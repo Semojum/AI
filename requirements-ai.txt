@@ -1,0 +1,56 @@
+# =================================================================
+# Semojum V2 AI — requirements-ai.txt  (Stage 2+ AI 모델 패키지)
+# 환경: Ubuntu 22.04 / Python 3.10 / CUDA 12.1 / L4 GPU
+#
+# [설치 순서] setup.sh 실행 후 Stage 2 시작 전 1회 실행:
+#   pip install -r requirements-ai.txt
+#
+# [주의]
+#   - torch, torchvision, autoawq, autoawq_kernels 는
+#     setup.sh 에서 CUDA 전용 휠로 먼저 설치됨. 이 파일에서 제외.
+#   - flash-attn 불필요: PyTorch 2.5.1 내장 SDPA 사용 (INT4 AWQ 추론 기준).
+#   - transformers/tokenizers/accelerate/einops/timm/safetensors 역시
+#     setup.sh step 6 에서 설치됨. 이 파일은 중복 명시용(버전 고정 보장).
+#   - braillify: PyPI 릴리스 확인 후 버전 고정 권장.
+#   - louis: liblouis 시스템 패키지 의존 (setup.sh step 2 에서 설치됨).
+#   - docling-core: docling 의 직접 의존 — 버전 고정 시 충돌 가능.
+#                   docling 이 호환 버전을 관리하도록 고정 제거.
+# =================================================================
+
+# ── 모델 공통 의존성 (setup.sh step 6 과 버전 고정 일치) ──────────
+transformers==4.57.0         # Qwen3-VL >= 4.57 필수 / HyperCLOVA X >= 4.53 충족
+tokenizers==0.21.1           # transformers 4.51.x 호환
+accelerate==1.2.1
+einops==0.8.0
+timm==1.0.11
+safetensors==0.4.5
+
+# ── 점자 변환 엔진 ────────────────────────────────────────────────
+braillify>=0.1.0             # 한글·영어 점자 변환 (설치 전 PyPI 최신 버전 확인)
+louis                        # liblouis Python 바인딩 (PyPI 최신 1.3)
+
+# ── 레이아웃 / 문서 탐지 ──────────────────────────────────────────
+ultralytics>=8.3.0           # DocLayout-YOLO v2 (YOLO 기반 레이아웃 탐지)
+
+# ── 표 구조 탐지 ──────────────────────────────────────────────────
+# [주의] docling-core 는 고정하지 않음 — docling 이 호환 버전을 관리.
+#        docling 2.15.0 → easyocr<2.0 sub-dep 설치됨.
+#        torch 는 setup.sh 에서 먼저 CUDA 버전으로 고정되어 덮어쓰이지 않음.
+docling==2.15.0
+
+# ── 수식 LaTeX 검증 ───────────────────────────────────────────────
+pylatexenc==2.10
+
+# ── RAG / 임베딩 ──────────────────────────────────────────────────
+# [CONFLICT FIX] chromadb 0.5.x → tokenizers<=0.20.3 요구 충돌
+#                chromadb 0.6.0+ → tokenizers>=0.13.2 (충돌 해소)
+chromadb>=0.6.0
+sentence-transformers==3.3.1
+
+# ── LLM API Fallback ──────────────────────────────────────────────
+openai==1.57.4
+
+# ── 메트릭 / 시각화 ───────────────────────────────────────────────
+asyncpg==0.30.0
+nltk==3.9.1
+matplotlib==3.9.3

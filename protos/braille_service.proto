@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package braille;
+option java_package = "com.semojum.backend.grpc";
+option java_outer_classname = "BrailleServiceProto";
+option java_multiple_files = true;
+
+service BrailleService {
+  rpc ProcessPage (BrailleRequest) returns (BrailleResponse);
+}
+
+// ── 요청 (BE → AI) ──────────────────────────────────────
+message BrailleRequest {
+  string job_id      = 1;
+  int32  page_no     = 2;
+  int32  total_pages = 3;   // 헤더·푸터 cross-page 감지용
+  bytes  pdf_data    = 4;   // 단일 페이지 PDF (~100–500 KB)
+  string mode        = 5;   // "a" | "b" | "c"
+  string source_text = 6;   // mode b 전용: 점역할 원본 텍스트
+}
+
+// ── 공통 서브메시지 ──────────────────────────────────────
+
+message BoundingBox {
+  string id            = 1;
+  int32  x             = 2;
+  int32  y             = 3;
+  int32  x2            = 4;
+  int32  y2            = 5;
+  string type          = 6;   // 11종: text|title|caption|table|image|formula|list_item|header_footer|page_number|footnote|sidebar
+  int32  heading_level = 7;   // 0 = null
+  string caption_ref   = 8;   // "" = null (참조하는 element_id)
+  repeated string flags = 9;
+}
+
+message RuleTrail {
+  string rule_id  = 1;
+  string source   = 2;
+  string section  = 3;
+  string title    = 4;
+  string excerpt  = 5;
+  string priority = 6;   // "primary" | "secondary"
+}
+
+message TactileGraphic {
+  string ascii_braille = 1;
+  string svg_path      = 2;
+  string target_tool   = 3;
+}
+
+message CriticalError {
+  string type       = 1;   // C1~C7
+  string element_id = 2;
+  string message    = 3;
+}
+
+message ReviewFlag {
+  string type       = 1;   // R1~R12
+  string element_id = 2;
+  string message    = 3;
+}
+
+message QualityReport {
+  float  ocr_confidence_avg  = 1;
+  float  line_overflow_rate  = 2;
+  repeated CriticalError critical_errors = 3;
+  repeated ReviewFlag    review_flags    = 4;
+}
+
+message ProcessingMeta {
+  int32  processing_time_ms   = 1;
+  float  pdf_layer_confidence = 2;
+  string routing_tier_used    = 3;   // ZERO|STANDARD|QUALITY|FALLBACK
+  bool   scan_only            = 4;
+}
+
+message TextElement {
+  string id                 = 1;
+  string type               = 2;
+  int32  order              = 3;
+  int32  heading_level      = 4;
+  float  ocr_confidence     = 5;
+  string tn_text            = 6;
+  bool   is_blocked         = 7;
+  string render_mode        = 8;
+  string visual_subtype     = 9;
+  float  subtype_confidence = 10;
+  string latex_string       = 11;  // formula 전용
+  TactileGraphic tactile    = 12;  // image/table 전용 (단계 3+)
+  repeated string contents      = 13;
+  repeated RuleTrail rule_trail = 14;
+}
+
+// ── 응답 (AI → BE) ──────────────────────────────────────
+message BrailleResponse {
+  string job_id      = 1;
+  string status      = 2;   // COMPLETED | NEEDS_REVIEW | BLOCKED
+  int32  page_number = 3;
+
+  ProcessingMeta processing_meta = 4;
+
+  // mode a, c
+  int32  image_width              = 5;
+  int32  image_height             = 6;
+  repeated BoundingBox bounding_box_list = 7;
+
+  // mode a, b, c
+  repeated TextElement text_list  = 8;
+
+  // mode b, c
+  repeated TextElement braille_text_list = 9;
+
+  QualityReport quality_report = 10;
+}

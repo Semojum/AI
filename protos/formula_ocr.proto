@@ -1,0 +1,16 @@
+syntax = "proto3";
+package formula;
+
+service FormulaOCRService {
+  rpc RecognizeFormula (FormulaRequest) returns (FormulaResponse);
+}
+
+message FormulaRequest {
+  bytes image_data       = 1;
+  float complexity_score = 2;  // ≤ 0.7 → FormulaNet-S / > 0.7 → FormulaNet-L
+}
+
+message FormulaResponse {
+  string latex_string = 1;
+  float  confidence   = 2;
+}

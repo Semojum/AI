@@ -1,0 +1,43 @@
+# 단계 1: TimescaleDB, ChromaDB 기반 서비스
+# 단계 3에서 formulanet-service 추가 예정 (docker-compose.yml의 services.formulanet 주석 해제)
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: semojum-timescaledb
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: semojum_metrics
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d semojum_metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: semojum-chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - chromadb_data:/chroma/chroma
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # TODO [단계 3] formulanet-service:
+  #   build: ./services/formulanet
+  #   ports:
+  #     - "50052:50052"
+  #   runtime: nvidia
+
+volumes:
+  timescaledb_data:
+  chromadb_data:

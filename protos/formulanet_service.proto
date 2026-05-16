@@ -1,0 +1,17 @@
+syntax = "proto3";
+package formulanet;
+
+// PP-FormulaNet-S/L BF16 수식 OCR 서비스 (PaddlePaddle Docker 컨테이너)
+service FormulaNetService {
+  rpc Recognize (RecognizeRequest) returns (RecognizeResponse);
+}
+
+message RecognizeRequest {
+  bytes image_bytes = 1;     // PNG/JPEG 이미지 바이트
+  string model_size = 2;     // "S" (복잡도 ≤ 0.7) | "L" (복잡도 > 0.7)
+}
+
+message RecognizeResponse {
+  string latex_string = 1;   // 인식된 LaTeX 문자열
+  float confidence = 2;      // 인식 신뢰도 0.0~1.0
+}
