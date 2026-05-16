@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 
 from app.ai.braille.kor_math_rules import convert_latex, digits_to_braille
+from app.ai.braille.symbol_rules import substitute_symbols
 
 # ── 한글 자모 점자 테이블 ──────────────────────────────────────────────────
 _CHOSEONG = [
@@ -174,5 +175,6 @@ def translate_tagged_text(text: str) -> str:
         return convert_latex(m.group(1))
 
     result = _FORMULA_RE.sub(_formula_sub, text)
-    result = _TAG_RE.sub("", result)  # 나머지 태그 제거
+    result = _TAG_RE.sub("", result)      # 나머지 태그 제거
+    result = substitute_symbols(result)   # 특수기호 → 점자 셀 치환 (T3-5)
     return _braillify(result)

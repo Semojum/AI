@@ -1,0 +1,86 @@
+[
+  {
+    "id": "T001",
+    "description": "기본 한글 음절",
+    "input": "가나다",
+    "contains_braille": ["⠈⠣", "⠉⠣", "⠊⠣"],
+    "note": "초성+중성 조합"
+  },
+  {
+    "id": "T002",
+    "description": "숫자 수표시 삽입 (C5-critical)",
+    "input": "3번",
+    "must_contain": "⠼",
+    "note": "숫자 앞 ⠼(수표시) 필수 — C5 배포 블로커"
+  },
+  {
+    "id": "T003",
+    "description": "영어 로마자표 삽입",
+    "input": "AI 시스템",
+    "must_contain": "⠴",
+    "note": "영문자 앞 ⠴(로마자표) 필수"
+  },
+  {
+    "id": "T004",
+    "description": "분수 LaTeX → 점자",
+    "input": "<formula>\\frac{1}{2}</formula>",
+    "must_contain": "⠜",
+    "note": "⠜ = 분자 시작 기호"
+  },
+  {
+    "id": "T005",
+    "description": "그리스 문자 치환",
+    "input": "α값",
+    "must_contain": "⠨⠁",
+    "note": "symbol_rules SYMBOL_TABLE 적용"
+  },
+  {
+    "id": "T006",
+    "description": "화살표 치환",
+    "input": "A→B",
+    "must_contain": "⠒⠕",
+    "note": "→ 치환"
+  },
+  {
+    "id": "T007",
+    "description": "소수점 포함 숫자",
+    "input": "3.14",
+    "must_contain_all": ["⠼", "⠂"],
+    "note": "수표시 + 소수점(⠂)"
+  },
+  {
+    "id": "T008",
+    "description": "원문자 치환",
+    "input": "① 항목",
+    "must_contain": "⠼⠁⠲",
+    "note": "① → ⠼⠁⠲"
+  },
+  {
+    "id": "T009",
+    "description": "섭씨 단위 치환",
+    "input": "25℃",
+    "must_contain": "⠘⠉",
+    "note": "℃ → ⠘⠉"
+  },
+  {
+    "id": "T010",
+    "description": "음수 부호",
+    "input": "-5도",
+    "must_contain_all": ["⠼", "⠤"],
+    "note": "수표시 + 음수 부호(⠤)"
+  },
+  {
+    "id": "T011",
+    "description": "한영 혼합",
+    "input": "Hello 세계",
+    "must_contain_all": ["⠴", "⠲"],
+    "note": "로마자표(⠴) + 종료표(⠲)"
+  },
+  {
+    "id": "T012",
+    "description": "태그 제거 확인",
+    "input": "<em>텍스트</em>",
+    "must_not_contain": "<em>",
+    "note": "<formula> 외 태그는 제거"
+  }
+]
