@@ -1,0 +1,568 @@
+{
+  "section_id": "제8절",
+  "section_name": "옛 자음자",
+  "extracted_at": "2026-05-25T01:59:09",
+  "source_lines": "961–1235",
+  "pairs": [
+    {
+      "item": "제19항 자음자 ",
+      "korean": "(아우)",
+      "brf_ascii": "<\".\"#",
+      "braille_unicode": "⠣⠐⠨⠐⠼",
+      "decode_ok": true
+    },
+    {
+      "item": "제19항 자음자 ",
+      "korean": "(여우의 가죽)",
+      "brf_ascii": ":\"kw`$2",
+      "braille_unicode": "⠱⠐⠅⠺[?`][?$]⠆",
+      "decode_ok": false
+    },
+    {
+      "item": "제19항 자음자 ",
+      "korean": "(여기)",
+      "brf_ascii": "o\"ds@w",
+      "braille_unicode": "⠕⠐⠙⠎⠈⠺",
+      "decode_ok": true
+    },
+    {
+      "item": "제19항 자음자 ",
+      "korean": "(굼벵이)",
+      "brf_ascii": "@m5^s\"4",
+      "braille_unicode": "⠈⠍⠢[?^]⠎⠐⠲",
+      "decode_ok": false
+    },
+    {
+      "item": "제19항 자음자 ",
+      "korean": "훈민(訓民正音",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제19항 자음자 ",
+      "korean": "(훈민정음)",
+      "brf_ascii": "jgeq.:\"4\"j[5",
+      "braille_unicode": "⠚⠑[?q]⠨⠱⠐⠲⠐⠚⠪⠢",
+      "decode_ok": false
+    },
+    {
+      "item": "제19항 자음자 ",
+      "korean": "(할 바가)",
+      "brf_ascii": "ju1\"0`^r",
+      "braille_unicode": "⠚⠥⠂⠐⠴[?`][?^]⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제19항 자음자 ",
+      "korean": "는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제19항 자음자 ",
+      "korean": "(‘군(君)’ 자)",
+      "brf_ascii": "@G_9,.\"#\"7",
+      "braille_unicode": "⠈[?G][?_]⠔⠠⠨⠐⠼⠐⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제19항 자음자 ",
+      "korean": "(‘홍(洪)’ 자)",
+      "brf_ascii": "\"JJu\"4_A,.\"#\"7",
+      "braille_unicode": "⠐[?J][?J]⠥⠐⠲[?_][?A]⠠⠨⠐⠼⠐⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제20항 연서로 ",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "15",
+      "braille_unicode": "⠂⠢",
+      "decode_ok": true
+    },
+    {
+      "item": "제20항 연서로 ",
+      "korean": "(‘두(斗)’ 자)",
+      "brf_ascii": "im\"57_\"b7,.\"#\"7",
+      "braille_unicode": "⠊⠍⠐⠢⠶[?_]⠐⠃⠶⠠⠨⠐⠼⠐⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제20항 연서로 ",
+      "korean": "(홀로)",
+      "brf_ascii": "j\"#\"^7\"#\".<",
+      "braille_unicode": "⠚⠐⠼⠐[?^]⠶⠐⠼⠐⠨⠣",
+      "decode_ok": false
+    },
+    {
+      "item": "제20항 연서로 ",
+      "korean": "(중세 국어 객체존대법의 선어말 어미 중 하나",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제20항 연서로 ",
+      "korean": "(방",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제21항 각자 병",
+      "korean": "다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제21항 각자 병",
+      "korean": "(닿는다)",
+      "brf_ascii": "i\"cc\"#co\"<",
+      "braille_unicode": "⠊⠐⠉⠉⠐⠼⠉⠕⠐⠣",
+      "decode_ok": true
+    },
+    {
+      "item": "제21항 각자 병",
+      "korean": "(하여금)",
+      "brf_ascii": "j\"#r\"gg:",
+      "braille_unicode": "⠚⠐⠼⠗⠐⠱",
+      "decode_ok": true
+    },
+    {
+      "item": "제21항 각자 병",
+      "korean": "(도리어)",
+      "brf_ascii": "iu\"\"#\"jj:",
+      "braille_unicode": "⠊⠥⠐⠐⠼⠐⠚⠚⠱",
+      "decode_ok": true
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "워 각 자음자를 어울러 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "리더라",
+      "brf_ascii": "\"^@[\"ois\"<",
+      "braille_unicode": "⠐[?^]⠈⠪⠐⠕⠊⠎⠐⠣",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "디시니",
+      "brf_ascii": "\"^I[IO,OCO",
+      "braille_unicode": "⠐[?^][?I]⠪[?I][?O]⠠[?O][?C][?O]",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(감싸더라, 보호하더라",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(뜻이시니",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "호",
+      "brf_ascii": "\"^,<juc\"#3",
+      "braille_unicode": "⠐[?^]⠠⠣⠚⠥⠉⠐⠼⠒",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(싸우는",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(짝",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "디며",
+      "brf_ascii": "\"^hsioe:",
+      "braille_unicode": "⠐[?^]⠓⠎⠊⠕⠑⠱",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(터지며",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(틈",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "디여",
+      "brf_ascii": "\",@sio:",
+      "braille_unicode": "⠐⠠⠈⠎⠊⠕⠱",
+      "decode_ok": true
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(때, 시각",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(꺼져서, 무너져서",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(사나이",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(딸",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "나모",
+      "brf_ascii": "\",^u\"4ceu",
+      "braille_unicode": "⠐⠠[?^]⠥⠐⠲⠉⠑⠥",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "여디고",
+      "brf_ascii": "\",.w:io@u",
+      "braille_unicode": "⠐⠠⠨⠺⠱⠊⠕⠈⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(뽕나무",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(째어지고",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "[다만] 현재 쓰이지 않는 겹받침 글자는 각 받침 글자를 어울러 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(유시(酉時))",
+      "brf_ascii": "i\"#1a'\"^,ir",
+      "braille_unicode": "⠊⠐⠼⠂⠁⠄⠐[?^]⠠⠊⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(열쇠)",
+      "brf_ascii": "|',y",
+      "braille_unicode": "[?|]⠄⠠⠽",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(‘금(禽)’은 날짐승이다)",
+      "brf_ascii": "@[5z`c\"#1\"0.%\"4,\"#r\"4o\"<",
+      "braille_unicode": "⠈⠪⠢⠿[?`]⠉⠐⠼⠂⠐⠴⠨⠩⠐⠲⠠⠐⠼⠗⠐⠲⠕⠐⠣",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(짐대에)",
+      "brf_ascii": ".O5'IR-/",
+      "braille_unicode": "⠨[?O]⠢⠄[?I][?R][?-]⠌⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제22항 합용 병",
+      "korean": "(예사 더러운 것들을)",
+      "brf_ascii": ",>\"4'`is\"sg`_si\"#1j\"#1",
+      "braille_unicode": "⠠⠜⠐⠲⠄[?`]⠊⠎⠐⠎[?`][?_]⠎⠊⠐⠼⠂⠚⠐⠼⠂",
+      "decode_ok": false
+    },
+    {
+      "item": "제23항 단독으로",
+      "korean": "워 받침으로 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제23항 단독으로",
+      "korean": "(‘홍(洪)’ 자)",
+      "brf_ascii": "\"JJu\"4_A,.\"#\"7",
+      "braille_unicode": "⠐[?J][?J]⠥⠐⠲[?_][?A]⠠⠨⠐⠼⠐⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제23항 단독으로",
+      "korean": "(‘군(君)’ 자)",
+      "brf_ascii": "@G_9,.\"#\"7",
+      "braille_unicode": "⠈[?G][?_]⠔⠠⠨⠐⠼⠐⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제23항 단독으로",
+      "korean": "(‘침(侵)’ 자)",
+      "brf_ascii": ";O5_B,.\"#\"7",
+      "braille_unicode": "⠰[?O]⠢[?_][?B]⠠⠨⠐⠼⠐⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제23항 단독으로",
+      "korean": "(‘두(斗)’ 자)",
+      "brf_ascii": "im\"57_\"b7,.\"#\"7",
+      "braille_unicode": "⠊⠍⠐⠢⠶[?_]⠐⠃⠶⠠⠨⠐⠼⠐⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제23항 단독으로",
+      "korean": "(‘허(虛)’ 자)",
+      "brf_ascii": "js\"7_\"0,.\"#\"7",
+      "braille_unicode": "⠚⠎⠐⠶[?_]⠐⠴⠠⠨⠐⠼⠐⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제23항 단독으로",
+      "korean": "(훗날)",
+      "brf_ascii": "jm_\"kc1",
+      "braille_unicode": "⠚⠍[?_]⠐⠅⠉⠂",
+      "decode_ok": false
+    },
+    {
+      "item": "제23항 단독으로",
+      "korean": "(적인(狄人) 사이에)",
+      "brf_ascii": ".?q_'`,s\"o-/",
+      "braille_unicode": "⠨[??][?q][?_]⠄[?`]⠠⠎⠐⠕[?-]⠌⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제23항 단독으로",
+      "korean": "(임금의 자리를 버리시어)",
+      "brf_ascii": "co5@[5`mr_1`^\"#\"o,>",
+      "braille_unicode": "⠉⠕⠢⠈⠪⠢[?`]⠍⠗[?_]⠂[?`][?^]⠐⠼⠐⠕⠠⠜",
+      "decode_ok": false
+    },
+    {
+      "item": "제23항 단독으로",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "17",
+      "braille_unicode": "⠂⠶",
+      "decode_ok": true
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "않는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "새",
+      "brf_ascii": ",r\".<5i\"#\"^7o",
+      "braille_unicode": "⠠⠗⠐⠨⠣⠢⠊⠐⠼⠐[?^]⠶⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "(혼자",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "(새삼스럽게",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "나치",
+      "brf_ascii": "c<\"kc;o",
+      "braille_unicode": "⠉⠣⠐⠅⠉⠰⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "이라",
+      "brf_ascii": "<\"ko\"<",
+      "braille_unicode": "⠣⠐⠅⠕⠐⠣",
+      "decode_ok": true
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "(낱낱이",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "(아우이다",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "밠바",
+      "brf_ascii": "^1'^i<\"4",
+      "braille_unicode": "[?^]⠂⠄[?^]⠊⠣⠐⠲",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "바이니라",
+      "brf_ascii": "^h<\"4oco\"<",
+      "braille_unicode": "[?^]⠓⠣⠐⠲⠕⠉⠕⠐⠣",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "(발바닥",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "(바탕이다",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "므리어나",
+      "brf_ascii": "$\"4'e[\"osc",
+      "braille_unicode": "[?$]⠐⠲⠄⠑⠪⠐⠕⠎⠉",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "갓가",
+      "brf_ascii": "$'$\"^7<",
+      "braille_unicode": "[?$]⠄[?$]⠐[?^]⠶⠣",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "(강물이거나",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "(가까워",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "니르다",
+      "brf_ascii": "co\"[\"^7<i",
+      "braille_unicode": "⠉⠕⠐⠪⠐[?^]⠶⠣⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "대",
+      "brf_ascii": "ir\"^7<9",
+      "braille_unicode": "⠊⠗⠐[?^]⠶⠣⠔",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "(받아 일으켜",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "(대나무밭",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "애븐",
+      "brf_ascii": "r\"^7<9^z",
+      "braille_unicode": "⠗⠐[?^]⠶⠣⠔[?^]⠿",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "(애달픈",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "(쌍생아",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "도라",
+      "brf_ascii": "$5'iu\"<c\"#1",
+      "braille_unicode": "[?$]⠢⠄⠊⠥⠐⠣⠉⠐⠼⠂",
+      "decode_ok": false
+    },
+    {
+      "item": "제24항 옛 자음",
+      "korean": "(감돌거늘",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    }
+  ]
+}

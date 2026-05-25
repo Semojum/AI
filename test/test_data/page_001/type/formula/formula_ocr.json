@@ -1,0 +1,72 @@
+[
+  {
+    "element_id": "22222222-0001-0000-0000-000000000001",
+    "corrected_text": null,
+    "latex_string": "\\frac{1}{2}",
+    "ocr_confidence": 1.0,
+    "visual_subtype": null,
+    "subtype_confidence": null,
+    "table_structure": null,
+    "flags": []
+  },
+  {
+    "element_id": "22222222-0002-0000-0000-000000000002",
+    "corrected_text": null,
+    "latex_string": "\\sqrt{x}",
+    "ocr_confidence": 1.0,
+    "visual_subtype": null,
+    "subtype_confidence": null,
+    "table_structure": null,
+    "flags": []
+  },
+  {
+    "element_id": "22222222-0003-0000-0000-000000000003",
+    "corrected_text": null,
+    "latex_string": "a^2 + b^2 = c^2",
+    "ocr_confidence": 1.0,
+    "visual_subtype": null,
+    "subtype_confidence": null,
+    "table_structure": null,
+    "flags": []
+  },
+  {
+    "element_id": "22222222-0004-0000-0000-000000000004",
+    "corrected_text": null,
+    "latex_string": "\\sin(\\theta) + \\cos(\\theta)",
+    "ocr_confidence": 1.0,
+    "visual_subtype": null,
+    "subtype_confidence": null,
+    "table_structure": null,
+    "flags": []
+  },
+  {
+    "element_id": "22222222-0005-0000-0000-000000000005",
+    "corrected_text": null,
+    "latex_string": "\\pi r^2",
+    "ocr_confidence": 1.0,
+    "visual_subtype": null,
+    "subtype_confidence": null,
+    "table_structure": null,
+    "flags": []
+  },
+  {
+    "element_id": "22222222-0006-0000-0000-000000000006",
+    "corrected_text": null,
+    "latex_string": "0.48",
+    "ocr_confidence": 1.0,
+    "visual_subtype": null,
+    "subtype_confidence": null,
+    "table_structure": null,
+    "flags": []
+  },
+  {
+    "element_id": "22222222-0007-0000-0000-000000000007",
+    "corrected_text": null,
+    "latex_string": "-3",
+    "ocr_confidence": 1.0,
+    "visual_subtype": null,
+    "subtype_confidence": null,
+    "table_structure": null,
+    "flags": []
+  }
+]

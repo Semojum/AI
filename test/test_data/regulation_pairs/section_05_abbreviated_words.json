@@ -1,0 +1,106 @@
+{
+  "section_id": "제5절",
+  "section_name": "모음 연쇄",
+  "extracted_at": "2026-05-25T01:59:05",
+  "source_lines": "536–570",
+  "pairs": [
+    {
+      "item": "제11항 모음자에",
+      "korean": "아예",
+      "brf_ascii": "<-/",
+      "braille_unicode": "⠣[?-]⠌⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제11항 모음자에",
+      "korean": "도예",
+      "brf_ascii": "iu-/",
+      "braille_unicode": "⠊⠥[?-]⠌⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제11항 모음자에",
+      "korean": "뭐예요",
+      "brf_ascii": "ep-/+",
+      "braille_unicode": "⠑⠏[?-]⠌⠗⠬",
+      "decode_ok": false
+    },
+    {
+      "item": "제11항 모음자에",
+      "korean": "서예",
+      "brf_ascii": ",s-/",
+      "braille_unicode": "⠠⠎[?-]⠌⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제11항 모음자에",
+      "korean": "[다만] 그 사이에서 줄이 바뀔 때에는 구분표를 적지 않는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제11항 모음자에",
+      "korean": "추사 김정희는 유명한 서예가입니다.",
+      "brf_ascii": "``;ml`@o5.}jwcz`%e}j3`,s````````",
+      "braille_unicode": "[?`][?`]⠰⠍[?l][?`]⠈⠕⠢⠨[?}]⠚⠺⠉⠿[?`]⠩⠑[?}]⠚⠒[?`]⠠⠎[?`][?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제12항 ‘ㅑ, ",
+      "korean": "-을 적어 나타낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제12항 ‘ㅑ, ",
+      "korean": "야애",
+      "brf_ascii": ">-r",
+      "braille_unicode": "⠜[?-]⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제12항 ‘ㅑ, ",
+      "korean": "소화액",
+      "brf_ascii": ",ujv-ra",
+      "braille_unicode": "⠠⠥⠚⠧[?-]⠗⠁",
+      "decode_ok": false
+    },
+    {
+      "item": "제12항 ‘ㅑ, ",
+      "korean": "수액",
+      "brf_ascii": ",m-ra",
+      "braille_unicode": "⠠⠍[?-]⠗⠁",
+      "decode_ok": false
+    },
+    {
+      "item": "제12항 ‘ㅑ, ",
+      "korean": "파워앰프",
+      "brf_ascii": "d<p-r5d{",
+      "braille_unicode": "⠙⠣⠏[?-]⠗⠢⠙⠪",
+      "decode_ok": false
+    },
+    {
+      "item": "제12항 ‘ㅑ, ",
+      "korean": "[다만] 그 사이에서 줄이 바뀔 때에는 구분표를 적지 않는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제12항 ‘ㅑ, ",
+      "korean": "침, 쓸개즙 등의 소화액은 소화 효소를 가지고 있다.",
+      "brf_ascii": "``;o5\"`,,!@r.{b`i{7w`,ujv```````",
+      "braille_unicode": "[?`][?`]⠰⠕⠢⠐[?`]⠠⠠[?!]⠈⠗⠨⠪⠃[?`]⠊⠪⠶⠺[?`]⠠⠥⠚⠧[?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제12항 ‘ㅑ, ",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "9",
+      "braille_unicode": "⠔",
+      "decode_ok": true
+    }
+  ]
+}

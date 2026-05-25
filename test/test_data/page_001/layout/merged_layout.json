@@ -1,0 +1,243 @@
+{
+  "page_id": "page_001",
+  "elements": [
+    {
+      "element_id": "11111111-0001-0000-0000-000000000001",
+      "type": "text",
+      "bbox": [
+        50,
+        50,
+        750,
+        100
+      ],
+      "reading_order": 1,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "11111111-0002-0000-0000-000000000002",
+      "type": "text",
+      "bbox": [
+        50,
+        110,
+        750,
+        160
+      ],
+      "reading_order": 2,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "11111111-0003-0000-0000-000000000003",
+      "type": "text",
+      "bbox": [
+        50,
+        170,
+        750,
+        220
+      ],
+      "reading_order": 3,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "11111111-0004-0000-0000-000000000004",
+      "type": "text",
+      "bbox": [
+        50,
+        230,
+        750,
+        280
+      ],
+      "reading_order": 4,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "11111111-0005-0000-0000-000000000005",
+      "type": "text",
+      "bbox": [
+        50,
+        290,
+        750,
+        340
+      ],
+      "reading_order": 5,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "11111111-0006-0000-0000-000000000006",
+      "type": "text",
+      "bbox": [
+        50,
+        350,
+        750,
+        400
+      ],
+      "reading_order": 6,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "11111111-0007-0000-0000-000000000007",
+      "type": "text",
+      "bbox": [
+        50,
+        410,
+        750,
+        460
+      ],
+      "reading_order": 7,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "11111111-0008-0000-0000-000000000008",
+      "type": "text",
+      "bbox": [
+        50,
+        470,
+        750,
+        520
+      ],
+      "reading_order": 8,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "11111111-0009-0000-0000-000000000009",
+      "type": "text",
+      "bbox": [
+        50,
+        530,
+        750,
+        580
+      ],
+      "reading_order": 9,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "11111111-0010-0000-0000-000000000010",
+      "type": "text",
+      "bbox": [
+        50,
+        590,
+        750,
+        640
+      ],
+      "reading_order": 10,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "11111111-0011-0000-0000-000000000011",
+      "type": "text",
+      "bbox": [
+        50,
+        650,
+        750,
+        700
+      ],
+      "reading_order": 11,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "11111111-0012-0000-0000-000000000012",
+      "type": "text",
+      "bbox": [
+        50,
+        710,
+        750,
+        760
+      ],
+      "reading_order": 12,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "22222222-0001-0000-0000-000000000001",
+      "type": "formula",
+      "bbox": [
+        200,
+        800,
+        600,
+        860
+      ],
+      "reading_order": 13,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "22222222-0002-0000-0000-000000000002",
+      "type": "formula",
+      "bbox": [
+        200,
+        880,
+        600,
+        940
+      ],
+      "reading_order": 14,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "22222222-0003-0000-0000-000000000003",
+      "type": "formula",
+      "bbox": [
+        200,
+        960,
+        600,
+        1020
+      ],
+      "reading_order": 15,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "22222222-0004-0000-0000-000000000004",
+      "type": "formula",
+      "bbox": [
+        200,
+        1040,
+        600,
+        1100
+      ],
+      "reading_order": 16,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    },
+    {
+      "element_id": "22222222-0005-0000-0000-000000000005",
+      "type": "formula",
+      "bbox": [
+        200,
+        1120,
+        600,
+        1180
+      ],
+      "reading_order": 17,
+      "heading_level": null,
+      "caption_ref": null,
+      "flags": []
+    }
+  ]
+}

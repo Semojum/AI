@@ -1,0 +1,211 @@
+{
+  "section_id": "제2절",
+  "section_name": "받침으로 쓰인 자음자",
+  "extracted_at": "2026-05-25T01:58:15",
+  "source_lines": "246–361",
+  "pairs": [
+    {
+      "item": "제3항 기본 자",
+      "korean": "국보",
+      "brf_ascii": "@ma~u",
+      "braille_unicode": "⠈⠍⠁⠘⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제3항 기본 자",
+      "korean": "윤리",
+      "brf_ascii": "%3\"o",
+      "braille_unicode": "⠩⠒⠐⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제3항 기본 자",
+      "korean": "싣고",
+      "brf_ascii": ",o9@u",
+      "braille_unicode": "⠠⠕⠔⠈⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제3항 기본 자",
+      "korean": "놀이",
+      "brf_ascii": "cu1o",
+      "braille_unicode": "⠉⠥⠂⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제3항 기본 자",
+      "korean": "솜씨",
+      "brf_ascii": ",u5,,o",
+      "braille_unicode": "⠠⠥⠢⠠⠠⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제3항 기본 자",
+      "korean": "넙치",
+      "brf_ascii": "csb;o",
+      "braille_unicode": "⠉⠎⠃⠰⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제3항 기본 자",
+      "korean": "놋그릇",
+      "brf_ascii": "cu'@{\"{'",
+      "braille_unicode": "⠉⠥⠄⠈⠪⠐⠪⠄",
+      "decode_ok": true
+    },
+    {
+      "item": "제3항 기본 자",
+      "korean": "향기",
+      "brf_ascii": "j>7@o",
+      "braille_unicode": "⠚⠜⠶⠈⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제3항 기본 자",
+      "korean": "엊저녁",
+      "brf_ascii": "sk.sc:a",
+      "braille_unicode": "⠎⠅⠨⠎⠉⠱⠁",
+      "decode_ok": true
+    },
+    {
+      "item": "제3항 기본 자",
+      "korean": "윷놀이",
+      "brf_ascii": "%2cu1o",
+      "braille_unicode": "⠩⠆⠉⠥⠂⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제3항 기본 자",
+      "korean": "부엌",
+      "brf_ascii": "~ms6",
+      "braille_unicode": "⠘⠍⠎⠖",
+      "decode_ok": true
+    },
+    {
+      "item": "제3항 기본 자",
+      "korean": "겉보리",
+      "brf_ascii": "@ s8~ u\"o",
+      "braille_unicode": "⠈⠀⠎⠦⠘⠀⠥⠐⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제3항 기본 자",
+      "korean": "앞집",
+      "brf_ascii": "<4.ob",
+      "braille_unicode": "⠣⠲⠨⠕⠃",
+      "decode_ok": true
+    },
+    {
+      "item": "제3항 기본 자",
+      "korean": "히읗",
+      "brf_ascii": "jo{0",
+      "braille_unicode": "⠚⠕⠪⠴",
+      "decode_ok": true
+    },
+    {
+      "item": "제4항 쌍받침 ",
+      "korean": "겪다",
+      "brf_ascii": "@:aai",
+      "braille_unicode": "⠈⠱⠁⠁⠊",
+      "decode_ok": true
+    },
+    {
+      "item": "제4항 쌍받침 ",
+      "korean": "묶음",
+      "brf_ascii": "emaa[5",
+      "braille_unicode": "⠑⠍⠁⠁⠪⠢",
+      "decode_ok": true
+    },
+    {
+      "item": "제4항 쌍받침 ",
+      "korean": "있다",
+      "brf_ascii": "o/i",
+      "braille_unicode": "⠕⠌⠗⠊",
+      "decode_ok": true
+    },
+    {
+      "item": "제4항 쌍받침 ",
+      "korean": "보았다",
+      "brf_ascii": "^u</i",
+      "braille_unicode": "[?^]⠥⠣⠌⠗⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제4항 쌍받침 ",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "5",
+      "braille_unicode": "⠢",
+      "decode_ok": true
+    },
+    {
+      "item": "제5항 겹받침은",
+      "korean": "품삯",
+      "brf_ascii": "dm5la'",
+      "braille_unicode": "⠙⠍⠢[?l]⠁⠄",
+      "decode_ok": false
+    },
+    {
+      "item": "제5항 겹받침은",
+      "korean": "앉다",
+      "brf_ascii": "<3ki",
+      "braille_unicode": "⠣⠒⠅⠊",
+      "decode_ok": true
+    },
+    {
+      "item": "제5항 겹받침은",
+      "korean": "않다",
+      "brf_ascii": "<30i",
+      "braille_unicode": "⠣⠒⠴⠊",
+      "decode_ok": true
+    },
+    {
+      "item": "제5항 겹받침은",
+      "korean": "읽다",
+      "brf_ascii": "o1ai",
+      "braille_unicode": "⠕⠂⠁⠊",
+      "decode_ok": true
+    },
+    {
+      "item": "제5항 겹받침은",
+      "korean": "옮기다",
+      "brf_ascii": "u15@oi",
+      "braille_unicode": "⠥⠂⠢⠈⠕⠊",
+      "decode_ok": true
+    },
+    {
+      "item": "제5항 겹받침은",
+      "korean": "얇다",
+      "brf_ascii": ">1bi",
+      "braille_unicode": "⠜⠂⠃⠊",
+      "decode_ok": true
+    },
+    {
+      "item": "제5항 겹받침은",
+      "korean": "외곬",
+      "brf_ascii": "y@u1'",
+      "braille_unicode": "⠽⠈⠥⠂⠄",
+      "decode_ok": true
+    },
+    {
+      "item": "제5항 겹받침은",
+      "korean": "핥다",
+      "brf_ascii": "j18i",
+      "braille_unicode": "⠚⠂⠦⠊",
+      "decode_ok": true
+    },
+    {
+      "item": "제5항 겹받침은",
+      "korean": "옳다",
+      "brf_ascii": "u10i",
+      "braille_unicode": "⠥⠂⠴⠊",
+      "decode_ok": true
+    },
+    {
+      "item": "제5항 겹받침은",
+      "korean": "없다",
+      "brf_ascii": "sb'i",
+      "braille_unicode": "⠎⠃⠄⠊",
+      "decode_ok": true
+    }
+  ]
+}

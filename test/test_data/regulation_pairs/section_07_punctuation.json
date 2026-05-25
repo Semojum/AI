@@ -1,0 +1,162 @@
+{
+  "section_id": "제7절",
+  "section_name": "약어",
+  "extracted_at": "2026-05-25T01:59:09",
+  "source_lines": "894–960",
+  "pairs": [
+    {
+      "item": "제18항 다음 단",
+      "korean": "그리고그리하여",
+      "brf_ascii": "as",
+      "braille_unicode": "⠁⠎",
+      "decode_ok": true
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "비가 왔다. 그래서 소풍 계획은 취소되었다.",
+      "brf_ascii": "``~o$`v/i4`as`,udm7`@/jyaz`;mr``",
+      "braille_unicode": "[?`][?`]⠘⠕[?$][?`]⠧⠌⠗⠊⠲[?`]⠁⠎[?`]⠠⠥⠙⠍⠶[?`]⠈⠌⠗⠚⠽⠁⠿[?`]⠰⠍⠗[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "아내는 조용히 그러나 단호하게 말했다.",
+      "brf_ascii": "``<crcz`.u+7jo`ac`i3juj@n`e1jr/`",
+      "braille_unicode": "[?`][?`]⠣⠉⠗⠉⠿[?`]⠨⠥⠬⠶⠚⠕[?`]⠁⠉[?`]⠊⠒⠚⠥⠚⠈⠝[?`]⠑⠂⠚⠗⠌⠗[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "만약 결과가 그러면 어떻게 할 거니?",
+      "brf_ascii": "``e3>a`@|@v$`a3`s,is0@n`j1`@sco8",
+      "braille_unicode": "[?`][?`]⠑⠒⠜⠁[?`]⠈[?|]⠈⠧[?$][?`]⠁⠒[?`]⠎⠠⠊⠎⠴⠈⠝[?`]⠚⠂[?`]⠈⠎⠉⠕⠦",
+      "decode_ok": false
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "그러므로 오늘 저녁에 와야 한다.",
+      "brf_ascii": "``a5`uc!`.sc:an`v>`j3i4`````````",
+      "braille_unicode": "[?`][?`]⠁⠢[?`]⠥⠉[?!][?`]⠨⠎⠉⠱⠁⠝[?`]⠧⠜[?`]⠚⠒⠊⠲[?`][?`][?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "내 잘못이 크다. 그런데 누구를 원망하겠나.",
+      "brf_ascii": "``cr`.1eu'o`f{i4`an`cm@m\"!`p3e7j",
+      "braille_unicode": "[?`][?`]⠉⠗[?`]⠨⠂⠑⠥⠄⠕[?`]⠋⠪⠊⠲[?`]⠁⠝[?`]⠉⠍⠈⠍⠐[?!][?`]⠏⠒⠑⠶⠚",
+      "decode_ok": false
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "그림을 그리고 있다.",
+      "brf_ascii": "``@[\"o5!`au`o/i4````````````````",
+      "braille_unicode": "[?`][?`]⠈⠪⠐⠕⠢[?!][?`]⠁⠥[?`]⠕⠌⠗⠊⠲[?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "13",
+      "braille_unicode": "⠂⠒",
+      "decode_ok": true
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "그리하여 그들은 친구 사이가 되었다.",
+      "brf_ascii": "``a:`@{i!z`;q@m`lo$`iys/i4``````",
+      "braille_unicode": "[?`][?`]⠁⠱[?`]⠈⠪⠊[?!]⠿[?`]⠰[?q]⠈⠍[?`][?l]⠕[?$][?`]⠊⠽⠎⠌⠗⠊⠲[?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "[붙임] 약어 뒤에 다른 글자가 붙어 나올 때에도 약어를 사용하여 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "그래서인지",
+      "brf_ascii": "asq.o",
+      "braille_unicode": "⠁⠎[?q]⠨⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "그러나저러나",
+      "brf_ascii": "ac.s\"sc",
+      "braille_unicode": "⠁⠉⠨⠎⠐⠎⠉",
+      "decode_ok": true
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "그러면서",
+      "brf_ascii": "a3,s",
+      "braille_unicode": "⠁⠒⠠⠎",
+      "decode_ok": true
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "그런데도",
+      "brf_ascii": "aniu",
+      "braille_unicode": "⠁⠝⠊⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "그리하여도",
+      "brf_ascii": "a:iu",
+      "braille_unicode": "⠁⠱⠊⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "왜 그러나요?",
+      "brf_ascii": "vr`ac+8",
+      "braille_unicode": "⠧⠗[?`]⠁⠉⠬⠦",
+      "decode_ok": false
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "그림을 그리고서 밥을 먹었다.",
+      "brf_ascii": "``@[\"o5!`au,s`^b!`e?s/i4````````",
+      "braille_unicode": "[?`][?`]⠈⠪⠐⠕⠢[?!][?`]⠁⠥⠠⠎[?`][?^]⠃[?!][?`]⠑[??]⠎⠌⠗⠊⠲[?`][?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "[다만] 약어 앞에 다른 글자가 붙어 나올 때에는 약어를 사용하지 않는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "오그리고",
+      "brf_ascii": "u@{\"o@u",
+      "braille_unicode": "⠥⠈⠪⠐⠕⠈⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "우그리고",
+      "brf_ascii": "m@{\"o@u",
+      "braille_unicode": "⠍⠈⠪⠐⠕⠈⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "쭈그리고",
+      "brf_ascii": ",.m@{\"o@u",
+      "braille_unicode": "⠠⠨⠍⠈⠪⠐⠕⠈⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제18항 다음 단",
+      "korean": "찡그리고",
+      "brf_ascii": ",.o7@{\"o@u",
+      "braille_unicode": "⠠⠨⠕⠶⠈⠪⠐⠕⠈⠥",
+      "decode_ok": true
+    }
+  ]
+}

@@ -1,0 +1,645 @@
+{
+  "section_id": "제14절",
+  "section_name": "기타 부호",
+  "extracted_at": "2026-05-25T01:59:21",
+  "source_lines": "2534–2992",
+  "pairs": [
+    {
+      "item": "제59항 쌍반점(",
+      "korean": "은 수산물이 있었다.",
+      "brf_ascii": "``l7.s5ncz`~r;m\"`,o@{5;o\"`i7@z``",
+      "braille_unicode": "[?`][?`][?l]⠶⠨⠎⠢⠝⠉⠿[?`]⠘⠗⠰⠍⠐[?`]⠠⠕⠈⠪⠢⠰⠕⠐[?`]⠊⠶⠈⠿[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제60항 별표(*",
+      "korean": "* 야애: 들에 낀 안개",
+      "brf_ascii": "\"9`>-r\"1`i!n`,@q`<3@r",
+      "braille_unicode": "⠐⠔[?`]⠜[?-]⠗⠐⠂[?`]⠊[?!]⠝[?`]⠠⠈[?q][?`]⠣⠒⠈⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제60항 별표(*",
+      "korean": "[다만 1] 별표와 참고표를 구별해야 할 때에는 참고표를 _9으로 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제60항 별표(*",
+      "korean": "[다만 2] 주석을 가리키는 별표의 위치와 띄어쓰기는 묵자를 따른다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제60항 별표(*",
+      "korean": "곡선이 주를 이룬다.",
+      "brf_ascii": "``$miow`@);mae&i!z`.<*n,s`.adm5w",
+      "braille_unicode": "[?`][?`][?$]⠍⠊⠕⠺[?`]⠈[?)]⠰⠍⠁⠑[?&]⠊[?!]⠿[?`]⠨⠣[?*]⠝⠠⠎[?`]⠨⠁⠙⠍⠢⠺",
+      "decode_ok": false
+    },
+    {
+      "item": "제60항 별표(*",
+      "korean": "음자리표에는 높은 음자리표, 낮은 음자리표, *가온 음자리표 등이 있다.",
+      "brf_ascii": "``{5.\"od+ncz`cu4z`{5.\"od+\"`ckz``",
+      "braille_unicode": "[?`][?`]⠪⠢⠨⠐⠕⠙⠬⠝⠉⠿[?`]⠉⠥⠲⠿[?`]⠪⠢⠨⠐⠕⠙⠬⠐[?`]⠉⠅⠿[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제61항 아포스트",
+      "korean": "’88 서울 올림픽",
+      "brf_ascii": "#'hh`,s&`u1\"o5doa",
+      "braille_unicode": "⠼⠄⠓⠓[?`]⠠⠎[?&][?`]⠥⠂⠐⠕⠢⠙⠕⠁",
+      "decode_ok": false
+    },
+    {
+      "item": "제62항 상동 기",
+      "korean": "제1 작업실",
+      "brf_ascii": ".n#a`.asb,o1",
+      "braille_unicode": "⠨⠝⠼⠁[?`]⠨⠁⠎⠃⠠⠕⠂",
+      "decode_ok": false
+    },
+    {
+      "item": "제62항 상동 기",
+      "korean": "제2   〃",
+      "brf_ascii": ".n#b`00",
+      "braille_unicode": "⠨⠝⠼⠃[?`]⠴⠴",
+      "decode_ok": false
+    },
+    {
+      "item": "제63항 긴소리표",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "41",
+      "braille_unicode": "⠲⠂",
+      "decode_ok": true
+    },
+    {
+      "item": "제63항 긴소리표",
+      "korean": "밤ː나무",
+      "brf_ascii": "^5,'cem",
+      "braille_unicode": "[?^]⠢⠠⠄⠉⠑⠍",
+      "decode_ok": false
+    },
+    {
+      "item": "제64항 동그라미",
+      "korean": "자는 7 7으로, 네모 문자는 _8 0l으로 묶어 나타낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제64항 동그라미",
+      "korean": "다음 ⓐ, ⓑ, ⓒ가 가리키는 것은?",
+      "brf_ascii": "``i<{5`70a7\"`70b7\"`70c7$`$\"ofocz",
+      "braille_unicode": "[?`][?`]⠊⠣⠪⠢[?`]⠶⠴⠁⠶⠐[?`]⠶⠴⠃⠶⠐[?`]⠶⠴⠉⠶[?$][?`][?$]⠐⠕⠋⠕⠉⠿",
+      "decode_ok": false
+    },
+    {
+      "item": "제64항 동그라미",
+      "korean": "에 들어갈 내용으로 가장 적절한 것은?",
+      "brf_ascii": "``_8$0ln`i!s$1`cr+7{\"u`$.7`.?.t`",
+      "braille_unicode": "[?`][?`][?_]⠦[?$]⠴[?l]⠝[?`]⠊[?!]⠎[?$]⠂[?`]⠉⠗⠬⠶⠪⠐⠥[?`][?$]⠨⠶[?`]⠨[??]⠨[?t][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제65항 화폐 기",
+      "korean": "[붙임] 화폐 기호 뒤에 한글이 이어 나올 때에는 한 칸 띄어 쓴다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제65항 화폐 기",
+      "korean": "$1는 100￠이다.",
+      "brf_ascii": "``0@s#a`cz`#ajj0@c`oi4``````````",
+      "braille_unicode": "[?`][?`]⠴⠈⠎⠼⠁[?`]⠉⠿[?`]⠼⠁⠚⠚⠴⠈⠉[?`]⠕⠊⠲[?`][?`][?`][?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제65항 화폐 기",
+      "korean": "€는 유럽 연합의 화폐 단위를 나타내는 기호이다.",
+      "brf_ascii": "``0@e`cz`%\"sb`*jbw`jvd/`i3mr\"!`c",
+      "braille_unicode": "[?`][?`]⠴⠈⠑[?`]⠉⠿[?`]⠩⠐⠎⠃[?`][?*]⠚⠃⠺[?`]⠚⠧⠙⠌⠗[?`]⠊⠒⠍⠗⠐[?!][?`]⠉",
+      "decode_ok": false
+    },
+    {
+      "item": "제66항 점역자가",
+      "korean": ",' ,'으로 묶어 나타낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제66항 점역자가",
+      "korean": ",'표의 가로와 세로를 바꾸어 점역하였음.,'",
+      "brf_ascii": "``,'d+w`$\"uv`,n\"u\"!`^,@ms`.s5:aj",
+      "braille_unicode": "[?`][?`]⠠⠄⠙⠬⠺[?`][?$]⠐⠥⠧[?`]⠠⠝⠐⠥⠐[?!][?`][?^]⠠⠈⠍⠎[?`]⠨⠎⠢⠱⠁⠚",
+      "decode_ok": false
+    },
+    {
+      "item": "제67항 묵자에 ",
+      "korean": "한 칸 띄어 쓴다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제67항 묵자에 ",
+      "korean": "_? 숫자 기호",
+      "brf_ascii": "_=_?`,m'.`@oju",
+      "braille_unicode": "[?_]⠿[?_][??][?`]⠠⠍⠄⠨[?`]⠈⠕⠚⠥",
+      "decode_ok": false
+    },
+    {
+      "item": "제67항 묵자에 ",
+      "korean": "마침표는 4으로 적는다.",
+      "brf_ascii": "``e;o5d+cz`_=4`[\"u`.?czi4```````",
+      "braille_unicode": "[?`][?`]⠑⠰⠕⠢⠙⠬⠉⠿[?`][?_]⠿⠲[?`]⠪⠐⠥[?`]⠨[??]⠉⠿⠊⠲[?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제68항 위 첨자",
+      "korean": "칸 띄어 쓴다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제68항 위 첨자",
+      "korean": "10,000㎡는 1㏊이다.",
+      "brf_ascii": "``#aj1jjj0m^#b`cz`#a0ha4oi4`````",
+      "braille_unicode": "[?`][?`]⠼⠁⠚⠂⠚⠚⠚⠴⠍[?^]⠼⠃[?`]⠉⠿[?`]⠼⠁⠴⠓⠁⠲⠕⠊⠲[?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제68항 위 첨자",
+      "korean": "1평은 3.3㎡이다.",
+      "brf_ascii": "``#a`d]z`#c4c0m^#boi4```````````",
+      "braille_unicode": "[?`][?`]⠼⠁[?`]⠙[?]]⠿[?`]⠼⠉⠲⠉⠴⠍[?^]⠼⠃⠕⠊⠲[?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제68항 위 첨자",
+      "korean": "비타민 B₉의 이름은 엽산이다.",
+      "brf_ascii": "``~oheq`0,b;#iw`o\"{5z`:bl3oi4```",
+      "braille_unicode": "[?`][?`]⠘⠕⠓⠑[?q][?`]⠴⠠⠃⠰⠼⠊⠺[?`]⠕⠐⠪⠢⠿[?`]⠱⠃[?l]⠒⠕⠊⠲[?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제68항 위 첨자",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "43",
+      "braille_unicode": "⠲⠒",
+      "decode_ok": true
+    },
+    {
+      "item": "제68항 위 첨자",
+      "korean": "[붙임 2] +나 -가 첨자일 때에는 그 뒤를 한 칸 띄어 쓴다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제68항 위 첨자",
+      "korean": "국산 쇠고기의 등급은 각 평가 기준을 합산한 등급으로 1++등급, 1+등급",
+      "brf_ascii": ",",
+      "braille_unicode": "⠠",
+      "decode_ok": true
+    },
+    {
+      "item": "제68항 위 첨자",
+      "korean": "1등급, 2등급, 3등급으로 나누어져 있다.",
+      "brf_ascii": "``@mal3`,y@u@ow`i{7@{bz`$a`d}$``",
+      "braille_unicode": "[?`][?`]⠈⠍⠁[?l]⠒[?`]⠠⠽⠈⠥⠈⠕⠺[?`]⠊⠪⠶⠈⠪⠃⠿[?`][?$]⠁[?`]⠙[?}][?$][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제68항 위 첨자",
+      "korean": "최근에는 A- 학점이 있는 학교가 적다.",
+      "brf_ascii": "``;y@zncz`0,a^9`ja.s5o`o/cz`ja@+",
+      "braille_unicode": "[?`][?`]⠰⠽⠈⠿⠝⠉⠿[?`]⠴⠠⠁[?^]⠔[?`]⠚⠁⠨⠎⠢⠕[?`]⠕⠌⠗⠉⠿[?`]⠚⠁⠈⠬",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "따른다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "1m는 100cm이다.",
+      "brf_ascii": "``#a0m4cz`#ajj0cm4oi4```````````",
+      "braille_unicode": "[?`][?`]⠼⠁⠴⠍⠲⠉⠿[?`]⠼⠁⠚⠚⠴⠉⠍⠲⠕⠊⠲[?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "운동으로 한 달 동안 7 kg을 감량했다.",
+      "brf_ascii": "``gi={\"u`j3`i1`i=<3`#g`0kg4!`$5`",
+      "braille_unicode": "[?`][?`]⠊⠿⠪⠐⠥[?`]⠚⠒[?`]⠊⠂[?`]⠊⠿⠣⠒[?`]⠼[?`]⠴⠅⠲[?!][?`][?$]⠢[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "그의 혈당 수치가 160㎎/㎗를 넘었다.",
+      "brf_ascii": "``@[w`j\\i7`,m;o$`#afj0mg_/dl4\"!`",
+      "braille_unicode": "[?`][?`]⠈⠪⠺[?`]⠚[?\\]⠊⠶[?`]⠠⠍⠰⠕[?$][?`]⠼⠁⠋⠚⠴⠍[?_]⠌⠗⠙[?l]⠲⠐[?!][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "일사량 단위에는 cal/㎠/min이 있다.",
+      "brf_ascii": "``o1l\">7`i3mrncz`0cal_/cm~#b_/``",
+      "braille_unicode": "[?`][?`]⠕⠂[?l]⠐⠜⠶[?`]⠊⠒⠍⠗⠝⠉⠿[?`]⠴⠉⠁[?l][?_]⠌⠗⠉⠍⠘⠼⠃[?_]⠌⠗[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "1in는 2.54cm이다.",
+      "brf_ascii": "``#a0in4cz`#b4ed0cm4oi4`````````",
+      "braille_unicode": "[?`][?`]⠼⠁⠴⠊⠝⠲⠉⠿[?`]⠼⠃⠲⠑⠙⠴⠉⠍⠲⠕⠊⠲[?`][?`][?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "국방 FM의 주파수는 수도권 기준으로 96.7 ㎒이다.",
+      "brf_ascii": "``@ma~7`0,,fm4w`.md,mcz`,miu@p3`",
+      "braille_unicode": "[?`][?`]⠈⠍⠁⠘⠶[?`]⠴⠠⠠⠋⠍⠲⠺[?`]⠨⠍⠙⠠⠍⠉⠿[?`]⠠⠍⠊⠥⠈⠏⠒[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "최근 USB 메모리 256GB는 5만 원대 가격이다.",
+      "brf_ascii": "``;y@z`0,,usb4`eneu\"o`#bef0,,gb4",
+      "braille_unicode": "[?`][?`]⠰⠽⠈⠿[?`]⠴⠠⠠⠥⠎⠃⠲[?`]⠑⠝⠑⠥⠐⠕[?`]⠼⠃⠑⠋⠴⠠⠠⠃⠲",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "스 문자를 사용한다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "1 μm는 1,000분의 1 mm이다.",
+      "brf_ascii": "``#a`0.mm4cz`#a1jjj^gw`#a`0mm4o`",
+      "braille_unicode": "[?`][?`]⠼⠁[?`]⠴⠨⠍⠍⠲⠉⠿[?`]⠼⠁⠂⠚⠚⠚[?^]⠺[?`]⠼⠁[?`]⠴⠍⠍⠲⠕[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "Ω는 전기 저항의 단위이다.",
+      "brf_ascii": "``0,.w4cz`.)@o`.sj7w`i3mroi4````",
+      "braille_unicode": "[?`][?`]⠴⠠⠨⠺⠲⠉⠿[?`]⠨[?)]⠈⠕[?`]⠨⠎⠚⠶⠺[?`]⠊⠒⠍⠗⠕⠊⠲[?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "다.",
+      "brf_ascii": "%",
+      "braille_unicode": "⠩",
+      "decode_ok": true
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "5 %와 6 %의 차이는 1 %p다.",
+      "brf_ascii": "``#e`0p`v`#f`0p`w`;<ocz`#a`0pp``",
+      "braille_unicode": "[?`][?`]⠼⠑[?`]⠴⠏[?`]⠧[?`]⠼⠋[?`]⠴⠏[?`]⠺[?`]⠰⠣⠕⠉⠿[?`]⠼⠁[?`]⠴⠏⠏[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "연 강수량의 10%에 해당한다.",
+      "brf_ascii": "``*`$7,m\">7w`#aj0p`n`jri7j3i4```",
+      "braille_unicode": "[?`][?`][?*][?`][?$]⠶⠠⠍⠐⠜⠶⠺[?`]⠼⠁⠚⠴⠏[?`]⠝[?`]⠚⠗⠊⠶⠚⠒⠊⠲[?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "직각은 90°이다.",
+      "brf_ascii": "``.oa$az`#ij0d`oi4``````````````",
+      "braille_unicode": "[?`][?`]⠨⠕⠁[?$]⠁⠿[?`]⠼⠊⠚⠴⠙[?`]⠕⠊⠲[?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "물은 100 ℃에서 끓는다.",
+      "brf_ascii": "``e&z`#ajj`0d,c`n,s`,@!0czi4````",
+      "braille_unicode": "[?`][?`]⠑[?&]⠿[?`]⠼⠁⠚⠚[?`]⠴⠙⠠⠉[?`]⠝⠠⠎[?`]⠠⠈[?!]⠴⠉⠿⠊⠲[?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "45",
+      "braille_unicode": "⠲⠢",
+      "decode_ok": true
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "같이 적어 나타내고, 띄어쓰기는 묵자를 따른다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "80 ㎞/시",
+      "brf_ascii": "#hj`0km4_/,o",
+      "braille_unicode": "⠼⠓⠚[?`]⠴⠅⠍⠲[?_]⠌⠗⠠⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제69항 로마자로",
+      "korean": "80킬로미터/h",
+      "brf_ascii": "#hj`fo1\"ueohs_/0h4",
+      "braille_unicode": "⠼⠓⠚[?`]⠋⠕⠂⠐⠥⠑⠕⠓⠎[?_]⠌⠗⠴⠓⠲",
+      "decode_ok": false
+    },
+    {
+      "item": "제70항 화살표는",
+      "korean": "부산 → 서울",
+      "brf_ascii": "~ml3`3o`,s&",
+      "braille_unicode": "⠘⠍[?l]⠒[?`]⠒⠕[?`]⠠⠎[?&]",
+      "decode_ok": false
+    },
+    {
+      "item": "제70항 화살표는",
+      "korean": "← 행주대교",
+      "brf_ascii": "{3`jr7.mir@+",
+      "braille_unicode": "⠪⠒[?`]⠚⠗⠶⠨⠍⠊⠗⠈⠬",
+      "decode_ok": false
+    },
+    {
+      "item": "제70항 화살표는",
+      "korean": "한글 ↔ 일본어 번역",
+      "brf_ascii": "j3@!`{3o`o1~(s`~):a",
+      "braille_unicode": "⠚⠒⠈[?!][?`]⠪⠒⠕[?`]⠕⠂⠘[?(]⠎[?`]⠘[?)]⠱⠁",
+      "decode_ok": false
+    },
+    {
+      "item": "제70항 화살표는",
+      "korean": "거래량 ↓",
+      "brf_ascii": "@s\"r\">7`~3o",
+      "braille_unicode": "⠈⠎⠐⠗⠐⠜⠶[?`]⠘⠒⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "역빗금",
+      "brf_ascii": "|",
+      "braille_unicode": "[?|]",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "인터넷에서 누군가에게 답장을 쓸 때 사용자 이름 앞에 @를 쓴다.",
+      "brf_ascii": "``qhscn'n,s`cm@g$n@n`ib.7!`,,!``",
+      "braille_unicode": "[?`][?`][?q]⠓⠎⠉⠝⠄⠝⠠⠎[?`]⠉⠍⠈[?$]⠝⠈⠝[?`]⠊⠃⠨⠶[?!][?`]⠠⠠[?!][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "^^은 웃는 모습의 이모티콘으로 메신저 대화나 채팅방에서 주로 쓰인다.",
+      "brf_ascii": "``@5@5z`m'cz`eu,{bw`oeuhof({\"u``",
+      "braille_unicode": "[?`][?`]⠈⠢⠈⠢⠿[?`]⠍⠄⠉⠿[?`]⠑⠥⠠⠪⠃⠺[?`]⠕⠑⠥⠓⠕⠋[?(]⠪⠐⠥[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "비밀번호 입력 후 #버튼을 누르시면 설정을 바꿀 수 있습니다.",
+      "brf_ascii": "``~oeo1~)ju`ob\":a`jm`_?~shz!`cm",
+      "braille_unicode": "[?`][?`]⠘⠕⠑⠕⠂⠘[?)]⠚⠥[?`]⠕⠃⠐⠱⠁[?`]⠚⠍[?`][?_][??]⠘⠎⠓⠿[?!][?`]⠉⠍",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "보도자료_업무협약 체결.hwp",
+      "brf_ascii": "~uiu.\"+_-sbemj:b>a`;n@|40hwp4",
+      "braille_unicode": "⠘⠥⠊⠥⠨⠐⠬[?_][?-]⠎⠃⠑⠍⠚⠱⠃⠜⠁[?`]⠰⠝⠈[?|]⠲⠴⠓⠺⠏⠲",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "\\은 프로그래밍 언어에서 사용한다.",
+      "brf_ascii": "``_*z`d{\"u@{\"reo7`)sn,s`l+7j3i4",
+      "braille_unicode": "[?`][?`][?_][?*]⠿[?`]⠙⠪⠐⠥⠈⠪⠐⠗⠑⠕⠶[?`][?)]⠎⠝⠠⠎[?`][?l]⠬⠶⠚⠒⠊⠲",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "저자 | 홍길동",
+      "brf_ascii": ".s.`_|`j=@o1i=",
+      "braille_unicode": "⠨⠎⠨[?`][?_][?|][?`]⠚⠿⠈⠕⠂⠊⠿",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "[다만] 한글과 혼동되는 앰퍼샌드(&), 섹션 기호(§), 문단 기호(¶), 저작권 기호(©",
+      "brf_ascii": "),",
+      "braille_unicode": "[?)]⠠",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "등록 상표(®), 상표 기호(™)는 로마자표와 로마자 종료표를 사용하여 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "종이접기 & 클레이아트",
+      "brf_ascii": ".=o.sb@o`0@&4`f!\"no<h{",
+      "braille_unicode": "⠨⠿⠕⠨⠎⠃⠈⠕[?`]⠴⠈[?&]⠲[?`]⠋[?!]⠐⠝⠕⠣⠓⠪",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "대한민국은 민주공화국이다(헌법§1①).",
+      "brf_ascii": "``irj3eq@maz`eq.m@=jv@maoi8'j)``",
+      "braille_unicode": "[?`][?`]⠊⠗⠚⠒⠑[?q]⠈⠍⠁⠿[?`]⠑[?q]⠨⠍⠈⠿⠚⠧⠈⠍⠁⠕⠊⠦⠄⠚[?)][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "이 책에서는 활용 예문, 활용어를 나타낼 때 ¶ 기호를 사용하였다.",
+      "brf_ascii": "``o`;ran,scz`jv1+7`/eg\"`jv1+7s\"!",
+      "braille_unicode": "[?`][?`]⠕[?`]⠰⠗⠁⠝⠠⠎⠉⠿[?`]⠚⠧⠂⠬⠶[?`]⠌⠗⠑⠐[?`]⠚⠧⠂⠬⠶⠎⠐[?!]",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "저작권자© 연합뉴스",
+      "brf_ascii": ".s.a@p3.0^c4`*jbc%,{",
+      "braille_unicode": "⠨⠎⠨⠁⠈⠏⠒⠨⠴[?^]⠉⠲[?`][?*]⠚⠃⠉⠩⠠⠪",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "®는 등록 상표로 동그라미 안에 문자 “R”이 들어 있는 모양이다.",
+      "brf_ascii": "``0~r4cz`i{7\"x`l7d+\"u`i=@{\"<eo``",
+      "braille_unicode": "[?`][?`]⠴⠘⠗⠲⠉⠿[?`]⠊⠪⠶⠐[?x][?`][?l]⠶⠙⠬⠐⠥[?`]⠊⠿⠈⠪⠐⠣⠑⠕[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "상표 기호는 ™로 표시한다.",
+      "brf_ascii": "``l7d+`@ojucz`0~t4\"u`d+,oj3i4```",
+      "braille_unicode": "[?`][?`][?l]⠶⠙⠬[?`]⠈⠕⠚⠥⠉⠿[?`]⠴⠘[?t]⠲⠐⠥[?`]⠙⠬⠠⠕⠚⠒⠊⠲[?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제71항 자주 쓰",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "47",
+      "braille_unicode": "⠲⠶",
+      "decode_ok": true
+    },
+    {
+      "item": "제72항 글머리 ",
+      "korean": "제1점역자 정의 글머리 기호",
+      "brf_ascii": "_5",
+      "braille_unicode": "[?_]⠢",
+      "decode_ok": false
+    },
+    {
+      "item": "제72항 글머리 ",
+      "korean": "제2점역자 정의 글머리 기호",
+      "brf_ascii": "_6",
+      "braille_unicode": "[?_]⠖",
+      "decode_ok": false
+    },
+    {
+      "item": "제72항 글머리 ",
+      "korean": "제3점역자 정의 글머리 기호",
+      "brf_ascii": "_8",
+      "braille_unicode": "[?_]⠦",
+      "decode_ok": false
+    },
+    {
+      "item": "제72항 글머리 ",
+      "korean": "제4점역자 정의 글머리 기호",
+      "brf_ascii": "_3",
+      "braille_unicode": "[?_]⠒",
+      "decode_ok": false
+    },
+    {
+      "item": "제72항 글머리 ",
+      "korean": "○ (주제) ‘한국어·한글 미래를 말하다’",
+      "brf_ascii": "``#bjba`j3@!c1`.m+`egjvjr7l`````",
+      "braille_unicode": "[?`][?`]⠼⠃⠚⠃⠁[?`]⠚⠒⠈[?!]⠉⠂[?`]⠨⠍⠬[?`]⠑⠚⠧⠚⠗⠶[?l][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제72항 글머리 ",
+      "korean": "로 적어 나타낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제72항 글머리 ",
+      "korean": "홍길동 국장",
+      "brf_ascii": "_00`,o1.7@{b`ql~1\"}",
+      "braille_unicode": "[?_]⠴⠴[?`]⠠⠕⠂⠨⠶⠈⠪⠃[?`][?q][?l]⠘⠂⠐[?}]",
+      "decode_ok": false
+    },
+    {
+      "item": "제73항 채워 넣",
+      "korean": "다음      에 적절한 단어를 넣으세요.",
+      "brf_ascii": "``i<{5`_-n`.?.tj3`i3s\"!`cs0{,n+4",
+      "braille_unicode": "[?`][?`]⠊⠣⠪⠢[?`][?_][?-]⠝[?`]⠨[??]⠨[?t]⠚⠒[?`]⠊⠒⠎⠐[?!][?`]⠉⠎⠴⠪⠠⠝⠬⠲",
+      "decode_ok": false
+    },
+    {
+      "item": "제73항 채워 넣",
+      "korean": "에 들어갈 말로 적절한 것은?",
+      "brf_ascii": "``_8`0ln`i!s$1`e1\"u`.?.tj3`_sz8`",
+      "braille_unicode": "[?`][?`][?_]⠦[?`]⠴[?l]⠝[?`]⠊[?!]⠎[?$]⠂[?`]⠑⠂⠐⠥[?`]⠨[??]⠨[?t]⠚⠒[?`][?_]⠎⠿⠦[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제73항 채워 넣",
+      "korean": "낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제73항 채워 넣",
+      "korean": "사자성어 채우기: 고성__",
+      "brf_ascii": "l.,]s`;rm@o\"1`@u,]_-_-",
+      "braille_unicode": "[?l]⠨⠠[?]]⠎[?`]⠰⠗⠍⠈⠕⠐⠂[?`]⠈⠥⠠[?]][?_][?-][?_][?-]",
+      "decode_ok": false
+    },
+    {
+      "item": "제73항 채워 넣",
+      "korean": "호를 붙여 적는다. 네모 빈칸에 표시 문자가 있을 때에는 묵자를 따른다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제73항 채워 넣",
+      "korean": "일시:    ㉠",
+      "brf_ascii": "``o1,o\"1`7=a7_-`````````````````",
+      "braille_unicode": "[?`][?`]⠕⠂⠠⠕⠐⠂[?`]⠶⠿⠁⠶[?_][?-][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제73항 채워 넣",
+      "korean": "(가) 은/는 대한민국 임시 정부의 외무부 차장을 역임하였습니다.",
+      "brf_ascii": "``_88'$,00lz_/cz`irj3eq@ma`o5,o`",
+      "braille_unicode": "[?`][?`][?_]⠦⠦⠄[?$]⠠⠴⠴[?l]⠿[?_]⠌⠗⠉⠿[?`]⠊⠗⠚⠒⠑[?q]⠈⠍⠁[?`]⠕⠢⠠⠕[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제73항 채워 넣",
+      "korean": "자료 (가)       시대의 문화유산 만들기",
+      "brf_ascii": "``.\"+`8'$,0`_8`0l`,oirw`egjv%l3`",
+      "braille_unicode": "[?`][?`]⠨⠐⠬[?`]⠦⠄[?$]⠠⠴[?`][?_]⠦[?`]⠴[?l][?`]⠠⠕⠊⠗⠺[?`]⠑⠚⠧⠩[?l]⠒[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제74항 컴퓨터 ",
+      "korean": "국립국어원의 누리집 주소는 https://www.korean.go.kr이다.",
+      "brf_ascii": "``@ma\"ob@masp3w`cm\"o.ob`.m,ucz``",
+      "braille_unicode": "[?`][?`]⠈⠍⠁⠐⠕⠃⠈⠍⠁⠎⠏⠒⠺[?`]⠉⠍⠐⠕⠨⠕⠃[?`]⠨⠍⠠⠥⠉⠿[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제74항 컴퓨터 ",
+      "korean": "그의 이메일 주소는 greenpark7150@korea.kr이다.",
+      "brf_ascii": "``@{w`oeno1`.m,ucz`0gre5p>k\"````",
+      "braille_unicode": "[?`][?`]⠈⠪⠺[?`]⠕⠑⠝⠕⠂[?`]⠨⠍⠠⠥⠉⠿[?`]⠴⠗⠑⠢⠏⠜⠅⠐[?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제74항 컴퓨터 ",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "49",
+      "braille_unicode": "⠲⠔",
+      "decode_ok": true
+    },
+    {
+      "item": "제74항 컴퓨터 ",
+      "korean": "document_bc#7.txt 파일을 복사해 주십시오.",
+      "brf_ascii": "``0docu;t.-bc_?#g4txt4`d<o1!`~xl",
+      "braille_unicode": "[?`][?`]⠴⠙⠕⠉⠥⠰[?t]⠨[?-]⠃⠉[?_][??]⠼⠲[?t][?x][?t]⠲[?`]⠙⠣⠕⠂[?!][?`]⠘[?x][?l]",
+      "decode_ok": false
+    },
+    {
+      "item": "제74항 컴퓨터 ",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "51",
+      "braille_unicode": "⠢⠂",
+      "decode_ok": true
+    }
+  ]
+}

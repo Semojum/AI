@@ -1,0 +1,67 @@
+[
+  {
+    "element_id": "33333333-0001-0000-0000-000000000001",
+    "corrected_text": null,
+    "latex_string": null,
+    "ocr_confidence": 0.95,
+    "visual_subtype": null,
+    "subtype_confidence": null,
+    "table_structure": {
+      "cells": [
+        {"row": 0, "col": 0, "text": "이름"},
+        {"row": 0, "col": 1, "text": "점수"},
+        {"row": 1, "col": 0, "text": "가나다"},
+        {"row": 1, "col": 1, "text": "95"}
+      ],
+      "rows": 2,
+      "cols": 2
+    },
+    "flags": []
+  },
+  {
+    "element_id": "33333333-0002-0000-0000-000000000002",
+    "corrected_text": null,
+    "latex_string": null,
+    "ocr_confidence": 0.88,
+    "visual_subtype": null,
+    "subtype_confidence": null,
+    "table_structure": {
+      "cells": [
+        {"row": 0, "col": 0, "text": "과목"},
+        {"row": 0, "col": 1, "text": "국어"},
+        {"row": 0, "col": 2, "text": "수학"},
+        {"row": 1, "col": 0, "text": "1학기"},
+        {"row": 1, "col": 1, "text": "85"},
+        {"row": 1, "col": 2, "text": "92"},
+        {"row": 2, "col": 0, "text": "2학기"},
+        {"row": 2, "col": 1, "text": "88"},
+        {"row": 2, "col": 2, "text": "90"}
+      ],
+      "rows": 3,
+      "cols": 3
+    },
+    "flags": []
+  },
+  {
+    "element_id": "33333333-0003-0000-0000-000000000003",
+    "corrected_text": "항목 | 내용\n제목 | 한국어 점자 규정\n발행 | 2024",
+    "latex_string": null,
+    "ocr_confidence": 0.72,
+    "visual_subtype": null,
+    "subtype_confidence": null,
+    "table_structure": {
+      "cells": [
+        {"row": 0, "col": 0, "text": "항목"},
+        {"row": 0, "col": 1, "text": "내용"},
+        {"row": 1, "col": 0, "text": "제목"},
+        {"row": 1, "col": 1, "text": "한국어 점자 규정"},
+        {"row": 2, "col": 0, "text": "발행"},
+        {"row": 2, "col": 1, "text": "2024"}
+      ],
+      "rows": 3,
+      "cols": 2,
+      "render_mode": "linear"
+    },
+    "flags": []
+  }
+]

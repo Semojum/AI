@@ -1,0 +1,666 @@
+{
+  "section_id": "제13절",
+  "section_name": "문장 부호",
+  "extracted_at": "2026-05-25T01:59:20",
+  "source_lines": "2112–2533",
+  "pairs": [
+    {
+      "item": "제49항 문장 부",
+      "korean": "법」의 [부록] 문장 부호의 규정을 준수한다.",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "닫는 작은따옴표",
+      "brf_ascii": "(",
+      "braille_unicode": "[?(]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "닫는 중괄호",
+      "brf_ascii": "[",
+      "braille_unicode": "⠪",
+      "decode_ok": true
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "젊은이는 나라의 기둥입니다.",
+      "brf_ascii": "``.t5zocz`c\"<w`@oim7obcoi4``````",
+      "braille_unicode": "[?`][?`]⠨[?t]⠢⠿⠕⠉⠿[?`]⠉⠐⠣⠺[?`]⠈⠕⠊⠍⠶⠕⠃⠉⠕⠊⠲[?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "이번에 가시면 언제 돌아오세요?",
+      "brf_ascii": "``o^)n`$,oe*`).n`iu1<u,n+8``````",
+      "braille_unicode": "[?`][?`]⠕[?^][?)]⠝[?`][?$]⠠⠕⠑[?*][?`][?)]⠨⠝[?`]⠊⠥⠂⠣⠥⠠⠝⠬⠦[?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "이거 정말 큰일이 났구나!",
+      "brf_ascii": "``o@s`.]e1`fzo1o`c/@mc6`````````",
+      "braille_unicode": "[?`][?`]⠕⠈⠎[?`]⠨[?]]⠑⠂[?`]⠋⠿⠕⠂⠕[?`]⠉⠌⠗⠈⠍⠉⠖[?`][?`][?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "근면, 검소, 협동은 우리 겨레의 미덕이다.",
+      "brf_ascii": "``@ze*\"`@s5,u\"`j:bi=z`m\"o`@:\"nw`",
+      "braille_unicode": "[?`][?`]⠈⠿⠑[?*]⠐[?`]⠈⠎⠢⠠⠥⠐[?`]⠚⠱⠃⠊⠿⠿[?`]⠍⠐⠕[?`]⠈⠱⠐⠝⠺[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "우리는 그 일의 참·거짓을 따질 겨를도 없었다.",
+      "brf_ascii": "``m\"ocz`@[`o1w`;<5\"2@s.o'!`,i.o1",
+      "braille_unicode": "[?`][?`]⠍⠐⠕⠉⠿[?`]⠈⠪[?`]⠕⠂⠺[?`]⠰⠣⠢⠐⠆⠈⠎⠨⠕⠄[?!][?`]⠠⠊⠨⠕⠂",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "문방사우: 종이, 붓, 먹, 벼루",
+      "brf_ascii": "eg^7lm\"1`.=o\"`^m'\"`e?\"`^:\"m",
+      "braille_unicode": "⠑[?^]⠶[?l]⠍⠐⠂[?`]⠨⠿⠕⠐[?`][?^]⠍⠄⠐[?`]⠑[??]⠐[?`][?^]⠱⠐⠍",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "남반구/북반구",
+      "brf_ascii": "c5^3@m_/^ma^3@m",
+      "braille_unicode": "⠉⠢[?^]⠒⠈⠍[?_]⠌⠗[?^]⠍⠁[?^]⠒⠈⠍",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "산에 / 산에 / 피는 꽃은 / 저만치 혼자서 피어 있네",
+      "brf_ascii": "``l3n`_/`l3n`_/`docz`,@u2z`_/```",
+      "braille_unicode": "[?`][?`][?l]⠒⠝[?`][?_]⠌⠗[?`][?l]⠒⠝[?`][?_]⠌⠗[?`]⠙⠕⠉⠿[?`]⠠⠈⠥⠆⠿[?`][?_]⠌⠗[?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "“어디 나하고 한번…….” 하고 민수가 나섰다.",
+      "brf_ascii": "``8sio`cj@u`j3^),,,40`j@u`eq,m$`",
+      "braille_unicode": "[?`][?`]⠦⠎⠊⠕[?`]⠉⠚⠈⠥[?`]⠚⠒[?^][?)]⠠⠠⠠⠲⠴[?`]⠚⠈⠥[?`]⠑[?q]⠠⠍[?$][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "죄다 있었다.",
+      "brf_ascii": "``ccz`ju.mesco\"!`imr.os/i4`imhm5",
+      "braille_unicode": "[?`][?`]⠉⠉⠿[?`]⠚⠥⠨⠍⠑⠎⠉⠕⠐[?!][?`]⠊⠍⠗⠨⠕⠎⠌⠗⠊⠲[?`]⠊⠍⠓⠍⠢",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "예로부터 “민심은 천심이다.”라고 하였다.",
+      "brf_ascii": "``/\"u^mhs`8eq,o5z`;),o5oi40\"<@u`",
+      "braille_unicode": "[?`][?`]⠌⠗⠐⠥[?^]⠍⠓⠎[?`]⠦⠑[?q]⠠⠕⠢⠿[?`]⠰[?)]⠠⠕⠢⠕⠊⠲⠴⠐⠣⠈⠥[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "나는 ‘일이 다 틀렸나 보군.’ 하고 생각하였다.",
+      "brf_ascii": "``ccz`,8o1o`I`h!\":/c`^u@g40'`j@u",
+      "braille_unicode": "[?`][?`]⠉⠉⠿[?`]⠠⠦⠕⠂⠕[?`][?I][?`]⠓[?!]⠐⠱⠌⠗⠉[?`][?^]⠥⠈⠲⠴⠄[?`]⠚⠈⠥",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "33",
+      "braille_unicode": "⠒⠒",
+      "decode_ok": true
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "니체(독일의 철학자)의 말을 빌리면 다음과 같다.",
+      "brf_ascii": "``co;n8'ixo1w`;tja.,0w`e1!`^o1\"o",
+      "braille_unicode": "[?`][?`]⠉⠕⠰⠝⠦⠄⠊[?x]⠕⠂⠺[?`]⠰[?t]⠚⠁⠨⠠⠴⠺[?`]⠑⠂[?!][?`][?^]⠕⠂⠐⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "국가의 성립 요소 {영토, 국민, 주권}",
+      "brf_ascii": "``@ma$w`,]\"ob`+,u`81]hu\"`@maeq\"`",
+      "braille_unicode": "[?`][?`]⠈⠍⠁[?$]⠺[?`]⠠[?]]⠐⠕⠃[?`]⠬⠠⠥[?`]⠦⠂[?]]⠓⠥⠐[?`]⠈⠍⠁⠑[?q]⠐[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "하였다.[윤석중 전집(1988), 70쪽 참조]",
+      "brf_ascii": "``s\"qoc1o`,r\"u`.n.]iys/!`i7,oncz",
+      "braille_unicode": "[?`][?`]⠎⠐[?q]⠕⠉⠂⠕[?`]⠠⠗⠐⠥[?`]⠨⠝⠨[?]]⠊⠽⠎⠌⠗[?!][?`]⠊⠶⠠⠕⠝⠉⠿",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "『훈민정음』은 1997년에 유네스코 세계 기록 유산으로 지정되었다.",
+      "brf_ascii": "``;8jgeq.][502z`#aiig`c*n`%cn,[`",
+      "braille_unicode": "[?`][?`]⠰⠦⠚⠑[?q]⠨[?]]⠪⠢⠴⠆⠿[?`]⠼⠁⠊⠊[?`]⠉[?*]⠝[?`]⠩⠉⠝⠠⠪[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "이 곡은 베르디가 작곡한 「축배의 노래」이다.",
+      "brf_ascii": "``o`@xz`^n\"[io$`.a@xj3`\"8;ma^rw`",
+      "braille_unicode": "[?`][?`]⠕[?`]⠈[?x]⠿[?`][?^]⠝⠐⠪⠊⠕[?$][?`]⠨⠁⠈[?x]⠚⠒[?`]⠐⠦⠰⠍⠁[?^]⠗⠺[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "《한성순보》는 우리나라 최초의 근대 신문이다.",
+      "brf_ascii": "``;7j3,],g^u72cz`m\"oc\"<`;y;uw`@z",
+      "braille_unicode": "[?`][?`]⠰⠶⠚⠒⠠[?]]⠠[?^]⠥⠶⠆⠉⠿[?`]⠍⠐⠕⠉⠐⠣[?`]⠰⠽⠰⠥⠺[?`]⠈⠿",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "백남준은 2005년에 〈엄마〉라는 작품을 선보였다.",
+      "brf_ascii": "``^rac5.gz`#bjje`c*n`\"7s5e71\"<cz",
+      "braille_unicode": "[?`][?`][?^]⠗⠁⠉⠢⠨⠿[?`]⠼⠃⠚⠚⠑[?`]⠉[?*]⠝[?`]⠐⠶⠎⠢⠑⠶⠂⠐⠣⠉⠿",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "이번 토론회의 제목은 ‘역사 바로잡기 ― 근대의 설정 ―’이다.",
+      "brf_ascii": "``o^)`hu\"(jyw`.nexz`,8:al`^\"u.b`",
+      "braille_unicode": "[?`][?`]⠕[?^][?)][?`]⠓⠥⠐[?(]⠚⠽⠺[?`]⠨⠝⠑[?x]⠿[?`]⠠⠦⠱⠁[?l][?`][?^]⠐⠥⠨⠃[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "드디어 서울-호치민의 항로가 열렸다.",
+      "brf_ascii": "``i[ios`,s&-ju;oeqw`j7\"u$`|\":/i4",
+      "braille_unicode": "[?`][?`]⠊⠪⠊⠕⠎[?`]⠠⠎[?&][?-]⠚⠥⠰⠕⠑[?q]⠺[?`]⠚⠶⠐⠥[?$][?`][?|]⠐⠱⠌⠗⠊⠲",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "9월 15일~9월 25일",
+      "brf_ascii": "#ip1`#aeo1@9#ip1`#beo1",
+      "braille_unicode": "⠼⠊⠏⠂[?`]⠼⠁⠑⠕⠂⠈⠔⠼⠊⠏⠂[?`]⠼⠃⠑⠕⠂",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "̊ 이다.",
+      "brf_ascii": "``j3@!w`~(io`o\"{5z`,-jgeq.]{5-'o",
+      "braille_unicode": "[?`][?`]⠚⠒⠈[?!]⠺[?`]⠘[?(]⠊⠕[?`]⠕⠐⠪⠢⠿[?`]⠠[?-]⠚⠑[?q]⠨[?]]⠪⠢[?-]⠄⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "중요한 것은 왜 사느냐가 아니라 어떻게 사느냐이다.",
+      "brf_ascii": "``.m7+j3`_sz`,-vr`lc{c>-'$`<co\"<",
+      "braille_unicode": "[?`][?`]⠨⠍⠶⠬⠚⠒[?`][?_]⠎⠿[?`]⠠[?-]⠧⠗[?`][?l]⠉⠪⠉⠜[?-]⠄[?$][?`]⠣⠉⠕⠐⠣",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "모집 인원: ○명",
+      "brf_ascii": "eu.ob`qp3\"1`_0le]",
+      "braille_unicode": "⠑⠥⠨⠕⠃[?`][?q]⠏⠒⠐⠂[?`][?_]⠴[?l]⠑[?]]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "그 말을 듣는 순간 ×란 말이 목구멍까지 치밀었다.",
+      "brf_ascii": "``@{`e1!`i{9cz`,g$3`_xl\"<3`e1o``",
+      "braille_unicode": "[?`][?`]⠈⠪[?`]⠑⠂[?!][?`]⠊⠪⠔⠉⠿[?`]⠠[?$]⠒[?`][?_][?x][?l]⠐⠣⠒[?`]⠑⠂⠕[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "우리나라는 기록 경기인 △△ 종목 단체전에서 우승했다.",
+      "brf_ascii": "``m\"oc\"<cz`@o\"x`@}@oq`_++l`.=ex`",
+      "braille_unicode": "[?`][?`]⠍⠐⠕⠉⠐⠣⠉⠿[?`]⠈⠕⠐[?x][?`]⠈[?}]⠈⠕[?q][?`][?_]⠬⠬[?l][?`]⠨⠿⠑[?x][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": ",' ,'으로 묶어 나타낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "의문의 정도가 약할 때는 ? 대신 .를 쓸 수 있다.",
+      "brf_ascii": "``wegw`.]iu$`>aj1`,ircz`_8`,'e&`",
+      "braille_unicode": "[?`][?`]⠺⠑⠺[?`]⠨[?]]⠊⠥[?$][?`]⠜⠁⠚⠂[?`]⠠⠊⠗⠉⠿[?`][?_]⠦[?`]⠠⠄⠑[?&][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "?는 대개 앞말에 붙여 쓴다.",
+      "brf_ascii": "``_8`,'e&[5d+,'cz`ir@r`<4e1n`^m8",
+      "braille_unicode": "[?`][?`][?_]⠦[?`]⠠⠄⠑[?&]⠪⠢⠙⠬⠠⠄⠉⠿[?`]⠊⠗⠈⠗[?`]⠣⠲⠑⠂⠝[?`][?^]⠍⠦",
+      "decode_ok": false
+    },
+    {
+      "item": "제49항 문장 부",
+      "korean": "『 』 안에는 책의 제목이나 신문 이름 등이 들어간다.",
+      "brf_ascii": "``;8`02`<3ncz`;raw`.nexoc`,qeg`o",
+      "braille_unicode": "[?`][?`]⠰⠦[?`]⠴⠆[?`]⠣⠒⠝⠉⠿[?`]⠰⠗⠁⠺[?`]⠨⠝⠑[?x]⠕⠉[?`]⠠[?q]⠑[?`]⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제50항 가운뎃점",
+      "korean": "올 수 없다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제50항 가운뎃점",
+      "korean": "정치·경제",
+      "brf_ascii": ".];o\"2@].n",
+      "braille_unicode": "⠨[?]]⠰⠕⠐⠆⠈[?]]⠨⠝",
+      "decode_ok": false
+    },
+    {
+      "item": "제50항 가운뎃점",
+      "korean": "사과·배, 배추·무",
+      "brf_ascii": "l@v\"2^r\"`^r;m\"2em",
+      "braille_unicode": "[?l]⠈⠧⠐⠆[?^]⠗⠐[?`][?^]⠗⠰⠍⠐⠆⠑⠍",
+      "decode_ok": false
+    },
+    {
+      "item": "제50항 가운뎃점",
+      "korean": "니다.",
+      "brf_ascii": "``,o.7n,s`l@v\"2~r\"2~x,m7<\"`ec!\"2",
+      "braille_unicode": "[?`][?`]⠠⠕⠨⠶⠝⠠⠎[?`][?l]⠈⠧⠐⠆⠘⠗⠐⠆⠘[?x]⠠⠍⠶⠣⠐[?`]⠑⠉[?!]⠐⠆",
+      "decode_ok": false
+    },
+    {
+      "item": "제50항 가운뎃점",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "35",
+      "braille_unicode": "⠒⠢",
+      "decode_ok": true
+    },
+    {
+      "item": "제50항 가운뎃점",
+      "korean": "[붙임] 가운뎃점이 숫자 사이에 올 때에는 뒤의 숫자에 수표를 다시 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제50항 가운뎃점",
+      "korean": "8·15 광복",
+      "brf_ascii": "#h\"2#ae`@v7~x",
+      "braille_unicode": "⠼⠓⠐⠆⠼⠁⠑[?`]⠈⠧⠶⠘[?x]",
+      "decode_ok": false
+    },
+    {
+      "item": "제50항 가운뎃점",
+      "korean": "통권 제54·55·56호",
+      "brf_ascii": "h=@p3`.n#ed\"2#ee\"2#ef`ju",
+      "braille_unicode": "⠓⠿⠈⠏⠒[?`]⠨⠝⠼⠑⠙⠐⠆⠼⠑⠑⠐⠆⠼⠑⠋[?`]⠚⠥",
+      "decode_ok": false
+    },
+    {
+      "item": "제51항 쌍점의 ",
+      "korean": "일시: 2006년 2월 28일 13시",
+      "brf_ascii": "``o1,o\"1`#bjjf`c*`#bp1`#bho1`#ac",
+      "braille_unicode": "[?`][?`]⠕⠂⠠⠕⠐⠂[?`]⠼⠃⠚⠚⠋[?`]⠉[?*][?`]⠼⠃⠏⠂[?`]⠼⠃⠓⠕⠂[?`]⠼⠁⠉",
+      "decode_ok": false
+    },
+    {
+      "item": "제51항 쌍점의 ",
+      "korean": "[다만 1] 쌍점 뒤에 붙어 나오는 숫자에는 수표를 다시 적는다.",
+      "brf_ascii": "480:420",
+      "braille_unicode": "⠲⠦⠴⠱⠲⠆⠴",
+      "decode_ok": true
+    },
+    {
+      "item": "제51항 쌍점의 ",
+      "korean": "에는 쌍점의 앞뒤를 붙여 쓴다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제51항 쌍점의 ",
+      "korean": "오전 10:20",
+      "brf_ascii": "u.)`#aj\"1#bj",
+      "braille_unicode": "⠥⠨[?)][?`]⠼⠁⠚⠐⠂⠼⠃⠚",
+      "decode_ok": false
+    },
+    {
+      "item": "제51항 쌍점의 ",
+      "korean": "요한 3:16",
+      "brf_ascii": "+j3`#c\"1#af",
+      "braille_unicode": "⠬⠚⠒[?`]⠼⠉⠐⠂⠼⠁⠋",
+      "decode_ok": false
+    },
+    {
+      "item": "제51항 쌍점의 ",
+      "korean": "청군:백군",
+      "brf_ascii": ";]@g\"1^ra@g",
+      "braille_unicode": "⠰[?]]⠈⠐⠂[?^]⠗⠁⠈",
+      "decode_ok": false
+    },
+    {
+      "item": "제52항 빗금이 ",
+      "korean": "강 나루 건너서 / 밀밭길을 // 구름에 달 가듯이 / 가는 나그네",
+      "brf_ascii": "``$7`c\"m`@)cs,s`_/`eo1~8@o1!````",
+      "braille_unicode": "[?`][?`][?$]⠶[?`]⠉⠐⠍[?`]⠈[?)]⠉⠎⠠⠎[?`][?_]⠌⠗[?`]⠑⠕⠂⠘⠦⠈⠕⠂[?!][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제52항 빗금이 ",
+      "korean": "되, 대비되는 어구가 두 어절 이상인 경우에는 빗금의 앞뒤를 띄어 쓸 수 있다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제52항 빗금이 ",
+      "korean": "먹이다/먹히다",
+      "brf_ascii": "e?oi_/e?joi",
+      "braille_unicode": "⠑[??]⠕⠊[?_]⠌⠗⠑[??]⠚⠕⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제52항 빗금이 ",
+      "korean": "착한 사람 / 악한 사람",
+      "brf_ascii": ";<aj3`l\"<5`_/`<aj3`l\"<5",
+      "braille_unicode": "⠰⠣⠁⠚⠒[?`][?l]⠐⠣⠢[?`][?_]⠌⠗[?`]⠣⠁⠚⠒[?`][?l]⠐⠣⠢",
+      "decode_ok": false
+    },
+    {
+      "item": "제52항 빗금이 ",
+      "korean": "를 붙여 쓴다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제52항 빗금이 ",
+      "korean": "1,000원/개",
+      "brf_ascii": "#a1jjjp3_/@r",
+      "braille_unicode": "⠼⠁⠂⠚⠚⠚⠏⠒[?_]⠌⠗⠈⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제53항 가운뎃점",
+      "korean": "...)는 444으로 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제53항 가운뎃점",
+      "korean": "“실은...... 저 사람... 우리 아저씨일지 몰라.”",
+      "brf_ascii": "``8,o1z444`.s`l\"<5444`m\"o`<.s,,o",
+      "braille_unicode": "[?`][?`]⠦⠠⠕⠂⠿⠲⠲⠲[?`]⠨⠎[?`][?l]⠐⠣⠢⠲⠲⠲[?`]⠍⠐⠕[?`]⠣⠨⠎⠠⠠⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제53항 가운뎃점",
+      "korean": "적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제53항 가운뎃점",
+      "korean": "허용된다.",
+      "brf_ascii": "``j3@!`ek;m5~sbn`,i\"{e*`.&o5d+cz",
+      "braille_unicode": "[?`][?`]⠚⠒⠈[?!][?`]⠑⠅⠰⠍⠢⠘⠎⠃⠝[?`]⠠⠊⠐⠪⠑[?*][?`]⠨[?&]⠕⠢⠙⠬⠉⠿",
+      "decode_ok": false
+    },
+    {
+      "item": "제53항 가운뎃점",
+      "korean": "앞뒤를 한 칸씩 띄어 쓴다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제53항 가운뎃점",
+      "korean": "육십갑자: 갑자, 을축, 병인, 정묘, 무진, …… 신유, 임술, 계해",
+      "brf_ascii": "``%a,ob$b.\"1`$b.\"`!;ma\"`~}q\"`.]`",
+      "braille_unicode": "[?`][?`]⠩⠁⠠⠕⠃[?$]⠃⠨⠐⠂[?`][?$]⠃⠨⠐[?`][?!]⠰⠍⠁⠐[?`]⠘[?}][?q]⠐[?`]⠨[?]][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제54항 여는 따",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "37",
+      "braille_unicode": "⠒⠶",
+      "decode_ok": true
+    },
+    {
+      "item": "제54항 여는 따",
+      "korean": "연을 시작했다.",
+      "brf_ascii": "``@{cz`8:\"s~g6`,8,o.ao`~3oi40'\"<",
+      "braille_unicode": "[?`][?`]⠈⠪⠉⠿[?`]⠦⠱⠐⠎⠘⠖[?`]⠠⠦⠠⠕⠨⠁⠕[?`]⠘⠒⠕⠊⠲⠴⠄⠐⠣",
+      "decode_ok": false
+    },
+    {
+      "item": "제54항 여는 따",
+      "korean": "다.",
+      "brf_ascii": "``o~)`jywncz`im`e}82oj/.]8',o1``",
+      "braille_unicode": "[?`][?`]⠕⠘[?)][?`]⠚⠽⠺⠝⠉⠿[?`]⠊⠍[?`]⠑[?}]⠦⠆⠕⠚⠌⠗⠨[?]]⠦⠄⠠⠕⠂[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제55항 빗금, ",
+      "korean": "그는 조심스레 발을 디디었다./디뎠다.",
+      "brf_ascii": "``@[cz`.u,o5,[\"n`^1!`ioios/i4_/`",
+      "braille_unicode": "[?`][?`]⠈⠪⠉⠿[?`]⠨⠥⠠⠕⠢⠠⠪⠐⠝[?`][?^]⠂[?!][?`]⠊⠕⠊⠕⠎⠌⠗⠊⠲[?_]⠌⠗[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제55항 빗금, ",
+      "korean": "배의 속살과 맛을 / 나타내 보일 수 있을까.",
+      "brf_ascii": "``.o'@mkz`,r7$an,s`_/`l@v\"!`@{\"o",
+      "braille_unicode": "[?`][?`]⠨⠕⠄⠈⠍⠅⠿[?`]⠠⠗⠶[?$]⠁⠝⠠⠎[?`][?_]⠌⠗[?`][?l]⠈⠧⠐[?!][?`]⠈⠪⠐⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제55항 빗금, ",
+      "korean": "내가 아침마다 먹는 오렌지―과일의 일종―는 주황색이다.",
+      "brf_ascii": "``cr$`<;o5ei`e?cz`u\"n3.o--``````",
+      "braille_unicode": "[?`][?`]⠉⠗[?$][?`]⠣⠰⠕⠢⠑⠊[?`]⠑[??]⠉⠿[?`]⠥⠐⠝⠒⠨⠕[?-][?-][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제55항 빗금, ",
+      "korean": "본 토론회의 제목은 ‘역사 바로잡기―근대의 설정’이다.",
+      "brf_ascii": "``~(`hu\"(jyw`.nexz`,8:al`~\"u.b@o",
+      "braille_unicode": "[?`][?`]⠘[?(][?`]⠓⠥⠐[?(]⠚⠽⠺[?`]⠨⠝⠑[?x]⠿[?`]⠠⠦⠱⠁[?l][?`]⠘⠐⠥⠨⠃⠈⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제55항 빗금, ",
+      "korean": "코로나19로 중단되었던 부산~베이징 간 항공 노선이 재개되었다.",
+      "brf_ascii": "``fu\"uc#ai\"u`.m7i3iys/i)`^ml3@9`",
+      "braille_unicode": "[?`][?`]⠋⠥⠐⠥⠉⠼⠁⠊⠐⠥[?`]⠨⠍⠶⠊⠒⠊⠽⠎⠌⠗⠊[?)][?`][?^]⠍[?l]⠒⠈⠔[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제55항 빗금, ",
+      "korean": "전화: 02-2669-9775(9시~18시)",
+      "brf_ascii": "``.)jv\"1`#jb-#bffi-#igge8'#i,o``",
+      "braille_unicode": "[?`][?`]⠨[?)]⠚⠧⠐⠂[?`]⠼⠚⠃[?-]⠼⠃⠋⠋⠊[?-]⠼⠊⠑⠦⠄⠼⠊⠠⠕[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제55항 빗금, ",
+      "korean": "나 첫머리에 홀로 적지 않고 해당 앞말이나 뒷말과 함께 줄을 바꿔 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제55항 빗금, ",
+      "korean": "선택을 나타내는 연결 어미로 ‘-든, -든가, -든지’가 쓰인다.",
+      "brf_ascii": "``,)hra!`chcrcz`*@|`seo\"u`,8-iz\"",
+      "braille_unicode": "[?`][?`]⠠[?)]⠓⠗⠁[?!][?`]⠉⠓⠉⠗⠉⠿[?`][?*]⠈[?|][?`]⠎⠑⠕⠐⠥[?`]⠠⠦[?-]⠊⠿⠐",
+      "decode_ok": false
+    },
+    {
+      "item": "제55항 빗금, ",
+      "korean": "만약 명사절의 성격을 띤다면 ‘~인지 아닌지’의 의미가 된다.",
+      "brf_ascii": "``e3>a`e}l.tw`,]@:a!`,iqie*`````",
+      "braille_unicode": "[?`][?`]⠑⠒⠜⠁[?`]⠑[?}][?l]⠨[?t]⠺[?`]⠠[?]]⠈⠱⠁[?!][?`]⠠⠊[?q]⠊⠑[?*][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제56항 드러냄표",
+      "korean": "된 글자체는 ;- -2으로 묶어 나타낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제56항 드러냄표",
+      "korean": "̇ 가 되겠다.",
+      "brf_ascii": "``,-~r~m\"z`ivr.o-'~uicz`,-~r@udz",
+      "braille_unicode": "[?`][?`]⠠[?-]⠘⠗⠘⠍⠐⠿[?`]⠊⠧⠗⠨⠕[?-]⠄⠘⠥⠊⠉⠿[?`]⠠[?-]⠘⠗⠈⠥⠙⠿",
+      "decode_ok": false
+    },
+    {
+      "item": "제56항 드러냄표",
+      "korean": "다음 보기에서 명사가 아닌 것은?",
+      "brf_ascii": "``i<{5`~u@on,s`e}l$`,-<cq-'`_sz8",
+      "braille_unicode": "[?`][?`]⠊⠣⠪⠢[?`]⠘⠥⠈⠕⠝⠠⠎[?`]⠑[?}][?l][?$][?`]⠠[?-]⠣⠉[?q][?-]⠄[?`][?_]⠎⠿⠦",
+      "decode_ok": false
+    },
+    {
+      "item": "제56항 드러냄표",
+      "korean": "서울은 대한민국의 수도이다.",
+      "brf_ascii": "``,s&z`irj3eq@maw`;-,miu-2oi4```",
+      "braille_unicode": "[?`][?`]⠠⠎[?&]⠿[?`]⠊⠗⠚⠒⠑[?q]⠈⠍⠁⠺[?`]⠰[?-]⠠⠍⠊⠥[?-]⠆⠕⠊⠲[?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제56항 드러냄표",
+      "korean": "제2점역자 정의 글자체표 @-`-a으로 묶어 나타낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제56항 드러냄표",
+      "korean": "최명희 작가는 전라북도 전주 출신입니다.",
+      "brf_ascii": "``;ye}jw`.a$cz`\"-.)\"<~maiu`.)```",
+      "braille_unicode": "[?`][?`]⠰⠽⠑[?}]⠚⠺[?`]⠨⠁[?$]⠉⠿[?`]⠐[?-]⠨[?)]⠐⠣⠘⠍⠁⠊⠥[?`]⠨[?)][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제56항 드러냄표",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "39",
+      "braille_unicode": "⠒⠔",
+      "decode_ok": true
+    },
+    {
+      "item": "제56항 드러냄표",
+      "korean": "금액 할인: 15,000원 14,500원",
+      "brf_ascii": "``@{5ra`j1q\"1`@-#ae1jjjp3-a`````",
+      "braille_unicode": "[?`][?`]⠈⠪⠢⠗⠁[?`]⠚⠂[?q]⠐⠂[?`]⠈[?-]⠼⠁⠑⠂⠚⠚⠚⠏⠒[?-]⠁[?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제56항 드러냄표",
+      "korean": "지 않고 강조나 구별의 필요가 있을 때에만 표기한다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제57항 숨김표가",
+      "korean": "묵자의 개수만큼 적어 나타낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제57항 숨김표가",
+      "korean": "김○○ 씨",
+      "brf_ascii": "@o5_00l`,,o",
+      "braille_unicode": "⠈⠕⠢[?_]⠴⠴[?l][?`]⠠⠠⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제57항 숨김표가",
+      "korean": "이 ×××야!",
+      "brf_ascii": "o`_xxxl>6",
+      "braille_unicode": "⠕[?`][?_][?x][?x][?x][?l]⠜⠖",
+      "decode_ok": false
+    },
+    {
+      "item": "제57항 숨김표가",
+      "korean": "△△도서관",
+      "brf_ascii": "_++liu,s@v3",
+      "braille_unicode": "[?_]⠬⠬[?l]⠊⠥⠠⠎⠈⠧⠒",
+      "decode_ok": false
+    },
+    {
+      "item": "제57항 숨김표가",
+      "korean": "하여 나타낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제57항 숨김표가",
+      "korean": "제1점역자 정의 숨김표",
+      "brf_ascii": "_9l",
+      "braille_unicode": "[?_]⠔[?l]",
+      "decode_ok": false
+    },
+    {
+      "item": "제57항 숨김표가",
+      "korean": "제2점역자 정의 숨김표",
+      "brf_ascii": "_5l",
+      "braille_unicode": "[?_]⠢[?l]",
+      "decode_ok": false
+    },
+    {
+      "item": "제57항 숨김표가",
+      "korean": "제3점역자 정의 숨김표",
+      "brf_ascii": "_ol",
+      "braille_unicode": "[?_]⠕[?l]",
+      "decode_ok": false
+    },
+    {
+      "item": "제57항 숨김표가",
+      "korean": "☆☆고등학교",
+      "brf_ascii": "_99l@ui[7ja@+",
+      "braille_unicode": "[?_]⠔⠔[?l]⠈⠥⠊⠪⠶⠚⠁⠈⠬",
+      "decode_ok": false
+    },
+    {
+      "item": "제57항 숨김표가",
+      "korean": "2016년 ◇월 ◆일",
+      "brf_ascii": "#bjaf`c*`_5lp1`_olo1",
+      "braille_unicode": "⠼⠃⠚⠁⠋[?`]⠉[?*][?`][?_]⠢[?l]⠏⠂[?`][?_]⠕[?l]⠕⠂",
+      "decode_ok": false
+    },
+    {
+      "item": "제58항 빠짐표가",
+      "korean": "적어 나타낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제58항 빠짐표가",
+      "korean": "훈민정음의 초성 중에서 아음은 □□□의 석 자다.",
+      "brf_ascii": "``jgeq.]{5w`;u,]`.m7n,s`<{5z````",
+      "braille_unicode": "[?`][?`]⠚⠑[?q]⠨[?]]⠪⠢⠺[?`]⠰⠥⠠[?]][?`]⠨⠍⠶⠝⠠⠎[?`]⠣⠪⠢⠿[?`][?`][?`][?`]",
+      "decode_ok": false
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "description": "이미지 세분류(PART 3-4) 정확도 검증용 목 데이터. visual_subtype → 최종 type 매핑 기준.",
+  "subtype_to_type": {
+    "photo": "image",
+    "illustration": "image",
+    "diagram": "image",
+    "cartoon": "cartoon",
+    "comic": "cartoon",
+    "bar_chart": "chart_graph",
+    "line_chart": "chart_graph",
+    "pie_chart": "chart_graph",
+    "scatter_plot": "chart_graph",
+    "graph": "chart_graph"
+  },
+  "test_cases": [
+    {"element_id": "77777777-0001-0000-0000-000000000001", "input_type": "image", "visual_subtype": "photo",        "subtype_confidence": 0.91, "expected_type": "image"},
+    {"element_id": "77777777-0002-0000-0000-000000000002", "input_type": "image", "visual_subtype": "illustration", "subtype_confidence": 0.85, "expected_type": "image"},
+    {"element_id": "77777777-0003-0000-0000-000000000003", "input_type": "image", "visual_subtype": "diagram",     "subtype_confidence": 0.80, "expected_type": "image"},
+    {"element_id": "77777777-0004-0000-0000-000000000004", "input_type": "image", "visual_subtype": "cartoon",     "subtype_confidence": 0.93, "expected_type": "cartoon"},
+    {"element_id": "77777777-0005-0000-0000-000000000005", "input_type": "image", "visual_subtype": "comic",       "subtype_confidence": 0.88, "expected_type": "cartoon"},
+    {"element_id": "77777777-0006-0000-0000-000000000006", "input_type": "image", "visual_subtype": "bar_chart",   "subtype_confidence": 0.92, "expected_type": "chart_graph"},
+    {"element_id": "77777777-0007-0000-0000-000000000007", "input_type": "image", "visual_subtype": "line_chart",  "subtype_confidence": 0.87, "expected_type": "chart_graph"},
+    {"element_id": "77777777-0008-0000-0000-000000000008", "input_type": "image", "visual_subtype": "pie_chart",   "subtype_confidence": 0.83, "expected_type": "chart_graph"},
+    {"element_id": "77777777-0009-0000-0000-000000000009", "input_type": "image", "visual_subtype": "scatter_plot","subtype_confidence": 0.79, "expected_type": "chart_graph"},
+    {"element_id": "77777777-000a-0000-0000-00000000000a", "input_type": "image", "visual_subtype": "graph",       "subtype_confidence": 0.81, "expected_type": "chart_graph"},
+    {"element_id": "77777777-000b-0000-0000-00000000000b", "input_type": "image", "visual_subtype": "photo",       "subtype_confidence": 0.62, "expected_type": "image"},
+    {"element_id": "77777777-000c-0000-0000-00000000000c", "input_type": "image", "visual_subtype": "cartoon",     "subtype_confidence": 0.91, "expected_type": "cartoon"}
+  ]
+}

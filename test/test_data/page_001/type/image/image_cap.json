@@ -1,0 +1,22 @@
+[
+  {
+    "element_id": "44444444-0001-0000-0000-000000000001",
+    "corrected_text": "교실 안에서 학생들이 책상에 앉아 수업을 듣고 있다. 칠판에는 수식이 적혀 있다.",
+    "latex_string": null,
+    "ocr_confidence": 0.92,
+    "visual_subtype": "photo",
+    "subtype_confidence": 0.91,
+    "table_structure": null,
+    "flags": []
+  },
+  {
+    "element_id": "44444444-0002-0000-0000-000000000002",
+    "corrected_text": "나뭇잎의 광합성 과정을 나타낸 삽화이다. 빛, 이산화탄소, 물이 포도당과 산소로 변환된다.",
+    "latex_string": null,
+    "ocr_confidence": 0.89,
+    "visual_subtype": "illustration",
+    "subtype_confidence": 0.85,
+    "table_structure": null,
+    "flags": []
+  }
+]

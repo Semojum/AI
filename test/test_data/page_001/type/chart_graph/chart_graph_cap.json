@@ -1,0 +1,22 @@
+[
+  {
+    "element_id": "66666666-0001-0000-0000-000000000001",
+    "corrected_text": "연도별 한국 인구 변화를 나타낸 막대 그래프이다. x축은 연도(2000~2020), y축은 인구(단위: 백만 명)이다. 2000년 약 4700만 명에서 2020년 약 5100만 명으로 증가하였다.",
+    "latex_string": null,
+    "ocr_confidence": 0.91,
+    "visual_subtype": "bar_chart",
+    "subtype_confidence": 0.88,
+    "table_structure": null,
+    "flags": []
+  },
+  {
+    "element_id": "66666666-0002-0000-0000-000000000002",
+    "corrected_text": "기온과 강수량의 관계를 나타낸 산점도이다. 대체로 기온이 높을수록 강수량도 증가하는 양의 상관관계를 보인다.",
+    "latex_string": null,
+    "ocr_confidence": 0.86,
+    "visual_subtype": "scatter_plot",
+    "subtype_confidence": 0.82,
+    "table_structure": null,
+    "flags": []
+  }
+]

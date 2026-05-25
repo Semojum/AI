@@ -73,4 +73,103 @@ class TestComplexityThreshold:
         assert _latex_complexity(formula) > _COMPLEXITY_THRESHOLD
 
 
+# ── BLEU 근사: 수식 파이프라인 E2E 정확도 ──────────────────────────────────
+
+import asyncio
+import json
+from pathlib import Path
+from unittest.mock import patch
+
+from app.ai.braille.formula_braille import FormulaBraille
+from app.ai.llm.formula_opt import FormulaOpt
+from app.schemas.content import BrailleOutput, ExtractedContent
+
+_FORMULA_PAIRS_PATH = Path(__file__).parent.parent.parent / "test_data" / "formula_pairs.json"
+_BLEU_THRESHOLD = 0.88
+
+
+def _char_precision(output: str, reference: str) -> float:
+    """문자 수준 정밀도: 출력 문자 중 정답에 등장하는 비율."""
+    if not output:
+        return 0.0
+    return sum(1 for ch in output if ch in reference) / len(output)
+
+
+def _char_recall(output: str, reference: str) -> float:
+    """문자 수준 재현율: 정답 문자 중 출력에 등장하는 비율."""
+    if not reference:
+        return 1.0
+    return sum(1 for ch in reference if ch in output) / len(reference)
+
+
+def _bleu_approx(output: str, reference: str) -> float:
+    """F1(precision, recall) 근사 — 문자 수준 BLEU 대체 지표."""
+    p = _char_precision(output, reference)
+    r = _char_recall(output, reference)
+    if p + r == 0:
+        return 0.0
+    return 2 * p * r / (p + r)
+
+
+def _load_formula_pairs() -> list[dict]:
+    d = json.loads(_FORMULA_PAIRS_PATH.read_text(encoding="utf-8"))
+    return [p for p in d["pairs"] if "id" in p and "expected" in p]
+
+
+def _run_formula_chain(latex: str) -> str:
+    """FormulaOpt(ZERO) → FormulaBraille → joined braille string."""
+    from uuid import uuid4
+    ext = ExtractedContent(element_id=uuid4(), latex_string=latex, ocr_confidence=1.0)
+    with patch("app.ai.llm.formula_opt.model_manager"):
+        llm_out = asyncio.run(FormulaOpt().optimize([ext], routing_tier="ZERO"))
+    braille_out: list[BrailleOutput] = FormulaBraille().translate(llm_out)
+    return "".join(braille_out[0].braille_lines)
+
+
+class TestFormulaBLEU:
+    """수식 파이프라인 E2E BLEU 근사 지표 ≥ 0.88.
+
+    formula_pairs.json의 known 쌍을 ZERO 티어로 실행하여 정확도를 측정.
+    수식 → 점자 변환은 결정론적이므로 BLEU가 1.0에 수렴해야 함.
+    """
+
+    @pytest.fixture(scope="class")
+    def pairs(self) -> list[dict]:
+        return _load_formula_pairs()
+
+    def test_pairs_loaded(self, pairs: list[dict]) -> None:
+        assert len(pairs) >= 10, f"수식 쌍 부족: {len(pairs)}개"
+
+    def test_average_bleu_above_threshold(self, pairs: list[dict]) -> None:
+        scores = []
+        for p in pairs:
+            latex = p["input"].replace("<formula>", "").replace("</formula>", "")
+            output = _run_formula_chain(latex)
+            scores.append(_bleu_approx(output, p["expected"]))
+        avg = sum(scores) / len(scores)
+        assert avg >= _BLEU_THRESHOLD, (
+            f"수식 BLEU 평균 {avg:.3f} < {_BLEU_THRESHOLD}"
+        )
+
+    def test_number_indicator_always_present(self, pairs: list[dict]) -> None:
+        """수표(⠼)를 포함하는 수식은 출력에도 ⠼이 있어야 함."""
+        num_pairs = [p for p in pairs if "⠼" in p["expected"]]
+        for p in num_pairs:
+            latex = p["input"].replace("<formula>", "").replace("</formula>", "")
+            output = _run_formula_chain(latex)
+            assert "⠼" in output, (
+                f"[{p['id']}] 수표(⠼) 누락: input={latex!r}, output={output!r}"
+            )
+
+    def test_fraction_indicator_present(self, pairs: list[dict]) -> None:
+        """분수(⠌)를 포함하는 쌍은 출력에도 ⠌이 있어야 함."""
+        frac_pairs = [p for p in pairs if "⠌" in p["expected"]]
+        for p in frac_pairs:
+            latex = p["input"].replace("<formula>", "").replace("</formula>", "")
+            output = _run_formula_chain(latex)
+            assert "⠌" in output, (
+                f"[{p['id']}] 분수표(⠌) 누락: input={latex!r}, output={output!r}"
+            )
+
+
 # TODO [STEP 4]: formula_opt, formula_braille 구현 완료 후 5-2, 5-3 테스트 추가

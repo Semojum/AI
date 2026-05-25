@@ -1,0 +1,155 @@
+{
+  "section_id": "제4절",
+  "section_name": "단독으로 쓰인 자모",
+  "extracted_at": "2026-05-25T01:59:04",
+  "source_lines": "472–535",
+  "pairs": [
+    {
+      "item": "제8항 자음자나",
+      "korean": "타내며, 자음자는 받침으로 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제8항 자음자나",
+      "korean": "파열음에는 ㄱ, ㄷ, ㅂ 등이 있다.",
+      "brf_ascii": "``d<|{5ncz`=a\"`=9\"`=b`i{7o`o/i4`",
+      "braille_unicode": "[?`][?`]⠙⠣[?|]⠪⠢⠝⠉⠿[?`]⠿⠁⠐[?`]⠿⠔⠐[?`]⠿⠃[?`]⠊⠪⠶⠕[?`]⠕⠌⠗⠊⠲[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제8항 자음자나",
+      "korean": "삼각형 ㄱㄴㄷ",
+      "brf_ascii": "l5$aj}`=a=3=9",
+      "braille_unicode": "[?l]⠢[?$]⠁⠚[?}][?`]⠿⠁⠿⠒⠿⠔",
+      "decode_ok": false
+    },
+    {
+      "item": "제8항 자음자나",
+      "korean": "다.",
+      "brf_ascii": "``y\"rsw`~9;o5!`d+@oj1`,irncz````",
+      "braille_unicode": "[?`][?`]⠽⠐⠗⠎⠺[?`]⠘⠔⠰⠕⠢[?!][?`]⠙⠬⠈⠕⠚⠂[?`]⠠⠊⠗⠝⠉⠿[?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제8항 자음자나",
+      "korean": "‘ㅖ’로 적는다.",
+      "brf_ascii": "``,8@/\"`\"/\"`e/\"`d/\"`j/0'w`,8=/0'",
+      "braille_unicode": "[?`][?`]⠠⠦⠈⠌⠗⠐[?`]⠐⠌⠗⠐[?`]⠑⠌⠗⠐[?`]⠙⠌⠗⠐[?`]⠚⠌⠗⠴⠄⠺[?`]⠠⠦⠿⠌⠗⠴⠄",
+      "decode_ok": false
+    },
+    {
+      "item": "제8항 자음자나",
+      "korean": "[붙임] 자음자나 모음자가 단독으로 쓰일 때 띄어쓰기는 묵자를 따른다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제8항 자음자나",
+      "korean": "낫 놓고 ㄱ자도 모른다.",
+      "brf_ascii": "``c'`cu0@u`=a.iu`eu\"zi4`````````",
+      "braille_unicode": "[?`][?`]⠉⠄[?`]⠉⠥⠴⠈⠥[?`]⠿⠁⠨⠊⠥[?`]⠑⠥⠐⠿⠊⠲[?`][?`][?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제8항 자음자나",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "7",
+      "braille_unicode": "⠶",
+      "decode_ok": true
+    },
+    {
+      "item": "제8항 자음자나",
+      "korean": "ㅂ은 여섯 번째 자음이다.",
+      "brf_ascii": "``=bz`:,s'`~),.r`.<{5oi4````````",
+      "braille_unicode": "[?`][?`]⠿⠃⠿[?`]⠱⠠⠎⠄[?`]⠘[?)]⠠⠨⠗[?`]⠨⠣⠪⠢⠕⠊⠲[?`][?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제8항 자음자나",
+      "korean": "컴퓨터 자판의 모음 배열에서 ㅗ, ㅓ, ㅏ, ㅣ는 나란히 있다.",
+      "brf_ascii": "``fs5d%hs`.d3w`eu{5`~r|n,s`=u\"``",
+      "braille_unicode": "[?`][?`]⠋⠎⠢⠙⠩⠓⠎[?`]⠨⠙⠒⠺[?`]⠑⠥⠪⠢[?`]⠘⠗[?|]⠝⠠⠎[?`]⠿⠥⠐[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제8항 자음자나",
+      "korean": "업무상 횡령 혐의로 ㄱ 대학교 ㄴ 교수가 구속되었다.",
+      "brf_ascii": "``sbeml7`jy7\"}`j:5w\"u`=a`irja@+",
+      "braille_unicode": "[?`][?`]⠎⠃⠑⠍[?l]⠶[?`]⠚⠽⠶⠐[?}][?`]⠚⠱⠢⠺⠐⠥[?`]⠿⠁[?`]⠊⠗⠚⠁⠈⠬",
+      "decode_ok": false
+    },
+    {
+      "item": "제9항 한글의 ",
+      "korean": "ㄱ. 유아기",
+      "brf_ascii": "=a4`%<@o",
+      "braille_unicode": "⠿⠁⠲[?`]⠩⠣⠈⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제9항 한글의 ",
+      "korean": "ㄴ. 아동기",
+      "brf_ascii": "=34`<i=@o",
+      "braille_unicode": "⠿⠒⠲[?`]⠣⠊⠿⠈⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제9항 한글의 ",
+      "korean": "ㄷ. 청년기",
+      "brf_ascii": "=94`;]c*@o",
+      "braille_unicode": "⠿⠔⠲[?`]⠰[?]]⠉[?*]⠈⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제9항 한글의 ",
+      "korean": "ㄹ. 장년기",
+      "brf_ascii": "=14`.7c*@o",
+      "braille_unicode": "⠿⠂⠲[?`]⠨⠶⠉[?*]⠈⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제9항 한글의 ",
+      "korean": "ㅁ. 노년기",
+      "brf_ascii": "=54`cuc*@o",
+      "braille_unicode": "⠿⠢⠲[?`]⠉⠥⠉[?*]⠈⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제10항 단독으로",
+      "korean": "는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제10항 단독으로",
+      "korean": "Roma [ㄹㄹ로마]",
+      "brf_ascii": "0,roma4`82_1_1\"ue;0",
+      "braille_unicode": "⠴⠠⠗⠕⠍⠁⠲[?`]⠦⠆[?_]⠂[?_]⠂⠐⠥⠑⠰⠴",
+      "decode_ok": false
+    },
+    {
+      "item": "제10항 단독으로",
+      "korean": "carro [까ㄹㄹ로]",
+      "brf_ascii": "0c>ro4`82,$_1_1\"u;0",
+      "braille_unicode": "⠴⠉⠜⠗⠕⠲[?`]⠦⠆⠠[?$][?_]⠂[?_]⠂⠐⠥⠰⠴",
+      "decode_ok": false
+    },
+    {
+      "item": "제10항 단독으로",
+      "korean": "요즘 교재에서는 bonjour의 발음을 [봉주ㄹ흐]라고 표기한다.",
+      "brf_ascii": "``+.{5`@+.rn,scz`0bonj|r4w`~1{5!",
+      "braille_unicode": "[?`][?`]⠬⠨⠪⠢[?`]⠈⠬⠨⠗⠝⠠⠎⠉⠿[?`]⠴⠃⠕⠝⠚[?|]⠗⠲⠺[?`]⠘⠂⠪⠢[?!]",
+      "decode_ok": false
+    },
+    {
+      "item": "제10항 단독으로",
+      "korean": "study는 [ㅅ떠디이]로, ice는 [아이ㅅ]와 같이 발음한다.",
+      "brf_ascii": "``0/udy4cz`82_',isioo;0\"u\"`0ice4",
+      "braille_unicode": "[?`][?`]⠴⠌⠗⠥⠙⠽⠲⠉⠿[?`]⠦⠆[?_]⠄⠠⠊⠎⠊⠕⠕⠰⠴⠐⠥⠐[?`]⠴⠊⠉⠑⠲",
+      "decode_ok": false
+    }
+  ]
+}

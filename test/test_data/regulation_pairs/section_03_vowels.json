@@ -1,0 +1,155 @@
+{
+  "section_id": "제3절",
+  "section_name": "모음자",
+  "extracted_at": "2026-05-25T01:58:15",
+  "source_lines": "362–471",
+  "pairs": [
+    {
+      "item": "제6항 기본 모",
+      "korean": "아리랑",
+      "brf_ascii": "<\"o\"<7",
+      "braille_unicode": "⠣⠐⠕⠐⠣⠶",
+      "decode_ok": true
+    },
+    {
+      "item": "제6항 기본 모",
+      "korean": "고양이",
+      "brf_ascii": "@u>7o",
+      "braille_unicode": "⠈⠥⠜⠶⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제6항 기본 모",
+      "korean": "엄지",
+      "brf_ascii": "s5.o",
+      "braille_unicode": "⠎⠢⠨⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제6항 기본 모",
+      "korean": "무역",
+      "brf_ascii": "em:a",
+      "braille_unicode": "⠑⠍⠱⠁",
+      "decode_ok": true
+    },
+    {
+      "item": "제6항 기본 모",
+      "korean": "호랑이",
+      "brf_ascii": "ju\"<7o",
+      "braille_unicode": "⠚⠥⠐⠣⠶⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제6항 기본 모",
+      "korean": "무용",
+      "brf_ascii": "em+7",
+      "braille_unicode": "⠑⠍⠬⠶",
+      "decode_ok": true
+    },
+    {
+      "item": "제6항 기본 모",
+      "korean": "국수",
+      "brf_ascii": "@ma,m",
+      "braille_unicode": "⠈⠍⠁⠠⠍",
+      "decode_ok": true
+    },
+    {
+      "item": "제6항 기본 모",
+      "korean": "법률",
+      "brf_ascii": "~sb\"%1",
+      "braille_unicode": "⠘⠎⠃⠐⠩⠂",
+      "decode_ok": true
+    },
+    {
+      "item": "제6항 기본 모",
+      "korean": "특기",
+      "brf_ascii": "h{a@o",
+      "braille_unicode": "⠓⠪⠁⠈⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제6항 기본 모",
+      "korean": "코끼리",
+      "brf_ascii": "fu,@o\"o",
+      "braille_unicode": "⠋⠥⠠⠈⠕⠐⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제7항 그 밖의",
+      "korean": "매미",
+      "brf_ascii": "ereo",
+      "braille_unicode": "⠑⠗⠑⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제7항 그 밖의",
+      "korean": "얘기",
+      "brf_ascii": ">r@o",
+      "braille_unicode": "⠜⠗⠈⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제7항 그 밖의",
+      "korean": "헤엄",
+      "brf_ascii": "jns5",
+      "braille_unicode": "⠚⠝⠎⠢",
+      "decode_ok": true
+    },
+    {
+      "item": "제7항 그 밖의",
+      "korean": "지혜",
+      "brf_ascii": ".oj/",
+      "braille_unicode": "⠨⠕⠚⠌⠗",
+      "decode_ok": true
+    },
+    {
+      "item": "제7항 그 밖의",
+      "korean": "광주리",
+      "brf_ascii": "@v7.m\"o",
+      "braille_unicode": "⠈⠧⠶⠨⠍⠐⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제7항 그 밖의",
+      "korean": "쾌활",
+      "brf_ascii": "fvrjv1",
+      "braille_unicode": "⠋⠧⠗⠚⠧⠂",
+      "decode_ok": true
+    },
+    {
+      "item": "제7항 그 밖의",
+      "korean": "피뢰침",
+      "brf_ascii": "do\"y;o5",
+      "braille_unicode": "⠙⠕⠐⠽⠰⠕⠢",
+      "decode_ok": true
+    },
+    {
+      "item": "제7항 그 밖의",
+      "korean": "권리",
+      "brf_ascii": "@p3\"o",
+      "braille_unicode": "⠈⠏⠒⠐⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제7항 그 밖의",
+      "korean": "우렁쉥이",
+      "brf_ascii": "m\"s7,pr7o",
+      "braille_unicode": "⠍⠐⠎⠶⠠⠏⠗⠶⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제7항 그 밖의",
+      "korean": "쉼터",
+      "brf_ascii": ",mr5hs",
+      "braille_unicode": "⠠⠍⠗⠢⠓⠎",
+      "decode_ok": true
+    },
+    {
+      "item": "제7항 그 밖의",
+      "korean": "무늬",
+      "brf_ascii": "emcw",
+      "braille_unicode": "⠑⠍⠉⠺",
+      "decode_ok": true
+    }
+  ]
+}

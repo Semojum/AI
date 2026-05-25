@@ -1,0 +1,12 @@
+[
+  {
+    "element_id": "55555555-0001-0000-0000-000000000001",
+    "corrected_text": "컷 1: 토끼가 거북이에게 경주를 제안한다. 컷 2: 경주가 시작되어 토끼는 앞서 달린다. 컷 3: 토끼가 낮잠을 자는 동안 거북이가 결승선에 도착한다.",
+    "latex_string": null,
+    "ocr_confidence": 0.87,
+    "visual_subtype": "cartoon",
+    "subtype_confidence": 0.93,
+    "table_structure": null,
+    "flags": []
+  }
+]

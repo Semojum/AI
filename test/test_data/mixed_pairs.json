@@ -1,0 +1,368 @@
+{
+  "description": "혼합 입력 통합 테스트 쌍 (한국어+영어+숫자+수식)",
+  "generated_at": "2026-05-25T14:13:49",
+  "pairs": [
+    {
+      "id": "ko_num_01",
+      "description": "한국어+숫자: 제20일",
+      "input": "제20일",
+      "must_contain": [
+        "⠼"
+      ]
+    },
+    {
+      "id": "ko_num_02",
+      "description": "한국어+숫자: 1학년 2반",
+      "input": "1학년 2반",
+      "must_contain": [
+        "⠼"
+      ]
+    },
+    {
+      "id": "ko_num_03",
+      "description": "한국어+숫자: 키 175cm",
+      "input": "키 175cm",
+      "must_contain": [
+        "⠼"
+      ]
+    },
+    {
+      "id": "ko_num_04",
+      "description": "한국어+소수: 3.14는 원주율",
+      "input": "3.14는 원주율",
+      "must_contain": [
+        "⠼",
+        "⠲"
+      ]
+    },
+    {
+      "id": "ko_num_05",
+      "description": "한국어+자릿점: 9,375원",
+      "input": "9,375원",
+      "must_contain": [
+        "⠼",
+        "⠂"
+      ]
+    },
+    {
+      "id": "ko_en_01",
+      "description": "한국어+영어: Hello 세계",
+      "input": "Hello 세계",
+      "must_contain": [
+        "⠴",
+        "⠲"
+      ]
+    },
+    {
+      "id": "ko_en_02",
+      "description": "한국어+영어: AI가 번역한다",
+      "input": "AI가 번역한다",
+      "must_contain": [
+        "⠴"
+      ]
+    },
+    {
+      "id": "ko_en_03",
+      "description": "한국어+영어: pH 7.4는 중성",
+      "input": "pH 7.4는 중성",
+      "must_contain": [
+        "⠴",
+        "⠼"
+      ]
+    },
+    {
+      "id": "ko_en_04",
+      "description": "영어+숫자: COVID-19",
+      "input": "COVID-19",
+      "must_contain": [
+        "⠼"
+      ]
+    },
+    {
+      "id": "ko_fx_01",
+      "description": "수식: 분수 1/2",
+      "input": "<formula>\\frac{1}{2}</formula>이다",
+      "must_contain": [
+        "⠌"
+      ]
+    },
+    {
+      "id": "ko_fx_02",
+      "description": "수식: 위첨자 x^2",
+      "input": "x의 값은 <formula>x^2+1</formula>",
+      "must_contain": [
+        "⠘"
+      ]
+    },
+    {
+      "id": "ko_fx_03",
+      "description": "수식: 소수 0.48",
+      "input": "<formula>0.48</formula>",
+      "must_contain": [
+        "⠼",
+        "⠲"
+      ]
+    },
+    {
+      "id": "ko_fx_04",
+      "description": "수식: 음수 -3",
+      "input": "<formula>-3</formula>",
+      "must_contain": [
+        "⠼",
+        "⠤"
+      ]
+    },
+    {
+      "id": "ko_fx_05",
+      "description": "수식: 근호 sqrt(2)",
+      "input": "<formula>\\sqrt{2}</formula>",
+      "must_contain": [
+        "⠜"
+      ]
+    },
+    {
+      "id": "fx_trig_sin",
+      "description": "수식: sin(π/6)",
+      "input": "<formula>\\sin(\\frac{\\pi}{6})</formula>",
+      "must_contain": [
+        "⠋⠎",
+        "⠌",
+        "⠨"
+      ]
+    },
+    {
+      "id": "fx_trig_cos",
+      "description": "수식: cos(x)",
+      "input": "<formula>\\cos(x)</formula>",
+      "must_contain": [
+        "⠋⠉"
+      ]
+    },
+    {
+      "id": "fx_log",
+      "description": "수식: log_2(x)",
+      "input": "<formula>\\log_2{x}</formula>",
+      "must_contain": [
+        "⠸"
+      ]
+    },
+    {
+      "id": "fx_ln",
+      "description": "수식: ln(x)",
+      "input": "<formula>\\ln(x)</formula>",
+      "must_contain": [
+        "⠸"
+      ]
+    },
+    {
+      "id": "fx_subscript",
+      "description": "수식: 아래첨자 a_n",
+      "input": "<formula>a_n</formula>",
+      "must_contain": [
+        "⠆"
+      ]
+    },
+    {
+      "id": "fx_power_grp",
+      "description": "수식: 복합 지수 x^{2n+1}",
+      "input": "<formula>x^{2n+1}</formula>",
+      "must_contain": [
+        "⠘"
+      ]
+    },
+    {
+      "id": "fx_sqrt_frac",
+      "description": "수식: 근호 안 분수",
+      "input": "<formula>\\sqrt{\\frac{3}{4}}</formula>",
+      "must_contain": [
+        "⠜",
+        "⠌"
+      ]
+    },
+    {
+      "id": "fx_greek_th",
+      "description": "수식: 그리스문자 θ",
+      "input": "<formula>\\theta</formula>",
+      "must_contain": [
+        "⠨"
+      ]
+    },
+    {
+      "id": "fx_abs",
+      "description": "수식: 절댓값 |x+1|",
+      "input": "<formula>|x+1|</formula>",
+      "must_contain": [
+        "⠳"
+      ]
+    },
+    {
+      "id": "fx_nested",
+      "description": "수식: 중첩 분수",
+      "input": "<formula>\\frac{\\frac{1}{2}}{3}</formula>",
+      "must_contain": [
+        "⠌"
+      ]
+    },
+    {
+      "id": "fx_pyth",
+      "description": "수식: 피타고라스 정리",
+      "input": "<formula>a^2+b^2=c^2</formula>",
+      "must_contain": [
+        "⠘"
+      ]
+    },
+    {
+      "id": "ko_fx_trig",
+      "description": "삼각함수와 한국어",
+      "input": "삼각형에서 <formula>\\sin(\\frac{\\pi}{6})</formula>의 값",
+      "must_contain": [
+        "⠋⠎",
+        "⠌"
+      ]
+    },
+    {
+      "id": "ko_fx_area",
+      "description": "넓이 공식",
+      "input": "삼각형의 넓이는 <formula>\\frac{1}{2}bh</formula>",
+      "must_contain": [
+        "⠌"
+      ]
+    },
+    {
+      "id": "ko_fx_quad",
+      "description": "이차방정식 근의 공식",
+      "input": "이차방정식 <formula>ax^2+bx+c=0</formula>의 근은 <formula>\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}</formula>",
+      "must_contain": [
+        "⠌",
+        "⠘",
+        "⠜"
+      ]
+    },
+    {
+      "id": "ko_fx_emc2",
+      "description": "물리: E=mc²",
+      "input": "에너지 <formula>E=mc^2</formula>",
+      "must_contain": [
+        "⠘"
+      ]
+    },
+    {
+      "id": "sym_pm",
+      "description": "특수: 플러스마이너스 ±",
+      "input": "오차는 ±0.5",
+      "must_contain": [
+        "⠼"
+      ]
+    },
+    {
+      "id": "sym_ellipsis",
+      "description": "특수: 줄임표 ...",
+      "input": "그러면...",
+      "must_contain": []
+    },
+    {
+      "id": "sym_parens",
+      "description": "특수: 소괄호",
+      "input": "결과(result)는 양수",
+      "must_contain": [
+        "⠴"
+      ]
+    },
+    {
+      "id": "sym_bracket",
+      "description": "특수: 대괄호 []",
+      "input": "배열[0]의 값",
+      "must_contain": [
+        "⠼"
+      ]
+    },
+    {
+      "id": "sym_quote",
+      "description": "특수: 큰따옴표",
+      "input": "그는 \"안녕\"이라고 했다",
+      "must_contain": []
+    },
+    {
+      "id": "sym_percent",
+      "description": "특수: 퍼센트 %",
+      "input": "합격률은 87.5%",
+      "must_contain": [
+        "⠼",
+        "⠲"
+      ]
+    },
+    {
+      "id": "sym_degree",
+      "description": "특수: 섭씨도 °C",
+      "input": "온도는 36.5°C",
+      "must_contain": [
+        "⠼",
+        "⠲"
+      ]
+    },
+    {
+      "id": "chem_h2o",
+      "description": "화학: H2O",
+      "input": "물은 H2O",
+      "must_contain": [
+        "⠴",
+        "⠼"
+      ]
+    },
+    {
+      "id": "chem_co2",
+      "description": "화학: CO2",
+      "input": "CO2 농도는 400ppm",
+      "must_contain": [
+        "⠼"
+      ]
+    },
+    {
+      "id": "unit_m2",
+      "description": "단위: 제곱미터 수식",
+      "input": "넓이는 <formula>25m^2</formula>",
+      "must_contain": [
+        "⠼",
+        "⠘"
+      ]
+    },
+    {
+      "id": "unit_km",
+      "description": "단위: km",
+      "input": "거리는 3.5km",
+      "must_contain": [
+        "⠼",
+        "⠲"
+      ]
+    },
+    {
+      "id": "mixed_01",
+      "description": "복합: 영어+숫자+한국어",
+      "input": "COVID-19 감염자 수는 1,234명",
+      "must_contain": [
+        "⠼",
+        "⠂"
+      ]
+    },
+    {
+      "id": "mixed_02",
+      "description": "복합: 한국어+영어+수식",
+      "input": "1학년 English 시험 점수는 <formula>\\frac{85}{100}</formula>점",
+      "must_contain": [
+        "⠼",
+        "⠴",
+        "⠌"
+      ]
+    },
+    {
+      "id": "mixed_03",
+      "description": "복합: 한국어+수식+숫자",
+      "input": "원의 넓이는 <formula>\\pi r^2</formula>이고 r은 5cm",
+      "must_contain": [
+        "⠨",
+        "⠘",
+        "⠼"
+      ]
+    }
+  ]
+}
