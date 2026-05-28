@@ -40,7 +40,7 @@ class QualityReport(BaseModel):
     """PART 9 품질 검증 결과."""
 
     page_id: str
-    status: str  # OK | NEEDS_REVIEW | BLOCKED
+    status: str  # COMPLETED | NEEDS_REVIEW | BLOCKED
     ocr_confidence_avg: float = 0.0
     line_overflow_rate: float = 0.0
     critical_errors: list[CriticalError] = Field(default_factory=list)

@@ -1,10 +1,17 @@
 """파이프라인 진입점.
 
-단계 3 구현: 6-체인 asyncio.gather 병렬 실행
+step3 구조: 현주 추출 → data/NNN_txt_result.json → 태민 분해/점역 → 단계별 json → 최종 결과
 
-  mode a: PART 2 → 3 → 3-4 → 6-체인-opt      (text_list 반환)
-  mode b: source_text → 4-2 → 4-3 → 10        (braille_text_list 반환)
-  mode c: PART 2 → 3 → 3-4 → 6-체인 → 10      (양쪽 반환)
+  공통 경계 파일: storage/jobs/{job}/temp/page_{no:03d}/data/{no:03d}_txt_result.json
+    형식 {meta:{job_id,page_no,extraction_method}, elements:[{id,order,type,content}]}
+    - 현주 파트(PART 2/3/4-1/5-1 등)가 생성. 이미 존재하면 그대로 사용(핸드오프).
+    - 태민 파트가 읽어서 6-체인(현재 text/formula 동작)으로 분해→opt→braille.
+
+  mode a: 현주추출 → 파일 → text_list 반환
+  mode b: source_text → 4-2 → 4-3 → 10 (braille_text_list 반환)
+  mode c: 현주추출 → 파일 → 6-체인 → 10 (양쪽 반환)
+
+단계 4(시각자료: table/image/cartoon/chart_graph)는 파일에 해당 요소가 있을 때 동작.
 """
 
 from __future__ import annotations
@@ -25,8 +32,11 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# 텍스트 요소 유형 — QwenOCR이 처리하는 요소들
+# 텍스트 요소 유형 — text 체인이 처리하는 요소들
 _TEXT_TYPES = {"text", "title", "caption", "list_item", "footnote", "sidebar", "header_footer", "page_number"}
+
+# 현주 type 값 → 태민/plan type 값 매핑 (현주는 chart 사용)
+_TYPE_ALIAS = {"chart": "chart_graph"}
 
 ChainResult = tuple[list[ExtractedContent], list[LLMOutput], list[BrailleOutput]]
 
@@ -85,373 +95,378 @@ def _debug_dump(task: PageTask, part_name: str, data: dict | list) -> None:
     dump_dir = Path(f"storage/jobs/{task.job_id}/temp/page_{task.page_no:03d}")
     dump_dir.mkdir(parents=True, exist_ok=True)
     (dump_dir / f"{part_name}.json").write_text(
-        json.dumps(data, ensure_ascii=False, indent=2, default=str)
+        json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
     )
 
 
-def _crop_element(page_image: "PIL.Image.Image", elem: BBoxItem) -> "PIL.Image.Image":
-    x1, y1, x2, y2 = elem.bbox
-    return page_image.crop((x1, y1, x2, y2))
+# ── 경계 파일 (현주 ↔ 태민) ───────────────────────────────────────────────
+
+def _page_dir(task: PageTask) -> Path:
+    return Path(f"storage/jobs/{task.job_id}/temp/page_{task.page_no:03d}")
 
 
-def _placeholder_extracted(elem: BBoxItem, reason: str, flag: str) -> ExtractedContent:
-    return ExtractedContent(
-        element_id=elem.element_id,
-        corrected_text=f"[처리 불가: {reason}]",
-        ocr_confidence=0.0,
-        flags=[flag],
+def _txt_result_path(task: PageTask) -> Path:
+    return _page_dir(task) / "data" / f"{task.page_no:03d}_txt_result.json"
+
+
+def _write_txt_result(task: PageTask, extraction: dict) -> None:
+    p = _txt_result_path(task)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(extraction, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _read_txt_result(task: PageTask) -> dict:
+    return json.loads(_txt_result_path(task).read_text(encoding="utf-8"))
+
+
+def _write_stage(task: PageTask, dir_name: str, filename: str, objs: list) -> None:
+    """태민 단계별 산출물 기록: temp/page_NNN/type/{dir}/{filename}."""
+    d = _page_dir(task) / "type" / dir_name
+    d.mkdir(parents=True, exist_ok=True)
+    payload = [o.model_dump() for o in objs]
+    (d / filename).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
     )
 
 
-# ── 6-체인 개별 구현 ─────────────────────────────────────────────────────
+# ── 현주 추출 (Phase 1) — data/NNN_txt_result.json 생성 ────────────────────
+
+def _blocks_from_text(pdf_text: Optional[str]) -> list[dict]:
+    """ZERO Tier: PyMuPDF 직접 추출 텍스트를 줄 단위 요소로 변환.
+
+    현주 PART2 ZERO 추출의 임시 구현(줄 단위). 현주 모듈이 type/order를 정밀
+    부여하도록 완성되면 이 함수 대신 그 출력을 사용한다.
+    """
+    elements: list[dict] = []
+    order = 0
+    for raw_line in (pdf_text or "").split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        order += 1
+        etype = "page_number" if line.isdigit() else "text"
+        elements.append({"id": str(uuid4()), "order": order, "type": etype, "content": line})
+    if not elements:
+        elements.append({"id": str(uuid4()), "order": 1, "type": "text", "content": (pdf_text or "").strip()})
+    return elements
+
+
+async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> list[dict]:
+    """non-ZERO Tier: 현주 모델 모듈(레이아웃·OCR) 호출. 미탑재/실패 시 빈 결과로 격리."""
+    try:
+        from app.ai.preprocessor.converter import convert_page
+        from app.ai.layout.layout_merger import LayoutMerger
+        from app.ai.layout.qwen_layout import QwenLayout
+        from app.ai.layout.yolo_layout import YoloLayout
+        from app.ai.ocr.qwen_ocr import QwenOCR
+
+        page_image = await asyncio.to_thread(
+            convert_page, task.pdf_data, task.page_no - 1,
+            doc_meta.routing_tier, task.job_id, task.page_no,
+        )
+        qwen_items, yolo_hints = await asyncio.gather(
+            asyncio.to_thread(QwenLayout().detect, page_image),
+            asyncio.to_thread(YoloLayout().detect, page_image),
+        )
+        layout = await asyncio.to_thread(
+            LayoutMerger().merge, qwen_items, yolo_hints,
+            task.job_id, task.page_no, page_image.width, page_image.height,
+        )
+        text_layout = LayoutResult(
+            page_id=f"p_{task.page_no:03d}",
+            elements=[e for e in layout.elements if e.type in _TEXT_TYPES],
+        )
+        extracted = await QwenOCR().process(text_layout, page_image, doc_meta.routing_tier, None)
+        ex_by_id = {x.element_id: x for x in extracted}
+        elements: list[dict] = []
+        for e in layout.elements:
+            ex = ex_by_id.get(e.element_id)
+            elements.append({
+                "id": str(e.element_id),
+                "order": e.reading_order,
+                "type": e.type,
+                "content": (ex.corrected_text if ex else "") or "",
+            })
+        return elements
+    except Exception as exc:
+        logger.warning("현주 모델 추출 실패(빈 결과로 격리): %s", exc)
+        return []
+
+
+async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
+    """현주 추출 단계: analyze_pdf + (ZERO 텍스트 | non-ZERO 모델) → 경계 dict."""
+    from app.ai.preprocessor.pdf_analyzer import analyze_pdf
+
+    doc_meta, pdf_text = await asyncio.to_thread(
+        analyze_pdf, task.pdf_data, task.page_no - 1, task.job_id
+    )
+    if doc_meta.routing_tier == "ZERO":
+        method = "TEXT_NATIVE"
+        elements = _blocks_from_text(pdf_text)
+    else:
+        method = "OCR"
+        elements = await _extract_via_models(task, doc_meta)
+
+    extraction = {
+        "meta": {
+            "job_id": task.job_id,
+            "page_no": task.page_no,
+            "extraction_method": method,
+        },
+        "elements": elements,
+    }
+    return doc_meta, extraction
+
+
+# ── 태민 분해 (Phase 2) — 경계 파일 → LayoutResult + ExtractedContent ───────
+
+def _parse_txt_result(
+    extraction: dict, page_id: str
+) -> tuple[LayoutResult, dict[UUID, ExtractedContent], str]:
+    method = extraction.get("meta", {}).get("extraction_method", "OCR")
+    conf = 1.0 if method == "TEXT_NATIVE" else 0.95
+
+    bbox_items: list[BBoxItem] = []
+    ext_map: dict[UUID, ExtractedContent] = {}
+
+    for idx, el in enumerate(extraction.get("elements", []), start=1):
+        try:
+            eid = UUID(str(el.get("id")))
+        except (ValueError, TypeError):
+            eid = uuid4()
+        etype = _TYPE_ALIAS.get(el.get("type", "text"), el.get("type", "text"))
+        order = int(el.get("order", idx))
+        content = el.get("content", "") or ""
+
+        bbox_items.append(BBoxItem(
+            element_id=eid, type=etype, bbox=(0, 0, 0, 0), reading_order=order,
+        ))
+        if etype == "formula":
+            ext_map[eid] = ExtractedContent(
+                element_id=eid, latex_string=content, corrected_text=content,
+                ocr_confidence=conf,
+            )
+        else:
+            ext_map[eid] = ExtractedContent(
+                element_id=eid, corrected_text=content, ocr_confidence=conf,
+            )
+
+    layout = LayoutResult(page_id=page_id, elements=bbox_items)
+    return layout, ext_map, method
+
+
+# ── 6-체인 (Phase 2: 태민 opt → braille, 단계별 json 기록) ──────────────────
 
 async def _run_text_chain(
+    extracted: list[ExtractedContent],
     layout: LayoutResult,
-    page_image: Optional["PIL.Image.Image"],
-    doc_meta: Optional[DocumentMeta],
     routing_tier: str,
     task: PageTask,
     include_braille: bool,
-    zero_text: Optional[str],
 ) -> ChainResult:
-    text_elems = [e for e in layout.elements if e.type in _TEXT_TYPES]
-    # ZERO 티어는 dummy 텍스트 요소를 항상 가지므로 empty 체크는 ZERO 이외에서만 의미있음
-    if not text_elems:
+    if not extracted:
         return [], [], []
-
-    # QwenOCR에는 텍스트 타입 요소만 전달 — formula/table/image가 섞이면 다른 체인과 element_id 중복
-    text_only_layout = LayoutResult(page_id=layout.page_id, elements=text_elems)
-
-    from app.ai.ocr.qwen_ocr import QwenOCR
-    extracted = await QwenOCR().process(text_only_layout, page_image, routing_tier, zero_text)
+    _write_stage(task, "text", "text_ocr.json", extracted)
 
     from app.ai.llm.text_opt import TextOpt
     llm_outputs = await TextOpt().optimize(extracted, routing_tier, layout)
+    _write_stage(task, "text", "text_opt.json", llm_outputs)
 
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.text_braille import TextBraille
         braille_outputs = TextBraille().translate(llm_outputs)
+        _write_stage(task, "text", "text_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
 
 
 async def _run_formula_chain(
-    layout: LayoutResult,
-    page_image: Optional["PIL.Image.Image"],
+    extracted: list[ExtractedContent],
     routing_tier: str,
     task: PageTask,
     include_braille: bool,
 ) -> ChainResult:
-    formula_elems = [e for e in layout.elements if e.type == "formula"]
-    if not formula_elems:
+    if not extracted:
         return [], [], []
-
-    extracted: list[ExtractedContent] = []
-    if page_image is not None:
-        try:
-            from app.ai.ocr.formula_ocr import FormulaOCR
-            crops = [(elem, _crop_element(page_image, elem)) for elem in formula_elems]
-            extracted = await FormulaOCR().process(crops)
-        except Exception as exc:
-            logger.warning("FormulaOCR 실패 (fallback): %s", exc)
-            extracted = [
-                _placeholder_extracted(e, "수식 OCR 오류", "C3_FALLBACK")
-                for e in formula_elems
-            ]
-    else:
-        extracted = [
-            _placeholder_extracted(e, "수식 이미지 없음", "C3_FALLBACK")
-            for e in formula_elems
-        ]
+    _write_stage(task, "formula", "formula_ocr.json", extracted)
 
     from app.ai.llm.formula_opt import FormulaOpt
     llm_outputs = await FormulaOpt().optimize(extracted, routing_tier)
+    _write_stage(task, "formula", "formula_opt.json", llm_outputs)
 
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.formula_braille import FormulaBraille
         braille_outputs = FormulaBraille().translate(llm_outputs)
+        _write_stage(task, "formula", "formula_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
 
 
 async def _run_table_chain(
+    extracted: list[ExtractedContent],
     layout: LayoutResult,
-    page_image: Optional["PIL.Image.Image"],
     routing_tier: str,
     task: PageTask,
     include_braille: bool,
 ) -> ChainResult:
-    table_elems = [e for e in layout.elements if e.type == "table"]
-    if not table_elems:
+    if not extracted:
         return [], [], []
-
-    extracted: list[ExtractedContent] = []
-    try:
-        from app.ai.captioning.table_cap import TableCap
-        crops = [(elem, _crop_element(page_image, elem)) for elem in table_elems] if page_image else []
-        extracted = await TableCap().process(crops, routing_tier)
-    except (ImportError, AttributeError):
-        # table_cap.py 미구현(현주 T3-5) — 플레이스홀더
-        extracted = [
-            _placeholder_extracted(e, "표 캡셔닝 미구현", "C4_FALLBACK")
-            for e in table_elems
-        ]
-    except Exception as exc:
-        logger.warning("TableCap 실패: %s", exc)
-        extracted = [
-            _placeholder_extracted(e, "표 캡셔닝 오류", "C4_FALLBACK")
-            for e in table_elems
-        ]
+    _write_stage(task, "table", "table_cap.json", extracted)
 
     from app.ai.llm.table_opt import TableOpt
     llm_outputs = await TableOpt().optimize(extracted, routing_tier, layout)
+    _write_stage(task, "table", "table_opt.json", llm_outputs)
 
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.table_braille import TableBraille
         braille_outputs = TableBraille().translate(llm_outputs)
+        _write_stage(task, "table", "table_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
 
 
 async def _run_image_chain(
+    extracted: list[ExtractedContent],
     layout: LayoutResult,
-    page_image: Optional["PIL.Image.Image"],
     routing_tier: str,
     task: PageTask,
     include_braille: bool,
 ) -> ChainResult:
-    # PART 3-4 이후 type이 "image"로 확정된 요소만 처리
-    # (cartoon/chart_graph로 분류된 요소는 해당 체인이 담당)
-    image_elems = [e for e in layout.elements if e.type == "image"]
-    if not image_elems:
+    if not extracted:
         return [], [], []
-
-    extracted: list[ExtractedContent] = []
-    try:
-        from app.ai.captioning.image_cap import ImageCap
-        crops = [(elem, _crop_element(page_image, elem)) for elem in image_elems] if page_image else []
-        extracted = await ImageCap().process(crops)
-    except (ImportError, AttributeError):
-        extracted = [
-            _placeholder_extracted(e, "이미지 캡셔닝 미구현", "C2_FALLBACK")
-            for e in image_elems
-        ]
-    except Exception as exc:
-        logger.warning("ImageCap 실패: %s", exc)
-        extracted = [
-            _placeholder_extracted(e, "이미지 캡셔닝 오류", "C2_FALLBACK")
-            for e in image_elems
-        ]
+    _write_stage(task, "image", "image_cap.json", extracted)
 
     from app.ai.llm.image_opt import ImageOpt
     llm_outputs = await ImageOpt().optimize(extracted, routing_tier, layout)
+    _write_stage(task, "image", "image_opt.json", llm_outputs)
 
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.image_braille import ImageBraille
         braille_outputs = ImageBraille().translate(llm_outputs)
+        _write_stage(task, "image", "image_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
 
 
 async def _run_cartoon_chain(
+    extracted: list[ExtractedContent],
     layout: LayoutResult,
-    page_image: Optional["PIL.Image.Image"],
     routing_tier: str,
     task: PageTask,
     include_braille: bool,
 ) -> ChainResult:
-    cartoon_elems = [e for e in layout.elements if e.type == "cartoon"]
-    if not cartoon_elems:
+    if not extracted:
         return [], [], []
-
-    extracted: list[ExtractedContent] = []
-    try:
-        from app.ai.captioning.cartoon_cap import CartoonCap
-        crops = [(elem, _crop_element(page_image, elem)) for elem in cartoon_elems] if page_image else []
-        extracted = await CartoonCap().process(crops)
-    except (ImportError, AttributeError):
-        extracted = [
-            _placeholder_extracted(e, "만화 캡셔닝 미구현", "C2_FALLBACK")
-            for e in cartoon_elems
-        ]
-    except Exception as exc:
-        logger.warning("CartoonCap 실패: %s", exc)
-        extracted = [
-            _placeholder_extracted(e, "만화 캡셔닝 오류", "C2_FALLBACK")
-            for e in cartoon_elems
-        ]
+    _write_stage(task, "cartoon", "cartoon_cap.json", extracted)
 
     from app.ai.llm.cartoon_opt import CartoonOpt
     llm_outputs = await CartoonOpt().optimize(extracted, routing_tier, layout)
+    _write_stage(task, "cartoon", "cartoon_opt.json", llm_outputs)
 
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.cartoon_braille import CartoonBraille
         braille_outputs = CartoonBraille().translate(llm_outputs)
+        _write_stage(task, "cartoon", "cartoon_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
 
 
 async def _run_chart_graph_chain(
+    extracted: list[ExtractedContent],
     layout: LayoutResult,
-    page_image: Optional["PIL.Image.Image"],
     routing_tier: str,
     task: PageTask,
     include_braille: bool,
 ) -> ChainResult:
-    chart_elems = [e for e in layout.elements if e.type == "chart_graph"]
-    if not chart_elems:
+    if not extracted:
         return [], [], []
-
-    extracted: list[ExtractedContent] = []
-    try:
-        from app.ai.captioning.chart_graph_cap import ChartGraphCap
-        crops = [(elem, _crop_element(page_image, elem)) for elem in chart_elems] if page_image else []
-        extracted = await ChartGraphCap().process(crops)
-    except (ImportError, AttributeError):
-        extracted = [
-            _placeholder_extracted(e, "차트 캡셔닝 미구현", "C2_FALLBACK")
-            for e in chart_elems
-        ]
-    except Exception as exc:
-        logger.warning("ChartGraphCap 실패: %s", exc)
-        extracted = [
-            _placeholder_extracted(e, "차트 캡셔닝 오류", "C2_FALLBACK")
-            for e in chart_elems
-        ]
+    _write_stage(task, "chart_graph", "cg_cap.json", extracted)
 
     from app.ai.llm.chart_graph_opt import ChartGraphOpt
     llm_outputs = await ChartGraphOpt().optimize(extracted, routing_tier, layout)
+    _write_stage(task, "chart_graph", "cg_opt.json", llm_outputs)
 
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.chart_graph_braille import ChartGraphBraille
         braille_outputs = ChartGraphBraille().translate(llm_outputs)
+        _write_stage(task, "chart_graph", "cg_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
 
 
 # ── 파이프라인 실행 ──────────────────────────────────────────────────────
 
+def _collect(layout: LayoutResult, ext_map: dict[UUID, ExtractedContent], types: set[str]) -> list[ExtractedContent]:
+    return [ext_map[e.element_id] for e in layout.elements if e.type in types and e.element_id in ext_map]
+
+
 async def _run_pipeline(task: PageTask) -> dict:
     page_id = f"p_{task.page_no:03d}"
 
     doc_meta: Optional[DocumentMeta] = None
-    page_image = None
-    layout_result: Optional[LayoutResult] = None
     image_width = 0
     image_height = 0
-    zero_text: Optional[str] = None
 
-    # ── mode a, c: VLM 전체 파이프라인 ─────────────────────────────────
-    if task.mode in ("a", "c"):
-
-        # PART 2: 전처리 — 신뢰도 산출 + 라우팅 티어 결정
-        from app.ai.preprocessor.pdf_analyzer import analyze_pdf
-        from app.ai.preprocessor.converter import convert_page
-
-        doc_meta, zero_text = await asyncio.to_thread(
-            analyze_pdf, task.pdf_data, task.page_no - 1, task.job_id
-        )
-        _debug_dump(task, "02_doc_meta", doc_meta.model_dump())
-
-        if doc_meta.routing_tier != "ZERO":
-            page_image = await asyncio.to_thread(
-                convert_page,
-                task.pdf_data, task.page_no - 1,
-                doc_meta.routing_tier, task.job_id, task.page_no,
-            )
-            image_width = page_image.width
-            image_height = page_image.height
-
-        # PART 3: 레이아웃 탐지 + 병합
-        if doc_meta.routing_tier == "ZERO":
-            dummy = BBoxItem(
-                element_id=uuid4(), type="text",
-                bbox=(0, 0, 1240, 1754), reading_order=1,
-            )
-            layout_result = LayoutResult(page_id=page_id, elements=[dummy])
-        else:
-            from app.ai.layout.qwen_layout import QwenLayout
-            from app.ai.layout.yolo_layout import YoloLayout
-            from app.ai.layout.layout_merger import LayoutMerger
-
-            qwen_items, yolo_hints = await asyncio.gather(
-                asyncio.to_thread(QwenLayout().detect, page_image),
-                asyncio.to_thread(YoloLayout().detect, page_image),
-            )
-            layout_result = await asyncio.to_thread(
-                LayoutMerger().merge,
-                qwen_items, yolo_hints, task.job_id, task.page_no,
-                image_width or 1240, image_height or 1754,
-            )
-            layout_result.page_id = page_id
-            _debug_dump(task, "03_layout", layout_result.model_dump())
-
-        # PART 3-4: 이미지 세분류 (GPT-4o, 현주 T3-8)
-        try:
-            from app.ai.captioning.classifier import ImageClassifier
-            layout_result = await ImageClassifier().classify(layout_result, page_image)
-            _debug_dump(task, "03_4_layout_classified", layout_result.model_dump())
-        except (ImportError, AttributeError):
-            pass  # 미구현 시 이미지 요소는 type="image" 그대로 유지
-
-    # ── mode b: source_text → 가상 요소 구성 ────────────────────────────
-    elif task.mode == "b":
-        dummy = BBoxItem(
-            element_id=uuid4(), type="text",
-            bbox=(0, 0, 1240, 1754), reading_order=1,
-        )
-        layout_result = LayoutResult(page_id=page_id, elements=[dummy])
-
-    routing_tier = doc_meta.routing_tier if doc_meta else "STANDARD"
-    include_braille = task.mode in ("b", "c")
-
-    # ── mode b: 텍스트 단일 체인 ─────────────────────────────────────
+    # ── mode b: source_text 단일 텍스트 체인 ───────────────────────────
     if task.mode == "b":
-        assert layout_result is not None
-        source_elem = layout_result.elements[0]
+        source_elem_id = uuid4()
+        layout_result = LayoutResult(
+            page_id=page_id,
+            elements=[BBoxItem(element_id=source_elem_id, type="text", bbox=(0, 0, 0, 0), reading_order=1)],
+        )
         extracted_texts = [ExtractedContent(
-            element_id=source_elem.element_id,
+            element_id=source_elem_id,
             corrected_text=task.source_text or "",
             ocr_confidence=1.0,
         )]
-        from app.ai.llm.text_opt import TextOpt
-        llm_outputs = await TextOpt().optimize(extracted_texts, routing_tier, layout_result)
-
-        braille_outputs: list[BrailleOutput] = []
-        if llm_outputs:
-            from app.ai.braille.text_braille import TextBraille
+        ext, llm_outputs, braille_outputs = await _run_text_chain(
+            extracted_texts, layout_result, "ZERO", task, include_braille=True,
+        )
+        if braille_outputs:
             from app.ai.braille.layout_braille import LayoutBraille
-            braille_outputs = TextBraille().translate(llm_outputs)
             LayoutBraille().layout(braille_outputs, task.page_no, task.job_id)
-
         return _build_response(
-            task, page_id, doc_meta, routing_tier, image_width, image_height,
-            layout_result, extracted_texts, llm_outputs, braille_outputs,
+            task, page_id, doc_meta, "ZERO", image_width, image_height,
+            layout_result, ext, llm_outputs, braille_outputs,
         )
 
-    # ── mode a, c: 6-체인 병렬 실행 ─────────────────────────────────
-    assert layout_result is not None
+    # ── mode a, c ──────────────────────────────────────────────────────
+    # Phase 1 (현주): 경계 파일이 없으면 현주 추출로 생성. 있으면 그대로 사용.
+    if _txt_result_path(task).exists():
+        extraction = _read_txt_result(task)
+        logger.info("기존 추출 파일 사용 job=%s page=%d", task.job_id, task.page_no)
+    else:
+        doc_meta, extraction = await _extract_with_hyunju(task)
+        _write_txt_result(task, extraction)
+        _debug_dump(task, "02_doc_meta", doc_meta.model_dump())
+
+    # Phase 2 (태민): 경계 파일 → 분해 → 6-체인
+    layout_result, ext_map, method = _parse_txt_result(extraction, page_id)
+    routing_tier = (
+        doc_meta.routing_tier if doc_meta
+        else ("ZERO" if method == "TEXT_NATIVE" else "STANDARD")
+    )
+    include_braille = task.mode == "c"
+
     chain_results = await asyncio.gather(
-        _run_text_chain(layout_result, page_image, doc_meta, routing_tier, task, include_braille, zero_text),
-        _run_formula_chain(layout_result, page_image, routing_tier, task, include_braille),
-        _run_table_chain(layout_result, page_image, routing_tier, task, include_braille),
-        _run_image_chain(layout_result, page_image, routing_tier, task, include_braille),
-        _run_cartoon_chain(layout_result, page_image, routing_tier, task, include_braille),
-        _run_chart_graph_chain(layout_result, page_image, routing_tier, task, include_braille),
+        _run_text_chain(_collect(layout_result, ext_map, _TEXT_TYPES), layout_result, routing_tier, task, include_braille),
+        _run_formula_chain(_collect(layout_result, ext_map, {"formula"}), routing_tier, task, include_braille),
+        _run_table_chain(_collect(layout_result, ext_map, {"table"}), layout_result, routing_tier, task, include_braille),
+        _run_image_chain(_collect(layout_result, ext_map, {"image"}), layout_result, routing_tier, task, include_braille),
+        _run_cartoon_chain(_collect(layout_result, ext_map, {"cartoon"}), layout_result, routing_tier, task, include_braille),
+        _run_chart_graph_chain(_collect(layout_result, ext_map, {"chart_graph"}), layout_result, routing_tier, task, include_braille),
         return_exceptions=True,
     )
 
-    # 체인 결과 병합 (예외 발생 체인은 빈 결과로 처리)
     all_extracted: list[ExtractedContent] = []
     all_llm: list[LLMOutput] = []
     all_braille: list[BrailleOutput] = []
-
     for i, result in enumerate(chain_results):
         if isinstance(result, Exception):
             logger.error("체인 %d 실패 (계속 진행): %s", i, result)
@@ -513,9 +528,11 @@ def _build_response(
         response["bounding_box_list"] = [
             {
                 "id": str(e.element_id),
+                "x": e.bbox[0],
+                "y": e.bbox[1],
+                "x2": e.bbox[2],
+                "y2": e.bbox[3],
                 "type": e.type,
-                "bbox": list(e.bbox),
-                "reading_order": e.reading_order,
                 "heading_level": e.heading_level or 0,
                 "caption_ref": str(e.caption_ref) if e.caption_ref else "",
                 "flags": e.flags,
