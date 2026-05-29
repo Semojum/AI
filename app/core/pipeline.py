@@ -1,6 +1,6 @@
 """파이프라인 진입점.
 
-step3 구조: 현주 추출 → data/NNN_txt_result.json → 태민 분해/점역 → 단계별 json → 최종 결과
+단계 3·4 구조: 현주 추출 → data/NNN_txt_result.json → 태민 분해/점역 → 단계별 json → 최종 결과
 
   공통 경계 파일: storage/jobs/{job}/temp/page_{no:03d}/data/{no:03d}_txt_result.json
     형식 {meta:{job_id,page_no,extraction_method}, elements:[{id,order,type,content}]}
@@ -578,6 +578,21 @@ def _build_response(
                         braille_by_id[o.element_id].rule_trail
                         if o.element_id in braille_by_id
                         else o.rule_trail
+                    )
+                ],
+                "selected_idx": (
+                    braille_by_id[o.element_id].selected_idx
+                    if o.element_id in braille_by_id else 0
+                ),
+                "drafts": [
+                    {
+                        "text": d.text,
+                        "label": d.label,
+                        "contents": d.braille_lines,
+                    }
+                    for d in (
+                        braille_by_id[o.element_id].drafts
+                        if o.element_id in braille_by_id else []
                     )
                 ],
             }

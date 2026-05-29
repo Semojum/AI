@@ -10,6 +10,7 @@ import logging
 import time
 from typing import Optional
 
+from app.ai.llm.draft_utils import ensure_tn_prefix, parse_labeled_drafts, single_draft
 from app.core.config import config
 from app.core.model_manager import model_manager
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
@@ -31,37 +32,30 @@ _MIN_RULE_TRAIL = [RuleApplication(
 )]
 
 _PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가입니다.
-다음 차트/그래프 설명을 점역자 주([점역사주])로 최적화하세요.
+다음 차트/그래프 설명을 점역자 주로, **서로 다른 3가지 방식**으로 각각 작성하세요.
+(점자 자료 제작 지침 §6.4, 점역사 지침: 데이터가 많으면 표 변환이 가장 좋음)
 
-## 점역자 주 형식 (점자 자료 제작 지침 §6.3.4, §6.4)
-- "[점역사주] 그래프유형: 내용" 형식으로 작성
-- 유형 명시 필수 — 막대그래프, 꺾은선그래프, 비율그래프, 선그래프, 그림그래프, 수직선 중 하나
-- [점역사주]로 시작 (필수)
+## 3가지 방식 (반드시 표현이 다르게)
+[방식1] 표 변환: 데이터를 "항목: 수치" 표 형태로 정리 (데이터 포인트가 많을 때 권장)
+[방식2] 수학적 서술: 유형 + x축·y축의 범위·단위 + 주요 추세 1개를 문장으로
+[방식3] 개조식 항목별: 항목별 수치를 위계 목록으로
 
-## 유형별 기술 원칙 (§6.4)
-- 비율그래프: 제목 + 전체 합계(있으면) + 항목별 레이블: 수치%
-- 막대그래프: 제목 + 가로축(항목명) + 세로축(단위) + 주요 막대 수치
-- 꺾은선그래프: 제목 + 축 정보 + 핵심 값 + 주요 추이(증가/감소/역전) 1개
-- 선그래프: 제목 + x축·y축 + 절편·좌표 + 변수 간 관계
-- 복잡하여 직접 기술 불가: "표로 대체하여 정리함" 명시
-
-## 수치 규칙
-- 수치는 아라비아 숫자 그대로 (100 → 백 변환 금지)
-- 단위 반드시 명시 (%, 명, 원, ℃ 등)
-- 원본 설명에 없는 수치·고유명사 추가 금지
-
-## 금지 사항
-- 주요 경향 2개 이상 나열 금지 (가장 중요한 1개만)
-- 그래프 색상만 언급하고 수치 생략 금지
+## 공통 규칙
+- 각 줄을 "[방식N] [점역사주] 그래프유형: 내용" 형식으로 (유형: 막대/꺾은선/비율/선/그림그래프/수직선 중)
+- 수치는 **아라비아 숫자 원문 그대로** (변환·추가·누락 금지), 단위 명시(%, 명, 원, ℃ 등)
+- 원본에 없는 수치·고유명사 추가 금지, 색상만 언급하고 수치 생략 금지
+- 주요 추세는 가장 중요한 1개만
 
 ## 출력 예시
-입력: "청일 전쟁 배상금 사용처 원형 그래프. 총 3억 6천만 엔. 군비 확장비 62%, 임시 군비 21.6%, 왕실 경비 5.5%, 기타 5.5%, 교육 기금 2.7%, 재해 준비금 2.7%."
-출력: [점역사주] 비율그래프: 청일 전쟁 배상금 사용처(총 3억 6천만 엔). 군비 확장비 62%, 임시 군비 21.6%, 왕실 경비 5.5%, 기타 5.5%, 교육 기금 2.7%, 재해 준비금 2.7%.
+입력: "연도별 발행 권수 막대그래프. 2020년 980권, 2021년 1100권, 2022년 1240권, 2023년 1380권."
+[방식1] [점역사주] 막대그래프: 연도별 발행 권수. 2020년: 980권, 2021년: 1100권, 2022년: 1240권, 2023년: 1380권.
+[방식2] [점역사주] 막대그래프: 연도별 발행 권수. x축 2020~2023년, y축 권수. 980권에서 1380권으로 증가.
+[방식3] [점역사주] 막대그래프: 연도별 발행 권수. - 2020년 980권 - 2021년 1100권 - 2022년 1240권 - 2023년 1380권.
 
 원본 설명:
 {caption}
 
-최적화된 점역자 주만 반환하세요. 다른 설명 없이 [점역사주]로 시작하는 문장만."""
+[방식1]/[방식2]/[방식3] 세 줄만 반환하세요. 다른 설명 없이."""
 
 
 def _verify_numbers(original: str, output: str) -> bool:
@@ -123,8 +117,16 @@ async def _fallback_optimize(caption: str) -> str:
         return caption
 
 
+# 초안 3안 방식 (stage4_complex.md 'T4-2 공통 규약' — 차트=표현 형식)
+_CHART_METHODS = [
+    ("narrative", "표 변환"),
+    ("narrative", "수학적 서술"),
+    ("narrative", "개조식"),
+]
+
+
 class ChartGraphOpt:
-    """ExtractedContent 목록 → LLMOutput 목록 (차트/그래프)."""
+    """ExtractedContent 목록 → LLMOutput 목록 (차트/그래프). 3안 생성 + 수치 검증."""
 
     async def optimize(
         self,
@@ -152,50 +154,50 @@ class ChartGraphOpt:
             )
 
         if routing_tier == "ZERO":
-            tn = f"[점역사주] {caption[:120]}"
-            return LLMOutput(
-                element_id=ext.element_id,
-                corrected_text=caption,
-                render_mode="narrative",
-                tn_text=tn,
-                routing_tier="ZERO",
-                processing_time_ms=0,
-                rule_trail=list(_MIN_RULE_TRAIL),
-            )
+            return self._build(ext.element_id, single_draft(caption[:120], "narrative", "원본"), "ZERO", 0)
 
         timeout = _QUALITY_TIMEOUT if ext.ocr_confidence < config.ocr_confidence_threshold else _STANDARD_TIMEOUT
         tier = "QUALITY" if ext.ocr_confidence < config.ocr_confidence_threshold else "STANDARD"
 
         fail_count = 0
-        tn_text = caption
+        response = ""
         while fail_count < 3:
             try:
-                tn_text = await _hcxt_optimize(caption, timeout)
+                response = await _hcxt_optimize(caption, timeout)
                 break
             except Exception as exc:
                 fail_count += 1
                 logger.warning("HyperCLOVA X 차트 실패 #%d id=%s: %s", fail_count, ext.element_id, exc)
                 if fail_count >= 3:
                     logger.warning("FALLBACK 전환 id=%s", ext.element_id)
-                    tn_text = await _fallback_optimize(caption)
+                    response = await _fallback_optimize(caption)
                     tier = "FALLBACK"
 
-        if not tn_text.startswith("[점역사주]"):
-            tn_text = f"[점역사주] {tn_text}"
+        drafts = parse_labeled_drafts(response, _CHART_METHODS)
+        if not drafts:
+            drafts = single_draft(response or caption[:120], "narrative", "수학적 서술")
 
-        # 수치 그라운딩 검증 — 원본 수치가 출력에 없으면 R5 플래그 + 원본 유지
-        if not _verify_numbers(caption, tn_text):
-            logger.warning("수치 검증 실패 id=%s — 원본 캡션 사용 (R5)", ext.element_id)
-            tn_text = f"[점역사주] {caption}"
+        # 수치 그라운딩 검증 — 원본 수치 누락 초안은 원본 캡션으로 대체 + R5
+        if any(not _verify_numbers(caption, d.text) for d in drafts):
+            logger.warning("수치 검증 실패 id=%s — 누락 초안 원본 대체 (R5)", ext.element_id)
+            for d in drafts:
+                if not _verify_numbers(caption, d.text):
+                    d.text = ensure_tn_prefix(caption)
             ext.flags = list(getattr(ext, "flags", [])) + ["R5"]
 
         elapsed_ms = int((time.monotonic() - start) * 1000)
+        return self._build(ext.element_id, drafts, tier, elapsed_ms)
+
+    @staticmethod
+    def _build(element_id, drafts, tier, elapsed_ms) -> LLMOutput:
         return LLMOutput(
-            element_id=ext.element_id,
-            corrected_text=caption,
-            render_mode="narrative",
-            tn_text=tn_text,
+            element_id=element_id,
+            corrected_text=drafts[0].text,
+            render_mode=drafts[0].render_mode,
+            tn_text=drafts[0].text,
             routing_tier=tier,
             processing_time_ms=elapsed_ms,
             rule_trail=list(_MIN_RULE_TRAIL),
+            drafts=drafts,
+            selected_idx=0,
         )

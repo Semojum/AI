@@ -74,6 +74,15 @@ message ProcessingMeta {
   bool   scan_only            = 4;
 }
 
+// 시각 요소(표·차트·이미지·만화) 점역사주 복수 초안 1개 — 단계4 T4-2.
+// 같은 자료를 다른 방식으로 점역한 대안. 점역사가 에디터에서 골라 쓴다.
+// (표·차트 = 레이아웃/표현 차이, 이미지·만화 = 설명 초점 차이. 셀 값·내부 텍스트·수치는 모든 초안 동일.)
+message Draft {
+  string text     = 1;            // 점역사주 원문(한글). 점역사가 읽고 비교하는 텍스트.
+  repeated string contents = 2;   // 이 초안의 점자 줄 목록(32칸 단위). 선택 시 이 값이 본문 점자가 됨.
+  string label    = 3;            // 피커에 표시할 방식명. 예: "격자형"/"행↔열 전치"/"위치 중심"/"요약"
+}
+
 message TextElement {
   string id                 = 1;
   string type               = 2;
@@ -87,8 +96,15 @@ message TextElement {
   float  subtype_confidence = 10;
   string latex_string       = 11;  // formula 전용
   TactileGraphic tactile    = 12;  // image/table 전용 (단계 3+)
+  // 기본(선택) 점자 줄 목록. 모든 블록 공통(텍스트·수식은 이 필드만 사용).
+  // 시각 블록은 drafts[selected_idx].contents 와 같은 값(중복) → BE는 타입 구분 없이 항상 이걸로 렌더.
   repeated string contents      = 13;
-  repeated RuleTrail rule_trail = 14;
+  repeated RuleTrail rule_trail = 14;  // 이 블록에 적용된 점자 규정 목록 (선택 초안 기준)
+  // ── 시각 요소(표·차트·이미지·만화) 복수 초안 — 단계4 T4-2 ──
+  // 점역사가 에디터에서 고를 수 있는 대체 초안들. 텍스트·수식 블록은 비어 있음([]).
+  // 피커를 지원하는 FE만 추가로 읽으면 됨(기본 렌더는 위 contents로 충분).
+  repeated Draft drafts     = 15;
+  int32  selected_idx       = 16;  // 기본 초안 번호(0-based). contents == drafts[selected_idx].contents
 }
 
 // ── 응답 (AI → BE) ──────────────────────────────────────

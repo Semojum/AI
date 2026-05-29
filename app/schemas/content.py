@@ -37,6 +37,22 @@ class ExtractedContent(BaseModel):
     # 플래그: C2_FALLBACK, C3_FALLBACK, C4_FALLBACK, VERTICAL_TEXT, SUBTYPE_UNCERTAIN
 
 
+class Draft(BaseModel):
+    """점역사주 복수 초안 1개 (시각 요소 전용).
+
+    표·차트·이미지·만화 opt는 서로 다른 3안을 생성한다. 분류·차이 축은
+    `code/prompts/stage4_complex.md` 'T4-2 공통 규약' 절이 단일 출처.
+    텍스트·수식은 단일안이라 drafts를 쓰지 않는다.
+    """
+
+    option: int                          # 1-based, 1 = default(selected_idx 0)
+    text: str                            # 점역사주 원문 (점역 대상)
+    render_mode: str = "narrative"       # table_grid|transposed|linear|narrative|...
+    label: str = ""                      # 방식명 (예: "행↔열 전치", "위치 중심", "요약")
+    braille_lines: list[str] = Field(default_factory=list)  # braille 단계에서 채움
+    rule_trail: list[RuleApplication] = Field(default_factory=list)
+
+
 class LLMOutput(BaseModel):
     """점역 최적화 LLM 출력 (PART 4-2 / 5-2 / 6-2 / ...).
 
@@ -54,11 +70,17 @@ class LLMOutput(BaseModel):
     routing_tier: str  # ZERO|STANDARD|QUALITY|FALLBACK
     processing_time_ms: int = 0
     rule_trail: list[RuleApplication] = Field(default_factory=list)
+    # 시각 요소(표·차트·이미지·만화) 전용 복수 초안. 텍스트·수식은 빈 리스트.
+    drafts: list[Draft] = Field(default_factory=list)
+    selected_idx: int = 0  # corrected_text == drafts[selected_idx].text (drafts 있을 때)
 
 
 class BrailleOutput(BaseModel):
     """점자 변환 출력 (PART 4-3 / 5-3 / 6-3 / ...)."""
 
     element_id: UUID
-    braille_lines: list[str]  # 32칸 이하로 분리된 점자 줄 목록
+    braille_lines: list[str]  # 선택 초안의 점자 줄 목록 (PART 10 조판용)
     rule_trail: list[RuleApplication] = Field(default_factory=list)
+    # 복수 초안 각각의 점역 결과 (BE/FE 노출용). 단일안은 빈 리스트.
+    drafts: list[Draft] = Field(default_factory=list)
+    selected_idx: int = 0

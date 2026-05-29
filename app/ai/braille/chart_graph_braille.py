@@ -1,4 +1,8 @@
-"""PART 9-3 — 차트/그래프 점역 (점역사주 TN 텍스트 → 점자)."""
+"""PART 9-3 — 차트/그래프 점역 (점역사주 TN 텍스트 → 점자).
+
+복수 초안(drafts)이 있으면 각 초안을 점역해 Draft.braille_lines를 채우고,
+선택 초안(selected_idx)의 점자를 BrailleOutput.braille_lines로 둔다(PART 10 조판용).
+"""
 
 from __future__ import annotations
 
@@ -37,22 +41,40 @@ def _split_lines(text: str) -> list[str]:
     return lines or [""]
 
 
+def _to_braille(text: str) -> list[str]:
+    if text.startswith("[처리 불가"):
+        return [text]
+    return _split_lines(translate_tagged_text(text))
+
+
 class ChartGraphBraille:
-    """LLMOutput 목록 → BrailleOutput 목록 (차트/그래프)."""
+    """LLMOutput 목록 → BrailleOutput 목록 (차트/그래프). 초안별 점역."""
 
     def translate(self, optimized: list[LLMOutput]) -> list[BrailleOutput]:
         results = []
         for opt in optimized:
-            text = opt.corrected_text
-            if text.startswith("[처리 불가"):
-                lines = [text]
+            base_trail = list(opt.rule_trail) + [_RULE_CHART, _RULE_LINE_WRAP]
+
+            if opt.drafts:
+                out_drafts = [
+                    d.model_copy(update={
+                        "braille_lines": _to_braille(d.text),
+                        "rule_trail": list(base_trail),
+                    })
+                    for d in opt.drafts
+                ]
+                sel = opt.selected_idx if 0 <= opt.selected_idx < len(out_drafts) else 0
+                results.append(BrailleOutput(
+                    element_id=opt.element_id,
+                    braille_lines=out_drafts[sel].braille_lines,
+                    rule_trail=base_trail,
+                    drafts=out_drafts,
+                    selected_idx=sel,
+                ))
             else:
-                tn = opt.tn_text or text
-                lines = _split_lines(translate_tagged_text(tn))
-            trail = list(opt.rule_trail) + [_RULE_CHART, _RULE_LINE_WRAP]
-            results.append(BrailleOutput(
-                element_id=opt.element_id,
-                braille_lines=lines,
-                rule_trail=trail,
-            ))
+                results.append(BrailleOutput(
+                    element_id=opt.element_id,
+                    braille_lines=_to_braille(opt.tn_text or opt.corrected_text),
+                    rule_trail=base_trail,
+                ))
         return results

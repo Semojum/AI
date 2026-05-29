@@ -10,6 +10,7 @@ import logging
 import time
 from typing import Optional
 
+from app.ai.llm.draft_utils import ensure_tn_prefix, parse_labeled_drafts, single_draft
 from app.core.config import config
 from app.core.model_manager import model_manager
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
@@ -31,33 +32,31 @@ _MIN_RULE_TRAIL = [RuleApplication(
 )]
 
 _PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가입니다.
-다음 이미지 설명을 점역자 주([점역사주])로 최적화하세요.
+다음 이미지 설명을 점역자 주로, **서로 다른 3가지 방식**으로 각각 작성하세요.
+(점자 자료 제작 지침 §6.1·§6.3.4, 점역사 지침 기준)
 
-## 점역자 주 형식 (점자 자료 제작 지침 §6.3.4)
-- 반드시 "[점역사주] 시각자료유형: 설명문" 형식으로 작성
-- 유형 명시 필수 — 사진, 그림, 삽화, 지도, 도표, 도형 중 하나
-- [점역사주]로 시작 (필수)
+## 3가지 방식 (반드시 초점이 다르게 — 거의 같으면 안 됨)
+[방식1] 상황 중심: 무엇이 있고 무엇을 하는지(주요 객체·행위)를 객관적으로 (기본)
+[방식2] 위치 중심: 구성 요소의 공간 배치·위치 관계를 중심으로
+[방식3] 요약: 핵심만 1~2문장으로 최대한 압축
 
-## 설명문 작성 원칙 (§6.1.4)
-- 간결: 최소 단어로 핵심만, 점자 1줄(32칸) 이내 목표, 최대 2문장
-- 단계적: 전체 윤곽(피사체+행위) → 세부 공간 관계 → 배경(필요 시만)
-- 명료: 한 번 읽어도 이해 가능하도록
-- 객관적: 주관적 형용사(아름다운, 인상적인) 대신 구체적 묘사(위치·수량·상태)
-
-## 금지 사항
-- 원본 설명에 없는 수치·고유명사 추가 금지
-- "그림은", "이미지는" 으로 시작 금지
-- 색상만 언급하고 형태/위치 생략 금지
-- 수치는 아라비아 숫자 그대로 (변환 금지)
+## 공통 규칙
+- 각 줄을 "[방식N] [점역사주] 시각자료유형: 설명문" 형식으로 (유형: 사진/그림/삽화/지도/도표/도형 중)
+- 간결·객관 (주관적 형용사·분위기·작가 의도 추측 금지, 객관적 사실만)
+- 원본에 없는 수치·고유명사 추가 금지, **이미지 내부 텍스트·레이블·수치는 원문 그대로** (변형 금지)
+- 인물 지칭: 이름·성별이 없으면 성별 구분하지 말 것; 직업이 특정되면 '직업·나이·성별(또는 번호)' 순
+- "그림은/이미지는"으로 시작 금지
 
 ## 출력 예시
-입력: "수소원자와 탄소원자 구조를 나란히 비교한 그림. 수소원자는 양성자 1개와 전자 1개, 탄소원자는 양성자 6개, 중성자 6개, 전자 6개."
-출력: [점역사주] 그림: 수소원자와 탄소원자 구조 비교. 수소원자는 양성자 1개·전자 1개, 탄소원자는 양성자 6개·중성자 6개·전자 6개.
+입력: "교실에서 선생님이 칠판 앞에 서 있고 학생 3명이 앉아 듣고 있는 그림."
+[방식1] [점역사주] 그림: 교실에서 선생님이 칠판 앞에 서서 설명하고, 학생 3명이 앉아 듣는다.
+[방식2] [점역사주] 그림: 칠판 앞 가운데 선생님, 그 앞에 학생 3명이 나란히 앉아 있다.
+[방식3] [점역사주] 그림: 교실 수업 장면. 선생님 1명, 학생 3명.
 
 원본 설명:
 {caption}
 
-최적화된 점역자 주만 반환하세요. 다른 설명 없이 [점역사주]로 시작하는 문장만."""
+[방식1]/[방식2]/[방식3] 세 줄만 반환하세요. 다른 설명 없이."""
 
 
 def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 256) -> str:
@@ -111,8 +110,16 @@ async def _fallback_optimize(caption: str) -> str:
         return caption
 
 
+# 초안 3안 방식 (stage4_complex.md 'T4-2 공통 규약' — 이미지=설명 초점)
+_IMAGE_METHODS = [
+    ("narrative", "상황 중심"),
+    ("narrative", "위치 중심"),
+    ("narrative", "요약"),
+]
+
+
 class ImageOpt:
-    """ExtractedContent 목록 → LLMOutput 목록 (이미지)."""
+    """ExtractedContent 목록 → LLMOutput 목록 (이미지). 3안 생성."""
 
     async def optimize(
         self,
@@ -139,45 +146,45 @@ class ImageOpt:
                 rule_trail=list(_MIN_RULE_TRAIL),
             )
 
+        # ZERO/FALLBACK 등 모델 미사용·실패 시 단일안으로 격리
         if routing_tier == "ZERO":
-            tn = f"[점역사주] {caption[:120]}"
-            return LLMOutput(
-                element_id=ext.element_id,
-                corrected_text=caption,
-                render_mode="narrative",
-                tn_text=tn,
-                routing_tier="ZERO",
-                processing_time_ms=0,
-                rule_trail=list(_MIN_RULE_TRAIL),
-            )
+            drafts = single_draft(caption[:120], "narrative", "원본")
+            return self._build(ext.element_id, drafts, "ZERO", 0)
 
         timeout = _QUALITY_TIMEOUT if ext.ocr_confidence < config.ocr_confidence_threshold else _STANDARD_TIMEOUT
         tier = "QUALITY" if ext.ocr_confidence < config.ocr_confidence_threshold else "STANDARD"
 
         fail_count = 0
-        tn_text = caption
+        response = ""
         while fail_count < 3:
             try:
-                tn_text = await _hcxt_optimize(caption, timeout)
+                response = await _hcxt_optimize(caption, timeout)
                 break
             except Exception as exc:
                 fail_count += 1
                 logger.warning("HyperCLOVA X 이미지 실패 #%d id=%s: %s", fail_count, ext.element_id, exc)
                 if fail_count >= 3:
                     logger.warning("FALLBACK 전환 id=%s", ext.element_id)
-                    tn_text = await _fallback_optimize(caption)
+                    response = await _fallback_optimize(caption)
                     tier = "FALLBACK"
 
-        if not tn_text.startswith("[점역사주]"):
-            tn_text = f"[점역사주] {tn_text}"
+        drafts = parse_labeled_drafts(response, _IMAGE_METHODS)
+        if not drafts:  # 파싱 실패 → 응답(또는 원본 캡션) 단일안
+            drafts = single_draft(response or caption[:120], "narrative", "상황 중심")
 
         elapsed_ms = int((time.monotonic() - start) * 1000)
+        return self._build(ext.element_id, drafts, tier, elapsed_ms)
+
+    @staticmethod
+    def _build(element_id, drafts, tier, elapsed_ms) -> LLMOutput:
         return LLMOutput(
-            element_id=ext.element_id,
-            corrected_text=caption,
-            render_mode="narrative",
-            tn_text=tn_text,
+            element_id=element_id,
+            corrected_text=drafts[0].text,
+            render_mode=drafts[0].render_mode,
+            tn_text=drafts[0].text,
             routing_tier=tier,
             processing_time_ms=elapsed_ms,
             rule_trail=list(_MIN_RULE_TRAIL),
+            drafts=drafts,
+            selected_idx=0,
         )

@@ -10,6 +10,7 @@ import logging
 import time
 from typing import Optional
 
+from app.ai.llm.draft_utils import parse_labeled_drafts, single_draft
 from app.core.config import config
 from app.core.model_manager import model_manager
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
@@ -31,34 +32,32 @@ _MIN_RULE_TRAIL = [RuleApplication(
 )]
 
 _PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가입니다.
-다음 만화/그림 설명을 점역자 주([점역사주])로 최적화하세요.
+다음 만화/그림 설명을 점역자 주로, **서로 다른 3가지 방식**으로 각각 작성하세요.
+(점자 자료 제작 지침 §5.3)
 
-## 만화 점역자 주 형식 (점자 자료 제작 지침 §5.3)
-- "[점역사주] 만화: 장면구성" 형식으로 작성
-- [점역사주]로 시작 (필수)
+## 3가지 방식 (반드시 구성이 다르게)
+[방식1] 장면+대사 통합: 장면 배경과 대사를 읽는 순서대로 함께 (기본)
+[방식2] 대사 중심: "인물명: 대사" 위주로, 장면 설명은 최소화
+[방식3] 장면별 개조식: "장면 1." "장면 2." 위계로 정리 (여러 장면일 때 특히)
 
-## 장면 기술 원칙 (§5.3.1~5.3.3)
-- 여러 장면: "장면 1." "장면 2." 순서대로 번호 명시 필수
-- 인물 대화: "인물명: 대사내용" 형식, 쌍점(:)으로 구분
-- 인물 행동·표정: "인물명: (행동 설명)" 괄호 사용, 객관적 묘사
-- 화자 불명: "말풍선: 내용" 으로 표기
-- 한 장면 만화: 장면 설정 설명 추가, "장면 1." 생략 가능
-- 전체 최대 3문장
-
-## 금지 사항
-- 대화 내용에 따옴표(" ") 사용 금지
-- 등장인물 감정 주관적 해석 금지 (표정·행동 객관적 묘사만)
+## 공통 규칙
+- 각 줄을 "[방식N] [점역사주] 만화: 내용" 형식으로
+- 인물 대화는 "인물명: 대사" (쌍점 구분), 화자 불명은 "말풍선: 내용"
+- **대사·말풍선 내부 텍스트는 원문 그대로** (요약·변형 금지), 따옴표("") 사용 금지
+- 행동·표정은 "(객관 묘사)", 감정 주관 해석 금지
+- 인물 지칭: 이름·성별 없으면 성별 구분하지 말 것; 직업 특정 시 '직업·나이·성별(또는 번호)'
 - 원본에 없는 인물명·대화 추가 금지
-- 장면 번호 없이 여러 장면 뒤섞기 금지
 
 ## 출력 예시
-입력: "두 컷 만화. 첫째 컷: 선생님이 학생에게 오늘 준비됐냐고 묻는다. 둘째 컷: 학생이 고개를 끄덕이며 웃는다."
-출력: [점역사주] 만화: 장면 1. 선생님: 오늘 준비됐나요? 장면 2. 학생: (고개를 끄덕이며 웃음)
+입력: "두 컷 만화. 첫째 컷: 선생님이 오늘 준비됐냐고 묻는다. 둘째 컷: 학생이 고개를 끄덕이며 웃는다."
+[방식1] [점역사주] 만화: 장면 1. 선생님: 오늘 준비됐나요? 장면 2. 학생: (고개를 끄덕이며 웃음)
+[방식2] [점역사주] 만화: 선생님: 오늘 준비됐나요? 학생: (끄덕임)
+[방식3] [점역사주] 만화: 장면 1. 선생님이 질문. 장면 2. 학생이 끄덕이며 웃음.
 
 원본 설명:
 {caption}
 
-최적화된 점역자 주만 반환하세요. 다른 설명 없이 [점역사주]로 시작하는 문장만."""
+[방식1]/[방식2]/[방식3] 세 줄만 반환하세요. 다른 설명 없이."""
 
 
 def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 300) -> str:
@@ -112,8 +111,16 @@ async def _fallback_optimize(caption: str) -> str:
         return caption
 
 
+# 초안 3안 방식 (stage4_complex.md 'T4-2 공통 규약' — 만화=구성 방식)
+_CARTOON_METHODS = [
+    ("narrative", "장면+대사 통합"),
+    ("narrative", "대사 중심"),
+    ("narrative", "장면별 개조식"),
+]
+
+
 class CartoonOpt:
-    """ExtractedContent 목록 → LLMOutput 목록 (만화)."""
+    """ExtractedContent 목록 → LLMOutput 목록 (만화). 3안 생성."""
 
     async def optimize(
         self,
@@ -141,44 +148,42 @@ class CartoonOpt:
             )
 
         if routing_tier == "ZERO":
-            tn = f"[점역사주] {caption[:120]}"
-            return LLMOutput(
-                element_id=ext.element_id,
-                corrected_text=caption,
-                render_mode="narrative",
-                tn_text=tn,
-                routing_tier="ZERO",
-                processing_time_ms=0,
-                rule_trail=list(_MIN_RULE_TRAIL),
-            )
+            return self._build(ext.element_id, single_draft(caption[:120], "narrative", "원본"), "ZERO", 0)
 
         timeout = _QUALITY_TIMEOUT if ext.ocr_confidence < config.ocr_confidence_threshold else _STANDARD_TIMEOUT
         tier = "QUALITY" if ext.ocr_confidence < config.ocr_confidence_threshold else "STANDARD"
 
         fail_count = 0
-        tn_text = caption
+        response = ""
         while fail_count < 3:
             try:
-                tn_text = await _hcxt_optimize(caption, timeout)
+                response = await _hcxt_optimize(caption, timeout)
                 break
             except Exception as exc:
                 fail_count += 1
                 logger.warning("HyperCLOVA X 만화 실패 #%d id=%s: %s", fail_count, ext.element_id, exc)
                 if fail_count >= 3:
                     logger.warning("FALLBACK 전환 id=%s", ext.element_id)
-                    tn_text = await _fallback_optimize(caption)
+                    response = await _fallback_optimize(caption)
                     tier = "FALLBACK"
 
-        if not tn_text.startswith("[점역사주]"):
-            tn_text = f"[점역사주] {tn_text}"
+        drafts = parse_labeled_drafts(response, _CARTOON_METHODS)
+        if not drafts:
+            drafts = single_draft(response or caption[:120], "narrative", "장면+대사 통합")
 
         elapsed_ms = int((time.monotonic() - start) * 1000)
+        return self._build(ext.element_id, drafts, tier, elapsed_ms)
+
+    @staticmethod
+    def _build(element_id, drafts, tier, elapsed_ms) -> LLMOutput:
         return LLMOutput(
-            element_id=ext.element_id,
-            corrected_text=caption,
-            render_mode="narrative",
-            tn_text=tn_text,
+            element_id=element_id,
+            corrected_text=drafts[0].text,
+            render_mode=drafts[0].render_mode,
+            tn_text=drafts[0].text,
             routing_tier=tier,
             processing_time_ms=elapsed_ms,
             rule_trail=list(_MIN_RULE_TRAIL),
+            drafts=drafts,
+            selected_idx=0,
         )

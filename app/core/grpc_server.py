@@ -73,6 +73,14 @@ def _dict_to_text_element(d: dict):
         trail.title = rt.get("title", "")
         trail.excerpt = rt.get("excerpt", "")
         trail.priority = rt.get("priority", "primary")
+    # 복수 초안 (단계 4 T4-2) — proto Draft/TextElement.drafts 필요(build.sh 재생성 후 동작)
+    elem.selected_idx = d.get("selected_idx", 0)
+    for dr in d.get("drafts", []):
+        draft = elem.drafts.add()
+        draft.text = dr.get("text", "")
+        draft.label = dr.get("label", "")
+        for c in dr.get("contents", []):
+            draft.contents.append(c)
     return elem
 
 
