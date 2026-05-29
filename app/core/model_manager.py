@@ -93,7 +93,7 @@ class ModelManager:
             )
             logger.info("Docling TableFormer 로드 완료")
         except Exception as exc:
-            logger.warning("TableFormer 로드 실패 (단계 3 필요, 계속 진행): %s", exc)
+            logger.warning("TableFormer 로드 실패 (단계 4 필요, 계속 진행): %s", exc)
             self._gpu0_models["tableformer"] = None
 
     def _load_hcxt(self) -> None:
