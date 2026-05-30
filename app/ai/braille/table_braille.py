@@ -10,33 +10,22 @@
 
 from __future__ import annotations
 
+from app.ai.braille.regulations import make_rule
 from app.ai.braille.translator import translate_tagged_text as _translate
 from app.schemas.content import BrailleOutput, Draft, LLMOutput, RuleApplication
 
-_RULE_TABLE = RuleApplication(
-    rule_id="KBR-6.1",
-    source="한국 점자 규정",
-    section="6.1",
-    title="표 점역 기본 원칙",
-    excerpt="표는 점자 32칸 내에서 구조를 유지하여 변환한다.",
-    priority="primary",
-)
-_RULE_LINE_WRAP = RuleApplication(
-    rule_id="KBR-2.1.1",
-    source="한국 점자 규정",
-    section="2.1.1",
-    title="줄 길이",
-    excerpt="한 줄은 32칸을 넘지 않는다.",
-    priority="primary",
-)
-_RULE_TRANSPOSE = RuleApplication(
-    rule_id="KBR-66",
-    source="한국 점자 규정",
-    section="제66항",
-    title="표 전치 점역자 주",
-    excerpt="표의 가로와 세로를 바꾸어 점역하였음.",
-    priority="primary",
-)
+
+def _base_trail(lines: list[str]) -> list[RuleApplication]:
+    """표 점역 일반(BBPG-3.1.1) + 줄바꿈(BBPG-1.2.1)을 점자 출력 전체 범위로 emit.
+
+    braille_text_list 기준 = 점자이므로 opt.rule_trail(태깅 텍스트 좌표)은 상속하지 않는다
+    (plan §3-4 2벌 독립). opt 규정은 text_list가 별도로 보유한다.
+    """
+    n = len("\n".join(lines))
+    return [
+        make_rule("BBPG-3.1.1", span_start=0, span_end=n),
+        make_rule("BBPG-1.2.1", span_start=0, span_end=n),
+    ]
 
 _COLS = 32
 _BORDER  = "⠿"  # 표 테두리
@@ -146,40 +135,49 @@ class TableBraille:
     def translate(self, optimized: list[LLMOutput]) -> list[BrailleOutput]:
         results = []
         for opt in optimized:
-            base_trail = list(opt.rule_trail) + [_RULE_TABLE, _RULE_LINE_WRAP]
             text = opt.corrected_text
 
             if text.startswith("[처리 불가") or text.startswith("[표 수동"):
+                lines = [text]
                 results.append(BrailleOutput(
-                    element_id=opt.element_id, braille_lines=[text], rule_trail=base_trail,
+                    element_id=opt.element_id, braille_lines=lines,
+                    rule_trail=_base_trail(lines),
                 ))
                 continue
 
             if "|" not in text:  # 비정형 → TN 단일안
                 tn = opt.tn_text or text
+                lines = _split_lines(_translate(tn))
                 results.append(BrailleOutput(
                     element_id=opt.element_id,
-                    braille_lines=_split_lines(_translate(tn)),
-                    rule_trail=base_trail,
+                    braille_lines=lines,
+                    rule_trail=_base_trail(lines),
                 ))
                 continue
 
             # 격자 구조 → 레이아웃 3안 (셀 값 동일, 조판만 다름)
+            grid_lines = _render_grid(text)
             transposed_lines = _split_lines(_translate(_TN_TRANSPOSE)) + _render_grid(_transpose_text(text))
+            linear_lines = _render_linear(text)
+            # 전치안은 표 유형별 점역(BBPG-3.1.2)을 추가로 기록
+            n_tr = len("\n".join(transposed_lines))
+            trail_transpose = _base_trail(transposed_lines) + [
+                make_rule("BBPG-3.1.2", span_start=0, span_end=n_tr),
+            ]
             drafts = [
                 Draft(option=1, text=text, render_mode="table_grid", label="격자형",
-                      braille_lines=_render_grid(text), rule_trail=list(base_trail)),
+                      braille_lines=grid_lines, rule_trail=_base_trail(grid_lines)),
                 Draft(option=2, text=text, render_mode="transposed", label="행↔열 전치",
-                      braille_lines=transposed_lines, rule_trail=base_trail + [_RULE_TRANSPOSE]),
+                      braille_lines=transposed_lines, rule_trail=trail_transpose),
                 Draft(option=3, text=text, render_mode="linear", label="선형(키:값)",
-                      braille_lines=_render_linear(text), rule_trail=list(base_trail)),
+                      braille_lines=linear_lines, rule_trail=_base_trail(linear_lines)),
             ]
             # 기본 선택은 opt가 추론한 render_mode에 맞춘다 (나머지는 대안 초안)
             sel = {"table_grid": 0, "transposed": 1, "linear": 2}.get(opt.render_mode, 0)
             results.append(BrailleOutput(
                 element_id=opt.element_id,
                 braille_lines=drafts[sel].braille_lines,
-                rule_trail=base_trail,
+                rule_trail=list(drafts[sel].rule_trail),
                 drafts=drafts,
                 selected_idx=sel,
             ))

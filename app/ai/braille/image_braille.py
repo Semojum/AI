@@ -6,25 +6,22 @@
 
 from __future__ import annotations
 
+from app.ai.braille.regulations import make_rule
 from app.ai.braille.translator import translate_tagged_text
 from app.schemas.content import BrailleOutput, LLMOutput, RuleApplication
 
-_RULE_IMAGE = RuleApplication(
-    rule_id="KBR-6.4.1",
-    source="점자 교과서 제작 지침",
-    section="6.4.1",
-    title="이미지 점역사주 원칙",
-    excerpt="사진·삽화는 피사체, 배경, 주요 특징을 간결하게 기술한다.",
-    priority="primary",
-)
-_RULE_LINE_WRAP = RuleApplication(
-    rule_id="KBR-2.1.1",
-    source="한국 점자 규정",
-    section="2.1.1",
-    title="줄 길이",
-    excerpt="한 줄은 32칸을 넘지 않는다.",
-    priority="primary",
-)
+
+def _base_trail(lines: list[str]) -> list[RuleApplication]:
+    """시각자료 일반(BBPG-3.2.1) + 줄바꿈(BBPG-1.2.1)을 점자 출력 전체 범위로 emit.
+
+    braille_text_list 기준 = 점자이므로 opt.rule_trail은 상속하지 않는다(plan §3-4 2벌 독립).
+    """
+    n = len("\n".join(lines))
+    return [
+        make_rule("BBPG-3.2.1", span_start=0, span_end=n),
+        make_rule("BBPG-1.2.1", span_start=0, span_end=n),
+    ]
+
 _COLS = 32
 
 
@@ -53,21 +50,19 @@ class ImageBraille:
     def translate(self, optimized: list[LLMOutput]) -> list[BrailleOutput]:
         results = []
         for opt in optimized:
-            base_trail = list(opt.rule_trail) + [_RULE_IMAGE, _RULE_LINE_WRAP]
-
             if opt.drafts:
-                out_drafts = [
-                    d.model_copy(update={
-                        "braille_lines": _to_braille(d.text),
-                        "rule_trail": list(base_trail),
-                    })
-                    for d in opt.drafts
-                ]
+                out_drafts = []
+                for d in opt.drafts:
+                    d_lines = _to_braille(d.text)
+                    out_drafts.append(d.model_copy(update={
+                        "braille_lines": d_lines,
+                        "rule_trail": _base_trail(d_lines),
+                    }))
                 sel = opt.selected_idx if 0 <= opt.selected_idx < len(out_drafts) else 0
                 results.append(BrailleOutput(
                     element_id=opt.element_id,
                     braille_lines=out_drafts[sel].braille_lines,
-                    rule_trail=base_trail,
+                    rule_trail=list(out_drafts[sel].rule_trail),
                     drafts=out_drafts,
                     selected_idx=sel,
                 ))
@@ -76,6 +71,6 @@ class ImageBraille:
                 results.append(BrailleOutput(
                     element_id=opt.element_id,
                     braille_lines=lines,
-                    rule_trail=base_trail,
+                    rule_trail=_base_trail(lines),
                 ))
         return results

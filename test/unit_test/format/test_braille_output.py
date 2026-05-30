@@ -13,10 +13,10 @@ from app.ai.braille.translator import translate_tagged_text
 from app.schemas.content import BrailleOutput, LLMOutput, RuleApplication
 
 _RULE = RuleApplication(
-    rule_id="KBR-1.1",
+    rule_id="KBR-0.1",
     source="한국 점자 규정",
-    section="1.1",
-    title="점자의 기본 원칙",
+    section="기본 원칙 1",
+    title="기본 원칙",
     excerpt="점자는 한국어 점자 규정에 따라 변환한다.",
     priority="primary",
 )
@@ -60,9 +60,9 @@ class TestTextBrailleOutput:
         results = TextBraille().translate([_text_out("가" * 100)])
         assert all(len(line) <= 32 for line in results[0].braille_lines)
 
-    def test_rule_trail_includes_kbr_211(self):
+    def test_rule_trail_includes_line_wrap(self):
         results = TextBraille().translate([_text_out("테스트")])
-        assert "KBR-2.1.1" in [r.rule_id for r in results[0].rule_trail]
+        assert "BBPG-1.2.1" in [r.rule_id for r in results[0].rule_trail]
 
     def test_formula_tag_removed_from_output(self):
         inp = _text_out("다음 수식: <formula>\\frac{1}{2}</formula> 참조")
@@ -104,9 +104,9 @@ class TestFormulaBrailleOutput:
         results = FormulaBraille().translate([_formula_out("\\frac{1}{2}")])
         assert all(len(line) <= 32 for line in results[0].braille_lines)
 
-    def test_rule_trail_includes_kbr_211(self):
+    def test_rule_trail_includes_line_wrap(self):
         results = FormulaBraille().translate([_formula_out("x^2")])
-        assert "KBR-2.1.1" in [r.rule_id for r in results[0].rule_trail]
+        assert "BBPG-1.2.1" in [r.rule_id for r in results[0].rule_trail]
 
     def test_placeholder_preserved_as_is(self):
         placeholder = "[처리 불가: 수식 OCR 실패]"

@@ -11,6 +11,7 @@ import logging
 import time
 from typing import Optional
 
+from app.ai.braille.regulations import make_rule
 from app.core.config import config
 from app.core.model_manager import model_manager
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
@@ -22,14 +23,9 @@ _STANDARD_TIMEOUT = 15.0
 _QUALITY_TIMEOUT  = 30.0
 _FALLBACK_TIMEOUT = 45.0
 
-_MIN_RULE_TRAIL = [RuleApplication(
-    rule_id="KBR-6.1",
-    source="한국 점자 규정",
-    section="6.1",
-    title="표 점역 기본 원칙",
-    excerpt="표는 점자 32칸 내에서 구조를 유지하여 변환한다.",
-    priority="primary",
-)]
+def _min_trail(text: str) -> list[RuleApplication]:
+    """표 점역 일반 사항(BBPG-3.1.1)을 표 텍스트 전체 범위로 emit."""
+    return [make_rule("BBPG-3.1.1", span_start=0, span_end=len(text))]
 
 _PROMPT_TABLE_GRID = """당신은 한국어 점역 전문가입니다.
 다음 표 내용을 점역사주([점역사주])로 표현하는 2가지 방식을 제안하세요.
@@ -188,7 +184,7 @@ class TableOpt:
                 render_mode="narrative",
                 routing_tier="FALLBACK",
                 processing_time_ms=0,
-                rule_trail=list(_MIN_RULE_TRAIL),
+                rule_trail=_min_trail("[표 수동 입력 필요]"),
             )
 
         # 텍스트 준비
@@ -204,7 +200,7 @@ class TableOpt:
                 render_mode="narrative",
                 routing_tier="FALLBACK",
                 processing_time_ms=0,
-                rule_trail=list(_MIN_RULE_TRAIL),
+                rule_trail=_min_trail("[처리 불가: 표 내용 없음]"),
             )
 
         if routing_tier == "ZERO":
@@ -216,7 +212,7 @@ class TableOpt:
                 tn_text=tn,
                 routing_tier="ZERO",
                 processing_time_ms=0,
-                rule_trail=list(_MIN_RULE_TRAIL),
+                rule_trail=_min_trail(table_text),
             )
 
         timeout = _QUALITY_TIMEOUT if ext.ocr_confidence < config.ocr_confidence_threshold else _STANDARD_TIMEOUT
@@ -250,5 +246,5 @@ class TableOpt:
             tn_text=tn_text,
             routing_tier=tier,
             processing_time_ms=elapsed_ms,
-            rule_trail=list(_MIN_RULE_TRAIL),
+            rule_trail=_min_trail(table_text),
         )

@@ -65,9 +65,9 @@ class TestTextChainE2E:
         for o in outputs:
             assert all(len(line) <= 32 for line in o.braille_lines)
 
-    def test_rule_trail_has_kbr_211(self, outputs):
+    def test_rule_trail_has_line_wrap(self, outputs):
         for o in outputs:
-            assert "KBR-2.1.1" in [r.rule_id for r in o.rule_trail]
+            assert "BBPG-1.2.1" in [r.rule_id for r in o.rule_trail]
 
     def test_element_ids_preserved_in_order(self, outputs):
         src_ids = [str(e.element_id) for e in _load_text()]
@@ -259,8 +259,8 @@ class TestSixChainFaultIsolation:
             from app.schemas.content import BrailleOutput, ExtractedContent, LLMOutput, RuleApplication
             ext = ExtractedContent(element_id=uuid4(), corrected_text=label, ocr_confidence=1.0)
             rule = RuleApplication(
-                rule_id="KBR-2.1.1", source="한국 점자 규정", section="2.1.1",
-                title="줄 길이", excerpt="한 줄은 32칸을 넘지 않는다.", priority="primary",
+                rule_id="BBPG-1.2.1", source="점자 도서 제작 지침", section="제1장 제2절",
+                title="줄바꿈", excerpt="한 줄은 32칸을 넘지 않는다.", priority="primary",
             )
             llm = LLMOutput(element_id=ext.element_id, corrected_text=label,
                             routing_tier="ZERO", rule_trail=[rule])
@@ -364,8 +364,8 @@ class TestSixChainFaultIsolation:
         from app.schemas.task import PageTask
 
         rule = RuleApplication(
-            rule_id="KBR-2.1.1", source="한국 점자 규정",
-            section="2.1.1", title="줄 길이", excerpt="한 줄은 32칸을 넘지 않는다.", priority="primary",
+            rule_id="BBPG-1.2.1", source="점자 도서 제작 지침",
+            section="제1장 제2절", title="줄바꿈", excerpt="한 줄은 32칸을 넘지 않는다.", priority="primary",
         )
         elem_id = uuid4()
         fake_extracted = ExtractedContent(element_id=elem_id, corrected_text="테스트", ocr_confidence=1.0)

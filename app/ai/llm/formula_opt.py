@@ -13,6 +13,7 @@ import logging
 import re
 import time
 
+from app.ai.braille.regulations import make_rule
 from app.core.config import config
 from app.core.model_manager import model_manager
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
@@ -23,14 +24,9 @@ _STANDARD_TIMEOUT = 15.0
 _QUALITY_TIMEOUT  = 30.0
 _FALLBACK_TIMEOUT = 45.0
 
-_MIN_RULE_TRAIL = [RuleApplication(
-    rule_id="KBR-5.1",
-    source="한국 점자 규정",
-    section="5.1",
-    title="수학 점자 기본 원칙",
-    excerpt="수학 기호는 수학 점자 규정에 따라 변환한다.",
-    priority="primary",
-)]
+def _min_trail(text: str) -> list[RuleApplication]:
+    """수학 점자 일반(KBR-수학-1.1)을 수식 텍스트 전체 범위로 emit."""
+    return [make_rule("KBR-수학-1.1", span_start=0, span_end=len(text))]
 
 # stage3_complex.md T3-3: LaTeX 기호 → 유니코드 정규화 (LLM 교정 보조용)
 # \\times / \\div / \\cdot 는 kor_math_rules에서 단일 처리 — 여기서 제거
@@ -154,19 +150,20 @@ class FormulaOpt:
                 render_mode="formula_block",
                 routing_tier="FALLBACK",
                 processing_time_ms=0,
-                rule_trail=list(_MIN_RULE_TRAIL),
+                rule_trail=_min_trail(placeholder),
             )
 
         render_mode = "formula_inline" if len(raw) <= 30 else "formula_block"
 
         if routing_tier == "ZERO":
+            norm = _normalize(raw)
             return LLMOutput(
                 element_id=ext.element_id,
-                corrected_text=_normalize(raw),
+                corrected_text=norm,
                 render_mode=render_mode,
                 routing_tier="ZERO",
                 processing_time_ms=0,
-                rule_trail=list(_MIN_RULE_TRAIL),
+                rule_trail=_min_trail(norm),
             )
 
         timeout = _QUALITY_TIMEOUT if ext.ocr_confidence < config.ocr_confidence_threshold else _STANDARD_TIMEOUT
@@ -194,5 +191,5 @@ class FormulaOpt:
             render_mode=render_mode,
             routing_tier=tier,
             processing_time_ms=elapsed_ms,
-            rule_trail=list(_MIN_RULE_TRAIL),
+            rule_trail=_min_trail(corrected),
         )

@@ -10,6 +10,7 @@ import logging
 import time
 from typing import Optional
 
+from app.ai.braille.regulations import make_rule
 from app.ai.llm.draft_utils import ensure_tn_prefix, parse_labeled_drafts, single_draft
 from app.core.config import config
 from app.core.model_manager import model_manager
@@ -22,14 +23,9 @@ _STANDARD_TIMEOUT = 15.0
 _QUALITY_TIMEOUT  = 30.0
 _FALLBACK_TIMEOUT = 45.0
 
-_MIN_RULE_TRAIL = [RuleApplication(
-    rule_id="KBR-6.4.1",
-    source="점자 교과서 제작 지침",
-    section="6.4.1",
-    title="이미지 점역사주 원칙",
-    excerpt="사진·삽화는 피사체, 배경, 주요 특징을 간결하게 기술한다.",
-    priority="primary",
-)]
+def _min_trail(text: str) -> list[RuleApplication]:
+    """시각자료 일반 사항(BBPG-3.2.1)을 점역사주 텍스트 전체 범위로 emit."""
+    return [make_rule("BBPG-3.2.1", span_start=0, span_end=len(text))]
 
 _PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가입니다.
 다음 이미지 설명을 점역자 주로, **서로 다른 3가지 방식**으로 각각 작성하세요.
@@ -143,7 +139,7 @@ class ImageOpt:
                 render_mode="narrative",
                 routing_tier="FALLBACK",
                 processing_time_ms=0,
-                rule_trail=list(_MIN_RULE_TRAIL),
+                rule_trail=_min_trail("[처리 불가: 이미지 캡션 없음]"),
             )
 
         # ZERO/FALLBACK 등 모델 미사용·실패 시 단일안으로 격리
@@ -184,7 +180,7 @@ class ImageOpt:
             tn_text=drafts[0].text,
             routing_tier=tier,
             processing_time_ms=elapsed_ms,
-            rule_trail=list(_MIN_RULE_TRAIL),
+            rule_trail=_min_trail(drafts[0].text),
             drafts=drafts,
             selected_idx=0,
         )

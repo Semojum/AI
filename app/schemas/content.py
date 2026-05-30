@@ -15,6 +15,9 @@ class RuleApplication(BaseModel):
     title: str
     excerpt: str
     priority: str = "primary"  # "primary" | "secondary"
+    span_start: int = 0  # 변환 산출물 char offset (0-based, 시작)
+    span_end: int = 0    # 변환 산출물 char offset (end 미포함). 점 태그는 start==end
+    tag: str = ""        # 변환 지점 태그 (number_sign / contraction / symbol / line_wrap ...)
 
 
 class ExtractedContent(BaseModel):

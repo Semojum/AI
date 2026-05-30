@@ -14,6 +14,7 @@ import time
 from typing import Optional
 from uuid import UUID
 
+from app.ai.braille.regulations import make_rule
 from app.core.config import config
 from app.core.model_manager import model_manager
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
@@ -25,14 +26,9 @@ _STANDARD_TIMEOUT = 15.0
 _QUALITY_TIMEOUT  = 30.0
 _FALLBACK_TIMEOUT = 45.0
 
-_MIN_RULE_TRAIL = [RuleApplication(
-    rule_id="KBR-1.1",
-    source="한국 점자 규정",
-    section="1.1",
-    title="점자의 기본 원칙",
-    excerpt="점자는 한국어 점자 규정에 따라 변환한다.",
-    priority="primary",
-)]
+def _min_trail(text: str) -> list[RuleApplication]:
+    """텍스트 점역 기본 원칙(KBR-0.1)을 태깅 텍스트 전체 범위로 emit."""
+    return [make_rule("KBR-0.1", span_start=0, span_end=len(text))]
 
 _PROMPT_STANDARD = """당신은 한국어 점역 전문가입니다.
 다음 텍스트를 점역 직전 상태로 교정하세요.
@@ -146,7 +142,7 @@ class TextOpt:
                 render_mode="text_only",
                 routing_tier="ZERO",
                 processing_time_ms=0,
-                rule_trail=list(_MIN_RULE_TRAIL),
+                rule_trail=_min_trail(text),
             )
 
         timeout = _QUALITY_TIMEOUT if ext.ocr_confidence < config.ocr_confidence_threshold else _STANDARD_TIMEOUT
@@ -173,5 +169,5 @@ class TextOpt:
             render_mode="text_only",
             routing_tier=tier,
             processing_time_ms=elapsed_ms,
-            rule_trail=list(_MIN_RULE_TRAIL),
+            rule_trail=_min_trail(corrected or text),
         )

@@ -5,17 +5,9 @@ LLMOutput.corrected_text → translator.translate_tagged_text() → BrailleOutpu
 
 from __future__ import annotations
 
+from app.ai.braille.regulations import make_rule
 from app.ai.braille.translator import translate_tagged_text
-from app.schemas.content import BrailleOutput, LLMOutput, RuleApplication
-
-_RULE_LINE_WRAP = RuleApplication(
-    rule_id="KBR-2.1.1",
-    source="한국 점자 규정",
-    section="2.1.1",
-    title="줄 길이",
-    excerpt="한 줄은 32칸을 넘지 않는다.",
-    priority="primary",
-)
+from app.schemas.content import BrailleOutput, LLMOutput
 
 _COLS = 32
 
@@ -43,7 +35,13 @@ class TextBraille:
         for opt in optimized:
             braille_str = translate_tagged_text(opt.corrected_text)
             lines = _split_lines(braille_str)
-            trail = list(opt.rule_trail) + [_RULE_LINE_WRAP]
+            # braille_text_list 기준 = 점자. opt.rule_trail(태깅 텍스트 좌표)은
+            # text_list가 별도로 보유하므로 여기서 상속하지 않는다(plan §3-4 2벌 독립).
+            n = len("\n".join(lines))
+            trail = [
+                make_rule("KBR-0.1", span_start=0, span_end=n),
+                make_rule("BBPG-1.2.1", span_start=0, span_end=n),
+            ]
             results.append(BrailleOutput(
                 element_id=opt.element_id,
                 braille_lines=lines,

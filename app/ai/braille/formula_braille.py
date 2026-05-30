@@ -3,24 +3,9 @@
 from __future__ import annotations
 
 from app.ai.braille.kor_math_rules import convert_latex
-from app.schemas.content import BrailleOutput, LLMOutput, RuleApplication
+from app.ai.braille.regulations import make_rule
+from app.schemas.content import BrailleOutput, LLMOutput
 
-_RULE_FORMULA = RuleApplication(
-    rule_id="KBR-5.1",
-    source="한국 점자 규정",
-    section="5.1",
-    title="수학 점자 기본 원칙",
-    excerpt="수학 기호는 수학 점자 규정에 따라 변환한다.",
-    priority="primary",
-)
-_RULE_LINE_WRAP = RuleApplication(
-    rule_id="KBR-2.1.1",
-    source="한국 점자 규정",
-    section="2.1.1",
-    title="줄 길이",
-    excerpt="한 줄은 32칸을 넘지 않는다.",
-    priority="primary",
-)
 _COLS = 32
 
 
@@ -49,7 +34,12 @@ class FormulaBraille:
                 lines = [text]
             else:
                 lines = _split_lines(convert_latex(text))
-            trail = list(opt.rule_trail) + [_RULE_FORMULA, _RULE_LINE_WRAP]
+            # braille_text_list 기준 = 점자. opt.rule_trail은 상속 안 함(plan §3-4 2벌 독립).
+            n = len("\n".join(lines))
+            trail = [
+                make_rule("KBR-수학-1.1", span_start=0, span_end=n),
+                make_rule("BBPG-1.2.1", span_start=0, span_end=n),
+            ]
             results.append(BrailleOutput(
                 element_id=opt.element_id,
                 braille_lines=lines,
