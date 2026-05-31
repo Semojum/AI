@@ -60,9 +60,15 @@ class TestTextBrailleOutput:
         results = TextBraille().translate([_text_out("가" * 100)])
         assert all(len(line) <= 32 for line in results[0].braille_lines)
 
-    def test_rule_trail_includes_line_wrap(self):
-        results = TextBraille().translate([_text_out("테스트")])
-        assert "BBPG-1.2.1" in [r.rule_id for r in results[0].rule_trail]
+    def test_rule_trail_excludes_generic(self):
+        # 정책(태민 2026-06-01): 포괄/조판 규칙(KBR-0.1·BBPG-1.2.1)은 rule_trail 미기록
+        rids = [r.rule_id for r in TextBraille().translate([_text_out("테스트")])[0].rule_trail]
+        assert "BBPG-1.2.1" not in rids and "KBR-0.1" not in rids
+
+    def test_rule_trail_tn_marker_when_present(self):
+        results = TextBraille().translate([_text_out("<!점역자주>주석<!/점역자주>")])
+        tags = [r.tag for r in results[0].rule_trail]
+        assert "tn_open" in tags and "tn_close" in tags
 
     def test_formula_tag_removed_from_output(self):
         inp = _text_out("다음 수식: <formula>\\frac{1}{2}</formula> 참조")
@@ -104,9 +110,11 @@ class TestFormulaBrailleOutput:
         results = FormulaBraille().translate([_formula_out("\\frac{1}{2}")])
         assert all(len(line) <= 32 for line in results[0].braille_lines)
 
-    def test_rule_trail_includes_line_wrap(self):
-        results = FormulaBraille().translate([_formula_out("x^2")])
-        assert "BBPG-1.2.1" in [r.rule_id for r in results[0].rule_trail]
+    def test_rule_trail_math_no_line_wrap(self):
+        # 수식 규칙(KBR-수학)은 유지, 조판 규칙(BBPG-1.2.1)은 제거(태민 정책)
+        rids = [r.rule_id for r in FormulaBraille().translate([_formula_out("x^2")])[0].rule_trail]
+        assert "KBR-수학-1.1" in rids
+        assert "BBPG-1.2.1" not in rids
 
     def test_placeholder_preserved_as_is(self):
         placeholder = "[처리 불가: 수식 OCR 실패]"

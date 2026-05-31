@@ -65,9 +65,12 @@ class TestTextChainE2E:
         for o in outputs:
             assert all(len(line) <= 32 for line in o.braille_lines)
 
-    def test_rule_trail_has_line_wrap(self, outputs):
+    def test_rule_trail_excludes_generic(self, outputs):
+        # 정책(태민 2026-06-01): 포괄/조판 규칙(KBR-0.1·BBPG-1.2.1)은 rule_trail 미기록
         for o in outputs:
-            assert "BBPG-1.2.1" in [r.rule_id for r in o.rule_trail]
+            rids = [r.rule_id for r in o.rule_trail]
+            assert "BBPG-1.2.1" not in rids
+            assert "KBR-0.1" not in rids
 
     def test_element_ids_preserved_in_order(self, outputs):
         src_ids = [str(e.element_id) for e in _load_text()]

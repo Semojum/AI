@@ -282,22 +282,23 @@ class TestLayoutBody:
         assert lines[3].strip() == "제목"           # 1단계 제목(가운데 정렬)
         assert lines[4] == ""                        # 뒤 1줄
 
-    def test_heading_blank_rule_trail(self, lb) -> None:
+    def test_heading_blank_not_in_rule_trail(self, lb) -> None:
+        # 조판 정책(태민 2026-06-01): heading 빈 줄은 적용하되 rule_trail에 기록하지 않는다.
         eid = uuid4()
         lr = _layout((eid, "title", 1, 1))
         bo = _out(["제목"], eid)
         lb.layout([bo], page_no=1, job_id="hdr", layout_result=lr)
-        hb = [r for r in bo.rule_trail if r.tag == "heading_blank"]
-        assert hb and hb[0].rule_id == _RULE_HEADING_BLANK
+        assert not any(r.tag == "heading_blank" for r in bo.rule_trail)
 
-    def test_line_wrap_rule_trail(self, lb) -> None:
+    def test_line_wrap_applied_but_not_in_rule_trail(self, lb, tmp_path) -> None:
+        # 32칸 줄바꿈은 적용하되 rule_trail에 기록하지 않는다(조판 서식 규칙 제외).
         eid = uuid4()
-        lr = _layout((eid, "sidebar", 1, 0))  # 들여쓰기 없는 타입 → 원본 좌표 그대로
+        lr = _layout((eid, "sidebar", 1, 0))
         bo = _out(["가" * 40], eid)
         lb.layout([bo], page_no=1, job_id="lw", layout_result=lr)
-        wraps = [r for r in bo.rule_trail if r.tag == "line_wrap"]
-        assert wraps and wraps[0].rule_id == _RULE_LINE_WRAP
-        assert wraps[0].span_start == 32  # 강제분리 지점 오프셋(원본 좌표)
+        lines = [ln for ln in _read_lines(tmp_path, "lw") if ln.strip()]
+        assert len(lines) >= 2  # 40칸 → 32+8 분리 (조판 동작 유지)
+        assert not any(r.tag == "line_wrap" for r in bo.rule_trail)
 
     def test_overflow_rate_c6(self, lb) -> None:
         """강제 분리 다발 → line_overflow_rate > 0.30 (C6 트리거 가능)."""
@@ -339,12 +340,10 @@ class TestLayoutBody:
         bo = _out(["가" * 50], eid)  # 50 → 첫줄 29(3칸+29) 후 줄바꿈
         lb.layout([bo], page_no=1, job_id="pind", layout_result=lr)
         lines = _read_lines(tmp_path, "pind")
-        assert lines[0].startswith("   ")            # 첫 줄 3칸
+        assert lines[0].startswith("   ")            # 첫 줄 3칸 (조판 동작 유지)
         assert not lines[1].startswith("   ")        # 이어지는 줄 첫칸
-        tags = [r.tag for r in bo.rule_trail]
-        assert "indent" in tags
-        ind = next(r for r in bo.rule_trail if r.tag == "indent")
-        assert ind.rule_id == _RULE_PARA_INDENT
+        # 들여쓰기는 조판 서식이므로 rule_trail에 기록하지 않는다(태민 정책)
+        assert not any(r.tag == "indent" for r in bo.rule_trail)
 
     def test_list_item_indent(self, lb, tmp_path) -> None:
         """list_item은 3칸 들여만(글머리 tier 추론 안 함)."""
@@ -353,9 +352,9 @@ class TestLayoutBody:
         bo = _out(["1. 환경 설치"], eid)
         lb.layout([bo], page_no=1, job_id="li", layout_result=lr)
         lines = _read_lines(tmp_path, "li")
-        assert lines[0] == "   1. 환경 설치"          # 번호 원본 유지 + 3칸
-        ind = [r for r in bo.rule_trail if r.tag == "indent"]
-        assert ind and ind[0].rule_id == _RULE_BULLET_INDENT
+        assert lines[0] == "   1. 환경 설치"          # 번호 원본 유지 + 3칸 (조판 동작 유지)
+        # 글머리 들여쓰기도 조판 서식 → rule_trail 미기록(태민 정책)
+        assert not any(r.tag == "indent" for r in bo.rule_trail)
 
     def test_heading_level1_centered(self, lb, tmp_path) -> None:
         """1단계 제목 가운데 정렬 (BBPG 2장2절1)."""

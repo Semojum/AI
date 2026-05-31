@@ -129,9 +129,13 @@ class TestTablePipelineBasic:
                     f"32칸 초과 (id={o.element_id}): {len(line)}칸 — {line!r}"
                 )
 
-    def test_rule_trail_present(self, braille_outputs: list[BrailleOutput]) -> None:
+    def test_rule_trail_excludes_generic(self, braille_outputs: list[BrailleOutput]) -> None:
+        # 정책(태민 2026-06-01): 포괄 표 규칙(BBPG-3.1.1)·조판 규칙(BBPG-1.2.1) 미기록.
+        # 구조화 표는 점역자 주가 없으면 rule_trail이 비는 것이 정상.
         for o in braille_outputs:
-            assert len(o.rule_trail) >= 1, f"rule_trail 없음: {o.element_id}"
+            rids = [r.rule_id for r in o.rule_trail]
+            assert "BBPG-3.1.1" not in rids
+            assert "BBPG-1.2.1" not in rids
 
     def test_element_ids_preserved(
         self,
