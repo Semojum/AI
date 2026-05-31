@@ -120,6 +120,7 @@ app/
 6. **이미지 캡셔닝=GPT-4o**: image/cartoon/chart_graph 캡셔닝(7/8/9-1)은 GPT-4o. Qwen3-VL로 캡셔닝 금지(레이아웃·OCR 전담).
 7. **Pydantic v2**: `.model_dump()`/`.model_validate()` 사용. `.dict()` 금지.
 8. **braillify 주의**: `substitute_symbols()` 결과의 점자 Unicode(U+2800–U+28FF)를 braillify에 직접 넘기면 이중 변환. `_emit_mixed`로 세그먼트 분리 필수. braillify 2.0.0은 `\x00`·PUA·em dash(—) 거부 → 플레이스홀더 방식 금지.
+9. **입력 태깅 규약**(정본 plan §3-5): 점역 직전 텍스트의 인라인 태그는 **`<!이름>`**(여는)·**`<!/이름>`**(닫는, `/`는 `!` 바로 뒤) 단일 형식. 유일 인식 앵커 `<!`, 정규식 `<!(/?)([^>]+)>`. `translator.py`가 `태그명→점자 글리프`(다대일) 치환 — 점역자 주 = 양끝 `⠠⠄`, 글상자=표 테두리 `⠿⠛…/⠿⠶…`. **`[점역사주]` 리터럴 + `strip_tn_marker()` 방식 금지**(그대로 점자화하면 한글 음절이 찍힘). 줄 배치·32칸은 `layout_braille.py` 담당.
 
 ---
 
@@ -136,6 +137,7 @@ app/
 3. **PART 3-4 분류기**: `captioning/classifier.py` = `# TODO [단계3]` 스텁. `ImageClassifier.classify` 부재 → pipeline이 `ImportError` catch → image 고정, cartoon/chart_graph 미분류, visual_subtype/subtype_confidence 미생성. → plan §3-1 값으로 구현.
 4. **PART 11 품질검사**: `quality/quality_checker.py`·`metrics_collector.py` 스텁. pipeline이 status **하드코딩 "COMPLETED"**, QualityReport 빈 값. C/R 판정·status 분기·TimescaleDB 기록 전무. → plan §4-1 status 규칙·C1~C7/R1~R12 구현 후 pipeline 연결.
 5. **현주 파트(모델 의존)**: layout/ocr/captioning 일부 모델 미탑재 시 동작 안 함. pipeline이 `ImportError/AttributeError`로 격리 → `[처리 불가]` 플레이스홀더.
+10. **입력 태깅 파서 미구현(정본 §3-5 위반)**: `translator.py`는 `<formula>`만 처리하고 나머지 `<...>`를 `_TAG_RE`로 **삭제**할 뿐, `<!이름>`/`<!/이름>` 인식·치환이 없다. 시각 opt(`table/image/cartoon/chart_graph_opt`)는 점역자 주를 `[점역사주]` 한글 리터럴로 출력 → `*_braille`이 그대로 점자화해 `⠦⠆⠨⠎⠢⠱⠁⠇⠨⠍⠰⠴`(한글 "점역사주") 발생, 마커 `⠠⠄` 0개. → ① opt가 `<!점역자주>…<!/점역자주>` 태그로 감싸고 ② `translator.py`에 태그 파서(`<!(/?)([^>]+)>` + `태그명→점자` 다대일 매핑) 구현, tn_open/tn_close rule_trail emit. 테두리(`<!표윗테두리>`=글상자 `⠿⠛…`)·빈칸 태그도 동일 파서로. 회귀 방지 단언 테스트 추가 필수.
 
 **C. 남은 정합 (참고)**
 7. **테스트 목 `chart_graph_cap.json`**: 런타임 코드는 `cg_cap.json` 기록(plan 일치)하나, `test_data/page_001/type/chart_graph/`의 목 파일명은 `chart_graph_cap.json`으로 남아 있음. step4 시각 테스트 정비 시 통일.

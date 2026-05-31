@@ -230,10 +230,7 @@ class LayoutBraille:
                 continue
             before, after = _HEADING_BLANK.get(hlevel, (0, 0))
             if before:
-                lines.extend([""] * before)
-                bo.rule_trail.append(
-                    make_rule(_RULE_HEADING_BLANK, span_start=0, span_end=0, tag="heading_blank")
-                )
+                lines.extend([""] * before)  # 조판 동작은 유지, rule_trail 미기록(태민 정책)
             lines.extend(el_lines)
             total += len(el_lines)
             forced_total += forced
@@ -251,8 +248,9 @@ class LayoutBraille:
     ) -> tuple[list[str], int]:
         """요소 점자 줄 → 들여쓰기·정렬·32칸 브레이킹 적용. (표시 줄, 강제분리 수).
 
-        조판 태깅(indent·line_wrap)을 점자 좌표(원본 "\n".join 오프셋)로 emit한다.
-        내용이 없는 요소(빈 줄뿐)는 태깅 없이 빈 결과를 반환한다.
+        조판 동작(들여·줄바꿈·가운데정렬)은 적용하되 rule_trail은 기록하지 않는다
+        (태민 정책 2026-06-01: 조판 서식 규칙은 rule_trail 제외, 내용 변환만).
+        내용이 없는 요소(빈 줄뿐)는 빈 결과를 반환한다.
         """
         if not any(ln.strip() for ln in bo.braille_lines):
             return [], 0
@@ -261,38 +259,27 @@ class LayoutBraille:
 
         out: list[str] = []
         forced_total = 0
-        joined_off = 0
         for li, orig in enumerate(bo.braille_lines):
             indent = first_indent if li == 0 else 0
             fw = (_COLS - indent) if indent else None
-            broken, forced, wraps = _break_line(orig, first_width=fw)
-            for off in wraps:
-                bo.rule_trail.append(make_rule(
-                    _RULE_LINE_WRAP, span_start=joined_off + off,
-                    span_end=joined_off + off, tag="line_wrap",
-                ))
-            if indent and broken:               # 표시용 들여쓰기(원본 좌표 불변)
+            broken, forced, _wraps = _break_line(orig, first_width=fw)
+            if indent and broken:               # 표시용 들여쓰기
                 broken[0] = " " * indent + broken[0]
             if is_heading and hlevel == 1:       # 1단계 제목 가운데 정렬
                 broken = [_center(b) for b in broken]
             out.extend(broken)
             forced_total += forced
-            joined_off += len(orig) + 1  # +1 = "\n".join 구분자
         return out, forced_total
 
     def _first_indent(
         self, bo: BrailleOutput, etype: str, is_heading: bool, hlevel: int
     ) -> int:
-        """첫 줄 들여쓰기 칸 수 + indent rule_trail emit (점 태그, span 0)."""
+        """첫 줄 들여쓰기 칸 수. (조판 서식이므로 rule_trail 미기록 — 태민 정책)."""
         if is_heading:
             return _HEADING_DEEP_INDENT if hlevel >= 3 else 0
         if etype == "text":
-            bo.rule_trail.append(make_rule(
-                _RULE_PARA_INDENT, span_start=0, span_end=0, tag="indent"))
             return _PARA_INDENT
         if etype == "list_item":
-            bo.rule_trail.append(make_rule(
-                _RULE_BULLET_INDENT, span_start=0, span_end=0, tag="indent"))
             return _BULLET_LINE_INDENT
         return 0
 

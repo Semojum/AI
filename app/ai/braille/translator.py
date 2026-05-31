@@ -18,10 +18,13 @@ braillify 미설치 시 (폴백):
 
 from __future__ import annotations
 
+import logging
 import re
 
 from app.ai.braille.kor_math_rules import convert_latex, digits_to_braille
 from app.ai.braille.symbol_rules import substitute_symbols
+
+logger = logging.getLogger(__name__)
 
 try:
     import braillify as _braillify_lib
@@ -240,13 +243,99 @@ def _fix_leading_roman(text_orig: str, braille: str) -> str:
     return _ROMAN_START + braille[:sp] + _ROMAN_END + braille[sp:]
 
 
+# ── 인라인 태그 파서 (점역 직전 텍스트 → 점자 마커) — plan §3-5 ──────────────
+# 형식: 여는 <!이름>, 닫는 <!/이름>. 유일 인식 앵커 <!. 정규식 옵션 슬래시.
+# 매핑은 다대일(태그명 달라도 점자 동일 가능). 미지 태그는 안전 제거(점자화로 안 깨뜨림).
+_TAG_TOKEN_RE = re.compile(r"<!/?[^>]+>")
+
+# 단일·대칭 인라인 마커: 태그명 → 점자 글리프
+_TAG_INLINE_MARKER: dict[str, str] = {
+    "점역자주": "⠠⠄",   # BBPG-1.2.6 점역자 주 — 양끝 동일(대칭)
+    "표빈칸":   "⠿⠿",   # 표 기입칸
+    "네모빈칸": "⠸⠦",   # 체크박스 □
+}
+
+# 테두리(글상자 = 표, BBPG-1.2.5): (캡, 채움) 글리프. 32칸 한 줄로 렌더.
+_BORDER_FILL: dict[str, tuple[str, str]] = {
+    "표윗테두리":   ("⠿", "⠛"),  # 위: 첫/끝 = , 중간 g
+    "표아랫테두리": ("⠿", "⠶"),  # 아래: 첫/끝 = , 중간 7
+}
+_BORDER_COLS      = 32
+_BORDER_BLANK     = "⠀"   # 점자 빈칸(U+2800)
+_BORDER_LEFT_FILL = 4     # 캡 뒤 채움 칸 → 제목 7칸에서 시작(BBPG-1.2.5(4)②: 캡1+채움4+빈칸1)
+
+# 신형식 <!이름>…<!/이름> + 구형식 <!이름>…<!이름> 모두 수용(닫기 슬래시 옵션)
+_BORDER_PAIR_RE = {
+    name: re.compile(rf"<!{re.escape(name)}>(.*?)<!/?{re.escape(name)}>", re.DOTALL)
+    for name in _BORDER_FILL
+}
+
+
+def _border_line(name: str, title_braille: str) -> str:
+    """글상자/표 테두리 32칸 줄. 제목 있으면 BBPG-1.2.5(4)② 배치(7칸, 양옆 띔)."""
+    cap, fill = _BORDER_FILL[name]
+    inner = _BORDER_COLS - 2
+    if not title_braille:
+        return cap + fill * inner + cap
+    # 케이스②: 캡1 + 채움4 + 빈칸1 + 제목 + 빈칸1 + 채움R + 캡1 = 32
+    max_title = inner - _BORDER_LEFT_FILL - 2          # = 24
+    t = title_braille[:max_title]                       # 초과 시 클립(케이스① 윗줄 5칸은 TODO: layout)
+    right_fill = inner - _BORDER_LEFT_FILL - 2 - len(t)
+    return (cap + fill * _BORDER_LEFT_FILL + _BORDER_BLANK
+            + t + _BORDER_BLANK + fill * right_fill + cap)
+
+
+TN_MARKER = "⠠⠄"  # 점역자 주 점자 마커 (BBPG-1.2.6), 양끝 동일
+
+
+def tn_marker_spans(braille: str) -> list[tuple[int, int, str]]:
+    """점역 결과 점자에서 점역자 주 마커(⠠⠄) 위치 → (start, end, tag) 목록.
+
+    첫 마커 = tn_open, 마지막 마커 = tn_close (TN은 내용 전체를 감싸므로 최외곽이 양끝).
+    rule_trail 점자 좌표 emit용 (plan §3-4·§3-5). 마커 없으면 빈 목록.
+    """
+    i = braille.find(TN_MARKER)
+    if i == -1:
+        return []
+    w = len(TN_MARKER)
+    spans = [(i, i + w, "tn_open")]
+    j = braille.rfind(TN_MARKER)
+    if j != i:
+        spans.append((j, j + w, "tn_close"))
+    return spans
+
+
+def substitute_tags(text: str) -> str:
+    """인라인 태그(<!이름>/<!/이름>)를 점자 마커로 치환. 미지 태그는 안전 제거.
+
+    치환 결과는 점자 Unicode이므로 이후 _emit_mixed/braillify가 보존한다(이중 변환 없음).
+    """
+    # 1) 테두리 쌍 (중간 제목 가능) → 32칸 줄
+    for name, pat in _BORDER_PAIR_RE.items():
+        text = pat.sub(
+            lambda m, n=name: _border_line(n, _braillify(m.group(1).strip())), text
+        )
+
+    # 2) 단일·대칭 인라인 마커 + 미지 태그 제거
+    def _token_sub(m: re.Match) -> str:
+        name = m.group(0)[2:-1].lstrip("/")  # "<!" ... ">" 안쪽, 닫기 슬래시 제거
+        if name in _TAG_INLINE_MARKER:
+            return _TAG_INLINE_MARKER[name]
+        logger.warning("translator: 미지 태그 제거 %s", m.group(0))
+        return ""
+
+    text = _TAG_TOKEN_RE.sub(_token_sub, text)
+    # 3) 그 외 잔여 <...>(비-! 태그) 안전 제거
+    return _TAG_RE.sub("", text)
+
+
 def _translate_with_braillify(text: str) -> str:
     parts = _FORMULA_RE.split(text)
     chunks: list[tuple[bool, str]] = []  # (is_formula, braille)
 
     for i, part in enumerate(parts):
         if i % 2 == 0:  # 일반 텍스트 세그먼트
-            clean = _TAG_RE.sub("", part)
+            clean = substitute_tags(part)
             if i > 0:                # 수식 직후: 앞 공백 제거
                 clean = clean.lstrip()
             if i < len(parts) - 1:  # 수식 직전: 뒤 공백 제거
@@ -278,7 +367,7 @@ def _translate_fallback(text: str) -> str:
         return convert_latex(m.group(1))
 
     result = _FORMULA_RE.sub(_formula_sub, text)
-    result = _TAG_RE.sub("", result)
+    result = substitute_tags(result)
     result = substitute_symbols(result)
     return _braillify_fallback(result)
 

@@ -12,19 +12,20 @@ from __future__ import annotations
 
 from app.ai.braille.regulations import make_rule
 from app.ai.braille.translator import translate_tagged_text as _translate
+from app.ai.braille.translator import tn_marker_spans
 from app.schemas.content import BrailleOutput, Draft, LLMOutput, RuleApplication
 
 
 def _base_trail(lines: list[str]) -> list[RuleApplication]:
-    """표 점역 일반(BBPG-3.1.1) + 줄바꿈(BBPG-1.2.1)을 점자 출력 전체 범위로 emit.
+    """점역자 주 마커(BBPG-1.2.6)만 점자 좌표로 emit.
 
-    braille_text_list 기준 = 점자이므로 opt.rule_trail(태깅 텍스트 좌표)은 상속하지 않는다
-    (plan §3-4 2벌 독립). opt 규정은 text_list가 별도로 보유한다.
+    rule_trail은 '내용 변환'만 기록한다(태민 정책 2026-06-01). 포괄·조판 규칙 제외.
+    표 내용 속 특수기호·수식 규칙은 Phase B에서 추가 예정.
     """
-    n = len("\n".join(lines))
+    joined = "\n".join(lines)
     return [
-        make_rule("BBPG-3.1.1", span_start=0, span_end=n),
-        make_rule("BBPG-1.2.1", span_start=0, span_end=n),
+        make_rule("BBPG-1.2.6", span_start=s, span_end=e, tag=tag)
+        for s, e, tag in tn_marker_spans(joined)
     ]
 
 _COLS = 32

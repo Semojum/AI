@@ -63,6 +63,7 @@ test/
 | `classifier_test_set.json` | 분류기 인터페이스 명세 |
 | `bbpg_layout_rules.json` | 조판/레이아웃 규칙 데이터(BBPG 제1·2장 정본). 폐기된 JAJAK 기반 `jajak_layout_rules.json` 대체 |
 | `few_shot_examples.json` | LLM few-shot 예시 |
+| `testdata_complex.txt` | **태깅 규약 정본 예시쌍**(태민 작성). 점역 직전 태그 텍스트(```` ``` ```` 블록) ↔ 기대 점자(`<aside>`)를 복합 시각자료별로 수록. 인라인 태그 `<!이름>`/`<!/이름>` 형식·점역자주 `⠠⠄`·테두리 등 정본 plan §3-5의 근거 데이터. ⚠ 입력 텍스트는 32칸 조판 이전 상태. |
 
 > `page_001/type/chart_graph/chart_graph_cap.json` — 목 데이터는 `chart_graph_cap.json`을 쓰지만, **plan 런타임 파일명은 `cg_cap.json`**(plan 데이터파이프라인 §7). 정본은 plan의 `cg_*.json` → 코드/테스트 정합 시 통일 필요.
 

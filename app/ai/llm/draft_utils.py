@@ -14,18 +14,30 @@ from app.schemas.content import Draft
 _METHOD_RE = re.compile(r"\[\s*방식\s*([1-3])\s*\]\s*(.*)")
 
 
+_TN_LEGACY_RE = re.compile(r"^\[\s*점역사주\s*\]\s*")
+
+
 def ensure_tn_prefix(text: str) -> str:
+    """점역자 주 텍스트를 인라인 태그 `<!점역자주>…<!/점역자주>`로 감싼다 (plan §3-5).
+
+    구 `[점역사주]` 리터럴 접두나 이미 붙은 태그가 있으면 제거 후 재포장(중복 방지).
+    점역 직전 텍스트의 이 태그를 translator가 점자 마커 `⠠⠄`(양끝)로 치환한다.
+    """
     t = (text or "").strip()
     if not t:
         return ""
-    return t if t.startswith("[점역사주]") else f"[점역사주] {t}"
+    t = _TN_LEGACY_RE.sub("", t)                       # 구 [점역사주] 접두 제거
+    t = t.replace("<!점역자주>", "").replace("<!/점역자주>", "").strip()  # 기존 태그 제거
+    if not t:
+        return ""
+    return f"<!점역자주>{t}<!/점역자주>"
 
 
 def parse_labeled_drafts(response: str, methods: list[tuple[str, str]]) -> list[Draft]:
     """LLM 응답의 [방식N] 라인 → Draft 목록.
 
     methods: 옵션 순서대로 [(render_mode, label), ...] (보통 3개).
-    파싱된 방식만 Draft로 만든다(부족하면 가능한 만큼). text엔 [점역사주] 접두 보장.
+    파싱된 방식만 Draft로 만든다(부족하면 가능한 만큼). text는 `<!점역자주>…<!/점역자주>` 포장.
     """
     found: dict[int, str] = {}
     for raw in response.splitlines():

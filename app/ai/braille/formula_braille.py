@@ -34,11 +34,11 @@ class FormulaBraille:
                 lines = [text]
             else:
                 lines = _split_lines(convert_latex(text))
-            # braille_text_list 기준 = 점자. opt.rule_trail은 상속 안 함(plan §3-4 2벌 독립).
+            # rule_trail은 '내용 변환'만 기록(태민 정책 2026-06-01): 조판 규칙(32칸 줄바꿈) 제외.
+            # 수식 일반(KBR-수학-1.1)은 유지. Phase B에서 분수·근·첨자 등 per-construct로 정밀화.
             n = len("\n".join(lines))
             trail = [
                 make_rule("KBR-수학-1.1", span_start=0, span_end=n),
-                make_rule("BBPG-1.2.1", span_start=0, span_end=n),
             ]
             results.append(BrailleOutput(
                 element_id=opt.element_id,
