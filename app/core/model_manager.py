@@ -1,7 +1,7 @@
-"""모델 매니저 — 2-GPU 정적 배치.
+"""모델 매니저 — GPU 정적 배치.
 
-GPU 0: Qwen3-VL-8B INT4 AWQ + DocLayout-YOLO v2 + Docling TableFormer
-GPU 1: HyperCLOVA X SEED Think 14B INT4
+기본(L4 × 2): GPU 0 = Qwen3-VL-8B + YOLO + TableFormer / GPU 1 = HyperCLOVA X 14B
+단일 GPU 환경: .env에서 QWEN_GPU_DEVICE=0 HCXT_GPU_DEVICE=0 으로 덮어씀.
 
 서버 기동 시 load_all() 1회 호출 → 이후 상시 상주. VRAM Swap 없음.
 """
@@ -64,7 +64,7 @@ class ModelManager:
             self._gpu0_models["qwen"] = AutoAWQForCausalLM.from_quantized(
                 config.qwen3_vl_model_path,
                 fuse_layers=True,
-                device_map="cuda:0",
+                device_map=f"cuda:{config.qwen_gpu_device}",
             )
             self._gpu0_models["qwen_processor"] = AutoProcessor.from_pretrained(
                 config.qwen3_vl_model_path
@@ -78,7 +78,7 @@ class ModelManager:
         logger.info("DocLayout-YOLO v2 로드: %s", config.doclayout_yolo_path)
         try:
             from ultralytics import YOLO
-            self._gpu0_models["yolo"] = YOLO(config.doclayout_yolo_path)
+            self._gpu0_models["yolo"] = YOLO(config.doclayout_yolo_path).to(f"cuda:{config.qwen_gpu_device}")
             logger.info("DocLayout-YOLO v2 로드 완료")
         except Exception as exc:
             logger.warning("DocLayout-YOLO 로드 실패 (보조 모델, 계속 진행): %s", exc)
@@ -89,7 +89,7 @@ class ModelManager:
         try:
             from docling.models.tableformer_model import TableFormerModel
             self._gpu0_models["tableformer"] = TableFormerModel(
-                config.docling_tableformer_path, device="cuda:0"
+                config.docling_tableformer_path, device=f"cuda:{config.qwen_gpu_device}"
             )
             logger.info("Docling TableFormer 로드 완료")
         except Exception as exc:
@@ -109,7 +109,7 @@ class ModelManager:
             self._gpu1_models["hcxt"] = AutoModelForCausalLM.from_pretrained(
                 config.hcxt_model_path,
                 quantization_config=quant_cfg,
-                device_map="cuda:1",
+                device_map=f"cuda:{config.hcxt_gpu_device}",
                 trust_remote_code=True,
             )
             self._gpu1_models["hcxt_tokenizer"] = AutoTokenizer.from_pretrained(

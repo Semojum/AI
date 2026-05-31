@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     doclayout_yolo_path: str = "/models/doclayout-yolo-v2"
     docling_tableformer_path: str = "/models/docling-tableformer"
 
+    # ── GPU 디바이스 배치 ─────────────────────────────────────────
+    # L4 × 2: QWEN_GPU_DEVICE=0  HCXT_GPU_DEVICE=1  (기본값)
+    # RTX 4090 Laptop (단일): QWEN_GPU_DEVICE=0  HCXT_GPU_DEVICE=0
+    qwen_gpu_device: int = 0
+    hcxt_gpu_device: int = 1
+
     # ── 외부 서비스 ───────────────────────────────────────────────
     formulanet_service_addr: str = "localhost:50052"
     chromadb_url: str = "http://localhost:8001"

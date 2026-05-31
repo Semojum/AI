@@ -9,4 +9,11 @@ dist/
 .pytest_cache/
 .mypy_cache/
 protos/generated/*_pb2*.py
+
+# 모델 디렉토리 (대용량 파일 — git 제외)
 /models/
+
+# 모델 가중치 파일 안전망 (models/ 밖에 실수로 저장된 경우 방지)
+*.safetensors
+*.gguf
+*.ggml

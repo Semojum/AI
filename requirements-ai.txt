@@ -19,8 +19,10 @@
 
 # ── 모델 공통 의존성 (setup.sh step 6 과 버전 고정 일치) ──────────
 transformers==4.57.0         # Qwen3-VL >= 4.57 필수 / HyperCLOVA X >= 4.53 충족
-tokenizers==0.21.1           # transformers 4.51.x 호환
-accelerate==1.2.1
+tokenizers>=0.22.0,<=0.23.0  # transformers 4.57.0 요구 범위 (0.21.1 은 범위 밖 — 설치 실패)
+accelerate>=1.2.1            # 1.x 내 하위 호환. 현주 환경 최신(1.13.0) 수용
+huggingface-hub>=0.34.0,<1.0 # transformers 4.57.0 요구 상한. 1.0 출시 시 자동 설치 방지
+sentencepiece>=0.1.91        # HCXT 토크나이저 / transformers 권장. 현주 파일에도 포함
 einops==0.8.0
 timm==1.0.11
 safetensors==0.4.5
