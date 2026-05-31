@@ -61,7 +61,7 @@ test/
 | `mixed_pairs.json` | 텍스트+수식 혼합 → 점자 기대값 |
 | `braille_translation_samples.json` | 점역 샘플 |
 | `classifier_test_set.json` | 분류기 인터페이스 명세 |
-| `jajak_layout_rules.json` | 자작(조판) 레이아웃 규칙 데이터 |
+| `bbpg_layout_rules.json` | 조판/레이아웃 규칙 데이터(BBPG 제1·2장 정본). 폐기된 JAJAK 기반 `jajak_layout_rules.json` 대체 |
 | `few_shot_examples.json` | LLM few-shot 예시 |
 
 > `page_001/type/chart_graph/chart_graph_cap.json` — 목 데이터는 `chart_graph_cap.json`을 쓰지만, **plan 런타임 파일명은 `cg_cap.json`**(plan 데이터파이프라인 §7). 정본은 plan의 `cg_*.json` → 코드/테스트 정합 시 통일 필요.

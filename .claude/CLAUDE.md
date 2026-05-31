@@ -60,7 +60,7 @@ app/
 │   │   ├── kor_math_rules.py ★ C5-critical. convert_latex(latex), digits_to_braille(수표 ⠼ 삽입), frac/sqrt/lim/log/sum/sup/sub
 │   │   ├── text_braille.py · formula_braille.py · table_braille.py · image_braille.py · cartoon_braille.py · chart_graph_braille.py
 │   │   │   table_braille: _render_grid / _render_linear (render_mode별 표 조판)
-│   │   └── layout_braille.py PART 10. LayoutBraille.layout(braille, page_no, job_id). _paginate(25줄), _save, 마커/들여쓰기 헬퍼
+│   │   └── layout_braille.py PART 10 조판 본체. layout(braille, page_no, job_id, *, layout_result, llm_outputs)→line_overflow_rate. reading_order정렬·_break_line(32칸 단어경계+first_width 들여예약, 강제분리 카운트)·heading 빈줄(L1 2/1·L2 1/1·L3 1/0)·1단계 제목 가운데정렬·3·4단계 5칸·문단 3칸들여(text)·목록 3칸들여(list_item, tier추론X)·페이지행(원본번호 좌[page_number]·꼬리말 가운데[header_footer]·점자번호 우, 한 원본→여러 점자페이지 시 2번째부터 알파벳 접두 a,b,c)·_paginate(25줄,페이지첫줄 빈줄버림)·_save. 조판 rule_trail(heading_blank·line_wrap·indent)을 점자 좌표로 BrailleOutput.rule_trail에 emit(braille_text_list 귀속). 마커/글상자 헬퍼(BBPG 정본). ⚠촉각그래픽(table/chart SVG)·출전(citation 신호없음)·원본 페이지 변경선(여러 원본→한 점자페이지 중간 대시선, 콘텐츠 흐름 속 경계위치 메타 필요) 미배선
 │   ├── quality/                 # PART 11 — ⚠ 미구현 스텁 (TODO 단계4)
 │   │   ├── quality_checker.py   QualityChecker.check() 주석만 — 미구현
 │   │   └── metrics_collector.py MetricsCollector 주석만 — 미구현

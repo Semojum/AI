@@ -2,70 +2,127 @@
 
 BrailleOutput 목록 → 32칸 × 25줄 페이지 조판 → 파일 저장.
 
-§2.1.1: 32칸 줄바꿈, 25줄 페이지 넘김
-§2.1.2: ⠼N⠲ 페이지 번호 우측 정렬 (25번째 줄)
-§2.1.3: 원본 페이지 번호 없음 ⠒⠒, 페이지 변경선 ⠨⠂
-§2.4.2: 단형 들여쓰기 (1/3/5칸)
-§2.4.6: 밑줄 빈칸 ⠒⠂
-§2.4.9: 출전 3칸 들여쓰기
-§2.5.5: 글머리 기호 위계별 점형 (⠿⠒/⠿⠄/⠤)
+조판/레이아웃 규정 정본 = 점자 도서 제작 지침(BBPG). 점자 글리프는 한국 점자
+규정(KBR)에서 도출. PDF 점자는 표준 Braille ASCII 폰트(#b=숫자2)로 디코딩.
+(폐기된 점자 자료 제작 지침 JAJAK 기반 마커 전면 교체됨.)
+
+BBPG 1장2절1: 32칸 줄바꿈, 25줄 페이지 넘김
+BBPG 1장2절2: 페이지행 — 원본 페이지번호(좌·첫칸) · 꼬리말(가운데) · 점자 페이지번호(우)
+BBPG 1장2절2-3): 원본 페이지 변경선 — 첫 칸부터 ⠤로 채운 선 + 우측정렬 원본 페이지번호
+BBPG 1장2절5: 글상자 테두리 — 위 ⠿…⠛…⠿ / 아래 ⠿…⠶…⠿ (32칸), 앞뒤 빈 줄
+BBPG 2장2절2: 문단 — 새 문단 3칸 시작, 이어지는 줄 첫 칸
+BBPG 2장2절3: 밑줄 빈칸 ⠸⠤ (길이 무관 1개)
+BBPG 2장2절6: 출전 — 본문 아래일 때 다음 줄 3칸
+BBPG 2장3절5: 글머리 기호 — 3칸 표기, 위계 1단계 동그라미 ⠸⠴ / 2단계 붙임표 ⠤ (KBR 제72항)
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING, Optional
 
 from app.ai.braille.kor_math_rules import _NUMBER_INDICATOR, _DIGIT_MAP
+from app.ai.braille.regulations import make_rule
 from app.schemas.content import BrailleOutput
+
+if TYPE_CHECKING:  # 런타임 import 회피 (annotations 지연 평가)
+    from app.schemas.layout import LayoutResult
 
 _COLS = 32
 _ROWS = 25
 
-# ── §2.1.3 원본 페이지 표기 ────────────────────────────────────────────────
-_NO_PAGE_MARKER = "⠒⠒"
-_PAGE_CHANGE_MARKER = "⠨⠂"
+# ── BBPG 2장2절1 제목 단계별 빈 줄 (level → (앞, 뒤)) ───────────────────────
+_HEADING_BLANK: dict[int, tuple[int, int]] = {1: (2, 1), 2: (1, 1), 3: (1, 0)}
 
-# ── §2.4.2 단형 들여쓰기 ──────────────────────────────────────────────────
-_NUMBERED_INDENT: dict[int, int] = {1: 1, 2: 3, 3: 5}
+# 단어 구분 = ASCII 공백 또는 점자 빈칸(U+2800)
+_WORD_RE = re.compile(r"[^ ⠀]+")
 
-# ── §2.4.6 빈칸 ───────────────────────────────────────────────────────────
-_UNDERLINE_BLANK_MARKER = "⠒⠂"
+# rule_trail rule_id (regulations.json 키)
+_RULE_LINE_WRAP = "BBPG-1.2.1"      # 줄바꿈(32칸), tag=line_wrap
+_RULE_HEADING_BLANK = "BBPG-2.2.1"  # 단계별 제목 표기, tag=heading_blank
+_RULE_PARA_INDENT = "BBPG-2.2.2"    # 문단 형식(새 문단 3칸), tag=indent
+_RULE_BULLET_INDENT = "BBPG-2.3.5"  # 글머리 3칸, tag=indent
 
-# ── §2.5.5 글머리 기호 ────────────────────────────────────────────────────
-_BULLET_MARKERS: dict[int, str] = {1: "⠿⠒", 2: "⠿⠄", 3: "⠤"}
+_PARA_INDENT = 3        # BBPG 2장2절2 새 문단 첫 줄 3칸 (text)
+_BULLET_LINE_INDENT = 3  # BBPG 2장3절5 글머리/목록 3칸 (list_item)
+_HEADING_DEEP_INDENT = 5  # BBPG 2장2절1 3·4단계 제목 5칸
 
+_DEFAULT_META: tuple[str, int, int] = ("text", 1_000_000, 0)
+_PAGE_LINE_TYPES = {"header_footer", "page_number"}
 
-def format_no_page_marker() -> str:
-    """원본 페이지 번호가 없을 때 사용하는 ⠒⠒ 마커 (§2.1.3)."""
-    return _NO_PAGE_MARKER
+# 원본 페이지 연속 표기용 알파벳 점자(a~z, 로마자표 없는 맨 letter) — BBPG 1장2절2
+_ALPHA_BRAILLE = "⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵"
 
+# ── BBPG 2장2절3 밑줄 빈칸 (KBR 밑줄 빈칸 기호 _- = ⠸⠤) ──────────────────────
+_UNDERLINE_BLANK_MARKER = "⠸⠤"
 
-def format_page_change_marker() -> str:
-    """원본 페이지 변경선 ⠨⠂ — 길이·위치와 무관하게 항상 1개 (§2.4.5)."""
-    return _PAGE_CHANGE_MARKER
+# ── BBPG 2장3절5 글머리 기호 — 위계 2단계 (글리프 KBR 제72항) ────────────────
+# 1단계(상위) 동그라미 ⠸⠴, 2단계(하위) 붙임표 ⠤
+_BULLET_MARKERS: dict[int, str] = {1: "⠸⠴", 2: "⠤"}
+_BULLET_INDENT = 2  # 3칸에 표기(2칸 들여 후 3번째 칸)
+
+# ── BBPG 2장2절2 문단 형식 ──────────────────────────────────────────────────
+_PARAGRAPH_INDENT = 3  # 새 문단은 3칸에서 시작
+
+# ── BBPG 2장2절6 출전 ──────────────────────────────────────────────────────
+_CITATION_INDENT = 3
+
+# ── BBPG 2장2절2-3) 원본 페이지 변경선 ─────────────────────────────────────
+_PAGE_CHANGE_FILL = "⠤"  # 변경선 채움 점형(BBPG는 ⠤ 또는 ⠒ 허용 — ⠤ 채택)
+
+# ── BBPG 2장2절2 선행 페이지 번호 초과 (#- = ⠼⠤) ───────────────────────────
+_OVERFLOW_PAGE_NUMBER = "⠼⠤"
+
+# ── BBPG 1장2절5 글상자 테두리 ─────────────────────────────────────────────
+_BOX_BORDER_END = "⠿"   # 양 끝 (=)
+_BOX_TOP_FILL = "⠛"     # 위 테두리 중간 (g)
+_BOX_BOTTOM_FILL = "⠶"  # 아래 테두리 중간 (7)
 
 
 def format_underline_blank(text: str) -> str:
-    """밑줄 빈칸(_+)을 ⠒⠂ 1개로 치환 — 길이 무관 (§2.4.6)."""
+    """밑줄 빈칸(_+)을 ⠸⠤ 1개로 치환 — 길이 무관 (BBPG 2장2절3)."""
     return re.sub(r"_+", _UNDERLINE_BLANK_MARKER, text)
 
 
 def format_citation(text: str) -> str:
-    """출전 정보를 다음 줄 3칸에 배치 (§2.4.9)."""
-    return " " * 3 + text
+    """출전 정보를 다음 줄 3칸에 배치 (BBPG 2장2절6)."""
+    return " " * _CITATION_INDENT + text
 
 
-def indent_numbered_item(text: str, level: int) -> str:
-    """단형 들여쓰기: level 1→1칸, 2→3칸, 3+→5칸 (§2.4.2)."""
-    indent = _NUMBERED_INDENT.get(min(level, 3), 5)
-    return " " * indent + text
+def format_paragraph_start(text: str) -> str:
+    """새 문단을 3칸에서 시작 (BBPG 2장2절2 문단 형식)."""
+    return " " * _PARAGRAPH_INDENT + text
 
 
 def format_bullet_item(text: str, tier: int) -> str:
-    """글머리 기호: tier 1→⠿⠒, 2→⠿⠄, 3→⠤, 기호 뒤 1칸 (§2.5.5)."""
-    marker = _BULLET_MARKERS.get(min(tier, 3), _BULLET_MARKERS[3])
-    return f"{marker} {text}"
+    """글머리 기호: 3칸 표기, tier 1→⠸⠴(동그라미) 2→⠤(붙임표), 기호 뒤 1칸 (BBPG 2장3절5)."""
+    marker = _BULLET_MARKERS.get(min(max(tier, 1), 2), _BULLET_MARKERS[2])
+    return " " * _BULLET_INDENT + f"{marker} {text}"
+
+
+def format_page_change_line(orig_page_braille: str) -> str:
+    """원본 페이지 변경선: 첫 칸부터 ⠤로 채우고 우측 정렬로 원본 페이지번호 (BBPG 2장2절2-3).
+
+    단일 마커가 아니라 줄 전체(32칸)를 채우는 '선'이다.
+    """
+    fill = max(0, _COLS - len(orig_page_braille))
+    return _PAGE_CHANGE_FILL * fill + orig_page_braille
+
+
+def format_box_top() -> str:
+    """글상자 위 테두리: ⠿ + ⠛×(32-2) + ⠿ (BBPG 1장2절5)."""
+    return _BOX_BORDER_END + _BOX_TOP_FILL * (_COLS - 2) + _BOX_BORDER_END
+
+
+def format_box_bottom() -> str:
+    """글상자 아래 테두리: ⠿ + ⠶×(32-2) + ⠿ (BBPG 1장2절5)."""
+    return _BOX_BORDER_END + _BOX_BOTTOM_FILL * (_COLS - 2) + _BOX_BORDER_END
+
+
+def format_overflow_page_number() -> str:
+    """선행 페이지 번호가 본문 시작을 넘을 때 ⠼⠤ (BBPG 2장2절2). JAJAK ⠒⠒ no-page 마커는 폐기."""
+    return _OVERFLOW_PAGE_NUMBER
 
 
 def _page_number_braille(n: int) -> str:
@@ -78,47 +135,263 @@ def _right_align(text: str, width: int) -> str:
     return " " * pad + text
 
 
+def _cell_count(text: str) -> int:
+    """점자 셀 수 = 문자 수. 점역 후 1점자셀=1 코드포인트(U+2800~28FF), 공백 1셀."""
+    return len(text)
+
+
+def _center(text: str, width: int = _COLS) -> str:
+    """text를 width 안에서 가운데 정렬 (BBPG 2장2절1 1단계 제목)."""
+    t = text.strip()
+    if _cell_count(t) >= width:
+        return t
+    return " " * ((width - _cell_count(t)) // 2) + t
+
+
+def _break_line(
+    line: str, width: int = _COLS, first_width: Optional[int] = None
+) -> tuple[list[str], int, list[int]]:
+    """한 줄을 width(32) 셀 이하로 분리. 단어 경계 우선, 초과 단어는 하이픈 없이 강제 분리.
+
+    first_width: 첫 출력 줄에 허용할 폭(들여쓰기 칸 예약용). None이면 width.
+    반환: (분리된 줄 목록, 강제분리 횟수, 줄바꿈이 삽입된 원본 char 오프셋 목록).
+    """
+    fw = width if first_width is None else first_width
+    if _cell_count(line) <= fw:
+        return ([line], 0, [])
+    words = [(m.group(), m.start()) for m in _WORD_RE.finditer(line)]
+    if not words:  # 공백뿐인 줄
+        return ([line], 0, [])
+
+    out: list[str] = []
+    wraps: list[int] = []
+    forced = 0
+    cur = ""
+    for word, start in words:
+        cap = fw if not out else width        # 첫 줄만 first_width 적용
+        candidate = word if not cur else f"{cur} {word}"
+        if _cell_count(candidate) <= cap:
+            cur = candidate
+            continue
+        if cur:                               # 현재 줄을 마감하고 단어 경계에서 줄바꿈
+            out.append(cur)
+            wraps.append(start)
+            cur = ""
+        cap = fw if not out else width
+        piece, piece_start = word, start
+        while _cell_count(piece) > cap:       # 단어 자체가 폭 초과 → 강제 분리
+            out.append(piece[:cap])
+            forced += 1
+            piece_start += cap
+            wraps.append(piece_start)
+            piece = piece[cap:]
+            cap = width
+        cur = piece
+    if cur:
+        out.append(cur)
+    return (out, forced, wraps)
+
+
 class LayoutBraille:
-    """BrailleOutput 목록 → 32칸 × 25줄 조판."""
+    """BrailleOutput 목록 → 32칸 × 25줄 점자 조판 (PART 10).
+
+    reading_order 정렬 → header_footer/page_number 분리 → 제목 단계별 빈 줄 →
+    32칸 단어경계 라인 브레이킹 → 25줄 페이지 브레이킹 → 파일 저장.
+    조판 태깅(heading_blank·line_wrap)은 점자 좌표 rule_trail로 emit(plan §3-4,
+    braille_text_list 귀속). line_overflow_rate(C6용)를 반환한다.
+
+    촉각 그래픽(table/chart_graph SVG)은 별도 태스크 — 미구현.
+    """
 
     def layout(
         self,
         braille_outputs: list[BrailleOutput],
         page_no: int,
         job_id: str,
-    ) -> list[str]:
-        """조판 후 파일 저장, 전체 줄 목록 반환."""
-        all_lines: list[str] = []
-        for bo in braille_outputs:
-            all_lines.extend(bo.braille_lines)
+        *,
+        layout_result: Optional["LayoutResult"] = None,
+    ) -> float:
+        """조판 후 파일 저장. line_overflow_rate(강제분리 줄 / 전체 줄) 반환.
 
-        pages = self._paginate(all_lines, page_no)
+        layout_result로 element별 type·reading_order·heading_level을 조회한다.
+        조판 rule_trail은 각 BrailleOutput.rule_trail에 in-place 추가(점자 좌표).
+        """
+        meta = self._build_meta(layout_result)
+        body, page_line_items = self._partition(braille_outputs, meta)
+        body.sort(key=lambda b: meta.get(b.element_id, _DEFAULT_META)[1])
+
+        lines: list[str] = []
+        total = 0
+        forced_total = 0
+        for bo in body:
+            etype, _order, hlevel = meta.get(bo.element_id, _DEFAULT_META)
+            el_lines, forced = self._format_element(bo, etype, hlevel)
+            if not el_lines:                       # 빈 요소는 빈 줄·태깅 없이 건너뜀
+                continue
+            before, after = _HEADING_BLANK.get(hlevel, (0, 0))
+            if before:
+                lines.extend([""] * before)
+                bo.rule_trail.append(
+                    make_rule(_RULE_HEADING_BLANK, span_start=0, span_end=0, tag="heading_blank")
+                )
+            lines.extend(el_lines)
+            total += len(el_lines)
+            forced_total += forced
+            if after:
+                lines.extend([""] * after)
+
+        footer = self._footer_text(page_line_items, meta)
+        orig_page = self._orig_page_text(page_line_items, meta)
+        pages = self._paginate(lines, page_no, footer, orig_page)
         self._save(pages, job_id, page_no)
+        return (forced_total / total) if total else 0.0
 
-        result: list[str] = []
-        for page in pages:
-            result.extend(page)
-        return result
+    def _format_element(
+        self, bo: BrailleOutput, etype: str, hlevel: int
+    ) -> tuple[list[str], int]:
+        """요소 점자 줄 → 들여쓰기·정렬·32칸 브레이킹 적용. (표시 줄, 강제분리 수).
 
-    def _paginate(self, lines: list[str], first_page_no: int) -> list[list[str]]:
+        조판 태깅(indent·line_wrap)을 점자 좌표(원본 "\n".join 오프셋)로 emit한다.
+        내용이 없는 요소(빈 줄뿐)는 태깅 없이 빈 결과를 반환한다.
+        """
+        if not any(ln.strip() for ln in bo.braille_lines):
+            return [], 0
+        is_heading = hlevel >= 1
+        first_indent = self._first_indent(bo, etype, is_heading, hlevel)
+
+        out: list[str] = []
+        forced_total = 0
+        joined_off = 0
+        for li, orig in enumerate(bo.braille_lines):
+            indent = first_indent if li == 0 else 0
+            fw = (_COLS - indent) if indent else None
+            broken, forced, wraps = _break_line(orig, first_width=fw)
+            for off in wraps:
+                bo.rule_trail.append(make_rule(
+                    _RULE_LINE_WRAP, span_start=joined_off + off,
+                    span_end=joined_off + off, tag="line_wrap",
+                ))
+            if indent and broken:               # 표시용 들여쓰기(원본 좌표 불변)
+                broken[0] = " " * indent + broken[0]
+            if is_heading and hlevel == 1:       # 1단계 제목 가운데 정렬
+                broken = [_center(b) for b in broken]
+            out.extend(broken)
+            forced_total += forced
+            joined_off += len(orig) + 1  # +1 = "\n".join 구분자
+        return out, forced_total
+
+    def _first_indent(
+        self, bo: BrailleOutput, etype: str, is_heading: bool, hlevel: int
+    ) -> int:
+        """첫 줄 들여쓰기 칸 수 + indent rule_trail emit (점 태그, span 0)."""
+        if is_heading:
+            return _HEADING_DEEP_INDENT if hlevel >= 3 else 0
+        if etype == "text":
+            bo.rule_trail.append(make_rule(
+                _RULE_PARA_INDENT, span_start=0, span_end=0, tag="indent"))
+            return _PARA_INDENT
+        if etype == "list_item":
+            bo.rule_trail.append(make_rule(
+                _RULE_BULLET_INDENT, span_start=0, span_end=0, tag="indent"))
+            return _BULLET_LINE_INDENT
+        return 0
+
+    def _build_meta(
+        self, layout_result: Optional["LayoutResult"]
+    ) -> dict:
+        """element_id → (type, reading_order, heading_level)."""
+        if not layout_result:
+            return {}
+        return {
+            e.element_id: (e.type, e.reading_order, e.heading_level or 0)
+            for e in layout_result.elements
+        }
+
+    def _partition(
+        self, braille_outputs: list[BrailleOutput], meta: dict
+    ) -> tuple[list[BrailleOutput], list[BrailleOutput]]:
+        """본문 요소와 페이지행 요소(header_footer/page_number) 분리."""
+        body, page_line = [], []
+        for bo in braille_outputs:
+            etype = meta.get(bo.element_id, _DEFAULT_META)[0]
+            (page_line if etype in _PAGE_LINE_TYPES else body).append(bo)
+        return body, page_line
+
+    def _first_nonempty(self, page_line_items: list[BrailleOutput], meta: dict, want: str) -> str:
+        """page_line_items 중 type==want 요소의 첫 비어있지 않은 점자 줄."""
+        for bo in page_line_items:
+            if meta.get(bo.element_id, _DEFAULT_META)[0] != want:
+                continue
+            for ln in bo.braille_lines:
+                if ln.strip():
+                    return ln.strip()
+        return ""
+
+    def _footer_text(self, page_line_items: list[BrailleOutput], meta: dict) -> str:
+        """페이지행 꼬리말(가운데). header_footer 요소의 첫 줄."""
+        return self._first_nonempty(page_line_items, meta, "header_footer")
+
+    def _orig_page_text(self, page_line_items: list[BrailleOutput], meta: dict) -> str:
+        """페이지행 원본 페이지 번호(좌측). page_number 요소의 첫 줄."""
+        return self._first_nonempty(page_line_items, meta, "page_number")
+
+    def _compose_page_line(self, footer: str, orig_page: str, page_no: int) -> str:
+        """페이지행: 원본 페이지번호(좌) · 꼬리말(가운데) · 점자 페이지번호(우) (BBPG 1장2절2)."""
+        pn = _page_number_braille(page_no)
+        cells = [" "] * _COLS
+        for k, ch in enumerate(pn):                       # 우: 점자 페이지 번호
+            cells[_COLS - len(pn) + k] = ch
+        left_end = 0
+        if orig_page:                                     # 좌: 원본 페이지 번호 (첫 칸)
+            clip = orig_page[:max(0, _COLS - len(pn) - 1)]
+            for k, ch in enumerate(clip):
+                cells[k] = ch
+            left_end = len(clip)
+        if footer:                                        # 가운데: 꼬리말
+            avail_start = left_end + (1 if left_end else 0)
+            avail = (_COLS - len(pn) - 1) - avail_start
+            clipped = footer[:max(0, avail)]
+            start = avail_start + max(0, (avail - len(clipped)) // 2)
+            for k, ch in enumerate(clipped):
+                cells[start + k] = ch
+        return "".join(cells)
+
+    def _paginate(
+        self, lines: list[str], first_page_no: int, footer: str, orig_page: str = ""
+    ) -> list[list[str]]:
         pages: list[list[str]] = []
         pno = first_page_no
         i = 0
-        total = len(lines)
+        n = len(lines)
 
-        while i < total or not pages:
-            content = lines[i : i + _ROWS - 1]
-            i += len(content)
+        page_idx = 0
+        while i < n or not pages:
+            while i < n and lines[i] == "":  # 페이지 첫 줄 빈 줄 버림 (plan 주의사항)
+                i += 1
+            content: list[str] = []
+            while i < n and len(content) < _ROWS - 1:
+                content.append(lines[i])
+                i += 1
             while len(content) < _ROWS - 1:
                 content.append("")
-            pn = _right_align(_page_number_braille(pno), _COLS)
-            content.append(pn)
+            op = self._continuation_orig_page(orig_page, page_idx)
+            content.append(self._compose_page_line(footer, op, pno))
             pages.append(content)
             pno += 1
-            if i >= total:
+            page_idx += 1
+            if i >= n:
                 break
 
         return pages
+
+    def _continuation_orig_page(self, orig_page: str, page_idx: int) -> str:
+        """한 원본 페이지가 여러 점자 페이지에 걸칠 때 2번째(page_idx>=1)부터
+        원본 번호 앞에 로마자표 없이 알파벳(a,b,c…)을 붙인다 (BBPG 1장2절2-2)(3))."""
+        if not orig_page or page_idx == 0:
+            return orig_page
+        k = page_idx - 1
+        suffix = _ALPHA_BRAILLE[k] if k < len(_ALPHA_BRAILLE) else _ALPHA_BRAILLE[-1]
+        return suffix + orig_page
 
     def _save(self, pages: list[list[str]], job_id: str, page_no: int) -> None:
         result_dir = Path(f"storage/jobs/{job_id}/temp/page_{page_no:03d}/result")

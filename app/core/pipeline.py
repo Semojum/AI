@@ -237,9 +237,14 @@ def _parse_txt_result(
         etype = _TYPE_ALIAS.get(el.get("type", "text"), el.get("type", "text"))
         order = int(el.get("order", idx))
         content = el.get("content", "") or ""
+        # heading_level: 현주 핸드오프가 주면 그 값, 없으면 title은 1단계 기본(PART 10 조판용)
+        hlevel = el.get("heading_level")
+        if hlevel in (None, 0) and etype == "title":
+            hlevel = 1
 
         bbox_items.append(BBoxItem(
             element_id=eid, type=etype, bbox=(0, 0, 0, 0), reading_order=order,
+            heading_level=hlevel,
         ))
         if etype == "formula":
             ext_map[eid] = ExtractedContent(
@@ -428,12 +433,17 @@ async def _run_pipeline(task: PageTask) -> dict:
         ext, llm_outputs, braille_outputs = await _run_text_chain(
             extracted_texts, layout_result, "ZERO", task, include_braille=True,
         )
+        overflow_rate = 0.0
         if braille_outputs:
             from app.ai.braille.layout_braille import LayoutBraille
-            LayoutBraille().layout(braille_outputs, task.page_no, task.job_id)
+            overflow_rate = LayoutBraille().layout(
+                braille_outputs, task.page_no, task.job_id,
+                layout_result=layout_result,
+            )
         return _build_response(
             task, page_id, doc_meta, "ZERO", image_width, image_height,
             layout_result, ext, llm_outputs, braille_outputs,
+            line_overflow_rate=overflow_rate,
         )
 
     # ── mode a, c ──────────────────────────────────────────────────────
@@ -480,13 +490,18 @@ async def _run_pipeline(task: PageTask) -> dict:
     _debug_dump(task, "05_all_opt", [o.model_dump() for o in all_llm])
 
     # PART 10: 레이아웃 조판
+    overflow_rate = 0.0
     if include_braille and all_braille:
         from app.ai.braille.layout_braille import LayoutBraille
-        LayoutBraille().layout(all_braille, task.page_no, task.job_id)
+        overflow_rate = LayoutBraille().layout(
+            all_braille, task.page_no, task.job_id,
+            layout_result=layout_result,
+        )
 
     return _build_response(
         task, page_id, doc_meta, routing_tier, image_width, image_height,
         layout_result, all_extracted, all_llm, all_braille,
+        line_overflow_rate=overflow_rate,
     )
 
 
@@ -503,6 +518,7 @@ def _build_response(
     extracted: list[ExtractedContent],
     llm_outputs: list[LLMOutput],
     braille_outputs: list[BrailleOutput],
+    line_overflow_rate: float = 0.0,
 ) -> dict:
     elem_by_id = {e.element_id: e for e in layout_result.elements}
     braille_by_id = {b.element_id: b for b in braille_outputs}
@@ -518,7 +534,8 @@ def _build_response(
             "scan_only": doc_meta.scan_only if doc_meta else False,
         },
         "quality_report": QualityReport(
-            page_id=page_id, status="COMPLETED"
+            page_id=page_id, status="COMPLETED",
+            line_overflow_rate=line_overflow_rate,
         ).model_dump(),
     }
 
