@@ -51,7 +51,7 @@ class ModelManager:
         await asyncio.to_thread(self._load_tableformer)
 
     async def _load_gpu1_stack(self) -> None:
-        """HyperCLOVA X SEED Think 14B INT4 → cuda:1"""
+        """HyperCLOVA X SEED Think 14B INT4 → cuda:{config.hcxt_gpu_device}"""
         await asyncio.to_thread(self._load_hcxt)
 
     # ── 내부 로더 ─────────────────────────────────────────────────
@@ -110,16 +110,33 @@ class ModelManager:
                 config.hcxt_model_path,
                 quantization_config=quant_cfg,
                 device_map=f"cuda:{config.hcxt_gpu_device}",
-                trust_remote_code=True,
             )
             self._gpu1_models["hcxt_tokenizer"] = AutoTokenizer.from_pretrained(
                 config.hcxt_model_path,
-                trust_remote_code=True,
             )
             logger.info("HyperCLOVA X SEED Think 14B INT4 로드 완료")
+            # CUDA JIT 커널 선컴파일 — 첫 실제 추론의 지연(~20s) 방지
+            self._warmup_hcxt()
         except Exception as exc:
             logger.exception("HyperCLOVA X 14B 로드 실패: %s", exc)
             raise
+
+    def _warmup_hcxt(self) -> None:
+        logger.info("HyperCLOVA X 워밍업 시작")
+        try:
+            model = self._gpu1_models["hcxt"]
+            tokenizer = self._gpu1_models["hcxt_tokenizer"]
+            device = next(model.parameters()).device
+            inputs = tokenizer("안녕", return_tensors="pt").to(device)
+            with torch.no_grad():
+                # generation_config.json에 stop string이 박혀 있어 tokenizer를 함께
+                # 넘기지 않으면 transformers 5.9가 generate를 거부한다(실추론 경로와 동일).
+                model.generate(**inputs, max_new_tokens=5, use_cache=True,
+                               pad_token_id=tokenizer.eos_token_id,
+                               tokenizer=tokenizer)
+            logger.info("HyperCLOVA X 워밍업 완료")
+        except Exception as exc:
+            logger.warning("HyperCLOVA X 워밍업 실패 (무시): %s", exc)
 
     # ── 퍼블릭 속성 ───────────────────────────────────────────────
 

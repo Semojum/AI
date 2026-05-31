@@ -60,10 +60,17 @@ def _read_as_pdf(file_path: str) -> bytes:
     sys.exit(1)
 
 
-async def run_direct(file_path: str, mode: str, job_id: str) -> None:
+async def run_direct(file_path: str, mode: str, job_id: str, load_models: bool = False, pipeline_timeout: float | None = None) -> None:
     """서버 없이 pipeline.run() 직접 호출."""
     from app.schemas.task import PageTask
     from app.core import pipeline
+
+    if load_models:
+        import asyncio as _asyncio
+        from app.core.model_manager import model_manager
+        print("[local_runner] HCXT 모델 로드 중…")
+        await _asyncio.to_thread(model_manager._load_hcxt)
+        print(f"[local_runner] 모델 상태: {model_manager.get_status()}")
 
     pdf_data = _read_as_pdf(file_path)
     task = PageTask(
@@ -75,7 +82,12 @@ async def run_direct(file_path: str, mode: str, job_id: str) -> None:
     )
 
     print(f"[local_runner] 직접 실행 — mode={mode} job_id={job_id} size={len(pdf_data):,} bytes")
-    result = await pipeline.run(task)
+    if pipeline_timeout is not None:
+        import asyncio as _asyncio2
+        from app.core import pipeline as _pipeline_mod
+        result = await _asyncio2.wait_for(_pipeline_mod._run_pipeline(task), timeout=pipeline_timeout)
+    else:
+        result = await pipeline.run(task)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
@@ -129,12 +141,24 @@ def main() -> None:
         "--server", default=None,
         help="gRPC 서버 주소 (예: localhost:50051). 미지정 시 직접 실행."
     )
+    parser.add_argument(
+        "--load-models", action="store_true",
+        help="직접 실행 시 HCXT 모델 로드 (실제 GPU 모델 E2E 테스트용)"
+    )
+    parser.add_argument(
+        "--pipeline-timeout", type=float, default=None,
+        help="파이프라인 타임아웃(초). 기본값은 config PAGE_TIMEOUT_SECONDS(180s). E2E GPU 테스트 시 증가 권장."
+    )
     args = parser.parse_args()
 
     if args.server:
         run_grpc(args.file, args.mode, args.job_id, args.server)
     else:
-        asyncio.run(run_direct(args.file, args.mode, args.job_id))
+        asyncio.run(run_direct(
+            args.file, args.mode, args.job_id,
+            load_models=args.load_models,
+            pipeline_timeout=args.pipeline_timeout,
+        ))
 
 
 if __name__ == "__main__":

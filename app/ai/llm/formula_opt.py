@@ -78,15 +78,24 @@ def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 256) -> str:
     import torch
     model = model_manager.hcxt_model
     tokenizer = model_manager.hcxt_tokenizer
-    inputs = tokenizer(prompt, return_tensors="pt").to("cuda:1")
+    device = next(model.parameters()).device
+    messages = [{"role": "user", "content": prompt}]
+    inputs = tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        skip_reasoning=True,
+        return_dict=True,
+        return_tensors="pt",
+    ).to(device)
     with torch.no_grad():
         out = model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
             do_sample=False,
-            temperature=None,
-            top_p=None,
             pad_token_id=tokenizer.eos_token_id,
+            stop_strings=["<|endofturn|>", "<|stop|>"],
+            tokenizer=tokenizer,
+            use_cache=True,
         )
     generated = out[0][inputs["input_ids"].shape[1]:]
     return tokenizer.decode(generated, skip_special_tokens=True).strip()

@@ -22,55 +22,57 @@ from app.schemas.layout import LayoutResult
 
 logger = logging.getLogger(__name__)
 
-_STANDARD_TIMEOUT = 15.0
-_QUALITY_TIMEOUT  = 30.0
+_STANDARD_TIMEOUT = 60.0   # 워밍업 후 bitsandbytes NF4 14B: ~15-25 tok/s, 100tok ≈ 5s + 여유
+_QUALITY_TIMEOUT  = 90.0
 _FALLBACK_TIMEOUT = 45.0
+
+# GPU 추론 직렬화 — 단일 GPU 환경에서 동시 호출 시 GPU 경쟁 방지
+_hcxt_sem: Optional["asyncio.Semaphore"] = None
+
+def _get_hcxt_sem() -> "asyncio.Semaphore":
+    global _hcxt_sem
+    if _hcxt_sem is None:
+        _hcxt_sem = asyncio.Semaphore(1)
+    return _hcxt_sem
 
 def _min_trail(text: str) -> list[RuleApplication]:
     """텍스트 점역 기본 원칙(KBR-0.1)을 태깅 텍스트 전체 범위로 emit."""
     return [make_rule("KBR-0.1", span_start=0, span_end=len(text))]
 
-_PROMPT_STANDARD = """당신은 한국어 점역 전문가입니다.
-다음 텍스트를 점역 직전 상태로 교정하세요.
+_PROMPT_STANDARD = ""  # STANDARD 티어는 passthrough — 미사용
 
-규칙:
-1. 확실한 맞춤법 오류만 교정 (추측 교정 금지)
-2. 특수문자·수식·수치는 그대로 유지
-3. 줄바꿈과 원문 구조 유지
+_PROMPT_QUALITY = """OCR 오류만 수정 후 텍스트만 출력. 설명 금지.
 
-텍스트:
+신뢰도: {ocr_confidence:.2f}
+
+입력:
 {text}
 
-교정된 텍스트만 반환하세요."""
-
-_PROMPT_QUALITY = """당신은 한국어 점역 전문가입니다.
-다음 텍스트를 점역 직전 상태로 정확히 교정하세요.
-
-OCR 신뢰도: {ocr_confidence:.2f}
-원문:
-{text}
-
-교정 지침:
-1. OCR 오류를 문맥으로 추론하여 교정
-2. 수식(LaTeX)은 원형 유지
-3. [처리 불가: ...] 플레이스홀더는 그대로 유지
-
-교정된 텍스트만 반환하세요."""
+출력:"""
 
 
-def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 512) -> str:
+def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 256) -> str:
     import torch
     model = model_manager.hcxt_model
     tokenizer = model_manager.hcxt_tokenizer
-    inputs = tokenizer(prompt, return_tensors="pt").to("cuda:1")
+    device = next(model.parameters()).device
+    messages = [{"role": "user", "content": prompt}]
+    inputs = tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        skip_reasoning=True,
+        return_dict=True,
+        return_tensors="pt",
+    ).to(device)
     with torch.no_grad():
         out = model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
             do_sample=False,
-            temperature=None,
-            top_p=None,
             pad_token_id=tokenizer.eos_token_id,
+            stop_strings=["<|endofturn|>", "<|stop|>"],
+            tokenizer=tokenizer,
+            use_cache=True,  # generation_config.json의 use_cache=false 오버라이드
         )
     generated = out[0][inputs["input_ids"].shape[1]:]
     return tokenizer.decode(generated, skip_special_tokens=True).strip()
@@ -81,14 +83,17 @@ async def _hcxt_optimize(text: str, ocr_confidence: float, timeout: float) -> st
         prompt = _PROMPT_STANDARD.format(text=text)
     else:
         prompt = _PROMPT_QUALITY.format(text=text, ocr_confidence=ocr_confidence)
-    try:
-        return await asyncio.wait_for(
-            asyncio.to_thread(_hcxt_generate_sync, prompt),
-            timeout=timeout,
-        )
-    except asyncio.TimeoutError:
-        logger.warning("HyperCLOVA X 타임아웃 (%.0fs)", timeout)
-        raise
+    # 입력 텍스트 길이 기반 max_new_tokens: 한글 1자 ≈ 1~2토큰, 여유분 30% 추가
+    max_new_tokens = min(512, max(64, int(len(text) * 1.3)))
+    async with _get_hcxt_sem():
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(_hcxt_generate_sync, prompt, max_new_tokens),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("HyperCLOVA X 타임아웃 (%.0fs)", timeout)
+            raise
 
 
 async def _fallback_optimize(text: str, ocr_confidence: float) -> str:
@@ -134,19 +139,21 @@ class TextOpt:
         text = ext.corrected_text or ""
         start = time.monotonic()
 
-        # ZERO Tier: LLM 호출 없음
-        if routing_tier == "ZERO" or ext.ocr_confidence == 1.0:
+        # ZERO / STANDARD Tier: LLM 호출 없음 — 텍스트 원문 보존
+        # STANDARD(신뢰도 ≥ threshold)는 OCR 품질이 충분해 교정 불필요.
+        # HCXT는 QUALITY(신뢰도 < threshold, 저화질 스캔)에서만 호출.
+        if routing_tier in ("ZERO", "STANDARD") or ext.ocr_confidence >= config.ocr_confidence_threshold:
             return LLMOutput(
                 element_id=ext.element_id,
                 corrected_text=text,
                 render_mode="text_only",
-                routing_tier="ZERO",
+                routing_tier=routing_tier if routing_tier in ("ZERO", "STANDARD") else "STANDARD",
                 processing_time_ms=0,
                 rule_trail=_min_trail(text),
             )
 
-        timeout = _QUALITY_TIMEOUT if ext.ocr_confidence < config.ocr_confidence_threshold else _STANDARD_TIMEOUT
-        tier = "QUALITY" if ext.ocr_confidence < config.ocr_confidence_threshold else "STANDARD"
+        timeout = _QUALITY_TIMEOUT
+        tier = "QUALITY"
 
         fail_count = 0
         corrected = text
