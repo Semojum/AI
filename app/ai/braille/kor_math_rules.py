@@ -407,6 +407,37 @@ _STRUCT_RULES: list[tuple[str, str]] = [
     ("KBR-수학-6.59", "선적분"),   # 제59항
 ]
 
+# 단순 LaTeX 기호 명령 → rule_id (구조 외, 검증된 항만). \cmd 토큰 단위 매칭(substring 무관).
+_LATEX_SYMBOL_RULES: dict[str, str] = {
+    # 집합 (수학 제60항)
+    **{c: "KBR-수학-7.60" for c in (
+        "in", "notin", "ni", "subset", "supset", "subseteq", "supseteq",
+        "cup", "cap", "emptyset", "varnothing", "vdash")},
+    # 부등호 (수학 제4항)
+    **{c: "KBR-수학-1.4" for c in ("leq", "le", "geq", "ge", "neq", "ne")},
+    # 논리·명제 (수학 제61항)
+    **{c: "KBR-수학-7.61" for c in (
+        "forall", "exists", "neg", "lnot", "land", "wedge", "lor", "vee")},
+    # 근사·합동·닮음 (수학 제29·32·43·42항)
+    "approx": "KBR-수학-3.29", "cong": "KBR-수학-3.32",
+    "equiv": "KBR-수학-4.43", "sim": "KBR-수학-4.42",
+    # 연산 (수학 제2항 ×÷±, 제15항 ⊕⊗∙)
+    "pm": "KBR-수학-1.2", "times": "KBR-수학-1.2", "div": "KBR-수학-1.2",
+    "cdot": "KBR-수학-2.15", "oplus": "KBR-수학-2.15",
+    "ominus": "KBR-수학-2.15", "otimes": "KBR-수학-2.15",
+    # 기타 (수학 제65항 ∴∵ℵ, 제50항 ∞)
+    "therefore": "KBR-수학-9.65", "because": "KBR-수학-9.65",
+    "aleph": "KBR-수학-9.65", "infty": "KBR-수학-6.50",
+    # 그리스 문자 (한글 제4장 제10절 제30항)
+    **{g: "KBR-4.10.30" for g in (
+        "alpha", "beta", "gamma", "delta", "epsilon", "varepsilon", "zeta",
+        "eta", "theta", "iota", "kappa", "lambda", "mu", "nu", "xi", "pi",
+        "rho", "sigma", "tau", "upsilon", "phi", "varphi", "chi", "psi", "omega",
+        "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta",
+        "Iota", "Kappa", "Lambda", "Mu", "Nu", "Xi", "Pi", "Rho", "Sigma",
+        "Tau", "Upsilon", "Phi", "Chi", "Psi", "Omega")},
+}
+
 _RE_TRIG_ARC = re.compile(r"\\arc(?:sin|cos|tan|csc|sec|cot)")
 _RE_TRIG_HYP = re.compile(r"\\(?:sin|cos|tan|csc|sec|cot)h")
 _RE_TRIG_BASE = re.compile(r"\\(?:sin|cos|tan|csc|sec|cot)(?![a-z])")
@@ -465,7 +496,12 @@ def latex_rule_ids(latex: str) -> list[str]:
         add("KBR-수학-2.18")
     if _SUB_RE.search(residual):
         add("KBR-수학-2.19")
-    # 탐지 순서를 _STRUCT_RULES 기준으로 정렬(일관된 trail 순서)
+    # 단순 기호 명령(\in, \leq, 그리스 등) — \cmd 토큰 단위로 추출(substring 충돌 없음)
+    for cmd in set(re.findall(r"\\([A-Za-z]+)", s)):
+        rid = _LATEX_SYMBOL_RULES.get(cmd)
+        if rid:
+            add(rid)
+    # 탐지 순서를 _STRUCT_RULES 기준으로 정렬(구조 먼저, 기호 명령은 뒤)
     order = {r: i for i, (r, _) in enumerate(_STRUCT_RULES)}
     out.sort(key=lambda r: order.get(r, 99))
     return out

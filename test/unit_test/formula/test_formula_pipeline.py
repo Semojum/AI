@@ -254,3 +254,27 @@ class TestSymbolOverloadContext:
         from app.ai.braille.symbol_rules import substitute_symbols
 
         assert substitute_symbols("∼") == "⠐⠠⠤"
+
+
+class TestLatexSymbolCommandEmit:
+    """수식 내 단순 LaTeX 기호 명령(\\in·\\leq·그리스 등) → rule_id emit."""
+
+    def test_명령_rule_id_DB실재(self) -> None:
+        from app.ai.braille.kor_math_rules import _LATEX_SYMBOL_RULES
+        from app.ai.braille.regulations import all_rule_ids
+
+        db = all_rule_ids()
+        missing = {r for r in _LATEX_SYMBOL_RULES.values() if r not in db}
+        assert not missing, f"DB에 없는 rule_id: {missing}"
+
+    def test_집합_부등호_그리스(self) -> None:
+        from app.ai.braille.kor_math_rules import latex_rule_ids
+
+        got = set(latex_rule_ids(r"\alpha \in A, x \leq y"))
+        assert {"KBR-4.10.30", "KBR-수학-7.60", "KBR-수학-1.4"} <= got
+
+    def test_int_은_적분이며_in_오매칭없음(self) -> None:
+        # \int = 적분(6.56)만, \in(집합 7.60)으로 오매칭되면 안 됨(토큰 단위 추출)
+        from app.ai.braille.kor_math_rules import latex_rule_ids
+
+        assert latex_rule_ids(r"\int x dx") == ["KBR-수학-6.56"]

@@ -222,3 +222,9 @@ class TestSymbolRuleEmit:
 
         for excluded in ("√", "∑", "∥"):
             assert excluded not in SYMBOL_RULE_IDS
+
+    def test_근삿값_제20항_매핑(self):
+        # ≒ = 근삿값(제20항 KBR-수학-2.20) — 규정 확인 후 추가
+        from app.ai.braille.symbol_rules import SYMBOL_RULE_IDS
+
+        assert SYMBOL_RULE_IDS["≒"] == "KBR-수학-2.20"
