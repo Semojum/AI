@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from app.ai.braille.regulations import make_rule
+from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import translate_tagged_text, tn_marker_spans
 from app.schemas.content import BrailleOutput, LLMOutput, RuleApplication
 
@@ -22,10 +23,15 @@ def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
     ∽·ː 등 동일 점형(⠠⠄)을 오인하지 않는다(B1 오탐 방지).
     """
     joined = "\n".join(lines)
-    return [
+    trail = [
         make_rule("BBPG-1.2.6", span_start=s, span_end=e, tag=tag)
         for s, e, tag in tn_marker_spans(joined, source)
     ]
+    trail += [
+        make_rule(rule_id, span_start=s, span_end=e, tag="symbol")
+        for s, e, rule_id in symbol_rule_spans(source, joined)
+    ]
+    return trail
 
 _COLS = 32
 

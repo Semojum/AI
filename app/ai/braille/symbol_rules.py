@@ -40,6 +40,73 @@ def _load_flat_table() -> dict[str, str]:
 SYMBOL_TABLE: dict[str, str] = _load_flat_table()
 
 
+def _load_rule_ids() -> dict[str, str]:
+    """기호 → rule_id 매핑 (rule_trail emit용, Phase B).
+
+    각 카테고리의 `_rule`(기본 rule_id) + `_rule_overrides`(세분 예외)에서 구성한다.
+    매핑이 없는 기호(미검증·확신 부족)는 제외 — 변환은 되지만 trail은 emit하지 않는다
+    (환각 0: 확신 없는 rule_id를 만들지 않음).
+    """
+    with _TABLE_PATH.open(encoding="utf-8") as f:
+        raw = json.load(f)
+    rules: dict[str, str] = {}
+    for category, entries in raw.items():
+        if category.startswith("_") or not isinstance(entries, dict):
+            continue
+        default = entries.get("_rule")
+        overrides = entries.get("_rule_overrides", {})
+        for symbol, braille in entries.items():
+            if symbol.startswith("_") or not isinstance(braille, str):
+                continue
+            rule_id = overrides.get(symbol, default)
+            if rule_id is not None:
+                rules[symbol] = rule_id
+    return rules
+
+
+SYMBOL_RULE_IDS: dict[str, str] = _load_rule_ids()
+
+
+def symbol_rule_spans(source_text: str, braille: str) -> list[tuple[int, int, str]]:
+    """원본에 등장하는 특수기호의 출력 점자 좌표 → (start, end, rule_id) 목록.
+
+    rule_trail '내용 변환' emit용(Phase B). source-gated — 원본(점역 전)에 실제로 있는
+    기호만 대상으로 하여 출력 스캔 오탐(B1식)을 방지한다. 출력 점자에서 해당 글리프
+    위치를 찾아 span을 부여하되, 긴 글리프 우선 + 점유 마스킹으로 부분일치(예: ⠤ ⊂ ⠤⠤)
+    와 중복 계수를 막는다. (점자 좌표는 best-effort — 줄분리/공백정리 통과 후 정밀 보정은 추후.)
+    """
+    targets = [
+        (symbol, SYMBOL_TABLE[symbol], rule_id)
+        for symbol, rule_id in SYMBOL_RULE_IDS.items()
+        if symbol in source_text and symbol in SYMBOL_TABLE
+    ]
+    targets.sort(key=lambda t: len(t[1]), reverse=True)  # 긴 글리프 우선
+
+    consumed = [False] * len(braille)
+    spans: list[tuple[int, int, str]] = []
+    for symbol, glyph, rule_id in targets:
+        if not glyph:
+            continue
+        max_n = source_text.count(symbol)
+        width = len(glyph)
+        found = 0
+        start = 0
+        while found < max_n:
+            i = braille.find(glyph, start)
+            if i == -1:
+                break
+            if any(consumed[i:i + width]):  # 더 긴 글리프가 이미 점유
+                start = i + 1
+                continue
+            for k in range(i, i + width):
+                consumed[k] = True
+            spans.append((i, i + width, rule_id))
+            found += 1
+            start = i + width
+    spans.sort(key=lambda s: s[0])
+    return spans
+
+
 def preprocess(text: str) -> tuple[str, dict[str, str]]:
     """특수기호를 플레이스홀더로 치환한다 (braillify 모드 Step A).
 

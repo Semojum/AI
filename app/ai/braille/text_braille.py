@@ -6,6 +6,7 @@ LLMOutput.corrected_text → translator.translate_tagged_text() → BrailleOutpu
 from __future__ import annotations
 
 from app.ai.braille.regulations import make_rule
+from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import translate_tagged_text, tn_marker_spans
 from app.schemas.content import BrailleOutput, LLMOutput
 
@@ -37,12 +38,16 @@ class TextBraille:
             lines = _split_lines(braille_str)
             # braille_text_list 기준 = 점자. rule_trail은 '내용 변환'만 기록한다
             # (태민 정책 2026-06-01): 포괄 규칙(KBR-0.1)·조판 규칙(32칸 줄바꿈) 제외.
-            # 점역자 주 마커만 emit. 특수기호·수식 규칙은 Phase B(span 배선)에서 추가.
+            # 점역자 주 마커 + 특수기호·수식 규칙 emit (Phase B). 둘 다 source-gated.
             joined = "\n".join(lines)
             # 원본 태그 유무로 gate — ∽·ː의 ⠠⠄를 점역자 주로 오인하지 않도록(B1).
             trail = [
                 make_rule("BBPG-1.2.6", span_start=s, span_end=e, tag=tag)
                 for s, e, tag in tn_marker_spans(joined, opt.corrected_text)
+            ]
+            trail += [
+                make_rule(rule_id, span_start=s, span_end=e, tag="symbol")
+                for s, e, rule_id in symbol_rule_spans(opt.corrected_text, joined)
             ]
             results.append(BrailleOutput(
                 element_id=opt.element_id,
