@@ -88,3 +88,63 @@ class TestTnMarkerSpans:
 
     def test_마커없음(self):
         assert tn_marker_spans("⠁⠃⠉") == []
+
+
+class TestTnFalsePositiveB1:
+    """B1 회귀: ∽(닮음)·ː(장음)은 점역자 주와 동일 점형(⠠⠄)이지만 오인 금지.
+
+    근본 해결: 출력 점자 스캔이 아니라 '원본 태그 유무'로 점역자 주 마커를 판정한다.
+    """
+
+    def test_source_has_tn_태그있음(self):
+        assert _tr.source_has_tn("<!점역자주>설명<!/점역자주>")
+
+    def test_source_has_tn_기호만(self):
+        # ∽·ː만 있고 점역자 주 태그가 없으면 False
+        assert not _tr.source_has_tn("삼각형 ABC ∽ DEF")
+        assert not _tr.source_has_tn("모ː음 표시")
+
+    def test_source_has_tn_무관태그(self):
+        assert not _tr.source_has_tn("도형 <!직사각형> 끝")
+
+    def test_marker_spans_source_gate_기호(self):
+        # ∽ → ⠠⠄ 점자가 있어도 원본에 TN 태그 없으면 emit 안 함
+        assert tn_marker_spans("⠠⠄⠁⠃", "ABC ∽ DEF") == []
+
+    def test_marker_spans_source_gate_진짜TN(self):
+        spans = tn_marker_spans("⠠⠄⠁⠃⠠⠄", "<!점역자주>x<!/점역자주>")
+        assert spans == [(0, 2, "tn_open"), (4, 6, "tn_close")]
+
+    def test_marker_spans_source_none이면_무게이트(self):
+        # source 미전달 시 기존 순수 스캐너 동작 유지
+        assert tn_marker_spans("⠠⠄⠁⠃⠠⠄") == [(0, 2, "tn_open"), (4, 6, "tn_close")]
+
+
+class TestTnFalsePositivePipeline:
+    """text_braille 파이프라인 레벨 B1 회귀."""
+
+    @staticmethod
+    def _trail(corrected_text: str):
+        import uuid
+
+        from app.ai.braille.text_braille import TextBraille
+        from app.schemas.content import LLMOutput
+
+        opt = LLMOutput(
+            element_id=str(uuid.uuid4()),
+            corrected_text=corrected_text,
+            render_mode="text_only",
+            routing_tier="ZERO",
+        )
+        return TextBraille().translate([opt])[0].rule_trail
+
+    def test_닮음기호_점역자주_오탐없음(self):
+        # 수학 교과서 빈발: "∽"가 ⠠⠄로 변환돼도 점역자 주로 잡히면 안 됨
+        assert self._trail("삼각형 ABC ∽ DEF 이다") == []
+
+    def test_장음기호_오탐없음(self):
+        assert self._trail("모ː음 표시") == []
+
+    def test_진짜_점역자주_emit(self):
+        trail = self._trail("<!점역자주>그림 설명<!/점역자주>")
+        assert [r.tag for r in trail] == ["tn_open", "tn_close"]

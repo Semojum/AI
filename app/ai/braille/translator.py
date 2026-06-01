@@ -288,12 +288,35 @@ def _border_line(name: str, title_braille: str) -> str:
 TN_MARKER = "⠠⠄"  # 점역자 주 점자 마커 (BBPG-1.2.6), 양끝 동일
 
 
-def tn_marker_spans(braille: str) -> list[tuple[int, int, str]]:
+def _tag_name(token: str) -> str:
+    """<!이름> / <!/이름> 토큰에서 이름만 추출 (닫기 슬래시 제거)."""
+    return token[2:-1].lstrip("/")
+
+
+def source_has_tn(text: str) -> bool:
+    """원본(점역 전) 텍스트에 점역자 주 마커(⠠⠄)를 만드는 태그가 있는지.
+
+    출력 점자만 스캔하면 ∽(닮음)·ː(장음) 등 동일 점형(⠠⠄)을 점역자 주로 오인한다(B1 오탐).
+    점역자 주 마커는 오직 태그에서만 삽입되므로, '원본 태그 유무'로 emit을 판정한다.
+    """
+    return any(
+        _TAG_INLINE_MARKER.get(_tag_name(m.group(0))) == TN_MARKER
+        for m in _TAG_TOKEN_RE.finditer(text)
+    )
+
+
+def tn_marker_spans(braille: str, source_text: str | None = None) -> list[tuple[int, int, str]]:
     """점역 결과 점자에서 점역자 주 마커(⠠⠄) 위치 → (start, end, tag) 목록.
 
     첫 마커 = tn_open, 마지막 마커 = tn_close (TN은 내용 전체를 감싸므로 최외곽이 양끝).
     rule_trail 점자 좌표 emit용 (plan §3-4·§3-5). 마커 없으면 빈 목록.
+
+    source_text를 주면 그 원본에 점역자 주 태그가 있을 때만 emit한다 —
+    ∽·ː 등 동일 점형(⠠⠄)을 점역자 주로 오인하는 B1 오탐 방지.
+    (점자 좌표 정밀 보정은 Phase B 좌표 배선과 함께 처리.)
     """
+    if source_text is not None and not source_has_tn(source_text):
+        return []
     i = braille.find(TN_MARKER)
     if i == -1:
         return []
@@ -318,7 +341,7 @@ def substitute_tags(text: str) -> str:
 
     # 2) 단일·대칭 인라인 마커 + 미지 태그 제거
     def _token_sub(m: re.Match) -> str:
-        name = m.group(0)[2:-1].lstrip("/")  # "<!" ... ">" 안쪽, 닫기 슬래시 제거
+        name = _tag_name(m.group(0))  # "<!" ... ">" 안쪽, 닫기 슬래시 제거
         if name in _TAG_INLINE_MARKER:
             return _TAG_INLINE_MARKER[name]
         logger.warning("translator: 미지 태그 제거 %s", m.group(0))

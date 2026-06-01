@@ -11,16 +11,19 @@ from app.ai.braille.translator import translate_tagged_text, tn_marker_spans
 from app.schemas.content import BrailleOutput, LLMOutput, RuleApplication
 
 
-def _base_trail(lines: list[str]) -> list[RuleApplication]:
+def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
     """점역자 주 마커(BBPG-1.2.6)만 점자 좌표로 emit.
 
     rule_trail은 '내용 변환'만 기록한다(태민 정책 2026-06-01). 포괄·조판 규칙 제외.
     내용 속 특수기호·수식 규칙은 Phase B에서 추가 예정.
+
+    source = 점역 전 원본 텍스트. 원본에 점역자 주 태그가 있을 때만 emit하여
+    ∽·ː 등 동일 점형(⠠⠄)을 오인하지 않는다(B1 오탐 방지).
     """
     joined = "\n".join(lines)
     return [
         make_rule("BBPG-1.2.6", span_start=s, span_end=e, tag=tag)
-        for s, e, tag in tn_marker_spans(joined)
+        for s, e, tag in tn_marker_spans(joined, source)
     ]
 
 _COLS = 32
@@ -57,7 +60,7 @@ class CartoonBraille:
                     d_lines = _to_braille(d.text)
                     out_drafts.append(d.model_copy(update={
                         "braille_lines": d_lines,
-                        "rule_trail": _base_trail(d_lines),
+                        "rule_trail": _base_trail(d_lines, d.text),
                     }))
                 sel = opt.selected_idx if 0 <= opt.selected_idx < len(out_drafts) else 0
                 results.append(BrailleOutput(
@@ -68,10 +71,11 @@ class CartoonBraille:
                     selected_idx=sel,
                 ))
             else:
-                lines = _to_braille(opt.tn_text or opt.corrected_text)
+                src = opt.tn_text or opt.corrected_text
+                lines = _to_braille(src)
                 results.append(BrailleOutput(
                     element_id=opt.element_id,
                     braille_lines=lines,
-                    rule_trail=_base_trail(lines),
+                    rule_trail=_base_trail(lines, src),
                 ))
         return results

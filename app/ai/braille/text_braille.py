@@ -39,9 +39,10 @@ class TextBraille:
             # (태민 정책 2026-06-01): 포괄 규칙(KBR-0.1)·조판 규칙(32칸 줄바꿈) 제외.
             # 점역자 주 마커만 emit. 특수기호·수식 규칙은 Phase B(span 배선)에서 추가.
             joined = "\n".join(lines)
+            # 원본 태그 유무로 gate — ∽·ː의 ⠠⠄를 점역자 주로 오인하지 않도록(B1).
             trail = [
                 make_rule("BBPG-1.2.6", span_start=s, span_end=e, tag=tag)
-                for s, e, tag in tn_marker_spans(joined)
+                for s, e, tag in tn_marker_spans(joined, opt.corrected_text)
             ]
             results.append(BrailleOutput(
                 element_id=opt.element_id,

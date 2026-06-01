@@ -27,6 +27,7 @@ from app.ai.braille.layout_braille import (
     _RULE_LINE_WRAP, _RULE_HEADING_BLANK, _RULE_PARA_INDENT, _RULE_BULLET_INDENT,
     _UNDERLINE_BLANK_MARKER, _BULLET_MARKERS, _PAGE_CHANGE_FILL,
     _OVERFLOW_PAGE_NUMBER, _BOX_BORDER_END, _BOX_TOP_FILL, _BOX_BOTTOM_FILL,
+    _is_border_line,
 )
 from app.schemas.content import BrailleOutput
 from app.schemas.layout import BBoxItem, LayoutResult
@@ -403,3 +404,52 @@ class TestLayoutBody:
         assert page_line.startswith("⠼⠉⠊")     # 좌측 원본 번호
         assert page_line.rstrip().endswith("⠲")  # 우측 점자 페이지번호
         assert "⠼⠉⠊" not in "\n".join(_read_lines(tmp_path, "pgn")[:-1])  # 본문 아님
+
+
+class TestBorderIndentB2:
+    """B2 회귀: 32칸 테두리에 문단·글머리 들여(3칸)를 더하면 _break_line이 테두리를
+    강제 분리해 망가진다. text/list_item 타입이라도 테두리 줄은 들여 미적용 + 경고."""
+
+    def test_is_border_line(self) -> None:
+        assert _is_border_line(format_box_top())       # ⠿⠛…⠿ (32칸)
+        assert _is_border_line(format_box_bottom())    # ⠿⠶…⠿ (32칸)
+        assert _is_border_line(_BOX_BORDER_END * _COLS)  # 표 전체 테두리
+        assert not _is_border_line("⠁⠃⠉")             # 일반 텍스트
+        assert not _is_border_line(_BOX_BORDER_END * 20)  # 32칸 아님
+
+    def test_border_in_text_not_split(self, lb, tmp_path) -> None:
+        eid = uuid4()
+        lr = _layout((eid, "text", 1, 0))
+        lb.layout([_out([format_box_top()], eid)],
+                  page_no=1, job_id="b2t", layout_result=lr)
+        first = next(l for l in _read_lines(tmp_path, "b2t") if l.strip())
+        assert first == format_box_top()           # 32칸 그대로, 들여·분리 없음
+        assert _cell_count(first) == _COLS
+
+    def test_border_in_list_item_not_split(self, lb, tmp_path) -> None:
+        eid = uuid4()
+        lr = _layout((eid, "list_item", 1, 0))
+        lb.layout([_out([format_box_bottom()], eid)],
+                  page_no=1, job_id="b2l", layout_result=lr)
+        first = next(l for l in _read_lines(tmp_path, "b2l") if l.strip())
+        assert first == format_box_bottom()
+        assert _cell_count(first) == _COLS
+
+    def test_titled_border_in_text_not_split(self, lb, tmp_path) -> None:
+        # 제목(범례) 포함 테두리는 내부에 빈칸이 있어 단어경계 분리가 더 잘 일어남
+        from app.ai.braille.translator import substitute_tags
+        eid = uuid4()
+        border = substitute_tags("<!표윗테두리>범례<!/표윗테두리>")
+        assert _cell_count(border) == _COLS
+        lr = _layout((eid, "text", 1, 0))
+        lb.layout([_out([border], eid)], page_no=1, job_id="b2tt", layout_result=lr)
+        first = next(l for l in _read_lines(tmp_path, "b2tt") if l.strip())
+        assert first == border                      # 분리 없이 보존
+
+    def test_normal_text_still_indented(self, lb, tmp_path) -> None:
+        # 테두리 없는 일반 text는 기존대로 3칸 들여 유지(과잉 억제 방지)
+        eid = uuid4()
+        lr = _layout((eid, "text", 1, 0))
+        lb.layout([_out(["일반 문단"], eid)], page_no=1, job_id="b2n", layout_result=lr)
+        first = next(l for l in _read_lines(tmp_path, "b2n") if l.strip())
+        assert first.startswith("   ")
