@@ -172,4 +172,61 @@ class TestFormulaBLEU:
             )
 
 
-# TODO [STEP 4]: formula_opt, formula_braille 구현 완료 후 5-2, 5-3 테스트 추가
+class TestMathStructEmit:
+    """Phase B: 수식 구조(분수·근·첨자·로그·극한·삼각 등) → rule_trail rule_id emit."""
+
+    def test_구조_rule_id_DB실재(self) -> None:
+        # 환각 0: 모든 구조 rule_id ⊆ regulations.json
+        from app.ai.braille.kor_math_rules import _STRUCT_RULES
+        from app.ai.braille.regulations import all_rule_ids
+
+        db = all_rule_ids()
+        missing = [rid for rid, _ in _STRUCT_RULES if rid not in db]
+        assert not missing, f"DB에 없는 구조 rule_id: {missing}"
+
+    def test_분수_위첨자_아래첨자_근호(self) -> None:
+        from app.ai.braille.kor_math_rules import latex_rule_ids
+
+        assert latex_rule_ids(r"\frac{a^2}{b_i}") == [
+            "KBR-수학-1.7", "KBR-수학-2.18", "KBR-수학-2.19"]
+        assert latex_rule_ids(r"\sqrt{x}") == ["KBR-수학-2.22"]
+
+    def test_함수명령_아래첨자_오계수없음(self) -> None:
+        # \lim_ \log_ \sum_ 의 _ 가 아래첨자(2.19)로 오계수되면 안 됨
+        from app.ai.braille.kor_math_rules import latex_rule_ids
+
+        assert latex_rule_ids(r"\lim_{x \to 0}") == ["KBR-수학-6.51"]
+        assert latex_rule_ids(r"\log_2 x") == ["KBR-수학-5.46"]
+        assert latex_rule_ids(r"\sum_{i=1}^{n}") == ["KBR-수학-2.25"]
+
+    def test_삼각함수_변형_정확분류(self) -> None:
+        from app.ai.braille.kor_math_rules import latex_rule_ids
+
+        assert latex_rule_ids(r"\sin x") == ["KBR-수학-5.47"]
+        assert latex_rule_ids(r"\arcsin x") == ["KBR-수학-5.48"]   # \sin 오매칭 금지
+        assert latex_rule_ids(r"\sinh x") == ["KBR-수학-5.49"]     # \sin 오매칭 금지
+
+    def test_formula_braille_구조trail(self) -> None:
+        import uuid
+
+        from app.ai.braille.formula_braille import FormulaBraille
+        from app.schemas.content import LLMOutput
+
+        opt = LLMOutput(element_id=str(uuid.uuid4()), corrected_text=r"\frac{1}{2} + \sqrt{x}",
+                        render_mode="formula_block", routing_tier="ZERO")
+        trail = FormulaBraille().translate([opt])[0].rule_trail
+        rids = {r.rule_id for r in trail}
+        assert "KBR-수학-1.1" in rids    # 일반 수식 마커 유지
+        assert "KBR-수학-1.7" in rids    # 분수
+        assert "KBR-수학-2.22" in rids   # 근호
+
+    def test_구조없는_수식은_일반마커만(self) -> None:
+        import uuid
+
+        from app.ai.braille.formula_braille import FormulaBraille
+        from app.schemas.content import LLMOutput
+
+        opt = LLMOutput(element_id=str(uuid.uuid4()), corrected_text="x + y = z",
+                        render_mode="formula_block", routing_tier="ZERO")
+        trail = FormulaBraille().translate([opt])[0].rule_trail
+        assert [r.rule_id for r in trail] == ["KBR-수학-1.1"]

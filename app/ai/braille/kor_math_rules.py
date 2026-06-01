@@ -381,6 +381,91 @@ def convert_latex(latex: str) -> str:
     return result
 
 
+# ── 수식 구조 → rule_id (rule_trail emit용, Phase B) ────────────────────────
+# 항→장→KBR-수학-{장}.{항}. 규정 원문 + 장 경계로 검증(환각 0). 모두 regulations.json 실재.
+_STRUCT_RULES: list[tuple[str, str]] = [
+    # (rule_id, 설명)  — 탐지 순서가 trail 순서
+    ("KBR-수학-1.7", "분수"),      # 제7항
+    ("KBR-수학-2.18", "위첨자"),   # 제18항
+    ("KBR-수학-2.19", "아래첨자"), # 제19항
+    ("KBR-수학-2.21", "절댓값"),   # 제21항
+    ("KBR-수학-2.22", "근호"),     # 제22항
+    ("KBR-수학-2.25", "총합"),     # 제25항
+    ("KBR-수학-5.46", "로그"),     # 제46항
+    ("KBR-수학-5.47", "삼각함수"), # 제47항
+    ("KBR-수학-5.48", "역삼각함수"),  # 제48항
+    ("KBR-수학-5.49", "쌍곡선함수"),  # 제49항
+    ("KBR-수학-6.51", "극한"),     # 제51항
+    ("KBR-수학-6.54", "편도함수"), # 제54항
+    ("KBR-수학-6.55", "델연산자"), # 제55항
+    ("KBR-수학-6.56", "적분"),     # 제56항
+    ("KBR-수학-6.59", "선적분"),   # 제59항
+]
+
+_RE_TRIG_ARC = re.compile(r"\\arc(?:sin|cos|tan|csc|sec|cot)")
+_RE_TRIG_HYP = re.compile(r"\\(?:sin|cos|tan|csc|sec|cot)h")
+_RE_TRIG_BASE = re.compile(r"\\(?:sin|cos|tan|csc|sec|cot)(?![a-z])")
+_RE_ABS_BAR = re.compile(r"\|[^|]+\|")
+
+
+def latex_rule_ids(latex: str) -> list[str]:
+    """LaTeX 수식에 쓰인 수학 '구조'(분수·근·첨자·로그·극한·합·절댓값·적분·삼각) → rule_id 목록.
+
+    source-based(LaTeX 명령 탐지) — 환각 0: 항을 규정 원문에서 검증한 rule_id만 사용.
+    단순 기호 명령(\\in, \\leq, 그리스 등)은 여기서 다루지 않음(symbol_table 매핑 영역).
+    반환은 탐지 순서·중복제거. 좌표는 formula_braille에서 수식 전체로 부여(구조 좌표는 추후).
+    """
+    out: list[str] = []
+
+    def add(rule_id: str) -> None:
+        if rule_id not in out:
+            out.append(rule_id)
+
+    s = latex
+    if "\\frac" in s:
+        add("KBR-수학-1.7")
+    if "\\sqrt" in s:
+        add("KBR-수학-2.22")
+    if "\\sum" in s:
+        add("KBR-수학-2.25")
+    if "\\lim" in s:
+        add("KBR-수학-6.51")
+    if "\\log" in s or "\\ln" in s:
+        add("KBR-수학-5.46")
+    if _RE_TRIG_ARC.search(s):
+        add("KBR-수학-5.48")
+    if _RE_TRIG_HYP.search(s):
+        add("KBR-수학-5.49")
+    if _RE_TRIG_BASE.search(s):
+        add("KBR-수학-5.47")
+    if "\\partial" in s:
+        add("KBR-수학-6.54")
+    if "\\nabla" in s:
+        add("KBR-수학-6.55")
+    if "\\oint" in s:
+        add("KBR-수학-6.59")
+    if "\\int" in s:
+        add("KBR-수학-6.56")
+    if (_ABS_RE.search(s) or "\\lvert" in s or "\\lVert" in s
+            or "\\|" in s or _RE_ABS_BAR.search(s)):
+        add("KBR-수학-2.21")
+    # 첨자: 함수/구조 명령(자체 _·^ 보유)을 제거한 잔여에서만 ^·_ 판정 → \log_ \lim_ \sum_ 오계수 방지
+    residual = _LIM_RE.sub(" ", s)
+    residual = _LOG_BASE_RE.sub(" ", residual)
+    residual = _LOG_BASE1_RE.sub(" ", residual)
+    residual = _SUM_RE.sub(" ", residual)
+    for cmd in ("\\log", "\\ln", "\\sum", "\\sqrt", "\\lim"):
+        residual = residual.replace(cmd, " ")
+    if _SUP_RE.search(residual):
+        add("KBR-수학-2.18")
+    if _SUB_RE.search(residual):
+        add("KBR-수학-2.19")
+    # 탐지 순서를 _STRUCT_RULES 기준으로 정렬(일관된 trail 순서)
+    order = {r: i for i, (r, _) in enumerate(_STRUCT_RULES)}
+    out.sort(key=lambda r: order.get(r, 99))
+    return out
+
+
 def _needs_wrap(expr: str) -> bool:
     """분모/분자가 다항식(+,-가 포함된 경우) 이면 묶음 괄호 필요."""
     expr = expr.strip()
