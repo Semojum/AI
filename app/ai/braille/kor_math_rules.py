@@ -363,6 +363,11 @@ def convert_latex(latex: str) -> str:
     result = re.sub(r"(?<=\s)-(?=\s)", "⠊", result)          # 뺄셈표 9=⠊ (공백 구분)
     result = result.replace("=", "⠉⠉")                       # 등호 33=⠉⠉
 
+    # ── 11c. 문맥 overload 분기: 수식 내 기호는 수학 의미로(텍스트 substitute_symbols와 분리) ──
+    # ∼: 텍스트=물결표(⠐⠠⠤) / 수식=논리부정·관계(⠈⠊, 수학 제61·34항)
+    # →: 텍스트=화살표(⠒⠕) / 수식=화살표·조건문(⠉⠕, 수학 제38·61항)
+    result = result.replace("∼", "⠈⠊").replace("→", "⠉⠕")
+
     # ── 12. 남은 유니코드 수학 기호 → substitute_symbols ────────────────
     result = substitute_symbols(result)
 

@@ -453,3 +453,45 @@ class TestBorderIndentB2:
         lb.layout([_out(["일반 문단"], eid)], page_no=1, job_id="b2n", layout_result=lr)
         first = next(l for l in _read_lines(tmp_path, "b2n") if l.strip())
         assert first.startswith("   ")
+
+
+class TestBulletMarkerKBR72:
+    """KBR 제72항: list_item 첫머리 ○□△ 숨김표 글리프 → 글머리형 정정 (글머리 분기)."""
+
+    @staticmethod
+    def _bo(line: str, rule_trail=None) -> BrailleOutput:
+        from app.ai.braille.regulations import make_rule
+        if rule_trail is None:
+            rule_trail = [make_rule("KBR-6.13.49", span_start=0, span_end=3, tag="symbol")]
+        return BrailleOutput(element_id=str(uuid4()), braille_lines=[line], rule_trail=rule_trail)
+
+    def test_동그라미_글머리_변환(self) -> None:
+        bo = self._bo("⠸⠚⠇⠁⠃")           # ○ 숨김표(⠸⠚⠇) + 내용 ⠁⠃
+        LayoutBraille()._apply_bullet_marker(bo)
+        assert bo.braille_lines[0] == "⠸⠚⠁⠃"   # 꼬리 ⠇ 제거 → 글머리 ⠸⠚
+        rids = [r.rule_id for r in bo.rule_trail]
+        assert "KBR-6.14.72" in rids            # 글머리로 정정
+        assert "KBR-6.13.49" not in rids        # 숨김표 entry 제거
+
+    def test_네모_세모_글머리(self) -> None:
+        for hidden, bullet in [("⠸⠄⠇", "⠸⠄"), ("⠸⠬⠇", "⠸⠬")]:
+            bo = self._bo(hidden + "⠁")
+            LayoutBraille()._apply_bullet_marker(bo)
+            assert bo.braille_lines[0] == bullet + "⠁"
+            assert any(r.rule_id == "KBR-6.14.72" for r in bo.rule_trail)
+
+    def test_숨김표아니면_불변(self) -> None:
+        bo = self._bo("⠁⠃⠉", rule_trail=[])    # 첫머리가 글머리 글리프 아님
+        LayoutBraille()._apply_bullet_marker(bo)
+        assert bo.braille_lines[0] == "⠁⠃⠉"
+        assert bo.rule_trail == []
+
+    def test_format_element_list_item_3칸들여_글머리(self) -> None:
+        from app.ai.braille.regulations import make_rule
+        bo = BrailleOutput(
+            element_id=str(uuid4()), braille_lines=["⠸⠚⠇⠁⠃"],
+            rule_trail=[make_rule("KBR-6.13.49", span_start=0, span_end=3, tag="symbol")],
+        )
+        lines, _ = LayoutBraille()._format_element(bo, "list_item", 0)
+        assert lines[0] == "   ⠸⠚⠁⠃"            # 3칸 들여 + 글머리형
+        assert any(r.rule_id == "KBR-6.14.72" for r in bo.rule_trail)

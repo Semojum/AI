@@ -47,6 +47,17 @@ _RULE_HEADING_BLANK = "BBPG-2.2.1"  # 단계별 제목 표기, tag=heading_blank
 _RULE_PARA_INDENT = "BBPG-2.2.2"    # 문단 형식(새 문단 3칸), tag=indent
 _RULE_BULLET_INDENT = "BBPG-2.3.5"  # 글머리 3칸, tag=indent
 
+# ── KBR 제72항 글머리 기호: 숨김표 글리프(_..l, 꼬리 ⠇) → 글머리형(_.., 꼬리 없음) ──
+# ○□△가 list_item 글머리로 쓰이면 숨김표(제49항)가 아니라 글머리형(제72항)이어야 한다.
+# text 체인은 문맥을 몰라 숨김표로 변환·emit하므로 여기서 글리프·rule을 글머리로 정정한다.
+_HIDDEN_TO_BULLET: dict[str, str] = {
+    "⠸⠚⠇": "⠸⠚",  # ○ 숨김표 → 글머리 (제72항 _0)
+    "⠸⠄⠇": "⠸⠄",  # □ → 글머리 (_7)
+    "⠸⠬⠇": "⠸⠬",  # △ → 글머리 (_+)
+}
+_RULE_BULLET = "KBR-6.14.72"   # 글머리 기호 (제72항)
+_RULE_HIDDEN_SINGLE = "KBR-6.13.49"  # 숨김표 단일(제49항) — list_item 첫머리면 글머리로 정정
+
 _PARA_INDENT = 3        # BBPG 2장2절2 새 문단 첫 줄 3칸 (text)
 _BULLET_LINE_INDENT = 3  # BBPG 2장3절5 글머리/목록 3칸 (list_item)
 _HEADING_DEEP_INDENT = 5  # BBPG 2장2절1 3·4단계 제목 5칸
@@ -270,6 +281,8 @@ class LayoutBraille:
         """
         if not any(ln.strip() for ln in bo.braille_lines):
             return [], 0
+        if etype == "list_item":
+            self._apply_bullet_marker(bo)
         is_heading = hlevel >= 1
         first_indent = self._first_indent(bo, etype, is_heading, hlevel)
         if first_indent and any(_is_border_line(ln) for ln in bo.braille_lines):
@@ -295,6 +308,39 @@ class LayoutBraille:
             out.extend(broken)
             forced_total += forced
         return out, forced_total
+
+    def _apply_bullet_marker(self, bo: BrailleOutput) -> None:
+        """list_item 첫머리 숨김표 글리프(○□△)를 KBR 제72항 글머리형으로 정정(in-place).
+
+        text 체인은 요소 type을 몰라 ○를 숨김표(⠸⠚⠇, KBR-6.13.49)로 변환·emit한다.
+        list_item 첫머리의 ○□△는 글머리이므로 글리프(꼬리 ⠇ 제거)와 rule_trail
+        (6.13.49→6.14.72)을 정정한다. (태민 정책: 위계 추론 없이 단일 글머리형.)
+        """
+        lines = bo.braille_lines
+        idx = next((i for i, ln in enumerate(lines) if ln.strip()), None)
+        if idx is None:
+            return
+        line = lines[idx]
+        for hidden, bullet in _HIDDEN_TO_BULLET.items():
+            if not line.startswith(hidden):
+                continue
+            lines[idx] = bullet + line[len(hidden):]
+            # rule_trail: 선두 숨김표(6.13.49, span_start==0) → 글머리(6.14.72)로 교체
+            new_trail = []
+            replaced = False
+            for r in bo.rule_trail:
+                if (not replaced and r.rule_id == _RULE_HIDDEN_SINGLE
+                        and r.span_start == 0):
+                    new_trail.append(make_rule(_RULE_BULLET, span_start=0,
+                                               span_end=len(bullet), tag="bullet"))
+                    replaced = True
+                else:
+                    new_trail.append(r)
+            if not replaced:
+                new_trail.append(make_rule(_RULE_BULLET, span_start=0,
+                                           span_end=len(bullet), tag="bullet"))
+            bo.rule_trail = new_trail
+            return
 
     def _first_indent(
         self, bo: BrailleOutput, etype: str, is_heading: bool, hlevel: int

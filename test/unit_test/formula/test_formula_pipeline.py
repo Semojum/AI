@@ -230,3 +230,27 @@ class TestMathStructEmit:
                         render_mode="formula_block", routing_tier="ZERO")
         trail = FormulaBraille().translate([opt])[0].rule_trail
         assert [r.rule_id for r in trail] == ["KBR-수학-1.1"]
+
+
+class TestSymbolOverloadContext:
+    """문맥 overload 분기: 수식 내 ∼·→는 수학 의미(텍스트와 다른 글리프)."""
+
+    def test_수식_물결_논리부정(self) -> None:
+        from app.ai.braille.kor_math_rules import convert_latex
+
+        out = convert_latex("a ∼ b")
+        assert "⠈⠊" in out          # 수식 ∼ = 논리부정·관계
+        assert "⠐⠠⠤" not in out      # 텍스트 물결표 아님
+
+    def test_수식_화살표(self) -> None:
+        from app.ai.braille.kor_math_rules import convert_latex
+
+        out = convert_latex("x → y")
+        assert "⠉⠕" in out          # 수식 → = 수학 화살표·조건문
+        assert "⠒⠕" not in out       # 텍스트 화살표(제70항) 아님
+
+    def test_텍스트_물결표_유지(self) -> None:
+        # 일반 텍스트 경로(substitute_symbols)에서는 ∼ = 물결표(텍스트 의미 유지)
+        from app.ai.braille.symbol_rules import substitute_symbols
+
+        assert substitute_symbols("∼") == "⠐⠠⠤"
