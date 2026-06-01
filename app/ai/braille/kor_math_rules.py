@@ -346,7 +346,7 @@ def convert_latex(latex: str) -> str:
         # 프라임 (수학 제17항: -으로 적는다)
         "\\prime":   "⠤",
         # 퍼센트·비 등
-        "\\%":       "⠚⠏",
+        "\\%":       "⠴⠏",   # % 단위 (단위표 0=⠴)
     }
     # 긴 명령어를 먼저 치환하여 prefix 충돌 방지 (예: \\int vs \\in)
     for latex_cmd, braille_val in sorted(_LATEX_SIMPLE.items(), key=lambda x: -len(x[0])):

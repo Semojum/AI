@@ -140,7 +140,7 @@ class TestSymbolSubstitution:
         assert substitute_symbols("→") == "⠒⠕"
 
     def test_celsius_substituted(self):
-        assert substitute_symbols("℃") == "⠚⠙⠠⠉"
+        assert substitute_symbols("℃") == "⠴⠙⠠⠉"
 
     def test_circled_number_substituted(self):
         assert substitute_symbols("①") == "⠼⠁⠲"
@@ -152,7 +152,7 @@ class TestSymbolSubstitution:
 
     def test_mixed_text_with_symbol(self):
         result = translate_tagged_text("온도는 25℃이다")
-        assert "⠚⠙⠠⠉" in result
+        assert "⠴⠙⠠⠉" in result
 
     def test_symbol_at_start_of_text(self):
         result = substitute_symbols("α는 각도이다")
