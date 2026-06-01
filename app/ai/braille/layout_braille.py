@@ -105,16 +105,22 @@ _BOX_TITLE_INLINE_MAX = _COLS - 2 - _BORDER_LEFT_FILL - 2  # = 24
 _BOX_TITLE_INDENT = 5  # 케이스① 제목 윗줄 5칸
 
 
-def _is_border_line(line: str) -> bool:
-    """글상자/표 테두리 줄(32칸, 양 끝 ⠿)인지 — 들여쓰기 금지 대상(B2).
+# 테두리 줄 양 끝 캡: 1단계 ⠿, 위계 2·3단계 위 ⠖…⠲ / 아래 ⠓…⠚ (BBPG-1.2.5(3)·(5))
+_BORDER_START_CAPS = frozenset("⠿⠖⠓")
+_BORDER_END_CAPS = frozenset("⠿⠲⠚")
 
-    translator/table_braille가 32칸 테두리를 미리 렌더하므로, 여기에 문단·글머리
-    들여(3칸)를 더하면 35칸이 되어 _break_line이 테두리를 강제 분리해 망가뜨린다.
+
+def _is_border_line(line: str) -> bool:
+    """글상자/표 테두리 줄(32칸, 양 끝이 테두리 캡)인지 — 들여쓰기 금지 대상(B2).
+
+    translator/table_braille가 32칸 테두리를 렌더하고 layout이 위계로 재렌더하므로,
+    여기에 문단·글머리 들여(3칸)를 더하면 35칸이 되어 _break_line이 테두리를 망가뜨린다.
+    1·2·3단계 캡을 모두 인식한다.
     """
     return (
         len(line) == _COLS
-        and line.startswith(_BOX_BORDER_END)
-        and line.endswith(_BOX_BORDER_END)
+        and line[:1] in _BORDER_START_CAPS
+        and line[-1:] in _BORDER_END_CAPS
     )
 
 

@@ -264,9 +264,10 @@ from app.ai.braille.constants import COLS as _BORDER_COLS  # noqa: E402 (공용 
 _BORDER_BLANK     = "⠀"   # 점자 빈칸(U+2800)
 _BORDER_LEFT_FILL = 4     # 캡 뒤 채움 칸 → 제목 7칸에서 시작(BBPG-1.2.5(4)②: 캡1+채움4+빈칸1)
 
-# 신형식 <!이름>…<!/이름> + 구형식 <!이름>…<!이름> 모두 수용(닫기 슬래시 옵션)
+# 신형식 <!이름>…<!/이름> + 구형식 <!이름>…<!이름> 모두 수용(닫기 슬래시 옵션).
+# 위계: 이름 뒤 단계 숫자 옵션(<!표윗테두리2>=2단계, 없으면 1단계). group(1)=단계, group(2)=제목.
 _BORDER_PAIR_RE = {
-    name: re.compile(rf"<!{re.escape(name)}>(.*?)<!/?{re.escape(name)}>", re.DOTALL)
+    name: re.compile(rf"<!{re.escape(name)}([23]?)>(.*?)<!/?{re.escape(name)}\1>", re.DOTALL)
     for name in _BORDER_FILL
 }
 
@@ -285,8 +286,9 @@ def _border_line(name: str, title_braille: str) -> str:
             + t + _BORDER_BLANK + fill * right_fill + cap)
 
 
-# 글상자 테두리 태그(위/아래) 문서 순서 수집용 — box_borders(BBPG-1.2.5) layout 재렌더
-_BORDER_ANY_RE = re.compile(r"<!(표윗테두리|표아랫테두리)>(.*?)<!/?\1>", re.DOTALL)
+# 글상자 테두리 태그(위/아래, 위계 옵션) 문서 순서 수집 — box_borders(BBPG-1.2.5) layout 재렌더
+# group(1)=이름, group(2)=단계 숫자(옵션), group(3)=제목
+_BORDER_ANY_RE = re.compile(r"<!(표윗테두리|표아랫테두리)([23]?)>(.*?)<!/?\1\2>", re.DOTALL)
 _BORDER_KIND = {"표윗테두리": "top", "표아랫테두리": "bottom"}
 
 
@@ -294,15 +296,16 @@ def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
     """원본의 글상자 테두리 태그를 문서 순서대로 (kind, level, 제목점자)로 수집(BBPG-1.2.5).
 
     layout이 이 목록으로 위계별 테두리·제목 배치(중간7칸/윗줄5칸/케이스①)를 재렌더한다.
-    translator는 인라인 32칸 테두리(위치 마커)도 그대로 둔다(_border_line). 위계 level은
-    현재 태그에 없어 1 고정 — 위계(2·3단계)는 §3-5 태그 규약 확정 후 확장.
+    translator는 인라인 32칸 테두리(위치 마커, 항상 1단계 ⠿ 형식)도 그대로 둔다(_border_line).
+    위계: 태그 이름 뒤 단계 숫자(<!표윗테두리2>=2단계, 없으면 1단계). ※§3-5 태그 규약 확장(태민 검토).
     """
     out: list[tuple[str, int, str]] = []
     for m in _BORDER_ANY_RE.finditer(source_text):
         kind = _BORDER_KIND[m.group(1)]
-        title_raw = (m.group(2) or "").strip()
+        level = int(m.group(2)) if m.group(2) else 1
+        title_raw = (m.group(3) or "").strip()
         title = _braillify(title_raw) if (kind == "top" and title_raw) else ""
-        out.append((kind, 1, title))
+        out.append((kind, level, title))
     return out
 
 
@@ -354,10 +357,10 @@ def substitute_tags(text: str) -> str:
 
     치환 결과는 점자 Unicode이므로 이후 _emit_mixed/braillify가 보존한다(이중 변환 없음).
     """
-    # 1) 테두리 쌍 (중간 제목 가능) → 32칸 줄
+    # 1) 테두리 쌍 (중간 제목 가능) → 32칸 줄(위치 마커). 위계는 box_borders로 layout이 재렌더.
     for name, pat in _BORDER_PAIR_RE.items():
         text = pat.sub(
-            lambda m, n=name: _border_line(n, _braillify(m.group(1).strip())), text
+            lambda m, n=name: _border_line(n, _braillify(m.group(2).strip())), text
         )
 
     # 2) 단일·대칭 인라인 마커 + 미지 태그 제거

@@ -589,3 +589,51 @@ class TestBoxBorderBBPG125:
         assert layout_braille._COLS == COLS
         assert text_braille._COLS == COLS
         assert translator._BORDER_COLS == COLS
+
+    def test_위계_태그_파싱(self) -> None:
+        from app.ai.braille.translator import box_borders_from_source
+
+        lv2 = box_borders_from_source("<!표윗테두리2>설명<!/표윗테두리2>")
+        assert lv2[0][1] == 2
+        lv3 = box_borders_from_source("<!표윗테두리3><!/표윗테두리3>")
+        assert lv3[0][1] == 3
+        lv1 = box_borders_from_source("<!표윗테두리>범례<!/표윗테두리>")
+        assert lv1[0][1] == 1
+
+    def test_위계별_테두리_글리프(self) -> None:
+        lb = LayoutBraille()
+        assert lb._render_box_top(1, "") == ["⠿" + "⠛" * 30 + "⠿"]
+        assert lb._render_box_top(2, "") == ["⠖" + "⠒" * 30 + "⠲"]   # 2단계 위 6 3 4
+        assert lb._render_box_bottom(2) == "⠓" + "⠒" * 30 + "⠚"       # 2단계 아래 h 3 j
+        assert lb._render_box_top(3, "") == ["⠖" + "⠐" * 30 + "⠲"]   # 3단계 위 6 " 4
+        assert lb._render_box_bottom(3) == "⠓" + "⠐" * 30 + "⠚"
+
+    def test_위계_테두리_border인식(self) -> None:
+        from app.ai.braille.layout_braille import _is_border_line
+
+        lb = LayoutBraille()
+        for lv in (1, 2, 3):
+            assert _is_border_line(lb._render_box_top(lv, "")[0])
+            assert _is_border_line(lb._render_box_bottom(lv))
+
+    def test_위계_inline마커_여전히_렌더(self) -> None:
+        # substitute_tags는 위계 태그도 인라인 32칸 마커(위치용)로 렌더 — 손실 없음
+        from app.ai.braille.translator import substitute_tags
+
+        out = substitute_tags("<!표윗테두리2>설명<!/표윗테두리2>")
+        assert len(out) == _COLS and out.startswith("⠿") and out.endswith("⠿")
+
+    def test_expand_위계2단계_재렌더(self) -> None:
+        from app.schemas.content import BoxBorder
+
+        marker = "⠿" + "⠛" * 30 + "⠿"
+        bo = BrailleOutput(
+            element_id=str(uuid4()),
+            braille_lines=[marker, "⠉", marker],
+            box_borders=[BoxBorder(kind="top", level=2, title=""),
+                         BoxBorder(kind="bottom", level=2, title="")],
+        )
+        LayoutBraille()._expand_box_borders(bo)
+        borders = [l for l in bo.braille_lines if l.strip()]
+        assert borders[0] == "⠖" + "⠒" * 30 + "⠲"   # 2단계 위
+        assert borders[-1] == "⠓" + "⠒" * 30 + "⠚"   # 2단계 아래
