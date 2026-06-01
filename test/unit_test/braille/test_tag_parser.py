@@ -217,14 +217,16 @@ class TestSymbolRuleEmit:
         assert all(r.tag != "symbol" for r in trail)
 
     def test_미매핑기호_emit제외(self):
-        # 확신 부족으로 매핑 제외한 기호(√ 등)는 trail에 없어야(환각 0)
+        # 미검증/규정DB 부재 기호(∥ 평행·노름 모호, ⋯ 생략, ↗ 점역자정의 대각)는 trail 없음(환각 0)
         from app.ai.braille.symbol_rules import SYMBOL_RULE_IDS
 
-        for excluded in ("√", "∑", "∥"):
+        for excluded in ("∥", "⋯", "↗"):
             assert excluded not in SYMBOL_RULE_IDS
 
-    def test_근삿값_제20항_매핑(self):
-        # ≒ = 근삿값(제20항 KBR-수학-2.20) — 규정 확인 후 추가
+    def test_근삿값_총합_근호_매핑(self):
+        # ≒ 근삿값(제20항 2.20), ∑ 총합(제25항 2.25), √ 근호(제22항 2.22) — 규정 검증 후 추가
         from app.ai.braille.symbol_rules import SYMBOL_RULE_IDS
 
         assert SYMBOL_RULE_IDS["≒"] == "KBR-수학-2.20"
+        assert SYMBOL_RULE_IDS["∑"] == "KBR-수학-2.25"
+        assert SYMBOL_RULE_IDS["√"] == "KBR-수학-2.22"
