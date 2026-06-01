@@ -260,7 +260,7 @@ _BORDER_FILL: dict[str, tuple[str, str]] = {
     "표윗테두리":   ("⠿", "⠛"),  # 위: 첫/끝 = , 중간 g
     "표아랫테두리": ("⠿", "⠶"),  # 아래: 첫/끝 = , 중간 7
 }
-_BORDER_COLS      = 32
+from app.ai.braille.constants import COLS as _BORDER_COLS  # noqa: E402 (공용 상수)
 _BORDER_BLANK     = "⠀"   # 점자 빈칸(U+2800)
 _BORDER_LEFT_FILL = 4     # 캡 뒤 채움 칸 → 제목 7칸에서 시작(BBPG-1.2.5(4)②: 캡1+채움4+빈칸1)
 

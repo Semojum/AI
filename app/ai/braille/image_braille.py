@@ -8,8 +8,17 @@ from __future__ import annotations
 
 from app.ai.braille.regulations import make_rule
 from app.ai.braille.symbol_rules import symbol_rule_spans
-from app.ai.braille.translator import translate_tagged_text, tn_marker_spans
-from app.schemas.content import BrailleOutput, LLMOutput, RuleApplication
+from app.ai.braille.translator import (
+    box_borders_from_source,
+    translate_tagged_text,
+    tn_marker_spans,
+)
+from app.schemas.content import BoxBorder, BrailleOutput, LLMOutput, RuleApplication
+
+
+def _box_borders(source: str) -> list[BoxBorder]:
+    """원본 글상자 테두리 태그 → box_borders(BBPG-1.2.5, layout 재렌더용)."""
+    return [BoxBorder(kind=k, level=lv, title=t) for k, lv, t in box_borders_from_source(source)]
 
 
 def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
@@ -33,7 +42,7 @@ def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
     ]
     return trail
 
-_COLS = 32
+from app.ai.braille.constants import COLS as _COLS  # noqa: E402 (공용 상수)
 
 
 def _split_lines(text: str) -> list[str]:
@@ -76,6 +85,7 @@ class ImageBraille:
                     rule_trail=list(out_drafts[sel].rule_trail),
                     drafts=out_drafts,
                     selected_idx=sel,
+                    box_borders=_box_borders(opt.drafts[sel].text),
                 ))
             else:  # 단일(처리 불가 등)
                 src = opt.tn_text or opt.corrected_text
@@ -84,5 +94,6 @@ class ImageBraille:
                     element_id=opt.element_id,
                     braille_lines=lines,
                     rule_trail=_base_trail(lines, src),
+                    box_borders=_box_borders(src),
                 ))
         return results

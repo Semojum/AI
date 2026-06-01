@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from app.ai.braille.kor_math_rules import convert_latex, latex_rule_ids
 from app.ai.braille.regulations import make_rule
+from app.ai.braille.constants import COLS as _COLS
 from app.schemas.content import BrailleOutput, LLMOutput
-
-_COLS = 32
 
 
 def _split_lines(text: str) -> list[str]:

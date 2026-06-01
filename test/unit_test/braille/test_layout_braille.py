@@ -565,3 +565,27 @@ class TestBoxBorderBBPG125:
         )
         bo = TextBraille().translate([opt])[0]
         assert [b.kind for b in bo.box_borders] == ["top", "bottom"]
+
+    def test_image_cartoon_chart_box_borders_채움(self) -> None:
+        import uuid
+
+        from app.ai.braille.cartoon_braille import CartoonBraille
+        from app.ai.braille.chart_graph_braille import ChartGraphBraille
+        from app.ai.braille.image_braille import ImageBraille
+        from app.schemas.content import LLMOutput
+
+        src = "<!표윗테두리>설명<!/표윗테두리>\n내용\n<!표아랫테두리><!/표아랫테두리>"
+        for Cls in (ImageBraille, CartoonBraille, ChartGraphBraille):
+            opt = LLMOutput(element_id=str(uuid.uuid4()), corrected_text=src,
+                            render_mode="narrative", routing_tier="ZERO")
+            bo = Cls().translate([opt])[0]
+            assert [b.kind for b in bo.box_borders] == ["top", "bottom"], Cls.__name__
+
+    def test_cols_상수_일원화(self) -> None:
+        from app.ai.braille import layout_braille, text_braille, translator
+        from app.ai.braille.constants import COLS
+
+        assert COLS == 32
+        assert layout_braille._COLS == COLS
+        assert text_braille._COLS == COLS
+        assert translator._BORDER_COLS == COLS

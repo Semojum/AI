@@ -32,8 +32,7 @@ if TYPE_CHECKING:  # 런타임 import 회피 (annotations 지연 평가)
 
 logger = logging.getLogger(__name__)
 
-_COLS = 32
-_ROWS = 25
+from app.ai.braille.constants import COLS as _COLS, ROWS as _ROWS  # noqa: E402 (공용 상수)
 
 # ── BBPG 2장2절1 제목 단계별 빈 줄 (level → (앞, 뒤)) ───────────────────────
 _HEADING_BLANK: dict[int, tuple[int, int]] = {1: (2, 1), 2: (1, 1), 3: (1, 0)}

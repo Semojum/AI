@@ -12,9 +12,8 @@ from app.ai.braille.translator import (
     translate_tagged_text,
     tn_marker_spans,
 )
+from app.ai.braille.constants import COLS as _COLS
 from app.schemas.content import BoxBorder, BrailleOutput, LLMOutput
-
-_COLS = 32
 
 
 def _split_lines(text: str) -> list[str]:

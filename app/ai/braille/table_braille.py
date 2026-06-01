@@ -37,7 +37,7 @@ def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
     ]
     return trail
 
-_COLS = 32
+from app.ai.braille.constants import COLS as _COLS  # noqa: E402 (공용 상수)
 _BORDER  = "⠿"  # 표 테두리
 _SEP     = "⠒"  # 행·셀 구분선
 _GUIDE   = "⠄"  # 유도점
