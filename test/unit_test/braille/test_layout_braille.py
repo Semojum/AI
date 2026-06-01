@@ -495,3 +495,73 @@ class TestBulletMarkerKBR72:
         lines, _ = LayoutBraille()._format_element(bo, "list_item", 0)
         assert lines[0] == "   ⠸⠚⠁⠃"            # 3칸 들여 + 글머리형
         assert any(r.rule_id == "KBR-6.14.72" for r in bo.rule_trail)
+
+
+class TestBoxBorderBBPG125:
+    """BBPG-1.2.5 글상자 테두리 — layout 전담 렌더(B안). 위계 1단계 + 제목 배치 + 빈 줄."""
+
+    def test_box_borders_from_source_순서수집(self) -> None:
+        from app.ai.braille.translator import box_borders_from_source
+
+        src = "<!표윗테두리>범례<!/표윗테두리>\n내용\n<!표아랫테두리><!/표아랫테두리>"
+        bb = box_borders_from_source(src)
+        assert [k for k, _, _ in bb] == ["top", "bottom"]
+        assert bb[0][1] == 1 and bb[0][2] != ""   # top, level1, 제목 점자 있음
+        assert bb[1][2] == ""                       # bottom 제목 없음
+
+    def test_render_top_짧은제목_중간7칸(self) -> None:
+        line = LayoutBraille()._render_box_top(1, "⠘⠎⠢")[0]
+        assert len(line) == _COLS
+        assert line.startswith("⠿⠛⠛⠛⠛⠀")          # 캡1+채움4+빈칸1 → 제목 7칸째
+        assert line.endswith("⠿")
+        assert "⠘⠎⠢" in line
+
+    def test_render_top_긴제목_윗줄5칸_케이스1(self) -> None:
+        title = "⠁" * 30                            # 24칸 초과
+        out = LayoutBraille()._render_box_top(1, title)
+        assert len(out) >= 2                         # 윗줄 제목(들) + 테두리
+        assert out[0].startswith(" " * 5)            # 윗줄 5칸 들여
+        assert out[-1] == "⠿" + "⠛" * 30 + "⠿"        # 테두리는 제목 없이
+        assert all(len(ln) <= _COLS for ln in out)
+
+    def test_render_top_제목없음(self) -> None:
+        assert LayoutBraille()._render_box_top(1, "") == ["⠿" + "⠛" * 30 + "⠿"]
+
+    def test_render_bottom(self) -> None:
+        assert LayoutBraille()._render_box_bottom(1) == "⠿" + "⠶" * 30 + "⠿"
+
+    def test_expand_위아래_빈줄_재렌더(self) -> None:
+        from app.schemas.content import BoxBorder
+
+        top = "⠿" + "⠛" * 30 + "⠿"
+        bot = "⠿" + "⠶" * 30 + "⠿"
+        bo = BrailleOutput(
+            element_id=str(uuid4()),
+            braille_lines=[top, "⠉⠕⠝⠁", bot],
+            box_borders=[BoxBorder(kind="top", level=1, title="⠘⠎⠢"),
+                         BoxBorder(kind="bottom", level=1, title="")],
+        )
+        LayoutBraille()._expand_box_borders(bo)
+        assert bo.braille_lines[0] == ""             # 위 한 줄 띔
+        assert bo.braille_lines[-1] == ""            # 아래 한 줄 띔
+        assert "⠘⠎⠢" in bo.braille_lines[1]          # 위 테두리에 제목
+        assert bo.braille_lines[2] == "⠉⠕⠝⠁"         # 내용 보존
+
+    def test_box_borders_없으면_불변(self) -> None:
+        bo = BrailleOutput(element_id=str(uuid4()), braille_lines=["⠁⠃⠉"])
+        LayoutBraille()._expand_box_borders(bo)
+        assert bo.braille_lines == ["⠁⠃⠉"]
+
+    def test_textbraille_box_borders_채움(self) -> None:
+        import uuid
+
+        from app.ai.braille.text_braille import TextBraille
+        from app.schemas.content import LLMOutput
+
+        opt = LLMOutput(
+            element_id=str(uuid.uuid4()),
+            corrected_text="<!표윗테두리>범례<!/표윗테두리>\n내용\n<!표아랫테두리><!/표아랫테두리>",
+            render_mode="text_only", routing_tier="ZERO",
+        )
+        bo = TextBraille().translate([opt])[0]
+        assert [b.kind for b in bo.box_borders] == ["top", "bottom"]

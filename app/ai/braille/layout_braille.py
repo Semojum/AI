@@ -92,6 +92,18 @@ _OVERFLOW_PAGE_NUMBER = "⠼⠤"
 _BOX_BORDER_END = "⠿"   # 양 끝 (=)
 _BOX_TOP_FILL = "⠛"     # 위 테두리 중간 (g)
 _BOX_BOTTOM_FILL = "⠶"  # 아래 테두리 중간 (7)
+_BORDER_BLANK = "⠀"     # 점자 빈칸(U+2800) — 제목 앞뒤 띔
+_BORDER_LEFT_FILL = 4   # 캡1+채움4+빈칸1 → 제목 7칸째 시작 (BBPG-1.2.5(4)②)
+# 위계별 테두리 (start_cap, fill, end_cap). 표준 Braille ASCII: =⠿ g⠛ 7⠶ 6⠖ 3⠒ 4⠲ h⠓ j⠚ "⠐
+# 현재 1단계만 발생(태그에 위계 없음). 2·3단계는 §3-5 태그 규약 확정 후 사용.
+_BOX_LEVELS: dict[int, dict[str, tuple[str, str, str]]] = {
+    1: {"top": ("⠿", "⠛", "⠿"), "bottom": ("⠿", "⠶", "⠿")},
+    2: {"top": ("⠖", "⠒", "⠲"), "bottom": ("⠓", "⠒", "⠚")},
+    3: {"top": ("⠖", "⠐", "⠲"), "bottom": ("⠓", "⠐", "⠚")},
+}
+# 제목을 위 테두리 안(중간 7칸)에 둘 수 있는 최대 길이. 초과 시 윗줄 5칸(케이스①, 규정 26칸)
+_BOX_TITLE_INLINE_MAX = _COLS - 2 - _BORDER_LEFT_FILL - 2  # = 24
+_BOX_TITLE_INDENT = 5  # 케이스① 제목 윗줄 5칸
 
 
 def _is_border_line(line: str) -> bool:
@@ -279,6 +291,7 @@ class LayoutBraille:
         (태민 정책 2026-06-01: 조판 서식 규칙은 rule_trail 제외, 내용 변환만).
         내용이 없는 요소(빈 줄뿐)는 빈 결과를 반환한다.
         """
+        self._expand_box_borders(bo)
         if not any(ln.strip() for ln in bo.braille_lines):
             return [], 0
         if etype == "list_item":
@@ -286,12 +299,11 @@ class LayoutBraille:
         is_heading = hlevel >= 1
         first_indent = self._first_indent(bo, etype, is_heading, hlevel)
         if first_indent and any(_is_border_line(ln) for ln in bo.braille_lines):
-            # B2: 32칸 테두리 + 들여(3칸) = 35칸 → _break_line이 테두리를 강제 분리해 망가짐.
-            # 테두리 layout 귀속 확정(3순위) 전까지 들여 미적용 + 경고로 깨짐을 막는다.
-            logger.warning(
-                "layout: %s 요소(%s)에 32칸 테두리 포함 — 들여쓰기(%d칸) 생략 "
-                "(B2; 테두리 아키텍처 확정 시 재검토)",
-                etype, bo.element_id, first_indent,
+            # 정식 규칙(테두리 아키텍처 B안 확정 2026-06-02): 32칸 테두리 줄(글상자 BBPG-1.2.5·
+            # 표 격자)은 layout이 폭을 소유하므로 들여쓰기를 적용하지 않는다. 들이면 35칸이 되어
+            # _break_line이 테두리를 분리해 깨진다. (글상자 테두리는 _expand_box_borders가 재렌더.)
+            logger.debug(
+                "layout: %s 요소(%s) 32칸 테두리 — 들여쓰기 미적용(정식)", etype, bo.element_id,
             )
             first_indent = 0
 
@@ -308,6 +320,52 @@ class LayoutBraille:
             out.extend(broken)
             forced_total += forced
         return out, forced_total
+
+    def _render_box_top(self, level: int, title: str) -> list[str]:
+        """위 테두리 줄 렌더 (BBPG-1.2.5). 제목 ≤24칸이면 중간 7칸, 초과면 윗줄 5칸(케이스①)."""
+        start, fill, end = _BOX_LEVELS.get(level, _BOX_LEVELS[1])["top"]
+        inner = _COLS - 2
+        if not title:
+            return [start + fill * inner + end]
+        if len(title) <= _BOX_TITLE_INLINE_MAX:
+            right = inner - _BORDER_LEFT_FILL - 2 - len(title)
+            return [start + fill * _BORDER_LEFT_FILL + _BORDER_BLANK
+                    + title + _BORDER_BLANK + fill * right + end]
+        # 케이스①: 제목을 윗줄 5칸에 적고(넘치면 다음 줄도 5칸), 테두리는 제목 없이
+        avail = _COLS - _BOX_TITLE_INDENT
+        chunks = [title[i:i + avail] for i in range(0, len(title), avail)] or [""]
+        title_lines = [" " * _BOX_TITLE_INDENT + c for c in chunks]
+        return title_lines + [start + fill * inner + end]
+
+    def _render_box_bottom(self, level: int) -> str:
+        """아래 테두리 줄 렌더 (BBPG-1.2.5)."""
+        start, fill, end = _BOX_LEVELS.get(level, _BOX_LEVELS[1])["bottom"]
+        return start + fill * (_COLS - 2) + end
+
+    def _expand_box_borders(self, bo: BrailleOutput) -> None:
+        """글상자 테두리 위치 마커(인라인 32칸 줄)를 box_borders와 순서대로 짝지어 재렌더(in-place).
+
+        translator가 남긴 32칸 테두리 줄을 위계·제목 배치로 다시 그리고(BBPG-1.2.5),
+        글상자 위아래에 빈 줄을 넣는다(1.2.5(5)). box_borders 없으면 변경 없음.
+        """
+        if not bo.box_borders:
+            return
+        specs = list(bo.box_borders)
+        si = 0
+        new_lines: list[str] = []
+        for ln in bo.braille_lines:
+            if si < len(specs) and _is_border_line(ln):
+                spec = specs[si]
+                si += 1
+                if spec.kind == "top":
+                    new_lines.append("")  # 위 한 줄 띔
+                    new_lines.extend(self._render_box_top(spec.level, spec.title))
+                else:
+                    new_lines.append(self._render_box_bottom(spec.level))
+                    new_lines.append("")  # 아래 한 줄 띔
+            else:
+                new_lines.append(ln)
+        bo.braille_lines = new_lines
 
     def _apply_bullet_marker(self, bo: BrailleOutput) -> None:
         """list_item 첫머리 숨김표 글리프(○□△)를 KBR 제72항 글머리형으로 정정(in-place).

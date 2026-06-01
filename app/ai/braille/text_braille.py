@@ -7,8 +7,12 @@ from __future__ import annotations
 
 from app.ai.braille.regulations import make_rule
 from app.ai.braille.symbol_rules import symbol_rule_spans
-from app.ai.braille.translator import translate_tagged_text, tn_marker_spans
-from app.schemas.content import BrailleOutput, LLMOutput
+from app.ai.braille.translator import (
+    box_borders_from_source,
+    translate_tagged_text,
+    tn_marker_spans,
+)
+from app.schemas.content import BoxBorder, BrailleOutput, LLMOutput
 
 _COLS = 32
 
@@ -49,9 +53,14 @@ class TextBraille:
                 make_rule(rule_id, span_start=s, span_end=e, tag="symbol")
                 for s, e, rule_id in symbol_rule_spans(opt.corrected_text, joined)
             ]
+            box_borders = [
+                BoxBorder(kind=kind, level=level, title=title)
+                for kind, level, title in box_borders_from_source(opt.corrected_text)
+            ]
             results.append(BrailleOutput(
                 element_id=opt.element_id,
                 braille_lines=lines,
                 rule_trail=trail,
+                box_borders=box_borders,
             ))
         return results

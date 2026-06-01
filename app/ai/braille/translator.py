@@ -285,6 +285,27 @@ def _border_line(name: str, title_braille: str) -> str:
             + t + _BORDER_BLANK + fill * right_fill + cap)
 
 
+# 글상자 테두리 태그(위/아래) 문서 순서 수집용 — box_borders(BBPG-1.2.5) layout 재렌더
+_BORDER_ANY_RE = re.compile(r"<!(표윗테두리|표아랫테두리)>(.*?)<!/?\1>", re.DOTALL)
+_BORDER_KIND = {"표윗테두리": "top", "표아랫테두리": "bottom"}
+
+
+def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
+    """원본의 글상자 테두리 태그를 문서 순서대로 (kind, level, 제목점자)로 수집(BBPG-1.2.5).
+
+    layout이 이 목록으로 위계별 테두리·제목 배치(중간7칸/윗줄5칸/케이스①)를 재렌더한다.
+    translator는 인라인 32칸 테두리(위치 마커)도 그대로 둔다(_border_line). 위계 level은
+    현재 태그에 없어 1 고정 — 위계(2·3단계)는 §3-5 태그 규약 확정 후 확장.
+    """
+    out: list[tuple[str, int, str]] = []
+    for m in _BORDER_ANY_RE.finditer(source_text):
+        kind = _BORDER_KIND[m.group(1)]
+        title_raw = (m.group(2) or "").strip()
+        title = _braillify(title_raw) if (kind == "top" and title_raw) else ""
+        out.append((kind, 1, title))
+    return out
+
+
 TN_MARKER = "⠠⠄"  # 점역자 주 점자 마커 (BBPG-1.2.6), 양끝 동일
 
 

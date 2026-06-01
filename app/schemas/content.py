@@ -78,12 +78,26 @@ class LLMOutput(BaseModel):
     selected_idx: int = 0  # corrected_text == drafts[selected_idx].text (drafts 있을 때)
 
 
+class BoxBorder(BaseModel):
+    """글상자 테두리 메타 (BBPG-1.2.5). layout이 위계·제목 배치로 재렌더한다.
+
+    translator는 점자 스트림에 인라인 32칸 테두리 줄을 위치 마커로 남기고(제어문자 없음),
+    제목 전체(클립 전)·위계를 이 메타로 순서대로 전달한다. layout이 마커 줄을 순서대로
+    이 메타와 짝지어 재렌더(위계별 테두리 + 제목 배치 중간7칸/윗줄5칸 + 위아래 빈 줄).
+    """
+
+    kind: str           # "top" | "bottom"
+    level: int = 1      # 위계 1~3 (현재 1만 발생; 구조는 확장 가능)
+    title: str = ""     # 점자화된 제목 (top만, 클립 전 전체)
+
+
 class BrailleOutput(BaseModel):
     """점자 변환 출력 (PART 4-3 / 5-3 / 6-3 / ...)."""
 
     element_id: UUID
     braille_lines: list[str]  # 선택 초안의 점자 줄 목록 (PART 10 조판용)
     rule_trail: list[RuleApplication] = Field(default_factory=list)
+    box_borders: list[BoxBorder] = Field(default_factory=list)  # 글상자 테두리(BBPG-1.2.5), layout 재렌더용
     # 복수 초안 각각의 점역 결과 (BE/FE 노출용). 단일안은 빈 리스트.
     drafts: list[Draft] = Field(default_factory=list)
     selected_idx: int = 0
