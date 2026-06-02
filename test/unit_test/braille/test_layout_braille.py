@@ -763,3 +763,35 @@ class TestSyllableLineWrap:
         assert per_line == 2, f"점역자주 마커 분리/소실: 줄별 합계 {per_line} — {bo.braille_lines}"
         for ln in bo.braille_lines:
             assert len(ln) <= _COLS
+
+
+class TestAllDraftsTypeset:
+    """#4 — 비선택 초안도 조판되어 모든 초안 contents가 32칸 이하 + 선택본=본문 계약."""
+
+    def test_모든_초안_32칸이하(self, lb) -> None:
+        import uuid
+
+        from app.ai.braille.image_braille import ImageBraille
+        from app.schemas.content import Draft, LLMOutput
+
+        long1 = "원 안에 작은 삼각형이 있는 그림이 매우 길게 설명되어 여러 줄에 걸친 상황 묘사"
+        long2 = "삼각형은 원의 정중앙 아래쪽에 위치하며 그 배치 관계를 길게 서술한 위치 중심 설명"
+        opt = LLMOutput(
+            element_id=uuid.uuid4(), corrected_text=long1, render_mode="narrative",
+            routing_tier="QUALITY",
+            drafts=[Draft(option=1, text=long1, render_mode="narrative", label="상황"),
+                    Draft(option=2, text=long2, render_mode="narrative", label="위치")],
+            selected_idx=0,
+        )
+        bo = ImageBraille().translate([opt])[0]
+        lr = _layout((bo.element_id, "image", 1, 0))
+        lb.layout([bo], page_no=1, job_id="drafts", layout_result=lr)
+        assert len(bo.drafts) == 2
+        for d in bo.drafts:                       # 선택·비선택 모두 32칸 이하
+            assert d.braille_lines, "초안 점자 비어 있음"
+            for ln in d.braille_lines:
+                assert len(ln) <= _COLS, f"초안 32칸 초과: {len(ln)} — {ln!r}"
+        # proto 계약: 본문 == 선택 초안
+        assert bo.braille_lines == bo.drafts[bo.selected_idx].braille_lines
+        # 비선택 초안도 실제로 줄바꿈돼 여러 줄(긴 입력)
+        assert len(bo.drafts[1].braille_lines) >= 2

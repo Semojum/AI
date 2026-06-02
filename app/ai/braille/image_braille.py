@@ -63,6 +63,7 @@ class ImageBraille:
                     draft_breaks.append(d_breaks)
                     out_drafts.append(d.model_copy(update={
                         "braille_lines": d_lines,
+                        "break_points": d_breaks,
                         "rule_trail": _base_trail(d_lines, d.text),
                     }))
                 sel = opt.selected_idx if 0 <= opt.selected_idx < len(out_drafts) else 0

@@ -328,7 +328,7 @@ class LayoutBraille:
         body, page_line_items = self._partition(braille_outputs, meta)
         body.sort(key=lambda b: meta.get(b.element_id, _DEFAULT_META)[1])
 
-        lines: list[str] = []
+        formatted: list[tuple[int, list[str]]] = []  # (heading_level, 조판 줄)
         total = 0
         forced_total = 0
         for bo in body:
@@ -336,20 +336,64 @@ class LayoutBraille:
             el_lines, forced = self._format_element(bo, etype, hlevel)
             if not el_lines:                       # 빈 요소는 빈 줄·태깅 없이 건너뜀
                 continue
-            before, after = _HEADING_BLANK.get(hlevel, (0, 0))
-            if before:
-                lines.extend([""] * before)  # 조판 동작은 유지, rule_trail 미기록(태민 정책)
-            lines.extend(el_lines)
+            formatted.append((hlevel, el_lines))
             total += len(el_lines)
             forced_total += forced
-            if after:
-                lines.extend([""] * after)
 
         footer = self._footer_text(page_line_items, meta)
         orig_page = self._orig_page_text(page_line_items, meta)
-        pages = self._paginate(lines, page_no, footer, orig_page)
+        pages = self._assemble_pages(formatted, footer, orig_page, page_no)
         self._save(pages, job_id, page_no)
         return (forced_total / total) if total else 0.0
+
+    def _assemble_pages(
+        self,
+        formatted_blocks: list[tuple[int, list[str]]],
+        footer: str,
+        orig_page: str,
+        page_no: int,
+    ) -> list[list[str]]:
+        """이미 조판된 블록 줄들을 페이지로 조립(BBPG): 제목 단계별 빈 줄 + 25줄 페이지 + 페이지행.
+
+        재-wrap·들여쓰기는 하지 않는다(블록 줄은 이미 32칸 조판본). layout()(초안)과
+        finalize()(편집본)가 공유하는 순수 조립부.
+        """
+        lines: list[str] = []
+        for hlevel, el_lines in formatted_blocks:
+            if not el_lines:
+                continue
+            before, after = _HEADING_BLANK.get(hlevel, (0, 0))
+            if before:
+                lines.extend([""] * before)
+            lines.extend(el_lines)
+            if after:
+                lines.extend([""] * after)
+        return self._paginate(lines, page_no, footer, orig_page)
+
+    def finalize(self, blocks: list[dict], page_no: int = 1) -> list[list[str]]:
+        """점역사가 편집한 블록(이미 32칸 줄)을 규정대로 페이지 조립(REST /finalize 전용).
+
+        blocks 항목: {type, heading_level, order, lines:[점자 줄...]}.
+        page_number/header_footer type은 페이지행으로 분리. 본문은 order로 정렬.
+        재-wrap 없음(줄 단위 편집 가정) — 점자 규정 조판은 AI가 소유, BE/FE는 호출만.
+        반환: 점자 페이지 목록(각 32칸×25줄).
+        """
+        def _first_line(want: str) -> str:
+            for b in blocks:
+                if b.get("type") == want:
+                    for ln in b.get("lines", []):
+                        if ln.strip():
+                            return ln.strip()
+            return ""
+
+        body = sorted(
+            (b for b in blocks if b.get("type") not in _PAGE_LINE_TYPES),
+            key=lambda b: b.get("order", 1_000_000),
+        )
+        formatted = [(int(b.get("heading_level") or 0), list(b.get("lines", []))) for b in body]
+        footer = _first_line("header_footer")
+        orig_page = _first_line("page_number")
+        return self._assemble_pages(formatted, footer, orig_page, page_no)
 
     def _format_element(
         self, bo: BrailleOutput, etype: str, hlevel: int
@@ -401,10 +445,19 @@ class LayoutBraille:
 
         self._remap_trail_to_formatted(bo, orig_lines, out, line_slices)
         bo.braille_lines = out                # contents = 최종 조판본
-        # proto 계약 유지: contents == drafts[selected_idx].contents (선택 초안 = 본문).
-        # (비선택 초안 조판은 T4-2 별도 — 계약상 본문과 묶이지 않음.)
-        if bo.drafts and 0 <= bo.selected_idx < len(bo.drafts):
-            bo.drafts[bo.selected_idx].braille_lines = out
+        # 모든 초안(피커 대안)을 32칸 조판한다(#4). 선택 초안 = 본문(proto 계약
+        # contents == drafts[selected_idx].contents). 시각요소는 들여/가운데 없음(_first_indent=0)
+        # 이라 음절 줄바꿈만 적용 → 점역사가 대안을 골라도 contents가 깨지지 않는다.
+        for di, d in enumerate(bo.drafts):
+            if di == bo.selected_idx:
+                d.braille_lines = out
+                continue
+            d_out: list[str] = []
+            for li, dl in enumerate(d.braille_lines):
+                dbr = d.break_points[li] if li < len(d.break_points) else []
+                seg, _ = _wrap_line(dl, dbr, _COLS)
+                d_out.extend(seg)
+            d.braille_lines = d_out
         return out, forced_total
 
     @staticmethod

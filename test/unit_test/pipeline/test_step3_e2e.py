@@ -404,3 +404,48 @@ class TestSixChainFaultIsolation:
             f"formula 체인 예외 시 파이프라인이 BLOCKED 반환: {result.get('status')!r}\n"
             f"  quality_report: {result.get('quality_report')}"
         )
+
+
+class TestResponseContract:
+    """응답 계약(FE/BE) — 읽기 순서·heading_level. (#2, #9a)"""
+
+    @staticmethod
+    def _build(elements, llm_outputs):
+        from app.core.pipeline import _build_response
+        from app.schemas.layout import LayoutResult
+        from app.schemas.task import PageTask
+
+        task = PageTask(job_id="t", page_no=1, mode="c")
+        lr = LayoutResult(page_id="p", elements=elements)
+        return _build_response(task, "p", None, "ZERO", 0, 0, lr, [], llm_outputs, [])
+
+    def test_읽기순서_정렬(self):
+        # 그림(reading_order 1)이 본문(2)보다 앞. 체인 순서상 text가 먼저 와도 응답은 읽기순서.
+        from app.schemas.content import LLMOutput
+        from app.schemas.layout import BBoxItem
+
+        img = uuid4(); txt = uuid4()
+        elements = [
+            BBoxItem(element_id=img, type="image", bbox=(0, 0, 0, 0), reading_order=1),
+            BBoxItem(element_id=txt, type="text", bbox=(0, 0, 0, 0), reading_order=2),
+        ]
+        # llm_outputs는 체인 묶음 순서(text 먼저)로 들어온다
+        llms = [
+            LLMOutput(element_id=txt, corrected_text="본문", routing_tier="ZERO"),
+            LLMOutput(element_id=img, corrected_text="그림", routing_tier="ZERO"),
+        ]
+        resp = self._build(elements, llms)
+        ids = [e["id"] for e in resp["text_list"]]
+        assert ids == [str(img), str(txt)], f"읽기순서 정렬 안 됨: {ids}"
+        assert [e["order"] for e in resp["text_list"]] == [1, 2]
+
+    def test_braille_heading_level_반영(self):
+        from app.schemas.content import LLMOutput
+        from app.schemas.layout import BBoxItem
+
+        tid = uuid4()
+        elements = [BBoxItem(element_id=tid, type="title", bbox=(0, 0, 0, 0),
+                             reading_order=1, heading_level=1)]
+        llms = [LLMOutput(element_id=tid, corrected_text="제목", routing_tier="ZERO")]
+        resp = self._build(elements, llms)
+        assert resp["braille_text_list"][0]["heading_level"] == 1

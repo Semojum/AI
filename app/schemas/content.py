@@ -55,7 +55,8 @@ class Draft(BaseModel):
     text: str                            # 점역사주 원문 (점역 대상)
     render_mode: str = "narrative"       # table_grid|transposed|linear|narrative|...
     label: str = ""                      # 방식명 (예: "행↔열 전치", "위치 중심", "요약")
-    braille_lines: list[str] = Field(default_factory=list)  # braille 단계에서 채움
+    braille_lines: list[str] = Field(default_factory=list)  # braille 단계에서 채움(조판 후 32칸)
+    break_points: list[list[int]] = Field(default_factory=list)  # 음절 줄바꿈 offset(layout 조판용)
     rule_trail: list[RuleApplication] = Field(default_factory=list)
 
 

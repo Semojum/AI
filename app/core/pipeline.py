@@ -523,6 +523,11 @@ def _build_response(
     elem_by_id = {e.element_id: e for e in layout_result.elements}
     braille_by_id = {b.element_id: b for b in braille_outputs}
 
+    # 응답 리스트는 문서 읽기 순서로 정렬한다. (6체인 gather 결과는 type별로 묶여 있어
+    # 그대로 내보내면 본문 위 그림 등에서 순서가 뒤바뀐다 — FE가 order로 렌더 가능하도록.)
+    _order_of = {e.element_id: e.reading_order for e in layout_result.elements}
+    llm_outputs = sorted(llm_outputs, key=lambda o: _order_of.get(o.element_id, 1_000_000))
+
     response: dict = {
         "job_id": task.job_id,
         "status": "COMPLETED",
@@ -580,7 +585,9 @@ def _build_response(
                 "id": str(o.element_id),
                 "type": elem_by_id.get(o.element_id, _DUMMY_ELEM).type,
                 "order": i + 1,
-                "heading_level": 0,
+                "heading_level": getattr(
+                    elem_by_id.get(o.element_id), "heading_level", None
+                ) or 0,
                 "ocr_confidence": _get_ocr_confidence(o.element_id, extracted),
                 "tn_text": o.tn_text or "",
                 "is_blocked": "[처리 불가" in o.corrected_text,
