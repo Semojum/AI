@@ -20,57 +20,51 @@ from app.schemas.layout import LayoutResult
 logger = logging.getLogger(__name__)
 
 _STANDARD_TIMEOUT = 15.0
-_QUALITY_TIMEOUT  = 30.0
+_QUALITY_TIMEOUT  = 60.0   # 3안 생성은 단일 교정보다 오래 걸림(느린 GPU 여유)
 _FALLBACK_TIMEOUT = 45.0
 
 def _min_trail(text: str) -> list[RuleApplication]:
     """시각자료 일반 사항(BBPG-3.2.1) — 요소 전체(line_no=-1)."""
     return [make_rule("BBPG-3.2.1")]
 
+# 답변을 `[방식1] [점역사주] `로 프리필(_PREFILL)해 포맷을 강제 → Think 모델의 장황한 추론을
+# 건너뛰고 곧바로 3안을 생성한다(Stage5 실험에서 채택된 방식). 프롬프트는 간결하게 유지.
+_PREFILL = "[방식1] [점역사주] "
+
 _PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가입니다.
-다음 이미지 설명을 점역자 주로, **서로 다른 3가지 방식**으로 각각 작성하세요.
-(점자 자료 제작 지침 §6.1·§6.3.4, 점역사 지침 기준)
+다음 그림을 점역자 주로 **서로 다른 3가지 방식**으로 작성하세요.
+[방식1] 상황 중심: 무엇이 있고 무엇을 하는지(주요 객체·행위)
+[방식2] 위치 중심: 구성 요소의 공간 배치·위치 관계
+[방식3] 요약: 핵심만 1문장으로 압축
 
-## 3가지 방식 (반드시 초점이 다르게 — 거의 같으면 안 됨)
-[방식1] 상황 중심: 무엇이 있고 무엇을 하는지(주요 객체·행위)를 객관적으로
-[방식2] 위치 중심: 구성 요소의 공간 배치·위치 관계를 중심으로
-[방식3] 요약: 핵심만 1~2문장으로 최대한 압축
+규칙: 객관적 사실만(추측·분위기·작가 의도 금지), 간결하게, "그림은/이미지는"으로 시작 금지,
+원본에 없는 수치·고유명사 추가 금지(이미지 내 텍스트·수치는 원문 그대로),
+인물은 이름·성별이 없으면 성별 구분 금지(직업 특정 시 '직업·나이·성별' 순).
+각 줄 형식: 예) [방식1] [점역사주] 그림: 원 안에 …  — [점역사주] 뒤에 자료유형(사진/그림/삽화/지도/도표/도형)과 설명을 적고, 방식 이름은 본문에 쓰지 말 것.
+다른 말 없이 정확히 3줄만.
 
-## 공통 규칙
-- 각 줄을 "[방식N] [점역사주] 시각자료유형: 설명문" 형식으로 (유형: 사진/그림/삽화/지도/도표/도형 중)
-- 간결·객관 (주관적 형용사·분위기·작가 의도 추측 금지, 객관적 사실만)
-- 원본에 없는 수치·고유명사 추가 금지, **이미지 내부 텍스트·레이블·수치는 원문 그대로** (변형 금지)
-- 인물 지칭: 이름·성별이 없으면 성별 구분하지 말 것; 직업이 특정되면 '직업·나이·성별(또는 번호)' 순
-- "그림은/이미지는"으로 시작 금지
-
-## 출력 예시
-입력: "교실에서 선생님이 칠판 앞에 서 있고 학생 3명이 앉아 듣고 있는 그림."
-[방식1] [점역사주] 그림: 교실에서 선생님이 칠판 앞에 서서 설명하고, 학생 3명이 앉아 듣는다.
-[방식2] [점역사주] 그림: 칠판 앞 가운데 선생님, 그 앞에 학생 3명이 나란히 앉아 있다.
-[방식3] [점역사주] 그림: 교실 수업 장면. 선생님 1명, 학생 3명.
-
-원본 설명:
-{caption}
-
-[방식1]/[방식2]/[방식3] 세 줄만, 각 줄을 `[방식N] [점역사주]`로 시작해 서로 다르게 작성하세요. 다른 설명 없이 3줄만."""
+그림: {caption}"""
 
 
-def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 512) -> str:  # 3안 생성 — 토큰 여유
+def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 512, prefill: str = "") -> str:
     import torch
     model = model_manager.hcxt_model
     tokenizer = model_manager.hcxt_tokenizer
     device = next(model.parameters()).device
     messages = [{"role": "user", "content": prompt}]
-    inputs = tokenizer.apply_chat_template(
-        messages,
-        add_generation_prompt=True,
-        skip_reasoning=True,
-        return_dict=True,
-        return_tensors="pt",
-    ).to(device)
+    enc = tokenizer.apply_chat_template(
+        messages, add_generation_prompt=True, skip_reasoning=True,
+        return_dict=True, return_tensors="pt",
+    )
+    input_ids = enc["input_ids"]
+    if prefill:  # 답변 시작을 강제(포맷 고정 → 추론 람블 방지)
+        pf = tokenizer(prefill, return_tensors="pt", add_special_tokens=False)["input_ids"]
+        input_ids = torch.cat([input_ids, pf], dim=1)
+    input_ids = input_ids.to(device)
     with torch.no_grad():
         out = model.generate(
-            **inputs,
+            input_ids=input_ids,
+            attention_mask=torch.ones_like(input_ids),
             max_new_tokens=max_new_tokens,
             do_sample=False,
             pad_token_id=tokenizer.eos_token_id,
@@ -78,8 +72,8 @@ def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 512) -> str:  # 3안 
             tokenizer=tokenizer,
             use_cache=True,
         )
-    generated = out[0][inputs["input_ids"].shape[1]:]
-    return tokenizer.decode(generated, skip_special_tokens=True).strip()
+    generated = tokenizer.decode(out[0][input_ids.shape[1]:], skip_special_tokens=True).strip()
+    return (prefill + generated) if prefill else generated
 
 
 async def _hcxt_optimize(caption: str, timeout: float) -> str:
@@ -88,7 +82,8 @@ async def _hcxt_optimize(caption: str, timeout: float) -> str:
     async with hcxt_lock():          # 단일 GPU 모델 추론 직렬화
         try:
             return await asyncio.wait_for(
-                asyncio.to_thread(_hcxt_generate_sync, prompt), timeout=timeout
+                asyncio.to_thread(_hcxt_generate_sync, prompt, 512, _PREFILL),
+                timeout=timeout,
             )
         except asyncio.TimeoutError:
             logger.warning("HyperCLOVA X 이미지 최적화 타임아웃 (%.0fs)", timeout)

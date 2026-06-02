@@ -18,6 +18,10 @@ _METHOD_RE = re.compile(r"\[?\s*방식\s*([1-3])\s*[\]:.)]*\s*(.*)")
 # 점역사주/점역자주 라벨(대괄호·콜론 변형 포함) 접두 제거용.
 _TN_LEGACY_RE = re.compile(r"^\s*\[?\s*점역[사자]주\s*\]?\s*[:：.]?\s*")
 
+# 모델이 방식 이름을 본문 앞에 붙이는 경우 제거(예: "상황 중심: …", "대사 중심: …").
+# 점자에 메타 라벨이 찍히지 않게 함. 콜론으로 끝나는 짧은 방식-라벨만 매칭.
+_PERSPECTIVE_LABEL_RE = re.compile(r"^(상황|위치|요약|장면|대사|개조|구성)[^:：\n]{0,10}[:：]\s*")
+
 
 def ensure_tn_prefix(text: str) -> str:
     """점역자 주 텍스트를 인라인 태그 `<!점역자주>…<!/점역자주>`로 감싼다 (plan §3-5).
@@ -30,6 +34,7 @@ def ensure_tn_prefix(text: str) -> str:
         return ""
     t = t.replace("<!점역자주>", "").replace("<!/점역자주>", "").strip()  # 기존 태그 제거
     t = _TN_LEGACY_RE.sub("", t).strip()               # [점역사주]·점역사주: 등 라벨 제거
+    t = _PERSPECTIVE_LABEL_RE.sub("", t).strip()       # 상황/위치/요약 등 방식 라벨 제거
     if not t:
         return ""
     return f"<!점역자주>{t}<!/점역자주>"

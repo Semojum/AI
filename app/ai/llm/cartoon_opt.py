@@ -20,58 +20,51 @@ from app.schemas.layout import LayoutResult
 logger = logging.getLogger(__name__)
 
 _STANDARD_TIMEOUT = 15.0
-_QUALITY_TIMEOUT  = 30.0
+_QUALITY_TIMEOUT  = 60.0   # 3안 생성은 단일 교정보다 오래 걸림(느린 GPU 여유)
 _FALLBACK_TIMEOUT = 45.0
 
 def _min_trail(text: str) -> list[RuleApplication]:
     """시각자료 일반 사항(BBPG-3.2.1) — 요소 전체(line_no=-1)."""
     return [make_rule("BBPG-3.2.1")]
 
+# 답변을 `[방식1] [점역사주] 만화: `로 프리필해 포맷+유형(만화)을 강제 → Think 모델의 추론 람블
+# 건너뛰고 3안 생성(Stage5 실험에서 채택). 프롬프트는 간결하게.
+_PREFILL = "[방식1] [점역사주] 만화: "
+
 _PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가입니다.
-다음 만화/그림 설명을 점역자 주로, **서로 다른 3가지 방식**으로 각각 작성하세요.
-(점자 자료 제작 지침 §5.3)
+다음 만화를 점역자 주로 **서로 다른 3가지 방식**으로 작성하세요.
+[방식1] 장면+대사 통합: 장면 배경과 대사를 읽는 순서대로
+[방식2] 대사 중심: "인물명: 대사" 위주, 장면 설명 최소화
+[방식3] 장면별 개조식: "장면 1." "장면 2." 위계로 정리
 
-## 3가지 방식 (반드시 구성이 다르게)
-[방식1] 장면+대사 통합: 장면 배경과 대사를 읽는 순서대로 함께
-[방식2] 대사 중심: "인물명: 대사" 위주로, 장면 설명은 최소화
-[방식3] 장면별 개조식: "장면 1." "장면 2." 위계로 정리 (여러 장면일 때 특히)
+규칙: 대사·말풍선 내부 텍스트는 원문 그대로(요약·변형·따옴표 금지), 화자 불명은 "말풍선: 내용",
+행동·표정은 (객관 묘사), 감정 주관 해석 금지, 인물은 이름·성별 없으면 성별 구분 금지,
+원본에 없는 인물명·대화 추가 금지.
+각 줄 형식: 예) [방식1] [점역사주] 만화: 1장면. …  — [점역사주] 뒤에 '만화:'과 설명을 적고, 방식 이름은 본문에 쓰지 말 것.
+다른 말 없이 정확히 3줄만.
 
-## 공통 규칙
-- 각 줄을 "[방식N] [점역사주] 만화: 내용" 형식으로
-- 인물 대화는 "인물명: 대사" (쌍점 구분), 화자 불명은 "말풍선: 내용"
-- **대사·말풍선 내부 텍스트는 원문 그대로** (요약·변형 금지), 따옴표("") 사용 금지
-- 행동·표정은 "(객관 묘사)", 감정 주관 해석 금지
-- 인물 지칭: 이름·성별 없으면 성별 구분하지 말 것; 직업 특정 시 '직업·나이·성별(또는 번호)'
-- 원본에 없는 인물명·대화 추가 금지
-
-## 출력 예시
-입력: "두 컷 만화. 첫째 컷: 선생님이 오늘 준비됐냐고 묻는다. 둘째 컷: 학생이 고개를 끄덕이며 웃는다."
-[방식1] [점역사주] 만화: 장면 1. 선생님: 오늘 준비됐나요? 장면 2. 학생: (고개를 끄덕이며 웃음)
-[방식2] [점역사주] 만화: 선생님: 오늘 준비됐나요? 학생: (끄덕임)
-[방식3] [점역사주] 만화: 장면 1. 선생님이 질문. 장면 2. 학생이 끄덕이며 웃음.
-
-원본 설명:
-{caption}
-
-[방식1]/[방식2]/[방식3] 세 줄만, 각 줄을 `[방식N] [점역사주]`로 시작해 서로 다르게 작성하세요. 다른 설명 없이 3줄만."""
+만화: {caption}"""
 
 
-def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 512) -> str:  # 3안 생성 — 토큰 여유
+def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 512, prefill: str = "") -> str:
     import torch
     model = model_manager.hcxt_model
     tokenizer = model_manager.hcxt_tokenizer
     device = next(model.parameters()).device
     messages = [{"role": "user", "content": prompt}]
-    inputs = tokenizer.apply_chat_template(
-        messages,
-        add_generation_prompt=True,
-        skip_reasoning=True,
-        return_dict=True,
-        return_tensors="pt",
-    ).to(device)
+    enc = tokenizer.apply_chat_template(
+        messages, add_generation_prompt=True, skip_reasoning=True,
+        return_dict=True, return_tensors="pt",
+    )
+    input_ids = enc["input_ids"]
+    if prefill:  # 답변 시작 강제(포맷 고정 → 추론 람블 방지)
+        pf = tokenizer(prefill, return_tensors="pt", add_special_tokens=False)["input_ids"]
+        input_ids = torch.cat([input_ids, pf], dim=1)
+    input_ids = input_ids.to(device)
     with torch.no_grad():
         out = model.generate(
-            **inputs,
+            input_ids=input_ids,
+            attention_mask=torch.ones_like(input_ids),
             max_new_tokens=max_new_tokens,
             do_sample=False,
             pad_token_id=tokenizer.eos_token_id,
@@ -79,8 +72,8 @@ def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 512) -> str:  # 3안 
             tokenizer=tokenizer,
             use_cache=True,
         )
-    generated = out[0][inputs["input_ids"].shape[1]:]
-    return tokenizer.decode(generated, skip_special_tokens=True).strip()
+    generated = tokenizer.decode(out[0][input_ids.shape[1]:], skip_special_tokens=True).strip()
+    return (prefill + generated) if prefill else generated
 
 
 async def _hcxt_optimize(caption: str, timeout: float) -> str:
@@ -89,7 +82,8 @@ async def _hcxt_optimize(caption: str, timeout: float) -> str:
     async with hcxt_lock():          # 단일 GPU 모델 추론 직렬화
         try:
             return await asyncio.wait_for(
-                asyncio.to_thread(_hcxt_generate_sync, prompt), timeout=timeout
+                asyncio.to_thread(_hcxt_generate_sync, prompt, 512, _PREFILL),
+                timeout=timeout,
             )
         except asyncio.TimeoutError:
             logger.warning("HyperCLOVA X 만화 최적화 타임아웃 (%.0fs)", timeout)
