@@ -13,7 +13,7 @@ from __future__ import annotations
 from app.ai.braille.regulations import make_rule, make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import translate_tagged_text as _translate
-from app.ai.braille.translator import tn_marker_spans
+from app.ai.braille.translator import tn_marker_spans, translate_with_breaks
 from app.schemas.content import BrailleOutput, Draft, LLMOutput, RuleApplication
 
 
@@ -157,10 +157,11 @@ class TableBraille:
 
             if "|" not in text:  # 비정형 → TN 단일안
                 tn = opt.tn_text or text
-                lines = _split_lines(_translate(tn))
+                lines, breaks = translate_with_breaks(tn)  # 음절 줄바꿈(BBPG-1.2.1)
                 results.append(BrailleOutput(
                     element_id=opt.element_id,
                     braille_lines=lines,
+                    break_points=breaks,
                     rule_trail=_base_trail(lines, tn),
                 ))
                 continue

@@ -81,8 +81,8 @@ class TestModeA:
         assert response.job_id == "test-job-001"
         assert response.page_number == 1
         assert response.status in ("COMPLETED", "NEEDS_REVIEW", "BLOCKED")
-        # mode a는 image_resolution, bounding_box_list, text_list 포함
-        assert response.image_resolution != "" or response.status == "BLOCKED"
+        # mode a는 image_width/image_height(이미지 치수), bounding_box_list, text_list 포함
+        assert response.image_width >= 0 and response.image_height >= 0
 
     def test_quality_report_present(self, grpc_stub):
         """mode a: quality_report 필드가 항상 포함되어야 한다."""

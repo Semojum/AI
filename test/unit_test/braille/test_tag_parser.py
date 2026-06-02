@@ -232,6 +232,45 @@ class TestSymbolRuleEmit:
         assert SYMBOL_RULE_IDS["√"] == "KBR-수학-2.22"
 
 
+class TestSyllableBreaks:
+    """BBPG-1.2.1 음절 줄바꿈 — translate_with_breaks가 단위(수·약자·점역자주 마커)
+    내부에는 줄바꿈 지점을 만들지 않고, 어절 경계는 항상 보장한다(접두 일관성)."""
+
+    def test_숫자_단위_내부_미분리(self):
+        from app.ai.braille.translator import translate_with_breaks
+
+        lines, breaks = translate_with_breaks("답은 25일이다")
+        ln, bk = lines[0], breaks[0]
+        i = ln.index("⠼")                       # 수표 위치
+        assert not any(i < b < i + 3 for b in bk), f"수(⠼…) 내부 줄바꿈: off={bk}"
+
+    def test_약자_내부_미분리(self):
+        from app.ai.braille.translator import translate_with_breaks
+
+        # '그래서' = 약자 ⠁⠎(2칸) → 내부 offset 1에 줄바꿈 없음
+        lines, breaks = translate_with_breaks("그래서 우리는")
+        assert 1 not in breaks[0], f"약자 내부 줄바꿈: {breaks[0]}"
+
+    def test_점역자주_마커_내부_미분리(self):
+        from app.ai.braille.translator import TN_MARKER, translate_with_breaks
+
+        lines, breaks = translate_with_breaks("<!점역자주>설명 내용<!/점역자주>")
+        ln, bk = lines[0], breaks[0]
+        m = ln.find(TN_MARKER)
+        while m != -1:
+            assert (m + 1) not in bk, f"점역자주 마커 내부 줄바꿈: m={m} off={bk}"
+            m = ln.find(TN_MARKER, m + len(TN_MARKER))
+
+    def test_어절경계_항상_줄바꿈가능(self):
+        # 한영 혼합 등 접두가 깨져도 공백(어절 경계)은 바닥선으로 보장
+        from app.ai.braille.translator import translate_with_breaks
+
+        lines, breaks = translate_with_breaks("ABC 그리고 DEF")
+        ln, bk = lines[0], breaks[0]
+        space_offsets = [i for i, ch in enumerate(ln) if ch in (" ", "⠀")]
+        assert space_offsets and all(s in bk for s in space_offsets)
+
+
 class TestElementLocalCoords:
     """요소-로컬 좌표(line_no/col_start/col_end) — 태민 결정 2026-06-02.
 

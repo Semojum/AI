@@ -62,8 +62,12 @@ class TestTextChainE2E:
         assert all(len(o.braille_lines) >= 1 for o in outputs)
 
     def test_each_line_within_32_cols(self, outputs):
+        # 모듈은 논리 줄, 32칸 줄바꿈은 layout(BBPG-1.2.1) → break_points wrap 후 검증
+        from app.ai.braille.layout_braille import _wrap_line
         for o in outputs:
-            assert all(len(line) <= 32 for line in o.braille_lines)
+            brs = o.break_points if len(o.break_points) == len(o.braille_lines) else [[]] * len(o.braille_lines)
+            for line, br in zip(o.braille_lines, brs):
+                assert all(len(seg) <= 32 for seg in _wrap_line(line, br, 32)[0])
 
     def test_rule_trail_excludes_generic(self, outputs):
         # 정책(태민 2026-06-01): 포괄/조판 규칙(KBR-0.1·BBPG-1.2.1)은 rule_trail 미기록
@@ -106,8 +110,12 @@ class TestFormulaChainE2E:
         assert all(len(o.braille_lines) >= 1 for o in outputs)
 
     def test_each_line_within_32_cols(self, outputs):
+        # 모듈은 논리 줄, 32칸 줄바꿈은 layout(BBPG-1.2.1) → break_points wrap 후 검증
+        from app.ai.braille.layout_braille import _wrap_line
         for o in outputs:
-            assert all(len(line) <= 32 for line in o.braille_lines)
+            brs = o.break_points if len(o.break_points) == len(o.braille_lines) else [[]] * len(o.braille_lines)
+            for line, br in zip(o.braille_lines, brs):
+                assert all(len(seg) <= 32 for seg in _wrap_line(line, br, 32)[0])
 
     def test_fraction_contains_fraction_bar(self, outputs, formula_items):
         """\\frac{1}{2} → 분수 구분자(⠌) 포함."""

@@ -9,26 +9,10 @@ from app.ai.braille.regulations import make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import (
     box_borders_from_source,
-    translate_tagged_text,
+    translate_with_breaks,
     tn_marker_spans,
 )
-from app.ai.braille.constants import COLS as _COLS
 from app.schemas.content import BoxBorder, BrailleOutput, LLMOutput
-
-
-def _split_lines(text: str) -> list[str]:
-    """32칸 기준 줄 분리."""
-    lines: list[str] = []
-    buf = ""
-    for ch in text:
-        if len(buf) >= _COLS:
-            lines.append(buf)
-            buf = ch
-        else:
-            buf += ch
-    if buf:
-        lines.append(buf)
-    return lines or [""]
 
 
 class TextBraille:
@@ -37,8 +21,8 @@ class TextBraille:
     def translate(self, optimized: list[LLMOutput]) -> list[BrailleOutput]:
         results = []
         for opt in optimized:
-            braille_str = translate_tagged_text(opt.corrected_text)
-            lines = _split_lines(braille_str)
+            # 논리 줄 + 음절 줄바꿈 offset. 32칸 줄바꿈은 layout이 수행(BBPG-1.2.1).
+            lines, breaks = translate_with_breaks(opt.corrected_text)
             # braille_text_list 기준 = 점자. rule_trail은 '내용 변환'만 기록한다
             # (태민 정책 2026-06-01): 포괄 규칙(KBR-0.1)·조판 규칙(32칸 줄바꿈) 제외.
             # 점역자 주 마커 + 특수기호·수식 규칙 emit (Phase B). 둘 다 source-gated.
@@ -60,6 +44,7 @@ class TextBraille:
             results.append(BrailleOutput(
                 element_id=opt.element_id,
                 braille_lines=lines,
+                break_points=breaks,
                 rule_trail=trail,
                 box_borders=box_borders,
             ))

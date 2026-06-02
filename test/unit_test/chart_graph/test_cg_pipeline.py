@@ -60,9 +60,13 @@ class TestChartGraphPipelineBasic:
             assert len(o.braille_lines) >= 1
 
     def test_all_lines_within_32_cols(self, braille_outputs: list[BrailleOutput]) -> None:
+        # 모듈은 논리 줄을 내고 32칸 줄바꿈은 layout이 수행(BBPG-1.2.1).
+        from app.ai.braille.layout_braille import _wrap_line
         for o in braille_outputs:
-            for line in o.braille_lines:
-                assert len(line) <= 32, f"32칸 초과: {len(line)}칸 — {line!r}"
+            brs = o.break_points if len(o.break_points) == len(o.braille_lines) else [[]] * len(o.braille_lines)
+            for line, br in zip(o.braille_lines, brs):
+                for seg in _wrap_line(line, br, 32)[0]:
+                    assert len(seg) <= 32, f"32칸 초과: {len(seg)}칸 — {seg!r}"
 
     def test_rule_trail_present(self, braille_outputs: list[BrailleOutput]) -> None:
         for o in braille_outputs:

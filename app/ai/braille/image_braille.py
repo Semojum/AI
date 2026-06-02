@@ -10,7 +10,7 @@ from app.ai.braille.regulations import make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import (
     box_borders_from_source,
-    translate_tagged_text,
+    translate_with_breaks,
     tn_marker_spans,
 )
 from app.schemas.content import BoxBorder, BrailleOutput, LLMOutput, RuleApplication
@@ -42,26 +42,11 @@ def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
     ]
     return trail
 
-from app.ai.braille.constants import COLS as _COLS  # noqa: E402 (공용 상수)
-
-
-def _split_lines(text: str) -> list[str]:
-    lines, buf = [], ""
-    for ch in text:
-        if len(buf) >= _COLS:
-            lines.append(buf)
-            buf = ch
-        else:
-            buf += ch
-    if buf:
-        lines.append(buf)
-    return lines or [""]
-
-
-def _to_braille(text: str) -> list[str]:
+def _to_braille(text: str) -> tuple[list[str], list[list[int]]]:
+    """논리 줄 + 음절 줄바꿈 offset. 32칸 줄바꿈은 layout(BBPG-1.2.1)."""
     if text.startswith("[처리 불가"):
-        return [text]
-    return _split_lines(translate_tagged_text(text))
+        return [text], [[]]
+    return translate_with_breaks(text)
 
 
 class ImageBraille:
@@ -72,8 +57,10 @@ class ImageBraille:
         for opt in optimized:
             if opt.drafts:
                 out_drafts = []
+                draft_breaks: list[list[list[int]]] = []
                 for d in opt.drafts:
-                    d_lines = _to_braille(d.text)
+                    d_lines, d_breaks = _to_braille(d.text)
+                    draft_breaks.append(d_breaks)
                     out_drafts.append(d.model_copy(update={
                         "braille_lines": d_lines,
                         "rule_trail": _base_trail(d_lines, d.text),
@@ -82,6 +69,7 @@ class ImageBraille:
                 results.append(BrailleOutput(
                     element_id=opt.element_id,
                     braille_lines=out_drafts[sel].braille_lines,
+                    break_points=draft_breaks[sel],
                     rule_trail=list(out_drafts[sel].rule_trail),
                     drafts=out_drafts,
                     selected_idx=sel,
@@ -89,10 +77,11 @@ class ImageBraille:
                 ))
             else:  # 단일(처리 불가 등)
                 src = opt.tn_text or opt.corrected_text
-                lines = _to_braille(src)
+                lines, breaks = _to_braille(src)
                 results.append(BrailleOutput(
                     element_id=opt.element_id,
                     braille_lines=lines,
+                    break_points=breaks,
                     rule_trail=_base_trail(lines, src),
                     box_borders=_box_borders(src),
                 ))

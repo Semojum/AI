@@ -582,12 +582,12 @@ class TestBoxBorderBBPG125:
             assert [b.kind for b in bo.box_borders] == ["top", "bottom"], Cls.__name__
 
     def test_cols_상수_일원화(self) -> None:
-        from app.ai.braille import layout_braille, text_braille, translator
+        # 32칸 줄바꿈은 layout 단독 책임(braille 모듈은 논리 줄만 냄 → _COLS 미사용).
+        from app.ai.braille import layout_braille, translator
         from app.ai.braille.constants import COLS
 
         assert COLS == 32
         assert layout_braille._COLS == COLS
-        assert text_braille._COLS == COLS
         assert translator._BORDER_COLS == COLS
 
     def test_위계_태그_파싱(self) -> None:
@@ -721,3 +721,45 @@ class TestPostLayoutCoords:
         lb.layout([bo], page_no=1, job_id="dft", layout_result=lr)
         assert len(bo.braille_lines) >= 2            # 줄바꿈 발생(조판 적용 확인)
         assert bo.braille_lines == bo.drafts[bo.selected_idx].braille_lines
+
+
+class TestSyllableLineWrap:
+    """BBPG-1.2.1 음절 줄바꿈 — 조판 후 모든 줄 ≤32, 점역자주 마커가 줄 경계에서 미분리."""
+
+    @staticmethod
+    def _layout_text(lb, text: str):
+        import uuid
+
+        from app.ai.braille.text_braille import TextBraille
+        from app.schemas.content import LLMOutput
+
+        opt = LLMOutput(
+            element_id=uuid.uuid4(), corrected_text=text,
+            render_mode="text_only", routing_tier="ZERO",
+        )
+        bo = TextBraille().translate([opt])[0]
+        lr = _layout((bo.element_id, "text", 1, 0))
+        lb.layout([bo], page_no=1, job_id="syl", layout_result=lr)
+        return bo
+
+    def test_긴문장_모든줄_32칸이하(self, lb) -> None:
+        bo = self._layout_text(
+            lb, "원 안에 작은 삼각형이 있는 그림이 그려져 있고 그 아래에 긴 설명 문장이 이어진다",
+        )
+        assert len(bo.braille_lines) >= 2
+        for ln in bo.braille_lines:
+            assert len(ln) <= _COLS, f"32칸 초과: {len(ln)} — {ln!r}"
+
+    def test_긴_점역자주_마커_줄경계_미분리(self, lb) -> None:
+        # 관찰된 버그 회귀: 닫는 ⠠⠄가 줄 경계에서 ⠠/⠄로 갈려 마커가 소실되면 안 된다.
+        from app.ai.braille.translator import TN_MARKER
+
+        text = ("<!점역자주>원 안에 작은 삼각형이 있는 그림이 매우 길게 설명되어 "
+                "여러 줄에 걸쳐 이어지는 점역자 주석<!/점역자주>")
+        bo = self._layout_text(lb, text)
+        assert len(bo.braille_lines) >= 2
+        # 마커가 줄 경계에서 분리되면 어느 한 줄에도 온전한 ⠠⠄가 안 잡혀 합계가 2 미만이 된다.
+        per_line = sum(ln.count(TN_MARKER) for ln in bo.braille_lines)
+        assert per_line == 2, f"점역자주 마커 분리/소실: 줄별 합계 {per_line} — {bo.braille_lines}"
+        for ln in bo.braille_lines:
+            assert len(ln) <= _COLS

@@ -98,7 +98,10 @@ class BrailleOutput(BaseModel):
     """점자 변환 출력 (PART 4-3 / 5-3 / 6-3 / ...)."""
 
     element_id: UUID
-    braille_lines: list[str]  # 선택 초안의 점자 줄 목록 (PART 10 조판용)
+    braille_lines: list[str]  # 논리 줄(개행 단위). 32칸 줄바꿈은 PART 10 layout이 수행
+    # 줄별 음절 줄바꿈 허용 offset(BBPG-1.2.1) — layout이 32칸 줄바꿈에 사용, 응답엔 미노출.
+    # braille_lines와 길이가 같다(줄 i의 허용 offset 목록). 비면 layout이 어절 단위로 분리.
+    break_points: list[list[int]] = Field(default_factory=list)
     rule_trail: list[RuleApplication] = Field(default_factory=list)
     box_borders: list[BoxBorder] = Field(default_factory=list)  # 글상자 테두리(BBPG-1.2.5), layout 재렌더용
     # 복수 초안 각각의 점역 결과 (BE/FE 노출용). 단일안은 빈 리스트.

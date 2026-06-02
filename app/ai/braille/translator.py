@@ -424,3 +424,65 @@ def translate_tagged_text(text: str) -> str:
     if _BRAILLIFY_AVAILABLE:
         return _translate_with_braillify(text)
     return _translate_fallback(text)
+
+
+# ── 음절 단위 줄바꿈 지점 산출 (BBPG-1.2.1) ──────────────────────────────────
+# 한글은 음절 단위, 외국어는 단어 단위 줄바꿈이 원칙. 운영 경로(braillify)는 약자를
+# 적용해 음절↔점자 매핑이 불투명하므로, '접두 일관성'으로 약자를 깨지 않는 경계만 고른다:
+# 어절[:b] 점역 결과가 어절 점역 전체의 접두이면 b는 안전한 줄바꿈 지점(약자가 b를
+# 가로지르면 접두가 깨져 자동 제외). 숫자·로마자 런은 한 단위이므로 내부 후보를 만들지
+# 않는다(접두 검사만으로는 ⠼⠃ ⊂ ⠼⠃⠑ 라 수 내부를 허용해버림).
+_NUM_RUN_RE = re.compile(r"-?\d[\d.,]*")
+_ROMAN_RUN_RE = re.compile(r"[A-Za-z]+")
+
+
+def _no_cut_interior(src: str) -> list[bool]:
+    """숫자·로마자 런 '내부' 위치 마스크 — 그 앞에서 줄바꿈 금지(단위 보존)."""
+    mask = [False] * (len(src) + 1)
+    for rx in (_NUM_RUN_RE, _ROMAN_RUN_RE):
+        for m in rx.finditer(src):
+            for i in range(m.start() + 1, m.end()):
+                mask[i] = True
+    return mask
+
+
+def _break_offsets(src: str, braille: str) -> list[int]:
+    """src(원문 한 줄)→braille의 줄바꿈 허용 셀 offset 목록(그 위치 '앞'에서 끊기 가능).
+
+    접두 일관성 기반 — 안전(fail-safe): 잘못된 지점은 접두 불일치로 자동 탈락하고,
+    드물게 놓친 경계는 그 어절이 통째로 다음 줄로 갈 뿐(규정 허용). 숫자/로마자 런
+    내부는 마스크로 제외(단위 보존). 양 경로(braillify·fallback) 공통.
+    """
+    if len(braille) <= 1:
+        return []
+    offs: set[int] = set()
+    # 바닥선: 출력 점자 공백 = 어절 경계, 항상 안전한 줄바꿈 지점(§1.2.1 단어 단위).
+    # 한영 혼합 등 접두가 깨지는 경우에도 최소 어절 단위 줄바꿈은 보장한다.
+    for i, ch in enumerate(braille):
+        if ch in (" ", "⠀") and 0 < i < len(braille):
+            offs.add(i)
+    # 음절 단위: 약자를 깨지 않는 경계만 접두 일관성으로 추가(순수 한글에서 촘촘히).
+    mask = _no_cut_interior(src)
+    for sp in range(1, len(src)):
+        if mask[sp]:
+            continue
+        pre = translate_tagged_text(src[:sp])
+        if pre and len(pre) < len(braille) and braille.startswith(pre):
+            offs.add(len(pre))
+    return sorted(offs)
+
+
+def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
+    """텍스트 → (논리 줄별 점자, 줄별 음절 줄바꿈 offset). 32칸 분리는 layout이 수행.
+
+    원문 개행(\\n)으로만 논리 줄을 나눈다(하드 32분리 폐기 — 음절·지시부호·마커를
+    칸 중간에서 쪼개지 않기 위함, §1.2.1). 각 줄의 break offset은 layout `_wrap_line`이
+    32칸 줄바꿈에 사용한다.
+    """
+    lines: list[str] = []
+    breaks: list[list[int]] = []
+    for src_line in text.split("\n"):
+        braille = translate_tagged_text(src_line)
+        lines.append(braille)
+        breaks.append(_break_offsets(src_line, braille))
+    return (lines or [""], breaks or [[]])

@@ -236,6 +236,54 @@ def _break_line(
     return (out, forced, wraps)
 
 
+def _safe_forced_cut(line: str, limit: int) -> int:
+    """단위가 width 초과 시(긴 복합어/수 — §1.2.1(2)) 셀 경계 강제 분리 위치.
+    2칸 지시부호(점역자 주 ⠠⠄)가 줄 경계에서 갈리지 않게 한 칸 물러선다."""
+    b = max(1, min(limit, len(line)))
+    if b < len(line) and line[b - 1] == "⠠" and line[b] == "⠄":
+        b -= 1
+    return max(1, b)
+
+
+def _wrap_line(
+    line: str, breaks: list[int], width: int = _COLS, first_width: Optional[int] = None
+) -> tuple[list[str], int]:
+    """break offset(음절·어절 경계)에서만 width 이하로 줄바꿈. (분리 줄, 강제분리 수).
+
+    breaks가 비면 어절(공백) 단위 `_break_line`으로 폴백(안전 — 단위 내부 미분리).
+    한 단위가 width 초과면 §1.2.1(2)대로 셀 경계 강제 분리(지시부호 보호).
+    """
+    fw = width if first_width is None else first_width
+    if _cell_count(line) <= fw:
+        return [line], 0
+    if not breaks:
+        out, forced, _ = _break_line(line, width=width, first_width=first_width)
+        return out, forced
+
+    cand = sorted(b for b in set(breaks) if 0 < b < len(line))
+    out: list[str] = []
+    forced = 0
+    start = 0
+    first = True
+    while len(line) - start > (fw if first else width):
+        cap = fw if first else width
+        limit = start + cap
+        usable = [b for b in cand if start < b <= limit]
+        if usable:
+            b = max(usable)
+        else:
+            b = _safe_forced_cut(line, limit)
+            forced += 1
+        out.append(line[start:b])
+        start = b
+        while start < len(line) and line[start] in (" ", "⠀"):  # 줄머리 공백 버림
+            start += 1
+        first = False
+    if start < len(line):
+        out.append(line[start:])
+    return (out or [line], forced)
+
+
 def _find_nth_occurrence(
     lines: list[str], start: int, end: int, glyph: str, rank: int
 ) -> Optional[tuple[int, int]]:
@@ -340,7 +388,8 @@ class LayoutBraille:
         for li, orig in enumerate(orig_lines):
             indent = first_indent if li == 0 else 0
             fw = (_COLS - indent) if indent else None
-            broken, forced, _wraps = _break_line(orig, first_width=fw)
+            br = bo.break_points[li] if li < len(bo.break_points) else []
+            broken, forced = _wrap_line(orig, br, _COLS, first_width=fw)
             if indent and broken:               # 표시용 들여쓰기
                 broken[0] = " " * indent + broken[0]
             if is_heading and hlevel == 1:       # 1단계 제목 가운데 정렬
@@ -416,8 +465,10 @@ class LayoutBraille:
         if not bo.box_borders:
             return
         specs = list(bo.box_borders)
+        old_breaks = bo.break_points
         si = 0
         new_lines: list[str] = []
+        new_breaks: list[list[int]] = []   # new_lines와 1:1 (삽입 줄은 [])
         index_map: dict[int, int] = {}  # 옛 줄 인덱스 → 새 줄 인덱스(내용 줄만)
         for old_idx, ln in enumerate(bo.braille_lines):
             if si < len(specs) and _is_border_line(ln):
@@ -425,14 +476,19 @@ class LayoutBraille:
                 si += 1
                 if spec.kind == "top":
                     new_lines.append("")  # 위 한 줄 띔
-                    new_lines.extend(self._render_box_top(spec.level, spec.title))
+                    top = self._render_box_top(spec.level, spec.title)
+                    new_lines.extend(top)
+                    new_breaks.extend([[]] * (1 + len(top)))
                 else:
                     new_lines.append(self._render_box_bottom(spec.level))
                     new_lines.append("")  # 아래 한 줄 띔
+                    new_breaks.extend([[], []])
             else:
                 index_map[old_idx] = len(new_lines)
                 new_lines.append(ln)
+                new_breaks.append(old_breaks[old_idx] if old_idx < len(old_breaks) else [])
         bo.braille_lines = new_lines
+        bo.break_points = new_breaks
         # 빈 줄·테두리 삽입으로 내용 줄이 밀렸으므로 rule_trail 요소-로컬 line_no 재매핑.
         for r in bo.rule_trail:
             if r.line_no >= 0 and r.line_no in index_map:
@@ -457,6 +513,12 @@ class LayoutBraille:
             # rule_trail: 선두 숨김표(6.13.49, idx줄 col0) → 글머리(6.14.72)로 교체.
             # 글리프가 축소(delta)되므로 같은 줄 뒤 내용 규칙의 칸도 보정(요소-로컬 좌표 유지).
             delta = len(hidden) - len(bullet)
+            # break_points도 글리프 축소만큼 당김(숨김표 내부 offset은 없음 → >= len(hidden)만 보정).
+            if delta and idx < len(bo.break_points):
+                bo.break_points[idx] = [
+                    (b - delta) if b >= len(hidden) else b
+                    for b in bo.break_points[idx]
+                ]
             new_trail = []
             replaced = False
             for r in bo.rule_trail:
