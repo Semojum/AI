@@ -25,8 +25,8 @@ _QUALITY_TIMEOUT  = 30.0
 _FALLBACK_TIMEOUT = 45.0
 
 def _min_trail(text: str) -> list[RuleApplication]:
-    """표 점역 일반 사항(BBPG-3.1.1)을 표 텍스트 전체 범위로 emit."""
-    return [make_rule("BBPG-3.1.1", span_start=0, span_end=len(text))]
+    """표 점역 일반 사항(BBPG-3.1.1) — 요소 전체(line_no=-1)."""
+    return [make_rule("BBPG-3.1.1")]
 
 _PROMPT_TABLE_GRID = """당신은 한국어 점역 전문가입니다.
 다음 표 내용을 점역사주([점역사주])로 표현하는 2가지 방식을 제안하세요.

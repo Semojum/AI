@@ -230,3 +230,91 @@ class TestSymbolRuleEmit:
         assert SYMBOL_RULE_IDS["≒"] == "KBR-수학-2.20"
         assert SYMBOL_RULE_IDS["∑"] == "KBR-수학-2.25"
         assert SYMBOL_RULE_IDS["√"] == "KBR-수학-2.22"
+
+
+class TestElementLocalCoords:
+    """요소-로컬 좌표(line_no/col_start/col_end) — 태민 결정 2026-06-02.
+
+    FE/BE는 계산하지 않고 contents[line_no][col_start:col_end]만 하이라이트한다.
+    좌표가 실제 점자 셀을 정확히 가리키는지(조판 in-place 변형 후에도) 회귀 검증.
+    """
+
+    @staticmethod
+    def _bo(corrected_text: str):
+        import uuid
+
+        from app.ai.braille.text_braille import TextBraille
+        from app.schemas.content import LLMOutput
+
+        opt = LLMOutput(
+            element_id=str(uuid.uuid4()), corrected_text=corrected_text,
+            render_mode="text_only", routing_tier="ZERO",
+        )
+        return TextBraille().translate([opt])[0]
+
+    def test_좌표_경계_불변(self):
+        # line_no>=0 entry는 contents 배열 안 유효 범위(0<=col_start<=col_end<=len(line))를 가리킨다.
+        bo = self._bo("온도는 25℃이고 A ∈ B 이다")
+        for r in bo.rule_trail:
+            if r.line_no < 0:
+                continue  # -1 = 요소 전체
+            assert 0 <= r.line_no < len(bo.braille_lines)
+            line = bo.braille_lines[r.line_no]
+            assert 0 <= r.col_start <= r.col_end <= len(line)
+
+    def test_점역자주_마커_좌표_정확(self):
+        from app.ai.braille.translator import TN_MARKER
+
+        bo = self._bo("<!점역자주>그림 설명<!/점역자주>")
+        marks = [r for r in bo.rule_trail if r.tag in ("tn_open", "tn_close")]
+        assert marks, "TN 마커 좌표가 emit돼야 함"
+        for r in marks:
+            assert bo.braille_lines[r.line_no][r.col_start:r.col_end] == TN_MARKER
+
+    def test_특수기호_좌표_글리프_일치(self):
+        from app.ai.braille.symbol_rules import SYMBOL_TABLE
+
+        bo = self._bo("온도는 25℃이다")
+        cel = [r for r in bo.rule_trail if r.rule_id == "KBR-6.14.69"]  # 섭씨
+        assert cel
+        glyph = SYMBOL_TABLE["℃"]
+        assert any(
+            bo.braille_lines[r.line_no][r.col_start:r.col_end] == glyph for r in cel
+        )
+
+    def test_글머리_정정후_좌표(self):
+        # _apply_bullet_marker가 글리프를 축소(⠸⠚⠇→⠸⠚)해도 좌표가 셀을 정확히 가리킨다.
+        import uuid
+
+        from app.ai.braille.layout_braille import LayoutBraille
+        from app.ai.braille.regulations import make_rule
+        from app.schemas.content import BrailleOutput
+
+        bo = BrailleOutput(
+            element_id=str(uuid.uuid4()), braille_lines=["⠸⠚⠇⠁⠃"],
+            rule_trail=[make_rule("KBR-6.13.49", line_no=0, col_start=0, col_end=3, tag="symbol")],
+        )
+        LayoutBraille()._apply_bullet_marker(bo)
+        bullet = next(r for r in bo.rule_trail if r.rule_id == "KBR-6.14.72")
+        assert (bullet.line_no, bullet.col_start, bullet.col_end) == (0, 0, 2)
+        assert bo.braille_lines[0][bullet.col_start:bullet.col_end] == "⠸⠚"
+
+    def test_글상자_확장후_line_no_재매핑(self):
+        # 위 테두리 확장(빈 줄+테두리 삽입)으로 내용 줄이 밀려도 line_no가 갱신돼 셀을 가리킨다.
+        import uuid
+
+        from app.ai.braille.layout_braille import LayoutBraille
+        from app.ai.braille.regulations import make_rule
+        from app.schemas.content import BoxBorder, BrailleOutput
+
+        top = "⠿" + "⠛" * 30 + "⠿"  # 32칸 위 테두리 마커
+        bo = BrailleOutput(
+            element_id=str(uuid.uuid4()),
+            braille_lines=[top, "⠠⠄⠁⠃"],  # idx1 = 내용(앞 ⠠⠄ TN)
+            rule_trail=[make_rule("BBPG-1.2.6", line_no=1, col_start=0, col_end=2, tag="tn_open")],
+            box_borders=[BoxBorder(kind="top", level=1, title="")],
+        )
+        LayoutBraille()._expand_box_borders(bo)
+        r = bo.rule_trail[0]
+        assert r.line_no != 1  # 내용 줄이 밀림
+        assert bo.braille_lines[r.line_no][r.col_start:r.col_end] == "⠠⠄"

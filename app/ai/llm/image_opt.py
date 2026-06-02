@@ -24,8 +24,8 @@ _QUALITY_TIMEOUT  = 30.0
 _FALLBACK_TIMEOUT = 45.0
 
 def _min_trail(text: str) -> list[RuleApplication]:
-    """시각자료 일반 사항(BBPG-3.2.1)을 점역사주 텍스트 전체 범위로 emit."""
-    return [make_rule("BBPG-3.2.1", span_start=0, span_end=len(text))]
+    """시각자료 일반 사항(BBPG-3.2.1) — 요소 전체(line_no=-1)."""
+    return [make_rule("BBPG-3.2.1")]
 
 _PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가입니다.
 다음 이미지 설명을 점역자 주로, **서로 다른 3가지 방식**으로 각각 작성하세요.

@@ -15,8 +15,11 @@ class RuleApplication(BaseModel):
     title: str
     excerpt: str
     priority: str = "primary"  # "primary" | "secondary"
-    span_start: int = 0  # 변환 산출물 char offset (0-based, 시작)
-    span_end: int = 0    # 변환 산출물 char offset (end 미포함). 점 태그는 start==end
+    # 요소-로컬 좌표(조판 후) — 좌표계 = 이 블록의 contents 배열.
+    # FE는 contents[line_no][col_start:col_end]만 하이라이트(계산 없음). line_no=-1 → 요소 전체.
+    line_no: int = -1    # contents 줄 인덱스(0-based). -1 = 요소 전체
+    col_start: int = 0   # 줄 안의 시작 칸(0-based)
+    col_end: int = 0     # 끝 칸(미포함). 점 태그는 col_start==col_end. line_no=-1이면 무시
     tag: str = ""        # 변환 지점 태그 (number_sign / contraction / symbol / line_wrap ...)
 
 

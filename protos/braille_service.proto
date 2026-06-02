@@ -40,9 +40,12 @@ message RuleTrail {
   string title    = 4;
   string excerpt  = 5;
   string priority = 6;   // "primary" | "secondary"
-  int32  span_start = 7; // 변환 산출물 char offset (0-based, 시작)
-  int32  span_end   = 8; // 변환 산출물 char offset (end 미포함). 점 태그는 start==end
-  string tag        = 9; // 변환 지점 태그 (number_sign / contraction / symbol / line_wrap ...)
+  // ── 요소-로컬 좌표(조판 후) — AI 서버가 완성, FE/BE 계산 없음 ──────────────
+  // 좌표계 = 이 블록의 contents 배열. FE는 contents[line_no][col_start:col_end]만 하이라이트.
+  int32  line_no   = 7;  // contents 줄 인덱스(0-based). -1 = 요소 전체(블록 전체 하이라이트)
+  int32  col_start = 8;  // 그 줄 안의 시작 칸(0-based)
+  int32  col_end   = 9;  // 끝 칸(미포함). 점 태그는 col_start==col_end. line_no==-1이면 무시
+  string tag       = 10; // 변환 지점 태그 (number_sign / contraction / symbol / line_wrap ...)
 }
 
 message TactileGraphic {

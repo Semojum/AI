@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from app.ai.braille.regulations import make_rule
+from app.ai.braille.regulations import make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import (
     box_borders_from_source,
@@ -32,11 +32,11 @@ def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
     """
     joined = "\n".join(lines)
     trail = [
-        make_rule("BBPG-1.2.6", span_start=s, span_end=e, tag=tag)
+        make_rule_at("BBPG-1.2.6", lines, s, e, tag=tag)
         for s, e, tag in tn_marker_spans(joined, source)
     ]
     trail += [
-        make_rule(rule_id, span_start=s, span_end=e, tag="symbol")
+        make_rule_at(rule_id, lines, s, e, tag="symbol")
         for s, e, rule_id in symbol_rule_spans(source, joined)
     ]
     return trail

@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from app.ai.braille.regulations import make_rule
+from app.ai.braille.regulations import make_rule, make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import translate_tagged_text as _translate
 from app.ai.braille.translator import tn_marker_spans
@@ -28,11 +28,11 @@ def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
     """
     joined = "\n".join(lines)
     trail = [
-        make_rule("BBPG-1.2.6", span_start=s, span_end=e, tag=tag)
+        make_rule_at("BBPG-1.2.6", lines, s, e, tag=tag)
         for s, e, tag in tn_marker_spans(joined, source)
     ]
     trail += [
-        make_rule(rule_id, span_start=s, span_end=e, tag="symbol")
+        make_rule_at(rule_id, lines, s, e, tag="symbol")
         for s, e, rule_id in symbol_rule_spans(source, joined)
     ]
     return trail
@@ -169,10 +169,9 @@ class TableBraille:
             grid_lines = _render_grid(text)
             transposed_lines = _split_lines(_translate(_TN_TRANSPOSE)) + _render_grid(_transpose_text(text))
             linear_lines = _render_linear(text)
-            # 전치안은 표 유형별 점역(BBPG-3.1.2)을 추가로 기록
-            n_tr = len("\n".join(transposed_lines))
+            # 전치안은 표 유형별 점역(BBPG-3.1.2)을 추가로 기록 — 요소 전체(line_no=-1)
             trail_transpose = _base_trail(transposed_lines, text) + [
-                make_rule("BBPG-3.1.2", span_start=0, span_end=n_tr),
+                make_rule("BBPG-3.1.2"),
             ]
             drafts = [
                 Draft(option=1, text=text, render_mode="table_grid", label="격자형",

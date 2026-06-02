@@ -236,6 +236,22 @@ def _break_line(
     return (out, forced, wraps)
 
 
+def _find_nth_occurrence(
+    lines: list[str], start: int, end: int, glyph: str, rank: int
+) -> Optional[tuple[int, int]]:
+    """lines[start:end]에서 glyph의 rank번째(0-based, 비중첩) 등장 위치 (line_idx, col)."""
+    count = 0
+    for li in range(start, min(end, len(lines))):
+        line = lines[li]
+        pos = line.find(glyph)
+        while pos != -1:
+            if count == rank:
+                return (li, pos)
+            count += 1
+            pos = line.find(glyph, pos + len(glyph))
+    return None
+
+
 class LayoutBraille:
     """BrailleOutput 목록 → 32칸 × 25줄 점자 조판 (PART 10).
 
@@ -292,10 +308,15 @@ class LayoutBraille:
     ) -> tuple[list[str], int]:
         """요소 점자 줄 → 들여쓰기·정렬·32칸 브레이킹 적용. (표시 줄, 강제분리 수).
 
-        조판 동작(들여·줄바꿈·가운데정렬)은 적용하되 rule_trail은 기록하지 않는다
-        (태민 정책 2026-06-01: 조판 서식 규칙은 rule_trail 제외, 내용 변환만).
+        조판 결과(out)를 **bo.braille_lines에 write-back**한다 — FE가 받는 contents가
+        곧 최종 조판본(들여·줄바꿈·가운데정렬 반영)이 되도록(태민 원칙: FE는 보이는
+        그대로 하이라이트, AI가 좌표 완성). rule_trail 요소-로컬 좌표도 조판 후 프레임으로
+        재매핑한다(내용 기반 탐색 — 비공백 글리프는 조판이 순서·개수를 보존하므로 안전).
+        조판 서식 규칙 자체는 rule_trail로 기록하지 않는다(태민 정책 2026-06-01: 내용 변환만).
         내용이 없는 요소(빈 줄뿐)는 빈 결과를 반환한다.
         """
+        # 시각요소 drafts와 rule_trail 객체 공유 시 in-place 변형이 새지 않도록 분리.
+        bo.rule_trail = [r.model_copy() for r in bo.rule_trail]
         self._expand_box_borders(bo)
         if not any(ln.strip() for ln in bo.braille_lines):
             return [], 0
@@ -312,9 +333,11 @@ class LayoutBraille:
             )
             first_indent = 0
 
+        orig_lines = list(bo.braille_lines)   # 조판 전 스냅샷(좌표 재매핑 기준)
         out: list[str] = []
+        line_slices: list[tuple[int, int]] = []  # orig 줄 → out 줄 범위 [start, end)
         forced_total = 0
-        for li, orig in enumerate(bo.braille_lines):
+        for li, orig in enumerate(orig_lines):
             indent = first_indent if li == 0 else 0
             fw = (_COLS - indent) if indent else None
             broken, forced, _wraps = _break_line(orig, first_width=fw)
@@ -322,9 +345,46 @@ class LayoutBraille:
                 broken[0] = " " * indent + broken[0]
             if is_heading and hlevel == 1:       # 1단계 제목 가운데 정렬
                 broken = [_center(b) for b in broken]
+            start = len(out)
             out.extend(broken)
+            line_slices.append((start, len(out)))
             forced_total += forced
+
+        self._remap_trail_to_formatted(bo, orig_lines, out, line_slices)
+        bo.braille_lines = out                # contents = 최종 조판본
+        # proto 계약 유지: contents == drafts[selected_idx].contents (선택 초안 = 본문).
+        # (비선택 초안 조판은 T4-2 별도 — 계약상 본문과 묶이지 않음.)
+        if bo.drafts and 0 <= bo.selected_idx < len(bo.drafts):
+            bo.drafts[bo.selected_idx].braille_lines = out
         return out, forced_total
+
+    @staticmethod
+    def _remap_trail_to_formatted(
+        bo: BrailleOutput,
+        orig_lines: list[str],
+        out: list[str],
+        line_slices: list[tuple[int, int]],
+    ) -> None:
+        """rule_trail 요소-로컬 좌표를 조판 후(out) 프레임으로 재매핑(in-place).
+
+        내용 기반: 조판은 비공백 글리프의 순서·개수를 보존하므로(공백 재배치·들여·가운데
+        패딩만 추가), 원본 줄에서 글리프의 등장 순번(rank)을 구해 out의 같은 순번 위치를 찾는다.
+        강제분리가 글리프 가운데를 끊는 드문 경우엔 못 찾으면 좌표를 유지(best-effort).
+        """
+        for r in bo.rule_trail:
+            if r.line_no < 0 or r.line_no >= len(orig_lines):
+                continue  # -1 = 요소 전체 / 안전
+            orig = orig_lines[r.line_no]
+            seg_start, seg_end = line_slices[r.line_no]
+            glyph = orig[r.col_start:r.col_end]
+            if not glyph:  # 점 태그(col_start==col_end): 해당 줄 첫 서브라인 시작으로
+                r.line_no = seg_start if seg_start < seg_end else r.line_no
+                continue
+            rank = orig.count(glyph, 0, r.col_start)  # col_start 앞 등장 횟수
+            located = _find_nth_occurrence(out, seg_start, seg_end, glyph, rank)
+            if located is not None:
+                nl, nc = located
+                r.line_no, r.col_start, r.col_end = nl, nc, nc + len(glyph)
 
     def _render_box_top(self, level: int, title: str) -> list[str]:
         """위 테두리 줄 렌더 (BBPG-1.2.5). 제목 ≤24칸이면 중간 7칸, 초과면 윗줄 5칸(케이스①)."""
@@ -358,7 +418,8 @@ class LayoutBraille:
         specs = list(bo.box_borders)
         si = 0
         new_lines: list[str] = []
-        for ln in bo.braille_lines:
+        index_map: dict[int, int] = {}  # 옛 줄 인덱스 → 새 줄 인덱스(내용 줄만)
+        for old_idx, ln in enumerate(bo.braille_lines):
             if si < len(specs) and _is_border_line(ln):
                 spec = specs[si]
                 si += 1
@@ -369,8 +430,13 @@ class LayoutBraille:
                     new_lines.append(self._render_box_bottom(spec.level))
                     new_lines.append("")  # 아래 한 줄 띔
             else:
+                index_map[old_idx] = len(new_lines)
                 new_lines.append(ln)
         bo.braille_lines = new_lines
+        # 빈 줄·테두리 삽입으로 내용 줄이 밀렸으므로 rule_trail 요소-로컬 line_no 재매핑.
+        for r in bo.rule_trail:
+            if r.line_no >= 0 and r.line_no in index_map:
+                r.line_no = index_map[r.line_no]
 
     def _apply_bullet_marker(self, bo: BrailleOutput) -> None:
         """list_item 첫머리 숨김표 글리프(○□△)를 KBR 제72항 글머리형으로 정정(in-place).
@@ -388,20 +454,27 @@ class LayoutBraille:
             if not line.startswith(hidden):
                 continue
             lines[idx] = bullet + line[len(hidden):]
-            # rule_trail: 선두 숨김표(6.13.49, span_start==0) → 글머리(6.14.72)로 교체
+            # rule_trail: 선두 숨김표(6.13.49, idx줄 col0) → 글머리(6.14.72)로 교체.
+            # 글리프가 축소(delta)되므로 같은 줄 뒤 내용 규칙의 칸도 보정(요소-로컬 좌표 유지).
+            delta = len(hidden) - len(bullet)
             new_trail = []
             replaced = False
             for r in bo.rule_trail:
                 if (not replaced and r.rule_id == _RULE_HIDDEN_SINGLE
-                        and r.span_start == 0):
-                    new_trail.append(make_rule(_RULE_BULLET, span_start=0,
-                                               span_end=len(bullet), tag="bullet"))
+                        and r.line_no == idx and r.col_start == 0):
+                    new_trail.append(make_rule(_RULE_BULLET, line_no=idx, col_start=0,
+                                               col_end=len(bullet), tag="bullet"))
                     replaced = True
                 else:
+                    if delta and r.line_no == idx and r.col_start > 0:
+                        r = r.model_copy(update={
+                            "col_start": max(0, r.col_start - delta),
+                            "col_end": max(0, r.col_end - delta),
+                        })
                     new_trail.append(r)
             if not replaced:
-                new_trail.append(make_rule(_RULE_BULLET, span_start=0,
-                                           span_end=len(bullet), tag="bullet"))
+                new_trail.append(make_rule(_RULE_BULLET, line_no=idx, col_start=0,
+                                           col_end=len(bullet), tag="bullet"))
             bo.rule_trail = new_trail
             return
 

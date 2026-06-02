@@ -25,8 +25,8 @@ _QUALITY_TIMEOUT  = 30.0
 _FALLBACK_TIMEOUT = 45.0
 
 def _min_trail(text: str) -> list[RuleApplication]:
-    """수학 점자 일반(KBR-수학-1.1)을 수식 텍스트 전체 범위로 emit."""
-    return [make_rule("KBR-수학-1.1", span_start=0, span_end=len(text))]
+    """수학 점자 일반(KBR-수학-1.1) — 요소 전체(line_no=-1)."""
+    return [make_rule("KBR-수학-1.1")]
 
 # stage3_complex.md T3-3: LaTeX 기호 → 유니코드 정규화 (LLM 교정 보조용)
 # \\times / \\div / \\cdot 는 kor_math_rules에서 단일 처리 — 여기서 제거

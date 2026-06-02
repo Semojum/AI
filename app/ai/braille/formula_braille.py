@@ -37,11 +37,10 @@ class FormulaBraille:
                 struct_rules = latex_rule_ids(text)
             # rule_trail은 '내용 변환'만 기록(태민 정책 2026-06-01): 조판 규칙(32칸 줄바꿈) 제외.
             # 수식 일반(KBR-수학-1.1) + 구조별 rule(분수·근·첨자·로그·극한 등, Phase B).
-            # 구조 좌표는 수식 전체(0:n)로 부여 — 구조 단위 정밀 좌표는 추후.
-            n = len("\n".join(lines))
-            trail = [make_rule("KBR-수학-1.1", span_start=0, span_end=n)]
+            # 수식 일반·구조 rule은 요소 전체(line_no=-1) — 구조 단위 정밀 좌표는 추후.
+            trail = [make_rule("KBR-수학-1.1")]
             trail += [
-                make_rule(rule_id, span_start=0, span_end=n, tag="math_struct")
+                make_rule(rule_id, tag="math_struct")
                 for rule_id in struct_rules
             ]
             results.append(BrailleOutput(

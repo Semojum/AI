@@ -462,7 +462,7 @@ class TestBulletMarkerKBR72:
     def _bo(line: str, rule_trail=None) -> BrailleOutput:
         from app.ai.braille.regulations import make_rule
         if rule_trail is None:
-            rule_trail = [make_rule("KBR-6.13.49", span_start=0, span_end=3, tag="symbol")]
+            rule_trail = [make_rule("KBR-6.13.49", line_no=0, col_start=0, col_end=3, tag="symbol")]
         return BrailleOutput(element_id=str(uuid4()), braille_lines=[line], rule_trail=rule_trail)
 
     def test_동그라미_글머리_변환(self) -> None:
@@ -490,7 +490,7 @@ class TestBulletMarkerKBR72:
         from app.ai.braille.regulations import make_rule
         bo = BrailleOutput(
             element_id=str(uuid4()), braille_lines=["⠸⠚⠇⠁⠃"],
-            rule_trail=[make_rule("KBR-6.13.49", span_start=0, span_end=3, tag="symbol")],
+            rule_trail=[make_rule("KBR-6.13.49", line_no=0, col_start=0, col_end=3, tag="symbol")],
         )
         lines, _ = LayoutBraille()._format_element(bo, "list_item", 0)
         assert lines[0] == "   ⠸⠚⠁⠃"            # 3칸 들여 + 글머리형
@@ -637,3 +637,87 @@ class TestBoxBorderBBPG125:
         borders = [l for l in bo.braille_lines if l.strip()]
         assert borders[0] == "⠖" + "⠒" * 30 + "⠲"   # 2단계 위
         assert borders[-1] == "⠓" + "⠒" * 30 + "⠚"   # 2단계 아래
+
+
+class TestPostLayoutCoords:
+    """조판 후 contents = 최종 조판본 + rule_trail 좌표가 실제 셀을 가리킨다(태민 원칙).
+
+    write-back으로 bo.braille_lines = 들여/줄바꿈/가운데 반영본이 되고, 좌표가 그
+    프레임으로 재매핑돼 FE가 contents[line_no][col_start:col_end]만 칠하면 된다.
+    """
+
+    @staticmethod
+    def _text_bo(corrected_text: str):
+        import uuid
+
+        from app.ai.braille.text_braille import TextBraille
+        from app.schemas.content import LLMOutput
+
+        opt = LLMOutput(
+            element_id=uuid.uuid4(), corrected_text=corrected_text,
+            render_mode="text_only", routing_tier="ZERO",
+        )
+        return TextBraille().translate([opt])[0]
+
+    def test_문단들여_후_TN좌표_셀일치(self, lb, tmp_path) -> None:
+        from app.ai.braille.translator import TN_MARKER
+
+        bo = self._text_bo("<!점역자주>설명<!/점역자주>")
+        eid = bo.element_id
+        lr = _layout((eid, "text", 1, 0))           # text → 문단 3칸 들여
+        lb.layout([bo], page_no=1, job_id="tnc", layout_result=lr)
+
+        assert bo.braille_lines[0].startswith("   ")  # write-back: 문단 들여 반영
+        # 파일 첫 내용줄 == contents 첫 줄 (둘이 같은 조판본)
+        assert _read_lines(tmp_path, "tnc")[0] == bo.braille_lines[0]
+        marks = [r for r in bo.rule_trail if r.tag in ("tn_open", "tn_close")]
+        assert marks
+        for r in marks:                              # 좌표가 실제 ⠠⠄ 셀을 가리킴
+            assert bo.braille_lines[r.line_no][r.col_start:r.col_end] == TN_MARKER
+        assert marks[0].col_start == 3               # 들여(3칸) 뒤 첫 마커
+
+    def test_문단들여_후_특수기호좌표_셀일치(self, lb) -> None:
+        from app.ai.braille.symbol_rules import SYMBOL_TABLE
+
+        bo = self._text_bo("온도는 25℃이다")
+        eid = bo.element_id
+        lr = _layout((eid, "text", 1, 0))
+        lb.layout([bo], page_no=1, job_id="symc", layout_result=lr)
+        glyph = SYMBOL_TABLE["℃"]
+        cel = [r for r in bo.rule_trail if r.rule_id == "KBR-6.14.69"]
+        assert cel
+        assert any(
+            bo.braille_lines[r.line_no][r.col_start:r.col_end] == glyph for r in cel
+        )
+
+    def test_글머리_들여_후_좌표_셀일치(self, lb) -> None:
+        # list_item ○ → 글머리형(⠸⠚) + 3칸 들여. 글머리 좌표가 들여 뒤 셀을 가리킨다.
+        bo = self._text_bo("○ 항목")               # ○ 숨김표로 변환 후 글머리 정정
+        eid = bo.element_id
+        lr = _layout((eid, "list_item", 1, 0))
+        lb.layout([bo], page_no=1, job_id="bulc", layout_result=lr)
+        bullet = next((r for r in bo.rule_trail if r.rule_id == "KBR-6.14.72"), None)
+        assert bullet is not None
+        assert bo.braille_lines[bullet.line_no][bullet.col_start:bullet.col_end] == "⠸⠚"
+        assert bullet.col_start == 3                 # 글머리 3칸 들여
+
+    def test_선택초안_contents_본문일치_proto계약(self, lb) -> None:
+        # proto/스키마 불변식: contents == drafts[selected_idx].contents.
+        # write-back으로 본문이 조판되면 선택 초안도 같이 동기화돼야 한다(긴 narrative=줄바꿈 발생).
+        import uuid
+
+        from app.ai.braille.image_braille import ImageBraille
+        from app.schemas.content import Draft, LLMOutput
+
+        long_text = "그림은 큰 원 안에 작은 삼각형이 있고 그 아래 설명 문구가 길게 이어진다"
+        opt = LLMOutput(
+            element_id=uuid.uuid4(), corrected_text=long_text, render_mode="narrative",
+            routing_tier="ZERO",
+            drafts=[Draft(option=1, text=long_text, render_mode="narrative", label="요약")],
+            selected_idx=0,
+        )
+        bo = ImageBraille().translate([opt])[0]
+        lr = _layout((bo.element_id, "image", 1, 0))
+        lb.layout([bo], page_no=1, job_id="dft", layout_result=lr)
+        assert len(bo.braille_lines) >= 2            # 줄바꿈 발생(조판 적용 확인)
+        assert bo.braille_lines == bo.drafts[bo.selected_idx].braille_lines

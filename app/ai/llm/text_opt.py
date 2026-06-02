@@ -36,8 +36,8 @@ def _get_hcxt_sem() -> "asyncio.Semaphore":
     return _hcxt_sem
 
 def _min_trail(text: str) -> list[RuleApplication]:
-    """텍스트 점역 기본 원칙(KBR-0.1)을 태깅 텍스트 전체 범위로 emit."""
-    return [make_rule("KBR-0.1", span_start=0, span_end=len(text))]
+    """텍스트 점역 기본 원칙(KBR-0.1) — 요소 전체(line_no=-1, 포괄 규칙)."""
+    return [make_rule("KBR-0.1")]
 
 _PROMPT_STANDARD = ""  # STANDARD 티어는 passthrough — 미사용
 
