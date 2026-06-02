@@ -67,21 +67,26 @@ def _table_to_text(table_structure: dict) -> str:
     return "\n".join(" | ".join(row) for row in grid)
 
 
-def _infer_render_mode(table_structure: Optional[dict]) -> str:
-    if not table_structure:
+def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
+    if table_structure:
+        if rm := table_structure.get("render_mode"):
+            return rm
+        cells = table_structure.get("cells", [])
+        if cells:
+            max_row = max((c.get("row", 0) for c in cells), default=0) + 1
+            max_col = max((c.get("col", 0) for c in cells), default=0) + 1
+            if max_col == 2:
+                return "linear"
+            if max_row == 1:
+                return "transposed"
+            return "table_grid"
+    # table_structure 없음/빈 셀: 텍스트의 '|' 격자로 추론(현주 미파싱 핸드오프 대비).
+    # '|'가 있으면 격자 표 → narrative로 오분류하지 않는다(2열은 linear, 그 외 격자).
+    rows = [ln for ln in (text or "").splitlines() if "|" in ln]
+    if not rows:
         return "narrative"
-    if rm := table_structure.get("render_mode"):
-        return rm
-    cells = table_structure.get("cells", [])
-    if not cells:
-        return "narrative"
-    max_row = max((c.get("row", 0) for c in cells), default=0) + 1
-    max_col = max((c.get("col", 0) for c in cells), default=0) + 1
-    if max_col == 2:
-        return "linear"
-    if max_row == 1:
-        return "transposed"
-    return "table_grid"
+    max_col = max(len(r.split("|")) for r in rows)
+    return "linear" if max_col == 2 else "table_grid"
 
 
 def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 512) -> str:
@@ -180,7 +185,7 @@ class TableOpt:
         self, ext: ExtractedContent, routing_tier: str
     ) -> LLMOutput:
         start = time.monotonic()
-        render_mode = _infer_render_mode(ext.table_structure)
+        render_mode = _infer_render_mode(ext.table_structure, ext.corrected_text or "")
         is_irregular = render_mode == "narrative" or (
             ext.table_structure is not None
             and ext.table_structure.get("irregular", False)

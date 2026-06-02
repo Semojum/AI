@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from typing import Optional
 from uuid import UUID
@@ -39,16 +40,24 @@ def _min_trail(text: str) -> list[RuleApplication]:
     """텍스트 점역 기본 원칙(KBR-0.1) — 요소 전체(line_no=-1, 포괄 규칙)."""
     return [make_rule("KBR-0.1")]
 
-_PROMPT_STANDARD = ""  # STANDARD 티어는 passthrough — 미사용
+# QUALITY 티어(저신뢰 스캔)에서만 호출 — OCR 오류 교정. 프롬프트 잔재('신뢰도/입력/출력'
+# 라벨)가 출력에 새지 않도록 라벨을 넣지 않고 결과만 받도록 지시한다(누출 버그 방지).
+_PROMPT_QUALITY = """다음 텍스트의 OCR 오류(깨진 글자·잘못된 띄어쓰기·오인식)만 교정해 교정된 텍스트만 출력하세요. 설명·머리말·따옴표 없이 결과만.
 
-_PROMPT_QUALITY = """OCR 오류만 수정 후 텍스트만 출력. 설명 금지.
+{text}"""
 
-신뢰도: {ocr_confidence:.2f}
+# 모델이 프롬프트 라벨을 복창한 경우 선두에서 제거(방어적 후처리).
+_ARTIFACT_RE = re.compile(r"^\s*(신뢰도|입력|출력|교정(된)?\s*텍스트|결과)\s*[:：].*$")
 
-입력:
-{text}
 
-출력:"""
+def _clean_output(text: str) -> str:
+    """LLM 출력에서 프롬프트 잔재(선두 라벨 줄)·감싼 따옴표 제거."""
+    raw = text or ""
+    lines = raw.splitlines()
+    while lines and (not lines[0].strip() or _ARTIFACT_RE.match(lines[0])):
+        lines.pop(0)
+    cleaned = "\n".join(lines).strip().strip("\"'`「」“”").strip()
+    return cleaned or raw.strip()
 
 
 def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 256) -> str:
@@ -79,18 +88,17 @@ def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 256) -> str:
 
 
 async def _hcxt_optimize(text: str, ocr_confidence: float, timeout: float) -> str:
-    if ocr_confidence >= config.ocr_confidence_threshold:
-        prompt = _PROMPT_STANDARD.format(text=text)
-    else:
-        prompt = _PROMPT_QUALITY.format(text=text, ocr_confidence=ocr_confidence)
+    # QUALITY(신뢰도<threshold)에서만 호출됨. 라벨 없는 프롬프트로 OCR 교정만 수행.
+    prompt = _PROMPT_QUALITY.format(text=text)
     # 입력 텍스트 길이 기반 max_new_tokens: 한글 1자 ≈ 1~2토큰, 여유분 30% 추가
     max_new_tokens = min(512, max(64, int(len(text) * 1.3)))
     async with _get_hcxt_sem():
         try:
-            return await asyncio.wait_for(
+            raw = await asyncio.wait_for(
                 asyncio.to_thread(_hcxt_generate_sync, prompt, max_new_tokens),
                 timeout=timeout,
             )
+            return _clean_output(raw)   # 프롬프트 잔재 제거
         except asyncio.TimeoutError:
             logger.warning("HyperCLOVA X 타임아웃 (%.0fs)", timeout)
             raise

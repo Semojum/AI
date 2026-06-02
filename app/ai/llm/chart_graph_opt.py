@@ -62,7 +62,7 @@ def _verify_numbers(original: str, output: str) -> bool:
     return nums_in.issubset(nums_out)
 
 
-def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 300) -> str:
+def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 512) -> str:  # 3안 생성 — 토큰 여유
     import torch
     model = model_manager.hcxt_model
     tokenizer = model_manager.hcxt_tokenizer
@@ -182,12 +182,12 @@ class ChartGraphOpt:
         if not drafts:
             drafts = single_draft(response or caption[:120], "narrative", "수학적 서술")
 
-        # 수치 그라운딩 검증 — 원본 수치 누락 초안은 원본 캡션으로 대체 + R5
+        # 수치 그라운딩 검증 — 원본 수치가 누락된 초안이 있으면 R5(검토 필요)만 표시.
+        # 초안을 원본으로 '덮어쓰지 않는다': 방식2(수학적 서술)는 추세 중심이라 의도적으로
+        # 일부 수치를 생략하므로, 덮어쓰면 3안이 모두 원본으로 동일해진다(차별화 소실).
+        # 환각/누락은 점역사가 R5 표시를 보고 검토·교정한다.
         if any(not _verify_numbers(caption, d.text) for d in drafts):
-            logger.warning("수치 검증 실패 id=%s — 누락 초안 원본 대체 (R5)", ext.element_id)
-            for d in drafts:
-                if not _verify_numbers(caption, d.text):
-                    d.text = ensure_tn_prefix(caption)
+            logger.warning("수치 검증 경고 id=%s — 일부 초안에 원본 수치 누락 (R5)", ext.element_id)
             ext.flags = list(getattr(ext, "flags", [])) + ["R5"]
 
         elapsed_ms = int((time.monotonic() - start) * 1000)

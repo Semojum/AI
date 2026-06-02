@@ -11,23 +11,25 @@ import re
 
 from app.schemas.content import Draft
 
-_METHOD_RE = re.compile(r"\[\s*방식\s*([1-3])\s*\]\s*(.*)")
+# [방식N] / 방식N / 방식 N + 구분기호(] : . )) 변형 허용. 대괄호·콜론 없어도 인식.
+_METHOD_RE = re.compile(r"\[?\s*방식\s*([1-3])\s*[\]:.)]*\s*(.*)")
 
 
-_TN_LEGACY_RE = re.compile(r"^\[\s*점역사주\s*\]\s*")
+# 점역사주/점역자주 라벨(대괄호·콜론 변형 포함) 접두 제거용.
+_TN_LEGACY_RE = re.compile(r"^\s*\[?\s*점역[사자]주\s*\]?\s*[:：.]?\s*")
 
 
 def ensure_tn_prefix(text: str) -> str:
     """점역자 주 텍스트를 인라인 태그 `<!점역자주>…<!/점역자주>`로 감싼다 (plan §3-5).
 
-    구 `[점역사주]` 리터럴 접두나 이미 붙은 태그가 있으면 제거 후 재포장(중복 방지).
+    구 `[점역사주]`·`점역사주:` 리터럴 접두나 이미 붙은 태그가 있으면 제거 후 재포장(중복 방지).
     점역 직전 텍스트의 이 태그를 translator가 점자 마커 `⠠⠄`(양끝)로 치환한다.
     """
     t = (text or "").strip()
     if not t:
         return ""
-    t = _TN_LEGACY_RE.sub("", t)                       # 구 [점역사주] 접두 제거
     t = t.replace("<!점역자주>", "").replace("<!/점역자주>", "").strip()  # 기존 태그 제거
+    t = _TN_LEGACY_RE.sub("", t).strip()               # [점역사주]·점역사주: 등 라벨 제거
     if not t:
         return ""
     return f"<!점역자주>{t}<!/점역자주>"
