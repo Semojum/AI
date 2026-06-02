@@ -132,12 +132,17 @@ app/
 1. ✅ **bounding_box 좌표**: `_build_response`가 이제 `{"x","y","x2","y2"}` 키로 내보냄(proto 일치). (단, 현재 경계 파일에 bbox가 없어 값은 0,0,0,0)
 2. ✅ **QualityReport.status 표기**: `quality.py` 주석 `COMPLETED|NEEDS_REVIEW|BLOCKED`로 정정.
 6'. ✅ **현주 파일 소비 + 단계별 json 기록**: pipeline이 `data/NNN_txt_result.json`을 생성(현주 ZERO)·소비(태민)하고 `type/{type}/*_ocr|cap·*_opt·*_braille.json`을 기록(위 실행 흐름). 차트 파일명은 `cg_*.json`(plan 일치).
+10'. ✅ **입력 태깅 파서 구현(§3-5)**: `translator.substitute_tags`가 `<!이름>`/`<!/이름>`을 점자 마커로 치환(점역자주 `⠠⠄`·글상자 테두리·빈칸), tn_open/tn_close·symbol rule_trail emit. 시각 opt는 `<!점역자주>…<!/점역자주>` 태그로 감쌈. 회귀 `test_tag_parser`.
+11'. ✅ **rule_trail 요소-로컬 좌표(§3-4)**: `line_no/col_start/col_end`(조판 후 contents 기준, `-1`=요소전체) + `tag`. proto·grpc 반영. `make_rule_at`/내용기반 재매핑(`_remap_trail_to_formatted`).
+12'. ✅ **음절 단위 줄바꿈(BBPG-1.2.1)**: `translate_with_breaks`(접두 일관성으로 약자·수·마커 미분리) + layout `_wrap_line`. 모듈은 논리 줄+`break_points`, 32칸 줄바꿈은 layout 단독.
+13'. ✅ **응답 계약 정리**: `_build_response` 읽기순서 정렬·braille_text_list heading_level·비선택 draft도 32칸 조판(contents==drafts[selected_idx].contents).
+14'. ✅ **마감 조판 REST `POST /finalize`**: 점역사 편집 블록 → BBPG 페이지 조립(`LayoutBraille.finalize`/`_assemble_pages`, 재-wrap 없음). 점자 규정은 AI 소유, BE/FE는 호출만.
 
 **B. 미구현 stub (plan 기준 구현 필요)**
 3. **PART 3-4 분류기**: `captioning/classifier.py` = `# TODO [단계3]` 스텁. `ImageClassifier.classify` 부재 → pipeline이 `ImportError` catch → image 고정, cartoon/chart_graph 미분류, visual_subtype/subtype_confidence 미생성. → plan §3-1 값으로 구현.
 4. **PART 11 품질검사**: `quality/quality_checker.py`·`metrics_collector.py` 스텁. pipeline이 status **하드코딩 "COMPLETED"**, QualityReport 빈 값. C/R 판정·status 분기·TimescaleDB 기록 전무. → plan §4-1 status 규칙·C1~C7/R1~R12 구현 후 pipeline 연결.
 5. **현주 파트(모델 의존)**: layout/ocr/captioning 일부 모델 미탑재 시 동작 안 함. pipeline이 `ImportError/AttributeError`로 격리 → `[처리 불가]` 플레이스홀더.
-10. **입력 태깅 파서 미구현(정본 §3-5 위반)**: `translator.py`는 `<formula>`만 처리하고 나머지 `<...>`를 `_TAG_RE`로 **삭제**할 뿐, `<!이름>`/`<!/이름>` 인식·치환이 없다. 시각 opt(`table/image/cartoon/chart_graph_opt`)는 점역자 주를 `[점역사주]` 한글 리터럴로 출력 → `*_braille`이 그대로 점자화해 `⠦⠆⠨⠎⠢⠱⠁⠇⠨⠍⠰⠴`(한글 "점역사주") 발생, 마커 `⠠⠄` 0개. → ① opt가 `<!점역자주>…<!/점역자주>` 태그로 감싸고 ② `translator.py`에 태그 파서(`<!(/?)([^>]+)>` + `태그명→점자` 다대일 매핑) 구현, tn_open/tn_close rule_trail emit. 테두리(`<!표윗테두리>`=글상자 `⠿⠛…`)·빈칸 태그도 동일 파서로. 회귀 방지 단언 테스트 추가 필수.
+11. **시각 복수초안(T4-2) 실모델 3안 생성**: `image/cartoon_opt`가 HCLOVA X 실모델에서 `[방식N]` 3줄 포맷을 안 따라 1안만 생성(파싱·토큰·폴백 인프라는 정상, chart는 동일 인프라로 3안 정상). → **Stage 5 프롬프트 튜닝 backlog**(메모리 `stage5-backlog-visual-3draft`). few-shot 강화·sampling·입력 복잡도별 분기.
 
 **C. 남은 정합 (참고)**
 7. **테스트 목 `chart_graph_cap.json`**: 런타임 코드는 `cg_cap.json` 기록(plan 일치)하나, `test_data/page_001/type/chart_graph/`의 목 파일명은 `chart_graph_cap.json`으로 남아 있음. step4 시각 테스트 정비 시 통일.

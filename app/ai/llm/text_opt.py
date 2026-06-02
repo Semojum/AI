@@ -13,7 +13,6 @@ import logging
 import re
 import time
 from typing import Optional
-from uuid import UUID
 
 from app.ai.braille.regulations import make_rule
 from app.core.config import config

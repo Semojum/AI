@@ -11,7 +11,7 @@ import time
 from typing import Optional
 
 from app.ai.braille.regulations import make_rule
-from app.ai.llm.draft_utils import ensure_tn_prefix, parse_labeled_drafts, single_draft
+from app.ai.llm.draft_utils import parse_labeled_drafts, single_draft
 from app.core.config import config
 from app.core.model_manager import model_manager
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
