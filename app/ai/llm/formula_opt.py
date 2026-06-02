@@ -102,14 +102,16 @@ def _hcxt_generate_sync(prompt: str, max_new_tokens: int = 256) -> str:
 
 
 async def _hcxt_optimize(latex: str, timeout: float) -> str:
+    from app.ai.llm.inference_lock import hcxt_lock
     prompt = _PROMPT.format(latex=latex)
-    try:
-        return await asyncio.wait_for(
-            asyncio.to_thread(_hcxt_generate_sync, prompt), timeout=timeout
-        )
-    except asyncio.TimeoutError:
-        logger.warning("HyperCLOVA X 수식 최적화 타임아웃 (%.0fs)", timeout)
-        raise
+    async with hcxt_lock():          # 단일 GPU 모델 추론 직렬화
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(_hcxt_generate_sync, prompt), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            logger.warning("HyperCLOVA X 수식 최적화 타임아웃 (%.0fs)", timeout)
+            raise
 
 
 async def _fallback_optimize(latex: str) -> str:

@@ -71,8 +71,11 @@ class ModelManager:
             )
             logger.info("Qwen3-VL-8B AWQ 로드 완료")
         except Exception as exc:
-            logger.exception("Qwen3-VL-8B 로드 실패: %s", exc)
-            raise
+            # 치명적 중단 대신 격리: qwen=None → property RuntimeError → layout/ocr가 빈 결과로
+            # 격리. 모델 하나 없다고 서버 전체가 안 뜨는 것을 막는다(요소 격리 철학).
+            logger.exception("Qwen3-VL-8B 로드 실패 — 레이아웃/OCR 비활성, 서버는 계속: %s", exc)
+            self._gpu0_models["qwen"] = None
+            self._gpu0_models["qwen_processor"] = None
 
     def _load_yolo(self) -> None:
         logger.info("DocLayout-YOLO v2 로드: %s", config.doclayout_yolo_path)
@@ -118,8 +121,11 @@ class ModelManager:
             # CUDA JIT 커널 선컴파일 — 첫 실제 추론의 지연(~20s) 방지
             self._warmup_hcxt()
         except Exception as exc:
-            logger.exception("HyperCLOVA X 14B 로드 실패: %s", exc)
-            raise
+            # 치명적 중단 대신 격리: hcxt=None → property RuntimeError → opt가 fallback/passthrough.
+            # QUALITY 최적화만 비활성되고 ZERO/규칙 기반 경로·서버는 정상 기동.
+            logger.exception("HyperCLOVA X 14B 로드 실패 — QUALITY 최적화 비활성, 서버는 계속: %s", exc)
+            self._gpu1_models["hcxt"] = None
+            self._gpu1_models["hcxt_tokenizer"] = None
 
     def _warmup_hcxt(self) -> None:
         logger.info("HyperCLOVA X 워밍업 시작")

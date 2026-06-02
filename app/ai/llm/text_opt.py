@@ -26,14 +26,8 @@ _STANDARD_TIMEOUT = 60.0   # 워밍업 후 bitsandbytes NF4 14B: ~15-25 tok/s, 1
 _QUALITY_TIMEOUT  = 90.0
 _FALLBACK_TIMEOUT = 45.0
 
-# GPU 추론 직렬화 — 단일 GPU 환경에서 동시 호출 시 GPU 경쟁 방지
-_hcxt_sem: Optional["asyncio.Semaphore"] = None
-
-def _get_hcxt_sem() -> "asyncio.Semaphore":
-    global _hcxt_sem
-    if _hcxt_sem is None:
-        _hcxt_sem = asyncio.Semaphore(1)
-    return _hcxt_sem
+# GPU 추론 직렬화는 모든 opt가 공유하는 inference_lock.hcxt_lock()을 사용한다
+# (text_opt 전용 세마포어 폐지 — 한 GPU 모델에 대해 전역 단일 추론 보장).
 
 def _min_trail(text: str) -> list[RuleApplication]:
     """텍스트 점역 기본 원칙(KBR-0.1) — 요소 전체(line_no=-1, 포괄 규칙)."""
@@ -91,7 +85,8 @@ async def _hcxt_optimize(text: str, ocr_confidence: float, timeout: float) -> st
     prompt = _PROMPT_QUALITY.format(text=text)
     # 입력 텍스트 길이 기반 max_new_tokens: 한글 1자 ≈ 1~2토큰, 여유분 30% 추가
     max_new_tokens = min(512, max(64, int(len(text) * 1.3)))
-    async with _get_hcxt_sem():
+    from app.ai.llm.inference_lock import hcxt_lock
+    async with hcxt_lock():          # 단일 GPU 모델 추론 직렬화(전역 공유)
         try:
             raw = await asyncio.wait_for(
                 asyncio.to_thread(_hcxt_generate_sync, prompt, max_new_tokens),
