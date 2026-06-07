@@ -60,6 +60,7 @@ _RULE_HIDDEN_SINGLE = "KBR-6.13.49"  # 숨김표 단일(제49항) — list_item 
 _PARA_INDENT = 3        # BBPG 2장2절2 새 문단 첫 줄 3칸 (text)
 _BULLET_LINE_INDENT = 3  # BBPG 2장3절5 글머리/목록 3칸 (list_item)
 _HEADING_DEEP_INDENT = 5  # BBPG 2장2절1 3·4단계 제목 5칸
+_HEADING_LEVEL2_INDENT = 3  # 2단계 제목 3칸 (BBPG 미명시 — 1단계 가운데와 3단계 5칸 사이, 태민 결정)
 
 _DEFAULT_META: tuple[str, int, int] = ("text", 1_000_000, 0)
 _PAGE_LINE_TYPES = {"header_footer", "page_number"}
@@ -598,7 +599,11 @@ class LayoutBraille:
     ) -> int:
         """첫 줄 들여쓰기 칸 수. (조판 서식이므로 rule_trail 미기록 — 태민 정책)."""
         if is_heading:
-            return _HEADING_DEEP_INDENT if hlevel >= 3 else 0
+            if hlevel >= 3:
+                return _HEADING_DEEP_INDENT  # 3·4단계 5칸
+            if hlevel == 2:
+                return _HEADING_LEVEL2_INDENT  # 2단계 3칸
+            return 0  # 1단계는 가운데 정렬(별도 처리)
         if etype == "text":
             return _PARA_INDENT
         if etype == "list_item":

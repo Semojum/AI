@@ -365,6 +365,15 @@ class TestLayoutBody:
         first = next(l for l in _read_lines(tmp_path, "ctr") if l.strip())
         assert first.startswith(" ") and first.strip() == "제목"  # 좌측 패딩 = 가운데
 
+    def test_heading_level2_indent3(self, lb, tmp_path) -> None:
+        """2단계 제목 3칸 들여 (BBPG 미명시 — 태민 결정: 1단계 가운데와 3단계 5칸 사이)."""
+        eid = uuid4()
+        lr = _layout((eid, "title", 1, 2))
+        lb.layout([_out(["중제목"], eid)], page_no=1, job_id="h2", layout_result=lr)
+        first = next(l for l in _read_lines(tmp_path, "h2") if l.strip())
+        assert first.startswith("   ") and not first.startswith("    ")
+        assert first.strip() == "중제목"
+
     def test_heading_level3_indent5(self, lb, tmp_path) -> None:
         """3단계 제목 5칸 들여 (BBPG 2장2절1)."""
         eid = uuid4()
