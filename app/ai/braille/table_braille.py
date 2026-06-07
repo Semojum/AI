@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from app.ai.braille.isolation import safe_translate
 from app.ai.braille.regulations import make_rule, make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import translate_tagged_text as _translate
@@ -143,52 +144,51 @@ class TableBraille:
     """LLMOutput 목록 → BrailleOutput 목록 (표). 격자/전치/선형 3안."""
 
     def translate(self, optimized: list[LLMOutput]) -> list[BrailleOutput]:
-        results = []
-        for opt in optimized:
-            text = opt.corrected_text
+        # 요소별 격리: 한 표 점역 실패가 다른 요소를 막지 않는다.
+        return safe_translate(optimized, self._translate_one)
 
-            if text.startswith("[처리 불가") or text.startswith("[표 수동"):
-                lines = [text]
-                results.append(BrailleOutput(
-                    element_id=opt.element_id, braille_lines=lines,
-                    rule_trail=_base_trail(lines, text),
-                ))
-                continue
+    def _translate_one(self, opt: LLMOutput) -> BrailleOutput:
+        text = opt.corrected_text
 
-            if "|" not in text:  # 비정형 → TN 단일안
-                tn = opt.tn_text or text
-                lines, breaks = translate_with_breaks(tn)  # 음절 줄바꿈(BBPG-1.2.1)
-                results.append(BrailleOutput(
-                    element_id=opt.element_id,
-                    braille_lines=lines,
-                    break_points=breaks,
-                    rule_trail=_base_trail(lines, tn),
-                ))
-                continue
+        if text.startswith("[처리 불가") or text.startswith("[표 수동"):
+            lines = [text]
+            return BrailleOutput(
+                element_id=opt.element_id, braille_lines=lines,
+                rule_trail=_base_trail(lines, text),
+            )
 
-            # 격자 구조 → 레이아웃 3안 (셀 값 동일, 조판만 다름)
-            grid_lines = _render_grid(text)
-            transposed_lines = _split_lines(_translate(_TN_TRANSPOSE)) + _render_grid(_transpose_text(text))
-            linear_lines = _render_linear(text)
-            # 전치안은 표 유형별 점역(BBPG-3.1.2)을 추가로 기록 — 요소 전체(line_no=-1)
-            trail_transpose = _base_trail(transposed_lines, text) + [
-                make_rule("BBPG-3.1.2"),
-            ]
-            drafts = [
-                Draft(option=1, text=text, render_mode="table_grid", label="격자형",
-                      braille_lines=grid_lines, rule_trail=_base_trail(grid_lines, text)),
-                Draft(option=2, text=text, render_mode="transposed", label="행↔열 전치",
-                      braille_lines=transposed_lines, rule_trail=trail_transpose),
-                Draft(option=3, text=text, render_mode="linear", label="선형(키:값)",
-                      braille_lines=linear_lines, rule_trail=_base_trail(linear_lines, text)),
-            ]
-            # 기본 선택은 opt가 추론한 render_mode에 맞춘다 (나머지는 대안 초안)
-            sel = {"table_grid": 0, "transposed": 1, "linear": 2}.get(opt.render_mode, 0)
-            results.append(BrailleOutput(
+        if "|" not in text:  # 비정형 → TN 단일안
+            tn = opt.tn_text or text
+            lines, breaks = translate_with_breaks(tn)  # 음절 줄바꿈(BBPG-1.2.1)
+            return BrailleOutput(
                 element_id=opt.element_id,
-                braille_lines=drafts[sel].braille_lines,
-                rule_trail=list(drafts[sel].rule_trail),
-                drafts=drafts,
-                selected_idx=sel,
-            ))
-        return results
+                braille_lines=lines,
+                break_points=breaks,
+                rule_trail=_base_trail(lines, tn),
+            )
+
+        # 격자 구조 → 레이아웃 3안 (셀 값 동일, 조판만 다름)
+        grid_lines = _render_grid(text)
+        transposed_lines = _split_lines(_translate(_TN_TRANSPOSE)) + _render_grid(_transpose_text(text))
+        linear_lines = _render_linear(text)
+        # 전치안은 표 유형별 점역(BBPG-3.1.2)을 추가로 기록 — 요소 전체(line_no=-1)
+        trail_transpose = _base_trail(transposed_lines, text) + [
+            make_rule("BBPG-3.1.2"),
+        ]
+        drafts = [
+            Draft(option=1, text=text, render_mode="table_grid", label="격자형",
+                  braille_lines=grid_lines, rule_trail=_base_trail(grid_lines, text)),
+            Draft(option=2, text=text, render_mode="transposed", label="행↔열 전치",
+                  braille_lines=transposed_lines, rule_trail=trail_transpose),
+            Draft(option=3, text=text, render_mode="linear", label="선형(키:값)",
+                  braille_lines=linear_lines, rule_trail=_base_trail(linear_lines, text)),
+        ]
+        # 기본 선택은 opt가 추론한 render_mode에 맞춘다 (나머지는 대안 초안)
+        sel = {"table_grid": 0, "transposed": 1, "linear": 2}.get(opt.render_mode, 0)
+        return BrailleOutput(
+            element_id=opt.element_id,
+            braille_lines=drafts[sel].braille_lines,
+            rule_trail=list(drafts[sel].rule_trail),
+            drafts=drafts,
+            selected_idx=sel,
+        )
