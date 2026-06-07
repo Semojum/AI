@@ -1,0 +1,47 @@
+{
+  "demo_id": "p08",
+  "title": "갈등 해결의 자세",
+  "subject": "도덕",
+  "declared_types": [
+    "cartoon",
+    "page_number",
+    "text",
+    "title"
+  ],
+  "txt_result": {
+    "meta": {
+      "job_id": "demo-p08",
+      "page_no": 1,
+      "extraction_method": "TEXT_NATIVE"
+    },
+    "elements": [
+      {
+        "id": "d2ebf437-cfee-4a16-b480-ddfe30f7665b",
+        "order": 1,
+        "type": "page_number",
+        "content": "57"
+      },
+      {
+        "id": "74e838a2-b799-4d97-abcf-08ccdba3b2d2",
+        "order": 2,
+        "type": "title",
+        "content": "2. 대화와 양보",
+        "heading_level": 1
+      },
+      {
+        "id": "28b5cba9-01b0-4910-b8b9-6accdbc10bf7",
+        "order": 3,
+        "type": "text",
+        "content": "서로의 입장을 이해하고 양보할 때 갈등을 평화롭게 해결할 수 있다."
+      },
+      {
+        "id": "e98deab1-3ff6-4016-9439-4e84852e9b7a",
+        "order": 4,
+        "type": "cartoon",
+        "content": "두 학생이 다투다가 서로의 이야기를 듣고 화해하는 네 컷 만화. 1컷 다툼, 2컷 침묵, 3컷 대화, 4컷 악수."
+      }
+    ]
+  },
+  "expected_braille": null,
+  "notes": "기대 점역(점역사 작성) 미입력 — 검토 기준 채우기 전까지 placeholder"
+}

@@ -1,0 +1,61 @@
+{
+  "demo_id": "p10",
+  "title": "생태계와 환경",
+  "subject": "과학",
+  "declared_types": [
+    "chart_graph",
+    "footnote",
+    "image",
+    "page_number",
+    "text",
+    "title"
+  ],
+  "txt_result": {
+    "meta": {
+      "job_id": "demo-p10",
+      "page_no": 1,
+      "extraction_method": "TEXT_NATIVE"
+    },
+    "elements": [
+      {
+        "id": "765b0b7b-7bbd-49a3-8eeb-eb6d4a8df7c5",
+        "order": 1,
+        "type": "page_number",
+        "content": "102"
+      },
+      {
+        "id": "d97452dc-1faa-49ab-99ea-796e2bb8ff31",
+        "order": 2,
+        "type": "title",
+        "content": "1. 생태계의 구성",
+        "heading_level": 1
+      },
+      {
+        "id": "ba4cce72-7bc9-4881-9508-ef784ed47863",
+        "order": 3,
+        "type": "text",
+        "content": "생태계는 생산자, 소비자, 분해자로 이루어지며 에너지가 순환한다."
+      },
+      {
+        "id": "1a915291-37af-4c73-9016-b5a29c945321",
+        "order": 4,
+        "type": "image",
+        "content": "햇빛을 받는 풀을 토끼가 먹고 토끼를 여우가 먹는 먹이 사슬 그림."
+      },
+      {
+        "id": "ce520b76-5a38-4491-8d2c-cac72ce2b487",
+        "order": 5,
+        "type": "chart_graph",
+        "content": "어느 숲의 생물 구성비 원그래프. 생산자 60%, 소비자 30%, 분해자 10%."
+      },
+      {
+        "id": "1e1ab91e-705b-4a1c-8955-0527886e1bb8",
+        "order": 6,
+        "type": "footnote",
+        "content": "※ 분해자는 죽은 생물을 분해해 양분을 자연으로 되돌린다."
+      }
+    ]
+  },
+  "expected_braille": null,
+  "notes": "기대 점역(점역사 작성) 미입력 — 검토 기준 채우기 전까지 placeholder"
+}

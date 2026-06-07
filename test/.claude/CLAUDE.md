@@ -43,8 +43,13 @@ test/
     ├── format/test_extracted_content.py     ExtractedContent 직렬화
     ├── format/test_llm_output.py            LLMOutput 직렬화
     ├── format/test_braille_output.py        BrailleOutput 직렬화
-    └── pipeline/test_step3_e2e.py           텍스트/수식 체인 E2E + 6체인 격리(레벨 A+B)
+    ├── pipeline/test_step3_e2e.py           텍스트/수식 체인 E2E + 6체인 격리(레벨 A+B)
+    ├── llm/test_draft_utils.py·test_inference_lock.py·test_opt_prompts.py   초안 파싱·추론락·프롬프트 .format 무결성
+    ├── llm/test_finetune_skeleton.py        T5-4 파인튜닝 스켈레톤(포맷·SFT쌍·시드·학습가드)
+    └── demo/test_demo_set.py                T5-1 BE 데모셋 무결성(≥10p·유형커버·manifest 정합)
 ```
+
+> 데모 러너: `test/demo_runner.py` (T5-2 스켈레톤) — demo_set 전 페이지를 파이프라인에 통과시켜 점역 출력·FALLBACK 집계·기대점역 대조. `python test/demo_runner.py [--id pNN] [--load-models]`.
 
 > `unit_test/text/` 폴더는 **없다** — 텍스트 검증은 braille/(word_accuracy, mixed_input)와 pipeline/에 분산. (plan `디렉토리 구조.md`는 text/test_text_pipeline.py를 적었으나 코드엔 없음.)
 
@@ -55,6 +60,7 @@ test/
 | 파일/폴더 | 용도 |
 |---|---|
 | `page_001/` | 현주 파트 미구현 대체 목 페이지. `layout/merged_layout.json` + `type/{text,formula,table,image,cartoon,chart_graph}/*.json` (ExtractedContent[] 형식) |
+| `demo_set/` | **T5-1 BE 데모셋(골격)**. `manifest.json` + `pages/page_NN_*.json`(11p, 과목·유형 혼합, TEXT_NATIVE 핸드오프). 각 페이지 `expected_braille`는 **점역사 작성 placeholder(None)** — 채워야 검토 기준 완성. 러너 `test/demo_runner.py`. |
 | `regulation_pairs/section_01~14_*.json` | 규정 조항별 입력→기대출력 쌍 (수동 기록, 순환검증 방지) |
 | `word_pairs.json` | 한국어 단어 → 점자 기대값 |
 | `formula_pairs.json` | LaTeX → 점자 기대값 (BLEU 근사) |

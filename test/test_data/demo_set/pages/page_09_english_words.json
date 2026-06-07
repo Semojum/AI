@@ -1,0 +1,54 @@
+{
+  "demo_id": "p09",
+  "title": "Unit 5. My Daily Life",
+  "subject": "영어",
+  "declared_types": [
+    "list_item",
+    "page_number",
+    "table",
+    "text",
+    "title"
+  ],
+  "txt_result": {
+    "meta": {
+      "job_id": "demo-p09",
+      "page_no": 1,
+      "extraction_method": "TEXT_NATIVE"
+    },
+    "elements": [
+      {
+        "id": "6a8b1ce8-2166-4161-aa7d-ac058ad33737",
+        "order": 1,
+        "type": "page_number",
+        "content": "70"
+      },
+      {
+        "id": "438e45fb-976f-4bd9-857d-d98028ed123a",
+        "order": 2,
+        "type": "title",
+        "content": "New Words",
+        "heading_level": 1
+      },
+      {
+        "id": "59cd1a27-ec3a-409b-b98e-9bb00c3cff6e",
+        "order": 3,
+        "type": "text",
+        "content": "다음 단어의 뜻을 익히고 예문을 읽어 보자."
+      },
+      {
+        "id": "e73d922d-f843-4bad-9795-cc2ce381d4c7",
+        "order": 4,
+        "type": "table",
+        "content": "단어와 뜻. breakfast 아침식사, subject 과목, library 도서관, weekend 주말."
+      },
+      {
+        "id": "9e39d9be-7d13-4c7e-8101-68302f9f4898",
+        "order": 5,
+        "type": "list_item",
+        "content": "○ I have breakfast at 7 a.m."
+      }
+    ]
+  },
+  "expected_braille": null,
+  "notes": "기대 점역(점역사 작성) 미입력 — 검토 기준 채우기 전까지 placeholder"
+}

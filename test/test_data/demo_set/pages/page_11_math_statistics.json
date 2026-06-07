@@ -1,0 +1,54 @@
+{
+  "demo_id": "p11",
+  "title": "자료의 정리와 해석",
+  "subject": "수학",
+  "declared_types": [
+    "chart_graph",
+    "page_number",
+    "table",
+    "text",
+    "title"
+  ],
+  "txt_result": {
+    "meta": {
+      "job_id": "demo-p11",
+      "page_no": 1,
+      "extraction_method": "TEXT_NATIVE"
+    },
+    "elements": [
+      {
+        "id": "7b31800b-c40e-4ea9-8101-7b7c4d942fe8",
+        "order": 1,
+        "type": "page_number",
+        "content": "150"
+      },
+      {
+        "id": "d008f674-6b40-4144-86da-092c33221083",
+        "order": 2,
+        "type": "title",
+        "content": "2. 도수분포표",
+        "heading_level": 1
+      },
+      {
+        "id": "7b088421-2977-4c26-a04d-b32d47a1c648",
+        "order": 3,
+        "type": "text",
+        "content": "자료를 일정한 구간으로 나누어 각 구간의 도수를 표로 정리한다."
+      },
+      {
+        "id": "405fe1ac-63a3-45d9-8e24-cab1a023c497",
+        "order": 4,
+        "type": "table",
+        "content": "도수분포표. 0~10점 2명, 10~20점 5명, 20~30점 8명, 30~40점 3명."
+      },
+      {
+        "id": "8f1adcbf-8265-4f6a-88a9-f7e86efe2093",
+        "order": 5,
+        "type": "chart_graph",
+        "content": "점수 구간별 학생 수 막대그래프(히스토그램). 20~30점 구간이 8명으로 가장 많다."
+      }
+    ]
+  },
+  "expected_braille": null,
+  "notes": "기대 점역(점역사 작성) 미입력 — 검토 기준 채우기 전까지 placeholder"
+}

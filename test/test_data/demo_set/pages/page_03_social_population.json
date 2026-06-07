@@ -1,0 +1,61 @@
+{
+  "demo_id": "p03",
+  "title": "우리나라의 인구 변화",
+  "subject": "사회",
+  "declared_types": [
+    "chart_graph",
+    "page_number",
+    "sidebar",
+    "table",
+    "text",
+    "title"
+  ],
+  "txt_result": {
+    "meta": {
+      "job_id": "demo-p03",
+      "page_no": 1,
+      "extraction_method": "TEXT_NATIVE"
+    },
+    "elements": [
+      {
+        "id": "276c7d54-1a89-4d31-a062-5e0bd84f0b9e",
+        "order": 1,
+        "type": "page_number",
+        "content": "115"
+      },
+      {
+        "id": "ad18def6-d3ef-4524-a466-707261f68e35",
+        "order": 2,
+        "type": "title",
+        "content": "1. 인구 구조의 변화",
+        "heading_level": 1
+      },
+      {
+        "id": "a9b1dec3-34e0-476b-b8a1-2710fc1135ad",
+        "order": 3,
+        "type": "text",
+        "content": "출생률이 낮아지고 평균 수명이 늘어나면서 노년층 비율이 빠르게 증가하고 있다."
+      },
+      {
+        "id": "9a8bdf05-73ed-4dea-8d0b-669f9b57f4bb",
+        "order": 4,
+        "type": "chart_graph",
+        "content": "연도별 65세 이상 인구 비율 막대그래프. 2000년 7%, 2010년 11%, 2020년 16%, 2030년 25%."
+      },
+      {
+        "id": "1d2406c4-6393-40b7-a20c-e27116b3ee6a",
+        "order": 5,
+        "type": "table",
+        "content": "표 1. 연령별 인구 구성비(2020년). 유소년 12%, 생산연령 72%, 노년 16%."
+      },
+      {
+        "id": "1a65335b-94c3-4482-ab42-5f4c86dc63b3",
+        "order": 6,
+        "type": "sidebar",
+        "content": "[더 알아보기] 노년 인구 비율이 14% 이상이면 고령사회, 20% 이상이면 초고령사회라 한다."
+      }
+    ]
+  },
+  "expected_braille": null,
+  "notes": "기대 점역(점역사 작성) 미입력 — 검토 기준 채우기 전까지 placeholder"
+}

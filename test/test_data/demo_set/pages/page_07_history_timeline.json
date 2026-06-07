@@ -1,0 +1,54 @@
+{
+  "demo_id": "p07",
+  "title": "조선의 건국과 발전",
+  "subject": "역사",
+  "declared_types": [
+    "page_number",
+    "sidebar",
+    "table",
+    "text",
+    "title"
+  ],
+  "txt_result": {
+    "meta": {
+      "job_id": "demo-p07",
+      "page_no": 1,
+      "extraction_method": "TEXT_NATIVE"
+    },
+    "elements": [
+      {
+        "id": "eb9210df-0b20-4946-adaf-634cbf948558",
+        "order": 1,
+        "type": "page_number",
+        "content": "131"
+      },
+      {
+        "id": "56db8e5f-6ff7-4f33-83d8-db4c19841666",
+        "order": 2,
+        "type": "title",
+        "content": "1. 조선의 성립",
+        "heading_level": 1
+      },
+      {
+        "id": "b487f496-6435-440f-a1f8-1aab4e6629e2",
+        "order": 3,
+        "type": "text",
+        "content": "이성계는 위화도 회군으로 권력을 잡고 1392년 조선을 건국하였다."
+      },
+      {
+        "id": "a2253f02-3a6c-45a4-94c0-aac72bf06117",
+        "order": 4,
+        "type": "table",
+        "content": "연표. 1388년 위화도 회군, 1392년 조선 건국, 1394년 한양 천도, 1446년 훈민정음 반포."
+      },
+      {
+        "id": "1cea7197-280f-46ba-b2c6-c114de02ba65",
+        "order": 5,
+        "type": "sidebar",
+        "content": "[인물] 정도전은 조선 건국의 기틀을 마련한 학자이자 정치가이다."
+      }
+    ]
+  },
+  "expected_braille": null,
+  "notes": "기대 점역(점역사 작성) 미입력 — 검토 기준 채우기 전까지 placeholder"
+}

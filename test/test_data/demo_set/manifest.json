@@ -1,0 +1,181 @@
+{
+  "name": "BE 데모 테스트 데이터셋 (T5-1 골격)",
+  "description": "BE→gRPC ProcessPage→AI 데모용. 현주 미구현이라 TEXT_NATIVE 파일 핸드오프로 입력.",
+  "page_count": 11,
+  "type_coverage": [
+    "cartoon",
+    "chart_graph",
+    "footnote",
+    "formula",
+    "header_footer",
+    "image",
+    "list_item",
+    "page_number",
+    "sidebar",
+    "table",
+    "text",
+    "title"
+  ],
+  "required_mix": [
+    "text",
+    "formula",
+    "table",
+    "image",
+    "chart_graph"
+  ],
+  "required_mix_covered": true,
+  "expected_filled": 0,
+  "expected_total": 11,
+  "pages": [
+    {
+      "demo_id": "p01",
+      "file": "pages/page_01_science_water.json",
+      "subject": "과학",
+      "title": "물의 상태 변화",
+      "declared_types": [
+        "chart_graph",
+        "formula",
+        "header_footer",
+        "image",
+        "list_item",
+        "page_number",
+        "table",
+        "text",
+        "title"
+      ]
+    },
+    {
+      "demo_id": "p02",
+      "file": "pages/page_02_math_quadratic.json",
+      "subject": "수학",
+      "title": "이차방정식의 풀이",
+      "declared_types": [
+        "formula",
+        "list_item",
+        "page_number",
+        "text",
+        "title"
+      ]
+    },
+    {
+      "demo_id": "p03",
+      "file": "pages/page_03_social_population.json",
+      "subject": "사회",
+      "title": "우리나라의 인구 변화",
+      "declared_types": [
+        "chart_graph",
+        "page_number",
+        "sidebar",
+        "table",
+        "text",
+        "title"
+      ]
+    },
+    {
+      "demo_id": "p04",
+      "file": "pages/page_04_korean_poem.json",
+      "subject": "국어",
+      "title": "시의 표현과 감상",
+      "declared_types": [
+        "footnote",
+        "image",
+        "list_item",
+        "page_number",
+        "text",
+        "title"
+      ]
+    },
+    {
+      "demo_id": "p05",
+      "file": "pages/page_05_science_circuit.json",
+      "subject": "과학",
+      "title": "전기 회로",
+      "declared_types": [
+        "formula",
+        "image",
+        "page_number",
+        "table",
+        "text",
+        "title"
+      ]
+    },
+    {
+      "demo_id": "p06",
+      "file": "pages/page_06_math_function.json",
+      "subject": "수학",
+      "title": "일차함수의 그래프",
+      "declared_types": [
+        "chart_graph",
+        "formula",
+        "page_number",
+        "text",
+        "title"
+      ]
+    },
+    {
+      "demo_id": "p07",
+      "file": "pages/page_07_history_timeline.json",
+      "subject": "역사",
+      "title": "조선의 건국과 발전",
+      "declared_types": [
+        "page_number",
+        "sidebar",
+        "table",
+        "text",
+        "title"
+      ]
+    },
+    {
+      "demo_id": "p08",
+      "file": "pages/page_08_ethics_cartoon.json",
+      "subject": "도덕",
+      "title": "갈등 해결의 자세",
+      "declared_types": [
+        "cartoon",
+        "page_number",
+        "text",
+        "title"
+      ]
+    },
+    {
+      "demo_id": "p09",
+      "file": "pages/page_09_english_words.json",
+      "subject": "영어",
+      "title": "Unit 5. My Daily Life",
+      "declared_types": [
+        "list_item",
+        "page_number",
+        "table",
+        "text",
+        "title"
+      ]
+    },
+    {
+      "demo_id": "p10",
+      "file": "pages/page_10_science_ecosystem.json",
+      "subject": "과학",
+      "title": "생태계와 환경",
+      "declared_types": [
+        "chart_graph",
+        "footnote",
+        "image",
+        "page_number",
+        "text",
+        "title"
+      ]
+    },
+    {
+      "demo_id": "p11",
+      "file": "pages/page_11_math_statistics.json",
+      "subject": "수학",
+      "title": "자료의 정리와 해석",
+      "declared_types": [
+        "chart_graph",
+        "page_number",
+        "table",
+        "text",
+        "title"
+      ]
+    }
+  ]
+}

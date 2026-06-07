@@ -1,0 +1,67 @@
+{
+  "demo_id": "p04",
+  "title": "시의 표현과 감상",
+  "subject": "국어",
+  "declared_types": [
+    "footnote",
+    "image",
+    "list_item",
+    "page_number",
+    "text",
+    "title"
+  ],
+  "txt_result": {
+    "meta": {
+      "job_id": "demo-p04",
+      "page_no": 1,
+      "extraction_method": "TEXT_NATIVE"
+    },
+    "elements": [
+      {
+        "id": "2f5a65be-e8df-44ec-8bc8-e6a379e170e7",
+        "order": 1,
+        "type": "page_number",
+        "content": "23"
+      },
+      {
+        "id": "2d9e92a0-61ef-4389-ab5c-33ddc64fd2e0",
+        "order": 2,
+        "type": "title",
+        "content": "1. 비유와 상징",
+        "heading_level": 1
+      },
+      {
+        "id": "433e4922-489a-40f9-b62c-af7730bc9afd",
+        "order": 3,
+        "type": "text",
+        "content": "시인은 대상을 다른 사물에 빗대어 표현함으로써 정서를 효과적으로 드러낸다."
+      },
+      {
+        "id": "264051b5-52a8-41e2-9453-f4e245989d9b",
+        "order": 4,
+        "type": "list_item",
+        "content": "○ 직유: '~같이', '~처럼'으로 직접 비유한다."
+      },
+      {
+        "id": "42f12e93-22f6-4e91-bf06-51a8d0e640ec",
+        "order": 5,
+        "type": "list_item",
+        "content": "○ 은유: 'A는 B이다' 형식으로 빗댄다."
+      },
+      {
+        "id": "34c3b24c-226f-48dc-8a68-6309953adec8",
+        "order": 6,
+        "type": "image",
+        "content": "낙엽이 떨어지는 가을 길을 한 사람이 걷는 삽화."
+      },
+      {
+        "id": "b9f88d96-5f55-474f-a680-c04cab91aeec",
+        "order": 7,
+        "type": "footnote",
+        "content": "※ 상징은 추상적 관념을 구체적 사물로 나타내는 표현 방법이다."
+      }
+    ]
+  },
+  "expected_braille": null,
+  "notes": "기대 점역(점역사 작성) 미입력 — 검토 기준 채우기 전까지 placeholder"
+}

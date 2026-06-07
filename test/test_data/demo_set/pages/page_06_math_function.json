@@ -1,0 +1,54 @@
+{
+  "demo_id": "p06",
+  "title": "일차함수의 그래프",
+  "subject": "수학",
+  "declared_types": [
+    "chart_graph",
+    "formula",
+    "page_number",
+    "text",
+    "title"
+  ],
+  "txt_result": {
+    "meta": {
+      "job_id": "demo-p06",
+      "page_no": 1,
+      "extraction_method": "TEXT_NATIVE"
+    },
+    "elements": [
+      {
+        "id": "0f33554b-e0ad-4745-ad73-151120b4f084",
+        "order": 1,
+        "type": "page_number",
+        "content": "40"
+      },
+      {
+        "id": "a9ff432e-dd21-410b-91c7-5640cc245757",
+        "order": 2,
+        "type": "title",
+        "content": "3. 기울기와 절편",
+        "heading_level": 1
+      },
+      {
+        "id": "a9c83654-3bb9-4791-aa43-aa0836fb4516",
+        "order": 3,
+        "type": "text",
+        "content": "일차함수 y = ax + b 에서 a는 기울기, b는 y절편을 나타낸다."
+      },
+      {
+        "id": "f5659b35-9dae-4a8d-a024-d2caf67a5cd4",
+        "order": 4,
+        "type": "formula",
+        "content": "y = ax + b"
+      },
+      {
+        "id": "6b91a710-baef-4fd3-a572-3906a22d2aec",
+        "order": 5,
+        "type": "chart_graph",
+        "content": "일차함수 꺾은선 그래프. 가로축 x, 세로축 y. 기울기 2, y절편 1인 직선이 오른쪽 위로 올라간다."
+      }
+    ]
+  },
+  "expected_braille": null,
+  "notes": "기대 점역(점역사 작성) 미입력 — 검토 기준 채우기 전까지 placeholder"
+}

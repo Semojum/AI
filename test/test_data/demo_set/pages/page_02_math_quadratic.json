@@ -1,0 +1,66 @@
+{
+  "demo_id": "p02",
+  "title": "이차방정식의 풀이",
+  "subject": "수학",
+  "declared_types": [
+    "formula",
+    "list_item",
+    "page_number",
+    "text",
+    "title"
+  ],
+  "txt_result": {
+    "meta": {
+      "job_id": "demo-p02",
+      "page_no": 1,
+      "extraction_method": "TEXT_NATIVE"
+    },
+    "elements": [
+      {
+        "id": "6f5fd2b7-832b-4652-b32f-6d47521dec2d",
+        "order": 1,
+        "type": "page_number",
+        "content": "62"
+      },
+      {
+        "id": "8762fe5b-8817-4e2f-a6ea-763f8bd90b5d",
+        "order": 2,
+        "type": "title",
+        "content": "2. 근의 공식",
+        "heading_level": 1
+      },
+      {
+        "id": "8c3a1dc8-462d-4cc4-8909-43b0bd19ee9c",
+        "order": 3,
+        "type": "text",
+        "content": "계수가 복잡한 이차방정식은 근의 공식을 이용하여 풀 수 있다."
+      },
+      {
+        "id": "5998c614-4d3b-44fd-8471-fef52bab5125",
+        "order": 4,
+        "type": "formula",
+        "content": "ax^2 + bx + c = 0"
+      },
+      {
+        "id": "c399d33e-8136-457d-8483-09ab356a3ce7",
+        "order": 5,
+        "type": "formula",
+        "content": "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"
+      },
+      {
+        "id": "715cb971-64f2-4eb2-bc30-5c922687d862",
+        "order": 6,
+        "type": "list_item",
+        "content": "○ 판별식 D = b^2 - 4ac 의 부호로 근의 개수를 안다."
+      },
+      {
+        "id": "a373b641-534c-44c6-aaaf-33a7380b0a02",
+        "order": 7,
+        "type": "text",
+        "content": "D > 0이면 서로 다른 두 실근, D = 0이면 중근, D < 0이면 실근이 없다."
+      }
+    ]
+  },
+  "expected_braille": null,
+  "notes": "기대 점역(점역사 작성) 미입력 — 검토 기준 채우기 전까지 placeholder"
+}

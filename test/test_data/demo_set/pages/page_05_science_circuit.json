@@ -1,0 +1,61 @@
+{
+  "demo_id": "p05",
+  "title": "전기 회로",
+  "subject": "과학",
+  "declared_types": [
+    "formula",
+    "image",
+    "page_number",
+    "table",
+    "text",
+    "title"
+  ],
+  "txt_result": {
+    "meta": {
+      "job_id": "demo-p05",
+      "page_no": 1,
+      "extraction_method": "TEXT_NATIVE"
+    },
+    "elements": [
+      {
+        "id": "b5b6ff16-3c81-4962-867f-8b2d729e9dbb",
+        "order": 1,
+        "type": "page_number",
+        "content": "88"
+      },
+      {
+        "id": "10bf0f4d-46f3-4a26-82c1-d48ef364e3c8",
+        "order": 2,
+        "type": "title",
+        "content": "2. 옴의 법칙",
+        "heading_level": 1
+      },
+      {
+        "id": "99662ea5-43dd-4246-b0f9-42c75e3a715f",
+        "order": 3,
+        "type": "text",
+        "content": "전류의 세기는 전압에 비례하고 저항에 반비례한다."
+      },
+      {
+        "id": "5ae96c3d-aa49-45a7-a52f-d53309ab79ac",
+        "order": 4,
+        "type": "formula",
+        "content": "V = I \\times R"
+      },
+      {
+        "id": "c67c4187-f279-4ec2-9554-f0a7a4367943",
+        "order": 5,
+        "type": "image",
+        "content": "전지, 저항, 전구가 하나의 고리로 연결된 전기 회로도."
+      },
+      {
+        "id": "fd98403f-474b-49ff-8b7c-ed0349614ee4",
+        "order": 6,
+        "type": "table",
+        "content": "표 2. 전압에 따른 전류. 2V 0.4A, 4V 0.8A, 6V 1.2A (저항 5Ω)."
+      }
+    ]
+  },
+  "expected_braille": null,
+  "notes": "기대 점역(점역사 작성) 미입력 — 검토 기준 채우기 전까지 placeholder"
+}
