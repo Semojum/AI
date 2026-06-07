@@ -68,10 +68,16 @@ class TestPromptBuild:
 
     def test_load_sft_dataset(self, tmp_path):
         path = tmp_path / "sft.jsonl"
-        to_jsonl([_ex(), _ex("cartoon", "두 컷", "[점역사주] 만화: 두 컷")], path)
+        to_jsonl([_ex(), _ex("chart_graph", "막대그래프 2020년 980권", "[점역사주] 막대그래프: ...")], path)
         ds = load_sft_dataset(path)
         assert len(ds) == 2
         assert all(d["messages"][0]["role"] == "user" for d in ds)
+
+    def test_cartoon_은_프롬프트학습_제외(self):
+        # 만화는 rule-based 골격(§5.3) — 프롬프트 기반 학습 대상이 아니라 명확히 거부.
+        from app.ai.llm.finetune.dataset import build_prompt
+        with pytest.raises(ValueError):
+            build_prompt(_ex("cartoon", "두 컷", "..."))
 
 
 class TestSeed:

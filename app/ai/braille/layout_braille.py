@@ -427,11 +427,16 @@ class LayoutBraille:
             first_indent = 0
 
         orig_lines = list(bo.braille_lines)   # 조판 전 스냅샷(좌표 재매핑 기준)
+        # 규정 골격 요소(만화 5칸 장면/3칸 대사·시각자료 제목 5칸)는 줄마다 들여쓰기가 다르다.
+        # line_indents가 줄 수와 맞으면 줄별 들여쓰기를 적용(첫 줄만 들이는 기본 동작 대체).
+        per_line = (bo.line_indents
+                    if bo.line_indents is not None and len(bo.line_indents) == len(orig_lines)
+                    else None)
         out: list[str] = []
         line_slices: list[tuple[int, int]] = []  # orig 줄 → out 줄 범위 [start, end)
         forced_total = 0
         for li, orig in enumerate(orig_lines):
-            indent = first_indent if li == 0 else 0
+            indent = per_line[li] if per_line is not None else (first_indent if li == 0 else 0)
             fw = (_COLS - indent) if indent else None
             br = bo.break_points[li] if li < len(bo.break_points) else []
             broken, forced = _wrap_line(orig, br, _COLS, first_width=fw)

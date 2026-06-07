@@ -80,10 +80,15 @@ class CartoonBraille:
             )
         src = opt.tn_text or opt.corrected_text
         lines, breaks = _to_braille(src)
+        # 규정 골격(만화 5칸 장면/3칸 대사) 줄별 들여쓰기를 layout에 전달(줄 수 일치 시).
+        line_indents = (opt.line_indents
+                        if opt.line_indents is not None and len(opt.line_indents) == len(lines)
+                        else None)
         return BrailleOutput(
             element_id=opt.element_id,
             braille_lines=lines,
             break_points=breaks,
             rule_trail=_base_trail(lines, src),
             box_borders=_box_borders(src),
+            line_indents=line_indents,
         )

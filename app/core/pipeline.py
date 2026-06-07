@@ -252,8 +252,12 @@ def _parse_txt_result(
                 ocr_confidence=conf,
             )
         else:
+            # 현주 구조화 입력(계약): structure(만화 panels·차트 axes 등)·table_structure 전달.
+            # 없으면 None → 각 opt가 corrected_text(caption) 폴백.
             ext_map[eid] = ExtractedContent(
                 element_id=eid, corrected_text=content, ocr_confidence=conf,
+                structure=el.get("structure"),
+                table_structure=el.get("table_structure"),
             )
 
     layout = LayoutResult(page_id=page_id, elements=bbox_items)

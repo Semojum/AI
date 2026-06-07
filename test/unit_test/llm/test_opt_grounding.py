@@ -8,7 +8,6 @@ from __future__ import annotations
 from uuid import uuid4
 
 from app.ai.llm.base_opt import numbers_grounded
-from app.ai.llm.cartoon_opt import CartoonOpt
 from app.ai.llm.chart_graph_opt import ChartGraphOpt
 from app.ai.llm.image_opt import ImageOpt
 from app.schemas.content import Draft, ExtractedContent
@@ -52,9 +51,5 @@ class TestChartGrounding:
         assert "R5" in ext.flags
 
 
-class TestCartoonNoGrounding:
-    def test_만화는_수치그라운딩_안함(self):
-        # 만화는 장면번호(1컷·2컷) 재구성이 정상이라 수치 그라운딩 off
-        ext = _ext("1컷 2컷 만화")
-        CartoonOpt()._post_process(ext, "1컷 2컷 만화", [_draft("두 장면 만화")])
-        assert "R5" not in ext.flags
+# 만화는 VisualDraftOpt가 아니라 rule-based 골격(§5.3) 조립으로 전환됨(수치 그라운딩 비대상).
+# 만화 골격 회귀는 test_cartoon_skeleton.py 참조.

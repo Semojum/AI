@@ -39,6 +39,9 @@ class ExtractedContent(BaseModel):
     visual_subtype: Optional[str] = None
     subtype_confidence: Optional[float] = None
     table_structure: Optional[dict] = None
+    # 시각자료 구조화 입력(현주 계약). 유형별: cartoon=panels/title, chart=axes/data_points,
+    # image=visual_type_label/ocr_texts 등. 없으면 corrected_text(caption) 폴백.
+    structure: Optional[dict] = None
     flags: list[str] = Field(default_factory=list)
     # 플래그: C2_FALLBACK, C3_FALLBACK, C4_FALLBACK, VERTICAL_TEXT, SUBTYPE_UNCERTAIN
 
@@ -80,6 +83,9 @@ class LLMOutput(BaseModel):
     # 시각 요소(표·차트·이미지·만화) 전용 복수 초안. 텍스트·수식은 빈 리스트.
     drafts: list[Draft] = Field(default_factory=list)
     selected_idx: int = 0  # corrected_text == drafts[selected_idx].text (drafts 있을 때)
+    # 줄별 들여쓰기(칸). 규정 골격(만화 5칸 장면/3칸 대사·시각자료 제목 5칸)을 rule-based로
+    # 조립한 요소에서 logical 줄 수와 같게 채운다. None이면 layout 기본(첫 줄만 들여).
+    line_indents: Optional[list[int]] = None
 
 
 class BoxBorder(BaseModel):
@@ -108,3 +114,6 @@ class BrailleOutput(BaseModel):
     # 복수 초안 각각의 점역 결과 (BE/FE 노출용). 단일안은 빈 리스트.
     drafts: list[Draft] = Field(default_factory=list)
     selected_idx: int = 0
+    # 줄별 들여쓰기(칸) — braille_lines와 길이 동일. 규정 골격 요소(만화·시각자료 제목)에서
+    # layout이 줄마다 이 칸수로 들여쓴다(첫 줄만 들이는 기본 동작을 대체). None이면 기본.
+    line_indents: Optional[list[int]] = None

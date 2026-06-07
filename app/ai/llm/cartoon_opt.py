@@ -1,50 +1,94 @@
-"""PART 8-2 — 만화/그림 점역 최적화 (HyperCLOVA X SEED Think 14B INT4, GPU 1).
+"""PART 8-2 — 만화 점역 최적화 (rule-based 골격 조립, §5.3).
 
-GPT-4o 캡션 (말풍선·컷 순서) → HyperCLOVA X → 점역사주 TN 최적화 (3안 생성).
-공통 흐름은 base_opt.VisualDraftOpt — 여기서는 만화에 최적화된 프롬프트만 정의한다.
+규정(점자 자료 제작 지침 §5.3)이 만화의 형식을 단일 골격으로 정한다 — 자유서술 3안이 아니다.
+구조화 입력(structure.panels)에서 코드가 골격을 결정적으로 조립한다:
+  제목줄  : 5칸 <!점역자주>만화<!/점역자주> {제목}            §5.3.1(1)
+  장면    : 5칸 <!점역자주>장면 N<!/점역자주>                 §5.3.3(1) (여러 장면일 때)
+  장면설명: 3칸 <!점역자주>{설명}<!/점역자주>                 §5.3.3(2)(7)
+  대사    : 3칸 {인물명}:{대사}                               §5.3.3(2)(3)  (대사 전사)
+  말풍선 화자불명 → '말풍선:내용' (§6.3.4(3)), 인물 불명 특징명은 점역자주 미사용(§5.3.3(5))
+구조가 없으면(현주 미구현 등) caption을 단일 점역자주로 폴백한다.
 """
 
 from __future__ import annotations
 
-from app.ai.llm.base_opt import VisualDraftOpt
+from app.ai.braille.regulations import make_rule
+from app.ai.llm.base_opt import BaseOpt
+from app.ai.llm.draft_utils import ensure_tn_prefix
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
+from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
-# 답변을 `[방식1] [점역사주] 만화: `로 프리필해 포맷+유형(만화)을 강제 → Think 모델의 추론 람블
-# 건너뛰고 3안 생성(Stage5 실험에서 채택). 프롬프트는 간결하게.
-_PREFILL = "[방식1] [점역사주] 만화: "
-
-_PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가입니다.
-다음 만화를 점역자 주로 **서로 다른 3가지 방식**으로 작성하세요.
-[방식1] 장면+대사 통합: 장면 배경과 대사를 읽는 순서대로
-[방식2] 대사 중심: "인물명: 대사" 위주, 장면 설명 최소화
-[방식3] 장면별 개조식: "장면 1." "장면 2." 위계로 정리
-
-규칙: 대사·말풍선 내부 텍스트는 원문 그대로(요약·변형·따옴표 금지), 화자 불명은 "말풍선: 내용",
-행동·표정은 (객관 묘사), 감정 주관 해석 금지, 인물은 이름·성별 없으면 성별 구분 금지,
-원본에 없는 인물명·대화 추가 금지.
-각 줄 형식: 예) [방식1] [점역사주] 만화: 1장면. …  — [점역사주] 뒤에 '만화:'과 설명을 적고, 방식 이름은 본문에 쓰지 말 것.
-다른 말 없이 정확히 3줄만.
-
-만화: {caption}"""
-
-# 초안 3안 방식 (stage4_complex.md 'T4-2 공통 규약' — 만화=구성 방식)
-_CARTOON_METHODS = [
-    ("narrative", "장면+대사 통합"),
-    ("narrative", "대사 중심"),
-    ("narrative", "장면별 개조식"),
-]
+_RULE_ID = "BBPG-3.2.1"   # 시각자료 일반(만화 골격 근거 §5.3)
+_SCENE_INDENT = 3
+_PANEL_INDENT = 5
 
 
-class CartoonOpt(VisualDraftOpt):
-    """ExtractedContent 목록 → LLMOutput 목록 (만화). 3안 생성."""
+def _min_trail(text: str) -> list[RuleApplication]:
+    return [make_rule(_RULE_ID)]
 
-    PROMPT = _PROMPT
-    PREFILL = _PREFILL
-    METHODS = _CARTOON_METHODS
-    RULE_ID = "BBPG-3.2.1"          # 시각자료 일반 사항
-    EMPTY_MSG = "[처리 불가: 만화 캡션 없음]"
-    DEFAULT_LABEL = "장면+대사 통합"
-    KIND = "만화"
-    STANDARD_TIMEOUT = 15.0
-    QUALITY_TIMEOUT = 60.0
-    FALLBACK_MAX_TOKENS = 300
+
+def assemble_cartoon(structure: dict) -> tuple[str, list[int]]:
+    """structure(panels/title) → (§5.3 골격 텍스트, 줄별 들여쓰기). rule-based·결정적."""
+    title = (structure.get("title") or "").strip()
+    panels = structure.get("panels") or []
+    lines: list[str] = []
+    indents: list[int] = []
+
+    head = "<!점역자주>만화<!/점역자주>" + (f" {title}" if title else "")
+    lines.append(head); indents.append(_PANEL_INDENT)        # §5.3.1(1)
+
+    multi = len(panels) > 1
+    for p in panels:
+        if multi:
+            lines.append(f"<!점역자주>장면 {p.get('order', '')}<!/점역자주>")
+            indents.append(_PANEL_INDENT)                    # §5.3.3(1)
+        scene = (p.get("scene_desc") or p.get("scene_src") or "").strip()
+        if scene:
+            lines.append(f"<!점역자주>{scene}<!/점역자주>")
+            indents.append(_SCENE_INDENT)                    # §5.3.3(2)(7) 장면 설정/행동
+        for d in p.get("dialogues") or []:
+            speaker = (d.get("speaker") or "말풍선").strip()  # §6.3.4(3) 화자 불명
+            txt = (d.get("text") or "").strip()
+            lines.append(f"{speaker}:{txt}")                 # §5.3.3(2)(3) 인물명:대사(전사)
+            indents.append(_SCENE_INDENT)
+    return "\n".join(lines), indents
+
+
+class CartoonOpt(BaseOpt):
+    """ExtractedContent 목록 → LLMOutput 목록 (만화). 규정 골격 rule-based 조립(단일 출력)."""
+
+    async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
+        structure = ext.structure or {}
+        if structure.get("panels"):
+            text, indents = assemble_cartoon(structure)
+            return LLMOutput(
+                element_id=ext.element_id,
+                corrected_text=text,
+                render_mode="narrative",
+                tn_text=text,
+                routing_tier=routing_tier,
+                processing_time_ms=0,
+                rule_trail=_min_trail(text),
+                line_indents=indents,
+            )
+        # 폴백: 구조 없음 → caption 단일 점역자주
+        cap = (ext.corrected_text or "").strip()
+        if not cap:
+            return LLMOutput(
+                element_id=ext.element_id,
+                corrected_text="[처리 불가: 만화 캡션 없음]",
+                render_mode="narrative",
+                routing_tier="FALLBACK",
+                processing_time_ms=0,
+                rule_trail=_min_trail(""),
+            )
+        tn = ensure_tn_prefix(f"만화: {cap}")
+        return LLMOutput(
+            element_id=ext.element_id,
+            corrected_text=tn,
+            render_mode="narrative",
+            tn_text=tn,
+            routing_tier=routing_tier,
+            processing_time_ms=0,
+            rule_trail=_min_trail(tn),
+        )

@@ -23,8 +23,8 @@ def _registry() -> dict[str, tuple[str, str]]:
     """유형 → (template, field). opt 모듈의 프롬프트 상수를 재사용(지연 import)."""
     if _REGISTRY_CACHE:
         return _REGISTRY_CACHE
+    # cartoon은 rule-based 골격 조립(§5.3)이라 프롬프트 기반 학습 대상이 아니다 — 레지스트리 제외.
     from app.ai.llm import (
-        cartoon_opt,
         chart_graph_opt,
         formula_opt,
         image_opt,
@@ -36,15 +36,19 @@ def _registry() -> dict[str, tuple[str, str]]:
         "formula":     (formula_opt._PROMPT, "latex"),
         "table":       (table_opt._PROMPT_TABLE_GRID, "table_text"),
         "image":       (image_opt._PROMPT, "caption"),
-        "cartoon":     (cartoon_opt._PROMPT, "caption"),
         "chart_graph": (chart_graph_opt._PROMPT, "caption"),
     })
     return _REGISTRY_CACHE
 
 
 def build_prompt(ex: TrainingExample) -> str:
-    """예시 → 추론과 동일한 프롬프트 문자열."""
-    template, field = _registry()[ex.element_type]
+    """예시 → 추론과 동일한 프롬프트 문자열. (rule-based 유형은 프롬프트 학습 대상 아님)"""
+    reg = _registry()
+    if ex.element_type not in reg:
+        raise ValueError(
+            f"'{ex.element_type}'은 rule-based 조립 유형(§5.3 등) — 프롬프트 기반 학습 대상이 아닙니다."
+        )
+    template, field = reg[ex.element_type]
     return template.format(**{field: ex.input_text})
 
 
