@@ -1,51 +1,126 @@
-"""PART 7-2 — 이미지 점역 최적화 (HyperCLOVA X SEED Think 14B INT4, GPU 1).
+"""PART 7-2 — 이미지 점역 최적화 (§6.3 규정 골격 + 설명문 LLM 2안).
 
-GPT-4o 캡션 → HyperCLOVA X → 점역사주 TN 최적화 (3안 생성).
-공통 흐름은 base_opt.VisualDraftOpt — 여기서는 이미지에 최적화된 프롬프트만 정의한다.
+골격(rule-based, 결정적):
+  제목   : 5칸 {제목}                              §6.3.3(1) (제목 있을 때, 점역자주 밖)
+  점역자주: <!점역자주>{유형}: {설명}<!/점역자주>   §6.3.4(1) 유형 라벨 필수
+  원본내용: ocr_texts 줄 전사                        §6.3.4(2)① 자료 내 글자/수치
+생성(LLM): 설명문만 — 2안 위치 중심 / 상황 중심 (QnA Q2). 장식용(decorative)은 생략(§6.3.4(2)②·Q7).
+구조가 없으면 caption을 설명문으로 폴백.
 """
 
 from __future__ import annotations
 
-from app.ai.llm.base_opt import VisualDraftOpt
-from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
+import re
 
-# 답변을 `[방식1] [점역사주] `로 프리필(_PREFILL)해 포맷을 강제 → Think 모델의 장황한 추론을
-# 건너뛰고 곧바로 3안을 생성한다(Stage5 실험에서 채택된 방식). 프롬프트는 간결하게 유지.
-_PREFILL = "[방식1] [점역사주] "
+from app.ai.braille.regulations import make_rule
+from app.ai.llm.base_opt import BaseOpt, decide_tier_timeout, generate_with_retry, numbers_grounded
+from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
+from app.schemas.content import Draft, ExtractedContent, LLMOutput, RuleApplication
+
+_RULE_ID = "BBPG-3.2.1"   # 시각자료 일반 사항
+_STANDARD_TIMEOUT = 15.0
+_QUALITY_TIMEOUT = 60.0
+_METHODS = ["위치 중심", "상황 중심"]   # §QnA Q2 — 규정이 허용하는 2안만
+
+# 답변 프리필 — 설명문만(점역자주·유형 라벨은 코드가 붙이므로 모델이 쓰지 않게).
+_PREFILL = "[방식1] "
 
 _PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가입니다.
-다음 그림을 점역자 주로 **서로 다른 3가지 방식**으로 작성하세요.
-[방식1] 상황 중심: 무엇이 있고 무엇을 하는지(주요 객체·행위)
-[방식2] 위치 중심: 구성 요소의 공간 배치·위치 관계
-[방식3] 요약: 핵심만 1문장으로 압축
+다음 그림을 **서로 다른 2가지 방식**의 짧은 객관 설명으로 작성하세요. 설명문만(유형 라벨·점역자주 표시 금지 — 코드가 붙임).
+[방식1] 위치 중심: 구성요소의 공간 배치·위치 관계
+[방식2] 상황 중심: 무엇이 있고 무엇을 하는지
 
-규칙: 객관적 사실만(추측·분위기·작가 의도 금지), 간결하게, "그림은/이미지는"으로 시작 금지,
-원본에 없는 수치·고유명사 추가 금지(이미지 내 텍스트·수치는 원문 그대로),
-인물은 이름·성별이 없으면 성별 구분 금지(직업 특정 시 '직업·나이·성별' 순).
-각 줄 형식: 예) [방식1] [점역사주] 그림: 원 안에 …  — [점역사주] 뒤에 자료유형(사진/그림/삽화/지도/도표/도형)과 설명을 적고, 방식 이름은 본문에 쓰지 말 것.
-다른 말 없이 정확히 3줄만.
+규칙: 객관 사실만(추측·분위기·작가 의도 금지), 간결, "그림은/이미지는" 시작 금지,
+원본에 없는 수치·고유명사 추가 금지, 인물은 이름·성별 없으면 성별 구분 금지.
+정확히 2줄([방식1]/[방식2])만.
 
 그림: {caption}"""
 
-# 초안 3안 방식 (stage4_complex.md 'T4-2 공통 규약' — 이미지=설명 초점)
-_IMAGE_METHODS = [
-    ("narrative", "상황 중심"),
-    ("narrative", "위치 중심"),
-    ("narrative", "요약"),
-]
+_LABEL_RE = re.compile(r"\[?\s*방식\s*[12]\s*[\]:.)]*\s*(.*)")
 
 
-class ImageOpt(VisualDraftOpt):
-    """ExtractedContent 목록 → LLMOutput 목록 (이미지). 3안 생성."""
+def _min_trail(text: str) -> list[RuleApplication]:
+    return [make_rule(_RULE_ID)]
 
-    PROMPT = _PROMPT
-    PREFILL = _PREFILL
-    METHODS = _IMAGE_METHODS
-    RULE_ID = "BBPG-3.2.1"          # 시각자료 일반 사항
-    EMPTY_MSG = "[처리 불가: 이미지 캡션 없음]"
-    DEFAULT_LABEL = "상황 중심"
-    KIND = "이미지"
-    STANDARD_TIMEOUT = 15.0
-    QUALITY_TIMEOUT = 60.0          # 3안 생성은 단일 교정보다 오래 걸림(느린 GPU 여유)
-    FALLBACK_MAX_TOKENS = 256
-    GROUND_NUMBERS = True            # 이미지 내 수치(축값·라벨) 변조 시 R5 (실모델서 3→5 변조 관측)
+
+def assemble_image(label: str, title: str, ocr_texts: list, description: str) -> tuple[str, list[int]]:
+    """§6.3 골격 조립 → (텍스트, 줄별 들여쓰기). rule-based."""
+    lines: list[str] = []
+    indents: list[int] = []
+    if title:
+        lines.append(title); indents.append(5)                      # §6.3.3(1) 제목 5칸
+    desc = (description or "").strip()
+    body = (f"<!점역자주>{label}: {desc}<!/점역자주>" if desc
+            else f"<!점역자주>{label} 생략<!/점역자주>")            # §6.3.4(1)/(2)
+    lines.append(body); indents.append(0)
+    for t in ocr_texts or []:
+        t = str(t).strip()
+        if t:
+            lines.append(t); indents.append(0)                      # §6.3.4(2)① 원본 내용 전사
+    return "\n".join(lines), indents
+
+
+def _parse_descriptions(response: str) -> list[str]:
+    """LLM 응답 [방식1]/[방식2] → 설명문 목록(유형/점역자주 라벨 제거)."""
+    out: list[str] = []
+    for ln in response.splitlines():
+        m = _LABEL_RE.search(ln.strip())
+        if m and m.group(1).strip():
+            t = re.sub(r"^\s*(위치 중심|상황 중심)\s*[:：]?\s*", "", m.group(1).strip())
+            t = t.replace("<!점역자주>", "").replace("<!/점역자주>", "").strip()
+            out.append(t)
+    return out
+
+
+class ImageOpt(BaseOpt):
+    """ExtractedContent 목록 → LLMOutput 목록 (이미지). 골격 rule-based + 설명문 2안."""
+
+    async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
+        st = ext.structure or {}
+        label = (st.get("visual_type_label") or "그림").strip()
+        title = (st.get("title") or "").strip()
+        ocr = st.get("ocr_texts") or []
+        caption = (st.get("caption_src") or ext.corrected_text or "").strip()
+
+        if st.get("decorative"):   # 장식용 → 생략(빈 출력, layout이 제외). §6.3.4(2)②·Q7
+            return LLMOutput(element_id=ext.element_id, corrected_text="", render_mode="narrative",
+                             routing_tier=routing_tier, processing_time_ms=0, rule_trail=[])
+
+        if not caption and not ocr and not title:
+            return LLMOutput(element_id=ext.element_id, corrected_text="[처리 불가: 이미지 캡션 없음]",
+                             render_mode="narrative", routing_tier="FALLBACK", processing_time_ms=0,
+                             rule_trail=_min_trail(""))
+
+        tier = routing_tier
+        if routing_tier == "ZERO" or not caption:
+            descriptions = [caption]                                  # 모델 미사용 → 단일안(캡션 전사)
+        else:
+            tier, timeout = decide_tier_timeout(ext.ocr_confidence, _STANDARD_TIMEOUT, _QUALITY_TIMEOUT)
+            response, used_fb = await generate_with_retry(
+                _PROMPT.format(caption=caption), timeout=timeout, element_id=ext.element_id,
+                kind="이미지", prefill=_PREFILL, max_new_tokens=512, fallback_max_tokens=256,
+            )
+            if used_fb:
+                tier = "FALLBACK"
+            descriptions = _parse_descriptions(response) or [caption]
+            if any(not numbers_grounded(caption, d) for d in descriptions):  # 수치 변조 → R5
+                ext.flags = list(getattr(ext, "flags", None) or []) + ["R5"]
+
+        drafts: list[Draft] = []
+        indents: list[int] = []
+        for i, desc in enumerate(descriptions):
+            text, indents = assemble_image(label, title, ocr, desc)
+            drafts.append(Draft(option=i + 1, text=text, render_mode="narrative",
+                                label=_METHODS[i] if i < len(_METHODS) else "설명"))
+        return LLMOutput(
+            element_id=ext.element_id,
+            corrected_text=drafts[0].text,
+            render_mode="narrative",
+            tn_text=drafts[0].text,
+            routing_tier=tier,
+            processing_time_ms=0,
+            rule_trail=_min_trail(drafts[0].text),
+            drafts=drafts,
+            selected_idx=0,
+            line_indents=indents,
+        )

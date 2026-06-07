@@ -9,7 +9,6 @@ from uuid import uuid4
 
 from app.ai.llm.base_opt import numbers_grounded
 from app.ai.llm.chart_graph_opt import ChartGraphOpt
-from app.ai.llm.image_opt import ImageOpt
 from app.schemas.content import Draft, ExtractedContent
 
 
@@ -32,16 +31,8 @@ class TestNumbersGrounded:
         assert numbers_grounded("21.6", "비율 21.6%")
 
 
-class TestImageGrounding:
-    def test_수치_변조시_R5(self):
-        ext = _ext("원 안에 숫자 3")
-        ImageOpt()._post_process(ext, "원 안에 숫자 3", [_draft("원 안에 숫자 5")])
-        assert "R5" in ext.flags
-
-    def test_수치_보존시_R5_없음(self):
-        ext = _ext("원 안에 숫자 3")
-        ImageOpt()._post_process(ext, "원 안에 숫자 3", [_draft("원 안에 숫자 3 그림")])
-        assert "R5" not in ext.flags
+# 이미지는 §6.3 rule-based 골격 + 설명문 2안으로 전환됨(_post_process 대신 _optimize_one에서
+# numbers_grounded로 R5 표시). 골격 회귀는 test_image_skeleton.py 참조.
 
 
 class TestChartGrounding:
