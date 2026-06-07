@@ -6,13 +6,9 @@ GPT-4o 캡션 (축 레이블·수치·경향) → HyperCLOVA X → 점역사주 
 
 from __future__ import annotations
 
-import logging
-import re
-
 from app.ai.llm.base_opt import VisualDraftOpt
+from app.ai.llm.base_opt import numbers_grounded as _verify_numbers  # noqa: F401 (테스트가 import)
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
-
-logger = logging.getLogger(__name__)
 
 _PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가입니다.
 다음 차트/그래프 설명을 점역자 주로, **서로 다른 3가지 방식**으로 각각 작성하세요.
@@ -48,15 +44,8 @@ _CHART_METHODS = [
 ]
 
 
-def _verify_numbers(original: str, output: str) -> bool:
-    """원본 캡션의 수치가 출력에 모두 존재하는지 확인 (환각 방지)."""
-    nums_in = set(re.findall(r"\d+(?:\.\d+)?", original))
-    nums_out = set(re.findall(r"\d+(?:\.\d+)?", output))
-    return nums_in.issubset(nums_out)
-
-
 class ChartGraphOpt(VisualDraftOpt):
-    """ExtractedContent 목록 → LLMOutput 목록 (차트/그래프). 3안 생성 + 수치 검증."""
+    """ExtractedContent 목록 → LLMOutput 목록 (차트/그래프). 3안 생성 + 수치 그라운딩(R5)."""
 
     PROMPT = _PROMPT
     PREFILL = ""                    # 차트는 프리필 없이 3안 생성
@@ -68,12 +57,4 @@ class ChartGraphOpt(VisualDraftOpt):
     STANDARD_TIMEOUT = 15.0
     QUALITY_TIMEOUT = 30.0
     FALLBACK_MAX_TOKENS = 300
-
-    def _post_process(self, ext, caption, drafts) -> None:
-        # 수치 그라운딩 검증 — 원본 수치가 누락된 초안이 있으면 R5(검토 필요)만 표시.
-        # 초안을 원본으로 '덮어쓰지 않는다': 방식2(수학적 서술)는 추세 중심이라 의도적으로
-        # 일부 수치를 생략하므로, 덮어쓰면 3안이 모두 원본으로 동일해진다(차별화 소실).
-        # 환각/누락은 점역사가 R5 표시를 보고 검토·교정한다.
-        if any(not _verify_numbers(caption, d.text) for d in drafts):
-            logger.warning("수치 검증 경고 id=%s — 일부 초안에 원본 수치 누락 (R5)", ext.element_id)
-            ext.flags = list(getattr(ext, "flags", [])) + ["R5"]
+    GROUND_NUMBERS = True            # 수치 누락 초안 → R5 (base_opt 공통 메커니즘)

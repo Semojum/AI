@@ -48,3 +48,4 @@ class ImageOpt(VisualDraftOpt):
     STANDARD_TIMEOUT = 15.0
     QUALITY_TIMEOUT = 60.0          # 3안 생성은 단일 교정보다 오래 걸림(느린 GPU 여유)
     FALLBACK_MAX_TOKENS = 256
+    GROUND_NUMBERS = True            # 이미지 내 수치(축값·라벨) 변조 시 R5 (실모델서 3→5 변조 관측)

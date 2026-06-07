@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from typing import Callable, Optional
 
@@ -101,6 +102,13 @@ async def fallback_optimize(prompt: str, *, max_tokens: int = 300, kind: str = "
         return ""
 
 
+def numbers_grounded(original: str, output: str) -> bool:
+    """원본의 수치가 출력에 모두 존재하는지(환각·변조 방지). 시각 opt 수치 그라운딩 공통."""
+    nums_in = set(re.findall(r"\d+(?:\.\d+)?", original))
+    nums_out = set(re.findall(r"\d+(?:\.\d+)?", output))
+    return nums_in.issubset(nums_out)
+
+
 def decide_tier_timeout(
     ocr_confidence: float, standard_timeout: float, quality_timeout: float
 ) -> tuple[str, float]:
@@ -177,6 +185,7 @@ class VisualDraftOpt(BaseOpt):
     QUALITY_TIMEOUT: float = 60.0
     FALLBACK_MAX_TOKENS: int = 300
     MAX_NEW_TOKENS: int = 512
+    GROUND_NUMBERS: bool = False   # True면 초안에 원본 수치 누락 시 R5 표시(수치 변조 검출)
 
     def _trail(self, text: str) -> list[RuleApplication]:
         return [make_rule(self.RULE_ID)]
@@ -210,15 +219,22 @@ class VisualDraftOpt(BaseOpt):
             tier = "FALLBACK"
 
         drafts = parse_labeled_drafts(response, self.METHODS)
-        if not drafts:  # 파싱 실패 → 응답(또는 원본 캡션) 단일안
-            drafts = single_draft(response or caption[:120], "narrative", self.DEFAULT_LABEL)
+        if not drafts:  # 파싱 실패 → 응답(또는 원본 캡션 전체) 단일안 — 캡션을 자르지 않는다
+            drafts = single_draft(response or caption, "narrative", self.DEFAULT_LABEL)
 
         self._post_process(ext, caption, drafts)
         elapsed_ms = int((time.monotonic() - start) * 1000)
         return self._build(ext.element_id, drafts, tier, elapsed_ms)
 
     def _post_process(self, ext: ExtractedContent, caption: str, drafts) -> None:
-        """초안 후처리 훅(기본 없음). 예: 차트 수치 그라운딩 검증(R5)."""
+        """초안 후처리 훅. GROUND_NUMBERS=True면 수치 누락 초안에 R5 표시(공통 안전망).
+
+        모델이 시각 캡션의 수치를 변조/누락(예: '3'→'5')해도 점역사가 R5로 검토하게 한다.
+        초안을 원본으로 덮어쓰지 않는다(방식별 수치 표현 차이 보존 — chart 방식2 등).
+        """
+        if self.GROUND_NUMBERS and any(not numbers_grounded(caption, d.text) for d in drafts):
+            logger.warning("수치 검증 경고 id=%s — 일부 초안에 원본 수치 누락 (R5)", ext.element_id)
+            ext.flags = list(getattr(ext, "flags", None) or []) + ["R5"]
 
     def _build(self, element_id, drafts, tier, elapsed_ms) -> LLMOutput:
         return LLMOutput(

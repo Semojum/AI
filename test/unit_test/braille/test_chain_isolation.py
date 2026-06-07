@@ -34,6 +34,7 @@ class TestSafeTranslate:
         assert out[2].braille_lines == ["정상2"]
         assert "[처리 불가" in "".join(out[1].braille_lines)  # 실패 요소만 placeholder
         assert out[1].element_id == opts[1].element_id        # element_id 보존
+        assert out[1].rule_trail and out[1].rule_trail[0].rule_id  # 리뷰 #5: placeholder도 rule_trail 필수
 
     def test_전부_정상이면_placeholder_없음(self):
         opts = [_opt("가"), _opt("나")]

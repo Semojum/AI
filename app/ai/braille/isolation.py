@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, Iterable
 
+from app.ai.braille.regulations import make_rule
 from app.schemas.content import BrailleOutput, LLMOutput
 
 logger = logging.getLogger(__name__)
@@ -36,8 +37,12 @@ def safe_translate(
 
 
 def _placeholder(opt: LLMOutput) -> BrailleOutput:
-    """실패 요소 → [처리 불가] (기존 placeholder 관례 = 리터럴 줄, 비어있지 않게)."""
+    """실패 요소 → [처리 불가] (placeholder 관례 = 리터럴 줄, 비어있지 않게).
+
+    불변 규칙 2(rule_trail 필수): 실패 요소도 포괄 규정(KBR-0.1)을 달아 응답 계약을 지킨다.
+    """
     return BrailleOutput(
         element_id=opt.element_id,
         braille_lines=["[처리 불가: 점역 오류]"],
+        rule_trail=[make_rule("KBR-0.1")],
     )
