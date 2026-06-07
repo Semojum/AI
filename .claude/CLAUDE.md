@@ -49,10 +49,11 @@ app/
 │   │   ├── cartoon_cap.py       PART 8-1. CartoonCap.process(crops)      (GPT-4o)
 │   │   └── chart_graph_cap.py   PART 9-1. ChartGraphCap.process(crops)   (GPT-4o)
 │   ├── llm/                     # PART *-2. 진입점 .optimize(extracted, tier[, layout])→list[LLMOutput]
+│   │   ├── base_opt.py  ★ 공통 베이스. hcxt_generate_sync·hcxt_optimize(HCLOVA X)·fallback_optimize(GPT-4o)·generate_with_retry(3회→폴백)·decide_tier_timeout + BaseOpt(optimize gather) + VisualDraftOpt(시각 3안 공통흐름). 공통·rule-based 구조는 전부 여기, 각 opt는 프롬프트만 추가.
 │   │   ├── text_opt.py · formula_opt.py · table_opt.py · image_opt.py · cartoon_opt.py · chart_graph_opt.py
-│   │   │   각: Class*Opt.optimize + _hcxt_generate_sync + _hcxt_optimize(HyperCLOVA X) + _fallback_optimize(GPT API)
-│   │   │   table_opt: _table_to_text, _infer_render_mode, _parse_tn_from_response
-│   │   │   chart_graph_opt: _verify_numbers (숫자 환각 검증)
+│   │   │   각: 자신에 최적화된 _PROMPT*만 정의 + base_opt 상속/사용. image·cartoon·chart_graph = VisualDraftOpt 상속(프롬프트·라벨·RULE_ID·타임아웃만 클래스 속성). text·formula·table = BaseOpt 상속 + 고유 _optimize_one(패스스루·정규화·표 구조 추론).
+│   │   │   table_opt: _table_to_text, _infer_render_mode, _parse_tn_from_response · formula_opt: _normalize · chart_graph_opt: _verify_numbers(숫자 환각 검증, _post_process로 R5)
+│   │   │   ※ 각 opt에 model_manager import 유지(단위 테스트가 모듈 네임스페이스 patch)
 │   ├── braille/                 # PART *-3 + 공통 엔진. 진입점 .translate(list[LLMOutput])→list[BrailleOutput]
 │   │   ├── translator.py    ★ 코어. translate_tagged_text(text)→점자. braillify(있으면)/폴백 분기, _emit_mixed 세그먼트 분리
 │   │   ├── symbol_rules.py   substitute_symbols(text), preprocess/postprocess. symbol_table.json 로드(_load_flat_table)
