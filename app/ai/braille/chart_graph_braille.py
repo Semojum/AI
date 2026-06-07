@@ -49,6 +49,13 @@ def _to_braille(text: str) -> tuple[list[str], list[list[int]]]:
     return translate_with_breaks(text)
 
 
+def _match_indents(line_indents, lines):
+    """줄별 들여쓰기(규정 골격: 제목 5칸)를 줄 수와 일치할 때만 전달."""
+    if line_indents is not None and len(line_indents) == len(lines):
+        return line_indents
+    return None
+
+
 class ChartGraphBraille:
     """LLMOutput 목록 → BrailleOutput 목록 (차트/그래프). 초안별 점역."""
 
@@ -77,6 +84,7 @@ class ChartGraphBraille:
                 drafts=out_drafts,
                 selected_idx=sel,
                 box_borders=_box_borders(opt.drafts[sel].text),
+                line_indents=_match_indents(opt.line_indents, out_drafts[sel].braille_lines),
             )
         src = opt.tn_text or opt.corrected_text
         lines, breaks = _to_braille(src)
@@ -86,4 +94,5 @@ class ChartGraphBraille:
             break_points=breaks,
             rule_trail=_base_trail(lines, src),
             box_borders=_box_borders(src),
+            line_indents=_match_indents(opt.line_indents, lines),
         )
