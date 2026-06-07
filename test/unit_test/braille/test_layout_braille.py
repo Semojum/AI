@@ -365,6 +365,22 @@ class TestLayoutBody:
         first = next(l for l in _read_lines(tmp_path, "ctr") if l.strip())
         assert first.startswith(" ") and first.strip() == "제목"  # 좌측 패딩 = 가운데
 
+    def test_page_boundary_natural_split(self, lb, tmp_path) -> None:
+        """Q14(점역사 QnA): 문장이 페이지를 넘어가면 자연 분할 — 흐름 보존, 손실·중복·재들여쓰기 없음."""
+        import re
+        eid = uuid4()
+        lines = [f"L{n:02d}맥락유지" for n in range(30)]   # 30 논리 줄(각 ≤32칸)
+        lr = _layout((eid, "text", 1, 0))
+        lb.layout([_out(lines, eid)], page_no=1, job_id="q14", layout_result=lr)
+        result = _read_lines(tmp_path, "q14")
+        assert len(result) == _ROWS * 2                    # 25×2 = 2페이지로 자연 분할
+        markers = [m.group(0) for ln in result for m in [re.search(r"L\d\d", ln)] if m]
+        assert markers == [f"L{n:02d}" for n in range(30)]  # 순서·무손실·무중복(흐름 보존)
+        first = next(ln for ln in result if ln.strip())
+        assert first.startswith("   L00")                  # 문단 첫 줄 3칸 들여
+        l24 = next(ln for ln in result if "L24" in ln)
+        assert l24.startswith("L24")                       # 페이지 넘어간 연속 줄은 재들여쓰기 없음
+
     def test_heading_level2_indent3(self, lb, tmp_path) -> None:
         """2단계 제목 3칸 들여 (BBPG 미명시 — 태민 결정: 1단계 가운데와 3단계 5칸 사이)."""
         eid = uuid4()
