@@ -127,6 +127,24 @@ _ALPHA_MAP: dict[str, str] = {
     "u": "⠥", "v": "⠧", "w": "⠺", "x": "⠭", "y": "⠽", "z": "⠵",
 }
 
+# 로마 숫자(유니코드 Number Forms) → 해당 로마자. 한국 점자 규정 제36항
+# "로마 숫자는 해당 로마자를 사용하여 적는다" → 정규화 후 기존 로마자 경로
+# (로마자표 ⠴ … 종료표 ⠲, 제29항)가 점역한다. 대문자/소문자 보존.
+_ROMAN_NUMERAL_MAP: dict[str, str] = {
+    "Ⅰ": "I", "Ⅱ": "II", "Ⅲ": "III", "Ⅳ": "IV", "Ⅴ": "V", "Ⅵ": "VI",
+    "Ⅶ": "VII", "Ⅷ": "VIII", "Ⅸ": "IX", "Ⅹ": "X", "Ⅺ": "XI", "Ⅻ": "XII",
+    "Ⅼ": "L", "Ⅽ": "C", "Ⅾ": "D", "Ⅿ": "M",
+    "ⅰ": "i", "ⅱ": "ii", "ⅲ": "iii", "ⅳ": "iv", "ⅴ": "v", "ⅵ": "vi",
+    "ⅶ": "vii", "ⅷ": "viii", "ⅸ": "ix", "ⅹ": "x", "ⅺ": "xi", "ⅻ": "xii",
+    "ⅼ": "l", "ⅽ": "c", "ⅾ": "d", "ⅿ": "m",
+}
+_ROMAN_NUMERAL_RE = re.compile("[" + "".join(_ROMAN_NUMERAL_MAP) + "]")
+
+
+def _normalize_roman_numerals(text: str) -> str:
+    """로마 숫자 유니코드 → 해당 로마자(제36항). 멱등 — 재적용해도 변화 없음."""
+    return _ROMAN_NUMERAL_RE.sub(lambda m: _ROMAN_NUMERAL_MAP[m.group()], text)
+
 _FORMULA_RE      = re.compile(r"<formula>(.*?)</formula>", re.DOTALL)
 _TAG_RE          = re.compile(r"<[^>]+>")
 _NUMBER_RE       = re.compile(r"-?\d+(?:[.,]\d+)*")
@@ -421,6 +439,7 @@ def _translate_fallback(text: str) -> str:
 
 def translate_tagged_text(text: str) -> str:
     """<formula> 태그가 포함된 텍스트를 점자 BRF로 변환."""
+    text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     if _BRAILLIFY_AVAILABLE:
         return _translate_with_braillify(text)
     return _translate_fallback(text)
