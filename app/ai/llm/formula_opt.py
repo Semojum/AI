@@ -68,11 +68,22 @@ LaTeX:
 
 교정된 LaTeX만 반환하세요."""
 
+# 답변을 `교정된 LaTeX: `로 프리필 — Think 모델이 "주어진 수식을 교정해야 합니다. 규칙을…"
+# 식 사고과정을 출력하지 않고 곧바로 LaTeX를 내도록 시작을 강제. 스캐폴드는 _extract에서 제거.
+_PREFILL = "교정된 LaTeX: "
+
 
 def _normalize(latex: str) -> str:
     for pattern, replacement in _LATEX_NORMALIZE:
         latex = re.sub(pattern, replacement, latex)
     return latex
+
+
+def _extract(resp: str) -> str:
+    """프리필 스캐폴드 제거 + 첫 줄(수식 한 줄)만 취해 설명 꼬리를 차단."""
+    t = resp[len(_PREFILL):] if resp.startswith(_PREFILL) else resp
+    t = t.strip().strip("`").strip()
+    return t.splitlines()[0].strip() if t.strip() else t
 
 
 class FormulaOpt(BaseOpt):
@@ -110,7 +121,8 @@ class FormulaOpt(BaseOpt):
         response, used_fb = await generate_with_retry(
             _PROMPT.format(latex=raw),
             timeout=timeout, element_id=ext.element_id, kind="수식",
-            max_new_tokens=256, fallback_max_tokens=512,
+            prefill=_PREFILL, max_new_tokens=256, fallback_max_tokens=512,
+            transform=_extract,
         )
         if used_fb:
             tier = "FALLBACK"

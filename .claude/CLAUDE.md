@@ -53,6 +53,7 @@ app/
 │   │   ├── text_opt.py · formula_opt.py · table_opt.py · image_opt.py · cartoon_opt.py · chart_graph_opt.py
 │   │   │   각: 자신에 최적화된 _PROMPT*만 정의 + base_opt 상속/사용. image·cartoon·chart_graph = VisualDraftOpt 상속(프롬프트·라벨·RULE_ID·타임아웃만 클래스 속성). text·formula·table = BaseOpt 상속 + 고유 _optimize_one(패스스루·정규화·표 구조 추론).
 │   │   │   table_opt: _table_to_text, _infer_render_mode, _parse_tn_from_response · formula_opt: _normalize · chart_graph_opt: _verify_numbers(숫자 환각 검증, _post_process로 R5)
+│   │   │   프리필(_PREFILL): 시각 3안 + text·formula도 사용 — Think 모델이 설명 람블 대신 결과만 내도록 답변 시작 강제, 스캐폴드는 _extract로 제거
 │   │   │   ※ 각 opt에 model_manager import 유지(단위 테스트가 모듈 네임스페이스 patch)
 │   │   └── finetune/  T5-4 파인튜닝 스켈레톤. data_format(TrainingExample+JSONL)·dataset(추론 템플릿 재사용 SFT 쌍·set_seed)·train(LoRA SFT 골격, run()은 NotImplementedError)·README(데이터 수집·라이선스). 실학습은 인프라 협의. GPU-free(무거운 import 지연).
 │   ├── braille/                 # PART *-3 + 공통 엔진. 진입점 .translate(list[LLMOutput])→list[BrailleOutput]

@@ -37,6 +37,11 @@ _PROMPT_QUALITY = """다음 텍스트의 OCR 오류(깨진 글자·잘못된 띄
 
 {text}"""
 
+# 답변을 `교정된 텍스트: `로 프리필 — Think 모델이 "원본 텍스트에서 오류를 발견했습니다…" 식
+# 설명을 늘어놓지 않고 곧바로 교정문을 내도록 시작을 강제(시각 opt 프리필과 동일 기법).
+# 프리필 스캐폴드는 _extract에서 제거하므로 최종 출력엔 라벨이 남지 않는다.
+_PREFILL = "교정된 텍스트: "
+
 # 모델이 프롬프트 라벨을 복창한 경우 선두에서 제거(방어적 후처리).
 _ARTIFACT_RE = re.compile(r"^\s*(신뢰도|입력|출력|교정(된)?\s*텍스트|결과)\s*[:：].*$")
 
@@ -49,6 +54,13 @@ def _clean_output(text: str) -> str:
         lines.pop(0)
     cleaned = "\n".join(lines).strip().strip("\"'`「」“”").strip()
     return cleaned or raw.strip()
+
+
+def _extract(resp: str) -> str:
+    """프리필 스캐폴드 제거 + 첫 문단만 취해(설명 꼬리 차단) 교정문을 뽑는다."""
+    t = resp[len(_PREFILL):] if resp.startswith(_PREFILL) else resp
+    t = _clean_output(t)
+    return t.splitlines()[0].strip() if t.strip() else t
 
 
 class TextOpt(BaseOpt):
@@ -76,8 +88,8 @@ class TextOpt(BaseOpt):
         response, used_fb = await generate_with_retry(
             _PROMPT_QUALITY.format(text=text),
             timeout=_QUALITY_TIMEOUT, element_id=ext.element_id, kind="텍스트",
-            max_new_tokens=max_new_tokens, fallback_max_tokens=1024,
-            transform=_clean_output,
+            prefill=_PREFILL, max_new_tokens=max_new_tokens, fallback_max_tokens=1024,
+            transform=_extract,
         )
         tier = "FALLBACK" if used_fb else "QUALITY"
 
