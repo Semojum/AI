@@ -80,10 +80,13 @@ def _normalize(latex: str) -> str:
 
 
 def _extract(resp: str) -> str:
-    """프리필 스캐폴드 제거 + 첫 줄(수식 한 줄)만 취해 설명 꼬리를 차단."""
+    """프리필 스캐폴드·코드펜스만 제거하고 본문은 그대로 둔다(여러 줄 LaTeX 보존).
+
+    프리필이 설명 머리말을 억제하므로 첫 줄만 자르지 않는다 — \\begin{cases} 등
+    여러 줄 수식이 잘려 깨지는 것을 막는다.
+    """
     t = resp[len(_PREFILL):] if resp.startswith(_PREFILL) else resp
-    t = t.strip().strip("`").strip()
-    return t.splitlines()[0].strip() if t.strip() else t
+    return t.strip().strip("`").strip()
 
 
 class FormulaOpt(BaseOpt):

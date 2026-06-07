@@ -87,3 +87,24 @@ class TestRunnerLoader:
         assert len(demo_runner.load_pages()) >= 10
         one = demo_runner.load_pages(only_id="p01")
         assert len(one) == 1 and one[0]["demo_id"] == "p01"
+
+    def test_count_tiers(self, tmp_path, monkeypatch):
+        # 리뷰 #2: FALLBACK 집계를 opt 산출물(routing_tier)에서 — braille_text_list엔 없음.
+        sys.path.insert(0, str(_DEMO_DIR.parent.parent))
+        import demo_runner
+        monkeypatch.chdir(tmp_path)
+        base = tmp_path / "storage/jobs/J/temp/page_001/type"
+        (base / "text").mkdir(parents=True)
+        (base / "text" / "text_opt.json").write_text(
+            json.dumps([{"routing_tier": "FALLBACK"}, {"routing_tier": "QUALITY"}]), encoding="utf-8")
+        (base / "image").mkdir(parents=True)
+        (base / "image" / "image_opt.json").write_text(
+            json.dumps([{"routing_tier": "ZERO"}]), encoding="utf-8")
+        total, fb = demo_runner.count_tiers("J")
+        assert total == 3 and fb == 1
+
+    def test_count_tiers_없는_job(self, tmp_path, monkeypatch):
+        sys.path.insert(0, str(_DEMO_DIR.parent.parent))
+        import demo_runner
+        monkeypatch.chdir(tmp_path)
+        assert demo_runner.count_tiers("missing") == (0, 0)

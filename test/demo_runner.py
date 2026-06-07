@@ -63,6 +63,25 @@ def _braille_lines(result: dict) -> list[str]:
     return lines
 
 
+def count_tiers(job_id: str) -> tuple[int, int]:
+    """opt 단계 산출물(type/*/*_opt.json)에서 (전체 요소 수, FALLBACK 수) 집계.
+
+    응답(braille_text_list)은 요소별 routing_tier를 노출하지 않으므로(페이지 단위
+    routing_tier_used만 존재), FALLBACK 사용률은 파이프라인이 기록한 LLMOutput에서 센다.
+    """
+    base = Path(f"storage/jobs/{job_id}/temp/page_001/type")
+    total = fb = 0
+    for f in base.glob("*/*_opt.json"):
+        try:
+            for o in json.loads(f.read_text(encoding="utf-8")):
+                total += 1
+                if o.get("routing_tier") == "FALLBACK":
+                    fb += 1
+        except Exception:
+            continue
+    return total, fb
+
+
 async def run(only_id: str | None, load_models: bool) -> int:
     from app.core import pipeline
     from app.schemas.task import PageTask
@@ -86,11 +105,10 @@ async def run(only_id: str | None, load_models: bool) -> int:
         task = PageTask(job_id=job_id, page_no=1, total_pages=1, pdf_data=pdf, mode="c")
         result = await pipeline.run(task)
 
-        # FALLBACK 집계(요소 단위 routing_tier가 있으면 — 실모델에서만 의미)
-        for b in result.get("braille_text_list", []):
-            total_elems += 1
-            if b.get("routing_tier") == "FALLBACK":
-                fallback_elems += 1
+        # FALLBACK 집계 — opt 단계 산출물의 요소별 routing_tier에서(ZERO면 0)
+        t_total, t_fb = count_tiers(job_id)
+        total_elems += t_total
+        fallback_elems += t_fb
 
         got = _braille_lines(result)
         expected = page.get("expected_braille")

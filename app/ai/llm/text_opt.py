@@ -57,10 +57,13 @@ def _clean_output(text: str) -> str:
 
 
 def _extract(resp: str) -> str:
-    """프리필 스캐폴드 제거 + 첫 문단만 취해(설명 꼬리 차단) 교정문을 뽑는다."""
+    """프리필 스캐폴드만 제거하고 본문은 그대로 둔다(여러 줄 교정문 보존).
+
+    프리필이 이미 설명 머리말을 억제하므로 첫 줄만 자르지 않는다 — 여러 문장/줄로 된
+    교정 텍스트가 잘려 소실되는 것을 막는다. 선두 라벨·따옴표는 _clean_output이 정리.
+    """
     t = resp[len(_PREFILL):] if resp.startswith(_PREFILL) else resp
-    t = _clean_output(t)
-    return t.splitlines()[0].strip() if t.strip() else t
+    return _clean_output(t)
 
 
 class TextOpt(BaseOpt):
