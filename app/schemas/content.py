@@ -86,6 +86,13 @@ class LLMOutput(BaseModel):
     # 줄별 들여쓰기(칸). 규정 골격(만화 5칸 장면/3칸 대사·시각자료 제목 5칸)을 rule-based로
     # 조립한 요소에서 logical 줄 수와 같게 채운다. None이면 layout 기본(첫 줄만 들여).
     line_indents: Optional[list[int]] = None
+    # 표 제목(전사). 도서 제작 지침 제3장 5): 표 제목은 5칸에서 시작하고 위 테두리 앞 줄에 적는다.
+    # table_braille가 위 테두리(격자) 앞에 5칸 들여 렌더한다. 표 외 요소는 None(제목은 골격에 포함).
+    table_title: Optional[str] = None
+    # 중첩 시각자료(점역사 QnA Q11). 테두리 태그가 든 보조 narrative를 본 요소 점자 끝에 덧붙인다.
+    #   그림 안 그래프 → 그래프 설명을 테두리로 묶음 / 표 안 그림 → 그림을 글상자처럼 1단 풀어쓰기.
+    # braille 모듈이 translate 후 braille_lines·box_borders에 append한다. 없으면 None.
+    nested_text: Optional[str] = None
 
 
 class BoxBorder(BaseModel):

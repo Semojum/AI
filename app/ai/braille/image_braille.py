@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from app.ai.braille.isolation import safe_translate
+from app.ai.braille.nested_block import append_nested
 from app.ai.braille.regulations import make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import (
@@ -77,7 +78,7 @@ class ImageBraille:
                     "rule_trail": _base_trail(d_lines, d.text),
                 }))
             sel = opt.selected_idx if 0 <= opt.selected_idx < len(out_drafts) else 0
-            return BrailleOutput(
+            bo = BrailleOutput(
                 element_id=opt.element_id,
                 braille_lines=out_drafts[sel].braille_lines,
                 break_points=draft_breaks[sel],
@@ -87,10 +88,12 @@ class ImageBraille:
                 box_borders=_box_borders(opt.drafts[sel].text),
                 line_indents=_match_indents(opt.line_indents, out_drafts[sel].braille_lines),
             )
+            append_nested(bo, opt.nested_text)   # 그림 안 그래프(Q11) 테두리 묶음 덧붙임
+            return bo
         # 단일(처리 불가 등)
         src = opt.tn_text or opt.corrected_text
         lines, breaks = _to_braille(src)
-        return BrailleOutput(
+        bo = BrailleOutput(
             element_id=opt.element_id,
             braille_lines=lines,
             break_points=breaks,
@@ -98,3 +101,5 @@ class ImageBraille:
             box_borders=_box_borders(src),
             line_indents=_match_indents(opt.line_indents, lines),
         )
+        append_nested(bo, opt.nested_text)
+        return bo

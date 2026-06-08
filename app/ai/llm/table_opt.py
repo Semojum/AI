@@ -12,6 +12,7 @@ import logging
 import time
 from typing import Optional
 
+from app.ai.braille.nested_block import box_narrative
 from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import BaseOpt, decide_tier_timeout, generate_with_retry
 from app.ai.llm.draft_utils import ensure_tn_prefix
@@ -22,6 +23,18 @@ logger = logging.getLogger(__name__)
 
 _STANDARD_TIMEOUT = 15.0
 _QUALITY_TIMEOUT = 30.0
+_NESTED_IMAGE_TYPES = {"image", "picture", "photo", "그림", "사진", "illustration"}
+
+
+def _nested_image_text(ext: ExtractedContent) -> Optional[str]:
+    """표 안 그림(Q11) → 그림을 글상자처럼 1단으로 풀어 쓴 보조 narrative. 없으면 None."""
+    for src in (ext.structure, ext.table_structure):
+        if src and src.get("nested"):
+            blocks = [n for n in src["nested"]
+                      if (n.get("type") or "").strip() in _NESTED_IMAGE_TYPES]
+            if blocks:
+                return box_narrative(blocks, default_label="그림")
+    return None
 
 
 def _min_trail(text: str) -> list[RuleApplication]:
@@ -47,6 +60,20 @@ _PROMPT_IRREGULAR = """당신은 한국어 점역 전문가입니다.
 {text}
 
 [점역사주]로 시작하는 설명 1문장만 반환하세요."""
+
+
+def _table_title(ext: ExtractedContent) -> Optional[str]:
+    """표 제목(전사) — 도서 제작 지침 제3장 5)(1) 5칸·(2) 표 위에 먼저.
+
+    구조화 입력(table_structure 또는 structure)의 'title'을 그대로 전사한다(rule-based).
+    원본에서 제목이 표 안에 있어도 점역 자료에서는 표 위로 올린다(§3 5)(2)).
+    """
+    for src in (ext.table_structure, ext.structure):
+        if src:
+            t = (src.get("title") or "").strip()
+            if t:
+                return t
+    return None
 
 
 def _table_to_text(table_structure: dict) -> str:
@@ -115,6 +142,8 @@ class TableOpt(BaseOpt):
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
         start = time.monotonic()
+        title = _table_title(ext)              # §3 5) 표 제목 5칸(전사). 없으면 None.
+        nested_text = _nested_image_text(ext)  # 표 안 그림(Q11) → 글상자 1단. 없으면 None.
         render_mode = _infer_render_mode(ext.table_structure, ext.corrected_text or "")
         is_irregular = render_mode == "narrative" or (
             ext.table_structure is not None
@@ -158,6 +187,8 @@ class TableOpt(BaseOpt):
                 routing_tier="ZERO",
                 processing_time_ms=0,
                 rule_trail=_min_trail(table_text),
+                table_title=title,
+                nested_text=nested_text,
             )
 
         tier, timeout = decide_tier_timeout(ext.ocr_confidence, _STANDARD_TIMEOUT, _QUALITY_TIMEOUT)
@@ -188,4 +219,6 @@ class TableOpt(BaseOpt):
             routing_tier=tier,
             processing_time_ms=elapsed_ms,
             rule_trail=_min_trail(table_text),
+            table_title=title,
+            nested_text=nested_text,
         )

@@ -12,10 +12,20 @@ from __future__ import annotations
 
 import re
 
+from app.ai.braille.nested_block import box_narrative
 from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import BaseOpt, decide_tier_timeout, generate_with_retry, numbers_grounded
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import Draft, ExtractedContent, LLMOutput, RuleApplication
+
+_NESTED_GRAPH_TYPES = {"chart", "graph", "chart_graph", "그래프", "차트"}
+
+
+def _nested_graph_text(structure: dict) -> str | None:
+    """그림 안 그래프(Q11) → 그래프 설명을 테두리로 묶은 보조 narrative. 없으면 None."""
+    blocks = [n for n in (structure.get("nested") or [])
+              if (n.get("type") or "").strip() in _NESTED_GRAPH_TYPES]
+    return box_narrative(blocks, default_label="그래프")
 
 _RULE_ID = "BBPG-3.2.1"   # 시각자료 일반 사항
 _STANDARD_TIMEOUT = 15.0
@@ -123,4 +133,5 @@ class ImageOpt(BaseOpt):
             drafts=drafts,
             selected_idx=0,
             line_indents=indents,
+            nested_text=_nested_graph_text(st),   # 그림 안 그래프(Q11) → 테두리 묶기
         )

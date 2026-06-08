@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from app.ai.braille.isolation import safe_translate
+from app.ai.braille.nested_block import append_nested
 from app.ai.braille.regulations import make_rule, make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import translate_tagged_text as _translate
@@ -43,6 +44,12 @@ _BORDER  = "⠿"  # 표 테두리
 _SEP     = "⠒"  # 행·셀 구분선
 _GUIDE   = "⠄"  # 유도점
 _TN_TRANSPOSE = "표의 가로와 세로를 바꾸어 점역함."
+_TITLE_INDENT = 5  # 도서 제작 지침 제3장 5)(1): 표 제목은 5칸에서 시작
+
+
+def _title_line(title: str) -> str:
+    """표 제목(전사) → 5칸 들여쓴 점자 줄 (§3 5)(1)). layout이 폭을 건드리지 않도록 공백을 직접 적는다."""
+    return " " * _TITLE_INDENT + _translate(title)
 
 
 def _border_line() -> str:
@@ -157,20 +164,32 @@ class TableBraille:
                 rule_trail=_base_trail(lines, text),
             )
 
+        # 표 제목(전사) — §3 5): 위 테두리 앞에 5칸 들여 한 줄. 없으면 None.
+        title_br = _title_line(opt.table_title) if opt.table_title else None
+
+        def _wt(lines: list[str]) -> list[str]:
+            """제목 줄을 표 위에 먼저 붙인다(§3 5)(2))."""
+            return ([title_br] + lines) if title_br else lines
+
         if "|" not in text:  # 비정형 → TN 단일안
             tn = opt.tn_text or text
             lines, breaks = translate_with_breaks(tn)  # 음절 줄바꿈(BBPG-1.2.1)
-            return BrailleOutput(
+            lines = _wt(lines)
+            if title_br:                      # 제목 줄은 음절 줄바꿈 대상 아님(단일 줄)
+                breaks = [[]] + breaks
+            bo = BrailleOutput(
                 element_id=opt.element_id,
                 braille_lines=lines,
                 break_points=breaks,
                 rule_trail=_base_trail(lines, tn),
             )
+            append_nested(bo, opt.nested_text)   # 표 안 그림(Q11) 글상자 1단 덧붙임
+            return bo
 
         # 격자 구조 → 레이아웃 3안 (셀 값 동일, 조판만 다름)
-        grid_lines = _render_grid(text)
-        transposed_lines = _split_lines(_translate(_TN_TRANSPOSE)) + _render_grid(_transpose_text(text))
-        linear_lines = _render_linear(text)
+        grid_lines = _wt(_render_grid(text))
+        transposed_lines = _wt(_split_lines(_translate(_TN_TRANSPOSE)) + _render_grid(_transpose_text(text)))
+        linear_lines = _wt(_render_linear(text))
         # 전치안은 표 유형별 점역(BBPG-3.1.2)을 추가로 기록 — 요소 전체(line_no=-1)
         trail_transpose = _base_trail(transposed_lines, text) + [
             make_rule("BBPG-3.1.2"),
@@ -185,10 +204,12 @@ class TableBraille:
         ]
         # 기본 선택은 opt가 추론한 render_mode에 맞춘다 (나머지는 대안 초안)
         sel = {"table_grid": 0, "transposed": 1, "linear": 2}.get(opt.render_mode, 0)
-        return BrailleOutput(
+        bo = BrailleOutput(
             element_id=opt.element_id,
             braille_lines=drafts[sel].braille_lines,
             rule_trail=list(drafts[sel].rule_trail),
             drafts=drafts,
             selected_idx=sel,
         )
+        append_nested(bo, opt.nested_text)   # 표 안 그림(Q11) 글상자 1단 덧붙임
+        return bo

@@ -546,6 +546,13 @@ class LayoutBraille:
                 index_map[old_idx] = len(new_lines)
                 new_lines.append(ln)
                 new_breaks.append(old_breaks[old_idx] if old_idx < len(old_breaks) else [])
+        # 줄별 들여쓰기(규정 골격)도 새 줄 수에 맞춰 재매핑 — 삽입된 테두리·빈 줄은 0칸,
+        # 내용 줄은 index_map으로 들여쓰기 보존(테두리 묶기 + 위계 들여쓰기 공존, Q11).
+        if bo.line_indents is not None and len(bo.line_indents) == len(bo.braille_lines):
+            new_indents = [0] * len(new_lines)
+            for old_idx, new_idx in index_map.items():
+                new_indents[new_idx] = bo.line_indents[old_idx]
+            bo.line_indents = new_indents
         bo.braille_lines = new_lines
         bo.break_points = new_breaks
         # 빈 줄·테두리 삽입으로 내용 줄이 밀렸으므로 rule_trail 요소-로컬 line_no 재매핑.
