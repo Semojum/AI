@@ -36,7 +36,18 @@ logger = get_logger(__name__)
 _TEXT_TYPES = {"text", "title", "caption", "list_item", "footnote", "sidebar", "header_footer", "page_number"}
 
 # 현주 type 값 → 태민/plan type 값 매핑 (현주는 chart 사용)
-_TYPE_ALIAS = {"chart": "chart_graph"}
+# 도표(§6.6 개념도·흐름도)는 단일 diagram 체인으로 라우팅하고, 하위유형은 visual_subtype로 보존한다.
+_TYPE_ALIAS = {
+    "chart": "chart_graph",
+    "도표": "diagram", "diagram": "diagram",
+    "concept_map": "diagram", "개념도": "diagram",
+    "flowchart": "diagram", "흐름도": "diagram",
+}
+# 현주 type 값이 도표 하위유형을 직접 가리킬 때 visual_subtype로 보존(concept_map/flowchart 구분).
+_SUBTYPE_FROM_TYPE = {
+    "concept_map": "concept_map", "개념도": "concept_map",
+    "flowchart": "flowchart", "흐름도": "flowchart",
+}
 
 ChainResult = tuple[list[ExtractedContent], list[LLMOutput], list[BrailleOutput]]
 
@@ -234,7 +245,9 @@ def _parse_txt_result(
             eid = UUID(str(el.get("id")))
         except (ValueError, TypeError):
             eid = uuid4()
-        etype = _TYPE_ALIAS.get(el.get("type", "text"), el.get("type", "text"))
+        orig_type = el.get("type", "text")
+        etype = _TYPE_ALIAS.get(orig_type, orig_type)
+        vsub = el.get("visual_subtype") or _SUBTYPE_FROM_TYPE.get(orig_type)
         order = int(el.get("order", idx))
         content = el.get("content", "") or ""
         # heading_level: 현주 핸드오프가 주면 그 값, 없으면 title은 1단계 기본(PART 10 조판용)
@@ -256,6 +269,7 @@ def _parse_txt_result(
             # 없으면 None → 각 opt가 corrected_text(caption) 폴백.
             ext_map[eid] = ExtractedContent(
                 element_id=eid, corrected_text=content, ocr_confidence=conf,
+                visual_subtype=vsub,
                 structure=el.get("structure"),
                 table_structure=el.get("table_structure"),
             )
@@ -409,6 +423,31 @@ async def _run_chart_graph_chain(
     return extracted, llm_outputs, braille_outputs
 
 
+async def _run_diagram_chain(
+    extracted: list[ExtractedContent],
+    layout: LayoutResult,
+    routing_tier: str,
+    task: PageTask,
+    include_braille: bool,
+) -> ChainResult:
+    """도표(§6.6 개념도·흐름도) 체인 — rule-based 골격 조립(opt→braille)."""
+    if not extracted:
+        return [], [], []
+    _write_stage(task, "diagram", "diagram_cap.json", extracted)
+
+    from app.ai.llm.diagram_opt import DiagramOpt
+    llm_outputs = await DiagramOpt().optimize(extracted, routing_tier, layout)
+    _write_stage(task, "diagram", "diagram_opt.json", llm_outputs)
+
+    braille_outputs: list[BrailleOutput] = []
+    if include_braille and llm_outputs:
+        from app.ai.braille.diagram_braille import DiagramBraille
+        braille_outputs = DiagramBraille().translate(llm_outputs)
+        _write_stage(task, "diagram", "diagram_braille.json", braille_outputs)
+
+    return extracted, llm_outputs, braille_outputs
+
+
 # ── 파이프라인 실행 ──────────────────────────────────────────────────────
 
 def _collect(layout: LayoutResult, ext_map: dict[UUID, ExtractedContent], types: set[str]) -> list[ExtractedContent]:
@@ -475,6 +514,7 @@ async def _run_pipeline(task: PageTask) -> dict:
         _run_image_chain(_collect(layout_result, ext_map, {"image"}), layout_result, routing_tier, task, include_braille),
         _run_cartoon_chain(_collect(layout_result, ext_map, {"cartoon"}), layout_result, routing_tier, task, include_braille),
         _run_chart_graph_chain(_collect(layout_result, ext_map, {"chart_graph"}), layout_result, routing_tier, task, include_braille),
+        _run_diagram_chain(_collect(layout_result, ext_map, {"diagram"}), layout_result, routing_tier, task, include_braille),
         return_exceptions=True,
     )
 

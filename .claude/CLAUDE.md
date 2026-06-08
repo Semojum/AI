@@ -22,7 +22,7 @@ app/
 │   ├── main.py          create_app(FastAPI) + _run_grpc/_run_rest + main() — gRPC·REST 동시 기동
 │   ├── config.py        Settings(pydantic-settings) 싱글톤 `config`. .env 로드. is_debug, max_grpc_message_bytes
 │   ├── grpc_server.py   PART 1·12. BrailleServiceServicer.ProcessPage, serve(), dict→proto 변환기들
-│   ├── pipeline.py      ★ 오케스트레이터. run(task) 180s 타임아웃 → _run_pipeline → 6-체인 gather → _build_response(dict)
+│   ├── pipeline.py      ★ 오케스트레이터. run(task) 180s 타임아웃 → _run_pipeline → 7-체인 gather(text/formula/table/image/cartoon/chart_graph/diagram) → _build_response(dict)
 │   ├── model_manager.py ModelManager 싱글톤. load_all → GPU0/GPU1 정적 로드. 모델 property + get_status()
 │   ├── health_check.py  PART 1-REST. get_health(), get_models_status() (dict 반환)
 │   └── routes.py        FastAPI 라우터: GET /health, GET /models/status
@@ -50,7 +50,8 @@ app/
 │   │   └── chart_graph_cap.py   PART 9-1. ChartGraphCap.process(crops)   (GPT-4o)
 │   ├── llm/                     # PART *-2. 진입점 .optimize(extracted, tier[, layout])→list[LLMOutput]
 │   │   ├── base_opt.py  ★ 공통 베이스. hcxt_generate_sync·hcxt_optimize(HCLOVA X)·fallback_optimize(GPT-4o)·generate_with_retry(3회→폴백)·decide_tier_timeout + BaseOpt(optimize gather) + VisualDraftOpt(시각 3안 공통흐름). 공통·rule-based 구조는 전부 여기, 각 opt는 프롬프트만 추가.
-│   │   ├── text_opt.py · formula_opt.py · table_opt.py · image_opt.py · cartoon_opt.py · chart_graph_opt.py
+│   │   ├── text_opt.py · formula_opt.py · table_opt.py · image_opt.py · cartoon_opt.py · chart_graph_opt.py · diagram_opt.py
+│   │   │   diagram_opt: 도표(§6.6) 개념도(위계 개조식 5/3·7/5/3)·흐름도(번호+한 줄·분기 3칸, 도형 점형은 보류) rule-based 골격. table_opt: 표 제목 5칸(도서지침 §3 5)→table_title)·표 안 그림(Q11)→nested_text. image_opt: 그림 안 그래프(Q11)→nested_text
 │   │   │   각: 자신에 최적화된 _PROMPT*만 정의 + base_opt 상속/사용. image·cartoon·chart_graph = VisualDraftOpt 상속(프롬프트·라벨·RULE_ID·타임아웃만 클래스 속성). text·formula·table = BaseOpt 상속 + 고유 _optimize_one(패스스루·정규화·표 구조 추론).
 │   │   │   table_opt: _table_to_text, _infer_render_mode, _parse_tn_from_response · formula_opt: _normalize · chart_graph_opt: _verify_numbers(숫자 환각 검증, _post_process로 R5)
 │   │   │   프리필(_PREFILL): 시각 3안 + text·formula도 사용 — Think 모델이 설명 람블 대신 결과만 내도록 답변 시작 강제, 스캐폴드는 _extract로 제거
@@ -61,7 +62,8 @@ app/
 │   │   ├── symbol_rules.py   substitute_symbols(text), preprocess/postprocess. symbol_table.json 로드(_load_flat_table)
 │   │   ├── symbol_table.json 기호→점자 매핑 데이터
 │   │   ├── kor_math_rules.py ★ C5-critical. convert_latex(latex), digits_to_braille(수표 ⠼ 삽입), frac/sqrt/lim/log/sum/sup/sub
-│   │   ├── text_braille.py · formula_braille.py · table_braille.py · image_braille.py · cartoon_braille.py · chart_graph_braille.py
+│   │   ├── text_braille.py · formula_braille.py · table_braille.py · image_braille.py · cartoon_braille.py · chart_graph_braille.py · diagram_braille.py
+│   │   ├── nested_block.py  중첩 시각자료(Q11) 공용: box_narrative(테두리 묶은 1단 narrative 텍스트)·append_nested(점자 끝에 덧붙임). diagram_braille: 도표 단일 출력(줄별 들여쓰기). 흐름도 도형 점형 디코드 표는 diagram_braille 주석(검증 대기)
 │   │   │   table_braille: _render_grid / _render_linear (render_mode별 표 조판)
 │   │   └── layout_braille.py PART 10 조판 본체. layout(braille, page_no, job_id, *, layout_result, llm_outputs)→line_overflow_rate. reading_order정렬·_break_line(32칸 단어경계+first_width 들여예약, 강제분리 카운트)·heading 빈줄(L1 2/1·L2 1/1·L3 1/0)·1단계 제목 가운데정렬·3·4단계 5칸·문단 3칸들여(text)·목록 3칸들여(list_item, tier추론X)·페이지행(원본번호 좌[page_number]·꼬리말 가운데[header_footer]·점자번호 우, 한 원본→여러 점자페이지 시 2번째부터 알파벳 접두 a,b,c)·_paginate(25줄,페이지첫줄 빈줄버림)·_save. 조판 rule_trail(heading_blank·line_wrap·indent)을 점자 좌표로 BrailleOutput.rule_trail에 emit(braille_text_list 귀속). 마커/글상자 헬퍼(BBPG 정본). ⚠촉각그래픽(table/chart SVG)·출전(citation 신호없음)·원본 페이지 변경선(여러 원본→한 점자페이지 중간 대시선, 콘텐츠 흐름 속 경계위치 메타 필요) 미배선
 │   ├── quality/                 # PART 11 — ⚠ 미구현 스텁 (TODO 단계4)
@@ -90,7 +92,7 @@ app/
 형식 `{meta:{job_id,page_no,extraction_method}, elements:[{id,order,type,content}]}` (현주 산출 형식 = `../../step3_hyunju_output.md`).
 
 - **mode a/c — Phase 1 (현주 추출)**: 경계 파일이 **없으면** `_extract_with_hyunju` 실행 → ZERO는 `analyze_pdf` PyMuPDF 텍스트를 `_blocks_from_text`로 요소화(`extraction_method=TEXT_NATIVE`), non-ZERO는 `_extract_via_models`(QwenLayout/YOLO/QwenOCR, 모델 미탑재 시 빈 결과로 격리, `OCR`) → `data/NNN_txt_result.json` 기록. 파일이 **이미 있으면 그대로 사용**(현주가 별도 생성한 핸드오프).
-- **mode a/c — Phase 2 (태민)**: `_read_txt_result` → `_parse_txt_result`(id→element_id, order→reading_order, content→corrected_text/formula는 latex_string, `chart`→`chart_graph` 매핑) → 타입별 **6-체인 `asyncio.gather(return_exceptions=True)`**(`_run_*_chain`은 opt→braille만, 현주 OCR 없음) → 각 단계 json 기록(`type/{type}/*_ocr|cap, *_opt, *_braille.json`) → `LayoutBraille.layout` → `_build_response`.
+- **mode a/c — Phase 2 (태민)**: `_read_txt_result` → `_parse_txt_result`(id→element_id, order→reading_order, content→corrected_text/formula는 latex_string, `chart`→`chart_graph`·`개념도/흐름도/도표/concept_map/flowchart`→`diagram`+visual_subtype 매핑) → 타입별 **7-체인 `asyncio.gather(return_exceptions=True)`**(`_run_*_chain`은 opt→braille만, 현주 OCR 없음) → 각 단계 json 기록(`type/{type}/*_ocr|cap, *_opt, *_braille.json`) → `LayoutBraille.layout` → `_build_response`.
 - **mode b**: source_text → text 체인(opt→braille) → `LayoutBraille.layout` → `_build_response`.
 - routing_tier: doc_meta 있으면 그 값, 없으면(주입 파일) `extraction_method`로 유추(TEXT_NATIVE→ZERO). ZERO/`ocr_confidence==1.0`이면 opt가 모델 없이 passthrough → GPU 불필요.
 - 타임아웃 → C7 BLOCKED, 예외 → C1 BLOCKED. `_debug_dump`(APP_ENV=debug): `02_doc_meta`·`04_all_ocr`·`05_all_opt`.
