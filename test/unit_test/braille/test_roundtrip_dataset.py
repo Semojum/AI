@@ -26,6 +26,8 @@ _FLOORS: dict[str, dict[str, float]] = {
     # 밑줄(_)·⠴없는 ⠠⠠ 한글충돌(TV=썰) — 기호/첨자 유형에서 풀리거나 천장. 측정 build0.57/test0.50.
     "roman": {"build": 0.55, "test": 0.45},
     "punctuation": {"build": 0.90, "test": 0.90},  # 현재 1.0 (?·! 어말 분리 수정 후) — 결정적
+    # 고유 점형 기호는 100% 복원. 점형 충돌(한글 61·기호 41·원문자 22)은 ambiguous로 floor 제외.
+    "symbols": {"build": 0.95, "test": 0.95},
 }
 
 
@@ -37,7 +39,8 @@ def _load(type_name: str) -> dict:
 
 
 def _accuracy(pairs: list[dict], split: str) -> tuple[int, int, list]:
-    rows = [p for p in pairs if p["split"] == split]
+    # 모호(ambiguous) 쌍은 floor에서 제외 — 같은 점형이 여러 뜻이라 블라인드 복원 불가(천장).
+    rows = [p for p in pairs if p["split"] == split and not p.get("ambiguous")]
     ok, fails = 0, []
     for p in rows:
         if decode(p["braille_unicode"]).replace(" ", "") == p["korean"].replace(" ", ""):

@@ -27,6 +27,8 @@ sys.path.insert(0, str(_AI_ROOT))
 
 from app.utils.braille_ascii import ascii_to_unicode        # noqa: E402
 from app.ai.braille.translator import translate_tagged_text  # noqa: E402
+from app.ai.braille.symbol_rules import SYMBOL_TABLE         # noqa: E402
+from app.utils.braille_back import _SYLLABLE_REV             # noqa: E402
 
 _PAIRS_DIR = _AI_ROOT / "test" / "test_data" / "regulation_pairs"
 _OUT_DIR = _AI_ROOT / "test" / "test_data" / "roundtrip_pairs"
@@ -198,21 +200,76 @@ def build_type(type_name: str) -> dict:
     }
 
 
+def build_symbols() -> dict:
+    """특수기호 — symbol_table(권위 골드)에서 직접. 점형이 한글·다른 기호·숫자(원문자)와
+    겹치면 ambiguous(블라인드 복원 불가, 한글우선 정책) → floor 제외, 정량화만."""
+    from collections import Counter
+    _TN = "⠠⠄"
+    brl_count = Counter(b for b in SYMBOL_TABLE.values() if b)
+
+    def _amb(sym: str, br: str) -> Optional[str]:
+        if br in _SYLLABLE_REV:      return "hangul"   # 한글 음절과 동일 점형
+        if brl_count[br] > 1:        return "symbol"   # 기호끼리 같은 점형
+        if br.startswith("⠼"):       return "number"   # 원문자(①) — 숫자와 충돌
+        if br == _TN:                return "tn"        # 점역자 주 마커와 충돌
+        return None
+
+    pairs = []
+    for sym, br in SYMBOL_TABLE.items():
+        if not br:
+            continue
+        a = _amb(sym, br)
+        pairs.append({
+            "korean": sym,
+            "brf_ascii": None,
+            "braille_unicode": br,
+            "split": _build_split(sym),
+            "ambiguous": a is not None,
+            "ambiguous_reason": a,
+            "source": "symbol_table",
+        })
+    pairs.sort(key=lambda p: (p["split"], p["korean"]))
+    non_amb = [p for p in pairs if not p["ambiguous"]]
+    counts = {
+        "build": sum(1 for p in non_amb if p["split"] == "build"),
+        "test": sum(1 for p in non_amb if p["split"] == "test"),
+        "ambiguous": sum(1 for p in pairs if p["ambiguous"]),
+        "review_excluded": 0,
+    }
+    return {
+        "type": "symbols",
+        "description": ("특수기호 (단위·수학·괄호·화살표 등). symbol_table 권위 골드. "
+                        "점형 충돌(한글·기호·원문자)은 ambiguous로 분리(한글우선 정책)."),
+        "split_ratio": "build:test = 7:3 (비모호 기준)",
+        "counts": counts,
+        "pairs": pairs,
+        "review": [],
+    }
+
+
+_ALL_TYPES = list(_CLASSIFIERS) + ["symbols"]  # symbols는 symbol_table 직생성(별도 빌더)
+
+
 def main(argv: list[str]) -> int:
     _OUT_DIR.mkdir(parents=True, exist_ok=True)
-    targets = list(_CLASSIFIERS) if (argv and argv[0] == "--all") else argv
+    targets = _ALL_TYPES if (argv and argv[0] == "--all") else argv
     if not targets:
         print(__doc__)
         return 0
     for t in targets:
-        if t not in _CLASSIFIERS:
-            print(f"미지원 유형: {t} (가능: {', '.join(_CLASSIFIERS)})")
+        if t == "symbols":
+            out = build_symbols()
+        elif t in _CLASSIFIERS:
+            out = build_type(t)
+        else:
+            print(f"미지원 유형: {t} (가능: {', '.join(_ALL_TYPES)})")
             continue
-        out = build_type(t)
         path = _OUT_DIR / f"{t}.json"
         path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"[{t}] build {out['counts']['build']} / test {out['counts']['test']} "
-              f"/ 제외 {out['counts']['review_excluded']} → {path.relative_to(_AI_ROOT)}")
+        c = out["counts"]
+        print(f"[{t}] build {c['build']} / test {c['test']} "
+              f"/ 모호 {c.get('ambiguous', 0)} / 제외 {c.get('review_excluded', 0)} "
+              f"→ {path.relative_to(_AI_ROOT)}")
     return 0
 
 

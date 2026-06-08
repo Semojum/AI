@@ -211,7 +211,9 @@ def _decode_line(s: str) -> str:
             if seg[-1] == "⠲" and seg[:-1] in _COMBINED:
                 out.append(_COMBINED[seg[:-1]])
                 out.append(".")
-            elif seg[-1] in _SENT_END and seg[:-1] in _COMBINED and _final(i + best_ln):
+            elif (seg in _SYLLABLE_REV and seg[-1] in _SENT_END
+                  and seg[:-1] in _COMBINED and _final(i + best_ln)):
+                # 한글 음절로 오인 흡수된 경우만 분리(요?=⠬⠦) — 기호(「=⠐⠦)는 그대로 둔다.
                 out.append(_COMBINED[seg[:-1]])
                 out.append(_SENT_END[seg[-1]])
             else:

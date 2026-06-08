@@ -1,0 +1,2480 @@
+{
+  "type": "symbols",
+  "description": "특수기호 (단위·수학·괄호·화살표 등). symbol_table 권위 골드. 점형 충돌(한글·기호·원문자)은 ambiguous로 분리(한글우선 정책).",
+  "split_ratio": "build:test = 7:3 (비모호 기준)",
+  "counts": {
+    "build": 101,
+    "test": 49,
+    "ambiguous": 124,
+    "review_excluded": 0
+  },
+  "pairs": [
+    {
+      "korean": "#",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠹",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "$",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠈⠎",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "'",
+      "brf_ascii": null,
+      "braille_unicode": "⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "(",
+      "brf_ascii": null,
+      "braille_unicode": "⠦⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": ")",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠴",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "*",
+      "brf_ascii": null,
+      "braille_unicode": "⠶⠊",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "-",
+      "brf_ascii": null,
+      "braille_unicode": "⠤",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "//",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠌⠸⠌",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": ";",
+      "brf_ascii": null,
+      "braille_unicode": "⠰⠆",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": ">",
+      "brf_ascii": null,
+      "braille_unicode": "⠑⠑",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "@",
+      "brf_ascii": null,
+      "braille_unicode": "⠈⠁",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "[",
+      "brf_ascii": null,
+      "braille_unicode": "⠦⠆",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "\\",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠡",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "^",
+      "brf_ascii": null,
+      "braille_unicode": "⠈⠑",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "{",
+      "brf_ascii": null,
+      "braille_unicode": "⠦⠂",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "|",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠇",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "}",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠴",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "¢",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠈⠉",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "¥",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠈⠽",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "§",
+      "brf_ascii": null,
+      "braille_unicode": "⠘⠎",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "©",
+      "brf_ascii": null,
+      "braille_unicode": "⠘⠉",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "¬",
+      "brf_ascii": null,
+      "braille_unicode": "⠈⠊",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "°",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠙",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "±",
+      "brf_ascii": null,
+      "braille_unicode": "⠑⠊",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "µm",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠍⠍",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "¶",
+      "brf_ascii": null,
+      "braille_unicode": "⠘⠏",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Å",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠡",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "÷",
+      "brf_ascii": null,
+      "braille_unicode": "⠌⠌",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "ː",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠄",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Α",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠁",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Δ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠙",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Ε",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠑",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Ζ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠵",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Η",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠓",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Κ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠅",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Ν",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠝",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Ξ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠭",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Π",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠏",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Ρ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠗",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Τ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠞",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Φ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠋",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Χ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠉",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Ψ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠽",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "δ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠙",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "ε",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠑",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "ζ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠵",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "η",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠓",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "θ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠹",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "ι",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠊",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "κ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠅",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "λ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠇",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "ν",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠝",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "ξ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠭",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "π",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠏",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "ρ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠗",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "φ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠋",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "ψ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠽",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "ω",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠺",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "‐",
+      "brf_ascii": null,
+      "braille_unicode": "⠤",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "–",
+      "brf_ascii": null,
+      "braille_unicode": "⠤",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "—",
+      "brf_ascii": null,
+      "braille_unicode": "⠤⠤",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "‘",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠦",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "’",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠄",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "“",
+      "brf_ascii": null,
+      "braille_unicode": "⠦",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "”",
+      "brf_ascii": null,
+      "braille_unicode": "⠴",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "•",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠄",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "″",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠤⠤",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "※",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠊",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "₣",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠈⠋",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "₩",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠈⠺",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "€",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠈⠑",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "℃",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠙⠠⠉",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "℉",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠙⠠⠋",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "™",
+      "brf_ascii": null,
+      "braille_unicode": "⠘⠞",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "ℵ",
+      "brf_ascii": null,
+      "braille_unicode": "⠗⠋",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "←",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠉",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "↑",
+      "brf_ascii": null,
+      "braille_unicode": "⠆⠉⠕",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "→",
+      "brf_ascii": null,
+      "braille_unicode": "⠒⠕",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "↔",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠉⠕",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "↖",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠑",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "↗",
+      "brf_ascii": null,
+      "braille_unicode": "⠊⠕",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "↘",
+      "brf_ascii": null,
+      "braille_unicode": "⠑⠕",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "↙",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠊",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⇄",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠛⠕",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⇒",
+      "brf_ascii": null,
+      "braille_unicode": "⠉⠉⠕",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⇔",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠉⠉⠕",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∀",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠄",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∂",
+      "brf_ascii": null,
+      "braille_unicode": "⠫",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∃",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠑",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∅",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠋",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∇",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠩",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∈",
+      "brf_ascii": null,
+      "braille_unicode": "⠋",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∉",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠋",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∌",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠙",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∑",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠎",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∗",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠣",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∘",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠚",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∙",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠙",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "√",
+      "brf_ascii": null,
+      "braille_unicode": "⠜",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∠",
+      "brf_ascii": null,
+      "braille_unicode": "⠹",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∥",
+      "brf_ascii": null,
+      "braille_unicode": "⠆⠃",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∧",
+      "brf_ascii": null,
+      "braille_unicode": "⠹",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∨",
+      "brf_ascii": null,
+      "braille_unicode": "⠼",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∩",
+      "brf_ascii": null,
+      "braille_unicode": "⠩",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∫",
+      "brf_ascii": null,
+      "braille_unicode": "⠮",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∬",
+      "brf_ascii": null,
+      "braille_unicode": "⠮⠮",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∮",
+      "brf_ascii": null,
+      "braille_unicode": "⠾",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∴",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠡",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∵",
+      "brf_ascii": null,
+      "braille_unicode": "⠈⠌",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∼",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠠⠤",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≃",
+      "brf_ascii": null,
+      "braille_unicode": "⠈⠊⠉",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≅",
+      "brf_ascii": null,
+      "braille_unicode": "⠈⠊⠉⠉",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≈",
+      "brf_ascii": null,
+      "braille_unicode": "⠈⠊⠈⠊",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≊",
+      "brf_ascii": null,
+      "braille_unicode": "⠈⠊⠈⠊⠉",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≒",
+      "brf_ascii": null,
+      "braille_unicode": "⠶⠉⠉",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≠",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠉⠉",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≡",
+      "brf_ascii": null,
+      "braille_unicode": "⠛⠛",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≤",
+      "brf_ascii": null,
+      "braille_unicode": "⠋⠋",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≥",
+      "brf_ascii": null,
+      "braille_unicode": "⠙⠙",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≯",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠑⠑",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≰",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠋⠋",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≱",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠙⠙",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⊄",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠋⠁",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⊕",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠑",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⊖",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠊",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⊥",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠄",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⋮",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠠⠠",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⋱",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠨⠨",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "①",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠁⠲",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "③",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠉",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "④",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠙",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑥",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠋",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑧",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠓",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑩",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠁⠚",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑫",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠁⠃",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑮",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠁⠑",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑰",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠁⠛",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑱",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠁⠓",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "◇",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠑⠇",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "○",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠚⠇",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "◎",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠚⠚",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "☆",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠊⠇",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "♀",
+      "brf_ascii": null,
+      "braille_unicode": "⠚⠘⠭⠙",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "♂",
+      "brf_ascii": null,
+      "braille_unicode": "⠚⠘⠽⠙",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "♭",
+      "brf_ascii": null,
+      "braille_unicode": "⠣",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "♮",
+      "brf_ascii": null,
+      "braille_unicode": "⠡",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "♯",
+      "brf_ascii": null,
+      "braille_unicode": "⠩",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⦾",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠚⠚",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⫤",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠸⠉",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "〃",
+      "brf_ascii": null,
+      "braille_unicode": "⠚⠚",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "》",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠆",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "「",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠦",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "」",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠂",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "『",
+      "brf_ascii": null,
+      "braille_unicode": "⠰⠦",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "』",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠆",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉠",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠿⠁⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉥",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠿⠋⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉧",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠿⠓⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉩",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠿⠚⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉪",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠿⠅⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉮",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠈⠣⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉰",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠊⠣⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉱",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠐⠣⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉲",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠑⠣⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉴",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠠⠣⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉵",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠣⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉸",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠋⠣⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉹",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠌⠣⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉺",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠍⠣⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉻",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠗⠣⠄",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㎏",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠅⠛",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㎒",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠍⠓⠵",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㎖",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠍⠇",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㎝",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠉⠍",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㎞",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠅⠍",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㎡",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠍⠘⠆",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㎢",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠅⠍⠘⠆",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "￠",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠈⠉",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "￡",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠈⠇",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "￥",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠈⠽",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "￦",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠈⠺",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "\"",
+      "brf_ascii": null,
+      "braille_unicode": "⠦",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "%",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠏",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "&",
+      "brf_ascii": null,
+      "braille_unicode": "⠈⠯",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "......",
+      "brf_ascii": null,
+      "braille_unicode": "⠲⠲⠲⠲⠲⠲",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "/",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠌",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": ":",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠂",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "<",
+      "brf_ascii": null,
+      "braille_unicode": "⠊⠊",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "=",
+      "brf_ascii": null,
+      "braille_unicode": "⠉⠉",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "]",
+      "brf_ascii": null,
+      "braille_unicode": "⠰⠴",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "~",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠠⠤",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "£",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠈⠇",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "®",
+      "brf_ascii": null,
+      "braille_unicode": "⠘⠗",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "·",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠄",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "×",
+      "brf_ascii": null,
+      "braille_unicode": "⠡",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Β",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠃",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Γ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠛",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Θ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠹",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Ι",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠊",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Λ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠇",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Μ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠍",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Σ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠎",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Υ",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠥",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "Ω",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠨⠺",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "α",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠁",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "β",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠃",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "γ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠛",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "μ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠍",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "μm",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠍⠍",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "σ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠎",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "τ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠞",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "υ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠥",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "χ",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠉",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "…",
+      "brf_ascii": null,
+      "braille_unicode": "⠲⠲⠲",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "……",
+      "brf_ascii": null,
+      "braille_unicode": "⠂⠂⠂",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "‰",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠏⠍",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "′",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠤",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "↓",
+      "brf_ascii": null,
+      "braille_unicode": "⠘⠉⠕",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⇐",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠉⠉",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∄",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠨⠑",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∆",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠬",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∋",
+      "brf_ascii": null,
+      "braille_unicode": "⠙",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∝",
+      "brf_ascii": null,
+      "braille_unicode": "⠬⠉",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∞",
+      "brf_ascii": null,
+      "braille_unicode": "⠿",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∪",
+      "brf_ascii": null,
+      "braille_unicode": "⠬",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∽",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠄",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≮",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠊⠊",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≲",
+      "brf_ascii": null,
+      "braille_unicode": "⠊⠊⠈⠊",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "≺",
+      "brf_ascii": null,
+      "braille_unicode": "⠊⠊",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⊂",
+      "brf_ascii": null,
+      "braille_unicode": "⠋⠁",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⊃",
+      "brf_ascii": null,
+      "braille_unicode": "⠶⠙",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⊅",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠶⠙",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⊗",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠡",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⊢",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠉",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⊣",
+      "brf_ascii": null,
+      "braille_unicode": "⠈⠸⠉",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⊨",
+      "brf_ascii": null,
+      "braille_unicode": "⠘⠸⠉",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⋁",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠤",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⋯",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠄⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "②",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠃",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑤",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠑",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑦",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠛",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑨",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠊",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑪",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠁⠁",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑬",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠁⠉",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑭",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠁⠙",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑯",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠁⠋",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑲",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠁⠊",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⑳",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠃⠚",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "number",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "□",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠄⠇",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "▣",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠄⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "△",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠬⠇",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "◆",
+      "brf_ascii": null,
+      "braille_unicode": "⠸⠕⠇",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "♩",
+      "brf_ascii": null,
+      "braille_unicode": "⠹",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "⫽",
+      "brf_ascii": null,
+      "braille_unicode": "⠰⠆",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "〈",
+      "brf_ascii": null,
+      "braille_unicode": "⠐⠄",
+      "split": "test",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "〉",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠂",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "《",
+      "brf_ascii": null,
+      "braille_unicode": "⠰⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉡",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠿⠃⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉢",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠿⠉⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉣",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠿⠙⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉤",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠿⠑⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉦",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠿⠛⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉨",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠿⠊⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉫",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠿⠇⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉬",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠿⠍⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉭",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠿⠝⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉯",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠉⠣⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉳",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠘⠣⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉶",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠨⠣⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㉷",
+      "brf_ascii": null,
+      "braille_unicode": "⠄⠩⠣⠄",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㎎",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠍⠛",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㎗",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠙⠇",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㎠",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠉⠍⠘⠃",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "㏊",
+      "brf_ascii": null,
+      "braille_unicode": "⠴⠓⠁",
+      "split": "test",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    }
+  ],
+  "review": []
+}
