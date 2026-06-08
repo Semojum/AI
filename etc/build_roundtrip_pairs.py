@@ -32,6 +32,12 @@ _PAIRS_DIR = _AI_ROOT / "test" / "test_data" / "regulation_pairs"
 _OUT_DIR = _AI_ROOT / "test" / "test_data" / "roundtrip_pairs"
 
 _HANGUL = re.compile(r"^[가-힣]+(?: [가-힣]+)*$")  # 순수 한글 단어(공백 허용)
+_HAS_DIGIT = re.compile(r"[0-9]")                   # 아라비아 숫자 포함
+
+
+def _strip_pad(b: str | None) -> str | None:
+    """규정 BRF 행은 32칸 고정폭이라 양끝에 공백 셀(⠀)·공백이 붙는다 — 양끝만 제거."""
+    return b.strip("⠀ \n") if b else b
 
 
 def _build_split(korean: str) -> str:
@@ -50,9 +56,26 @@ def _is_hangul_syllable(korean: str, brf: str) -> bool:
     return True
 
 
+def _is_number(korean: str, brf: str) -> bool:
+    """숫자 유형: 아라비아 숫자 포함(정수·소수·자릿점·범위·단위 혼용).
+
+    로마자(영문) 포함 행은 로마자 유형으로 미루고 제외 → 숫자 decode만 깨끗이 검증.
+    원문자(①)는 [0-9]가 아니라 자동 제외.
+    """
+    if not _HAS_DIGIT.search(korean):
+        return False
+    if korean.startswith("[") or len(korean) > 20:
+        return False
+    if re.search(r"[A-Za-z]", korean):         # 로마자 혼합 → 로마자 유형으로
+        return False
+    return True
+
+
 _CLASSIFIERS = {
     "hangul": ("한글 음절 (받침 유무·겹받침·된소리). 규정 1~3장 + section_01~03 등.",
                _is_hangul_syllable),
+    "numbers": ("아라비아 숫자 (수표·정수·소수점·자릿점·범위·단위 혼용). 규정 제6·12절 등.",
+                _is_number),
 }
 
 
@@ -75,13 +98,13 @@ def build_type(type_name: str) -> dict:
     for kor, brf, source in _collect_rows():
         if not accept(kor, brf):
             continue
-        gold = ascii_to_unicode(brf)
+        gold = _strip_pad(ascii_to_unicode(brf))   # 규정 행의 양끝 32칸 패딩(⠀) 제거
         if "[?" in gold:                       # 변환 불가(잔존 깨짐) → 제외
             review.append({"korean": kor, "brf_ascii": brf, "reason": "ascii_broken"})
             continue
-        # 내부 정합성: 정방향 점역기가 규정 골드를 재현하는가
+        # 내부 정합성: 정방향 점역기가 규정 골드를 재현하는가(양끝 공백 무시)
         try:
-            fwd = translate_tagged_text(kor)
+            fwd = _strip_pad(translate_tagged_text(kor))
         except Exception:
             fwd = None
         if fwd != gold:                        # brf 깨짐/옛 버그/정방향 불일치 → review

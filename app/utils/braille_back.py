@@ -83,6 +83,10 @@ _COMBINED: dict[str, str] = {**_SYMBOL_REV, **_SYLLABLE_REV, **_WORD_ABBR}
 # 단독 문장부호(마침표·쉼표·느낌표)도 풀리도록 — 기존 기호 매핑은 덮지 않는다.
 for _c, _t in (("⠲", "."), ("⠐", ","), ("⠖", "!")):
     _COMBINED.setdefault(_c, _t)
+# 변이체 정본화 — 같은 점형이 여러 유니코드(붙임표/하이픈/대시)로 매핑될 때 ASCII 정본 우선.
+# ⠤는 symbol_table에서 '–'(en dash)로 먼저 잡히나, 숫자 범위·붙임표는 ASCII '-'가 정본.
+for _c, _t in (("⠤", "-"),):
+    _COMBINED[_c] = _t
 _MAX_CELLS = max((len(k) for k in _COMBINED), default=1)
 
 
@@ -128,13 +132,23 @@ def _decode_roman(s: str, i: int, end: int) -> str:
 
 
 def _decode_number(s: str, i: int) -> tuple[str, int]:
-    """s[i]=수표 ⠼. 뒤따르는 숫자 셀을 소비해 (숫자문자열, 다음위치) 반환."""
+    """s[i]=수표 ⠼. 뒤따르는 숫자 셀을 소비해 (숫자문자열, 다음위치) 반환.
+
+    수 안의 소수점은 마침표 셀 ⠲로 적힌다(3.14=⠼⠉⠲⠁⠙) — ⠲ 뒤에 숫자가 오면
+    소수점으로 보고 수를 이어 읽는다. 자릿점 쉼표 ⠂는 _DIGIT_REV로 이어진다.
+    """
     j = i + 1
-    out = []
-    while j < len(s) and s[j] in _DIGIT_REV:
-        out.append(_DIGIT_REV[s[j]])
-        j += 1
-    if not out:                  # 수표 뒤 숫자 없음 → 기호로 둠
+    out: list[str] = []
+    while j < len(s):
+        if s[j] in _DIGIT_REV:
+            out.append(_DIGIT_REV[s[j]])
+            j += 1
+        elif s[j] == _ROMAN_END and j + 1 < len(s) and s[j + 1] in _DIGIT_REV:
+            out.append(".")        # 소수점(⠲) — 뒤에 숫자가 있을 때만
+            j += 1
+        else:
+            break
+    if not out:                    # 수표 뒤 숫자 없음 → 기호로 둠
         return "⟨⠼⟩", i + 1
     return "".join(out), j
 

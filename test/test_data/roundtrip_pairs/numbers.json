@@ -1,0 +1,411 @@
+{
+  "type": "numbers",
+  "description": "아라비아 숫자 (수표·정수·소수점·자릿점·범위·단위 혼용). 규정 제6·12절 등.",
+  "split_ratio": "build:test = 7:3 (md5 안정 해시)",
+  "counts": {
+    "build": 22,
+    "test": 4,
+    "review_excluded": 27
+  },
+  "pairs": [
+    {
+      "korean": "1,000원/개",
+      "brf_ascii": "#a1jjjp3_/@r",
+      "braille_unicode": "⠼⠁⠂⠚⠚⠚⠏⠒⠸⠌⠈⠗",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_13_misc"
+    },
+    {
+      "korean": "1가",
+      "brf_ascii": "#a$",
+      "braille_unicode": "⠼⠁⠫",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "1년",
+      "brf_ascii": "#a`c*",
+      "braille_unicode": "⠼⠁⠀⠉⠡",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "2권",
+      "brf_ascii": "#b@p3",
+      "braille_unicode": "⠼⠃⠈⠏⠒",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "2도",
+      "brf_ascii": "#b`iu",
+      "braille_unicode": "⠼⠃⠀⠊⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "3명",
+      "brf_ascii": "#c`e]",
+      "braille_unicode": "⠼⠉⠀⠑⠻",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "3반",
+      "brf_ascii": "#c^3",
+      "braille_unicode": "⠼⠉⠘⠒",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "4선",
+      "brf_ascii": "#d,)",
+      "braille_unicode": "⠼⠙⠠⠾",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "4칸",
+      "brf_ascii": "#d`f3",
+      "braille_unicode": "⠼⠙⠀⠋⠒",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "5 개",
+      "brf_ascii": "#e`@r",
+      "braille_unicode": "⠼⠑⠀⠈⠗",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "5,700,000원",
+      "brf_ascii": "#e1gjj1jjjp3",
+      "braille_unicode": "⠼⠑⠂⠛⠚⠚⠂⠚⠚⠚⠏⠒",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "5운6기",
+      "brf_ascii": "#e`g#f@o",
+      "braille_unicode": "⠼⠑⠀⠛⠼⠋⠈⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "5월",
+      "brf_ascii": "#ep1",
+      "braille_unicode": "⠼⠑⠏⠂",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "6평",
+      "brf_ascii": "#f`d]",
+      "braille_unicode": "⠼⠋⠀⠙⠻",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "7자루",
+      "brf_ascii": "#g.\"m",
+      "braille_unicode": "⠼⠛⠨⠐⠍",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "7항",
+      "brf_ascii": "#g`j7",
+      "braille_unicode": "⠼⠛⠀⠚⠶",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "8 상자",
+      "brf_ascii": "#h`l7.",
+      "braille_unicode": "⠼⠓⠀⠇⠶⠨",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "8꾸러미",
+      "brf_ascii": "#h,@m\"seo",
+      "braille_unicode": "⠼⠓⠠⠈⠍⠐⠎⠑⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "9,375명",
+      "brf_ascii": "#i1cge`e}",
+      "braille_unicode": "⠼⠊⠂⠉⠛⠑⠀⠑⠻",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "요한 3:16",
+      "brf_ascii": "+j3`#c\"1#af",
+      "braille_unicode": "⠬⠚⠒⠀⠼⠉⠐⠂⠼⠁⠋",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_13_misc"
+    },
+    {
+      "korean": "제1 작업실",
+      "brf_ascii": ".n#a`.asb,o1",
+      "braille_unicode": "⠨⠝⠼⠁⠀⠨⠁⠎⠃⠠⠕⠂",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_14_layout"
+    },
+    {
+      "korean": "창세기 12,1-9",
+      "brf_ascii": ";<7,n@o`#ab1a-#i",
+      "braille_unicode": "⠰⠣⠶⠠⠝⠈⠕⠀⠼⠁⠃⠂⠁⠤⠼⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "5톤",
+      "brf_ascii": "#e`h(",
+      "braille_unicode": "⠼⠑⠀⠓⠷",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "6일",
+      "brf_ascii": "#fo1",
+      "braille_unicode": "⠼⠋⠕⠂",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_11_english"
+    },
+    {
+      "korean": "오전 10:20",
+      "brf_ascii": "u.)`#aj\"1#bj",
+      "braille_unicode": "⠥⠨⠾⠀⠼⠁⠚⠐⠂⠼⠃⠚",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_13_misc"
+    },
+    {
+      "korean": "원주율은 약 3.14이다.",
+      "brf_ascii": "``p3.m%1z`>a`#c4adoi4```````````",
+      "braille_unicode": "⠏⠒⠨⠍⠩⠂⠵⠀⠜⠁⠀⠼⠉⠲⠁⠙⠕⠊⠲",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_12_numbers2"
+    }
+  ],
+  "review": [
+    {
+      "korean": "뒤에 로마자 종료표 4을 적는다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠊⠍⠗⠝⠀⠐⠥⠑⠨⠀⠨⠿⠐⠬⠙⠬⠀⠼⠙⠮⠀⠨⠹⠉⠵⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "당첨금: 10,000,000,000원",
+      "brf_ascii": "``i7;s5@[5\"1`#aj1jjj1jjj1,``````",
+      "gold": "⠊⠶⠰⠎⠢⠈⠪⠢⠐⠂⠀⠼⠁⠚⠂⠚⠚⠚⠂⠚⠚⠚⠂⠠",
+      "forward": "⠊⠶⠰⠎⠢⠈⠪⠢⠐⠂⠼⠁⠚⠂⠚⠚⠚⠂⠚⠚⠚⠂⠚⠚⠚⠏⠒",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "3·1 운동",
+      "brf_ascii": "#c\"2#a`gi=",
+      "gold": "⠼⠉⠐⠆⠼⠁⠀⠛⠊⠿",
+      "forward": "⠼⠉⠐⠄⠼⠁⠀⠛⠊⠿",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "5개-3개=2개",
+      "brf_ascii": "#e@r`9`#c@r`33`#b@r",
+      "gold": "⠼⠑⠈⠗⠀⠔⠀⠼⠉⠈⠗⠀⠒⠒⠀⠼⠃⠈⠗",
+      "forward": "⠼⠑⠈⠗⠤⠼⠉⠈⠗⠉⠉⠼⠃⠈⠗",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "9월 15일~9월 25일",
+      "brf_ascii": "#ip1`#aeo1@9#ip1`#beo1",
+      "gold": "⠼⠊⠏⠂⠀⠼⠁⠑⠕⠂⠈⠔⠼⠊⠏⠂⠀⠼⠃⠑⠕⠂",
+      "forward": "⠼⠊⠏⠂⠀⠼⠁⠑⠕⠂⠐⠠⠤⠼⠊⠏⠂⠀⠼⠃⠑⠕⠂",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "8·15 광복",
+      "brf_ascii": "#h\"2#ae`@v7~x",
+      "gold": "⠼⠓⠐⠆⠼⠁⠑⠀⠈⠧⠶⠘⠭",
+      "forward": "⠼⠓⠐⠄⠼⠁⠑⠀⠈⠧⠶⠘⠭",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "통권 제54·55·56호",
+      "brf_ascii": "h=@p3`.n#ed\"2#ee\"2#ef`ju",
+      "gold": "⠓⠿⠈⠏⠒⠀⠨⠝⠼⠑⠙⠐⠆⠼⠑⠑⠐⠆⠼⠑⠋⠀⠚⠥",
+      "forward": "⠓⠿⠈⠏⠒⠀⠨⠝⠼⠑⠙⠐⠄⠼⠑⠑⠐⠄⠼⠑⠋⠀⠚⠥",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "일시: 2006년 2월 28일 13시",
+      "brf_ascii": "``o1,o\"1`#bjjf`c*`#bp1`#bho1`#ac",
+      "gold": "⠕⠂⠠⠕⠐⠂⠀⠼⠃⠚⠚⠋⠀⠉⠡⠀⠼⠃⠏⠂⠀⠼⠃⠓⠕⠂⠀⠼⠁⠉",
+      "forward": "⠕⠂⠠⠕⠐⠂⠼⠃⠚⠚⠋⠀⠉⠡⠀⠼⠃⠏⠂⠀⠼⠃⠓⠕⠂⠀⠼⠁⠉⠠⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "...)는 444으로 적는다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠲⠲⠲⠠⠴⠉⠵⠀⠼⠙⠙⠙⠪⠐⠥⠀⠨⠹⠉⠵⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "제1점역자 정의 숨김표",
+      "brf_ascii": "_9l",
+      "gold": "⠸⠔⠇",
+      "forward": "⠨⠝⠼⠁⠨⠎⠢⠱⠁⠨⠀⠨⠻⠺⠀⠠⠍⠢⠈⠕⠢⠙⠬",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "제2점역자 정의 숨김표",
+      "brf_ascii": "_5l",
+      "gold": "⠸⠢⠇",
+      "forward": "⠨⠝⠼⠃⠨⠎⠢⠱⠁⠨⠀⠨⠻⠺⠀⠠⠍⠢⠈⠕⠢⠙⠬",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "제3점역자 정의 숨김표",
+      "brf_ascii": "_ol",
+      "gold": "⠸⠕⠇",
+      "forward": "⠨⠝⠼⠉⠨⠎⠢⠱⠁⠨⠀⠨⠻⠺⠀⠠⠍⠢⠈⠕⠢⠙⠬",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "2016년 ◇월 ◆일",
+      "brf_ascii": "#bjaf`c*`_5lp1`_olo1",
+      "gold": "⠼⠃⠚⠁⠋⠀⠉⠡⠀⠸⠢⠇⠏⠂⠀⠸⠕⠇⠕⠂",
+      "forward": "⠼⠃⠚⠁⠋⠀⠉⠡⠸⠑⠇⠏⠂⠸⠕⠇⠕⠂",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "’88 서울 올림픽",
+      "brf_ascii": "#'hh`,s&`u1\"o5doa",
+      "gold": "⠼⠄⠓⠓⠀⠠⠎⠯⠀⠥⠂⠐⠕⠢⠙⠕⠁",
+      "forward": "⠴⠄⠼⠓⠓⠀⠠⠎⠯⠀⠥⠂⠐⠕⠢⠙⠕⠁",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "제2   〃",
+      "brf_ascii": ".n#b`00",
+      "gold": "⠨⠝⠼⠃⠀⠴⠴",
+      "forward": "⠨⠝⠼⠃⠚⠚",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "$1는 100￠이다.",
+      "brf_ascii": "``0@s#a`cz`#ajj0@c`oi4``````````",
+      "gold": "⠴⠈⠎⠼⠁⠀⠉⠵⠀⠼⠁⠚⠚⠴⠈⠉⠀⠕⠊⠲",
+      "forward": "⠴⠈⠎⠼⠁⠀⠉⠵⠀⠼⠁⠚⠚⠴⠈⠉⠕⠊⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "마침표는 4으로 적는다.",
+      "brf_ascii": "``e;o5d+cz`_=4`[\"u`.?czi4```````",
+      "gold": "⠑⠰⠕⠢⠙⠬⠉⠵⠀⠸⠿⠲⠀⠪⠐⠥⠀⠨⠹⠉⠵⠊⠲",
+      "forward": "⠑⠰⠕⠢⠙⠬⠉⠵⠀⠼⠙⠪⠐⠥⠀⠨⠹⠉⠵⠊⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "10,000㎡는 1㏊이다.",
+      "brf_ascii": "``#aj1jjj0m^#b`cz`#a0ha4oi4`````",
+      "gold": "⠼⠁⠚⠂⠚⠚⠚⠴⠍⠘⠼⠃⠀⠉⠵⠀⠼⠁⠴⠓⠁⠲⠕⠊⠲",
+      "forward": "⠼⠁⠚⠂⠚⠚⠚⠴⠍⠘⠆⠉⠵⠀⠼⠁⠴⠓⠁⠕⠊⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "1평은 3.3㎡이다.",
+      "brf_ascii": "``#a`d]z`#c4c0m^#boi4```````````",
+      "gold": "⠼⠁⠀⠙⠻⠵⠀⠼⠉⠲⠉⠴⠍⠘⠼⠃⠕⠊⠲",
+      "forward": "⠼⠁⠀⠙⠻⠵⠀⠼⠉⠲⠉⠴⠍⠘⠆⠕⠊⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "연 강수량의 10%에 해당한다.",
+      "brf_ascii": "``*`$7,m\">7w`#aj0p`n`jri7j3i4```",
+      "gold": "⠡⠀⠫⠶⠠⠍⠐⠜⠶⠺⠀⠼⠁⠚⠴⠏⠀⠝⠀⠚⠗⠊⠶⠚⠒⠊⠲",
+      "forward": "⠡⠀⠫⠶⠠⠍⠐⠜⠶⠺⠀⠼⠁⠚⠴⠏⠝⠀⠚⠗⠊⠶⠚⠒⠊⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "직각은 90°이다.",
+      "brf_ascii": "``.oa$az`#ij0d`oi4``````````````",
+      "gold": "⠨⠕⠁⠫⠁⠵⠀⠼⠊⠚⠴⠙⠀⠕⠊⠲",
+      "forward": "⠨⠕⠁⠫⠁⠵⠀⠼⠊⠚⠴⠙⠕⠊⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "물은 100 ℃에서 끓는다.",
+      "brf_ascii": "``e&z`#ajj`0d,c`n,s`,@!0czi4````",
+      "gold": "⠑⠯⠵⠀⠼⠁⠚⠚⠀⠴⠙⠠⠉⠀⠝⠠⠎⠀⠠⠈⠮⠴⠉⠵⠊⠲",
+      "forward": "⠑⠯⠵⠀⠼⠁⠚⠚⠴⠙⠠⠉⠝⠠⠎⠀⠠⠈⠮⠴⠉⠵⠊⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "80 ㎞/시",
+      "brf_ascii": "#hj`0km4_/,o",
+      "gold": "⠼⠓⠚⠀⠴⠅⠍⠲⠸⠌⠠⠕",
+      "forward": "⠼⠓⠚⠴⠅⠍⠸⠌⠠⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "제1점역자 정의 글머리 기호",
+      "brf_ascii": "_5",
+      "gold": "⠸⠢",
+      "forward": "⠨⠝⠼⠁⠨⠎⠢⠱⠁⠨⠀⠨⠻⠺⠀⠈⠮⠑⠎⠐⠕⠀⠈⠕⠚⠥",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "제2점역자 정의 글머리 기호",
+      "brf_ascii": "_6",
+      "gold": "⠸⠖",
+      "forward": "⠨⠝⠼⠃⠨⠎⠢⠱⠁⠨⠀⠨⠻⠺⠀⠈⠮⠑⠎⠐⠕⠀⠈⠕⠚⠥",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "제3점역자 정의 글머리 기호",
+      "brf_ascii": "_8",
+      "gold": "⠸⠦",
+      "forward": "⠨⠝⠼⠉⠨⠎⠢⠱⠁⠨⠀⠨⠻⠺⠀⠈⠮⠑⠎⠐⠕⠀⠈⠕⠚⠥",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "제4점역자 정의 글머리 기호",
+      "brf_ascii": "_3",
+      "gold": "⠸⠒",
+      "forward": "⠨⠝⠼⠙⠨⠎⠢⠱⠁⠨⠀⠨⠻⠺⠀⠈⠮⠑⠎⠐⠕⠀⠈⠕⠚⠥",
+      "reason": "forward_mismatch"
+    }
+  ]
+}
