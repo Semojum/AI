@@ -1,0 +1,2188 @@
+{
+  "type": "hangul",
+  "description": "한글 음절 (받침 유무·겹받침·된소리). 규정 1~3장 + section_01~03 등.",
+  "split_ratio": "build:test = 7:3 (md5 안정 해시)",
+  "counts": {
+    "build": 162,
+    "test": 66,
+    "review_excluded": 57
+  },
+  "pairs": [
+    {
+      "korean": "가곡",
+      "brf_ascii": "$@x",
+      "braille_unicode": "⠫⠈⠭",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "가지",
+      "brf_ascii": "$.o",
+      "braille_unicode": "⠫⠨⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "갈비탕",
+      "brf_ascii": "$1~oh7",
+      "braille_unicode": "⠫⠂⠘⠕⠓⠶",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "강산",
+      "brf_ascii": "$7l3",
+      "braille_unicode": "⠫⠶⠇⠒",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "거리",
+      "brf_ascii": "@s\"o",
+      "braille_unicode": "⠈⠎⠐⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "것이다",
+      "brf_ascii": "_soi",
+      "braille_unicode": "⠸⠎⠕⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "격언",
+      "brf_ascii": "@:a)",
+      "braille_unicode": "⠈⠱⠁⠾",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "고구마",
+      "brf_ascii": "@u@me",
+      "braille_unicode": "⠈⠥⠈⠍⠑",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "고삐",
+      "brf_ascii": "@u,~o",
+      "braille_unicode": "⠈⠥⠠⠘⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "광주리",
+      "brf_ascii": "@v7.m\"o",
+      "braille_unicode": "⠈⠧⠶⠨⠍⠐⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "구슬",
+      "brf_ascii": "@m,!",
+      "braille_unicode": "⠈⠍⠠⠮",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "국보",
+      "brf_ascii": "@ma~u",
+      "braille_unicode": "⠈⠍⠁⠘⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "국수",
+      "brf_ascii": "@ma,m",
+      "braille_unicode": "⠈⠍⠁⠠⠍",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "굶다",
+      "brf_ascii": "@&5i",
+      "braille_unicode": "⠈⠯⠢⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "그래서인지",
+      "brf_ascii": "asq.o",
+      "braille_unicode": "⠁⠎⠟⠨⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_07_punctuation"
+    },
+    {
+      "korean": "그러면서",
+      "brf_ascii": "a3,s",
+      "braille_unicode": "⠁⠒⠠⠎",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_07_punctuation"
+    },
+    {
+      "korean": "그리하여도",
+      "brf_ascii": "a:iu",
+      "braille_unicode": "⠁⠱⠊⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_07_punctuation"
+    },
+    {
+      "korean": "근로",
+      "brf_ascii": "@z\"u",
+      "braille_unicode": "⠈⠵⠐⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "긁다",
+      "brf_ascii": "@!ai",
+      "braille_unicode": "⠈⠮⠁⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "기적",
+      "brf_ascii": "@o.?",
+      "braille_unicode": "⠈⠕⠨⠹",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "까치",
+      "brf_ascii": ",$;o",
+      "braille_unicode": "⠠⠫⠰⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "깜깜하다",
+      "brf_ascii": ",$5,$5ji",
+      "braille_unicode": "⠠⠫⠢⠠⠫⠢⠚⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "깡충깡충",
+      "brf_ascii": ",$7;m7,$7;m7",
+      "braille_unicode": "⠠⠫⠶⠰⠍⠶⠠⠫⠶⠰⠍⠶",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "꺾다",
+      "brf_ascii": ",@?ai",
+      "braille_unicode": "⠠⠈⠹⠁⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "꾸러미",
+      "brf_ascii": ",@m\"seo",
+      "braille_unicode": "⠠⠈⠍⠐⠎⠑⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "끊다",
+      "brf_ascii": ",@z0i",
+      "braille_unicode": "⠠⠈⠵⠴⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "나비",
+      "brf_ascii": "c~o",
+      "braille_unicode": "⠉⠘⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "나이",
+      "brf_ascii": "c<o",
+      "braille_unicode": "⠉⠣⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "너비",
+      "brf_ascii": "cs~o",
+      "braille_unicode": "⠉⠎⠘⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "넋",
+      "brf_ascii": "c?'",
+      "braille_unicode": "⠉⠹⠄",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "넓다",
+      "brf_ascii": "ctbi",
+      "braille_unicode": "⠉⠞⠃⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "넙치",
+      "brf_ascii": "csb;o",
+      "braille_unicode": "⠉⠎⠃⠰⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "넥타이",
+      "brf_ascii": "cnah<o",
+      "braille_unicode": "⠉⠝⠁⠓⠣⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "놋그릇",
+      "brf_ascii": "cu'@{\"{'",
+      "braille_unicode": "⠉⠥⠄⠈⠪⠐⠪⠄",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "다리미",
+      "brf_ascii": "i\"oeo",
+      "braille_unicode": "⠊⠐⠕⠑⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "단란",
+      "brf_ascii": "i3\"<3",
+      "braille_unicode": "⠊⠒⠐⠣⠒",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "덕망",
+      "brf_ascii": "i?e7",
+      "braille_unicode": "⠊⠹⠑⠶",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "도예",
+      "brf_ascii": "iu-/",
+      "braille_unicode": "⠊⠥⠤⠌",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_05_abbreviated_words"
+    },
+    {
+      "korean": "동그라미",
+      "brf_ascii": "i=@{\"<eo",
+      "braille_unicode": "⠊⠿⠈⠪⠐⠣⠑⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "두꺼비",
+      "brf_ascii": "im,@s~o",
+      "braille_unicode": "⠊⠍⠠⠈⠎⠘⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "따님",
+      "brf_ascii": ",ico5",
+      "braille_unicode": "⠠⠊⠉⠕⠢",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "딱따구리",
+      "brf_ascii": ",ia,i@m\"o",
+      "braille_unicode": "⠠⠊⠁⠠⠊⠈⠍⠐⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "뚜껑",
+      "brf_ascii": ",im,@s7",
+      "braille_unicode": "⠠⠊⠍⠠⠈⠎⠶",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "라디오",
+      "brf_ascii": "\"<iou",
+      "braille_unicode": "⠐⠣⠊⠕⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "러시아",
+      "brf_ascii": "\"s,o<",
+      "braille_unicode": "⠐⠎⠠⠕⠣",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "리코더",
+      "brf_ascii": "\"ofuis",
+      "braille_unicode": "⠐⠕⠋⠥⠊⠎",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "마음껏",
+      "brf_ascii": "e<{5,_s",
+      "braille_unicode": "⠑⠣⠪⠢⠠⠸⠎",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "마흔",
+      "brf_ascii": "ejz",
+      "braille_unicode": "⠑⠚⠵",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "만찬",
+      "brf_ascii": "e3;<3",
+      "braille_unicode": "⠑⠒⠰⠣⠒",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "말썽",
+      "brf_ascii": "e1,,]",
+      "braille_unicode": "⠑⠂⠠⠠⠻",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "매미",
+      "brf_ascii": "ereo",
+      "braille_unicode": "⠑⠗⠑⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "무늬",
+      "brf_ascii": "emcw",
+      "braille_unicode": "⠑⠍⠉⠺",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "무역",
+      "brf_ascii": "em:a",
+      "braille_unicode": "⠑⠍⠱⠁",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "묶음",
+      "brf_ascii": "emaa[5",
+      "braille_unicode": "⠑⠍⠁⠁⠪⠢",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "뭐예요",
+      "brf_ascii": "ep-/+",
+      "braille_unicode": "⠑⠏⠤⠌⠬",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_05_abbreviated_words"
+    },
+    {
+      "korean": "미소",
+      "brf_ascii": "eo,u",
+      "braille_unicode": "⠑⠕⠠⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "바느질",
+      "brf_ascii": "~c{.o1",
+      "braille_unicode": "⠘⠉⠪⠨⠕⠂",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "버찌",
+      "brf_ascii": "~s,.o",
+      "braille_unicode": "⠘⠎⠠⠨⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "법률",
+      "brf_ascii": "~sb\"%1",
+      "braille_unicode": "⠘⠎⠃⠐⠩⠂",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "보리",
+      "brf_ascii": "~u\"o",
+      "braille_unicode": "⠘⠥⠐⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "복덕방",
+      "brf_ascii": "~xi?~7",
+      "braille_unicode": "⠘⠭⠊⠹⠘⠶",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "부엌",
+      "brf_ascii": "~ms6",
+      "braille_unicode": "⠘⠍⠎⠖",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "불고기",
+      "brf_ascii": "~&@u@o",
+      "braille_unicode": "⠘⠯⠈⠥⠈⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "빵집",
+      "brf_ascii": ",~7.ob",
+      "braille_unicode": "⠠⠘⠶⠨⠕⠃",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "뻐꾸기",
+      "brf_ascii": ",~s,@m@o",
+      "braille_unicode": "⠠⠘⠎⠠⠈⠍⠈⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "사위",
+      "brf_ascii": "lmr",
+      "braille_unicode": "⠇⠍⠗",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "새옹지마",
+      "brf_ascii": ",r=.oe",
+      "braille_unicode": "⠠⠗⠿⠨⠕⠑",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "성가",
+      "brf_ascii": ",}$",
+      "braille_unicode": "⠠⠻⠫",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "셔츠",
+      "brf_ascii": ",:;{",
+      "braille_unicode": "⠠⠱⠰⠪",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "소화액",
+      "brf_ascii": ",ujv-ra",
+      "braille_unicode": "⠠⠥⠚⠧⠤⠗⠁",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_05_abbreviated_words"
+    },
+    {
+      "korean": "솜씨",
+      "brf_ascii": ",u5,,o",
+      "braille_unicode": "⠠⠥⠢⠠⠠⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "수액",
+      "brf_ascii": ",m-ra",
+      "braille_unicode": "⠠⠍⠤⠗⠁",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_05_abbreviated_words"
+    },
+    {
+      "korean": "순두부",
+      "brf_ascii": ",gim~m",
+      "braille_unicode": "⠠⠛⠊⠍⠘⠍",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "숭례문",
+      "brf_ascii": ",m7\"/eg",
+      "braille_unicode": "⠠⠍⠶⠐⠌⠑⠛",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "쉼터",
+      "brf_ascii": ",mr5hs",
+      "braille_unicode": "⠠⠍⠗⠢⠓⠎",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "싣고",
+      "brf_ascii": ",o9@u",
+      "braille_unicode": "⠠⠕⠔⠈⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "실타래",
+      "brf_ascii": ",o1h\"r",
+      "braille_unicode": "⠠⠕⠂⠓⠐⠗",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "싸구려",
+      "brf_ascii": ",l@m\":",
+      "braille_unicode": "⠠⠇⠈⠍⠐⠱",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "쌍둥이",
+      "brf_ascii": ",l7im7o",
+      "braille_unicode": "⠠⠇⠶⠊⠍⠶⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "쓰기",
+      "brf_ascii": ",,{@o",
+      "braille_unicode": "⠠⠠⠪⠈⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "아예",
+      "brf_ascii": "<-/",
+      "braille_unicode": "⠣⠤⠌",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_05_abbreviated_words"
+    },
+    {
+      "korean": "아저씨",
+      "brf_ascii": "<.s,,o",
+      "braille_unicode": "⠣⠨⠎⠠⠠⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "안녕",
+      "brf_ascii": "<3c}",
+      "braille_unicode": "⠣⠒⠉⠻",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "안방",
+      "brf_ascii": "<3~7",
+      "braille_unicode": "⠣⠒⠘⠶",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "앉다",
+      "brf_ascii": "<3ki",
+      "braille_unicode": "⠣⠒⠅⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "않다",
+      "brf_ascii": "<30i",
+      "braille_unicode": "⠣⠒⠴⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "앞집",
+      "brf_ascii": "<4.ob",
+      "braille_unicode": "⠣⠲⠨⠕⠃",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "야구",
+      "brf_ascii": ">@m",
+      "braille_unicode": "⠜⠈⠍",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "야애",
+      "brf_ascii": ">-r",
+      "braille_unicode": "⠜⠤⠗",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_05_abbreviated_words"
+    },
+    {
+      "korean": "얄라셩",
+      "brf_ascii": ">1\"<,:7",
+      "braille_unicode": "⠜⠂⠐⠣⠠⠱⠶",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "얇다",
+      "brf_ascii": ">1bi",
+      "braille_unicode": "⠜⠂⠃⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "양은",
+      "brf_ascii": ">7z",
+      "braille_unicode": "⠜⠶⠵",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "얘기",
+      "brf_ascii": ">r@o",
+      "braille_unicode": "⠜⠗⠈⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "어린이",
+      "brf_ascii": "s\"qo",
+      "braille_unicode": "⠎⠐⠟⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "어정쩡",
+      "brf_ascii": "s.},.}",
+      "braille_unicode": "⠎⠨⠻⠠⠨⠻",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "얹다",
+      "brf_ascii": ")ki",
+      "braille_unicode": "⠾⠅⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "얽다",
+      "brf_ascii": "tai",
+      "braille_unicode": "⠞⠁⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "없다",
+      "brf_ascii": "sb'i",
+      "braille_unicode": "⠎⠃⠄⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "엊저녁",
+      "brf_ascii": "sk.sc:a",
+      "braille_unicode": "⠎⠅⠨⠎⠉⠱⠁",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "연필",
+      "brf_ascii": "*do1",
+      "braille_unicode": "⠡⠙⠕⠂",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "영어",
+      "brf_ascii": "}s",
+      "braille_unicode": "⠻⠎",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "오그리고",
+      "brf_ascii": "u@{\"o@u",
+      "braille_unicode": "⠥⠈⠪⠐⠕⠈⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_07_punctuation"
+    },
+    {
+      "korean": "오리온",
+      "brf_ascii": "u\"o(",
+      "braille_unicode": "⠥⠐⠕⠷",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "오빠",
+      "brf_ascii": "u,~",
+      "braille_unicode": "⠥⠠⠘",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "오이",
+      "brf_ascii": "uo",
+      "braille_unicode": "⠥⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "옥수수",
+      "brf_ascii": "x,m,m",
+      "braille_unicode": "⠭⠠⠍⠠⠍",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "온도",
+      "brf_ascii": "(iu",
+      "braille_unicode": "⠷⠊⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "옮기다",
+      "brf_ascii": "u15@oi",
+      "braille_unicode": "⠥⠂⠢⠈⠕⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "옹고집",
+      "brf_ascii": "=@u.ob",
+      "braille_unicode": "⠿⠈⠥⠨⠕⠃",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "외곬",
+      "brf_ascii": "y@u1'",
+      "braille_unicode": "⠽⠈⠥⠂⠄",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "요리",
+      "brf_ascii": "+\"o",
+      "braille_unicode": "⠬⠐⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "용돈",
+      "brf_ascii": "+7i(",
+      "braille_unicode": "⠬⠶⠊⠷",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "우그리고",
+      "brf_ascii": "m@{\"o@u",
+      "braille_unicode": "⠍⠈⠪⠐⠕⠈⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_07_punctuation"
+    },
+    {
+      "korean": "우렁쉥이",
+      "brf_ascii": "m\"s7,pr7o",
+      "braille_unicode": "⠍⠐⠎⠶⠠⠏⠗⠶⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "우유",
+      "brf_ascii": "m%",
+      "braille_unicode": "⠍⠩",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "울타리",
+      "brf_ascii": "&h\"o",
+      "braille_unicode": "⠯⠓⠐⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "윤리",
+      "brf_ascii": "%3\"o",
+      "braille_unicode": "⠩⠒⠐⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "윷놀이",
+      "brf_ascii": "%2cu1o",
+      "braille_unicode": "⠩⠆⠉⠥⠂⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "을지로",
+      "brf_ascii": "!.o\"u",
+      "braille_unicode": "⠮⠨⠕⠐⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "읊다",
+      "brf_ascii": "!4i",
+      "braille_unicode": "⠮⠲⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "인내",
+      "brf_ascii": "qcr",
+      "braille_unicode": "⠟⠉⠗",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "일출",
+      "brf_ascii": "o1;&",
+      "braille_unicode": "⠕⠂⠰⠯",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "읽다",
+      "brf_ascii": "o1ai",
+      "braille_unicode": "⠕⠂⠁⠊",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "자아",
+      "brf_ascii": ".<<",
+      "braille_unicode": "⠨⠣⠣",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "자연",
+      "brf_ascii": ".<*",
+      "braille_unicode": "⠨⠣⠡",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "저고리",
+      "brf_ascii": ".s@u\"o",
+      "braille_unicode": "⠨⠎⠈⠥⠐⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "정성",
+      "brf_ascii": ".},}",
+      "braille_unicode": "⠨⠻⠠⠻",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "지혜",
+      "brf_ascii": ".oj/",
+      "braille_unicode": "⠨⠕⠚⠌",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "진실",
+      "brf_ascii": ".q,o1",
+      "braille_unicode": "⠨⠟⠠⠕⠂",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "짜장",
+      "brf_ascii": ",..7",
+      "braille_unicode": "⠠⠨⠨⠶",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "짱구",
+      "brf_ascii": ",.7@m",
+      "braille_unicode": "⠠⠨⠶⠈⠍",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "쭈그리고",
+      "brf_ascii": ",.m@{\"o@u",
+      "braille_unicode": "⠠⠨⠍⠈⠪⠐⠕⠈⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_07_punctuation"
+    },
+    {
+      "korean": "쭈르르",
+      "brf_ascii": ",.m\"{\"{",
+      "braille_unicode": "⠠⠨⠍⠐⠪⠐⠪",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "찡그리고",
+      "brf_ascii": ",.o7@{\"o@u",
+      "braille_unicode": "⠠⠨⠕⠶⠈⠪⠐⠕⠈⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_07_punctuation"
+    },
+    {
+      "korean": "찹쌀",
+      "brf_ascii": ";<b,l1",
+      "braille_unicode": "⠰⠣⠃⠠⠇⠂",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "청년",
+      "brf_ascii": ";}c*",
+      "braille_unicode": "⠰⠻⠉⠡",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "추수",
+      "brf_ascii": ";m,m",
+      "braille_unicode": "⠰⠍⠠⠍",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "추억",
+      "brf_ascii": ";m?",
+      "braille_unicode": "⠰⠍⠹",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "카메라",
+      "brf_ascii": "fen\"<",
+      "braille_unicode": "⠋⠑⠝⠐⠣",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "카이로",
+      "brf_ascii": "f<o\"u",
+      "braille_unicode": "⠋⠣⠕⠐⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "코끼리",
+      "brf_ascii": "fu,@o\"o",
+      "braille_unicode": "⠋⠥⠠⠈⠕⠐⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "쾌활",
+      "brf_ascii": "fvrjv1",
+      "braille_unicode": "⠋⠧⠗⠚⠧⠂",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "탁구공",
+      "brf_ascii": "ha@m@=",
+      "braille_unicode": "⠓⠁⠈⠍⠈⠿",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "특기",
+      "brf_ascii": "h{a@o",
+      "braille_unicode": "⠓⠪⠁⠈⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "파도",
+      "brf_ascii": "diu",
+      "braille_unicode": "⠙⠊⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "파워앰프",
+      "brf_ascii": "d<p-r5d{",
+      "braille_unicode": "⠙⠣⠏⠤⠗⠢⠙⠪",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_05_abbreviated_words"
+    },
+    {
+      "korean": "파이프",
+      "brf_ascii": "d<od{",
+      "braille_unicode": "⠙⠣⠕⠙⠪",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "판소리",
+      "brf_ascii": "d3,u\"o",
+      "braille_unicode": "⠙⠒⠠⠥⠐⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "평화",
+      "brf_ascii": "d}jv",
+      "braille_unicode": "⠙⠻⠚⠧",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "품삯",
+      "brf_ascii": "dm5la'",
+      "braille_unicode": "⠙⠍⠢⠇⠁⠄",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "피리",
+      "brf_ascii": "do\"o",
+      "braille_unicode": "⠙⠕⠐⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "피아노",
+      "brf_ascii": "do<cu",
+      "braille_unicode": "⠙⠕⠣⠉⠥",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "하루",
+      "brf_ascii": "j\"m",
+      "braille_unicode": "⠚⠐⠍",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "하얀",
+      "brf_ascii": "j<>3",
+      "braille_unicode": "⠚⠣⠜⠒",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "하얼빈",
+      "brf_ascii": "j<t~q",
+      "braille_unicode": "⠚⠣⠞⠘⠟",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "합창",
+      "brf_ascii": "jb;<7",
+      "braille_unicode": "⠚⠃⠰⠣⠶",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "행운",
+      "brf_ascii": "jr7g",
+      "braille_unicode": "⠚⠗⠶⠛",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "헌혈",
+      "brf_ascii": "j)j|",
+      "braille_unicode": "⠚⠾⠚⠳",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "호랑이",
+      "brf_ascii": "ju\"<7o",
+      "braille_unicode": "⠚⠥⠐⠣⠶⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "호수",
+      "brf_ascii": "ju,m",
+      "braille_unicode": "⠚⠥⠠⠍",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "히읗",
+      "brf_ascii": "jo{0",
+      "braille_unicode": "⠚⠕⠪⠴",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "힘껏",
+      "brf_ascii": "jo5,_s",
+      "braille_unicode": "⠚⠕⠢⠠⠸⠎",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "가열",
+      "brf_ascii": "$|",
+      "braille_unicode": "⠫⠳",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "가옥",
+      "brf_ascii": "$x",
+      "braille_unicode": "⠫⠭",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "가을",
+      "brf_ascii": "$!",
+      "braille_unicode": "⠫⠮",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "개천절",
+      "brf_ascii": "@r;).t",
+      "braille_unicode": "⠈⠗⠰⠾⠨⠞",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "거인",
+      "brf_ascii": "@sq",
+      "braille_unicode": "⠈⠎⠟",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "건전지",
+      "brf_ascii": "@).).o",
+      "braille_unicode": "⠈⠾⠨⠾⠨⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "겨울",
+      "brf_ascii": "@:&",
+      "braille_unicode": "⠈⠱⠯",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "겪다",
+      "brf_ascii": "@:aai",
+      "braille_unicode": "⠈⠱⠁⠁⠊",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "고양이",
+      "brf_ascii": "@u>7o",
+      "braille_unicode": "⠈⠥⠜⠶⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "권리",
+      "brf_ascii": "@p3\"o",
+      "braille_unicode": "⠈⠏⠒⠐⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "그러나저러나",
+      "brf_ascii": "ac.s\"sc",
+      "braille_unicode": "⠁⠉⠨⠎⠐⠎⠉",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_07_punctuation"
+    },
+    {
+      "korean": "그런데도",
+      "brf_ascii": "aniu",
+      "braille_unicode": "⠁⠝⠊⠥",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_07_punctuation"
+    },
+    {
+      "korean": "글씨",
+      "brf_ascii": "@!,,o",
+      "braille_unicode": "⠈⠮⠠⠠⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "기차",
+      "brf_ascii": "@o;<",
+      "braille_unicode": "⠈⠕⠰⠣",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "까마귀",
+      "brf_ascii": ",$e@mr",
+      "braille_unicode": "⠠⠫⠑⠈⠍⠗",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "끓다",
+      "brf_ascii": ",@!0i",
+      "braille_unicode": "⠠⠈⠮⠴⠊",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "낮잠",
+      "brf_ascii": "ck.5",
+      "braille_unicode": "⠉⠅⠨⠢",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "논두렁",
+      "brf_ascii": "c(im\"s7",
+      "braille_unicode": "⠉⠷⠊⠍⠐⠎⠶",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "놀이",
+      "brf_ascii": "cu1o",
+      "braille_unicode": "⠉⠥⠂⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "다음",
+      "brf_ascii": "i<[5",
+      "braille_unicode": "⠊⠣⠪⠢",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "도자기",
+      "brf_ascii": "iu.@o",
+      "braille_unicode": "⠊⠥⠨⠈⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "두더지",
+      "brf_ascii": "imis.o",
+      "braille_unicode": "⠊⠍⠊⠎⠨⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "마우스",
+      "brf_ascii": "e<m,{",
+      "braille_unicode": "⠑⠣⠍⠠⠪",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "무용",
+      "brf_ascii": "em+7",
+      "braille_unicode": "⠑⠍⠬⠶",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "바위",
+      "brf_ascii": "^<mr",
+      "braille_unicode": "⠘⠣⠍⠗",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "바캉스",
+      "brf_ascii": "~f7,{",
+      "braille_unicode": "⠘⠋⠶⠠⠪",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "벌레",
+      "brf_ascii": "~t\"n",
+      "braille_unicode": "⠘⠞⠐⠝",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "변화",
+      "brf_ascii": "~*jv",
+      "braille_unicode": "⠘⠡⠚⠧",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "별자리",
+      "brf_ascii": "~|.\"o",
+      "braille_unicode": "⠘⠳⠨⠐⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "보았다",
+      "brf_ascii": "^u</i",
+      "braille_unicode": "⠘⠥⠣⠌⠊",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "볶다",
+      "brf_ascii": "~xai",
+      "braille_unicode": "⠘⠭⠁⠊",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "붉다",
+      "brf_ascii": "^&ai",
+      "braille_unicode": "⠘⠯⠁⠊",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "서예",
+      "brf_ascii": ",s-/",
+      "braille_unicode": "⠠⠎⠤⠌",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_05_abbreviated_words"
+    },
+    {
+      "korean": "수련",
+      "brf_ascii": ",m\"*",
+      "braille_unicode": "⠠⠍⠐⠡",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "싸리나무",
+      "brf_ascii": ",l\"ocem",
+      "braille_unicode": "⠠⠇⠐⠕⠉⠑⠍",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "아궁이",
+      "brf_ascii": "<@m7o",
+      "braille_unicode": "⠣⠈⠍⠶⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "아리랑",
+      "brf_ascii": "<\"o\"<7",
+      "braille_unicode": "⠣⠐⠕⠐⠣⠶",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "아버지",
+      "brf_ascii": "<~s.o",
+      "braille_unicode": "⠣⠘⠎⠨⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "어머니",
+      "brf_ascii": "sesco",
+      "braille_unicode": "⠎⠑⠎⠉⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "억새",
+      "brf_ascii": "?,r",
+      "braille_unicode": "⠹⠠⠗",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "언어",
+      "brf_ascii": ")s",
+      "braille_unicode": "⠾⠎",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "얼룩",
+      "brf_ascii": "t\"ma",
+      "braille_unicode": "⠞⠐⠍⠁",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "엄지",
+      "brf_ascii": "s5.o",
+      "braille_unicode": "⠎⠢⠨⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "여우",
+      "brf_ascii": ":m",
+      "braille_unicode": "⠱⠍",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "열매",
+      "brf_ascii": "|er",
+      "braille_unicode": "⠳⠑⠗",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "엷다",
+      "brf_ascii": "|bi",
+      "braille_unicode": "⠳⠃⠊",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "옳다",
+      "brf_ascii": "u10i",
+      "braille_unicode": "⠥⠂⠴⠊",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "옷걸이",
+      "brf_ascii": "u'@to",
+      "braille_unicode": "⠥⠄⠈⠞⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "운동장",
+      "brf_ascii": "gi=.7",
+      "braille_unicode": "⠛⠊⠿⠨⠶",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "유리",
+      "brf_ascii": "%\"o",
+      "braille_unicode": "⠩⠐⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "으스스",
+      "brf_ascii": "{,{,{",
+      "braille_unicode": "⠪⠠⠪⠠⠪",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "은하수",
+      "brf_ascii": "zj,m",
+      "braille_unicode": "⠵⠚⠠⠍",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "이것",
+      "brf_ascii": "o_s",
+      "braille_unicode": "⠕⠸⠎",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "이모",
+      "brf_ascii": "oeu",
+      "braille_unicode": "⠕⠑⠥",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "있다",
+      "brf_ascii": "o/i",
+      "braille_unicode": "⠕⠌⠊",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "젊다",
+      "brf_ascii": ".t5i",
+      "braille_unicode": "⠨⠞⠢⠊",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "커피",
+      "brf_ascii": "fsdo",
+      "braille_unicode": "⠋⠎⠙⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "터무니",
+      "brf_ascii": "hsemco",
+      "braille_unicode": "⠓⠎⠑⠍⠉⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "피뢰침",
+      "brf_ascii": "do\"y;o5",
+      "braille_unicode": "⠙⠕⠐⠽⠰⠕⠢",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "하겄다",
+      "brf_ascii": "j@s/i",
+      "braille_unicode": "⠚⠈⠎⠌⠊",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "핥다",
+      "brf_ascii": "j18i",
+      "braille_unicode": "⠚⠂⠦⠊",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "향기",
+      "brf_ascii": "j>7@o",
+      "braille_unicode": "⠚⠜⠶⠈⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
+    },
+    {
+      "korean": "허리띠",
+      "brf_ascii": "js\"o,io",
+      "braille_unicode": "⠚⠎⠐⠕⠠⠊⠕",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_01_choseong"
+    },
+    {
+      "korean": "헤엄",
+      "brf_ascii": "jns5",
+      "braille_unicode": "⠚⠝⠎⠢",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_03_vowels"
+    },
+    {
+      "korean": "환영",
+      "brf_ascii": "jv3}",
+      "braille_unicode": "⠚⠧⠒⠻",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    },
+    {
+      "korean": "훑다",
+      "brf_ascii": "j&8i",
+      "braille_unicode": "⠚⠯⠦⠊",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_06_numbers"
+    }
+  ],
+  "review": [
+    {
+      "korean": "도우미",
+      "brf_ascii": "ium eo",
+      "gold": "⠊⠥⠍⠀⠑⠕",
+      "forward": "⠊⠥⠍⠑⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "겉보리",
+      "brf_ascii": "@ s8~ u\"o",
+      "gold": "⠈⠀⠎⠦⠘⠀⠥⠐⠕",
+      "forward": "⠈⠎⠦⠘⠥⠐⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "는다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠉⠵⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "하",
+      "brf_ascii": "$",
+      "gold": "⠫",
+      "forward": "⠚",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "용하지 않는다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠬⠶⠚⠨⠕⠀⠣⠒⠴⠉⠵⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "울",
+      "brf_ascii": "?",
+      "gold": "⠹",
+      "forward": "⠯",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "것",
+      "brf_ascii": "z",
+      "gold": "⠵",
+      "forward": "⠸⠎",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "나타낸다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠉⠓⠉⠗⠒⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "그리고그리하여",
+      "brf_ascii": "as",
+      "gold": "⠁⠎",
+      "forward": "⠁⠥⠈⠪⠐⠕⠚⠣⠱",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "워 받침으로 적는다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠏⠀⠘⠔⠰⠕⠢⠪⠐⠥⠀⠨⠹⠉⠵⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "않는다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠣⠒⠴⠉⠵⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "명칭",
+      "brf_ascii": "a",
+      "gold": "⠁",
+      "forward": "⠑⠻⠰⠕⠶",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "에이",
+      "brf_ascii": "b",
+      "gold": "⠃",
+      "forward": "⠝⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "비",
+      "brf_ascii": "c",
+      "gold": "⠉",
+      "forward": "⠘⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "시",
+      "brf_ascii": "d",
+      "gold": "⠙",
+      "forward": "⠠⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "디",
+      "brf_ascii": "e",
+      "gold": "⠑",
+      "forward": "⠊⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "이",
+      "brf_ascii": "f",
+      "gold": "⠋",
+      "forward": "⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "에프",
+      "brf_ascii": "g",
+      "gold": "⠛",
+      "forward": "⠝⠙⠪",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "지",
+      "brf_ascii": "h",
+      "gold": "⠓",
+      "forward": "⠨⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "에이치",
+      "brf_ascii": "i",
+      "gold": "⠊",
+      "forward": "⠝⠕⠰⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "아이",
+      "brf_ascii": "j",
+      "gold": "⠚",
+      "forward": "⠣⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "제이",
+      "brf_ascii": "k",
+      "gold": "⠅",
+      "forward": "⠨⠝⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "케이",
+      "brf_ascii": "l",
+      "gold": "⠇",
+      "forward": "⠋⠝⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "엘",
+      "brf_ascii": "m",
+      "gold": "⠍",
+      "forward": "⠝⠂",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "엠",
+      "brf_ascii": "n",
+      "gold": "⠝",
+      "forward": "⠝⠢",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "엔",
+      "brf_ascii": "o",
+      "gold": "⠕",
+      "forward": "⠝⠒",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "오",
+      "brf_ascii": "p",
+      "gold": "⠏",
+      "forward": "⠥",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "피",
+      "brf_ascii": "q",
+      "gold": "⠟",
+      "forward": "⠙⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "큐",
+      "brf_ascii": "r",
+      "gold": "⠗",
+      "forward": "⠋⠩",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "에스",
+      "brf_ascii": "t",
+      "gold": "⠞",
+      "forward": "⠝⠠⠪",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "티",
+      "brf_ascii": "u",
+      "gold": "⠥",
+      "forward": "⠓⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "유",
+      "brf_ascii": "v",
+      "gold": "⠧",
+      "forward": "⠩",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "브이",
+      "brf_ascii": "w",
+      "gold": "⠺",
+      "forward": "⠘⠪⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "더블유",
+      "brf_ascii": "x",
+      "gold": "⠭",
+      "forward": "⠊⠎⠘⠮⠩",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "엑스",
+      "brf_ascii": "y",
+      "gold": "⠽",
+      "forward": "⠝⠁⠠⠪",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "와이",
+      "brf_ascii": "z",
+      "gold": "⠵",
+      "forward": "⠧⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "마자 종료표를 적는다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠑⠨⠀⠨⠿⠐⠬⠙⠬⠐⠮⠀⠨⠹⠉⠵⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "대괄호",
+      "brf_ascii": "/ /",
+      "gold": "⠌⠀⠌",
+      "forward": "⠊⠗⠈⠧⠂⠚⠥",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "등호",
+      "brf_ascii": ">",
+      "gold": "⠜",
+      "forward": "⠊⠪⠶⠚⠥",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "보다 작다",
+      "brf_ascii": "5+7=12",
+      "gold": "⠢⠬⠶⠿⠂⠆",
+      "forward": "⠘⠥⠊⠀⠨⠁⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "띄어 쓴다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠠⠊⠺⠎⠀⠠⠠⠵⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "닫는 작은따옴표",
+      "brf_ascii": "(",
+      "gold": "⠷",
+      "forward": "⠊⠔⠉⠵⠀⠨⠁⠵⠠⠊⠣⠥⠢⠙⠬",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "닫는 중괄호",
+      "brf_ascii": "[",
+      "gold": "⠪",
+      "forward": "⠊⠔⠉⠵⠀⠨⠍⠶⠈⠧⠂⠚⠥",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "올 수 없다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠥⠂⠀⠠⠍⠀⠎⠃⠄⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "를 붙여 쓴다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠐⠮⠀⠘⠍⠦⠱⠀⠠⠠⠵⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "적는다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠨⠹⠉⠵⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "하여 나타낸다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠚⠣⠱⠀⠉⠓⠉⠗⠒⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "적어 나타낸다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠨⠹⠎⠀⠉⠓⠉⠗⠒⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "한 칸 띄어 쓴다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠚⠒⠀⠋⠒⠀⠠⠊⠺⠎⠀⠠⠠⠵⠊",
+      "reason": "forward_mismatch"
+    }
+  ]
+}
