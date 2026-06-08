@@ -3,11 +3,19 @@
   "description": "로마자 (로마자표·대문자표·정자/약자, 한글 혼용). 규정 제8·11절.",
   "split_ratio": "build:test = 7:3 (md5 안정 해시)",
   "counts": {
-    "build": 6,
-    "test": 3,
-    "review_excluded": 11
+    "build": 7,
+    "test": 4,
+    "review_excluded": 9
   },
   "pairs": [
+    {
+      "korean": "1m는 100cm이다.",
+      "brf_ascii": "``#a0m4cz`#ajj0cm4oi4```````````",
+      "braille_unicode": "⠼⠁⠴⠍⠲⠉⠵⠀⠼⠁⠚⠚⠴⠉⠍⠲⠕⠊⠲",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_14_layout"
+    },
     {
       "korean": "A4용지",
       "brf_ascii": "0,a#d+7.o",
@@ -53,6 +61,14 @@
       "brf_ascii": "``~oheq`0,b;#iw`o\"{5z`:bl3oi4```",
       "braille_unicode": "⠘⠕⠓⠑⠟⠀⠴⠠⠃⠰⠼⠊⠺⠀⠕⠐⠪⠢⠵⠀⠱⠃⠇⠒⠕⠊⠲",
       "split": "build",
+      "ambiguous": false,
+      "source": "section_14_layout"
+    },
+    {
+      "korean": "1in는 2.54cm이다.",
+      "brf_ascii": "``#a0in4cz`#b4ed0cm4oi4`````````",
+      "braille_unicode": "⠼⠁⠴⠊⠝⠲⠉⠵⠀⠼⠃⠲⠑⠙⠴⠉⠍⠲⠕⠊⠲",
+      "split": "test",
       "ambiguous": false,
       "source": "section_14_layout"
     },
@@ -129,20 +145,6 @@
       "brf_ascii": "``@[`;raw`0v-;x4,.x!`o1as`^u,n+4",
       "gold": "⠈⠪⠀⠰⠗⠁⠺⠀⠴⠧⠤⠰⠭⠲⠠⠨⠭⠮⠀⠕⠂⠁⠎⠀⠘⠥⠠⠝⠬⠲",
       "forward": "⠈⠪⠀⠰⠗⠁⠺⠀⠴⠧⠲⠤⠴⠭⠲⠠⠨⠭⠮⠀⠕⠂⠁⠎⠀⠘⠥⠠⠝⠬⠲",
-      "reason": "forward_mismatch"
-    },
-    {
-      "korean": "1m는 100cm이다.",
-      "brf_ascii": "``#a0m4cz`#ajj0cm4oi4```````````",
-      "gold": "⠼⠁⠴⠍⠲⠉⠵⠀⠼⠁⠚⠚⠴⠉⠍⠲⠕⠊⠲",
-      "forward": "⠼⠁⠀⠴⠍⠲⠉⠵⠀⠼⠁⠚⠚⠀⠴⠉⠍⠲⠕⠊⠲",
-      "reason": "forward_mismatch"
-    },
-    {
-      "korean": "1in는 2.54cm이다.",
-      "brf_ascii": "``#a0in4cz`#b4ed0cm4oi4`````````",
-      "gold": "⠼⠁⠴⠊⠝⠲⠉⠵⠀⠼⠃⠲⠑⠙⠴⠉⠍⠲⠕⠊⠲",
-      "forward": "⠼⠁⠀⠴⠊⠝⠲⠉⠵⠀⠼⠃⠲⠑⠙⠀⠴⠉⠍⠲⠕⠊⠲",
       "reason": "forward_mismatch"
     },
     {

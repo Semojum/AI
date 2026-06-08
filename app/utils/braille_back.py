@@ -38,6 +38,8 @@ _ROMAN_END = "⠲"             # 로마자 종료표 (= 마침표 셀과 동일)
 _CAPITAL = "⠠"               # 대문자 표시 (연속 ⠠⠠ = 대문자 단어)
 _TN_MARKER = "⠠⠄"            # 점역자 주(양끝)
 _SPACE_CELL = "⠀"            # 점자 공백(U+2800)
+# 어말 문장부호 — 받침 셀과 같은 점형이라(같=⠫⠦) 뒤가 공백/끝일 때만 부호로 본다.
+_SENT_END = {"⠦": "?", "⠖": "!"}
 
 # 알파벳 점형 → 글자 (translator._ALPHA_MAP의 역)
 _ALPHA_REV = {
@@ -198,13 +200,20 @@ def _decode_line(s: str) -> str:
             if s[i:i + ln] in _COMBINED:
                 best_ln = ln
                 break
+        def _final(after: int) -> bool:
+            """위치 after가 줄 끝이거나 공백이면 어말(문장부호 분리 판단)."""
+            return after >= n or s[after] in (_SPACE_CELL, " ")
+
         if best_ln >= 2:
             seg = s[i:i + best_ln]
-            # 마침표가 음절 뒤에 붙어 다른 음절로 오인된 경우만 분리(다.=닾 → 다 + .).
-            # ?·!(⠦·⠖)은 받침과 충돌하므로 분리하지 않는다(같=⠫⠦ 보호).
+            # 마침표가 음절 뒤에 붙어 다른 음절로 오인된 경우 분리(다.=닾 → 다 + .).
+            # ?·!(⠦·⠖)은 받침과 충돌(같=⠫⠦)하므로 **어말일 때만** 분리(요?=⠬⠦ → 요 + ?).
             if seg[-1] == "⠲" and seg[:-1] in _COMBINED:
                 out.append(_COMBINED[seg[:-1]])
                 out.append(".")
+            elif seg[-1] in _SENT_END and seg[:-1] in _COMBINED and _final(i + best_ln):
+                out.append(_COMBINED[seg[:-1]])
+                out.append(_SENT_END[seg[-1]])
             else:
                 out.append(_COMBINED[seg])
             i += best_ln
@@ -215,6 +224,11 @@ def _decode_line(s: str) -> str:
             txt, j = roman
             out.append(txt)
             i = j
+            continue
+        # 어말 ?·!(⠦·⠖) — 단독으로 떨어진 경우 따옴표(") 대신 문장부호로(안녕?=…⠦).
+        if ch in _SENT_END and _final(i + 1):
+            out.append(_SENT_END[ch])
+            i += 1
             continue
         # 단일 셀 매칭(따옴표·쉼표 등)
         if best_ln == 1:

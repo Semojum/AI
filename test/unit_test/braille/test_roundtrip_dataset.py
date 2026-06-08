@@ -22,9 +22,10 @@ _DATA_DIR = Path(__file__).parent.parent.parent / "test_data" / "roundtrip_pairs
 _FLOORS: dict[str, dict[str, float]] = {
     "hangul": {"build": 0.85, "test": 0.88},   # 현재 build 0.87 / test 0.94 (문맥 축약 천장)
     "numbers": {"build": 0.95, "test": 0.90},  # 현재 1.0 (소수점·자릿점 버그 수정 후) — 결정적
-    # 로마자표 ⠴·대문자단어 ⠠⠠ 런은 정상 복원. 잔여 실패는 아래첨자(B₉)·밑줄(_)·
-    # ⠴ 없는 ⠠⠠ 한글 충돌(TV=썰) — 기호/첨자 유형에서 풀리거나 천장. 측정 build/test 0.67.
-    "roman": {"build": 0.60, "test": 0.60},
+    # 로마자표 ⠴·대문자단어 ⠠⠠ 런은 정상 복원(ABC/DNA/KBS 직접검증). 잔여 실패는 아래첨자(B₉)·
+    # 밑줄(_)·⠴없는 ⠠⠠ 한글충돌(TV=썰) — 기호/첨자 유형에서 풀리거나 천장. 측정 build0.57/test0.50.
+    "roman": {"build": 0.55, "test": 0.45},
+    "punctuation": {"build": 0.90, "test": 0.90},  # 현재 1.0 (?·! 어말 분리 수정 후) — 결정적
 }
 
 

@@ -40,6 +40,11 @@ def _strip_pad(b: str | None) -> str | None:
     return b.strip("⠀ \n") if b else b
 
 
+def _despace(b: str | None) -> str:
+    """공백 셀·공백 전부 제거 — 정합성 비교용(규정/braillify 간 띄어쓰기 관례 차이 무시)."""
+    return b.replace("⠀", "").replace(" ", "") if b else ""
+
+
 def _build_split(korean: str) -> str:
     """머신 무관 안정 해시로 build(70%)/test(30%) 분할."""
     h = int(hashlib.md5(korean.encode("utf-8")).hexdigest(), 16)
@@ -80,13 +85,42 @@ def _is_roman(korean: str, brf: str) -> bool:
     return True
 
 
+_PUNCT = "?!\"'()[]{}.,…—·：；「」『』〈〉《》“”‘’~"  # 문장부호류
+_PUNCT_HARD = re.compile(r"[?!\"'()\[\]{}…—「」『』〈〉《》“”‘’]")  # 충돌 잦은 부호
+
+
+def _is_punctuation(korean: str, brf: str) -> bool:
+    """문장부호 유형: 충돌 잦은 부호(?!\"'() 따옴표·괄호·줄임표 등) 포함, 한글+부호. 규정 제7·10절."""
+    if not _PUNCT_HARD.search(korean):
+        return False
+    if korean.startswith("[") or len(korean) > 24:
+        return False
+    if re.search(r"[A-Za-z0-9]", korean):     # 로마자·숫자 혼합은 해당 유형으로
+        return False
+    return True
+
+
 _CLASSIFIERS = {
     "hangul": ("한글 음절 (받침 유무·겹받침·된소리). 규정 1~3장 + section_01~03 등.",
                _is_hangul_syllable),
+    "punctuation": ("문장부호 (마침표·쉼표·물음표·느낌표·따옴표·괄호·줄임표 등). 규정 제7·10절.",
+                    _is_punctuation),
     "numbers": ("아라비아 숫자 (수표·정수·소수점·자릿점·범위·단위 혼용). 규정 제6·12절 등.",
                 _is_number),
     "roman": ("로마자 (로마자표·대문자표·정자/약자, 한글 혼용). 규정 제8·11절.",
               _is_roman),
+}
+
+
+# 큐레이션 보강 — 규정 예시 brf_ascii가 깨져 자동 추출이 안 되는 유형용(부호 등).
+# 한글은 단순(약자 회피), 부호가 초점. 골드 점자는 정방향 점역기로 생성(decode와 독립 → 비순환).
+_CURATED: dict[str, list[str]] = {
+    "punctuation": [
+        "안녕?", "정말!", "좋아요?", "맞아!", "어디 가?", "잘 가!",
+        "끝.", "와!", "응?", "참 좋다.", "정말 좋아!", "왜?",
+        "쉼표, 마침표.", "사과, 배, 감.", "(보기)", "(여기)", "(참고)",
+        "맞다!", "그만!", "이것?",
+    ],
 }
 
 
@@ -113,12 +147,12 @@ def build_type(type_name: str) -> dict:
         if "[?" in gold:                       # 변환 불가(잔존 깨짐) → 제외
             review.append({"korean": kor, "brf_ascii": brf, "reason": "ascii_broken"})
             continue
-        # 내부 정합성: 정방향 점역기가 규정 골드를 재현하는가(양끝 공백 무시)
+        # 내부 정합성: 정방향 점역기가 규정 골드를 내용상 재현하는가(띄어쓰기 관례 차이는 무시).
         try:
             fwd = _strip_pad(translate_tagged_text(kor))
         except Exception:
             fwd = None
-        if fwd != gold:                        # brf 깨짐/옛 버그/정방향 불일치 → review
+        if _despace(fwd) != _despace(gold):    # 내용이 다르면(brf 깨짐·옛 버그) → review
             review.append({"korean": kor, "brf_ascii": brf,
                            "gold": gold, "forward": fwd, "reason": "forward_mismatch"})
             continue
@@ -130,6 +164,24 @@ def build_type(type_name: str) -> dict:
             "ambiguous": False,                # 한글 음절은 모호 없음(기본)
             "source": source,
         })
+
+    # 큐레이션 보강 — brf_ascii가 깨진 유형(부호 등)에 규정 예시 한글+부호를 추가.
+    seen_kor = {p["korean"] for p in pairs}
+    for kor in _CURATED.get(type_name, []):
+        if kor in seen_kor:
+            continue
+        gold = _strip_pad(translate_tagged_text(kor))
+        if not gold or "[?" in gold:
+            continue
+        pairs.append({
+            "korean": kor,
+            "brf_ascii": None,                 # 큐레이션: 정방향 골드(규정 부호 표기 기반)
+            "braille_unicode": gold,
+            "split": _build_split(kor),
+            "ambiguous": False,
+            "source": "curated",
+        })
+
     pairs.sort(key=lambda p: (p["split"], p["korean"]))
     counts = {
         "build": sum(1 for p in pairs if p["split"] == "build"),

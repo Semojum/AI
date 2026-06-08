@@ -3,11 +3,19 @@
   "description": "아라비아 숫자 (수표·정수·소수점·자릿점·범위·단위 혼용). 규정 제6·12절 등.",
   "split_ratio": "build:test = 7:3 (md5 안정 해시)",
   "counts": {
-    "build": 22,
+    "build": 26,
     "test": 4,
-    "review_excluded": 27
+    "review_excluded": 23
   },
   "pairs": [
+    {
+      "korean": "$1는 100￠이다.",
+      "brf_ascii": "``0@s#a`cz`#ajj0@c`oi4``````````",
+      "braille_unicode": "⠴⠈⠎⠼⠁⠀⠉⠵⠀⠼⠁⠚⠚⠴⠈⠉⠀⠕⠊⠲",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_14_layout"
+    },
     {
       "korean": "1,000원/개",
       "brf_ascii": "#a1jjjp3_/@r",
@@ -161,6 +169,22 @@
       "source": "section_11_english"
     },
     {
+      "korean": "물은 100 ℃에서 끓는다.",
+      "brf_ascii": "``e&z`#ajj`0d,c`n,s`,@!0czi4````",
+      "braille_unicode": "⠑⠯⠵⠀⠼⠁⠚⠚⠀⠴⠙⠠⠉⠀⠝⠠⠎⠀⠠⠈⠮⠴⠉⠵⠊⠲",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_14_layout"
+    },
+    {
+      "korean": "연 강수량의 10%에 해당한다.",
+      "brf_ascii": "``*`$7,m\">7w`#aj0p`n`jri7j3i4```",
+      "braille_unicode": "⠡⠀⠫⠶⠠⠍⠐⠜⠶⠺⠀⠼⠁⠚⠴⠏⠀⠝⠀⠚⠗⠊⠶⠚⠒⠊⠲",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_14_layout"
+    },
+    {
       "korean": "요한 3:16",
       "brf_ascii": "+j3`#c\"1#af",
       "braille_unicode": "⠬⠚⠒⠀⠼⠉⠐⠂⠼⠁⠋",
@@ -172,6 +196,14 @@
       "korean": "제1 작업실",
       "brf_ascii": ".n#a`.asb,o1",
       "braille_unicode": "⠨⠝⠼⠁⠀⠨⠁⠎⠃⠠⠕⠂",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_14_layout"
+    },
+    {
+      "korean": "직각은 90°이다.",
+      "brf_ascii": "``.oa$az`#ij0d`oi4``````````````",
+      "braille_unicode": "⠨⠕⠁⠫⠁⠵⠀⠼⠊⠚⠴⠙⠀⠕⠊⠲",
       "split": "build",
       "ambiguous": false,
       "source": "section_14_layout"
@@ -324,13 +356,6 @@
       "reason": "forward_mismatch"
     },
     {
-      "korean": "$1는 100￠이다.",
-      "brf_ascii": "``0@s#a`cz`#ajj0@c`oi4``````````",
-      "gold": "⠴⠈⠎⠼⠁⠀⠉⠵⠀⠼⠁⠚⠚⠴⠈⠉⠀⠕⠊⠲",
-      "forward": "⠴⠈⠎⠼⠁⠀⠉⠵⠀⠼⠁⠚⠚⠴⠈⠉⠕⠊⠲",
-      "reason": "forward_mismatch"
-    },
-    {
       "korean": "마침표는 4으로 적는다.",
       "brf_ascii": "``e;o5d+cz`_=4`[\"u`.?czi4```````",
       "gold": "⠑⠰⠕⠢⠙⠬⠉⠵⠀⠸⠿⠲⠀⠪⠐⠥⠀⠨⠹⠉⠵⠊⠲",
@@ -349,27 +374,6 @@
       "brf_ascii": "``#a`d]z`#c4c0m^#boi4```````````",
       "gold": "⠼⠁⠀⠙⠻⠵⠀⠼⠉⠲⠉⠴⠍⠘⠼⠃⠕⠊⠲",
       "forward": "⠼⠁⠀⠙⠻⠵⠀⠼⠉⠲⠉⠴⠍⠘⠆⠕⠊⠲",
-      "reason": "forward_mismatch"
-    },
-    {
-      "korean": "연 강수량의 10%에 해당한다.",
-      "brf_ascii": "``*`$7,m\">7w`#aj0p`n`jri7j3i4```",
-      "gold": "⠡⠀⠫⠶⠠⠍⠐⠜⠶⠺⠀⠼⠁⠚⠴⠏⠀⠝⠀⠚⠗⠊⠶⠚⠒⠊⠲",
-      "forward": "⠡⠀⠫⠶⠠⠍⠐⠜⠶⠺⠀⠼⠁⠚⠴⠏⠝⠀⠚⠗⠊⠶⠚⠒⠊⠲",
-      "reason": "forward_mismatch"
-    },
-    {
-      "korean": "직각은 90°이다.",
-      "brf_ascii": "``.oa$az`#ij0d`oi4``````````````",
-      "gold": "⠨⠕⠁⠫⠁⠵⠀⠼⠊⠚⠴⠙⠀⠕⠊⠲",
-      "forward": "⠨⠕⠁⠫⠁⠵⠀⠼⠊⠚⠴⠙⠕⠊⠲",
-      "reason": "forward_mismatch"
-    },
-    {
-      "korean": "물은 100 ℃에서 끓는다.",
-      "brf_ascii": "``e&z`#ajj`0d,c`n,s`,@!0czi4````",
-      "gold": "⠑⠯⠵⠀⠼⠁⠚⠚⠀⠴⠙⠠⠉⠀⠝⠠⠎⠀⠠⠈⠮⠴⠉⠵⠊⠲",
-      "forward": "⠑⠯⠵⠀⠼⠁⠚⠚⠴⠙⠠⠉⠝⠠⠎⠀⠠⠈⠮⠴⠉⠵⠊⠲",
       "reason": "forward_mismatch"
     },
     {

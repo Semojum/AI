@@ -3,9 +3,9 @@
   "description": "한글 음절 (받침 유무·겹받침·된소리). 규정 1~3장 + section_01~03 등.",
   "split_ratio": "build:test = 7:3 (md5 안정 해시)",
   "counts": {
-    "build": 162,
+    "build": 164,
     "test": 66,
-    "review_excluded": 57
+    "review_excluded": 55
   },
   "pairs": [
     {
@@ -55,6 +55,14 @@
       "split": "build",
       "ambiguous": false,
       "source": "section_06_numbers"
+    },
+    {
+      "korean": "겉보리",
+      "brf_ascii": "@ s8~ u\"o",
+      "braille_unicode": "⠈⠀⠎⠦⠘⠀⠥⠐⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_02_jongseong"
     },
     {
       "korean": "격언",
@@ -311,6 +319,14 @@
       "split": "build",
       "ambiguous": false,
       "source": "section_05_abbreviated_words"
+    },
+    {
+      "korean": "도우미",
+      "brf_ascii": "ium eo",
+      "braille_unicode": "⠊⠥⠍⠀⠑⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_01_choseong"
     },
     {
       "korean": "동그라미",
@@ -1835,20 +1851,6 @@
   ],
   "review": [
     {
-      "korean": "도우미",
-      "brf_ascii": "ium eo",
-      "gold": "⠊⠥⠍⠀⠑⠕",
-      "forward": "⠊⠥⠍⠑⠕",
-      "reason": "forward_mismatch"
-    },
-    {
-      "korean": "겉보리",
-      "brf_ascii": "@ s8~ u\"o",
-      "gold": "⠈⠀⠎⠦⠘⠀⠥⠐⠕",
-      "forward": "⠈⠎⠦⠘⠥⠐⠕",
-      "reason": "forward_mismatch"
-    },
-    {
       "korean": "는다",
       "brf_ascii": ".",
       "gold": "⠨",
@@ -2182,6 +2184,20 @@
       "brf_ascii": ".",
       "gold": "⠨",
       "forward": "⠚⠒⠀⠋⠒⠀⠠⠊⠺⠎⠀⠠⠠⠵⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "칸 띄어 쓴다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠋⠒⠀⠠⠊⠺⠎⠀⠠⠠⠵⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "따른다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠠⠊⠐⠵⠊",
       "reason": "forward_mismatch"
     }
   ]
