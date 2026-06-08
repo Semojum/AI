@@ -71,11 +71,22 @@ def _is_number(korean: str, brf: str) -> bool:
     return True
 
 
+def _is_roman(korean: str, brf: str) -> bool:
+    """로마자 유형: 영문 알파벳 포함(로마자표·대문자표·정자/약자). 규정 제8·11절."""
+    if not re.search(r"[A-Za-z]", korean):
+        return False
+    if korean.startswith("[") or len(korean) > 20:
+        return False
+    return True
+
+
 _CLASSIFIERS = {
     "hangul": ("한글 음절 (받침 유무·겹받침·된소리). 규정 1~3장 + section_01~03 등.",
                _is_hangul_syllable),
     "numbers": ("아라비아 숫자 (수표·정수·소수점·자릿점·범위·단위 혼용). 규정 제6·12절 등.",
                 _is_number),
+    "roman": ("로마자 (로마자표·대문자표·정자/약자, 한글 혼용). 규정 제8·11절.",
+              _is_roman),
 }
 
 

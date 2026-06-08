@@ -90,45 +90,54 @@ for _c, _t in (("⠤", "-"),):
 _MAX_CELLS = max((len(k) for k in _COMBINED), default=1)
 
 
-def _is_roman_run(s: str, i: int) -> int:
-    """s[i]가 로마자표면 종료표 위치를 반환(로마자 런), 아니면 -1.
+_SUBSCRIPT = "⠰"   # 첨자·약물 표 등 — 로마자 런 안에서는 근사로 건너뜀
 
-    로마자 런 = ⠴ 다음 [대문자표 ⠠ | 알파벳 셀]+ 이 ⠲로 닫히는 패턴.
-    단위(℃=⠴⠙…)·따옴표(⠴)와 구분: 반드시 ⠲로 닫혀야 로마자로 본다.
+def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
+    """로마자 런이면 (텍스트, 다음위치), 아니면 None.
+
+    시작: 로마자표 ⠴ , 또는 대문자 단어표 ⠠⠠ 다음에 알파벳(문장 중 영문, 예 TV).
+    대문자: ⠠⠠(단어 전체)·⠠(한 글자). 종료: 공백·수표 ⠼·종료표 ⠲·비로마자 셀.
+    (단위 ℃=⠴⠙… 는 _COMBINED 긴-셀 매칭이 먼저 잡으므로 여기 도달하지 않는다.)
     """
-    if s[i] != _ROMAN_START:
-        return -1
-    j = i + 1
-    while j < len(s) and s[j] != _ROMAN_END and s[j] != _SPACE_CELL:
-        if s[j] == _CAPITAL or s[j] in _ALPHA_REV:
-            j += 1
-        else:
-            return -1
-    if j < len(s) and s[j] == _ROMAN_END and j > i + 1:
-        return j
-    return -1
+    n = len(s)
+    if s[i] == _ROMAN_START:                       # ⠴ 로마자표
+        j = i + 1
+    elif s[i:i + 2] == _CAPITAL + _CAPITAL and i + 2 < n and s[i + 2] in _ALPHA_REV:
+        j = i                                      # 로마자표 없이 대문자 단어(예: TV)
+    else:
+        return None
 
-
-def _decode_roman(s: str, i: int, end: int) -> str:
-    """s[i]=⠴ … s[end]=⠲ 구간을 로마자로 복원."""
-    out = []
-    j = i + 1
-    while j < end:
-        if s[j:j + 2] == _CAPITAL + _CAPITAL:   # 대문자 단어: 종료까지 대문자
-            j += 2
-            while j < end:
-                out.append(_ALPHA_REV.get(s[j], "?").upper())
-                j += 1
+    out: list[str] = []
+    caps_word = False
+    while j < n:
+        c = s[j]
+        if c in (_SPACE_CELL, " ", _NUMBER_SIGN):  # 공백·수표 → 런 종료(소비 안 함)
             break
-        if s[j] == _CAPITAL:                     # 단일 대문자
+        if c == _ROMAN_END:                        # 종료표 ⠲ → 소비하고 종료
             j += 1
-            if j < end:
-                out.append(_ALPHA_REV.get(s[j], "?").upper())
+            break
+        if s[j:j + 2] == _CAPITAL + _CAPITAL:       # 대문자 단어표
+            caps_word = True
+            j += 2
+            continue
+        if c == _CAPITAL:                           # 단일 대문자표
+            j += 1
+            if j < n and s[j] in _ALPHA_REV:
+                out.append(_ALPHA_REV[s[j]].upper())
                 j += 1
-        else:
-            out.append(_ALPHA_REV.get(s[j], "?"))
+            continue
+        if c in _ALPHA_REV:
+            ch = _ALPHA_REV[c]
+            out.append(ch.upper() if caps_word else ch)
             j += 1
-    return "".join(out)
+            continue
+        if c == _SUBSCRIPT:                          # 첨자표 등 → 근사로 건너뜀
+            j += 1
+            continue
+        break                                       # 비로마자 셀 → 런 종료
+    if not out:
+        return None
+    return "".join(out), j
 
 
 def _decode_number(s: str, i: int) -> tuple[str, int]:
@@ -200,11 +209,12 @@ def _decode_line(s: str) -> str:
                 out.append(_COMBINED[seg])
             i += best_ln
             continue
-        # 로마자 런(⠴…⠲) — 단독 ⠴(따옴표)보다 우선
-        end = _is_roman_run(s, i)
-        if end != -1:
-            out.append(_decode_roman(s, i, end))
-            i = end + 1
+        # 로마자 런(로마자표 ⠴ 또는 대문자 단어표 ⠠⠠+알파벳) — 단독 ⠴(따옴표)보다 우선
+        roman = _decode_roman_run(s, i)
+        if roman is not None:
+            txt, j = roman
+            out.append(txt)
+            i = j
             continue
         # 단일 셀 매칭(따옴표·쉼표 등)
         if best_ln == 1:

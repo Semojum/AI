@@ -1,0 +1,163 @@
+{
+  "type": "roman",
+  "description": "로마자 (로마자표·대문자표·정자/약자, 한글 혼용). 규정 제8·11절.",
+  "split_ratio": "build:test = 7:3 (md5 안정 해시)",
+  "counts": {
+    "build": 6,
+    "test": 3,
+    "review_excluded": 11
+  },
+  "pairs": [
+    {
+      "korean": "A4용지",
+      "brf_ascii": "0,a#d+7.o",
+      "braille_unicode": "⠴⠠⠁⠼⠙⠬⠶⠨⠕",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_10_marks"
+    },
+    {
+      "korean": "CD 1장을 구하려 합니다.",
+      "brf_ascii": "``0;,,cd`#a.7!`@mj\":`jbcoi4`````",
+      "braille_unicode": "⠴⠰⠠⠠⠉⠙⠀⠼⠁⠨⠶⠮⠀⠈⠍⠚⠐⠱⠀⠚⠃⠉⠕⠊⠲",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_10_marks"
+    },
+    {
+      "korean": "KBS 1 TV 좀 켜 주세요.",
+      "brf_ascii": "``0,,kbs`#a`,,tv4`.u5`f:`.m,n+4`",
+      "braille_unicode": "⠴⠠⠠⠅⠃⠎⠀⠼⠁⠀⠠⠠⠞⠧⠲⠀⠨⠥⠢⠀⠋⠱⠀⠨⠍⠠⠝⠬⠲",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_10_marks"
+    },
+    {
+      "korean": "Lesson 1. 인사말",
+      "brf_ascii": "0,lesson`#a4`qle1",
+      "braille_unicode": "⠴⠠⠇⠑⠎⠎⠕⠝⠀⠼⠁⠲⠀⠟⠇⠑⠂",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_10_marks"
+    },
+    {
+      "korean": "MP3 플레이어",
+      "brf_ascii": "0,,mp#c`d!\"nos",
+      "braille_unicode": "⠴⠠⠠⠍⠏⠼⠉⠀⠙⠮⠐⠝⠕⠎",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_10_marks"
+    },
+    {
+      "korean": "비타민 B₉의 이름은 엽산이다.",
+      "brf_ascii": "``~oheq`0,b;#iw`o\"{5z`:bl3oi4```",
+      "braille_unicode": "⠘⠕⠓⠑⠟⠀⠴⠠⠃⠰⠼⠊⠺⠀⠕⠐⠪⠢⠵⠀⠱⠃⠇⠒⠕⠊⠲",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_14_layout"
+    },
+    {
+      "korean": "LP 1장",
+      "brf_ascii": "0,,lp`#a.7",
+      "braille_unicode": "⠴⠠⠠⠇⠏⠀⠼⠁⠨⠶",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_10_marks"
+    },
+    {
+      "korean": "그는 Canada로 여행을 떠났다.",
+      "brf_ascii": "``@{cz`0,canada4\"u`:jr7!`,isc/i4",
+      "braille_unicode": "⠈⠪⠉⠵⠀⠴⠠⠉⠁⠝⠁⠙⠁⠲⠐⠥⠀⠱⠚⠗⠶⠮⠀⠠⠊⠎⠉⠌⠊⠲",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_10_marks"
+    },
+    {
+      "korean": "보도자료_업무협약 체결.hwp",
+      "brf_ascii": "~uiu.\"+_-sbemj:b>a`;n@|40hwp4",
+      "braille_unicode": "⠘⠥⠊⠥⠨⠐⠬⠸⠤⠎⠃⠑⠍⠚⠱⠃⠜⠁⠀⠰⠝⠈⠳⠲⠴⠓⠺⠏⠲",
+      "split": "test",
+      "ambiguous": false,
+      "source": "section_14_layout"
+    }
+  ],
+  "review": [
+    {
+      "korean": "Roma [ㄹㄹ로마]",
+      "brf_ascii": "0,roma4`82_1_1\"ue;0",
+      "gold": "⠴⠠⠗⠕⠍⠁⠲⠀⠦⠆⠸⠂⠸⠂⠐⠥⠑⠰⠴",
+      "forward": "⠴⠠⠗⠕⠍⠁⠦⠆⠸⠂⠸⠂⠐⠥⠑⠰⠴⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "carro [까ㄹㄹ로]",
+      "brf_ascii": "0c>ro4`82,$_1_1\"u;0",
+      "gold": "⠴⠉⠜⠗⠕⠲⠀⠦⠆⠠⠫⠸⠂⠸⠂⠐⠥⠰⠴",
+      "forward": "⠉⠜⠗⠕⠦⠆⠠⠫⠸⠂⠸⠂⠐⠥⠰⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "WHO: 세계 보건 기구",
+      "brf_ascii": "0,,who\"1`,n@/`~u@)`@o@m",
+      "gold": "⠴⠠⠠⠺⠓⠕⠐⠂⠀⠠⠝⠈⠌⠀⠘⠥⠈⠾⠀⠈⠕⠈⠍",
+      "forward": "⠴⠠⠠⠺⠓⠕⠐⠂⠠⠝⠈⠌⠲⠀⠘⠥⠈⠾⠀⠈⠕⠈⠍",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "KTX/새마을호/무궁화호",
+      "brf_ascii": "0,,ktx4_/,re<!ju_/em@m7jvju",
+      "gold": "⠴⠠⠠⠅⠞⠭⠲⠸⠌⠠⠗⠑⠣⠮⠚⠥⠸⠌⠑⠍⠈⠍⠶⠚⠧⠚⠥",
+      "forward": "⠴⠠⠠⠅⠞⠭⠸⠌⠠⠗⠑⠣⠮⠚⠥⠸⠌⠑⠍⠈⠍⠶⠚⠧⠚⠥⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "U-도서관",
+      "brf_ascii": "0,u4-iu,s@v3",
+      "gold": "⠴⠠⠥⠲⠤⠊⠥⠠⠎⠈⠧⠒",
+      "forward": "⠴⠠⠥⠤⠊⠥⠠⠎⠈⠧⠒⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "Summary~연습 문제",
+      "brf_ascii": "0,summ>y4@9*,{b`eg.n",
+      "gold": "⠴⠠⠎⠥⠍⠍⠜⠽⠲⠈⠔⠡⠠⠪⠃⠀⠑⠛⠨⠝",
+      "forward": "⠴⠠⠎⠥⠍⠍⠜⠽⠐⠠⠤⠡⠠⠪⠃⠲⠀⠑⠛⠨⠝",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "그 책의 v-x쪽을 읽어 보세요.",
+      "brf_ascii": "``@[`;raw`0v-;x4,.x!`o1as`^u,n+4",
+      "gold": "⠈⠪⠀⠰⠗⠁⠺⠀⠴⠧⠤⠰⠭⠲⠠⠨⠭⠮⠀⠕⠂⠁⠎⠀⠘⠥⠠⠝⠬⠲",
+      "forward": "⠈⠪⠀⠰⠗⠁⠺⠀⠴⠧⠲⠤⠴⠭⠲⠠⠨⠭⠮⠀⠕⠂⠁⠎⠀⠘⠥⠠⠝⠬⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "1m는 100cm이다.",
+      "brf_ascii": "``#a0m4cz`#ajj0cm4oi4```````````",
+      "gold": "⠼⠁⠴⠍⠲⠉⠵⠀⠼⠁⠚⠚⠴⠉⠍⠲⠕⠊⠲",
+      "forward": "⠼⠁⠀⠴⠍⠲⠉⠵⠀⠼⠁⠚⠚⠀⠴⠉⠍⠲⠕⠊⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "1in는 2.54cm이다.",
+      "brf_ascii": "``#a0in4cz`#b4ed0cm4oi4`````````",
+      "gold": "⠼⠁⠴⠊⠝⠲⠉⠵⠀⠼⠃⠲⠑⠙⠴⠉⠍⠲⠕⠊⠲",
+      "forward": "⠼⠁⠀⠴⠊⠝⠲⠉⠵⠀⠼⠃⠲⠑⠙⠀⠴⠉⠍⠲⠕⠊⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "5 %와 6 %의 차이는 1 %p다.",
+      "brf_ascii": "``#e`0p`v`#f`0p`w`;<ocz`#a`0pp``",
+      "gold": "⠼⠑⠀⠴⠏⠀⠧⠀⠼⠋⠀⠴⠏⠀⠺⠀⠰⠣⠕⠉⠵⠀⠼⠁⠀⠴⠏⠏",
+      "forward": "⠼⠑⠴⠏⠧⠀⠼⠋⠴⠏⠺⠀⠰⠣⠕⠉⠵⠀⠼⠁⠴⠏⠴⠏⠲⠊⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "80킬로미터/h",
+      "brf_ascii": "#hj`fo1\"ueohs_/0h4",
+      "gold": "⠼⠓⠚⠀⠋⠕⠂⠐⠥⠑⠕⠓⠎⠸⠌⠴⠓⠲",
+      "forward": "⠼⠓⠚⠀⠋⠕⠂⠐⠥⠑⠕⠓⠎⠸⠌⠓",
+      "reason": "forward_mismatch"
+    }
+  ]
+}
