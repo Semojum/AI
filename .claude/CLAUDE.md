@@ -51,7 +51,7 @@ app/
 │   ├── llm/                     # PART *-2. 진입점 .optimize(extracted, tier[, layout])→list[LLMOutput]
 │   │   ├── base_opt.py  ★ 공통 베이스. hcxt_generate_sync·hcxt_optimize(HCLOVA X)·fallback_optimize(GPT-4o)·generate_with_retry(3회→폴백)·decide_tier_timeout + BaseOpt(optimize gather) + VisualDraftOpt(시각 3안 공통흐름). 공통·rule-based 구조는 전부 여기, 각 opt는 프롬프트만 추가.
 │   │   ├── text_opt.py · formula_opt.py · table_opt.py · image_opt.py · cartoon_opt.py · chart_graph_opt.py · diagram_opt.py
-│   │   │   diagram_opt: 도표(§6.6) 개념도(위계 개조식 5/3·7/5/3)·흐름도(번호+한 줄·분기 3칸, 도형 점형은 보류) rule-based 골격. table_opt: 표 제목 5칸(도서지침 §3 5)→table_title)·표 안 그림(Q11)→nested_text. image_opt: 그림 안 그래프(Q11)→nested_text
+│   │   │   diagram_opt: 도표(§6.6) rule-based 골격 8종 — 개념도(위계 5/3·7/5/3)·흐름도(번호+한 줄·분기 3칸, 도형 점형 보류)·조직도/하향식 가계도(1칸+2칸/단계)·상향식 가계도(3칸)·연대표(날짜+사건·동일연도 5/3)·양식(글상자·한 줄, 밑줄 빈칸 보류)·화면이미지(글상자·구획, 하이퍼링크 보류)·슬라이드(제목·들여쓰기·노트). subtype→_ASSEMBLERS 디스패치. table_opt: 표 제목 5칸(도서지침 §3 5)→table_title)·표 안 그림(Q11)→nested_text. image_opt: 그림 안 그래프(Q11)→nested_text
 │   │   │   각: 자신에 최적화된 _PROMPT*만 정의 + base_opt 상속/사용. image·cartoon·chart_graph = VisualDraftOpt 상속(프롬프트·라벨·RULE_ID·타임아웃만 클래스 속성). text·formula·table = BaseOpt 상속 + 고유 _optimize_one(패스스루·정규화·표 구조 추론).
 │   │   │   table_opt: _table_to_text, _infer_render_mode, _parse_tn_from_response · formula_opt: _normalize · chart_graph_opt: _verify_numbers(숫자 환각 검증, _post_process로 R5)
 │   │   │   프리필(_PREFILL): 시각 3안 + text·formula도 사용 — Think 모델이 설명 람블 대신 결과만 내도록 답변 시작 강제, 스캐폴드는 _extract로 제거

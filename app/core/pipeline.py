@@ -42,11 +42,23 @@ _TYPE_ALIAS = {
     "도표": "diagram", "diagram": "diagram",
     "concept_map": "diagram", "개념도": "diagram",
     "flowchart": "diagram", "흐름도": "diagram",
+    "org_chart": "diagram", "조직도": "diagram",
+    "family_tree": "diagram", "가계도": "diagram",
+    "timeline": "diagram", "연대표": "diagram",
+    "form": "diagram", "양식": "diagram",
+    "screen_image": "diagram", "화면이미지": "diagram", "화면 이미지": "diagram",
+    "slide": "diagram", "발표슬라이드": "diagram", "발표용 슬라이드": "diagram", "슬라이드": "diagram",
 }
-# 현주 type 값이 도표 하위유형을 직접 가리킬 때 visual_subtype로 보존(concept_map/flowchart 구분).
+# 현주 type 값이 도표 하위유형을 직접 가리킬 때 visual_subtype로 보존(§6.6 하위유형 구분).
 _SUBTYPE_FROM_TYPE = {
     "concept_map": "concept_map", "개념도": "concept_map",
     "flowchart": "flowchart", "흐름도": "flowchart",
+    "org_chart": "org_chart", "조직도": "org_chart",
+    "family_tree": "family_tree", "가계도": "family_tree",
+    "timeline": "timeline", "연대표": "timeline",
+    "form": "form", "양식": "form",
+    "screen_image": "screen_image", "화면이미지": "screen_image", "화면 이미지": "screen_image",
+    "slide": "slide", "발표슬라이드": "slide", "발표용 슬라이드": "slide", "슬라이드": "slide",
 }
 
 ChainResult = tuple[list[ExtractedContent], list[LLMOutput], list[BrailleOutput]]
