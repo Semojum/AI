@@ -397,13 +397,13 @@ class TestLayoutBody:
         l24 = next(ln for ln in result if "L24" in ln)
         assert l24.startswith("L24")                       # 페이지 넘어간 연속 줄은 재들여쓰기 없음
 
-    def test_heading_level2_indent3(self, lb, tmp_path) -> None:
-        """2단계 제목 3칸 들여 (BBPG 미명시 — 태민 결정: 1단계 가운데와 3단계 5칸 사이)."""
+    def test_heading_level2_indent7(self, lb, tmp_path) -> None:
+        """2단계 제목 7칸 들여 (BBPG 2장2절1 3): 쪽바꿈하여 7칸에서 시작)."""
         eid = uuid4()
         lr = _layout((eid, "title", 1, 2))
         lb.layout([_out(["중제목"], eid)], page_no=1, job_id="h2", layout_result=lr)
         first = next(l for l in _read_lines(tmp_path, "h2") if l.strip())
-        assert first.startswith("   ") and not first.startswith("    ")
+        assert first.startswith(" " * 7) and not first.startswith(" " * 8)
         assert first.strip() == "중제목"
 
     def test_heading_level3_indent5(self, lb, tmp_path) -> None:
