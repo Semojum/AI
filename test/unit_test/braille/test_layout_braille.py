@@ -135,6 +135,22 @@ class TestLayoutRulesSpec:
         assert len(last_line) == _COLS
         assert last_line.endswith("⠼⠁")  # 점자 페이지번호 ⠼1 (마침표 없음, 예 1-6)
 
+    def test_double_sided_페이지행_홀수만(self, lb, monkeypatch) -> None:
+        """양면 제본(DOUBLE_SIDED): 홀수 점자페이지만 페이지행, 짝수는 26줄 본문 (BBPG 1장2절2)."""
+        monkeypatch.setattr("app.ai.braille.layout_braille.DOUBLE_SIDED", True)
+        content = [f"⠁{i % 10}" for i in range(60)]      # 2페이지 초과 분량
+        pages = lb._paginate(content, 1, "", "")
+        assert pages[0][-1].rstrip().endswith("⠼⠁")       # 1페이지(홀수): 페이지행 ⠼1
+        assert len(pages[1]) == _ROWS                       # 2페이지(짝수): 26줄 전부 본문
+        assert not pages[1][-1].rstrip().endswith("⠼⠃")    # 2페이지: 페이지행(⠼2) 없음
+
+    def test_single_sided_페이지행_매페이지(self, lb) -> None:
+        """단면(기본): 모든 페이지에 페이지행 (DOUBLE_SIDED=False)."""
+        content = [f"⠁{i % 10}" for i in range(60)]
+        pages = lb._paginate(content, 1, "", "")
+        assert pages[0][-1].rstrip().endswith("⠼⠁")        # 1페이지 페이지행
+        assert pages[1][-1].rstrip().endswith("⠼⠃")        # 2페이지도 페이지행 ⠼2
+
     # ── BBPG 마커/헬퍼 검증 ───────────────────────────────────────────────────
 
     def test_underline_blank_marker(self) -> None:

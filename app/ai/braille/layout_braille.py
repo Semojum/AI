@@ -32,7 +32,7 @@ if TYPE_CHECKING:  # 런타임 import 회피 (annotations 지연 평가)
 
 logger = logging.getLogger(__name__)
 
-from app.ai.braille.constants import COLS as _COLS, ROWS as _ROWS  # noqa: E402 (공용 상수)
+from app.ai.braille.constants import COLS as _COLS, ROWS as _ROWS, DOUBLE_SIDED  # noqa: E402 (공용 상수)
 
 # ── BBPG 2장2절1 제목 단계별 빈 줄 (level → (앞, 뒤)) ───────────────────────
 _HEADING_BLANK: dict[int, tuple[int, int]] = {1: (2, 1), 2: (1, 1), 3: (1, 0)}
@@ -695,14 +695,18 @@ class LayoutBraille:
         while i < n or not pages:
             while i < n and lines[i] == "":  # 페이지 첫 줄 빈 줄 버림 (plan 주의사항)
                 i += 1
+            # 양면 제본이면 홀수 점자페이지만 페이지행, 짝수는 26줄 본문(BBPG 1장2절2). 단면은 매 페이지.
+            has_page_line = (not DOUBLE_SIDED) or (pno % 2 == 1)
+            cap = (_ROWS - 1) if has_page_line else _ROWS
             content: list[str] = []
-            while i < n and len(content) < _ROWS - 1:
+            while i < n and len(content) < cap:
                 content.append(lines[i])
                 i += 1
-            while len(content) < _ROWS - 1:
+            while len(content) < cap:
                 content.append("")
-            op = self._continuation_orig_page(orig_page, page_idx)
-            content.append(self._compose_page_line(footer, op, pno))
+            if has_page_line:
+                op = self._continuation_orig_page(orig_page, page_idx)
+                content.append(self._compose_page_line(footer, op, pno))
             pages.append(content)
             pno += 1
             page_idx += 1
