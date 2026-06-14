@@ -159,7 +159,7 @@
       "description": "수식: 아래첨자 a_n",
       "input": "<formula>a_n</formula>",
       "must_contain": [
-        "⠆"
+        "⠰"
       ]
     },
     {

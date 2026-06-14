@@ -31,8 +31,8 @@ _DIGIT_MAP: dict[str, str] = {
 _FRACTION_MID    = "⠌"  # / (dots 3,4)
 # 수학 점자 제18항: 위첨자 기호 ^ = ⠘ (dots 4,5)
 _SUPERSCRIPT_IND = "⠘"
-# 수학 점자 제19항: 아래첨자 기호 ; = ⠆ (dots 2,3)
-_SUBSCRIPT_IND   = "⠆"
+# 수학 점자 제19항/한글 제68항: 아래첨자 기호 ; = ⠰ (dots 5,6). 규정 폰트 ";" 디코드
+_SUBSCRIPT_IND   = "⠰"
 # 수학 점자 제22항: 근호 > = ⠜ (dots 3,4,5)
 _SQRT_IND        = "⠜"
 # 수학 점자 제22항 붙임1: 세제곱근 이상 근수 기호 ] = ⠻ (dots 1,2,4,5,6)
@@ -68,21 +68,21 @@ _TRIG: dict[str, str] = {
 # ── 로그 (수학 점자 제46항): _ (⠸, dots 4,5,6) ────────────────────────
 # log 기호 = _ = ⠸
 # 밑이 숫자: _, + 수표 없이 숫자 (예: log₂ = _,2 = ⠸⠠⠃)
-# 밑이 변수: _; + 문자 (예: log_a = _;a = ⠸⠆⠁)
-# ln = log_e = _;e = ⠸⠆⠑
+# 밑이 변수: _; + 문자 (예: log_a = _;a = ⠸⠰⠁)
+# ln = log_e = _;e = ⠸⠰⠑
 _LOG_IND     = "⠸"   # _ (dots 4,5,6) — log 기호
 _LOG_NUM_SEP = "⠠"   # , (dot 6) — 밑이 숫자일 때 구분자 (붙임: 수표 없이)
-_LN_BRAILLE  = "⠸⠆⠑"  # _;e — 자연로그 ln = log_e
+_LN_BRAILLE  = "⠸⠰⠑"  # _;e — 자연로그 ln = log_e (아래첨자 ; = ⠰)
 
 # ── 극한 (수학 점자 제51항): lim;변수 ` → ` 점근값 ` ` 함수 ─────────────
 _LIM_BRAILLE  = "⠇⠊⠍"  # lim (l=⠇, i=⠊, m=⠍)
-_ARROW_RIGHT  = "⠉⠕"   # → (3o, 수학 제10항)
+_ARROW_RIGHT  = "⠒⠕"   # → (3o=⠒⠕, 수학 제10항/제38항 반직선)
 
 # ── 절댓값 (수학 점자 제21항): \ \ ─────────────────────────────────────
 _ABS_IND = "⠳"  # \ (dots 1,2,5,6) — 절댓값 기호
 
 # ── 정적분 범위 / 합 범위 구분자 ─────────────────────────────────────────
-_RANGE_SEP = "⠆"   # ; = ⠆ — 범위 시작 (아래첨자 기호와 동일 셀)
+_RANGE_SEP = "⠰"   # ; = ⠰ — 범위 시작 (아래첨자 기호와 동일 셀, 규정 폰트 ";")
 
 
 # ── 정규식 ────────────────────────────────────────────────────────────────
@@ -251,7 +251,7 @@ def convert_latex(latex: str) -> str:
 
     result = _SUP_RE.sub(_sup_replace, result)
 
-    # ── 9. 아래첨자: base_{sub} → base⠆sub (수학 제19항) ────────────
+    # ── 9. 아래첨자: base_{sub} → base⠰sub (수학 제19항, ; = ⠰) ────────────
     def _sub_replace(m: re.Match) -> str:
         base = m.group(1) or m.group(3) or ""
         sub  = convert_latex(m.group(2) or m.group(4) or "")
@@ -264,12 +264,12 @@ def convert_latex(latex: str) -> str:
     _LATEX_SIMPLE: dict[str, str] = {
         "\\infty":    "⠿",    # ∞ (수학 제50항: =)
         "\\pm":       "⠑⠊",   # ± (수학연산)
-        "\\times":    "⠐⠦",   # × (수학 곱셈, 점자규정 확인값)
-        "\\div":      "⠐⠌",   # ÷ (수학 나눗셈, 점자규정 확인값)
-        "\\cdot":     "⠐⠲",   # ∙ (중간점, 점자규정 확인값)
-        "\\leq":      "⠋⠋",   # ≤ (수학 제4항 8호)
-        "\\geq":      "⠙⠙",   # ≥ (수학 제4항 6호)
-        "\\neq":      "⠨⠉⠉",  # ≠ (수학 제4항 1호)
+        "\\times":    "⠡",    # × (수학 제2항, 폰트 "*"=⠡)
+        "\\div":      "⠌⠌",   # ÷ (수학 제2항, 폰트 "//"=⠌⠌)
+        "\\cdot":     "⠐",    # · (수학 제2항 붙임, 폰트 '"'=⠐)
+        "\\leq":      "⠦⠦",   # ≤ (수학 제4항 8호, 폰트 "66"=⠦⠦)
+        "\\geq":      "⠲⠲",   # ≥ (수학 제4항 6호, 폰트 "44"=⠲⠲)
+        "\\neq":      "⠨⠒⠒",  # ≠ (수학 제4항 1호, 폰트 ".33"=⠨⠒⠒)
         "\\approx":   "⠈⠊⠈⠊", # ≈ (수학기하)
         "\\equiv":    "⠛⠛",   # ≡ (합동, 기하 제43항)
         "\\sim":      "⠠⠄",   # ∽ (닮음 관련)
@@ -317,12 +317,12 @@ def convert_latex(latex: str) -> str:
         "\\ddots":    "⠨⠨⠨",  # ⋱
         "\\therefore":"⠠⠡",   # ∴ (수학 제65항 2호: ,*)
         "\\because":  "⠈⠌",   # ∵ (수학 제65항 3호: @/)
-        "\\rightarrow": "⠉⠕", # →
-        "\\leftarrow":  "⠐⠉", # ←
-        "\\leftrightarrow": "⠐⠉⠕",  # ↔
-        "\\Rightarrow":  "⠉⠉⠕",     # ⇒
-        "\\Leftarrow":   "⠐⠉⠉",     # ⇐
-        "\\Leftrightarrow": "⠐⠉⠉⠕", # ⇔
+        "\\rightarrow": "⠒⠕", # → (3o)
+        "\\leftarrow":  "⠪⠒", # ← (폰트 "[3"=⠪⠒)
+        "\\leftrightarrow": "⠪⠒⠕",  # ↔ (폰트 "[3o")
+        "\\Rightarrow":  "⠒⠒⠕",     # ⇒ (명제 제61항, "33o")
+        "\\Leftarrow":   "⠐⠉⠉",     # ⇐ (미확인 — 규정 원문 재확인 필요)
+        "\\Leftrightarrow": "⠪⠒⠒⠕", # ⇔ (명제 제61항, "[33o")
         # 대문자 그리스 문자
         "\\Alpha":   "⠠⠨⠁", "\\Beta":    "⠠⠨⠃",
         "\\Gamma":   "⠠⠨⠛", "\\Delta":   "⠠⠨⠙",
@@ -359,14 +359,14 @@ def convert_latex(latex: str) -> str:
     result = _NUM_RE.sub(_num_replace, result)
 
     # ── 11b. 사칙연산 기호 변환 (수학 제2항) — 숫자 변환 후 처리 ──────────
-    result = result.replace("+", "⠑")                        # 덧셈표 5=⠑
-    result = re.sub(r"(?<=\s)-(?=\s)", "⠊", result)          # 뺄셈표 9=⠊ (공백 구분)
-    result = result.replace("=", "⠉⠉")                       # 등호 33=⠉⠉
+    result = result.replace("+", "⠢")                        # 덧셈표 (수학 제2항, 폰트 "5"=⠢)
+    result = re.sub(r"(?<=\s)-(?=\s)", "⠔", result)          # 뺄셈표 (수학 제2항, 폰트 "9"=⠔)
+    result = result.replace("=", "⠒⠒")                       # 등호 (수학 제3항, 폰트 "33"=⠒⠒)
 
     # ── 11c. 문맥 overload 분기: 수식 내 기호는 수학 의미로(텍스트 substitute_symbols와 분리) ──
-    # ∼: 텍스트=물결표(⠐⠠⠤) / 수식=논리부정·관계(⠈⠊, 수학 제61·34항)
-    # →: 텍스트=화살표(⠒⠕) / 수식=화살표·조건문(⠉⠕, 수학 제38·61항)
-    result = result.replace("∼", "⠈⠊").replace("→", "⠉⠕")
+    # ∼: 수식 논리부정·관계 = ⠈⠔ (명제 제61항, 폰트 "@9"). 텍스트 물결표는 symbol_table 담당.
+    # →: 화살표·조건문 = ⠒⠕ (제38·61항, 폰트 "3o").
+    result = result.replace("∼", "⠈⠔").replace("→", "⠒⠕")
 
     # ── 12. 남은 유니코드 수학 기호 → substitute_symbols ────────────────
     result = substitute_symbols(result)

@@ -150,6 +150,43 @@ class TestConvertLatex:
         assert result.count(_NUMBER_INDICATOR) == 1, "수표 중복 삽입"
 
 
+class TestMathOperators:
+    """수식 연산자·관계·화살표 점형 (한국 점자 규정 수학 제2~4항·제61항). FIX-01.
+
+    근본원인 회귀: 규정 점자폰트 글자(5/9/3/;)를 한국 숫자점형으로 오독하던 버그 방지.
+    """
+
+    def test_plus(self) -> None:
+        assert convert_latex("3+2") == "⠼⠉⠢⠼⠃"          # 덧셈표 ⠢(폰트 5), ⠑ 아님
+
+    def test_minus_binary(self) -> None:
+        assert "⠔" in convert_latex("3 - 2")             # 뺄셈표 ⠔(폰트 9), ⠊ 아님
+
+    def test_equals(self) -> None:
+        assert "⠒⠒" in convert_latex("x=y")              # 등호 ⠒⠒(폰트 33), ⠉⠉ 아님
+
+    def test_leq(self) -> None:
+        assert "⠦⠦" in convert_latex("x \\leq 5")        # ≤ ⠦⠦(폰트 66)
+
+    def test_geq(self) -> None:
+        assert "⠲⠲" in convert_latex("x \\geq 5")        # ≥ ⠲⠲(폰트 44)
+
+    def test_neq(self) -> None:
+        assert "⠨⠒⠒" in convert_latex("x \\neq y")       # ≠ ⠨⠒⠒(폰트 .33)
+
+    def test_times(self) -> None:
+        assert "⠡" in convert_latex("3 \\times 4")       # × ⠡(폰트 *)
+
+    def test_div(self) -> None:
+        assert "⠌⠌" in convert_latex("6 \\div 2")        # ÷ ⠌⠌(폰트 //)
+
+    def test_subscript(self) -> None:
+        assert "⠰" in convert_latex("a_2")               # 아래첨자 ⠰(폰트 ;), ⠆ 아님
+
+    def test_arrow_right(self) -> None:
+        assert "⠒⠕" in convert_latex("x \\to y")         # → ⠒⠕(폰트 3o)
+
+
 class TestTranslator:
 
     def test_hangul_nonempty(self) -> None:

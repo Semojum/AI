@@ -134,25 +134,25 @@
       "id": "sup_group",
       "rule": "수학 점자 규정 제18항 + 제6항: 복합 지수 — ⠘ + 수학 소괄호 ⠷⠾",
       "input": "<formula>x^{2n+1}</formula>",
-      "expected": "⠭⠘⠷⠼⠃⠝⠑⠼⠁⠾",
+      "expected": "⠭⠘⠷⠼⠃⠝⠢⠼⠁⠾",
       "must_contain": ["⠘", "⠷"]
     },
 
-    {"_section": "수학 점자 규정 제19항 — 아래첨자 지시자(⠆)"},
+    {"_section": "수학 점자 규정 제19항 — 아래첨자 지시자(⠰, 폰트 ;)"},
 
     {
       "id": "sub_an",
-      "rule": "수학 점자 규정 제19항: a_n → a(⠁) + ⠆ + n(⠝)",
+      "rule": "수학 점자 규정 제19항: a_n → a(⠁) + ⠰ + n(⠝)",
       "input": "<formula>a_n</formula>",
-      "expected": "⠁⠆⠝",
-      "must_contain": ["⠆"]
+      "expected": "⠁⠰⠝",
+      "must_contain": ["⠰"]
     },
     {
       "id": "sub_x1",
-      "rule": "수학 점자 규정 제19항: x_1 → x(⠭) + ⠆ + 1(⠼⠁)",
+      "rule": "수학 점자 규정 제19항: x_1 → x(⠭) + ⠰ + 1(⠼⠁)",
       "input": "<formula>x_1</formula>",
-      "expected": "⠭⠆⠼⠁",
-      "must_contain": ["⠆"]
+      "expected": "⠭⠰⠼⠁",
+      "must_contain": ["⠰"]
     },
 
     {"_section": "수학 점자 규정 제21항 — 절댓값 기호(⠳)"},
@@ -209,9 +209,9 @@
 
     {
       "id": "log_ln",
-      "rule": "수학 점자 규정 제46항: ln=log_e → ⠸⠆⠑. \\ln(x)=⠸⠆⠑⠷⠭⠾",
+      "rule": "수학 점자 규정 제46항: ln=log_e → ⠸⠰⠑. \\ln(x)=⠸⠰⠑⠷⠭⠾",
       "input": "<formula>\\ln(x)</formula>",
-      "expected": "⠸⠆⠑⠷⠭⠾",
+      "expected": "⠸⠰⠑⠷⠭⠾",
       "must_contain": ["⠸"]
     },
     {
