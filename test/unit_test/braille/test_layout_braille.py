@@ -491,15 +491,15 @@ class TestBulletMarkerKBR72:
         return BrailleOutput(element_id=str(uuid4()), braille_lines=[line], rule_trail=rule_trail)
 
     def test_동그라미_글머리_변환(self) -> None:
-        bo = self._bo("⠸⠚⠇⠁⠃")           # ○ 숨김표(⠸⠚⠇) + 내용 ⠁⠃
+        bo = self._bo("⠸⠴⠇⠁⠃")           # ○ 숨김표(⠸⠴⠇) + 내용 ⠁⠃
         LayoutBraille()._apply_bullet_marker(bo)
-        assert bo.braille_lines[0] == "⠸⠚⠁⠃"   # 꼬리 ⠇ 제거 → 글머리 ⠸⠚
+        assert bo.braille_lines[0] == "⠸⠴⠁⠃"   # 꼬리 ⠇ 제거 → 글머리 ⠸⠴
         rids = [r.rule_id for r in bo.rule_trail]
         assert "KBR-6.14.72" in rids            # 글머리로 정정
         assert "KBR-6.13.49" not in rids        # 숨김표 entry 제거
 
     def test_네모_세모_글머리(self) -> None:
-        for hidden, bullet in [("⠸⠄⠇", "⠸⠄"), ("⠸⠬⠇", "⠸⠬")]:
+        for hidden, bullet in [("⠸⠶⠇", "⠸⠶"), ("⠸⠬⠇", "⠸⠬")]:
             bo = self._bo(hidden + "⠁")
             LayoutBraille()._apply_bullet_marker(bo)
             assert bo.braille_lines[0] == bullet + "⠁"
@@ -514,11 +514,11 @@ class TestBulletMarkerKBR72:
     def test_format_element_list_item_3칸들여_글머리(self) -> None:
         from app.ai.braille.regulations import make_rule
         bo = BrailleOutput(
-            element_id=str(uuid4()), braille_lines=["⠸⠚⠇⠁⠃"],
+            element_id=str(uuid4()), braille_lines=["⠸⠴⠇⠁⠃"],
             rule_trail=[make_rule("KBR-6.13.49", line_no=0, col_start=0, col_end=3, tag="symbol")],
         )
         lines, _ = LayoutBraille()._format_element(bo, "list_item", 0)
-        assert lines[0] == "   ⠸⠚⠁⠃"            # 3칸 들여 + 글머리형
+        assert lines[0] == "   ⠸⠴⠁⠃"            # 3칸 들여 + 글머리형
         assert any(r.rule_id == "KBR-6.14.72" for r in bo.rule_trail)
 
 
@@ -716,14 +716,14 @@ class TestPostLayoutCoords:
         )
 
     def test_글머리_들여_후_좌표_셀일치(self, lb) -> None:
-        # list_item ○ → 글머리형(⠸⠚) + 3칸 들여. 글머리 좌표가 들여 뒤 셀을 가리킨다.
+        # list_item ○ → 글머리형(⠸⠴) + 3칸 들여. 글머리 좌표가 들여 뒤 셀을 가리킨다.
         bo = self._text_bo("○ 항목")               # ○ 숨김표로 변환 후 글머리 정정
         eid = bo.element_id
         lr = _layout((eid, "list_item", 1, 0))
         lb.layout([bo], page_no=1, job_id="bulc", layout_result=lr)
         bullet = next((r for r in bo.rule_trail if r.rule_id == "KBR-6.14.72"), None)
         assert bullet is not None
-        assert bo.braille_lines[bullet.line_no][bullet.col_start:bullet.col_end] == "⠸⠚"
+        assert bo.braille_lines[bullet.line_no][bullet.col_start:bullet.col_end] == "⠸⠴"
         assert bullet.col_start == 3                 # 글머리 3칸 들여
 
     def test_선택초안_contents_본문일치_proto계약(self, lb) -> None:

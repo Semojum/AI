@@ -228,3 +228,23 @@ class TestTranslator:
         """제40항: 한글 문장 내 숫자도 수표 + 점자로 변환."""
         result = translate_tagged_text("제20일")
         assert _NUMBER_INDICATOR in result
+
+
+class TestSymbolGlyphs:
+    """특수기호 점형 (한국 점자 규정 제49·53·60항·수학 제3·4·60항). FIX-11/12 회귀.
+
+    규정 점자폰트 글자를 한국 숫자점형으로 오독하던 symbol_table 버그 방지.
+    """
+
+    @pytest.mark.parametrize("symbol,expected", [
+        ("=", "⠒⠒"), ("≤", "⠦⠦"), ("≥", "⠲⠲"), ("≠", "⠨⠒⠒"),
+        ("<", "⠔⠔"), (">", "⠢⠢"),
+        ("→", "⠒⠕"), ("←", "⠪⠒"),
+        ("∈", "⠦"), ("⊂", "⠦⠂"), ("≡", "⠶⠶"),
+        ("…", "⠠⠠⠠"), ("《", "⠰⠶"), ("※", "⠐⠔"), ("〃", "⠴⠴"),
+        ("○", "⠸⠴⠇"), ("□", "⠸⠶⠇"),
+    ])
+    def test_symbol_glyph(self, symbol: str, expected: str) -> None:
+        from app.ai.braille.symbol_rules import substitute_symbols
+        got = substitute_symbols(symbol)
+        assert got == expected, f"{symbol!r} → {got!r}, 기대 {expected!r}"

@@ -251,11 +251,11 @@ class TestSymbolOverloadContext:
         out = convert_latex("x → y")
         assert "⠒⠕" in out          # → = ⠒⠕ (제38·61·70항, 폰트 3o)
 
-    def test_텍스트_물결표_유지(self) -> None:
-        # 일반 텍스트 경로(substitute_symbols)에서는 ∼ = 물결표(텍스트 의미 유지)
+    def test_텍스트_물결표(self) -> None:
+        # 물결표 ∼ = ⠈⠔ (제49·55항, 폰트 @9) — 텍스트·수식 동일(FIX-11)
         from app.ai.braille.symbol_rules import substitute_symbols
 
-        assert substitute_symbols("∼") == "⠐⠠⠤"
+        assert substitute_symbols("∼") == "⠈⠔"
 
 
 class TestLatexSymbolCommandEmit:

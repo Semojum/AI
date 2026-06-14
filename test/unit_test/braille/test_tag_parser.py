@@ -330,13 +330,13 @@ class TestElementLocalCoords:
         from app.schemas.content import BrailleOutput
 
         bo = BrailleOutput(
-            element_id=str(uuid.uuid4()), braille_lines=["⠸⠚⠇⠁⠃"],
+            element_id=str(uuid.uuid4()), braille_lines=["⠸⠴⠇⠁⠃"],
             rule_trail=[make_rule("KBR-6.13.49", line_no=0, col_start=0, col_end=3, tag="symbol")],
         )
         LayoutBraille()._apply_bullet_marker(bo)
         bullet = next(r for r in bo.rule_trail if r.rule_id == "KBR-6.14.72")
         assert (bullet.line_no, bullet.col_start, bullet.col_end) == (0, 0, 2)
-        assert bo.braille_lines[0][bullet.col_start:bullet.col_end] == "⠸⠚"
+        assert bo.braille_lines[0][bullet.col_start:bullet.col_end] == "⠸⠴"
 
     def test_글상자_확장후_line_no_재매핑(self):
         # 위 테두리 확장(빈 줄+테두리 삽입)으로 내용 줄이 밀려도 line_no가 갱신돼 셀을 가리킨다.

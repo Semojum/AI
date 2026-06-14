@@ -3,9 +3,9 @@
   "description": "특수기호 (단위·수학·괄호·화살표 등). symbol_table 권위 골드. 점형 충돌(한글·기호·원문자)은 ambiguous로 분리(한글우선 정책).",
   "split_ratio": "build:test = 7:3 (비모호 기준)",
   "counts": {
-    "build": 101,
-    "test": 49,
-    "ambiguous": 124,
+    "build": 100,
+    "test": 48,
+    "ambiguous": 126,
     "review_excluded": 0
   },
   "pairs": [
@@ -57,10 +57,10 @@
     {
       "korean": "*",
       "brf_ascii": null,
-      "braille_unicode": "⠶⠊",
+      "braille_unicode": "⠐⠔",
       "split": "build",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
       "source": "symbol_table"
     },
     {
@@ -93,7 +93,7 @@
     {
       "korean": ">",
       "brf_ascii": null,
-      "braille_unicode": "⠑⠑",
+      "braille_unicode": "⠢⠢",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -140,8 +140,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠦⠂",
       "split": "build",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
       "source": "symbol_table"
     },
     {
@@ -201,10 +201,10 @@
     {
       "korean": "¬",
       "brf_ascii": null,
-      "braille_unicode": "⠈⠊",
+      "braille_unicode": "⠈⠔",
       "split": "build",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
       "source": "symbol_table"
     },
     {
@@ -401,8 +401,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠨⠙",
       "split": "build",
-      "ambiguous": true,
-      "ambiguous_reason": "symbol",
+      "ambiguous": false,
+      "ambiguous_reason": null,
       "source": "symbol_table"
     },
     {
@@ -597,7 +597,7 @@
     {
       "korean": "•",
       "brf_ascii": null,
-      "braille_unicode": "⠐⠄",
+      "braille_unicode": "⠐⠆",
       "split": "build",
       "ambiguous": true,
       "ambiguous_reason": "symbol",
@@ -615,7 +615,7 @@
     {
       "korean": "※",
       "brf_ascii": null,
-      "braille_unicode": "⠸⠊",
+      "braille_unicode": "⠐⠔",
       "split": "build",
       "ambiguous": true,
       "ambiguous_reason": "symbol",
@@ -687,7 +687,7 @@
     {
       "korean": "←",
       "brf_ascii": null,
-      "braille_unicode": "⠐⠉",
+      "braille_unicode": "⠪⠒",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -696,7 +696,7 @@
     {
       "korean": "↑",
       "brf_ascii": null,
-      "braille_unicode": "⠆⠉⠕",
+      "braille_unicode": "⠰⠒⠕",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -714,7 +714,7 @@
     {
       "korean": "↔",
       "brf_ascii": null,
-      "braille_unicode": "⠐⠉⠕",
+      "braille_unicode": "⠪⠒⠕",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -723,43 +723,43 @@
     {
       "korean": "↖",
       "brf_ascii": null,
-      "braille_unicode": "⠐⠑",
+      "braille_unicode": "⠪⠢",
       "split": "build",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
       "source": "symbol_table"
     },
     {
       "korean": "↗",
       "brf_ascii": null,
-      "braille_unicode": "⠊⠕",
-      "split": "build",
-      "ambiguous": true,
-      "ambiguous_reason": "hangul",
-      "source": "symbol_table"
-    },
-    {
-      "korean": "↘",
-      "brf_ascii": null,
-      "braille_unicode": "⠑⠕",
-      "split": "build",
-      "ambiguous": true,
-      "ambiguous_reason": "hangul",
-      "source": "symbol_table"
-    },
-    {
-      "korean": "↙",
-      "brf_ascii": null,
-      "braille_unicode": "⠐⠊",
+      "braille_unicode": "⠔⠕",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
       "source": "symbol_table"
     },
     {
+      "korean": "↘",
+      "brf_ascii": null,
+      "braille_unicode": "⠢⠕",
+      "split": "build",
+      "ambiguous": false,
+      "ambiguous_reason": null,
+      "source": "symbol_table"
+    },
+    {
+      "korean": "↙",
+      "brf_ascii": null,
+      "braille_unicode": "⠪⠔",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
+      "source": "symbol_table"
+    },
+    {
       "korean": "⇄",
       "brf_ascii": null,
-      "braille_unicode": "⠐⠛⠕",
+      "braille_unicode": "⠪⠶⠕",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -768,7 +768,7 @@
     {
       "korean": "⇒",
       "brf_ascii": null,
-      "braille_unicode": "⠉⠉⠕",
+      "braille_unicode": "⠒⠒⠕",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -777,7 +777,7 @@
     {
       "korean": "⇔",
       "brf_ascii": null,
-      "braille_unicode": "⠐⠉⠉⠕",
+      "braille_unicode": "⠪⠒⠒⠕",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -831,28 +831,28 @@
     {
       "korean": "∈",
       "brf_ascii": null,
-      "braille_unicode": "⠋",
+      "braille_unicode": "⠦",
+      "split": "build",
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
+      "source": "symbol_table"
+    },
+    {
+      "korean": "∉",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠦",
       "split": "build",
       "ambiguous": true,
       "ambiguous_reason": "hangul",
       "source": "symbol_table"
     },
     {
-      "korean": "∉",
-      "brf_ascii": null,
-      "braille_unicode": "⠨⠋",
-      "split": "build",
-      "ambiguous": true,
-      "ambiguous_reason": "symbol",
-      "source": "symbol_table"
-    },
-    {
       "korean": "∌",
       "brf_ascii": null,
-      "braille_unicode": "⠨⠙",
+      "braille_unicode": "⠨⠲",
       "split": "build",
       "ambiguous": true,
-      "ambiguous_reason": "symbol",
+      "ambiguous_reason": "hangul",
       "source": "symbol_table"
     },
     {
@@ -867,10 +867,10 @@
     {
       "korean": "∗",
       "brf_ascii": null,
-      "braille_unicode": "⠸⠣",
+      "braille_unicode": "⠐⠔",
       "split": "build",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
       "source": "symbol_table"
     },
     {
@@ -993,7 +993,7 @@
     {
       "korean": "∼",
       "brf_ascii": null,
-      "braille_unicode": "⠐⠠⠤",
+      "braille_unicode": "⠈⠔",
       "split": "build",
       "ambiguous": true,
       "ambiguous_reason": "symbol",
@@ -1002,7 +1002,7 @@
     {
       "korean": "≃",
       "brf_ascii": null,
-      "braille_unicode": "⠈⠊⠉",
+      "braille_unicode": "⠈⠔⠒",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1011,7 +1011,7 @@
     {
       "korean": "≅",
       "brf_ascii": null,
-      "braille_unicode": "⠈⠊⠉⠉",
+      "braille_unicode": "⠈⠔⠒⠒",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1020,7 +1020,7 @@
     {
       "korean": "≈",
       "brf_ascii": null,
-      "braille_unicode": "⠈⠊⠈⠊",
+      "braille_unicode": "⠈⠔⠈⠔",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1029,7 +1029,7 @@
     {
       "korean": "≊",
       "brf_ascii": null,
-      "braille_unicode": "⠈⠊⠈⠊⠉",
+      "braille_unicode": "⠈⠔⠈⠔⠒",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1038,7 +1038,7 @@
     {
       "korean": "≒",
       "brf_ascii": null,
-      "braille_unicode": "⠶⠉⠉",
+      "braille_unicode": "⠐⠒⠒",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1047,7 +1047,7 @@
     {
       "korean": "≠",
       "brf_ascii": null,
-      "braille_unicode": "⠨⠉⠉",
+      "braille_unicode": "⠨⠒⠒",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1056,7 +1056,7 @@
     {
       "korean": "≡",
       "brf_ascii": null,
-      "braille_unicode": "⠛⠛",
+      "braille_unicode": "⠶⠶",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1065,7 +1065,7 @@
     {
       "korean": "≤",
       "brf_ascii": null,
-      "braille_unicode": "⠋⠋",
+      "braille_unicode": "⠦⠦",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1074,7 +1074,7 @@
     {
       "korean": "≥",
       "brf_ascii": null,
-      "braille_unicode": "⠙⠙",
+      "braille_unicode": "⠲⠲",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1083,7 +1083,7 @@
     {
       "korean": "≯",
       "brf_ascii": null,
-      "braille_unicode": "⠨⠑⠑",
+      "braille_unicode": "⠨⠢⠢",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1092,7 +1092,7 @@
     {
       "korean": "≰",
       "brf_ascii": null,
-      "braille_unicode": "⠨⠋⠋",
+      "braille_unicode": "⠨⠦⠦",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1101,7 +1101,7 @@
     {
       "korean": "≱",
       "brf_ascii": null,
-      "braille_unicode": "⠨⠙⠙",
+      "braille_unicode": "⠨⠲⠲",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1110,7 +1110,7 @@
     {
       "korean": "⊄",
       "brf_ascii": null,
-      "braille_unicode": "⠨⠋⠁",
+      "braille_unicode": "⠨⠦⠂",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1130,8 +1130,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠸⠊",
       "split": "build",
-      "ambiguous": true,
-      "ambiguous_reason": "symbol",
+      "ambiguous": false,
+      "ambiguous_reason": null,
       "source": "symbol_table"
     },
     {
@@ -1148,8 +1148,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠠⠠⠠",
       "split": "build",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
       "source": "symbol_table"
     },
     {
@@ -1263,7 +1263,7 @@
     {
       "korean": "○",
       "brf_ascii": null,
-      "braille_unicode": "⠸⠚⠇",
+      "braille_unicode": "⠸⠴⠇",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1272,10 +1272,10 @@
     {
       "korean": "◎",
       "brf_ascii": null,
-      "braille_unicode": "⠸⠚⠚",
+      "braille_unicode": "⠸⠴⠴",
       "split": "build",
-      "ambiguous": true,
-      "ambiguous_reason": "symbol",
+      "ambiguous": false,
+      "ambiguous_reason": null,
       "source": "symbol_table"
     },
     {
@@ -1337,14 +1337,14 @@
       "brf_ascii": null,
       "braille_unicode": "⠸⠚⠚",
       "split": "build",
-      "ambiguous": true,
-      "ambiguous_reason": "symbol",
+      "ambiguous": false,
+      "ambiguous_reason": null,
       "source": "symbol_table"
     },
     {
       "korean": "⫤",
       "brf_ascii": null,
-      "braille_unicode": "⠨⠸⠉",
+      "braille_unicode": "⠨⠸⠒",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1353,7 +1353,7 @@
     {
       "korean": "〃",
       "brf_ascii": null,
-      "braille_unicode": "⠚⠚",
+      "braille_unicode": "⠴⠴",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1362,7 +1362,7 @@
     {
       "korean": "》",
       "brf_ascii": null,
-      "braille_unicode": "⠄⠆",
+      "braille_unicode": "⠶⠆",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1668,7 +1668,7 @@
     {
       "korean": "......",
       "brf_ascii": null,
-      "braille_unicode": "⠲⠲⠲⠲⠲⠲",
+      "braille_unicode": "⠲⠲⠲",
       "split": "test",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1695,7 +1695,7 @@
     {
       "korean": "<",
       "brf_ascii": null,
-      "braille_unicode": "⠊⠊",
+      "braille_unicode": "⠔⠔",
       "split": "test",
       "ambiguous": true,
       "ambiguous_reason": "symbol",
@@ -1704,7 +1704,7 @@
     {
       "korean": "=",
       "brf_ascii": null,
-      "braille_unicode": "⠉⠉",
+      "braille_unicode": "⠒⠒",
       "split": "test",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -1722,7 +1722,7 @@
     {
       "korean": "~",
       "brf_ascii": null,
-      "braille_unicode": "⠐⠠⠤",
+      "braille_unicode": "⠈⠔",
       "split": "test",
       "ambiguous": true,
       "ambiguous_reason": "symbol",
@@ -1749,7 +1749,7 @@
     {
       "korean": "·",
       "brf_ascii": null,
-      "braille_unicode": "⠐⠄",
+      "braille_unicode": "⠐⠆",
       "split": "test",
       "ambiguous": true,
       "ambiguous_reason": "symbol",
@@ -1929,19 +1929,19 @@
     {
       "korean": "…",
       "brf_ascii": null,
-      "braille_unicode": "⠲⠲⠲",
+      "braille_unicode": "⠠⠠⠠",
       "split": "test",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
       "source": "symbol_table"
     },
     {
       "korean": "……",
       "brf_ascii": null,
-      "braille_unicode": "⠂⠂⠂",
+      "braille_unicode": "⠠⠠⠠",
       "split": "test",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "symbol",
       "source": "symbol_table"
     },
     {
@@ -1965,7 +1965,7 @@
     {
       "korean": "↓",
       "brf_ascii": null,
-      "braille_unicode": "⠘⠉⠕",
+      "braille_unicode": "⠘⠒⠕",
       "split": "test",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -2001,19 +2001,19 @@
     {
       "korean": "∋",
       "brf_ascii": null,
-      "braille_unicode": "⠙",
+      "braille_unicode": "⠲",
       "split": "test",
-      "ambiguous": true,
-      "ambiguous_reason": "hangul",
+      "ambiguous": false,
+      "ambiguous_reason": null,
       "source": "symbol_table"
     },
     {
       "korean": "∝",
       "brf_ascii": null,
-      "braille_unicode": "⠬⠉",
+      "braille_unicode": "⠬⠒",
       "split": "test",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "hangul",
       "source": "symbol_table"
     },
     {
@@ -2046,7 +2046,7 @@
     {
       "korean": "≮",
       "brf_ascii": null,
-      "braille_unicode": "⠨⠊⠊",
+      "braille_unicode": "⠨⠔⠔",
       "split": "test",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -2055,7 +2055,7 @@
     {
       "korean": "≲",
       "brf_ascii": null,
-      "braille_unicode": "⠊⠊⠈⠊",
+      "braille_unicode": "⠔⠔⠈⠔",
       "split": "test",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -2064,7 +2064,7 @@
     {
       "korean": "≺",
       "brf_ascii": null,
-      "braille_unicode": "⠊⠊",
+      "braille_unicode": "⠔⠔",
       "split": "test",
       "ambiguous": true,
       "ambiguous_reason": "symbol",
@@ -2073,16 +2073,16 @@
     {
       "korean": "⊂",
       "brf_ascii": null,
-      "braille_unicode": "⠋⠁",
+      "braille_unicode": "⠦⠂",
       "split": "test",
       "ambiguous": true,
-      "ambiguous_reason": "hangul",
+      "ambiguous_reason": "symbol",
       "source": "symbol_table"
     },
     {
       "korean": "⊃",
       "brf_ascii": null,
-      "braille_unicode": "⠶⠙",
+      "braille_unicode": "⠐⠲",
       "split": "test",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -2091,7 +2091,7 @@
     {
       "korean": "⊅",
       "brf_ascii": null,
-      "braille_unicode": "⠨⠶⠙",
+      "braille_unicode": "⠨⠐⠲",
       "split": "test",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -2109,7 +2109,7 @@
     {
       "korean": "⊢",
       "brf_ascii": null,
-      "braille_unicode": "⠸⠉",
+      "braille_unicode": "⠸⠒",
       "split": "test",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -2118,7 +2118,7 @@
     {
       "korean": "⊣",
       "brf_ascii": null,
-      "braille_unicode": "⠈⠸⠉",
+      "braille_unicode": "⠈⠸⠒",
       "split": "test",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -2127,7 +2127,7 @@
     {
       "korean": "⊨",
       "brf_ascii": null,
-      "braille_unicode": "⠘⠸⠉",
+      "braille_unicode": "⠘⠸⠒",
       "split": "test",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -2244,7 +2244,7 @@
     {
       "korean": "□",
       "brf_ascii": null,
-      "braille_unicode": "⠸⠄⠇",
+      "braille_unicode": "⠸⠶⠇",
       "split": "test",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -2253,7 +2253,7 @@
     {
       "korean": "▣",
       "brf_ascii": null,
-      "braille_unicode": "⠸⠄⠄",
+      "braille_unicode": "⠸⠶⠶",
       "split": "test",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -2298,16 +2298,16 @@
     {
       "korean": "〈",
       "brf_ascii": null,
-      "braille_unicode": "⠐⠄",
+      "braille_unicode": "⠐⠶",
       "split": "test",
-      "ambiguous": true,
-      "ambiguous_reason": "symbol",
+      "ambiguous": false,
+      "ambiguous_reason": null,
       "source": "symbol_table"
     },
     {
       "korean": "〉",
       "brf_ascii": null,
-      "braille_unicode": "⠄⠂",
+      "braille_unicode": "⠶⠂",
       "split": "test",
       "ambiguous": false,
       "ambiguous_reason": null,
@@ -2316,7 +2316,7 @@
     {
       "korean": "《",
       "brf_ascii": null,
-      "braille_unicode": "⠰⠄",
+      "braille_unicode": "⠰⠶",
       "split": "test",
       "ambiguous": false,
       "ambiguous_reason": null,
