@@ -35,7 +35,9 @@ logger = logging.getLogger(__name__)
 from app.ai.braille.constants import COLS as _COLS, ROWS as _ROWS, DOUBLE_SIDED  # noqa: E402 (공용 상수)
 
 # ── BBPG 2장2절1 제목 단계별 빈 줄 (level → (앞, 뒤)) ───────────────────────
-_HEADING_BLANK: dict[int, tuple[int, int]] = {1: (2, 1), 2: (1, 1), 3: (1, 0)}
+# BBPG 2장2절1·2장2절2 2)①: 1단계 아래·2단계 아래·3단계 위아래·4단계 위 빈 줄.
+# (1·2단계 before는 장/쪽바꿈 근사 — 양면 조판은 DOUBLE_SIDED 참조.)
+_HEADING_BLANK: dict[int, tuple[int, int]] = {1: (2, 1), 2: (1, 1), 3: (1, 1), 4: (1, 0)}
 
 # 단어 구분 = ASCII 공백 또는 점자 빈칸(U+2800)
 _WORD_RE = re.compile(r"[^ ⠀]+")

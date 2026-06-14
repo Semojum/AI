@@ -406,6 +406,12 @@ class TestLayoutBody:
         assert first.startswith(" " * 7) and not first.startswith(" " * 8)
         assert first.strip() == "중제목"
 
+    def test_heading_blank_lines_규정(self) -> None:
+        """BBPG 2장2절2 2)①: 3단계=위아래 빈 줄, 4단계=위에만."""
+        from app.ai.braille.layout_braille import _HEADING_BLANK
+        assert _HEADING_BLANK[3] == (1, 1)   # 3단계 위아래
+        assert _HEADING_BLANK[4] == (1, 0)   # 4단계 위에만
+
     def test_heading_level3_indent5(self, lb, tmp_path) -> None:
         """3단계 제목 5칸 들여 (BBPG 2장2절1)."""
         eid = uuid4()
