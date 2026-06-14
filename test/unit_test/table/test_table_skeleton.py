@@ -30,7 +30,7 @@ class TestStructuredInput:
     def test_render_mode_추론(self):
         assert _infer_render_mode(_CELLS) == "linear"            # 2열 → 선형
         grid = {"cells": _CELLS["cells"] + [{"row": 0, "col": 2, "text": "비고"}]}
-        assert _infer_render_mode(grid) == "table_grid"          # 3열 → 격자
+        assert _infer_render_mode(grid) == "unfold"              # 3열 → 풀어쓰기(BBPG-3.1.2)
 
 
 class TestOptimize:
@@ -48,8 +48,8 @@ class TestOptimize:
         opt = asyncio.run(TableOpt().optimize([ext], "ZERO"))
         bo = TableBraille().translate(opt)[0]
         labels = [d.label for d in bo.drafts]
-        assert labels == ["격자형", "행↔열 전치", "선형(키:값)"]   # 레이아웃 3안(셀 동일)
-        assert _border_line() in bo.drafts[0].braille_lines        # 격자 테두리 ⠿
+        assert labels == ["풀어쓰기(3칸·2칸)", "격자형", "행↔열 전치", "선형(키:값)"]  # 기본=풀어쓰기
+        assert _border_line() in bo.drafts[1].braille_lines        # 격자형(대안) 테두리 ⠿
 
 
 class TestTitle:
@@ -81,7 +81,7 @@ class TestTitle:
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, table_structure=grid)
         opt = asyncio.run(TableOpt().optimize([ext], "ZERO"))
         bo = TableBraille().translate(opt)[0]
-        lines = bo.drafts[0].braille_lines
+        lines = bo.drafts[1].braille_lines                     # 격자형(테두리 있는 대안)
         # 제목 줄이 위 테두리보다 먼저(§3 5)(2)), 5칸 들여(§3 5)(1))
         assert lines[0].startswith(" " * 5) and not lines[0].startswith(" " * 6)
         assert lines[0].strip() and not _is_border(lines[0])
@@ -91,7 +91,7 @@ class TestTitle:
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, table_structure=_CELLS)
         opt = asyncio.run(TableOpt().optimize([ext], "ZERO"))
         bo = TableBraille().translate(opt)[0]
-        assert not bo.drafts[0].braille_lines[0].startswith(" ")   # 제목 줄 없음
+        assert _is_border(bo.drafts[1].braille_lines[0])           # 제목 없으면 격자형 첫 줄=위 테두리
 
 
 def _is_border(line: str) -> bool:

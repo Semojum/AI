@@ -67,6 +67,11 @@ def _grits(extracted: ExtractedContent, output: BrailleOutput, render_mode: str)
         guide_lines = [ln for ln in output.braille_lines if ln.startswith("⠄")]
         checks.append(len(guide_lines) == max_row)  # 행 수 정확히 일치
         checks.append(len(output.braille_lines) == max_row)  # 총 줄 수 일치
+    elif render_mode == "unfold":
+        # 풀어쓰기(BBPG-3.1.2): 행당 한 줄, 3칸(앞 2칸 빈칸) 시작
+        nonblank = [ln for ln in output.braille_lines if ln.strip()]
+        checks.append(len(output.braille_lines) == max_row)
+        checks.append(all(ln.startswith("  ") for ln in nonblank))
     else:
         # table_grid: border(⠿×32) 2줄 + separator(⠒×32) (row-1)줄 + data row줄
         border_lines = [ln for ln in output.braille_lines if set(ln) == {"⠿"}]
@@ -212,16 +217,18 @@ class TestTableRenderModes:
         two_col_items = [o for o in opt_outputs if o.render_mode == "linear"]
         assert len(two_col_items) >= 1, "2열 표의 linear 렌더 모드 없음"
 
-    def test_3col_table_uses_grid_mode(self, opt_outputs: list[Any]) -> None:
-        grid_items = [o for o in opt_outputs if o.render_mode == "table_grid"]
-        assert len(grid_items) >= 1, "3열 이상 표의 table_grid 렌더 모드 없음"
+    def test_3col_table_uses_unfold_mode(self, opt_outputs: list[Any]) -> None:
+        # 3열 이상 = 풀어쓰기(BBPG-3.1.2)가 기본, 격자는 대안
+        unfold_items = [o for o in opt_outputs if o.render_mode == "unfold"]
+        assert len(unfold_items) >= 1, "3열 이상 표의 unfold(풀어쓰기) 렌더 모드 없음"
 
-    def test_grid_output_has_border(self, braille_outputs: list[BrailleOutput]) -> None:
-        grid_outputs = [
-            o for o in braille_outputs
-            if any("⠿" in line for line in o.braille_lines)
-        ]
-        assert len(grid_outputs) >= 1, "⠿ 테두리 없음"
+    def test_grid_alternative_draft_has_border(self, braille_outputs: list[BrailleOutput]) -> None:
+        # 격자형은 기본이 아니라 대안 초안 — ⠿ 테두리가 대안 draft에 존재해야 함
+        has_grid = any(
+            d.render_mode == "table_grid" and any("⠿" in ln for ln in d.braille_lines)
+            for o in braille_outputs for d in o.drafts
+        )
+        assert has_grid, "격자형 대안 초안의 ⠿ 테두리 없음"
 
     def test_linear_output_has_guide(self, braille_outputs: list[BrailleOutput]) -> None:
         linear_outputs = [

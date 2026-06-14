@@ -1,7 +1,7 @@
 """PART 6-2 — 표 점역 최적화 (HyperCLOVA X SEED Think 14B INT4, GPU 1).
 
 점역사주 복수 초안 생성 + render_mode 결정.
-render_mode 우선순위: table_structure['render_mode'] → 행/열 수 기반 추론 → table_grid
+render_mode 우선순위: table_structure['render_mode'] → 행/열 수 기반 추론 → unfold(풀어쓰기)
 
 공통 추론·폴백·재시도는 base_opt — 여기서는 표에 최적화된 프롬프트·구조 추론만 정의한다.
 """
@@ -106,14 +106,14 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
                 return "linear"
             if max_row == 1:
                 return "transposed"
-            return "table_grid"
+            return "unfold"   # 3열 이상 = 풀어쓰기 기본(BBPG-3.1.2), 격자는 대안 초안
     # table_structure 없음/빈 셀: 텍스트의 '|' 격자로 추론(현주 미파싱 핸드오프 대비).
-    # '|'가 있으면 격자 표 → narrative로 오분류하지 않는다(2열은 linear, 그 외 격자).
+    # '|'가 있으면 격자 표 → narrative로 오분류하지 않는다(2열은 linear, 그 외 풀어쓰기).
     rows = [ln for ln in (text or "").splitlines() if "|" in ln]
     if not rows:
         return "narrative"
     max_col = max(len(r.split("|")) for r in rows)
-    return "linear" if max_col == 2 else "table_grid"
+    return "linear" if max_col == 2 else "unfold"
 
 
 def _parse_tn_from_response(response: str) -> str:

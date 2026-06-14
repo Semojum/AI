@@ -136,6 +136,29 @@ def _render_linear(corrected_text: str) -> list[str]:
     return result or [""]
 
 
+def _render_unfold(corrected_text: str) -> list[str]:
+    """표 → 풀어쓰기 컬럼 정렬 (BBPG-3.1.2: 열 제목 3칸부터·두 칸씩 띄어 구분).
+
+    각 열을 열별 최대 너비로 맞춰 2칸씩 띄어 구분하고, 줄 전체를 3칸(앞 2칸 빈칸)에서
+    시작한다. 열 제목 줄과 데이터 줄이 같은 열 위치에 정렬된다(셀 내용도 이와 같이).
+    한 줄이 32칸을 넘으면 layout이 음절 단위로 줄바꿈한다(넓은 표는 전치안 권장).
+    """
+    rows = [[c.strip() for c in ln.split("|")] for ln in corrected_text.splitlines() if ln.strip()]
+    if not rows:
+        return [""]
+    n_cols = max(len(r) for r in rows)
+    rows = [r + [""] * (n_cols - len(r)) for r in rows]
+    cells_br = [[_translate(c) for c in r] for r in rows]
+    widths = [max((len(cells_br[i][j]) for i in range(len(cells_br))), default=0)
+              for j in range(n_cols)]
+    lines: list[str] = []
+    for r in cells_br:
+        parts = [r[j].ljust(widths[j]) for j in range(n_cols)]
+        line = "  " + "  ".join(parts)            # 3칸 시작(앞 2칸) + 2칸 구분
+        lines.append(line.rstrip() or "  ")        # 마지막 열 trailing 패딩 제거
+    return lines or [""]
+
+
 def _transpose_text(corrected_text: str) -> str:
     """'|' 구분 표 텍스트의 행↔열을 바꾼다."""
     rows = [[c.strip() for c in ln.split("|")] for ln in corrected_text.splitlines() if ln.strip()]
@@ -186,24 +209,25 @@ class TableBraille:
             append_nested(bo, opt.nested_text)   # 표 안 그림(Q11) 글상자 1단 덧붙임
             return bo
 
-        # 격자 구조 → 레이아웃 3안 (셀 값 동일, 조판만 다름)
+        # 표 유형별 레이아웃 (셀 값 동일, 조판만 다름). 기본=풀어쓰기(BBPG-3.1.2 원칙).
+        unfold_lines = _wt(_render_unfold(text))
         grid_lines = _wt(_render_grid(text))
         transposed_lines = _wt(_split_lines(_translate(_TN_TRANSPOSE)) + _render_grid(_transpose_text(text)))
         linear_lines = _wt(_render_linear(text))
-        # 전치안은 표 유형별 점역(BBPG-3.1.2)을 추가로 기록 — 요소 전체(line_no=-1)
-        trail_transpose = _base_trail(transposed_lines, text) + [
-            make_rule("BBPG-3.1.2"),
-        ]
         drafts = [
-            Draft(option=1, text=text, render_mode="table_grid", label="격자형",
+            Draft(option=1, text=text, render_mode="unfold", label="풀어쓰기(3칸·2칸)",
+                  braille_lines=unfold_lines,
+                  rule_trail=_base_trail(unfold_lines, text) + [make_rule("BBPG-3.1.2")]),
+            Draft(option=2, text=text, render_mode="table_grid", label="격자형",
                   braille_lines=grid_lines, rule_trail=_base_trail(grid_lines, text)),
-            Draft(option=2, text=text, render_mode="transposed", label="행↔열 전치",
-                  braille_lines=transposed_lines, rule_trail=trail_transpose),
-            Draft(option=3, text=text, render_mode="linear", label="선형(키:값)",
+            Draft(option=3, text=text, render_mode="transposed", label="행↔열 전치",
+                  braille_lines=transposed_lines,
+                  rule_trail=_base_trail(transposed_lines, text) + [make_rule("BBPG-3.1.2")]),
+            Draft(option=4, text=text, render_mode="linear", label="선형(키:값)",
                   braille_lines=linear_lines, rule_trail=_base_trail(linear_lines, text)),
         ]
-        # 기본 선택은 opt가 추론한 render_mode에 맞춘다 (나머지는 대안 초안)
-        sel = {"table_grid": 0, "transposed": 1, "linear": 2}.get(opt.render_mode, 0)
+        # 기본 선택 = opt 추론 render_mode (없으면 풀어쓰기). 나머지는 대안 초안.
+        sel = {"unfold": 0, "table_grid": 1, "transposed": 2, "linear": 3}.get(opt.render_mode, 0)
         bo = BrailleOutput(
             element_id=opt.element_id,
             braille_lines=drafts[sel].braille_lines,
