@@ -18,7 +18,7 @@ from app.ai.llm.draft_utils import ensure_tn_prefix
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
-_RULE_ID = "BBPG-3.2.1"   # 시각자료 일반(만화 골격 근거 §5.3)
+_RULE_ID = "JAJAK-5.3"   # 만화 골격 (점자 자료 제작 지침 §5.3)
 _SCENE_INDENT = 3
 _PANEL_INDENT = 5
 

@@ -57,7 +57,7 @@ def _llm(text: str, *, drafts=None, render_mode="text_only") -> LLMOutput:
 class TestRuleRegistry:
 
     def test_registry_size(self):
-        assert len(all_rule_ids()) == 226
+        assert len(all_rule_ids()) == 233  # KBR+BBPG 226 + 자료지침(JAJAK) 7
 
     def test_make_rule_literals_subset_of_registry(self):
         scanned = _scan_make_rule_ids()

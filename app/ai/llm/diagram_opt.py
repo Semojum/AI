@@ -50,7 +50,7 @@ from app.ai.llm.draft_utils import ensure_tn_prefix
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
-_RULE_ID = "BBPG-3.2.1"   # 시각자료 일반(도표 골격 근거 §6.6)
+_RULE_ID = "JAJAK-6.6.1"   # 도표 골격 (점자 자료 제작 지침 §6.6)
 _TITLE_INDENT = 5         # §6.3.3(1)
 _BRANCH_INDENT = 3        # §6.6.2(4)⑥ 선택지 3칸
 _HIER_BASE = 1            # §6.6.5(2)·§6.6.4(2)② 최상위 1칸

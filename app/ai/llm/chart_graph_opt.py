@@ -15,7 +15,7 @@ from app.ai.llm.base_opt import numbers_grounded as _verify_numbers  # noqa: F40
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import Draft, ExtractedContent, LLMOutput, RuleApplication
 
-_RULE_ID = "BBPG-3.2.2"   # 시각자료 유형별 점역(차트·그래프)
+_RULE_ID = "JAJAK-6.4.1"   # 그래프 골격 (점자 자료 제작 지침 §6.4)
 _STANDARD_TIMEOUT = 15.0
 _QUALITY_TIMEOUT = 30.0
 _METHODS = ["표 변환", "수학적 서술"]   # §6.4·Q5 — 규정이 허용하는 2안만

@@ -27,7 +27,7 @@ def _nested_graph_text(structure: dict) -> str | None:
               if (n.get("type") or "").strip() in _NESTED_GRAPH_TYPES]
     return box_narrative(blocks, default_label="그래프")
 
-_RULE_ID = "BBPG-3.2.1"   # 시각자료 일반 사항
+_RULE_ID = "JAJAK-6.3.3"   # 이미지 골격·제목 5칸 (점자 자료 제작 지침 §6.3)
 _STANDARD_TIMEOUT = 15.0
 _QUALITY_TIMEOUT = 60.0
 _METHODS = ["위치 중심", "상황 중심"]   # §QnA Q2 — 규정이 허용하는 2안만
