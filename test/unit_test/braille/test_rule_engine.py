@@ -243,6 +243,7 @@ class TestSymbolGlyphs:
         ("∈", "⠦"), ("⊂", "⠦⠂"), ("≡", "⠶⠶"),
         ("…", "⠠⠠⠠"), ("《", "⠰⠶"), ("※", "⠐⠔"), ("〃", "⠴⠴"),
         ("○", "⠸⠴⠇"), ("□", "⠸⠶⠇"),
+        ("①", "⠼⠂"), ("⑩", "⠼⠂⠴"), ("⑳", "⠼⠆⠴"),  # 제64항 한 단 내림
     ])
     def test_symbol_glyph(self, symbol: str, expected: str) -> None:
         from app.ai.braille.symbol_rules import substitute_symbols

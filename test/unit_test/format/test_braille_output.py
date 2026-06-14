@@ -146,7 +146,8 @@ class TestSymbolSubstitution:
         assert substitute_symbols("℃") == "⠴⠙⠠⠉"
 
     def test_circled_number_substituted(self):
-        assert substitute_symbols("①") == "⠼⠁⠲"
+        # 제64항: 동그라미 숫자 = 수표 + 한 단 내림 숫자 (① = ⠼⠂)
+        assert substitute_symbols("①") == "⠼⠂"
 
     def test_symbols_in_translation(self):
         result = translate_tagged_text("α + β")
