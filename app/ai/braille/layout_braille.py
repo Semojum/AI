@@ -171,8 +171,9 @@ def format_overflow_page_number() -> str:
 
 
 def _page_number_braille(n: int) -> str:
+    # 점자 페이지 번호 = 수표 + 숫자 (BBPG 1장2절2 예 1-6: ⠼NN, 끝에 마침표 없음)
     digits = "".join(_DIGIT_MAP.get(c, c) for c in str(n))
-    return f"{_NUMBER_INDICATOR}{digits}⠲"
+    return f"{_NUMBER_INDICATOR}{digits}"
 
 
 def _right_align(text: str, width: int) -> str:

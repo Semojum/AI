@@ -4,7 +4,7 @@
 규정(KBR)에서 도출. (폐기된 JAJAK 기반 마커 전면 교체됨.)
 
 BBPG 1장2절1: 32칸 줄바꿈, 25줄 페이지 넘김
-BBPG 1장2절2: ⠼N⠲ 점자 페이지 번호 우측 정렬
+BBPG 1장2절2: ⠼N 점자 페이지 번호 우측 정렬 (마침표 없음, 예 1-6)
 
 TestLayoutRulesSpec: BBPG 제1·2장 레이아웃 규칙 검증.
   - testable=True 규칙은 직접 assert.
@@ -122,7 +122,7 @@ class TestLayoutRulesSpec:
 
     def test_right_align_fills_to_32(self) -> None:
         """_right_align은 text를 32칸 우측에 정렬한다."""
-        text = "⠼⠁⠲"
+        text = "⠼⠁"
         result = _right_align(text, _COLS)
         assert len(result) == _COLS
         assert result.endswith(text)
@@ -133,7 +133,7 @@ class TestLayoutRulesSpec:
         lb.layout([_out(["테스트"])], page_no=1, job_id="align-test")
         last_line = _read_lines(tmp_path, "align-test")[-1]
         assert len(last_line) == _COLS
-        assert last_line.endswith("⠲")  # 페이지 번호 종료 점형
+        assert last_line.endswith("⠼⠁")  # 점자 페이지번호 ⠼1 (마침표 없음, 예 1-6)
 
     # ── BBPG 마커/헬퍼 검증 ───────────────────────────────────────────────────
 
@@ -427,7 +427,7 @@ class TestLayoutBody:
                   page_no=1, job_id="pgn", layout_result=lr)
         page_line = _read_lines(tmp_path, "pgn")[-1]
         assert page_line.startswith("⠼⠉⠊")     # 좌측 원본 번호
-        assert page_line.rstrip().endswith("⠲")  # 우측 점자 페이지번호
+        assert page_line.rstrip().endswith("⠼⠁")  # 우측 점자 페이지번호(⠼1, 마침표 없음)
         assert "⠼⠉⠊" not in "\n".join(_read_lines(tmp_path, "pgn")[:-1])  # 본문 아님
 
 

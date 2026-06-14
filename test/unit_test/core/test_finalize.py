@@ -34,7 +34,7 @@ class TestFinalizeAssembly:
         page_row = pages[0][-1]                 # 마지막 줄 = 페이지행
         assert len(page_row) == _COLS
         assert page_row.startswith("⠼⠁")        # 좌: 원본 페이지번호
-        assert page_row.rstrip().endswith("⠼⠁⠲")  # 우: 점자 페이지번호 ⠼⠁⠲
+        assert page_row.rstrip().endswith("⠼⠁")  # 우: 점자 페이지번호 ⠼1 (마침표 없음)
         assert "⠈⠪⠐⠕⠢" in page_row              # 가운데: 꼬리말
 
     def test_본문_보존(self):
