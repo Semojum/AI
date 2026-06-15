@@ -100,7 +100,7 @@ def _render_grid(corrected_text: str) -> list[str]:
         raw_cells = [c.strip() for c in row.split("|")]
         raw_cells += [""] * (n_cols - len(raw_cells))
 
-        cell_lines = [_split_cell(_translate(c), col_w) for c in raw_cells]
+        cell_lines = [_split_cell(_translate(c) if c else "⠿⠿", col_w) for c in raw_cells]  # 빈 셀=⠿⠿
         max_h = max(len(cl) for cl in cell_lines)
 
         for h in range(max_h):
@@ -148,7 +148,7 @@ def _render_unfold(corrected_text: str) -> list[str]:
         return [""]
     n_cols = max(len(r) for r in rows)
     rows = [r + [""] * (n_cols - len(r)) for r in rows]
-    cells_br = [[_translate(c) for c in r] for r in rows]
+    cells_br = [[(_translate(c) if c else "⠿⠿") for c in r] for r in rows]  # 빈 셀=⠿⠿(BBPG-3.1.2(4))
     widths = [max((len(cells_br[i][j]) for i in range(len(cells_br))), default=0)
               for j in range(n_cols)]
     lines: list[str] = []
