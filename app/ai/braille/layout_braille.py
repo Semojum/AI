@@ -39,6 +39,9 @@ from app.ai.braille.constants import COLS as _COLS, ROWS as _ROWS, DOUBLE_SIDED 
 # (1·2단계 before는 장/쪽바꿈 근사 — 양면 조판은 DOUBLE_SIDED 참조.)
 _HEADING_BLANK: dict[int, tuple[int, int]] = {1: (2, 1), 2: (1, 1), 3: (1, 1), 4: (1, 0)}
 
+# BBPG 2장2절2 2)①④: 표·시각 자료는 위아래에 빈 줄을 삽입한다.
+_BLANK_AROUND_TYPES = frozenset({"table", "image", "cartoon", "chart_graph", "diagram"})
+
 # 단어 구분 = ASCII 공백 또는 점자 빈칸(U+2800)
 _WORD_RE = re.compile(r"[^ ⠀]+")
 
@@ -332,7 +335,7 @@ class LayoutBraille:
         body, page_line_items = self._partition(braille_outputs, meta)
         body.sort(key=lambda b: meta.get(b.element_id, _DEFAULT_META)[1])
 
-        formatted: list[tuple[int, list[str]]] = []  # (heading_level, 조판 줄)
+        formatted: list[tuple[int, str, list[str]]] = []  # (heading_level, etype, 조판 줄)
         total = 0
         forced_total = 0
         for bo in body:
@@ -340,7 +343,7 @@ class LayoutBraille:
             el_lines, forced = self._format_element(bo, etype, hlevel)
             if not el_lines:                       # 빈 요소는 빈 줄·태깅 없이 건너뜀
                 continue
-            formatted.append((hlevel, el_lines))
+            formatted.append((hlevel, etype, el_lines))
             total += len(el_lines)
             forced_total += forced
 
@@ -352,26 +355,28 @@ class LayoutBraille:
 
     def _assemble_pages(
         self,
-        formatted_blocks: list[tuple[int, list[str]]],
+        formatted_blocks: list[tuple[int, str, list[str]]],
         footer: str,
         orig_page: str,
         page_no: int,
     ) -> list[list[str]]:
-        """이미 조판된 블록 줄들을 페이지로 조립(BBPG): 제목 단계별 빈 줄 + 25줄 페이지 + 페이지행.
+        """이미 조판된 블록 줄들을 페이지로 조립(BBPG): 제목·표·시각자료 빈 줄 + 페이지 + 페이지행.
 
         재-wrap·들여쓰기는 하지 않는다(블록 줄은 이미 32칸 조판본). layout()(초안)과
-        finalize()(편집본)가 공유하는 순수 조립부.
+        finalize()(편집본)가 공유하는 순수 조립부. 인접 블록의 빈 줄은 하나로 합친다.
         """
         lines: list[str] = []
-        for hlevel, el_lines in formatted_blocks:
+        trailing = 0   # 현재 lines 끝의 빈 줄 수(인접 블록 빈 줄 중복 방지)
+        for hlevel, etype, el_lines in formatted_blocks:
             if not el_lines:
                 continue
             before, after = _HEADING_BLANK.get(hlevel, (0, 0))
-            if before:
-                lines.extend([""] * before)
+            if etype in _BLANK_AROUND_TYPES:        # 표·시각자료 위아래(BBPG 2장2절2 2)①④)
+                before, after = max(before, 1), max(after, 1)
+            lines.extend([""] * max(0, before - trailing))
             lines.extend(el_lines)
-            if after:
-                lines.extend([""] * after)
+            lines.extend([""] * after)
+            trailing = after
         return self._paginate(lines, page_no, footer, orig_page)
 
     def finalize(self, blocks: list[dict], page_no: int = 1) -> list[list[str]]:
@@ -394,7 +399,8 @@ class LayoutBraille:
             (b for b in blocks if b.get("type") not in _PAGE_LINE_TYPES),
             key=lambda b: b.get("order", 1_000_000),
         )
-        formatted = [(int(b.get("heading_level") or 0), list(b.get("lines", []))) for b in body]
+        formatted = [(int(b.get("heading_level") or 0), b.get("type") or "", list(b.get("lines", [])))
+                     for b in body]
         footer = _first_line("header_footer")
         orig_page = _first_line("page_number")
         return self._assemble_pages(formatted, footer, orig_page, page_no)

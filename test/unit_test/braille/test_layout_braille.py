@@ -412,6 +412,14 @@ class TestLayoutBody:
         assert _HEADING_BLANK[3] == (1, 1)   # 3단계 위아래
         assert _HEADING_BLANK[4] == (1, 0)   # 4단계 위에만
 
+    def test_표_시각자료_위아래_빈줄(self, lb) -> None:
+        """표·시각자료는 위아래 빈 줄 삽입 (BBPG 2장2절2 2)①④)."""
+        formatted = [(0, "text", ["⠁⠁"]), (0, "table", ["⠞⠞"]), (0, "text", ["⠃⠃"])]
+        body = [l for page in lb._assemble_pages(formatted, "", "", 1) for l in page]
+        ti = body.index("⠞⠞")
+        assert body[ti - 1] == ""    # 표 위 빈 줄
+        assert body[ti + 1] == ""    # 표 아래 빈 줄
+
     def test_heading_level3_indent5(self, lb, tmp_path) -> None:
         """3단계 제목 5칸 들여 (BBPG 2장2절1)."""
         eid = uuid4()
