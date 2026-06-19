@@ -177,16 +177,16 @@ def _blocks_from_text(pdf_text: Optional[str]) -> list[dict]:
 async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> list[dict]:
     """non-ZERO Tier: 현주 모델 모듈(레이아웃·OCR) 호출. 미탑재/실패 시 빈 결과로 격리."""
     try:
-        from app.ai.preprocessor.converter import convert_page
+        # from app.ai.preprocessor.converter import convert_page  # converter.py 삭제됨
         from app.ai.layout.layout_merger import LayoutMerger
         from app.ai.layout.qwen_layout import QwenLayout
         from app.ai.layout.yolo_layout import YoloLayout
         from app.ai.ocr.qwen_ocr import QwenOCR
 
-        page_image = await asyncio.to_thread(
-            convert_page, task.pdf_data, task.page_no - 1,
-            doc_meta.routing_tier, task.job_id, task.page_no,
-        )
+        # page_image = await asyncio.to_thread(  # converter.py 삭제됨
+        #     convert_page, task.pdf_data, task.page_no - 1,
+        #     doc_meta.routing_tier, task.job_id, task.page_no,
+        # )
         qwen_items, yolo_hints = await asyncio.gather(
             asyncio.to_thread(QwenLayout().detect, page_image),
             asyncio.to_thread(YoloLayout().detect, page_image),

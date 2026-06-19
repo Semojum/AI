@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 .env
 storage/
+test/results/
 *.egg-info/
 dist/
 .pytest_cache/
