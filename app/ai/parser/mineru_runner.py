@@ -23,6 +23,7 @@ TYPE_MAP = {
     "caption":             "caption",
     "interline_equation":  "formula",
     "inline_equation":     "formula",
+    "equation":            "formula",
     "list":                "list_item",
     "footnote":            "footnote",
     "sidebar":             "sidebar",

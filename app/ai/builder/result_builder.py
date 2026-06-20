@@ -55,15 +55,24 @@ def _reorder(elements: list[dict]) -> list[dict]:
     return top + body + bottom
 
 
-def _do_caption(el: dict) -> str:
+_CLASSIFY_TYPE_MAP = {
+    "cartoon": "cartoon",
+    "chart": "chart_graph",
+    "image": "image",
+}
+
+
+def _do_caption(el: dict) -> tuple[str, str]:
     img_path = el.get("image_path")
+    original_type = el.get("type", "image")
     if not img_path or not Path(img_path).exists():
-        return "[이미지 경로 없음]"
+        return "[이미지 경로 없음]", original_type
     try:
         image_type = classify(img_path)
-        return caption(img_path, image_type)
+        mapped_type = _CLASSIFY_TYPE_MAP.get(image_type, "image")
+        return caption(img_path, image_type), mapped_type
     except Exception:
-        return "[캡셔닝 실패]"
+        return "[캡셔닝 실패]", original_type
 
 
 def _render_page(pdf_path: str, page_no: int) -> Image.Image:
@@ -111,9 +120,10 @@ def build(
     order = 1
     for el in ordered:
         if el["type"] in _VISUAL_TYPES:
-            content = _do_caption(el)
+            content, el_type = _do_caption(el)
         else:
             content = el.get("content", "")
+            el_type = el["type"]
 
         if not content.strip():
             continue
@@ -122,7 +132,7 @@ def build(
         elements.append({
             "id": el["element_id"],
             "order": order,
-            "type": el["type"],
+            "type": el_type,
             "content": content,
         })
 
