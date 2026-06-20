@@ -5,7 +5,7 @@ MinerU VLM 백엔드로 PDF 단일 페이지 처리.
 출력:  storage/jobs/{job_id}/temp/page_{no:03d}/
         mineru_raw/images/{element_id}.jpg  (이미지/표 요소)
        debug=True 시 추가:
-        test/results/page_{no:03d}/merged_layout.json
+        storage/jobs/{job_id}/temp/page_{no:03d}/merged_layout.json
 반환:  merged_layout (list[dict])
 """
 import json
