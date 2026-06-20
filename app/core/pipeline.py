@@ -209,6 +209,11 @@ async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> list[di
                 "order": e.reading_order,
                 "type": e.type,
                 "content": (ex.corrected_text if ex else "") or "",
+                # 위치·연결 신호도 경계 dict에 실어 BoundingBox까지 흐르게 한다(현주 계약).
+                "bbox": list(e.bbox),
+                "caption_ref": str(e.caption_ref) if e.caption_ref else "",
+                "flags": list(e.flags),
+                "heading_level": e.heading_level or 0,
             })
         return elements
     except Exception as exc:
@@ -266,22 +271,40 @@ def _parse_txt_result(
         hlevel = el.get("heading_level")
         if hlevel in (None, 0) and etype == "title":
             hlevel = 1
+        # bbox: 현주 레이아웃 좌표 → BoundingBox(x,y,x2,y2)로 BE 전달. 없거나 깨지면 (0,0,0,0).
+        raw_bbox = el.get("bbox")
+        try:
+            bbox = (int(raw_bbox[0]), int(raw_bbox[1]), int(raw_bbox[2]), int(raw_bbox[3]))
+        except (TypeError, IndexError, ValueError):
+            bbox = (0, 0, 0, 0)
+        # caption_ref: 캡션→대상(그림/표) 연결. UUID 문자열만 수용, 그 외 None.
+        raw_cref = el.get("caption_ref")
+        try:
+            caption_ref = UUID(str(raw_cref)) if raw_cref else None
+        except (ValueError, TypeError):
+            caption_ref = None
+        flags = [str(f) for f in (el.get("flags") or [])]
+        # ocr_confidence: 요소별 값이 오면 사용, 없으면 추출방식 기준값(conf).
+        raw_conf = el.get("ocr_confidence")
+        econf = float(raw_conf) if isinstance(raw_conf, (int, float)) else conf
 
         bbox_items.append(BBoxItem(
-            element_id=eid, type=etype, bbox=(0, 0, 0, 0), reading_order=order,
-            heading_level=hlevel,
+            element_id=eid, type=etype, bbox=bbox, reading_order=order,
+            heading_level=hlevel, caption_ref=caption_ref, flags=flags,
         ))
         if etype == "formula":
             ext_map[eid] = ExtractedContent(
                 element_id=eid, latex_string=content, corrected_text=content,
-                ocr_confidence=conf,
+                ocr_confidence=econf,
             )
         else:
             # 현주 구조화 입력(계약): structure(만화 panels·차트 axes 등)·table_structure 전달.
             # 없으면 None → 각 opt가 corrected_text(caption) 폴백.
+            raw_subconf = el.get("subtype_confidence")
             ext_map[eid] = ExtractedContent(
-                element_id=eid, corrected_text=content, ocr_confidence=conf,
+                element_id=eid, corrected_text=content, ocr_confidence=econf,
                 visual_subtype=vsub,
+                subtype_confidence=float(raw_subconf) if isinstance(raw_subconf, (int, float)) else None,
                 structure=el.get("structure"),
                 table_structure=el.get("table_structure"),
             )
