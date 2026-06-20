@@ -108,7 +108,8 @@ DEBUG    = "--debug" in sys.argv
 
 print(f"[pipeline] PDF={PDF_PATH}, job_id={JOB_ID}, page_no={PAGE_NO}")
 
-extraction_method = analyze_pdf(PDF_PATH, PAGE_NO)
+doc_meta, _pdf_text = analyze_pdf(PDF_PATH, PAGE_NO)
+extraction_method = "TEXT_NATIVE" if doc_meta.routing_tier == "ZERO" else "OCR"
 print(f"[pipeline] extraction_method={extraction_method}")
 
 before_torch = _torch_snapshot()

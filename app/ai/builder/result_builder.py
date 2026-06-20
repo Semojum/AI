@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 from app.ai.captioning.captioner import caption
 from app.ai.captioning.classifier import classify
 
-_VISUAL_TYPES = {"image", "cartoon", "chart"}
+_VISUAL_TYPES = {"image", "cartoon", "chart_graph"}
 _HF_TYPES = {"header_footer", "page_number"}
 _TOP_Y_MAX = 200   # 0~1000 정규화 좌표 기준 상단 헤더 경계
 

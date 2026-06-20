@@ -31,7 +31,7 @@ TYPE_MAP = {
     "page_number":         "page_number",
     "table":               "table",
     "image":               "image",
-    "chart":               "chart",
+    "chart":               "chart_graph",
     "cartoon":             "cartoon",
     "figure":              "image",
 }
@@ -178,11 +178,11 @@ def run(
                     image_path = str(existing)
             if item_type == "table":
                 content = item.get("table_body", "")
-            elif mapped_type in ("image", "chart", "cartoon"):
+            elif mapped_type in ("image", "chart_graph", "cartoon"):
                 content = "이미지 캡셔닝 대기"
             else:
                 content = item.get("content", "")
-        elif mapped_type in ("image", "chart", "cartoon"):
+        elif mapped_type in ("image", "chart_graph", "cartoon"):
             content = "이미지 캡셔닝 대기"
         elif item_type == "list":
             content = "\n".join(item.get("list_items", []))
@@ -190,7 +190,7 @@ def run(
             content = item.get("text", "")
 
         # TEXT_NATIVE면 PyMuPDF 텍스트로 교체 (텍스트 타입만)
-        if extraction_method == "TEXT_NATIVE" and mapped_type not in ("table", "image", "chart", "cartoon"):
+        if extraction_method == "TEXT_NATIVE" and mapped_type not in ("table", "image", "chart_graph", "cartoon"):
             content = _extract_text_native(fitz_page, bb) or content
 
         # page_number인데 숫자가 아닌 경우 type을 text로 정정
