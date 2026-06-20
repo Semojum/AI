@@ -154,6 +154,8 @@ def run(
     for item in content_list:
         item_type = item.get("type", "text")
         mapped_type = TYPE_MAP.get(item_type, "text")
+        if mapped_type == "image" and item.get("sub_type") == "flowchart":
+            mapped_type = "chart_graph"
         bb = item.get("bbox")
         if bb is None:
             continue
