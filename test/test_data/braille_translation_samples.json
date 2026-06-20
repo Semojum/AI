@@ -23,7 +23,7 @@
   {
     "id": "T004",
     "description": "분수 LaTeX → 점자",
-    "input": "<formula>\\frac{1}{2}</formula>",
+    "input": "<!수식>\\frac{1}{2}<!/수식>",
     "must_contain": "⠜",
     "note": "⠜ = 분자 시작 기호"
   },
@@ -81,6 +81,6 @@
     "description": "태그 제거 확인",
     "input": "<em>텍스트</em>",
     "must_not_contain": "<em>",
-    "note": "<formula> 외 태그는 제거"
+    "note": "<!수식> 외 태그는 제거"
   }
 ]

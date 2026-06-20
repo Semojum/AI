@@ -35,11 +35,11 @@ class TestPointMarkers:
         out = translate_tagged_text("<!점역자주>X<!점역자주>")
         assert out.startswith(TN_MARKER) and out.endswith(TN_MARKER)
 
-    def test_표빈칸(self):
-        assert "⠿⠿" in substitute_tags("성명 <!표빈칸>")
+    def test_빈칸_표(self):
+        assert "⠿⠿" in substitute_tags("성명 <!빈칸_표>")
 
-    def test_네모빈칸(self):
-        assert "⠸⠦" in substitute_tags("동의 <!네모빈칸> 예 <!네모빈칸> 아니오")
+    def test_빈칸_네모(self):
+        assert "⠸⠦" in substitute_tags("동의 <!빈칸_네모> 예 <!빈칸_네모> 아니오")
 
     def test_미지태그_안전제거(self):
         out = substitute_tags("도형 1<!직사각형> 끝")
@@ -51,24 +51,24 @@ class TestBorder:
     """글상자=표 테두리 (BBPG-1.2.5). 캡 ⠿, 위 채움 ⠛(=g), 아래 채움 ⠶(=7), 32칸."""
 
     def test_위테두리_제목없음_전체채움(self):
-        out = substitute_tags("<!표윗테두리><!/표윗테두리>")
+        out = substitute_tags("<!테두리_위><!/테두리_위>")
         assert out == "⠿" + "⠛" * 30 + "⠿"
         assert len(out) == 32
 
     def test_아랫테두리_제목없음_전체채움(self):
-        out = substitute_tags("<!표아랫테두리><!/표아랫테두리>")
+        out = substitute_tags("<!테두리_아래><!/테두리_아래>")
         assert out == "⠿" + "⠶" * 30 + "⠿"
         assert len(out) == 32
 
     def test_위테두리_제목_32칸_7칸배치(self):
         # BBPG-1.2.5(4)②: 제목 7번째 칸부터, 양옆 한 칸 띔
-        out = substitute_tags("<!표윗테두리>범례<!/표윗테두리>")
+        out = substitute_tags("<!테두리_위>범례<!/테두리_위>")
         assert len(out) == 32
         assert out.startswith("⠿⠛⠛⠛⠛⠀")  # 캡1+채움4+빈칸1 → 제목 col7
         assert out.endswith("⠿")
 
     def test_위테두리_구형식_동일토큰(self):
-        out = substitute_tags("<!표윗테두리>범례<!표윗테두리>")
+        out = substitute_tags("<!테두리_위>범례<!테두리_위>")
         assert len(out) == 32
 
     @pytest.mark.skipif(not _tr._BRAILLIFY_AVAILABLE,
@@ -76,7 +76,7 @@ class TestBorder:
     def test_위테두리_범례_testdata_정본대조(self):
         # testdata_complex.txt 60행 (글상자 범례 위 테두리, 태민 정본)
         expect = "⠿⠛⠛⠛⠛⠀⠘⠎⠢⠐⠌⠀⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠿"
-        assert substitute_tags("<!표윗테두리>범례<!/표윗테두리>") == expect
+        assert substitute_tags("<!테두리_위>범례<!/테두리_위>") == expect
 
 
 class TestTnMarkerSpans:

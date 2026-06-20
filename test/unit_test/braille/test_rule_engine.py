@@ -203,15 +203,15 @@ class TestTranslator:
 
     def test_formula_tag_fraction_order(self) -> None:
         """수학 제7항: \\frac{1}{2} → 분모(⠃) before 분수표(⠌) before 분자(⠁)."""
-        result = translate_tagged_text("<formula>\\frac{1}{2}</formula>")
+        result = translate_tagged_text("<!수식>\\frac{1}{2}<!/수식>")
         assert "⠌" in result
         bar_pos = result.index("⠌")
         assert "⠃" in result[:bar_pos], f"분모(⠃)가 분수표(⠌) 앞에 없음: {result!r}"
         assert "⠁" in result[bar_pos:], f"분자(⠁)가 분수표(⠌) 뒤에 없음: {result!r}"
 
     def test_formula_tag_decimal(self) -> None:
-        """제43항: <formula>0.48</formula> → 소수점 ⠲ 포함."""
-        result = translate_tagged_text("<formula>0.48</formula>")
+        """제43항: <!수식>0.48<!/수식> → 소수점 ⠲ 포함."""
+        result = translate_tagged_text("<!수식>0.48<!/수식>")
         assert "⠲" in result, f"소수점 ⠲ 없음: {result!r}"
 
     def test_other_tags_stripped(self) -> None:

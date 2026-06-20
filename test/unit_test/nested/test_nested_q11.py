@@ -38,10 +38,10 @@ class TestBoxNarrative:
         txt = box_narrative([{"label": "막대그래프", "description": "국가별 인구",
                               "ocr_texts": ["프랑스 67"]}])
         lines = txt.split("\n")
-        assert lines[0] == "<!표윗테두리><!/표윗테두리>"   # 테두리 쌍(빈 제목)
+        assert lines[0] == "<!테두리_위><!/테두리_위>"   # 테두리 쌍(빈 제목)
         assert lines[1] == "<!점역자주>막대그래프: 국가별 인구<!/점역자주>"
         assert "프랑스 67" in lines                       # 원본 내용 전사
-        assert lines[-1] == "<!표아랫테두리><!/표아랫테두리>"
+        assert lines[-1] == "<!테두리_아래><!/테두리_아래>"
         assert box_narrative([]) is None
 
     def test_default_label(self):
@@ -53,7 +53,7 @@ class TestImageNestedGraph:
     def test_opt_nested_text(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_IMG_WITH_GRAPH)
         opt = asyncio.run(ImageOpt().optimize([ext], "ZERO"))[0]
-        assert opt.nested_text and "<!표윗테두리>" in opt.nested_text
+        assert opt.nested_text and "<!테두리_위>" in opt.nested_text
         assert "막대그래프" in opt.nested_text
 
     def test_braille_테두리_수집(self):
@@ -76,7 +76,7 @@ class TestTableNestedImage:
     def test_opt_nested_text(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, table_structure=_TBL_WITH_IMG)
         opt = asyncio.run(TableOpt().optimize([ext], "ZERO"))[0]
-        assert opt.nested_text and "<!표윗테두리>" in opt.nested_text
+        assert opt.nested_text and "<!테두리_위>" in opt.nested_text
         assert "사진" in opt.nested_text and "금관 사진" in opt.nested_text
 
     def test_braille_테두리_수집(self):

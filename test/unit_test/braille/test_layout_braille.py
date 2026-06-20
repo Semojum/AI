@@ -494,7 +494,7 @@ class TestBorderIndentB2:
         # 제목(범례) 포함 테두리는 내부에 빈칸이 있어 단어경계 분리가 더 잘 일어남
         from app.ai.braille.translator import substitute_tags
         eid = uuid4()
-        border = substitute_tags("<!표윗테두리>범례<!/표윗테두리>")
+        border = substitute_tags("<!테두리_위>범례<!/테두리_위>")
         assert _cell_count(border) == _COLS
         lr = _layout((eid, "text", 1, 0))
         lb.layout([_out([border], eid)], page_no=1, job_id="b2tt", layout_result=lr)
@@ -558,7 +558,7 @@ class TestBoxBorderBBPG125:
     def test_box_borders_from_source_순서수집(self) -> None:
         from app.ai.braille.translator import box_borders_from_source
 
-        src = "<!표윗테두리>범례<!/표윗테두리>\n내용\n<!표아랫테두리><!/표아랫테두리>"
+        src = "<!테두리_위>범례<!/테두리_위>\n내용\n<!테두리_아래><!/테두리_아래>"
         bb = box_borders_from_source(src)
         assert [k for k, _, _ in bb] == ["top", "bottom"]
         assert bb[0][1] == 1 and bb[0][2] != ""   # top, level1, 제목 점자 있음
@@ -615,7 +615,7 @@ class TestBoxBorderBBPG125:
 
         opt = LLMOutput(
             element_id=str(uuid.uuid4()),
-            corrected_text="<!표윗테두리>범례<!/표윗테두리>\n내용\n<!표아랫테두리><!/표아랫테두리>",
+            corrected_text="<!테두리_위>범례<!/테두리_위>\n내용\n<!테두리_아래><!/테두리_아래>",
             render_mode="text_only", routing_tier="ZERO",
         )
         bo = TextBraille().translate([opt])[0]
@@ -629,7 +629,7 @@ class TestBoxBorderBBPG125:
         from app.ai.braille.image_braille import ImageBraille
         from app.schemas.content import LLMOutput
 
-        src = "<!표윗테두리>설명<!/표윗테두리>\n내용\n<!표아랫테두리><!/표아랫테두리>"
+        src = "<!테두리_위>설명<!/테두리_위>\n내용\n<!테두리_아래><!/테두리_아래>"
         for Cls in (ImageBraille, CartoonBraille, ChartGraphBraille):
             opt = LLMOutput(element_id=str(uuid.uuid4()), corrected_text=src,
                             render_mode="narrative", routing_tier="ZERO")
@@ -648,11 +648,11 @@ class TestBoxBorderBBPG125:
     def test_위계_태그_파싱(self) -> None:
         from app.ai.braille.translator import box_borders_from_source
 
-        lv2 = box_borders_from_source("<!표윗테두리2>설명<!/표윗테두리2>")
+        lv2 = box_borders_from_source("<!테두리_위2>설명<!/테두리_위2>")
         assert lv2[0][1] == 2
-        lv3 = box_borders_from_source("<!표윗테두리3><!/표윗테두리3>")
+        lv3 = box_borders_from_source("<!테두리_위3><!/테두리_위3>")
         assert lv3[0][1] == 3
-        lv1 = box_borders_from_source("<!표윗테두리>범례<!/표윗테두리>")
+        lv1 = box_borders_from_source("<!테두리_위>범례<!/테두리_위>")
         assert lv1[0][1] == 1
 
     def test_위계별_테두리_글리프(self) -> None:
@@ -675,7 +675,7 @@ class TestBoxBorderBBPG125:
         # substitute_tags는 위계 태그도 인라인 32칸 마커(위치용)로 렌더 — 손실 없음
         from app.ai.braille.translator import substitute_tags
 
-        out = substitute_tags("<!표윗테두리2>설명<!/표윗테두리2>")
+        out = substitute_tags("<!테두리_위2>설명<!/테두리_위2>")
         assert len(out) == _COLS and out.startswith("⠿") and out.endswith("⠿")
 
     def test_expand_위계2단계_재렌더(self) -> None:

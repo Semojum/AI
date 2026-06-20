@@ -143,7 +143,7 @@ class TestFormulaBLEU:
     def test_average_bleu_above_threshold(self, pairs: list[dict]) -> None:
         scores = []
         for p in pairs:
-            latex = p["input"].replace("<formula>", "").replace("</formula>", "")
+            latex = p["input"].replace("<!수식>", "").replace("<!/수식>", "")
             output = _run_formula_chain(latex)
             scores.append(_bleu_approx(output, p["expected"]))
         avg = sum(scores) / len(scores)
@@ -155,7 +155,7 @@ class TestFormulaBLEU:
         """수표(⠼)를 포함하는 수식은 출력에도 ⠼이 있어야 함."""
         num_pairs = [p for p in pairs if "⠼" in p["expected"]]
         for p in num_pairs:
-            latex = p["input"].replace("<formula>", "").replace("</formula>", "")
+            latex = p["input"].replace("<!수식>", "").replace("<!/수식>", "")
             output = _run_formula_chain(latex)
             assert "⠼" in output, (
                 f"[{p['id']}] 수표(⠼) 누락: input={latex!r}, output={output!r}"
@@ -165,7 +165,7 @@ class TestFormulaBLEU:
         """분수(⠌)를 포함하는 쌍은 출력에도 ⠌이 있어야 함."""
         frac_pairs = [p for p in pairs if "⠌" in p["expected"]]
         for p in frac_pairs:
-            latex = p["input"].replace("<formula>", "").replace("</formula>", "")
+            latex = p["input"].replace("<!수식>", "").replace("<!/수식>", "")
             output = _run_formula_chain(latex)
             assert "⠌" in output, (
                 f"[{p['id']}] 분수표(⠌) 누락: input={latex!r}, output={output!r}"

@@ -3,14 +3,14 @@
 공개 API: translate_tagged_text(text: str) -> str
 
 braillify 설치 시 (AI 서버 운영 환경):
-  - <formula>...</formula> → kor_math_rules.convert_latex() (LaTeX 전용)
+  - <!수식>...<!/수식> → kor_math_rules.convert_latex() (LaTeX 전용)
   - 나머지 텍스트 → braillify.translate_to_unicode()
     (한글 약자·약어·수 포함 2024 개정 규정, 영어, 숫자, π·∫·∂ 등 수학 기호)
   주의: 이미 변환된 점자 셀(U+2800-U+28FF)이 braillify에 들어가지 않도록
-        <formula> 세그먼트와 일반 텍스트 세그먼트를 분리해 처리한다.
+        <!수식> 세그먼트와 일반 텍스트 세그먼트를 분리해 처리한다.
 
 braillify 미설치 시 (폴백):
-  - <formula> → convert_latex, 기호 → substitute_symbols, 나머지 → 자모 분해 폴백
+  - <!수식> → convert_latex, 기호 → substitute_symbols, 나머지 → 자모 분해 폴백
   - 약자·약어 미지원
 
 매핑 기준: 한국 점자 규정 2024 개정 (braillify) / 2017 개정 (폴백)
@@ -152,7 +152,7 @@ def _normalize_roman_numerals(text: str) -> str:
     """로마 숫자 유니코드 → 해당 로마자(제36항). 멱등 — 재적용해도 변화 없음."""
     return _ROMAN_NUMERAL_RE.sub(lambda m: _ROMAN_NUMERAL_MAP[m.group()], text)
 
-_FORMULA_RE      = re.compile(r"<formula>(.*?)</formula>", re.DOTALL)
+_FORMULA_RE      = re.compile(r"<!수식>(.*?)<!/수식>", re.DOTALL)
 _TAG_RE          = re.compile(r"<[^>]+>")
 _NUMBER_RE       = re.compile(r"-?\d+(?:[.,]\d+)*")
 _ALPHA_RUN_RE    = re.compile(r"[A-Za-z]+")
@@ -276,21 +276,21 @@ _TAG_TOKEN_RE = re.compile(r"<!/?[^>]+>")
 # 단일·대칭 인라인 마커: 태그명 → 점자 글리프
 _TAG_INLINE_MARKER: dict[str, str] = {
     "점역자주": "⠠⠄",   # BBPG-1.2.6 점역자 주 — 양끝 동일(대칭)
-    "표빈칸":   "⠿⠿",   # 표 기입칸
-    "네모빈칸": "⠸⠦",   # 체크박스 □
+    "빈칸_표":   "⠿⠿",   # 표 기입칸
+    "빈칸_네모": "⠸⠦",   # 체크박스 □
 }
 
 # 테두리(글상자 = 표, BBPG-1.2.5): (캡, 채움) 글리프. 32칸 한 줄로 렌더.
 _BORDER_FILL: dict[str, tuple[str, str]] = {
-    "표윗테두리":   ("⠿", "⠛"),  # 위: 첫/끝 = , 중간 g
-    "표아랫테두리": ("⠿", "⠶"),  # 아래: 첫/끝 = , 중간 7
+    "테두리_위":   ("⠿", "⠛"),  # 위: 첫/끝 = , 중간 g
+    "테두리_아래": ("⠿", "⠶"),  # 아래: 첫/끝 = , 중간 7
 }
 from app.ai.braille.constants import COLS as _BORDER_COLS  # noqa: E402 (공용 상수)
 _BORDER_BLANK     = "⠀"   # 점자 빈칸(U+2800)
 _BORDER_LEFT_FILL = 4     # 캡 뒤 채움 칸 → 제목 7칸에서 시작(BBPG-1.2.5(4)②: 캡1+채움4+빈칸1)
 
 # 신형식 <!이름>…<!/이름> + 구형식 <!이름>…<!이름> 모두 수용(닫기 슬래시 옵션).
-# 위계: 이름 뒤 단계 숫자 옵션(<!표윗테두리2>=2단계, 없으면 1단계). group(1)=단계, group(2)=제목.
+# 위계: 이름 뒤 단계 숫자 옵션(<!테두리_위2>=2단계, 없으면 1단계). group(1)=단계, group(2)=제목.
 _BORDER_PAIR_RE = {
     name: re.compile(rf"<!{re.escape(name)}([23]?)>(.*?)<!/?{re.escape(name)}\1>", re.DOTALL)
     for name in _BORDER_FILL
@@ -313,8 +313,8 @@ def _border_line(name: str, title_braille: str) -> str:
 
 # 글상자 테두리 태그(위/아래, 위계 옵션) 문서 순서 수집 — box_borders(BBPG-1.2.5) layout 재렌더
 # group(1)=이름, group(2)=단계 숫자(옵션), group(3)=제목
-_BORDER_ANY_RE = re.compile(r"<!(표윗테두리|표아랫테두리)([23]?)>(.*?)<!/?\1\2>", re.DOTALL)
-_BORDER_KIND = {"표윗테두리": "top", "표아랫테두리": "bottom"}
+_BORDER_ANY_RE = re.compile(r"<!(테두리_위|테두리_아래)([23]?)>(.*?)<!/?\1\2>", re.DOTALL)
+_BORDER_KIND = {"테두리_위": "top", "테두리_아래": "bottom"}
 
 
 def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
@@ -322,7 +322,7 @@ def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
 
     layout이 이 목록으로 위계별 테두리·제목 배치(중간7칸/윗줄5칸/케이스①)를 재렌더한다.
     translator는 인라인 32칸 테두리(위치 마커, 항상 1단계 ⠿ 형식)도 그대로 둔다(_border_line).
-    위계: 태그 이름 뒤 단계 숫자(<!표윗테두리2>=2단계, 없으면 1단계). ※§3-5 태그 규약 확장(태민 검토).
+    위계: 태그 이름 뒤 단계 숫자(<!테두리_위2>=2단계, 없으면 1단계). ※§3-5 태그 규약 확장(태민 검토).
     """
     out: list[tuple[str, int, str]] = []
     for m in _BORDER_ANY_RE.finditer(source_text):
@@ -445,7 +445,7 @@ def _translate_fallback(text: str) -> str:
 
 
 def translate_tagged_text(text: str) -> str:
-    """<formula> 태그가 포함된 텍스트를 점자 BRF로 변환."""
+    """<!수식> 태그가 포함된 텍스트를 점자 BRF로 변환."""
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     if _BRAILLIFY_AVAILABLE:
         return _translate_with_braillify(text)

@@ -81,7 +81,7 @@
     {
       "id": "ko_fx_01",
       "description": "수식: 분수 1/2",
-      "input": "<formula>\\frac{1}{2}</formula>이다",
+      "input": "<!수식>\\frac{1}{2}<!/수식>이다",
       "must_contain": [
         "⠌"
       ]
@@ -89,7 +89,7 @@
     {
       "id": "ko_fx_02",
       "description": "수식: 위첨자 x^2",
-      "input": "x의 값은 <formula>x^2+1</formula>",
+      "input": "x의 값은 <!수식>x^2+1<!/수식>",
       "must_contain": [
         "⠘"
       ]
@@ -97,7 +97,7 @@
     {
       "id": "ko_fx_03",
       "description": "수식: 소수 0.48",
-      "input": "<formula>0.48</formula>",
+      "input": "<!수식>0.48<!/수식>",
       "must_contain": [
         "⠼",
         "⠲"
@@ -106,7 +106,7 @@
     {
       "id": "ko_fx_04",
       "description": "수식: 음수 -3",
-      "input": "<formula>-3</formula>",
+      "input": "<!수식>-3<!/수식>",
       "must_contain": [
         "⠼",
         "⠤"
@@ -115,7 +115,7 @@
     {
       "id": "ko_fx_05",
       "description": "수식: 근호 sqrt(2)",
-      "input": "<formula>\\sqrt{2}</formula>",
+      "input": "<!수식>\\sqrt{2}<!/수식>",
       "must_contain": [
         "⠜"
       ]
@@ -123,7 +123,7 @@
     {
       "id": "fx_trig_sin",
       "description": "수식: sin(π/6)",
-      "input": "<formula>\\sin(\\frac{\\pi}{6})</formula>",
+      "input": "<!수식>\\sin(\\frac{\\pi}{6})<!/수식>",
       "must_contain": [
         "⠋⠎",
         "⠌",
@@ -133,7 +133,7 @@
     {
       "id": "fx_trig_cos",
       "description": "수식: cos(x)",
-      "input": "<formula>\\cos(x)</formula>",
+      "input": "<!수식>\\cos(x)<!/수식>",
       "must_contain": [
         "⠋⠉"
       ]
@@ -141,7 +141,7 @@
     {
       "id": "fx_log",
       "description": "수식: log_2(x)",
-      "input": "<formula>\\log_2{x}</formula>",
+      "input": "<!수식>\\log_2{x}<!/수식>",
       "must_contain": [
         "⠸"
       ]
@@ -149,7 +149,7 @@
     {
       "id": "fx_ln",
       "description": "수식: ln(x)",
-      "input": "<formula>\\ln(x)</formula>",
+      "input": "<!수식>\\ln(x)<!/수식>",
       "must_contain": [
         "⠸"
       ]
@@ -157,7 +157,7 @@
     {
       "id": "fx_subscript",
       "description": "수식: 아래첨자 a_n",
-      "input": "<formula>a_n</formula>",
+      "input": "<!수식>a_n<!/수식>",
       "must_contain": [
         "⠰"
       ]
@@ -165,7 +165,7 @@
     {
       "id": "fx_power_grp",
       "description": "수식: 복합 지수 x^{2n+1}",
-      "input": "<formula>x^{2n+1}</formula>",
+      "input": "<!수식>x^{2n+1}<!/수식>",
       "must_contain": [
         "⠘"
       ]
@@ -173,7 +173,7 @@
     {
       "id": "fx_sqrt_frac",
       "description": "수식: 근호 안 분수",
-      "input": "<formula>\\sqrt{\\frac{3}{4}}</formula>",
+      "input": "<!수식>\\sqrt{\\frac{3}{4}}<!/수식>",
       "must_contain": [
         "⠜",
         "⠌"
@@ -182,7 +182,7 @@
     {
       "id": "fx_greek_th",
       "description": "수식: 그리스문자 θ",
-      "input": "<formula>\\theta</formula>",
+      "input": "<!수식>\\theta<!/수식>",
       "must_contain": [
         "⠨"
       ]
@@ -190,7 +190,7 @@
     {
       "id": "fx_abs",
       "description": "수식: 절댓값 |x+1|",
-      "input": "<formula>|x+1|</formula>",
+      "input": "<!수식>|x+1|<!/수식>",
       "must_contain": [
         "⠳"
       ]
@@ -198,7 +198,7 @@
     {
       "id": "fx_nested",
       "description": "수식: 중첩 분수",
-      "input": "<formula>\\frac{\\frac{1}{2}}{3}</formula>",
+      "input": "<!수식>\\frac{\\frac{1}{2}}{3}<!/수식>",
       "must_contain": [
         "⠌"
       ]
@@ -206,7 +206,7 @@
     {
       "id": "fx_pyth",
       "description": "수식: 피타고라스 정리",
-      "input": "<formula>a^2+b^2=c^2</formula>",
+      "input": "<!수식>a^2+b^2=c^2<!/수식>",
       "must_contain": [
         "⠘"
       ]
@@ -214,7 +214,7 @@
     {
       "id": "ko_fx_trig",
       "description": "삼각함수와 한국어",
-      "input": "삼각형에서 <formula>\\sin(\\frac{\\pi}{6})</formula>의 값",
+      "input": "삼각형에서 <!수식>\\sin(\\frac{\\pi}{6})<!/수식>의 값",
       "must_contain": [
         "⠋⠎",
         "⠌"
@@ -223,7 +223,7 @@
     {
       "id": "ko_fx_area",
       "description": "넓이 공식",
-      "input": "삼각형의 넓이는 <formula>\\frac{1}{2}bh</formula>",
+      "input": "삼각형의 넓이는 <!수식>\\frac{1}{2}bh<!/수식>",
       "must_contain": [
         "⠌"
       ]
@@ -231,7 +231,7 @@
     {
       "id": "ko_fx_quad",
       "description": "이차방정식 근의 공식",
-      "input": "이차방정식 <formula>ax^2+bx+c=0</formula>의 근은 <formula>\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}</formula>",
+      "input": "이차방정식 <!수식>ax^2+bx+c=0<!/수식>의 근은 <!수식>\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}<!/수식>",
       "must_contain": [
         "⠌",
         "⠘",
@@ -241,7 +241,7 @@
     {
       "id": "ko_fx_emc2",
       "description": "물리: E=mc²",
-      "input": "에너지 <formula>E=mc^2</formula>",
+      "input": "에너지 <!수식>E=mc^2<!/수식>",
       "must_contain": [
         "⠘"
       ]
@@ -320,7 +320,7 @@
     {
       "id": "unit_m2",
       "description": "단위: 제곱미터 수식",
-      "input": "넓이는 <formula>25m^2</formula>",
+      "input": "넓이는 <!수식>25m^2<!/수식>",
       "must_contain": [
         "⠼",
         "⠘"
@@ -347,7 +347,7 @@
     {
       "id": "mixed_02",
       "description": "복합: 한국어+영어+수식",
-      "input": "1학년 English 시험 점수는 <formula>\\frac{85}{100}</formula>점",
+      "input": "1학년 English 시험 점수는 <!수식>\\frac{85}{100}<!/수식>점",
       "must_contain": [
         "⠼",
         "⠴",
@@ -357,7 +357,7 @@
     {
       "id": "mixed_03",
       "description": "복합: 한국어+수식+숫자",
-      "input": "원의 넓이는 <formula>\\pi r^2</formula>이고 r은 5cm",
+      "input": "원의 넓이는 <!수식>\\pi r^2<!/수식>이고 r은 5cm",
       "must_contain": [
         "⠨",
         "⠘",

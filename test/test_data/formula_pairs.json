@@ -8,28 +8,28 @@
     {
       "id": "num_1",
       "rule": "한국 점자 규정 제41항: 수표시 ⠼ 삽입, 1=⠁",
-      "input": "<formula>1</formula>",
+      "input": "<!수식>1<!/수식>",
       "expected": "⠼⠁",
       "must_contain": ["⠼"]
     },
     {
       "id": "num_2",
       "rule": "한국 점자 규정 제41항: 2=⠃",
-      "input": "<formula>2</formula>",
+      "input": "<!수식>2<!/수식>",
       "expected": "⠼⠃",
       "must_contain": ["⠼"]
     },
     {
       "id": "num_0",
       "rule": "한국 점자 규정 제41항: 0=⠚",
-      "input": "<formula>0</formula>",
+      "input": "<!수식>0<!/수식>",
       "expected": "⠼⠚",
       "must_contain": ["⠼"]
     },
     {
       "id": "num_multidigit",
       "rule": "한국 점자 규정 제41항: 두 자리 수 — 수표시 한 번, 각 자리 셀 나열",
-      "input": "<formula>12</formula>",
+      "input": "<!수식>12<!/수식>",
       "expected": "⠼⠁⠃",
       "must_contain": ["⠼"]
     },
@@ -39,14 +39,14 @@
     {
       "id": "decimal_pi",
       "rule": "한국 점자 규정 제42항: 소수점 ⠲, 3.14=⠼⠉⠲⠁⠙",
-      "input": "<formula>3.14</formula>",
+      "input": "<!수식>3.14<!/수식>",
       "expected": "⠼⠉⠲⠁⠙",
       "must_contain": ["⠼", "⠲"]
     },
     {
       "id": "decimal_zero_point",
       "rule": "한국 점자 규정 제42항: 0.48=⠼⠚⠲⠙⠓",
-      "input": "<formula>0.48</formula>",
+      "input": "<!수식>0.48<!/수식>",
       "expected": "⠼⠚⠲⠙⠓",
       "must_contain": ["⠼", "⠲"]
     },
@@ -56,7 +56,7 @@
     {
       "id": "negative_3",
       "rule": "수학 점자 규정 제17항: 음수 부호 ⠤",
-      "input": "<formula>-3</formula>",
+      "input": "<!수식>-3<!/수식>",
       "expected": "⠼⠤⠉",
       "must_contain": ["⠤", "⠼"]
     },
@@ -66,34 +66,34 @@
     {
       "id": "frac_1_2",
       "rule": "수학 점자 규정 제7항: \\frac{1}{2} → 분모(⠼⠃) + ⠌ + 분자(⠼⠁)",
-      "input": "<formula>\\frac{1}{2}</formula>",
+      "input": "<!수식>\\frac{1}{2}<!/수식>",
       "expected": "⠼⠃⠌⠼⠁",
       "must_contain": ["⠌"]
     },
     {
       "id": "frac_3_4",
       "rule": "수학 점자 규정 제7항: \\frac{3}{4} → ⠼⠙⠌⠼⠉",
-      "input": "<formula>\\frac{3}{4}</formula>",
+      "input": "<!수식>\\frac{3}{4}<!/수식>",
       "expected": "⠼⠙⠌⠼⠉",
       "must_contain": ["⠌"]
     },
     {
       "id": "frac_var",
       "rule": "수학 점자 규정 제7항: \\frac{a}{b} → 분모(b=⠃) + ⠌ + 분자(a=⠁)",
-      "input": "<formula>\\frac{a}{b}</formula>",
+      "input": "<!수식>\\frac{a}{b}<!/수식>",
       "expected": "⠃⠌⠁",
       "must_contain": ["⠌"]
     },
     {
       "id": "frac_nested",
       "rule": "수학 점자 규정 제7항: 중첩 분수 \\frac{\\frac{1}{2}}{3} — ⠌ 두 번",
-      "input": "<formula>\\frac{\\frac{1}{2}}{3}</formula>",
+      "input": "<!수식>\\frac{\\frac{1}{2}}{3}<!/수식>",
       "must_contain": ["⠌", "⠼"]
     },
     {
       "id": "frac_sqrt_denom",
       "rule": "수학 점자 규정 제7·22항: \\sqrt{} 안 \\frac — ⠜ 와 ⠌ 공존",
-      "input": "<formula>\\sqrt{\\frac{3}{4}}</formula>",
+      "input": "<!수식>\\sqrt{\\frac{3}{4}}<!/수식>",
       "must_contain": ["⠜", "⠌"]
     },
 
@@ -102,14 +102,14 @@
     {
       "id": "sqrt_2",
       "rule": "수학 점자 규정 제22항: ⠜ 뒤 피연산수. \\sqrt{2}=⠜⠼⠃",
-      "input": "<formula>\\sqrt{2}</formula>",
+      "input": "<!수식>\\sqrt{2}<!/수식>",
       "expected": "⠜⠼⠃",
       "must_contain": ["⠜"]
     },
     {
       "id": "sqrt_4",
       "rule": "수학 점자 규정 제22항: \\sqrt{4}=⠜⠼⠙",
-      "input": "<formula>\\sqrt{4}</formula>",
+      "input": "<!수식>\\sqrt{4}<!/수식>",
       "expected": "⠜⠼⠙",
       "must_contain": ["⠜"]
     },
@@ -119,21 +119,21 @@
     {
       "id": "sup_x2",
       "rule": "수학 점자 규정 제18항: x^2 → x(⠭) + ⠘ + 2(⠼⠃)",
-      "input": "<formula>x^2</formula>",
+      "input": "<!수식>x^2<!/수식>",
       "expected": "⠭⠘⠼⠃",
       "must_contain": ["⠘"]
     },
     {
       "id": "sup_a2",
       "rule": "수학 점자 규정 제18항: a^2 → a(⠁) + ⠘ + 2(⠼⠃)",
-      "input": "<formula>a^2</formula>",
+      "input": "<!수식>a^2<!/수식>",
       "expected": "⠁⠘⠼⠃",
       "must_contain": ["⠘"]
     },
     {
       "id": "sup_group",
       "rule": "수학 점자 규정 제18항 + 제6항: 복합 지수 — ⠘ + 수학 소괄호 ⠷⠾",
-      "input": "<formula>x^{2n+1}</formula>",
+      "input": "<!수식>x^{2n+1}<!/수식>",
       "expected": "⠭⠘⠷⠼⠃⠝⠢⠼⠁⠾",
       "must_contain": ["⠘", "⠷"]
     },
@@ -143,14 +143,14 @@
     {
       "id": "sub_an",
       "rule": "수학 점자 규정 제19항: a_n → a(⠁) + ⠰ + n(⠝)",
-      "input": "<formula>a_n</formula>",
+      "input": "<!수식>a_n<!/수식>",
       "expected": "⠁⠰⠝",
       "must_contain": ["⠰"]
     },
     {
       "id": "sub_x1",
       "rule": "수학 점자 규정 제19항: x_1 → x(⠭) + ⠰ + 1(⠼⠁)",
-      "input": "<formula>x_1</formula>",
+      "input": "<!수식>x_1<!/수식>",
       "expected": "⠭⠰⠼⠁",
       "must_contain": ["⠰"]
     },
@@ -160,7 +160,7 @@
     {
       "id": "abs_x",
       "rule": "수학 점자 규정 제21항: |x| → ⠳ + x(⠭) + ⠳ (열기·닫기 각 1개)",
-      "input": "<formula>|x|</formula>",
+      "input": "<!수식>|x|<!/수식>",
       "expected": "⠳⠭⠳",
       "must_contain": ["⠳"]
     },
@@ -170,14 +170,14 @@
     {
       "id": "greek_pi",
       "rule": "수학 점자: \\pi → ⠨⠏",
-      "input": "<formula>\\pi</formula>",
+      "input": "<!수식>\\pi<!/수식>",
       "expected": "⠨⠏",
       "must_contain": ["⠨"]
     },
     {
       "id": "greek_theta",
       "rule": "수학 점자: \\theta → ⠨⠹",
-      "input": "<formula>\\theta</formula>",
+      "input": "<!수식>\\theta<!/수식>",
       "expected": "⠨⠹",
       "must_contain": ["⠨"]
     },
@@ -187,21 +187,21 @@
     {
       "id": "trig_sin",
       "rule": "수학 점자 규정 제47항: sin → ⠋⠎ (6s). \\sin(x)=⠋⠎⠷⠭⠾",
-      "input": "<formula>\\sin(x)</formula>",
+      "input": "<!수식>\\sin(x)<!/수식>",
       "expected": "⠋⠎⠷⠭⠾",
       "must_contain": ["⠋⠎"]
     },
     {
       "id": "trig_cos",
       "rule": "수학 점자 규정 제47항: cos → ⠋⠉ (6c). \\cos(x)=⠋⠉⠷⠭⠾",
-      "input": "<formula>\\cos(x)</formula>",
+      "input": "<!수식>\\cos(x)<!/수식>",
       "expected": "⠋⠉⠷⠭⠾",
       "must_contain": ["⠋⠉"]
     },
     {
       "id": "trig_sin_frac_pi",
       "rule": "수학 점자 규정 제47항+제7항+그리스: sin(π/6) — ⠋⠎·⠌·⠨ 공존",
-      "input": "<formula>\\sin(\\frac{\\pi}{6})</formula>",
+      "input": "<!수식>\\sin(\\frac{\\pi}{6})<!/수식>",
       "must_contain": ["⠋⠎", "⠌", "⠨"]
     },
 
@@ -210,14 +210,14 @@
     {
       "id": "log_ln",
       "rule": "수학 점자 규정 제46항: ln=log_e → ⠸⠰⠑. \\ln(x)=⠸⠰⠑⠷⠭⠾",
-      "input": "<formula>\\ln(x)</formula>",
+      "input": "<!수식>\\ln(x)<!/수식>",
       "expected": "⠸⠰⠑⠷⠭⠾",
       "must_contain": ["⠸"]
     },
     {
       "id": "log_base2",
       "rule": "수학 점자 규정 제46항: log₂ → ⠸⠠⠃ (수표 없이 숫자 밑)",
-      "input": "<formula>\\log_2{x}</formula>",
+      "input": "<!수식>\\log_2{x}<!/수식>",
       "must_contain": ["⠸"]
     },
 
@@ -226,13 +226,13 @@
     {
       "id": "quadratic_formula",
       "rule": "수학 점자 제7·18·22항: 근의 공식 — ⠌(분수표)·⠘(위첨자)·⠜(근호) 공존",
-      "input": "<formula>\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}</formula>",
+      "input": "<!수식>\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}<!/수식>",
       "must_contain": ["⠌", "⠘", "⠜"]
     },
     {
       "id": "pythagorean",
       "rule": "수학 점자 제18항: a²+b²=c² — ⠘ 세 번",
-      "input": "<formula>a^2+b^2=c^2</formula>",
+      "input": "<!수식>a^2+b^2=c^2<!/수식>",
       "must_contain": ["⠘"]
     }
   ]

@@ -59,8 +59,8 @@ _BOTTOMUP_INDENT = 3      # §6.6.4(3)② 상향식 가계도 항목 3칸
 _TIMELINE_YEAR = 5        # §6.6.6(4) 동일 연도 연도줄 5칸
 _TIMELINE_EVENT = 3       # §6.6.6(4) 동일 연도 사건줄 3칸
 _SCREEN_SECTION_BODY = 2  # 화면 이미지 구획 내용 들여쓰기(§6.6.7(3)① 가독성)
-_BOX_TOP = "<!표윗테두리><!/표윗테두리>"      # 글상자 위 테두리(빈 제목 쌍) — layout 재렌더
-_BOX_BOTTOM = "<!표아랫테두리><!/표아랫테두리>"  # 글상자 아래 테두리
+_BOX_TOP = "<!테두리_위><!/테두리_위>"      # 글상자 위 테두리(빈 제목 쌍) — layout 재렌더
+_BOX_BOTTOM = "<!테두리_아래><!/테두리_아래>"  # 글상자 아래 테두리
 _TYPE_LABEL = {
     "concept_map": "개념도", "flowchart": "흐름도",
     "org_chart": "조직도", "family_tree": "가계도", "timeline": "연대표",

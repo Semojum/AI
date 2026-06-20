@@ -124,13 +124,13 @@ class TestFractionOrder:
 
     def test_denominator_before_bar(self) -> None:
         """\frac{1}{2}: 분모(⠼⠃)가 ⠌ 앞에 있어야 함."""
-        result = translate_tagged_text("<formula>\\frac{1}{2}</formula>")
+        result = translate_tagged_text("<!수식>\\frac{1}{2}<!/수식>")
         bar = result.index("⠌")
         assert "⠃" in result[:bar], f"분모(⠃)가 ⠌ 앞에 없음: {result!r}"
 
     def test_nested_fraction_two_bars(self) -> None:
         """중첩 분수 — ⠌ 가 두 번 이상 등장."""
-        result = translate_tagged_text("<formula>\\frac{\\frac{1}{2}}{3}</formula>")
+        result = translate_tagged_text("<!수식>\\frac{\\frac{1}{2}}{3}<!/수식>")
         assert result.count("⠌") >= 2, f"⠌ 개수 부족: {result!r}"
 
 
@@ -138,7 +138,7 @@ class TestAbsoluteValueCount:
     """수학 제21항: 절댓값 기호 ⠳ 열기·닫기 각 1개."""
 
     def test_abs_bars_exactly_two(self) -> None:
-        result = translate_tagged_text("<formula>|x+1|</formula>")
+        result = translate_tagged_text("<!수식>|x+1|<!/수식>")
         assert result.count("⠳") == 2, f"⠳ 개수 불일치: {result!r}"
 
 
@@ -147,7 +147,7 @@ class TestSuperscriptCount:
 
     def test_pythagorean_three_superscripts(self) -> None:
         """a²+b²=c²: 위첨자 ⠘ 세 번."""
-        result = translate_tagged_text("<formula>a^2+b^2=c^2</formula>")
+        result = translate_tagged_text("<!수식>a^2+b^2=c^2<!/수식>")
         assert result.count("⠘") == 3, f"⠘ 개수 불일치: {result!r}"
 
 
@@ -155,7 +155,7 @@ class TestNumberIndicatorCount:
     """한국 점자 규정 제41항: 수표시 중복 삽입 금지."""
 
     def test_decimal_no_duplicate_indicator(self) -> None:
-        result = translate_tagged_text("<formula>0.48</formula>")
+        result = translate_tagged_text("<!수식>0.48<!/수식>")
         assert result.count("⠼") == 1, f"⠼ 중복: {result!r}"
 
     def test_thousands_no_duplicate_indicator(self) -> None:
@@ -189,6 +189,6 @@ class TestBug3NestedFrac:
 
     def test_quadratic_frac_has_bar(self) -> None:
         result = translate_tagged_text(
-            "<formula>\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}</formula>"
+            "<!수식>\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}<!/수식>"
         )
         assert "⠌" in result, f"분수표(⠌) 없음: {result!r}"

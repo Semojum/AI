@@ -74,10 +74,10 @@ class TestTextBrailleOutput:
         assert "tn_open" in tags and "tn_close" in tags
 
     def test_formula_tag_removed_from_output(self):
-        inp = _text_out("다음 수식: <formula>\\frac{1}{2}</formula> 참조")
+        inp = _text_out("다음 수식: <!수식>\\frac{1}{2}<!/수식> 참조")
         results = TextBraille().translate([inp])
         combined = "".join(results[0].braille_lines)
-        assert "<formula>" not in combined
+        assert "<!수식>" not in combined
         assert len(combined) > 0
 
     def test_c5_number_produces_number_indicator(self):

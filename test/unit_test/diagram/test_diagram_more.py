@@ -123,10 +123,10 @@ class TestForm:
         lines = text.split("\n")
         assert (lines[0], indents[0]) == ("신청서", 5)
         assert lines[1] == "<!점역자주>양식<!/점역자주>"
-        assert lines[2] == "<!표윗테두리><!/표윗테두리>"                     # §6.6.3(2) 글상자
+        assert lines[2] == "<!테두리_위><!/테두리_위>"                     # §6.6.3(2) 글상자
         assert lines[3] == "이름:" and lines[4] == "주소:"                   # §6.6.3(3) 한 줄에 하나
         assert lines[5] == "<!점역자주>긴 빈칸 두 줄<!/점역자주>"           # §6.6.3(5)
-        assert lines[6] == "<!표아랫테두리><!/표아랫테두리>"
+        assert lines[6] == "<!테두리_아래><!/테두리_아래>"
 
 
 class TestScreenImage:
@@ -134,10 +134,10 @@ class TestScreenImage:
         text, indents = assemble_screen_image(_SCREEN)
         lines = text.split("\n")
         assert lines[0] == "<!점역자주>화면 이미지<!/점역자주>"
-        assert lines[1] == "<!표윗테두리><!/표윗테두리>"                     # §6.6.7(1)
+        assert lines[1] == "<!테두리_위><!/테두리_위>"                     # §6.6.7(1)
         assert lines[2:-1] == ["주 메뉴", "홈", "소개", "본문", "환영합니다"]  # §6.6.7(3)①
         assert indents[2:-1] == [0, 2, 2, 0, 2]
-        assert lines[-1] == "<!표아랫테두리><!/표아랫테두리>"
+        assert lines[-1] == "<!테두리_아래><!/테두리_아래>"
 
 
 class TestSlide:
