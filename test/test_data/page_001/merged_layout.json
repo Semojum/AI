@@ -1,0 +1,347 @@
+[
+  {
+    "element_id": "a0746c75-3a1c-40e0-b139-47c48046d9b7",
+    "reading_order": 1,
+    "type": "text",
+    "bbox": [
+      100,
+      131,
+      334,
+      144
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "5491e8dd-66fe-4e10-ab10-60923a88691f",
+    "reading_order": 2,
+    "type": "image",
+    "bbox": [
+      119,
+      155,
+      478,
+      278
+    ],
+    "image_path": "test/test_data/page_001/mineru_raw/images/5491e8dd-66fe-4e10-ab10-60923a88691f.jpg",
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "f2f237ef-678e-4728-8d32-0241c9c10807",
+    "reading_order": 3,
+    "type": "list_item",
+    "bbox": [
+      112,
+      285,
+      480,
+      425
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "44315db4-bc7d-41bb-bcd5-0955bccf4e29",
+    "reading_order": 4,
+    "type": "text",
+    "bbox": [
+      100,
+      476,
+      420,
+      490
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "10234e93-ba93-402f-9a47-a37cba2b64cd",
+    "reading_order": 5,
+    "type": "text",
+    "bbox": [
+      124,
+      504,
+      471,
+      532
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "1169bb2a-77e2-4a4e-9ea7-da6ddeafdadc",
+    "reading_order": 6,
+    "type": "table",
+    "bbox": [
+      129,
+      537,
+      467,
+      630
+    ],
+    "image_path": "test/test_data/page_001/mineru_raw/images/1169bb2a-77e2-4a4e-9ea7-da6ddeafdadc.jpg",
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "663796b8-e2e7-457e-9a84-ef0f5629dec6",
+    "reading_order": 7,
+    "type": "list_item",
+    "bbox": [
+      125,
+      634,
+      471,
+      744
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "3521741c-20da-483d-a2fc-575e81e5c7cf",
+    "reading_order": 8,
+    "type": "list_item",
+    "bbox": [
+      112,
+      757,
+      480,
+      896
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "3163b2ba-c40a-4115-bde2-5b34a9e7fb62",
+    "reading_order": 9,
+    "type": "text",
+    "bbox": [
+      515,
+      131,
+      834,
+      144
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "8e62daa5-455d-4d16-93f7-a0e03ebcb6bf",
+    "reading_order": 10,
+    "type": "text",
+    "bbox": [
+      536,
+      158,
+      887,
+      229
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "deba1e60-3995-4186-9045-e4a74db5e990",
+    "reading_order": 11,
+    "type": "list_item",
+    "bbox": [
+      527,
+      241,
+      894,
+      339
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "51ba9850-6486-4936-ad8b-5ffd5d9d6e3e",
+    "reading_order": 12,
+    "type": "text",
+    "bbox": [
+      513,
+      362,
+      777,
+      376
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "b278cf50-c549-4aee-85df-45f0e40859e7",
+    "reading_order": 13,
+    "type": "text",
+    "bbox": [
+      522,
+      387,
+      887,
+      499
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "a3374c18-69f7-4e7c-a542-52b22fa532f0",
+    "reading_order": 14,
+    "type": "text",
+    "bbox": [
+      515,
+      511,
+      823,
+      525
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "59be6f0d-b81b-458f-86c8-eebb18ba4240",
+    "reading_order": 15,
+    "type": "list_item",
+    "bbox": [
+      527,
+      532,
+      894,
+      671
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "ce1b8d78-de2a-4993-aa9e-29942ccca80c",
+    "reading_order": 16,
+    "type": "text",
+    "bbox": [
+      515,
+      696,
+      890,
+      710
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "ad6b9107-a157-421b-90b8-c54d496d8eec",
+    "reading_order": 17,
+    "type": "text",
+    "bbox": [
+      536,
+      723,
+      887,
+      759
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "35954783-e324-41ea-891c-307378042378",
+    "reading_order": 18,
+    "type": "list_item",
+    "bbox": [
+      527,
+      771,
+      894,
+      895
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "bcaffe96-5fa4-46d2-8953-611301cd4635",
+    "reading_order": 19,
+    "type": "header_footer",
+    "bbox": [
+      102,
+      92,
+      236,
+      115
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "3311a588-4a69-4685-9c0c-6cae1a2d000b",
+    "reading_order": 20,
+    "type": "header_footer",
+    "bbox": [
+      395,
+      91,
+      598,
+      117
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "b6fffff9-9cbc-40e3-be4c-e0c2c01f44b9",
+    "reading_order": 21,
+    "type": "page_number",
+    "bbox": [
+      870,
+      91,
+      893,
+      116
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "f967a059-a511-40e6-aba3-a16455e3b39f",
+    "reading_order": 22,
+    "type": "page_number",
+    "bbox": [
+      471,
+      907,
+      494,
+      919
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  },
+  {
+    "element_id": "02f13f2d-edb6-4ee7-8dc3-7108d08cd541",
+    "reading_order": 23,
+    "type": "page_number",
+    "bbox": [
+      505,
+      914,
+      524,
+      925
+    ],
+    "image_path": null,
+    "heading_level": null,
+    "caption_ref": null,
+    "flags": []
+  }
+]

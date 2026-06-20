@@ -175,49 +175,34 @@ def _blocks_from_text(pdf_text: Optional[str]) -> list[dict]:
 
 
 async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> list[dict]:
-    """non-ZERO Tier: 현주 모델 모듈(레이아웃·OCR) 호출. 미탑재/실패 시 빈 결과로 격리."""
+    """non-ZERO Tier(스캔 PDF): MinerU2.5-Pro로 레이아웃·OCR·수식·표를 통합 추출.
+    pdf_data(bytes)를 임시 파일로 저장해 MinerU subprocess에 경로로 넘기고,
+    result_builder가 이미지 분류·캡셔닝까지 거쳐 경계 elements를 만든다.
+    MinerU 미설치/실패 시 빈 결과로 격리(요소 격리 원칙)."""
+    import os
+    import tempfile
     try:
-        from app.ai.preprocessor.converter import convert_page
-        from app.ai.layout.layout_merger import LayoutMerger
-        from app.ai.layout.qwen_layout import QwenLayout
-        from app.ai.layout.yolo_layout import YoloLayout
-        from app.ai.ocr.qwen_ocr import QwenOCR
+        from app.ai.parser.mineru_runner import run as mineru_run
+        from app.ai.builder.result_builder import build as build_result
 
-        page_image = await asyncio.to_thread(
-            convert_page, task.pdf_data, task.page_no - 1,
-            doc_meta.routing_tier, task.job_id, task.page_no,
-        )
-        qwen_items, yolo_hints = await asyncio.gather(
-            asyncio.to_thread(QwenLayout().detect, page_image),
-            asyncio.to_thread(YoloLayout().detect, page_image),
-        )
-        layout = await asyncio.to_thread(
-            LayoutMerger().merge, qwen_items, yolo_hints,
-            task.job_id, task.page_no, page_image.width, page_image.height,
-        )
-        text_layout = LayoutResult(
-            page_id=f"p_{task.page_no:03d}",
-            elements=[e for e in layout.elements if e.type in _TEXT_TYPES],
-        )
-        extracted = await QwenOCR().process(text_layout, page_image, doc_meta.routing_tier, None)
-        ex_by_id = {x.element_id: x for x in extracted}
-        elements: list[dict] = []
-        for e in layout.elements:
-            ex = ex_by_id.get(e.element_id)
-            elements.append({
-                "id": str(e.element_id),
-                "order": e.reading_order,
-                "type": e.type,
-                "content": (ex.corrected_text if ex else "") or "",
-                # 위치·연결 신호도 경계 dict에 실어 BoundingBox까지 흐르게 한다(현주 계약).
-                "bbox": list(e.bbox),
-                "caption_ref": str(e.caption_ref) if e.caption_ref else "",
-                "flags": list(e.flags),
-                "heading_level": e.heading_level or 0,
-            })
-        return elements
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(task.pdf_data)
+            tmp_path = f.name
+        try:
+            merged = await asyncio.to_thread(
+                mineru_run, tmp_path, task.page_no, task.job_id, "OCR",
+            )
+            result = await asyncio.to_thread(
+                build_result, merged, task.job_id, task.page_no, "OCR",
+            )
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        return result.get("elements", [])
     except Exception as exc:
-        logger.warning("현주 모델 추출 실패(빈 결과로 격리): %s", exc)
+        logger.warning("MinerU 추출 실패(빈 결과로 격리): %s", exc)
         return []
 
 
@@ -225,8 +210,10 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     """현주 추출 단계: analyze_pdf + (ZERO 텍스트 | non-ZERO 모델) → 경계 dict."""
     from app.ai.preprocessor.pdf_analyzer import analyze_pdf
 
+    # analyze_pdf의 page_no는 1-indexed(0 이하만 내부 보정). 빼기 1을 넘기면
+    # 2페이지부터 한 장씩 밀리므로 task.page_no를 그대로 전달한다(현주 계약).
     doc_meta, pdf_text = await asyncio.to_thread(
-        analyze_pdf, task.pdf_data, task.page_no - 1, task.job_id
+        analyze_pdf, task.pdf_data, task.page_no, task.job_id
     )
     if doc_meta.routing_tier == "ZERO":
         method = "TEXT_NATIVE"
