@@ -5,12 +5,8 @@ from app.core.model_manager import ModelManager
 
 
 class TestGracefulLoad:
-    def test_qwen_로드실패_비치명적(self):
-        # dev엔 Qwen 모델/awq 미탑재 → 로드 실패해도 예외 없이 None 격리
-        mm = ModelManager()
-        mm._load_qwen()                      # raise 안 해야 함
-        assert mm._gpu0_models.get("qwen") is None
-        assert mm._gpu0_models.get("qwen_processor") is None
+    # Qwen3-VL·YOLO·TableFormer 상주 로더는 MinerU 전환으로 제거됨(추출은 MinerU subprocess).
+    # 남은 상주 모델은 HCXT 하나이며, 로드 실패가 서버 기동을 막지 않아야 한다.
 
     def test_hcxt_로드실패_비치명적(self):
         mm = ModelManager()
