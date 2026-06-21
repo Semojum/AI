@@ -286,17 +286,26 @@ fi
 # storage 디렉토리
 mkdir -p "$ROOT/storage/jobs"
 
-# 설치 검증
+# 설치 검증 — 한 항목이 없어도 중단하지 않고 끝까지 리포트 (set +e)
 echo ""
 echo "── 설치 검증 ──────────────────────────────"
+set +e
 python -c "import torch; print(f'torch        : {torch.__version__}  CUDA={torch.version.cuda}  GPU={torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"NONE\"}')"
 python -c "import transformers; print(f'transformers : {transformers.__version__}')"
-python -c "import autoawq; print(f'autoawq      : {autoawq.__version__}')"
 python -c "import torch; fa=torch.backends.cuda.flash_sdp_enabled(); print(f'SDPA flash   : {fa}')"
 python -c "import grpc; print(f'grpcio       : {grpc.__version__}')"
-python -c "import braillify; print('braillify    : OK')" || echo "   [정보] braillify 미설치 — Stage 2 전 requirements-ai.txt 설치 필요"
-python -c "import louis; print('louis        : OK')"
 python -c "import pytest; print(f'pytest       : {pytest.__version__}')"
+# ── 선택(없어도 단계 1·텍스트/BE 테스트엔 무관) ──
+# autoawq 의 import 이름은 'awq' (패키지명 autoawq ≠ 모듈명). AWQ 양자화 모델 추론 시에만 필요.
+python -c "import importlib.metadata as m; print('autoawq      :', m.version('autoawq'), '(import awq)')" \
+    || echo "autoawq      : 미설치 (선택 — AWQ 모델 추론 시 필요)"
+python -c "import awq_ext" 2>/dev/null && echo "awq_kernels  : OK" \
+    || echo "awq_kernels  : 미설치 (선택 — GitHub 휠 404. AWQ GPU 커널, 모델 추론 시 수동 설치)"
+python -c "import braillify; print('braillify    : OK')" \
+    || echo "braillify    : 미설치 (requirements-ai.txt — 점자 엔진, 미설치 시 폴백 모드)"
+python -c "import louis; print('louis        : OK')" \
+    || echo "louis        : 미설치 (requirements-ai.txt — liblouis 바인딩)"
+set -e
 echo "───────────────────────────────────────────"
 
 echo ""
