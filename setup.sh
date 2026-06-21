@@ -124,10 +124,11 @@ sudo apt-get install -y \
 # -------------------------------------------------------------------
 echo "🐍 [3/9] Creating Python 3.10 virtual environment..."
 if [ -d "$ROOT/venv" ]; then
-    echo "   - 기존 venv 제거 후 재생성..."
-    rm -rf "$ROOT/venv"
+    echo "   - 기존 venv 재사용 (이미 설치된 패키지는 자동 skip — 재실행 시 빠름)."
+    echo "     완전 초기화하려면: rm -rf venv 후 재실행."
+else
+    python3.10 -m venv "$ROOT/venv"
 fi
-python3.10 -m venv "$ROOT/venv"
 source "$ROOT/venv/bin/activate"
 pip install --upgrade pip setuptools wheel packaging ninja -q
 
@@ -163,7 +164,7 @@ echo "   - SDPA 확인 완료."
 # 6. [AI Models] 모델 의존성 패키지 설치
 #
 #    transformers 4.57.0 — Qwen3-VL 필수 버전 / HyperCLOVA X SEED Think 14B 호환
-#                          tokenizers<0.22,>=0.21 요구
+#                          tokenizers>=0.22.0,<=0.23.0 요구 (4.57.0 의존 범위)
 #
 #    AutoAWQ 설치 전략:
 #      PyPI autoawq 0.2.7 wheel = py3-none-any (순수 Python, CUDA 커널 없음)
@@ -184,7 +185,7 @@ pip install "numpy==1.26.4"
 # Hugging Face 생태계
 pip install \
     "transformers==4.57.0" \
-    "tokenizers==0.21.1" \
+    "tokenizers==0.22.0" \
     "accelerate==1.2.1" \
     "einops==0.8.0" \
     "timm==1.0.11" \
