@@ -41,7 +41,8 @@ TYPE_MAP = {
 def _run_mineru(pdf_path: Path, out_dir: Path, page_no: int) -> None:
     cmd = [
         "mineru", "-p", str(pdf_path), "-o", str(out_dir),
-        "-b", "vlm-auto-engine",
+        # MinerU 3.4.0 호환: 구 백엔드명 vlm-auto-engine → vlm-engine (로컬 VLM, 모델 동일)
+        "-b", "vlm-engine",
         "-s", str(page_no - 1), "-e", str(page_no - 1),
     ]
     result = subprocess.run(cmd, capture_output=False, text=True)
