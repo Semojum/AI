@@ -113,9 +113,12 @@ class ModelManager:
                 config.hcxt_model_path,
                 quantization_config=quant_cfg,
                 device_map=f"cuda:{config.hcxt_gpu_device}",
+                trust_remote_code=True,  # HyperCLOVA X = 커스텀 모델 코드. 미지정 시 백그라운드
+                                         # 스레드에서 동의 prompt(SIGALRM) 시도 → signal 오류로 로드 실패.
             )
             self._gpu1_models["hcxt_tokenizer"] = AutoTokenizer.from_pretrained(
                 config.hcxt_model_path,
+                trust_remote_code=True,
             )
             logger.info("HyperCLOVA X SEED Think 14B INT4 로드 완료")
             # CUDA JIT 커널 선컴파일 — 첫 실제 추론의 지연(~20s) 방지
