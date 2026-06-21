@@ -2,7 +2,12 @@
 
 # =================================================================
 # Semojum V2 AI — Server Setup Script
-# 환경: Ubuntu 22.04 / Python 3.10 / CUDA 12.1
+# 환경: Ubuntu 22.04 LTS (jammy) / Python 3.10 / CUDA 12.1
+# 기본 이미지: GCP 민짜 Ubuntu 22.04 LTS (Deep Learning 이미지 아님).
+#             → NVIDIA 드라이버가 미설치이므로 이 스크립트가 직접 설치한다.
+#               (DL 이미지를 쓰면 Py3.12/CUDA12.9가 고정되므로 민짜 이미지 채택)
+# 로컬 개발: WSL2(Ubuntu)는 호스트 Windows의 NVIDIA 드라이버를 공유하므로
+#           드라이버 설치 단계가 자동 skip된다(nvidia-smi 이미 동작).
 # 기본 대상: NVIDIA L4 GPU (24GB VRAM) × 2  [단계 1~4]
 # 단계 5 환경: L4 × 1 + A100 × 1 (80GB) — 모델 업그레이드 필요
 #
@@ -41,13 +46,31 @@ if command -v nvidia-smi &> /dev/null; then
         echo "          단계 1 더미 파이프라인은 GPU 없이도 동작합니다."
     fi
 else
-    echo "   [경고] nvidia-smi 없음 — GPU 환경을 확인할 수 없습니다."
+    echo "   [경고] nvidia-smi 없음 — NVIDIA 드라이버 미설치 상태."
+    if command -v apt-get &> /dev/null; then
+        # GCP 민짜 Ubuntu 22.04 이미지: 드라이버가 없으므로 직접 설치한다.
+        # (WSL2 는 호스트 드라이버를 공유 → nvidia-smi 가 이미 동작하여 이 블록 skip)
+        echo "   - 민짜 Ubuntu 감지 → NVIDIA 드라이버(535-server, L4/Ada 호환) 설치 시도..."
+        sudo apt-get update -qq
+        sudo apt-get install -y ubuntu-drivers-common
+        sudo ubuntu-drivers install --gpgpu nvidia:535-server 2>/dev/null \
+            || sudo apt-get install -y nvidia-driver-535-server \
+            || echo "   [경고] 드라이버 자동설치 실패 — 'sudo ubuntu-drivers install' 수동 실행 필요"
+        echo "   ────────────────────────────────────────────────────────────"
+        echo "   [중요] 드라이버 설치 후 재부팅이 필요할 수 있습니다:"
+        echo "          sudo reboot  →  재부팅 후 'bash setup.sh' 재실행"
+        echo "          (nvidia-smi 가 정상 동작하면 재부팅 불필요)"
+        echo "   ────────────────────────────────────────────────────────────"
+    else
+        echo "          GPU 없이도 단계 1 더미 파이프라인은 동작합니다."
+    fi
 fi
 
 # -------------------------------------------------------------------
 # 1. [System] CUDA Toolkit 12.1 설치
-#    L4 GPU 드라이버(530.x)와 호환되는 CUDA 12.1 툴킷만 설치.
-#    드라이버는 건드리지 않는다.
+#    NVIDIA 드라이버는 위 단계 0 에서 설치(민짜 이미지) 또는 호스트 공유(WSL).
+#    여기서는 535-server 드라이버와 호환되는 CUDA 12.1 "툴킷"만 설치한다
+#    (cuda-toolkit-12-1 메타패키지는 드라이버를 끌어오지 않음).
 # -------------------------------------------------------------------
 echo "📦 [1/9] Checking CUDA Toolkit 12.1..."
 
