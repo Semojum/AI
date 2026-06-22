@@ -215,7 +215,7 @@ def _braillify_fallback(text: str) -> str:
 def _braillify(text: str) -> str:
     """태그 없는 순수 텍스트 → 점자 변환 (외부 직접 호출용 래퍼)."""
     if _BRAILLIFY_AVAILABLE:
-        return _braillify_lib.translate_to_unicode(text)
+        return _safe_to_unicode(text)
     return _braillify_fallback(text)
 
 
@@ -232,12 +232,12 @@ def _emit_mixed(text: str, result: list[str]) -> None:
     for m in _BRAILLE_RE.finditer(text):
         pre = text[last:m.start()]
         if pre:
-            result.append(_braillify_lib.translate_to_unicode(pre))
+            result.append(_safe_to_unicode(pre))
         result.append(m.group())
         last = m.end()
     tail = text[last:]
     if tail:
-        result.append(_braillify_lib.translate_to_unicode(tail))
+        result.append(_safe_to_unicode(tail))
 
 
 def _preprocess_units(text: str) -> str:
@@ -444,9 +444,67 @@ def _translate_fallback(text: str) -> str:
     return _braillify_fallback(result)
 
 
+# braillify가 거부하는 문자: PUA(사설영역)·비공백 제어문자.
+# 한컴/HWP 수식 폰트는 수식 글리프를 PUA(U+E000~)로 인코딩 → PyMuPDF가 매핑 없는
+# raw 코드포인트로 추출한다. 한 글자라도 braillify에 들어가면 "Invalid symbol character"
+# 예외로 요소 전체가 [처리 불가]가 되므로(빈 결과 금지 위반), 정화해 견고하게 만든다.
+# PUA가 많은 페이지 자체는 pdf_analyzer가 STANDARD(MinerU)로 라우팅한다(텍스트레이어 비신뢰).
+_BRAILLIFY_HOSTILE_RE = re.compile(
+    r"[-\U000f0000-\U0010fffd\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]+"
+)
+
+
+# braillify가 거부하는 비-PUA 특수문자 → 받아들이는 등가물(품질 보존).
+# 전각 ASCII(U+FF01~FF5E)는 코드포인트 산술로 반각화, 그 밖은 아래 표로.
+# 거부 예: ～(전각물결) ｢｣(반각모서리) ，．？！（）；(전각문장부호) ◦(흰 불릿).
+_SPECIAL_MAP = {
+    "｢": "「", "｣": "」",            # 반각 모서리괄호 → 전각(symbol_table가 점역)
+    "◦": "·", "◌": "·", "∘": "·",   # 흰 불릿류 → 가운뎃점
+    "　": " ",                       # 전각 공백
+}
+
+
+def _normalize_special(s: str) -> str:
+    out = []
+    for ch in s:
+        o = ord(ch)
+        if 0xFF01 <= o <= 0xFF5E:        # 전각 ASCII → 반각(，．？！（）；～ 등)
+            out.append(chr(o - 0xFEE0))
+        else:
+            out.append(_SPECIAL_MAP.get(ch, ch))
+    return "".join(out)
+
+
+def sanitize_for_braille(text: str) -> str:
+    """braillify가 거부하는 문자를 안전화(요소 격리·빈 결과 금지).
+
+    1) PUA·제어문자 런 → 단일 공백.
+    2) 전각 문장부호·반각괄호·불릿 → 받아들이는 등가물(품질 보존).
+    주변 한글·영문·숫자는 보존하고, 이중 공백은 이후 _collapse_spaces가 정리한다.
+    """
+    text = _BRAILLIFY_HOSTILE_RE.sub(" ", text)
+    return _normalize_special(text)
+
+
+def _safe_to_unicode(seg: str) -> str:
+    """braillify 변환 + 최후 폴백. 정규화 후에도 남은 미지 글자가 줄 전체를 깨지 않도록,
+    세그먼트가 실패하면 글자 단위로 변환하고 변환 불가 글자만 공백으로 대체한다."""
+    try:
+        return _braillify_lib.translate_to_unicode(seg)
+    except Exception:  # noqa: BLE001 — 미지 글자 격리(줄 보존)
+        out = []
+        for ch in seg:
+            try:
+                out.append(_braillify_lib.translate_to_unicode(ch))
+            except Exception:  # noqa: BLE001
+                out.append(" ")
+        return "".join(out)
+
+
 def translate_tagged_text(text: str) -> str:
     """<!수식> 태그가 포함된 텍스트를 점자 BRF로 변환."""
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
+    text = sanitize_for_braille(text)        # PUA·제어문자 정화(요소 전체 소실 방지)
     if _BRAILLIFY_AVAILABLE:
         return _translate_with_braillify(text)
     return _translate_fallback(text)

@@ -656,7 +656,14 @@ def _build_response(
                 ) or 0,
                 "ocr_confidence": _get_ocr_confidence(o.element_id, extracted),
                 "tn_text": o.tn_text or "",
-                "is_blocked": "[처리 불가" in o.corrected_text,
+                # opt(텍스트)뿐 아니라 braille 단계 실패(요소 격리 placeholder)도 블록으로 집계.
+                "is_blocked": (
+                    "[처리 불가" in o.corrected_text
+                    or any("[처리 불가" in ln for ln in (
+                        braille_by_id[o.element_id].braille_lines
+                        if o.element_id in braille_by_id else []
+                    ))
+                ),
                 "render_mode": o.render_mode,
                 "contents": (
                     braille_by_id[o.element_id].braille_lines

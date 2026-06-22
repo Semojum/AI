@@ -9,6 +9,7 @@ MinerU VLM 백엔드로 PDF 단일 페이지 처리.
 반환:  merged_layout (list[dict])
 """
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -39,8 +40,11 @@ TYPE_MAP = {
 
 
 def _run_mineru(pdf_path: Path, out_dir: Path, page_no: int) -> None:
+    # MinerU는 별도 env에 설치(transformers 버전 충돌 회피). bare 'mineru'가 PATH에
+    # 없을 수 있어 MINERU_BIN으로 실행 파일 경로를 덮어쓸 수 있게 한다(GCP는 심볼릭).
+    mineru_bin = os.environ.get("MINERU_BIN", "mineru")
     cmd = [
-        "mineru", "-p", str(pdf_path), "-o", str(out_dir),
+        mineru_bin, "-p", str(pdf_path), "-o", str(out_dir),
         # MinerU 3.4.0 호환: 구 백엔드명 vlm-auto-engine → vlm-engine (로컬 VLM, 모델 동일)
         "-b", "vlm-engine",
         "-s", str(page_no - 1), "-e", str(page_no - 1),

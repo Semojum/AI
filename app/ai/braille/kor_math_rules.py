@@ -137,10 +137,59 @@ def _digit_no_indicator(ch: str) -> str:
     return _DIGIT_MAP.get(ch, ch)
 
 
+# MinerU/마크다운 입력 정규화용 패턴 ─────────────────────────────────────
+_CODE_FENCE_RE = re.compile(r"```[a-zA-Z]*\n?|```")        # ```latex … ``` 펜스
+_MATH_DELIM_RE = re.compile(r"\${1,2}")                    # $$ … $$ / $ … $
+_CMD_BRACE_SP_RE = re.compile(r"(\\[a-zA-Z]+)\s+(?=[{[(])")  # \frac { → \frac{
+# 첨자 _ ^ 양쪽 공백 제거: a _ {i} → a_{i}, } ^{∞} → }^{∞} (첨자가 본체에 붙도록)
+_SUBSUP_SP_RE = re.compile(r"\s*([_^])\s*")
+_MULTISPACE_RE = re.compile(r" {2,}")                       # 다중 공백 → 단일
+_BRACE_IN_SP_RE = re.compile(r"\{\s+")                      # { x → {x
+_BRACE_OUT_SP_RE = re.compile(r"\s+\}")                     # x } → x}
+# \left( \right) 류 — 구분자만 남기고 \left·\right 제거(단, \left| … \right| 절댓값은 보존)
+_LEFTRIGHT_RE = re.compile(r"\\(?:left|right)\s*(?=[()\[\].])")
+# 간격 명령(\quad \, \; \! \:) → 공백
+_SPACING_CMD_RE = re.compile(r"\\(?:quad|qquad|[,;:!])")
+# 텍스트/서식 래퍼: \text{…}·\boxed{…}·\mathrm{…} 등 → 내용만 남김(수식 속 한글·식별자 보존)
+_TEXT_WRAP_RE = re.compile(r"\\(?:text|boxed|mathrm|mathbf|mathit|operatorname)\{([^{}]*)\}")
+
+# MinerU가 자주 내는 명령 별칭 → 유니코드(이후 substitute_symbols가 점자화)
+_CMD_ALIAS = {
+    r"\infty": "∞", r"\cdot": "·", r"\times": "×", r"\div": "÷",
+    r"\leq": "≤", r"\geq": "≥", r"\neq": "≠", r"\pm": "±", r"\mp": "∓",
+    r"\in": "∈", r"\subset": "⊂", r"\cup": "∪", r"\cap": "∩",
+    r"\angle": "∠", r"\triangle": "△", r"\cdots": "⋯", r"\dots": "⋯", r"\ldots": "⋯",
+}
+
+
+def _normalize_latex_input(latex: str) -> str:
+    """MinerU/마크다운식 LaTeX를 convert_latex가 다룰 수 있게 정규화.
+
+    코드펜스·`$$` 구분자 제거, `\\frac {1}{a _ {i}}`류 공백 축약, `\\left( … \\right)`의
+    \\left/\\right 제거(절댓값 `\\left| … \\right|`은 보존), 간격 명령·줄바꿈 정리.
+    """
+    s = _CODE_FENCE_RE.sub("", latex)
+    s = _MATH_DELIM_RE.sub(" ", s)
+    s = s.replace("\r", " ").replace("\n", " ")
+    s = _SPACING_CMD_RE.sub(" ", s)
+    s = _TEXT_WRAP_RE.sub(r"\1", s)
+    s = _LEFTRIGHT_RE.sub("", s)
+    # 공백 축약(명령/첨자/중괄호 주변) — 정규식이 토큰을 인식하도록
+    s = _CMD_BRACE_SP_RE.sub(r"\1", s)
+    s = _SUBSUP_SP_RE.sub(r"\1", s)
+    s = _BRACE_IN_SP_RE.sub("{", s)
+    s = _BRACE_OUT_SP_RE.sub("}", s)
+    for cmd, uni in _CMD_ALIAS.items():
+        s = s.replace(cmd, uni)
+    s = _MULTISPACE_RE.sub(" ", s)
+    return s.strip()
+
+
 def convert_latex(latex: str) -> str:
     """LaTeX 수식 문자열 → 점자 BRF.
 
     처리 순서:
+      0. MinerU/마크다운 입력 정규화 (코드펜스·$$·공백·\\left\\right)
       1. 수학 괄호 변환 (텍스트 괄호와 충돌 방지)
       2. 구조 기호: 분수, 근호
       3. 함수: lim, log, ln, 삼각함수
@@ -149,7 +198,7 @@ def convert_latex(latex: str) -> str:
       6. 나머지 유니코드 기호 → substitute_symbols
       7. 잔여 LaTeX 명령어·중괄호 제거
     """
-    result = latex
+    result = _normalize_latex_input(latex)
 
     # ── 1. 수학 괄호 치환 (substitute_symbols보다 먼저) ─────────────────
     result = result.replace("(", _MATH_PAREN_S).replace(")", _MATH_PAREN_E)

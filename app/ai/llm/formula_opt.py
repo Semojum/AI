@@ -79,14 +79,23 @@ def _normalize(latex: str) -> str:
     return latex
 
 
+# ```latex … ``` 코드펜스(언어태그 포함)·$$ 구분자 제거. 백틱만 strip하면 'latex'
+# 언어태그가 남아 그대로 점역되는 버그가 있었다(⠇⠁⠞⠑⠭).
+_FENCE_RE = re.compile(r"```[a-zA-Z]*\n?|```")
+_DOLLAR_RE = re.compile(r"^\s*\${1,2}|\${1,2}\s*$")
+
+
 def _extract(resp: str) -> str:
-    """프리필 스캐폴드·코드펜스만 제거하고 본문은 그대로 둔다(여러 줄 LaTeX 보존).
+    """프리필 스캐폴드·코드펜스·$$ 구분자를 제거하고 본문은 그대로 둔다(여러 줄 LaTeX 보존).
 
     프리필이 설명 머리말을 억제하므로 첫 줄만 자르지 않는다 — \\begin{cases} 등
     여러 줄 수식이 잘려 깨지는 것을 막는다.
     """
     t = resp[len(_PREFILL):] if resp.startswith(_PREFILL) else resp
-    return t.strip().strip("`").strip()
+    t = _FENCE_RE.sub("", t).strip()      # ```latex … ``` 펜스(언어태그 포함)
+    t = t.strip("`").strip()              # 잔여 인라인 백틱(`…`)
+    t = _DOLLAR_RE.sub("", t).strip()     # $$ … $$ 구분자
+    return t
 
 
 class FormulaOpt(BaseOpt):
