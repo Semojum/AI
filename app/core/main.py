@@ -31,8 +31,10 @@ from app.utils.logger import get_logger, setup_root_logging
 setup_root_logging(level=logging.INFO)
 # 3rd-party 라이브러리 로그 소음 억제(요청 로그가 묻히지 않도록).
 for _noisy in ("httpx", "httpcore", "openai", "urllib3", "asyncio",
-               "transformers", "PIL", "grpc", "uvicorn.access"):
+               "PIL", "grpc", "uvicorn.access"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
+# transformers는 토크나이저 경고(clean_up_tokenization_spaces 등)를 WARNING으로 내므로 ERROR로.
+logging.getLogger("transformers").setLevel(logging.ERROR)
 logger = get_logger(__name__)
 
 
@@ -59,7 +61,7 @@ async def _run_rest() -> None:
         app=app,
         host="0.0.0.0",
         port=config.rest_port,
-        log_level="debug" if config.is_debug else "info",
+        log_level="info",   # debug면 asyncio·uvicorn 디버그 로그가 쏟아져 INFO 고정
         loop="none",
         ssl_certfile=config.tls_cert_path if config.tls_enabled else None,
         ssl_keyfile=config.tls_key_path if config.tls_enabled else None,
