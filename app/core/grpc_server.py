@@ -104,6 +104,28 @@ def _dict_to_bounding_box(d: dict):
     return bb
 
 
+def _dump_response(task, resp) -> None:
+    """디버그 모드: BE에 보낸 BrailleResponse를 storage에 JSON으로 저장(BE 대조용).
+    경로: storage/jobs/{job}/temp/page_{no:03d}/response_sent.json
+    """
+    if not config.is_debug:
+        return
+    try:
+        import json
+        from pathlib import Path
+
+        from google.protobuf.json_format import MessageToDict
+        d = Path(f"storage/jobs/{task.job_id}/temp/page_{task.page_no:03d}")
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "response_sent.json").write_text(
+            json.dumps(MessageToDict(resp, preserving_proto_field_name=True),
+                       ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:  # noqa: BLE001 — 덤프 실패가 응답을 막지 않게
+        logger.warning("응답 덤프 실패(무시): %s", exc)
+
+
 def _build_error_response(job_id: str, page_no: int, message: str):
     resp = braille_service_pb2.BrailleResponse()
     resp.job_id = job_id
@@ -173,7 +195,9 @@ class BrailleServiceServicer(braille_service_pb2_grpc.BrailleServiceServicer):
 
         try:
             result = await pipeline.run(task)
-            return _build_proto_response(result)
+            resp = _build_proto_response(result)
+            _dump_response(task, resp)   # 디버그 시 BE에 보낸 응답을 storage에 저장
+            return resp
         except Exception as exc:
             logger.exception(
                 "pipeline error job=%s page=%d: %s", task.job_id, task.page_no, exc
