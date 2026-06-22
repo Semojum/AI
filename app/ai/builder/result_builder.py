@@ -105,6 +105,33 @@ def _viz_page(page_img: Image.Image, elements: list[dict]) -> Image.Image:
     return img
 
 
+_CAPTIONABLE = _VISUAL_TYPES | {"table"}   # 캡션이 가리킬 수 있는 시각요소
+
+
+def _link_captions(elements: list[dict]) -> None:
+    """caption 요소 → 가장 가까운 시각요소(그림/표/차트)에 caption_ref 연결(공간 근접).
+
+    캡션은 보통 대상 그림/표 바로 아래·위에 붙는다. bbox 세로 중심 거리가 가장 가까운
+    시각요소를 대상으로 본다. bbox 없거나 시각요소 없으면 빈 값 유지.
+    """
+    visuals = [e for e in elements if e["type"] in _CAPTIONABLE and e.get("bbox")]
+    if not visuals:
+        return
+    for cap in elements:
+        if cap["type"] != "caption" or not cap.get("bbox"):
+            continue
+        cb = cap["bbox"]
+        cy = (cb[1] + cb[3]) / 2
+        best, best_d = None, float("inf")
+        for v in visuals:
+            vb = v["bbox"]
+            d = abs(cy - (vb[1] + vb[3]) / 2)
+            if d < best_d:
+                best, best_d = v, d
+        if best:
+            cap["caption_ref"] = best["id"]
+
+
 def build(
     merged_layout: list[dict],
     job_id: str,
@@ -140,12 +167,15 @@ def build(
             "type": el_type,
             "content": content,
             "bbox": [int(round(v)) for v in bbox_px] if bbox_px else None,
+            "caption_ref": "",   # 아래 _link_captions가 채움
         })
 
         if debug:
             el["final_order"] = order  # viz용 임시 필드
 
         order += 1
+
+    _link_captions(elements)
 
     # 페이지 크기(2x 렌더 픽셀) — 요소들이 공유. bbox와 같은 좌표계로 BE/FE 매핑용.
     page_w = next((el.get("page_width") for el in ordered if el.get("page_width")), 0)

@@ -59,6 +59,28 @@ def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int,
     return blocks, int(round(w * 2)), int(round(h * 2))
 
 
+def _page_has_visual(page) -> bool:
+    """텍스트레이어 페이지에 표·유의미한 이미지가 있으면 True → MinerU(OCR) 라우팅.
+
+    순수 텍스트는 ZERO로 빠르게 처리하되, 표·그림 등 '텍스트 기반 시각자료'는 구조·캡션이
+    필요해 MinerU가 처리해야 한다(태민 방침). 작은 장식 로고는 제외(페이지 3% 미만).
+    """
+    page_area = (page.rect.width * page.rect.height) or 1.0
+    try:
+        for info in page.get_image_info():
+            bb = info.get("bbox")
+            if bb and (bb[2] - bb[0]) * (bb[3] - bb[1]) > 0.03 * page_area:
+                return True
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        if page.find_tables().tables:   # 선이 있는 표 감지
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    return False
+
+
 def _pua_ratio(text: str) -> float:
     """비공백 글자 중 PUA(U+E000~U+F8FF, 보충 PUA) 비율."""
     chars = [c for c in text if not c.isspace()]
@@ -164,6 +186,7 @@ def analyze_pdf(
             page_idx = max(0, min(page_no - 1, doc.page_count - 1))
             page = doc[page_idx]
             text = page.get_text().strip()
+            has_visual = _page_has_visual(page) if len(text) >= MIN_TEXT_LENGTH else False
         finally:
             doc.close()
     finally:
@@ -179,6 +202,11 @@ def analyze_pdf(
                 pua * 100, PUA_RATIO_THRESHOLD * 100, page_no,
             )
             return DocumentMeta(pdf_confidence=0.5, routing_tier="STANDARD", scan_only=False), ""
+        if has_visual:
+            # 텍스트레이어지만 표·그림 등 시각자료 포함 → 구조·캡션 위해 MinerU OCR.
+            logger.info("표·그림 포함 → STANDARD(MinerU) 라우팅 page=%s", page_no)
+            return DocumentMeta(pdf_confidence=0.7, routing_tier="STANDARD", scan_only=False), ""
+        # 순수 텍스트 → ZERO(빠른 직접추출).
         return DocumentMeta(pdf_confidence=1.0, routing_tier="ZERO", scan_only=False), text
     else:
         return DocumentMeta(pdf_confidence=0.5, routing_tier="STANDARD", scan_only=False), ""

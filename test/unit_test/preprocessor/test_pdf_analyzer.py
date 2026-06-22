@@ -21,10 +21,20 @@ def test_returns_tuple():
     assert isinstance(page_text, str)
 
 
-def test_extraction_method_text_native():
-    doc_meta, page_text = analyze_pdf(str(PDF_PATH), 1)
-    assert doc_meta.routing_tier == "ZERO", f"예상: ZERO, 실제: {doc_meta.routing_tier}"
-    assert len(page_text) > 0
+def test_visual_page_routes_standard():
+    # test.pdf 1페이지는 이미지·표를 포함 → 순수 텍스트가 아니므로 MinerU(STANDARD).
+    doc_meta, _ = analyze_pdf(str(PDF_PATH), 1)
+    assert doc_meta.routing_tier == "STANDARD", f"이미지·표 포함 페이지는 STANDARD, 실제: {doc_meta.routing_tier}"
+
+
+def test_pure_text_routes_zero():
+    # 그림·표 없는 순수 텍스트 페이지만 ZERO(빠른 직접추출).
+    import fitz
+    d = fitz.open()
+    d.new_page().insert_text((72, 72), "순수 텍스트만 있는 페이지입니다 그림도 표도 없습니다 abc 123")
+    meta, text = analyze_pdf(d.tobytes(), 1)
+    d.close()
+    assert meta.routing_tier == "ZERO" and len(text) > 0
 
 
 def test_accepts_bytes():

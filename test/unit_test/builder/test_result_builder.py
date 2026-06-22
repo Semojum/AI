@@ -166,3 +166,19 @@ class TestBBoxPassthrough:
         el.pop("bbox_px")
         res = _build([el], "t_bbox3", 1, "OCR")
         assert res["elements"][0]["bbox"] == [10, 20, 30, 40]
+
+
+class TestCaptionRefLink:
+    def test_caption이_가까운_그림에_연결(self):
+        img = _mk_el([100, 100, 500, 400], [200, 200, 1000, 800]); img["type"] = "image"
+        cap = _mk_el([100, 410, 500, 430], [200, 820, 1000, 860]); cap["type"] = "caption"
+        far = _mk_el([100, 1500, 500, 1530], [200, 3000, 1000, 3060]); far["type"] = "text"
+        res = _build([img, cap, far], "t_capref", 1, "OCR")
+        by_type = {e["type"]: e for e in res["elements"]}
+        assert by_type["caption"]["caption_ref"] == by_type["image"]["id"]
+        assert by_type["image"]["caption_ref"] == ""   # 그림 자신은 빈 값
+
+    def test_시각요소_없으면_빈값(self):
+        cap = _mk_el([0, 0, 100, 20], [0, 0, 200, 40]); cap["type"] = "caption"
+        res = _build([cap], "t_capref2", 1, "OCR")
+        assert res["elements"][0]["caption_ref"] == ""
