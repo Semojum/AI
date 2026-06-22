@@ -45,10 +45,16 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int) -> None:
     mineru_bin = os.environ.get("MINERU_BIN", "mineru")
     cmd = [
         mineru_bin, "-p", str(pdf_path), "-o", str(out_dir),
-        # MinerU 3.4.0 호환: 구 백엔드명 vlm-auto-engine → vlm-engine (로컬 VLM, 모델 동일)
-        "-b", "vlm-engine",
         "-s", str(page_idx), "-e", str(page_idx),   # 도착 PDF 내 0-based 인덱스
     ]
+    # 영구 mineru-api가 떠 있으면 thin client로 붙어 모델 재로드를 피한다(추출 대폭 단축).
+    # 없으면 요청마다 로컬 VLM 로드(vlm-engine 폴백).
+    from app.ai.parser import mineru_service
+    api_url = mineru_service.get_url()
+    if api_url:
+        cmd += ["--api-url", api_url]
+    else:
+        cmd += ["-b", "vlm-engine"]
     result = subprocess.run(cmd, capture_output=False, text=True)
     if result.returncode != 0:
         print("[mineru_runner] MinerU 실행 실패", file=sys.stderr)

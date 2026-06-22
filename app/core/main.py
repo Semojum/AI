@@ -84,6 +84,14 @@ async def main() -> None:
     await model_manager.load_all()
     logger.info("GPU 0/1 모델 로드 완료")
 
+    # MinerU 영구 서비스 기동(VLM 프리로드) — 페이지마다 모델 재로드 비용 제거.
+    # 실패/비활성 시 요청마다 CLI 폴백이라 서버는 계속 동작. MINERU_PERSISTENT=0으로 끔.
+    from app.ai.parser import mineru_service
+    if await asyncio.to_thread(mineru_service.ensure_started):
+        logger.info("MinerU 영구 서비스 사용(추출 가속)")
+    else:
+        logger.info("MinerU 영구 서비스 미사용 — 요청마다 CLI(폴백)")
+
     await asyncio.gather(_run_grpc(), _run_rest())
 
 
