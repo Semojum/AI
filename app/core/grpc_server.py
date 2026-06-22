@@ -183,10 +183,14 @@ class BrailleServiceServicer(braille_service_pb2_grpc.BrailleServiceServicer):
                 message=f"요청 파싱 실패: {type(exc).__name__}: {exc}",
             )
 
-        # job_id 네이밍 — peer로 출처(BE 원격/로컬) 판별해 job_be_/job_local_ 부여.
-        # gRPC는 동기 req/resp라 job_id를 바꿔도 BE 응답 상관관계는 유지된다(응답이 곧 답).
-        source = job_id_util.source_from_peer(context.peer())
-        task.job_id = job_id_util.generate(source)
+        # job_id는 BE가 보낸 값을 정본으로 그대로 사용한다.
+        # BE는 이 job_id로 요청·응답을 상관(correlation)·멱등 판단하므로 절대 바꾸면 안 된다.
+        # (예전엔 출처 구분용으로 새로 생성·덮어썼으나, 응답 job_id가 달라져 BE가
+        #  완료를 인지 못하고 같은 페이지를 무한 재전송하는 버그가 있었다.)
+        # BE가 job_id를 비워 보낸 경우(로컬 직접 호출 등)에만 출처를 붙여 새로 생성한다.
+        if not task.job_id:
+            source = job_id_util.source_from_peer(context.peer())
+            task.job_id = job_id_util.generate(source)
 
         logger.info(
             "grpc request received peer=%s job=%s page=%d/%d mode=%s",
