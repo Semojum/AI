@@ -83,10 +83,11 @@ _SYLLABLE_REV = _load_syllable_rev()
 # 통합 역맵(약어 + 음절 + 기호). 긴 셀 우선 매칭을 위해 최대 길이 기록.
 _COMBINED: dict[str, str] = {**_SYMBOL_REV, **_SYLLABLE_REV, **_WORD_ABBR}
 # 단독 문장부호(마침표·쉼표·느낌표)도 풀리도록 — 기존 기호 매핑은 덮지 않는다.
+# (⠲는 symbol_table에서 ∋로 먼저 잡힘 → 단독 ∋은 그대로, 어말 마침표는 _decode_line의
+#  위치 규칙이 별도 처리한다.)
 for _c, _t in (("⠲", "."), ("⠐", ","), ("⠖", "!")):
     _COMBINED.setdefault(_c, _t)
 # 변이체 정본화 — 같은 점형이 여러 유니코드(붙임표/하이픈/대시)로 매핑될 때 ASCII 정본 우선.
-# ⠤는 symbol_table에서 '–'(en dash)로 먼저 잡히나, 숫자 범위·붙임표는 ASCII '-'가 정본.
 for _c, _t in (("⠤", "-"),):
     _COMBINED[_c] = _t
 _MAX_CELLS = max((len(k) for k in _COMBINED), default=1)
@@ -232,6 +233,12 @@ def _decode_line(s: str) -> str:
             out.append(_SENT_END[ch])
             i += 1
             continue
+        # 어말 마침표 ⠲ — ∋ 기호와 같은 점형이라, 앞에 텍스트가 있고 어말(끝/공백 앞)일
+        # 때만 마침표로 본다(곳.=…⠲ → 곳 + .). 단독 ⠲(앞이 비었거나 공백)는 기호(∋)로 둔다.
+        if ch == _ROMAN_END and out and out[-1] != " " and _final(i + 1):
+            out.append(".")
+            i += 1
+            continue
         # 단일 셀 매칭(따옴표·쉼표 등)
         if best_ln == 1:
             out.append(_COMBINED[ch])
@@ -248,15 +255,25 @@ def regenerate_syllable_map() -> int:
     """모든 한글 음절(가~힣)을 braillify로 정방향 변환해 셀→음절 역맵 생성·저장.
 
     braillify가 약자를 적용하므로, 음절을 직접 forward 돌린 결과가 곧 정본 역맵이다.
+
+    단, 나·다·마·바·자·카·타·파·하 등은 **약자**라 단독으론 초성만(다=⠊)이지만 단어
+    속에선 full형(다=⠊⠣)으로 나온다. 단독형만 담으면 단어 속 ⠊⠣를 다+아로 오분해하므로,
+    단독형과 '단어 속(full)' 형태를 **둘 다** 등록한다(디코더는 긴 셀 우선이라 full형 선택).
     충돌(서로 다른 음절이 같은 셀)은 먼저 나온 음절 유지.
     """
     from braillify import translate_to_unicode as _fwd
+    suffix = _fwd("음")    # 뒤에 음절을 붙이면 앞 음절이 약자 없이 full형으로 나온다
     rev: dict[str, str] = {}
     for code in range(0xAC00, 0xD7A4):           # 가(AC00) ~ 힣(D7A3)
         syl = chr(code)
-        cells = _fwd(syl)
-        if cells and cells not in rev:
-            rev[cells] = syl
+        solo = _fwd(syl)
+        # 단어 속(full) 형태: syl+'음' 점역에서 '음' 셀을 떼어낸 앞부분
+        ctx = _fwd(syl + "음")
+        inword = ctx[: -len(suffix)] if suffix and ctx.endswith(suffix) else ""
+        # full형(긴 셀)을 먼저 등록해 긴-셀 우선 매칭에서 선택되게 한다.
+        for cells in (inword, solo):
+            if cells and cells not in rev:
+                rev[cells] = syl
     _MAP_PATH.write_text(json.dumps(rev, ensure_ascii=False, indent=0), encoding="utf-8")
     return len(rev)
 
