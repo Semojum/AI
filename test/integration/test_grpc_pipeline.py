@@ -173,8 +173,13 @@ class TestTimeout:
 
 @pytest.mark.integration
 class TestNoEmptyResponse:
-    def test_job_id_always_present(self, grpc_stub):
-        """모든 응답에 job_id가 존재해야 한다 (빈 결과 금지 원칙)."""
+    def test_job_id_echoed_back(self, grpc_stub):
+        """BE가 보낸 job_id를 응답에 그대로 돌려줘야 한다.
+
+        BE는 이 job_id로 요청·응답을 상관(correlation)하므로 서버가 바꾸면
+        BE가 완료를 인지 못해 같은 페이지를 무한 재전송한다.
+        """
         for mode in ("a", "b", "c"):
-            response = grpc_stub.ProcessPage(_make_request(mode, job_id=f"empty-check-{mode}"), timeout=30)
-            assert response.job_id.startswith(("job_be_", "job_local_")), f"mode {mode}: job_id 누락/형식오류"
+            sent = f"be-job-{mode}"
+            response = grpc_stub.ProcessPage(_make_request(mode, job_id=sent), timeout=30)
+            assert response.job_id == sent, f"mode {mode}: 응답 job_id가 요청과 다름"
