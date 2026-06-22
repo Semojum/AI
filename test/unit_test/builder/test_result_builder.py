@@ -134,3 +134,35 @@ def test_image_captioning_result(monkeypatch):
             f"캡셔닝 미완료 ({el['type']}): '{el['content']}'"
         assert len(el["content"]) > 10, \
             f"캡셔닝 결과가 너무 짧음: '{el['content']}'"
+
+
+# ── bbox·페이지 크기 전달 회귀 (BE에 좌표 넘기기) ─────────────────────────────
+import uuid as _uuid
+
+from app.ai.builder.result_builder import build as _build
+
+
+def _mk_el(bbox, bbox_px, content="텍스트"):
+    return {"element_id": str(_uuid.uuid4()), "reading_order": 1, "type": "text",
+            "bbox": bbox, "bbox_px": bbox_px, "page_width": 1680, "page_height": 2376,
+            "content": content, "image_path": None, "heading_level": None,
+            "caption_ref": None, "flags": []}
+
+
+class TestBBoxPassthrough:
+    def test_경계요소에_bbox_픽셀_포함(self):
+        res = _build([_mk_el([120, 87, 392, 104], [202.4, 146.2, 658.6, 174.7])],
+                     "t_bbox1", 1, "OCR")
+        el = res["elements"][0]
+        assert el["bbox"] == [202, 146, 659, 175]   # bbox_px 반올림
+
+    def test_meta에_페이지크기(self):
+        res = _build([_mk_el([0, 0, 500, 500], [0, 0, 840, 840])], "t_bbox2", 1, "OCR")
+        assert res["meta"]["image_width"] == 1680
+        assert res["meta"]["image_height"] == 2376
+
+    def test_bbox_px_없으면_정규화_bbox_폴백(self):
+        el = _mk_el([10, 20, 30, 40], None)
+        el.pop("bbox_px")
+        res = _build([el], "t_bbox3", 1, "OCR")
+        assert res["elements"][0]["bbox"] == [10, 20, 30, 40]

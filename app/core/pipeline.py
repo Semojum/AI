@@ -536,6 +536,11 @@ async def _run_pipeline(task: PageTask) -> dict:
         method0 = extraction.get("meta", {}).get("extraction_method", "?")
         st.note = f"{len(extraction.get('elements', []))}요소 · {method0}"
 
+    # 원본 페이지 크기(경계 meta) → 응답 image_width/height. bbox와 같은 좌표계(2x 픽셀).
+    _meta0 = extraction.get("meta", {})
+    image_width = int(_meta0.get("image_width") or 0)
+    image_height = int(_meta0.get("image_height") or 0)
+
     # Phase 2 (태민): 경계 파일 → 분해 → 6-체인
     layout_result, ext_map, method = _parse_txt_result(extraction, page_id)
     routing_tier = (

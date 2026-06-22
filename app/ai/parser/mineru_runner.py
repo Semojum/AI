@@ -221,6 +221,10 @@ def run(
             "type": mapped_type,
             "bbox": bb,
             "bbox_px": bb_px,
+            # 페이지 픽셀 크기(2x 렌더 기준) — bbox_px와 같은 좌표계. BE/FE가 bbox를
+            # image_width/height에 대한 비율로 매핑할 수 있게 경계파일까지 흘려보낸다.
+            "page_width": img_w,
+            "page_height": img_h,
             "content": content,
             "image_path": image_path,
             "heading_level": None,

@@ -132,17 +132,24 @@ def build(
             continue
 
         # element_id를 그대로 사용 (새 UUID 생성 안 함)
+        # bbox는 픽셀 좌표(bbox_px, 2x 렌더 기준)로 BE에 전달 — 없으면 0~1000 정규화 bbox.
+        bbox_px = el.get("bbox_px") or el.get("bbox")
         elements.append({
             "id": el["element_id"],
             "order": order,
             "type": el_type,
             "content": content,
+            "bbox": [int(round(v)) for v in bbox_px] if bbox_px else None,
         })
 
         if debug:
             el["final_order"] = order  # viz용 임시 필드
 
         order += 1
+
+    # 페이지 크기(2x 렌더 픽셀) — 요소들이 공유. bbox와 같은 좌표계로 BE/FE 매핑용.
+    page_w = next((el.get("page_width") for el in ordered if el.get("page_width")), 0)
+    page_h = next((el.get("page_height") for el in ordered if el.get("page_height")), 0)
 
     if debug and pdf_path:
         debug_dir = Path("storage") / "jobs" / job_id / "temp" / f"page_{page_no:03d}"
@@ -156,6 +163,8 @@ def build(
             "job_id": job_id,
             "page_no": page_no,
             "extraction_method": extraction_method,
+            "image_width": page_w,
+            "image_height": page_h,
         },
         "elements": elements,
     }
