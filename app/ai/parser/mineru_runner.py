@@ -39,7 +39,7 @@ TYPE_MAP = {
 }
 
 
-def _run_mineru(pdf_path: Path, out_dir: Path, page_no: int) -> None:
+def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int) -> None:
     # MinerU는 별도 env에 설치(transformers 버전 충돌 회피). bare 'mineru'가 PATH에
     # 없을 수 있어 MINERU_BIN으로 실행 파일 경로를 덮어쓸 수 있게 한다(GCP는 심볼릭).
     mineru_bin = os.environ.get("MINERU_BIN", "mineru")
@@ -47,7 +47,7 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_no: int) -> None:
         mineru_bin, "-p", str(pdf_path), "-o", str(out_dir),
         # MinerU 3.4.0 호환: 구 백엔드명 vlm-auto-engine → vlm-engine (로컬 VLM, 모델 동일)
         "-b", "vlm-engine",
-        "-s", str(page_no - 1), "-e", str(page_no - 1),
+        "-s", str(page_idx), "-e", str(page_idx),   # 도착 PDF 내 0-based 인덱스
     ]
     result = subprocess.run(cmd, capture_output=False, text=True)
     if result.returncode != 0:
@@ -126,10 +126,16 @@ def run(
     pdf_path = Path(pdf_path)
     base = Path("storage") / "jobs" / job_id / "temp" / f"page_{page_no:03d}"
 
+    # proto 계약상 pdf_data는 '단일 페이지' PDF(BE가 페이지마다 1장씩 전송). page_no는
+    # 원본 문서 페이지 번호(저장경로용)이므로 도착 PDF 인덱스로 그대로 쓰면 단일 페이지에서
+    # 범위 초과. 페이지 수에 맞게 클램프(단일=0, 멀티=page_no-1).
+    with fitz.open(str(pdf_path)) as _d:
+        page_idx = max(0, min(page_no - 1, _d.page_count - 1))
+
     raw_dir = Path(mineru_cache_dir) if mineru_cache_dir else base / "mineru_raw"
     if not list(raw_dir.rglob("*_content_list.json")):
         raw_dir.mkdir(parents=True, exist_ok=True)
-        _run_mineru(pdf_path, raw_dir, page_no)
+        _run_mineru(pdf_path, raw_dir, page_idx)
         _cleanup_mineru_output(raw_dir)
         _flatten_mineru_output(raw_dir)
 
@@ -148,7 +154,7 @@ def run(
 
     # PDF 페이지 크기 (bbox 픽셀 변환용, 2x 렌더 기준)
     doc = fitz.open(str(pdf_path))
-    fitz_page = doc[page_no - 1]
+    fitz_page = doc[page_idx]
     rect = fitz_page.rect
     img_w = int(rect.width * 2)
     img_h = int(rect.height * 2)

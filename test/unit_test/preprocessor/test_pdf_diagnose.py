@@ -79,3 +79,27 @@ class TestPUARouting:
     def test_base64로_와도_분석성공(self):
         meta, text = analyze_pdf(base64.b64encode(VALID), 1)
         assert meta.routing_tier == "ZERO" and text
+
+
+class TestSinglePagePageNo:
+    """proto상 pdf_data는 단일 페이지. page_no>1이어도 IndexError 없이 그 페이지를 읽어야."""
+
+    def test_단일페이지_page_no_2_무예외(self):
+        # BE는 페이지마다 1장 PDF를 보내며 page_no는 원본 페이지 번호
+        meta, text = analyze_pdf(VALID, page_no=2)  # 이전엔 IndexError: page 1 not in document
+        assert meta.routing_tier == "ZERO" and text
+
+    def test_단일페이지_큰_page_no_무예외(self):
+        meta, _ = analyze_pdf(VALID, page_no=99)
+        assert meta.routing_tier in ("ZERO", "STANDARD")
+
+    def test_멀티페이지_page_no로_해당페이지(self):
+        # ASCII 내용(기본 폰트가 한글을 임베드 못 해 추출이 깨지는 것 회피)으로 페이지 구분 확인
+        d = fitz.open()
+        for i in range(3):
+            d.new_page().insert_text((72, 72), f"this is page number {i + 1} content body")
+        multi = d.tobytes()
+        d.close()
+        _, t2 = analyze_pdf(multi, page_no=2)
+        _, t3 = analyze_pdf(multi, page_no=3)
+        assert "page number 2" in t2 and "page number 3" in t3

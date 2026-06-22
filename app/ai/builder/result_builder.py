@@ -77,7 +77,10 @@ def _do_caption(el: dict) -> tuple[str, str]:
 
 def _render_page(pdf_path: str, page_no: int) -> Image.Image:
     doc = fitz.open(str(pdf_path))
-    pix = doc[page_no - 1].get_pixmap(matrix=fitz.Matrix(2, 2))
+    # pdf_data는 단일 페이지 PDF(proto 계약). page_no는 원본 페이지 번호이므로
+    # 페이지 수에 맞게 클램프(단일=0, 멀티=page_no-1) — 범위 초과 방지.
+    page_idx = max(0, min(page_no - 1, doc.page_count - 1))
+    pix = doc[page_idx].get_pixmap(matrix=fitz.Matrix(2, 2))
     img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
     doc.close()
     return img

@@ -121,7 +121,12 @@ def analyze_pdf(
 
         doc = fitz.open(open_path)
         try:
-            page = doc[page_no - 1]
+            # proto 계약상 pdf_data는 '단일 페이지' PDF다(BE가 페이지마다 1장씩 전송).
+            # page_no는 원본 문서의 페이지 번호(헤더/푸터·저장경로용)일 뿐이므로,
+            # 도착 PDF 인덱스로 그대로 쓰면(예: page_no=2 → doc[1]) 단일 페이지에서
+            # IndexError가 난다. 페이지 수에 맞게 클램프(단일=0, 멀티=page_no-1).
+            page_idx = max(0, min(page_no - 1, doc.page_count - 1))
+            page = doc[page_idx]
             text = page.get_text().strip()
         finally:
             doc.close()
