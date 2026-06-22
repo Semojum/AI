@@ -14,6 +14,7 @@ from typing import Optional
 
 from app.ai.braille.nested_block import box_narrative
 from app.ai.braille.regulations import make_rule
+from app.ai.braille.table_braille import build_table_tags
 from app.ai.llm.base_opt import BaseOpt, decide_tier_timeout, generate_with_retry
 from app.ai.llm.draft_utils import ensure_tn_prefix
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
@@ -76,22 +77,40 @@ def _table_title(ext: ExtractedContent) -> Optional[str]:
     return None
 
 
-def _table_to_text(table_structure: dict) -> str:
-    """table_structure dict → 사람이 읽을 수 있는 텍스트."""
+def _table_to_grid(table_structure: dict) -> list[list[str]]:
+    """table_structure dict → 행렬(list[list[str]]). 셀 없으면 빈 리스트."""
     cells: list[dict] = table_structure.get("cells", [])
     if not cells:
-        return table_structure.get("text", "") or ""
-
+        return []
     max_row = max((c.get("row", 0) for c in cells), default=0) + 1
     max_col = max((c.get("col", 0) for c in cells), default=0) + 1
-
     grid: list[list[str]] = [[""] * max_col for _ in range(max_row)]
     for cell in cells:
         r, c = cell.get("row", 0), cell.get("col", 0)
         if r < max_row and c < max_col:
             grid[r][c] = str(cell.get("text", ""))
+    return grid
 
+
+def _table_to_text(table_structure: dict) -> str:
+    """table_structure dict → '|' 구분 텍스트(LLM 프롬프트·render_mode 추론용)."""
+    grid = _table_to_grid(table_structure)
+    if not grid:
+        return table_structure.get("text", "") or ""
     return "\n".join(" | ".join(row) for row in grid)
+
+
+def _pipe_to_grid(text: str) -> list[list[str]]:
+    """'|' 구분 텍스트 → 행렬(현주 핸드오프가 파이프 텍스트만 줄 때 대비)."""
+    return [[c.strip() for c in ln.split("|")] for ln in text.splitlines() if ln.strip()]
+
+
+def _table_tags(table_structure, table_text: str) -> str:
+    """표 구조 → <!표> 태그(stage② 표시·table_braille 입력). 비정형은 원문 유지."""
+    grid = _table_to_grid(table_structure) if table_structure else []
+    if not grid and "|" in table_text:
+        grid = _pipe_to_grid(table_text)
+    return build_table_tags(grid) if grid else table_text
 
 
 def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
@@ -177,16 +196,20 @@ class TableOpt(BaseOpt):
                 rule_trail=_min_trail("[처리 불가: 표 내용 없음]"),
             )
 
+        # 점역 직전 텍스트(stage②) = 표 구조 태그. table_braille가 파싱해 4안 렌더에 위임.
+        # table_text(파이프)는 LLM 프롬프트·render_mode 추론·rule_trail 소스로만 사용.
+        table_tags = _table_tags(ext.table_structure, table_text)
+
         if routing_tier == "ZERO":
             tn = ensure_tn_prefix(f"표. {table_text[:100]}")  # <!점역자주>…<!/점역자주>
             return LLMOutput(
                 element_id=ext.element_id,
-                corrected_text=table_text,
+                corrected_text=table_tags,
                 render_mode=render_mode,
                 tn_text=tn,
                 routing_tier="ZERO",
                 processing_time_ms=0,
-                rule_trail=_min_trail(table_text),
+                rule_trail=_min_trail(table_tags),
                 table_title=title,
                 nested_text=nested_text,
             )
@@ -213,12 +236,12 @@ class TableOpt(BaseOpt):
         elapsed_ms = int((time.monotonic() - start) * 1000)
         return LLMOutput(
             element_id=ext.element_id,
-            corrected_text=table_text,
+            corrected_text=table_tags,
             render_mode=render_mode,
             tn_text=tn_text,
             routing_tier=tier,
             processing_time_ms=elapsed_ms,
-            rule_trail=_min_trail(table_text),
+            rule_trail=_min_trail(table_tags),
             table_title=title,
             nested_text=nested_text,
         )

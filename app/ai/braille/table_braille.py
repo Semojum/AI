@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import re
+
 from app.ai.braille.isolation import safe_translate
 from app.ai.braille.nested_block import append_nested
 from app.ai.braille.regulations import make_rule, make_rule_at
@@ -42,6 +44,36 @@ def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
 from app.ai.braille.constants import COLS as _COLS  # noqa: E402 (공용 상수)
 _BORDER  = "⠿"  # 표 테두리
 _SEP     = "⠒"  # 행·셀 구분선
+
+# ── 표 구조 태그 (plan §3-5 확장) ─────────────────────────────────────────────
+# table_opt가 stage②(점역 직전 텍스트)에 <!표>/<!행>/<!칸>으로 표 구조를 출력하고,
+# 여기서 행렬로 파싱해 기존 4안 렌더러(풀어쓰기/격자/전치/선형)에 1:1 위임한다.
+_TBL_OPEN, _TBL_CLOSE = "<!표>", "<!/표>"
+_TBL_ROW_OPEN, _TBL_ROW_CLOSE = "<!행>", "<!/행>"
+_TBL_CELL = "<!칸>"
+_TBL_ROW_RE = re.compile(r"<!행>(.*?)<!/행>", re.DOTALL)
+
+
+def build_table_tags(rows: list[list[str]]) -> str:
+    """행렬 → <!표><!행><!칸>… 태그 문자열(stage② 표시·table_braille 입력)."""
+    out = [_TBL_OPEN]
+    for r in rows:
+        out.append(_TBL_ROW_OPEN + "".join(_TBL_CELL + str(c) for c in r) + _TBL_ROW_CLOSE)
+    out.append(_TBL_CLOSE)
+    return "\n".join(out)
+
+
+def parse_table_tags(text: str):
+    """<!표> 태그 → 행렬(list[list[str]]). 태그 없으면 None(파이프 폴백)."""
+    if _TBL_OPEN not in text:
+        return None
+    rows: list[list[str]] = []
+    for m in _TBL_ROW_RE.finditer(text):
+        cells = m.group(1).split(_TBL_CELL)
+        if cells and cells[0] == "":
+            cells = cells[1:]   # 첫 <!칸> 앞 빈 셀 제거
+        rows.append([c.strip() for c in cells])
+    return rows or None
 _GUIDE   = "⠄"  # 유도점
 _TN_TRANSPOSE = "표의 가로와 세로를 바꾸어 점역함."
 _TITLE_INDENT = 5  # 도서 제작 지침 제3장 5)(1): 표 제목은 5칸에서 시작
@@ -186,6 +218,11 @@ class TableBraille:
                 element_id=opt.element_id, braille_lines=lines,
                 rule_trail=_base_trail(lines, text),
             )
+
+        # <!표> 구조 태그 → 내부 '|' 격자로 변환해 기존 4안 렌더러에 위임(1:1).
+        parsed_rows = parse_table_tags(text)
+        if parsed_rows is not None:
+            text = "\n".join(" | ".join(r) for r in parsed_rows)
 
         # 표 제목(전사) — §3 5): 위 테두리 앞에 5칸 들여 한 줄. 없으면 None.
         title_br = _title_line(opt.table_title) if opt.table_title else None
