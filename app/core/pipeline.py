@@ -29,6 +29,7 @@ from app.schemas.layout import BBoxItem, DocumentMeta, LayoutResult
 from app.schemas.quality import CriticalError, QualityReport
 from app.schemas.task import PageTask
 from app.utils.logger import get_logger
+from app.utils.req_log import api_summary, stage, start_request
 
 logger = get_logger(__name__)
 
@@ -476,6 +477,17 @@ def _collect(layout: LayoutResult, ext_map: dict[UUID, ExtractedContent], types:
     return [ext_map[e.element_id] for e in layout.elements if e.type in types and e.element_id in ext_map]
 
 
+def _type_breakdown(layout: LayoutResult) -> str:
+    """요소 유형별 개수 요약(진행 로그 note용). 예: '텍스트18·수식2·표1'."""
+    from collections import Counter
+    label = {"formula": "수식", "table": "표", "image": "그림",
+             "cartoon": "만화", "chart_graph": "차트", "diagram": "도표"}
+    c: Counter = Counter()
+    for e in layout.elements:
+        c["텍스트" if e.type in _TEXT_TYPES else label.get(e.type, e.type)] += 1
+    return "·".join(f"{k}{v}" for k, v in c.items())
+
+
 async def _run_pipeline(task: PageTask) -> dict:
     page_id = f"p_{task.page_no:03d}"
 
@@ -513,13 +525,16 @@ async def _run_pipeline(task: PageTask) -> dict:
 
     # ── mode a, c ──────────────────────────────────────────────────────
     # Phase 1 (현주): 경계 파일이 없으면 현주 추출로 생성. 있으면 그대로 사용.
-    if _txt_result_path(task).exists():
-        extraction = _read_txt_result(task)
-        logger.info("기존 추출 파일 사용 job=%s page=%d", task.job_id, task.page_no)
-    else:
-        doc_meta, extraction = await _extract_with_hyunju(task)
-        _write_txt_result(task, extraction)
-        _debug_dump(task, "02_doc_meta", doc_meta.model_dump())
+    with stage("추출") as st:
+        if _txt_result_path(task).exists():
+            extraction = _read_txt_result(task)
+            st.note = "캐시 재사용"
+        else:
+            doc_meta, extraction = await _extract_with_hyunju(task)
+            _write_txt_result(task, extraction)
+            _debug_dump(task, "02_doc_meta", doc_meta.model_dump())
+        method0 = extraction.get("meta", {}).get("extraction_method", "?")
+        st.note = f"{len(extraction.get('elements', []))}요소 · {method0}"
 
     # Phase 2 (태민): 경계 파일 → 분해 → 6-체인
     layout_result, ext_map, method = _parse_txt_result(extraction, page_id)
@@ -529,16 +544,18 @@ async def _run_pipeline(task: PageTask) -> dict:
     )
     include_braille = task.mode == "c"
 
-    chain_results = await asyncio.gather(
-        _run_text_chain(_collect(layout_result, ext_map, _TEXT_TYPES), layout_result, routing_tier, task, include_braille),
-        _run_formula_chain(_collect(layout_result, ext_map, {"formula"}), routing_tier, task, include_braille),
-        _run_table_chain(_collect(layout_result, ext_map, {"table"}), layout_result, routing_tier, task, include_braille),
-        _run_image_chain(_collect(layout_result, ext_map, {"image"}), layout_result, routing_tier, task, include_braille),
-        _run_cartoon_chain(_collect(layout_result, ext_map, {"cartoon"}), layout_result, routing_tier, task, include_braille),
-        _run_chart_graph_chain(_collect(layout_result, ext_map, {"chart_graph"}), layout_result, routing_tier, task, include_braille),
-        _run_diagram_chain(_collect(layout_result, ext_map, {"diagram"}), layout_result, routing_tier, task, include_braille),
-        return_exceptions=True,
-    )
+    with stage("점역(7체인)") as st:
+        st.note = _type_breakdown(layout_result)
+        chain_results = await asyncio.gather(
+            _run_text_chain(_collect(layout_result, ext_map, _TEXT_TYPES), layout_result, routing_tier, task, include_braille),
+            _run_formula_chain(_collect(layout_result, ext_map, {"formula"}), routing_tier, task, include_braille),
+            _run_table_chain(_collect(layout_result, ext_map, {"table"}), layout_result, routing_tier, task, include_braille),
+            _run_image_chain(_collect(layout_result, ext_map, {"image"}), layout_result, routing_tier, task, include_braille),
+            _run_cartoon_chain(_collect(layout_result, ext_map, {"cartoon"}), layout_result, routing_tier, task, include_braille),
+            _run_chart_graph_chain(_collect(layout_result, ext_map, {"chart_graph"}), layout_result, routing_tier, task, include_braille),
+            _run_diagram_chain(_collect(layout_result, ext_map, {"diagram"}), layout_result, routing_tier, task, include_braille),
+            return_exceptions=True,
+        )
 
     all_extracted: list[ExtractedContent] = []
     all_llm: list[LLMOutput] = []
@@ -558,11 +575,12 @@ async def _run_pipeline(task: PageTask) -> dict:
     # PART 10: 레이아웃 조판
     overflow_rate = 0.0
     if include_braille and all_braille:
-        from app.ai.braille.layout_braille import LayoutBraille
-        overflow_rate = LayoutBraille().layout(
-            all_braille, task.page_no, task.job_id,
-            layout_result=layout_result,
-        )
+        with stage("조판"):
+            from app.ai.braille.layout_braille import LayoutBraille
+            overflow_rate = LayoutBraille().layout(
+                all_braille, task.page_no, task.job_id,
+                layout_result=layout_result,
+            )
 
     return _build_response(
         task, page_id, doc_meta, routing_tier, image_width, image_height,
@@ -720,6 +738,9 @@ _DUMMY_ELEM = _DummyElem()
 
 async def run(task: PageTask) -> dict:
     """파이프라인 진입점. 180초 하드 타임아웃 강제."""
+    start_request()   # 요청 단위 API 카운터 초기화
+    logger.info("━━ job=%s page=%d/%d mode=%s 처리 시작 ━━",
+                task.job_id, task.page_no, task.total_pages, task.mode)
     start = time.monotonic()
     try:
         result = await asyncio.wait_for(
@@ -728,20 +749,22 @@ async def run(task: PageTask) -> dict:
         )
         elapsed_ms = int((time.monotonic() - start) * 1000)
         result["processing_meta"]["processing_time_ms"] = elapsed_ms
+        n_braille = len(result.get("braille_text_list") or [])
         logger.info(
-            "pipeline completed job=%s page=%d mode=%s elapsed=%dms",
-            task.job_id, task.page_no, task.mode, elapsed_ms,
+            "✅ %s  총 %.1fs · API %s · 점자 %d줄  (job=%s page=%d mode=%s)",
+            result.get("status"), elapsed_ms / 1000, api_summary(), n_braille,
+            task.job_id, task.page_no, task.mode,
         )
         return result
 
     except asyncio.TimeoutError:
         elapsed_ms = int((time.monotonic() - start) * 1000)
-        logger.warning("pipeline timeout job=%s page=%d elapsed=%dms",
-                       task.job_id, task.page_no, elapsed_ms)
+        logger.warning("⛔ BLOCKED(타임아웃) %.1fs · API %s  (job=%s page=%d)",
+                       elapsed_ms / 1000, api_summary(), task.job_id, task.page_no)
         return _build_timeout_response(task, elapsed_ms)
 
     except Exception as exc:
         elapsed_ms = int((time.monotonic() - start) * 1000)
-        logger.exception("pipeline error job=%s page=%d: %s",
-                         task.job_id, task.page_no, exc)
+        logger.exception("⛔ BLOCKED(예외) %.1fs job=%s page=%d: %s",
+                         elapsed_ms / 1000, task.job_id, task.page_no, exc)
         return _build_exception_response(task, elapsed_ms, exc)

@@ -50,6 +50,8 @@ def caption(image_path: str, image_type: str = "image") -> str:
     ext = Path(image_path).suffix.lstrip(".").lower()
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
+    from app.utils.req_log import inc_gpt4o
+    inc_gpt4o()
     resp = _get_client().chat.completions.create(
         model="gpt-4o",
         messages=[

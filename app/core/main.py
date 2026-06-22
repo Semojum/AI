@@ -11,6 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+
+# gRPC C-core 로그 정리 — TLS 디버깅 때 셸에 켜둔 GRPC_VERBOSITY=DEBUG·GRPC_TRACE가
+# tcp_posix/ssl 스팸을 쏟아낸다. grpc import 이전(여기)에서 조용히 강제한다.
+# 다시 자세히 보려면 SEMOJUM_GRPC_DEBUG=1 로 기동.
+if os.environ.get("SEMOJUM_GRPC_DEBUG") != "1":
+    os.environ["GRPC_VERBOSITY"] = "ERROR"
+    os.environ.pop("GRPC_TRACE", None)
 
 import uvicorn
 from fastapi import FastAPI
@@ -19,7 +27,12 @@ from app.core.config import config
 from app.core.routes import router
 from app.utils.logger import get_logger, setup_root_logging
 
-setup_root_logging(level=logging.DEBUG if config.is_debug else logging.INFO)
+# Python 로그 레벨은 INFO 고정(디버그 모드=중간 JSON 덤프이지 로그 폭주가 아님).
+setup_root_logging(level=logging.INFO)
+# 3rd-party 라이브러리 로그 소음 억제(요청 로그가 묻히지 않도록).
+for _noisy in ("httpx", "httpcore", "openai", "urllib3", "asyncio",
+               "transformers", "PIL", "grpc", "uvicorn.access"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 logger = get_logger(__name__)
 
 

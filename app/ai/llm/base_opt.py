@@ -34,6 +34,9 @@ FALLBACK_TIMEOUT = 45.0  # GPT-4o 폴백 제한
 def hcxt_generate_sync(prompt: str, max_new_tokens: int = 512, prefill: str = "") -> str:
     """HyperCLOVA X 동기 추론. prefill이 있으면 답변 시작을 강제해 포맷을 고정한다."""
     import torch
+
+    from app.utils.req_log import inc_hcxt
+    inc_hcxt()
     model = model_manager.hcxt_model
     tokenizer = model_manager.hcxt_tokenizer
     device = next(model.parameters()).device
@@ -85,6 +88,9 @@ async def fallback_optimize(prompt: str, *, max_tokens: int = 300, kind: str = "
         logger.error("FALLBACK: OPENAI_API_KEY 미설정")
         return ""
     import openai
+
+    from app.utils.req_log import inc_gpt4o
+    inc_gpt4o()
     client = openai.AsyncOpenAI(api_key=config.openai_api_key)
     try:
         resp = await asyncio.wait_for(
