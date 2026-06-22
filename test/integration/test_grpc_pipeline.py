@@ -78,7 +78,7 @@ class TestModeA:
         """mode a: 응답 필드 구조 검증."""
         response = grpc_stub.ProcessPage(_make_request("a"), timeout=30)
 
-        assert response.job_id == "test-job-001"
+        assert response.job_id.startswith(("job_be_", "job_local_"))  # AI가 출처별 job_id 생성
         assert response.page_number == 1
         assert response.status in ("COMPLETED", "NEEDS_REVIEW", "BLOCKED")
         # mode a는 image_width/image_height(이미지 치수), bounding_box_list, text_list 포함
@@ -102,7 +102,7 @@ class TestModeB:
         """mode b: braille_text_list 포함 여부 검증."""
         response = grpc_stub.ProcessPage(_make_request("b"), timeout=30)
 
-        assert response.job_id == "test-job-001"
+        assert response.job_id.startswith(("job_be_", "job_local_"))  # AI가 출처별 job_id 생성
         assert response.status in ("COMPLETED", "NEEDS_REVIEW", "BLOCKED")
         # braille_text_list 포함 여부 실제 검증
         if response.status != "BLOCKED":
@@ -120,7 +120,7 @@ class TestModeC:
         """mode c: bounding_box_list + braille_text_list 모두 포함."""
         response = grpc_stub.ProcessPage(_make_request("c"), timeout=30)
 
-        assert response.job_id == "test-job-001"
+        assert response.job_id.startswith(("job_be_", "job_local_"))  # AI가 출처별 job_id 생성
         assert response.status in ("COMPLETED", "NEEDS_REVIEW", "BLOCKED")
 
     def test_quality_report_structure(self, grpc_stub):
@@ -177,4 +177,4 @@ class TestNoEmptyResponse:
         """모든 응답에 job_id가 존재해야 한다 (빈 결과 금지 원칙)."""
         for mode in ("a", "b", "c"):
             response = grpc_stub.ProcessPage(_make_request(mode, job_id=f"empty-check-{mode}"), timeout=30)
-            assert response.job_id == f"empty-check-{mode}", f"mode {mode}: job_id 누락"
+            assert response.job_id.startswith(("job_be_", "job_local_")), f"mode {mode}: job_id 누락/형식오류"

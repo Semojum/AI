@@ -136,7 +136,8 @@ def main() -> None:
         "--mode", default="c", choices=["a", "b", "c"],
         help="처리 모드 (a: 텍스트 추출, b: 점자 변환, c: 통합)"
     )
-    parser.add_argument("--job-id", default="local-test-001", help="job_id")
+    parser.add_argument("--job-id", default=None,
+                        help="job_id (미지정 시 job_local_월일시분초_해시 자동 생성)")
     parser.add_argument(
         "--server", default=None,
         help="gRPC 서버 주소 (예: localhost:50051). 미지정 시 직접 실행."
@@ -151,11 +152,17 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # 로컬 직접 실행 job_id = job_local_월일시분초_해시(미지정 시). 서버 경유는 grpc_server가 부여.
+    job_id = args.job_id
+    if job_id is None:
+        from app.utils.job_id import generate
+        job_id = generate("local")
+
     if args.server:
-        run_grpc(args.file, args.mode, args.job_id, args.server)
+        run_grpc(args.file, args.mode, job_id, args.server)
     else:
         asyncio.run(run_direct(
-            args.file, args.mode, args.job_id,
+            args.file, args.mode, job_id,
             load_models=args.load_models,
             pipeline_timeout=args.pipeline_timeout,
         ))

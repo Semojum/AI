@@ -156,11 +156,7 @@ def _write_stage(task: PageTask, dir_name: str, filename: str, objs: list) -> No
 # ── 현주 추출 (Phase 1) — data/NNN_txt_result.json 생성 ────────────────────
 
 def _blocks_from_text(pdf_text: Optional[str]) -> list[dict]:
-    """ZERO Tier: PyMuPDF 직접 추출 텍스트를 줄 단위 요소로 변환.
-
-    현주 PART2 ZERO 추출의 임시 구현(줄 단위). 현주 모듈이 type/order를 정밀
-    부여하도록 완성되면 이 함수 대신 그 출력을 사용한다.
-    """
+    """ZERO 폴백: 블록 추출이 비면 텍스트를 줄 단위 요소로(좌표 없음)."""
     elements: list[dict] = []
     order = 0
     for raw_line in (pdf_text or "").split("\n"):
@@ -175,10 +171,24 @@ def _blocks_from_text(pdf_text: Optional[str]) -> list[dict]:
     return elements
 
 
-async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> list[dict]:
-    """non-ZERO Tier(스캔 PDF): MinerU2.5-Pro로 레이아웃·OCR·수식·표를 통합 추출.
-    pdf_data(bytes)를 임시 파일로 저장해 MinerU subprocess에 경로로 넘기고,
-    result_builder가 이미지 분류·캡셔닝까지 거쳐 경계 elements를 만든다.
+def _blocks_with_bbox(blocks: list[dict]) -> list[dict]:
+    """ZERO Tier: PyMuPDF 블록(content+bbox) → 경계 요소(bbox 포함)."""
+    elements: list[dict] = []
+    for order, b in enumerate(blocks, start=1):
+        content = b.get("content", "").strip()
+        if not content:
+            continue
+        etype = "page_number" if content.isdigit() else "text"
+        elements.append({
+            "id": str(uuid4()), "order": order, "type": etype,
+            "content": content, "bbox": b.get("bbox"),
+        })
+    return elements
+
+
+async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> tuple[list[dict], int, int]:
+    """non-ZERO Tier(스캔 PDF): MinerU2.5-Pro 통합 추출 → (elements, page_w, page_h).
+    result_builder가 이미지 분류·캡셔닝까지 거쳐 경계 elements(bbox 포함)를 만든다.
     MinerU 미설치/실패 시 빈 결과로 격리(요소 격리 원칙)."""
     import os
     import tempfile
@@ -201,33 +211,40 @@ async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> list[di
                 os.unlink(tmp_path)
             except OSError:
                 pass
-        return result.get("elements", [])
+        m = result.get("meta", {})
+        return result.get("elements", []), int(m.get("image_width") or 0), int(m.get("image_height") or 0)
     except Exception as exc:
         logger.warning("MinerU 추출 실패(빈 결과로 격리): %s", exc)
-        return []
+        return [], 0, 0
 
 
 async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
-    """현주 추출 단계: analyze_pdf + (ZERO 텍스트 | non-ZERO 모델) → 경계 dict."""
-    from app.ai.preprocessor.pdf_analyzer import analyze_pdf
+    """현주 추출 단계: analyze_pdf + (ZERO 텍스트 | non-ZERO 모델) → 경계 dict(크기·bbox 포함)."""
+    from app.ai.preprocessor.pdf_analyzer import analyze_pdf, extract_text_blocks
 
     # analyze_pdf의 page_no는 1-indexed(0 이하만 내부 보정). 빼기 1을 넘기면
     # 2페이지부터 한 장씩 밀리므로 task.page_no를 그대로 전달한다(현주 계약).
     doc_meta, pdf_text = await asyncio.to_thread(
         analyze_pdf, task.pdf_data, task.page_no, task.job_id
     )
+    image_width = image_height = 0
     if doc_meta.routing_tier == "ZERO":
         method = "TEXT_NATIVE"
-        elements = _blocks_from_text(pdf_text)
+        blocks, image_width, image_height = await asyncio.to_thread(
+            extract_text_blocks, task.pdf_data, task.page_no
+        )
+        elements = _blocks_with_bbox(blocks) or _blocks_from_text(pdf_text)
     else:
         method = "OCR"
-        elements = await _extract_via_models(task, doc_meta)
+        elements, image_width, image_height = await _extract_via_models(task, doc_meta)
 
     extraction = {
         "meta": {
             "job_id": task.job_id,
             "page_no": task.page_no,
             "extraction_method": method,
+            "image_width": image_width,
+            "image_height": image_height,
         },
         "elements": elements,
     }
@@ -611,6 +628,17 @@ def _build_response(
 ) -> dict:
     elem_by_id = {e.element_id: e for e in layout_result.elements}
     braille_by_id = {b.element_id: b for b in braille_outputs}
+    ext_by_id = {e.element_id: e for e in extracted}
+
+    def _meta_fields(eid) -> dict:
+        """proto TextElement 부가 필드 — 수식 latex·시각자료 subtype(추출에서 가져옴)."""
+        e = ext_by_id.get(eid)
+        return {
+            "latex_string": (e.latex_string or "") if e else "",
+            "visual_subtype": (e.visual_subtype or "") if e else "",
+            "subtype_confidence": float(e.subtype_confidence)
+            if e and e.subtype_confidence is not None else 0.0,
+        }
 
     # 응답 리스트는 문서 읽기 순서로 정렬한다. (6체인 gather 결과는 type별로 묶여 있어
     # 그대로 내보내면 본문 위 그림 등에서 순서가 뒤바뀐다 — FE가 order로 렌더 가능하도록.)
@@ -664,6 +692,7 @@ def _build_response(
                 "render_mode": o.render_mode,
                 "contents": [o.corrected_text],
                 "rule_trail": [r.model_dump() for r in o.rule_trail],
+                **_meta_fields(o.element_id),
             }
             for i, o in enumerate(llm_outputs)
         ]
@@ -715,6 +744,7 @@ def _build_response(
                         if o.element_id in braille_by_id else []
                     )
                 ],
+                **_meta_fields(o.element_id),
             }
             for i, o in enumerate(llm_outputs)
         ]

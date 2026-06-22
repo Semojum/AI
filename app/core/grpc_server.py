@@ -11,6 +11,7 @@ import grpc
 from app.core.config import config
 from app.core import pipeline
 from app.schemas.task import PageTask
+from app.utils import job_id as job_id_util
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -160,9 +161,14 @@ class BrailleServiceServicer(braille_service_pb2_grpc.BrailleServiceServicer):
                 message=f"요청 파싱 실패: {type(exc).__name__}: {exc}",
             )
 
+        # job_id 네이밍 — peer로 출처(BE 원격/로컬) 판별해 job_be_/job_local_ 부여.
+        # gRPC는 동기 req/resp라 job_id를 바꿔도 BE 응답 상관관계는 유지된다(응답이 곧 답).
+        source = job_id_util.source_from_peer(context.peer())
+        task.job_id = job_id_util.generate(source)
+
         logger.info(
-            "grpc request received job=%s page=%d/%d mode=%s",
-            task.job_id, task.page_no, task.total_pages, task.mode,
+            "grpc request received peer=%s job=%s page=%d/%d mode=%s",
+            context.peer(), task.job_id, task.page_no, task.total_pages, task.mode,
         )
 
         try:

@@ -23,6 +23,42 @@ PUA_RATIO_THRESHOLD = 0.10
 _PDF_MAGIC = b"%PDF-"
 
 
+def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int, int]:
+    """텍스트레이어(ZERO) 추출 — PyMuPDF 블록 단위로 (content, bbox)를 뽑는다.
+
+    반환: (blocks, page_width, page_height). 좌표계 = MinerU와 동일하게 2x 렌더 픽셀
+    (PyMuPDF 포인트 × 2). page_width/height도 2x. BE/FE가 bbox/크기 비율로 매핑.
+    """
+    data = _coerce_pdf_bytes(pdf_data)
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(data)
+            tmp_path = f.name
+        doc = fitz.open(tmp_path)
+        try:
+            page_idx = max(0, min(page_no - 1, doc.page_count - 1))
+            page = doc[page_idx]
+            w, h = page.rect.width, page.rect.height
+            blocks: list[dict] = []
+            for x0, y0, x1, y1, text, _bno, btype in page.get_text("blocks"):
+                if btype != 0:          # 0 = 텍스트 블록, 1 = 이미지 블록(여기선 제외)
+                    continue
+                t = (text or "").strip()
+                if not t:
+                    continue
+                blocks.append({
+                    "content": t,
+                    "bbox": [round(x0 * 2), round(y0 * 2), round(x1 * 2), round(y1 * 2)],
+                })
+        finally:
+            doc.close()
+    finally:
+        if tmp_path:
+            os.unlink(tmp_path)
+    return blocks, int(round(w * 2)), int(round(h * 2))
+
+
 def _pua_ratio(text: str) -> float:
     """비공백 글자 중 PUA(U+E000~U+F8FF, 보충 PUA) 비율."""
     chars = [c for c in text if not c.isspace()]
