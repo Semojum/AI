@@ -19,5 +19,7 @@ protos/generated/*_pb2*.py
 *.gguf
 *.ggml
 
-# 테스트 리포트
+# 테스트 리포트·로컬 E2E 산출물 (생성물·저작권 슬라이스 — git 제외)
 test_report.html
+test/report/
+test/data/
