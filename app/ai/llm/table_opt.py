@@ -9,6 +9,7 @@ render_mode 우선순위: table_structure['render_mode'] → 행/열 수 기반 
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Optional
 
@@ -105,9 +106,33 @@ def _pipe_to_grid(text: str) -> list[list[str]]:
     return [[c.strip() for c in ln.split("|")] for ln in text.splitlines() if ln.strip()]
 
 
+# MinerU는 표를 <table><tr><td>… HTML로 낸다(P5). 셀을 보존하려면 격자로 파싱해야
+# narrative(산문 요약)로 오분류되지 않고 unfold/linear로 점역된다. colspan/rowspan은
+# 단순화(무시), <img> 등 비텍스트 셀은 내부 태그 제거 후 빈칸으로 남는다.
+_TR_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.DOTALL | re.IGNORECASE)
+_TD_RE = re.compile(r"<t[dh][^>]*>(.*?)</t[dh]>", re.DOTALL | re.IGNORECASE)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _is_html_table(text: str) -> bool:
+    return "<table" in (text or "").lower()
+
+
+def _html_to_grid(html: str) -> list[list[str]]:
+    """MinerU <table> HTML → 행렬. 행/셀 단위 파싱, 내부 태그 제거(이미지 셀=빈칸)."""
+    grid: list[list[str]] = []
+    for tr in _TR_RE.findall(html):
+        row = [_HTML_TAG_RE.sub("", td).strip() for td in _TD_RE.findall(tr)]
+        if row:
+            grid.append(row)
+    return grid
+
+
 def _table_tags(table_structure, table_text: str) -> str:
     """표 구조 → <!표> 태그(stage② 표시·table_braille 입력). 비정형은 원문 유지."""
     grid = _table_to_grid(table_structure) if table_structure else []
+    if not grid and _is_html_table(table_text):
+        grid = _html_to_grid(table_text)
     if not grid and "|" in table_text:
         grid = _pipe_to_grid(table_text)
     return build_table_tags(grid) if grid else table_text
@@ -126,8 +151,12 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
             if max_row == 1:
                 return "transposed"
             return "unfold"   # 3열 이상 = 풀어쓰기 기본(BBPG-3.1.2), 격자는 대안 초안
-    # table_structure 없음/빈 셀: 텍스트의 '|' 격자로 추론(현주 미파싱 핸드오프 대비).
-    # '|'가 있으면 격자 표 → narrative로 오분류하지 않는다(2열은 linear, 그 외 풀어쓰기).
+    # table_structure 없음/빈 셀: HTML 표(MinerU) 또는 '|' 격자로 추론(narrative 오분류 방지).
+    if _is_html_table(text):
+        grid = _html_to_grid(text)
+        if grid:
+            max_col = max(len(r) for r in grid)
+            return "linear" if max_col == 2 else "unfold"
     rows = [ln for ln in (text or "").splitlines() if "|" in ln]
     if not rows:
         return "narrative"
@@ -185,6 +214,11 @@ class TableOpt(BaseOpt):
             table_text = _table_to_text(ext.table_structure)
         else:
             table_text = ext.corrected_text or ""
+        # MinerU HTML 표 → '|' 격자 텍스트로 정규화(셀 보존·tn 요약·rule_trail용, P5)
+        if _is_html_table(table_text):
+            grid = _html_to_grid(table_text)
+            if grid:
+                table_text = "\n".join(" | ".join(row) for row in grid)
 
         if not table_text.strip():
             return LLMOutput(
