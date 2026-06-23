@@ -154,6 +154,18 @@ def _normalize_roman_numerals(text: str) -> str:
 
 _FORMULA_RE      = re.compile(r"<!수식>(.*?)<!/수식>", re.DOTALL)
 _TAG_RE          = re.compile(r"<[^>]+>")
+
+# 텍스트 안의 LaTeX 수식 구분자 → <!수식> 태그 정규화(P1: 인라인 수식 라우팅).
+# MinerU/추출 텍스트는 수식을 $…$ · $$…$$ · \(…\) · \[…\]로 내보낸다. 이를 수식 태그로
+# 감싸야 _FORMULA_RE 분리에서 convert_latex 경로를 타고(본문은 한글 점자), 안 그러면
+# \frac·\sqrt 같은 명령어가 영어 단어로 음역된다. $$를 $보다 먼저 매칭하도록 순서 주의.
+_INLINE_MATH_RE = re.compile(
+    r"\$\$(.+?)\$\$"          # $$ … $$  (디스플레이 수식)
+    r"|\$(.+?)\$"            # $ … $    (인라인 수식)
+    r"|\\\((.+?)\\\)"        # \( … \)
+    r"|\\\[(.+?)\\\]",       # \[ … \]
+    re.DOTALL,
+)
 _NUMBER_RE       = re.compile(r"-?\d+(?:[.,]\d+)*")
 _ALPHA_RUN_RE    = re.compile(r"[A-Za-z]+")
 _BRAILLE_RE      = re.compile(r"[⠀-⣿]+")
@@ -501,8 +513,25 @@ def _safe_to_unicode(seg: str) -> str:
         return "".join(out)
 
 
+def _normalize_inline_math(text: str) -> str:
+    """텍스트 속 LaTeX 수식 구분자($…$ 등)를 <!수식>…<!/수식> 태그로 정규화한다.
+
+    이미 <!수식> 태그가 있으면 그대로 두고, raw 수식 구분자만 감싼다. 빈 수식은 제거.
+    이렇게 해야 수식이 convert_latex 경로로 라우팅되어 수학 점자로 변환된다(P1).
+    """
+    if "$" not in text and "\\(" not in text and "\\[" not in text:
+        return text
+
+    def _wrap(m: re.Match) -> str:
+        inner = next((g for g in m.groups() if g is not None), "").strip()
+        return f"<!수식>{inner}<!/수식>" if inner else ""
+
+    return _INLINE_MATH_RE.sub(_wrap, text)
+
+
 def translate_tagged_text(text: str) -> str:
     """<!수식> 태그가 포함된 텍스트를 점자 BRF로 변환."""
+    text = _normalize_inline_math(text)     # $…$/\(…\) → <!수식> (P1: 수식 라우팅)
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     text = sanitize_for_braille(text)        # PUA·제어문자 정화(요소 전체 소실 방지)
     if _BRAILLIFY_AVAILABLE:
