@@ -154,6 +154,12 @@ def _normalize_roman_numerals(text: str) -> str:
 
 _FORMULA_RE      = re.compile(r"<!수식>(.*?)<!/수식>", re.DOTALL)
 _TAG_RE          = re.compile(r"<[^>]+>")
+# 잔여 <!…> 정식 태그만 안전 제거(아래 _ANGLE_LABEL_RE가 본문 <…>를 살린 뒤).
+_RESIDUAL_BANG_TAG_RE = re.compile(r"<!/?[^>]*>")
+# <보기>·<학습 활동>처럼 한글/영문으로 시작하는 꺽쇠 묶음은 마크업이 아니라 본문이다.
+# 홑화살괄호 〈 〉로 바꿔 점역한다(빈 결과 금지·문장 부호 제13절). 부등호(< 10 …)는
+# 공백·숫자로 시작하므로 매칭되지 않아 그대로 수학 기호로 처리된다.
+_ANGLE_LABEL_RE  = re.compile(r"<([가-힣A-Za-z][^<>]*)>")
 
 # 텍스트 안의 LaTeX 수식 구분자 → <!수식> 태그 정규화(P1: 인라인 수식 라우팅).
 # MinerU/추출 텍스트는 수식을 $…$ · $$…$$ · \(…\) · \[…\]로 내보낸다. 이를 수식 태그로
@@ -409,8 +415,10 @@ def substitute_tags(text: str) -> str:
         return ""
 
     text = _TAG_TOKEN_RE.sub(_token_sub, text)
-    # 3) 그 외 잔여 <...>(비-! 태그) 안전 제거
-    return _TAG_RE.sub("", text)
+    # 3) 잔여 <!…> 정식 태그만 제거. 그 밖의 <보기>류는 본문이므로 삭제 금지 —
+    #    홑화살괄호 〈 〉로 바꿔 점역(빈 결과 금지). symbol_table이 〈=⠐⠶·〉=⠶⠂로 치환.
+    text = _RESIDUAL_BANG_TAG_RE.sub("", text)
+    return _ANGLE_LABEL_RE.sub(r"〈\1〉", text)
 
 
 def _translate_with_braillify(text: str) -> str:
@@ -599,3 +607,11 @@ def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
         lines.append(braille)
         breaks.append(_break_offsets(src_line, braille))
     return (lines or [""], breaks or [[]])
+
+
+# 수식 속 \text{한글}을 한글 점자로 변환하는 훅 등록(P2). kor_math_rules는 translator를
+# import하지 않고(순환 회피) 런타임 주입만 받는다. 평문(한글)은 <!수식>·$ 가 없어
+# translate_tagged_text가 convert_latex로 재진입하지 않으므로 무한 재귀가 없다.
+from app.ai.braille import kor_math_rules as _kor_math_rules  # noqa: E402
+
+_kor_math_rules.register_text_hook(translate_tagged_text)

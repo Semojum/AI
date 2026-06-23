@@ -150,8 +150,60 @@ _BRACE_OUT_SP_RE = re.compile(r"\s+\}")                     # x } → x}
 _LEFTRIGHT_RE = re.compile(r"\\(?:left|right)\s*(?=[()\[\].])")
 # 간격 명령(\quad \, \; \! \:) → 공백
 _SPACING_CMD_RE = re.compile(r"\\(?:quad|qquad|[,;:!])")
-# 텍스트/서식 래퍼: \text{…}·\boxed{…}·\mathrm{…} 등 → 내용만 남김(수식 속 한글·식별자 보존)
-_TEXT_WRAP_RE = re.compile(r"\\(?:text|boxed|mathrm|mathbf|mathit|operatorname)\{([^{}]*)\}")
+# 서식 래퍼: \boxed{…}·\mathrm{…} 등 → 내용만 남김(수식 식별자 보존). \text는 별도(P2 한글 점역).
+_TEXT_WRAP_RE = re.compile(
+    r"\\(?:boxed|fbox|mbox|mathrm|mathbf|mathit|mathbb|mathcal|mathsf|operatorname)\s*\{([^{}]*)\}"
+)
+# \text·\textbf 등 자연어 래퍼 → 내용을 한글 점자 훅으로 변환(P2). 미등록 시 내용 보존.
+_TEXT_CMD_RE = re.compile(r"\\text(?:rm|bf|it|sf|tt|normal|md)?\s*\{([^{}]*)\}")
+# 식 번호 \tag{N} → (N), 배열 환경 \begin{array}{l}…\end{array} → 제거(행 \\는 공백)
+_TAG_CMD_RE = re.compile(r"\\tag\s*\*?\s*\{([^{}]*)\}")
+_ENV_RE = re.compile(r"\\(?:begin|end)\s*\{[^{}]*\}(?:\s*\[[^\]]*\])?(?:\s*\{[^{}]*\})?")
+
+# \text{한글} 점역용 훅(translator가 런타임 주입 — 순환 import 회피).
+_text_hook = None
+
+
+def register_text_hook(fn) -> None:
+    r"""\text{…} 내부 자연어(한글·영문)를 점자로 바꾸는 함수를 주입한다(translator가 호출).
+
+    convert_latex는 수식 변환기라 한글을 점역할 수 없으므로, 한글 점역은 translator가
+    맡는다. import 순환을 피하려 모듈 로드 시 런타임으로 주입한다.
+    """
+    global _text_hook
+    _text_hook = fn
+
+
+def _protect_text(latex: str) -> tuple[str, list[str]]:
+    r"""\text{한글}을 점자로 변환해 PUA sentinel로 치환(이후 수식 처리에서 보호).
+
+    반환: (sentinel 치환된 latex, 점자 저장 리스트). convert_latex 끝에서 복원한다.
+    중첩(\boxed{\text{…}})·다중 \text를 위해 안정될 때까지 반복한다.
+    """
+    store: list[str] = []
+
+    def _repl(m: re.Match) -> str:
+        content = m.group(1)
+        brailled = content
+        if _text_hook is not None:
+            try:
+                brailled = _text_hook(content)
+            except Exception:  # noqa: BLE001 — 훅 실패 시 원문 보존(빈 결과 금지)
+                brailled = content
+        store.append(brailled)
+        return chr(0xE000 + len(store) - 1)   # BMP PUA sentinel(이후 단계에 불활성)
+
+    prev = None
+    while prev != latex:
+        prev = latex
+        latex = _TEXT_CMD_RE.sub(_repl, latex)
+    return latex, store
+
+
+def _restore_text(result: str, store: list[str]) -> str:
+    for i, val in enumerate(store):
+        result = result.replace(chr(0xE000 + i), val)
+    return result
 
 # MinerU가 자주 내는 명령 별칭 → 유니코드(이후 substitute_symbols가 점자화)
 _CMD_ALIAS = {
@@ -159,6 +211,7 @@ _CMD_ALIAS = {
     r"\leq": "≤", r"\geq": "≥", r"\neq": "≠", r"\pm": "±", r"\mp": "∓",
     r"\in": "∈", r"\subset": "⊂", r"\cup": "∪", r"\cap": "∩",
     r"\angle": "∠", r"\triangle": "△", r"\cdots": "⋯", r"\dots": "⋯", r"\ldots": "⋯",
+    r"\bullet": "·",
 }
 
 
@@ -172,7 +225,16 @@ def _normalize_latex_input(latex: str) -> str:
     s = _MATH_DELIM_RE.sub(" ", s)
     s = s.replace("\r", " ").replace("\n", " ")
     s = _SPACING_CMD_RE.sub(" ", s)
-    s = _TEXT_WRAP_RE.sub(r"\1", s)
+    # 배열 환경 평탄화: \begin{array}{l}…\end{array} 제거, 행 구분 \\·열 구분 & → 공백
+    s = _ENV_RE.sub(" ", s)
+    s = s.replace("\\\\", " ").replace("&", " ")
+    # 식 번호 \tag{N} → (N)
+    s = _TAG_CMD_RE.sub(r"(\1)", s)
+    # 서식 래퍼(\boxed{…} 등) → 내용만. 중첩 대응으로 안정될 때까지 반복.
+    prev = None
+    while prev != s:
+        prev = s
+        s = _TEXT_WRAP_RE.sub(r"\1", s)
     s = _LEFTRIGHT_RE.sub("", s)
     # 공백 축약(명령/첨자/중괄호 주변) — 정규식이 토큰을 인식하도록
     s = _CMD_BRACE_SP_RE.sub(r"\1", s)
@@ -198,6 +260,7 @@ def convert_latex(latex: str) -> str:
       6. 나머지 유니코드 기호 → substitute_symbols
       7. 잔여 LaTeX 명령어·중괄호 제거
     """
+    latex, _text_store = _protect_text(latex)   # P2: \text{한글} → 한글 점자 sentinel
     result = _normalize_latex_input(latex)
 
     # ── 1. 수학 괄호 치환 (substitute_symbols보다 먼저) ─────────────────
@@ -417,6 +480,10 @@ def convert_latex(latex: str) -> str:
     # →: 화살표·조건문 = ⠒⠕ (제38·61항, 폰트 "3o").
     result = result.replace("∼", "⠈⠔").replace("→", "⠒⠕")
 
+    # ── 11d. 미처리 \cmd 제거(P3) — substitute_symbols가 백슬래시를 ⠸⠡로 음역하기 전에 정리.
+    # 구조·텍스트 매크로는 위에서 내용으로 풀렸고, 여기 남은 건 미지원 명령 → 제거(음역 방지).
+    result = re.sub(r"\\[a-zA-Z]+\*?", "", result)
+
     # ── 12. 남은 유니코드 수학 기호 → substitute_symbols ────────────────
     result = substitute_symbols(result)
 
@@ -432,6 +499,8 @@ def convert_latex(latex: str) -> str:
     # ── 15. 수식 내 ASCII 공백 → 점자공백(⠀) ─────────────────────────────
     result = result.replace(" ", "⠀")
 
+    # ── 16. P2: 보호한 \text{한글} 점자 복원 ─────────────────────────────
+    result = _restore_text(result, _text_store)
     return result
 
 

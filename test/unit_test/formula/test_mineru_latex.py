@@ -26,8 +26,16 @@ class TestNormalizeMinerULatex:
         assert "latex" not in _normalize_latex_input("```latex\nx\n```")
 
     def test_text_래퍼_언랩(self):
-        assert "\\text" not in _normalize_latex_input(r"\text{값}")
-        assert "값" in _normalize_latex_input(r"\text{값}")
+        # \text는 이제 convert_latex가 처리한다(번역 훅 등록 시 한글 점자, 미등록 시 내용 보존).
+        # 어느 경우든 \text 명령 자체는 출력에 남으면 안 된다(영어 음역 금지).
+        out = convert_latex(r"\text{값}")
+        assert "\\text" not in out and "text" not in out
+
+    def test_boxed_언랩(self):
+        # \boxed{X}는 내용만 남고 'boxed' 음역 잔재가 없어야 한다(P3).
+        out = convert_latex(r"\boxed{5}")
+        assert "boxed" not in out and "\\boxed" not in out
+        assert "⠼⠑" in out  # 5는 수표와 함께
 
 
 class TestConvertMinerULatex:
