@@ -1,0 +1,243 @@
+{
+  "type": "math",
+  "description": "수학식 (사칙연산·첨자·근호·분수·그리스·관계). 골드=convert_latex(정방향). 분수는 분모-우선 점자 관례로 '분의'로 읽음. decode(math=True)로 검증.",
+  "split_ratio": "build:test = 7:3 (md5 안정 해시)",
+  "counts": {
+    "build": 18,
+    "test": 5,
+    "review_excluded": 0
+  },
+  "pairs": [
+    {
+      "korean": "10 ÷ 2 = 5",
+      "latex": "10 \\div 2 = 5",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠁⠚⠀⠌⠌⠀⠼⠃⠀⠒⠒⠀⠼⠑",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "2 ≤ 4",
+      "latex": "2 \\leq 4",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠃⠀⠦⠦⠀⠼⠙",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "2 × 3 = 6",
+      "latex": "2 \\times 3 = 6",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠃⠀⠡⠀⠼⠉⠀⠒⠒⠀⠼⠋",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "2^10",
+      "latex": "2^{10}",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠃⠘⠼⠁⠚",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "5 ≥ 3",
+      "latex": "5 \\geq 3",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠑⠀⠲⠲⠀⠼⠉",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "7 - 4 = 3",
+      "latex": "7 - 4 = 3",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠛⠀⠔⠀⠼⠙⠀⠒⠒⠀⠼⠉",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "α + β",
+      "latex": "\\alpha + \\beta",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠁⠀⠢⠀⠨⠃",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "4분의3",
+      "latex": "\\frac{3}{4}",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠙⠌⠼⠉",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "b분의a = c",
+      "latex": "\\frac{a}{b} = c",
+      "brf_ascii": null,
+      "braille_unicode": "⠃⠌⠁⠀⠒⠒⠀⠉",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "π",
+      "latex": "\\pi",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠏",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "√2",
+      "latex": "\\sqrt{2}",
+      "brf_ascii": null,
+      "braille_unicode": "⠜⠼⠃",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "√3 × 2",
+      "latex": "\\sqrt{3} \\times 2",
+      "brf_ascii": null,
+      "braille_unicode": "⠜⠼⠉⠀⠡⠀⠼⠃",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "θ",
+      "latex": "\\theta",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠹",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "a_1",
+      "latex": "a_1",
+      "brf_ascii": null,
+      "braille_unicode": "⠁⠰⠼⠁",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "a_1 + a_2",
+      "latex": "a_1 + a_2",
+      "brf_ascii": null,
+      "braille_unicode": "⠁⠰⠼⠁⠀⠢⠀⠁⠰⠼⠃",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "n^2 - 1",
+      "latex": "n^2 - 1",
+      "brf_ascii": null,
+      "braille_unicode": "⠝⠘⠼⠃⠀⠔⠀⠼⠁",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "x ≠ y",
+      "latex": "x \\neq y",
+      "brf_ascii": null,
+      "braille_unicode": "⠭⠀⠨⠒⠒⠀⠽",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "x^2",
+      "latex": "x^2",
+      "brf_ascii": null,
+      "braille_unicode": "⠭⠘⠼⠃",
+      "split": "build",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "2 + 3 = 5",
+      "latex": "2 + 3 = 5",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠃⠀⠢⠀⠼⠉⠀⠒⠒⠀⠼⠑",
+      "split": "test",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "2분의1",
+      "latex": "\\frac{1}{2}",
+      "brf_ascii": null,
+      "braille_unicode": "⠼⠃⠌⠼⠁",
+      "split": "test",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "√(x+1)",
+      "latex": "\\sqrt{x+1}",
+      "brf_ascii": null,
+      "braille_unicode": "⠜⠷⠭⠢⠼⠁⠾",
+      "split": "test",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "a = b",
+      "latex": "a = b",
+      "brf_ascii": null,
+      "braille_unicode": "⠁⠀⠒⠒⠀⠃",
+      "split": "test",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    },
+    {
+      "korean": "x^2 + 2x + 1",
+      "latex": "x^2 + 2x + 1",
+      "brf_ascii": null,
+      "braille_unicode": "⠭⠘⠼⠃⠀⠢⠀⠼⠃⠭⠀⠢⠀⠼⠁",
+      "split": "test",
+      "ambiguous": false,
+      "math": true,
+      "source": "curated_math"
+    }
+  ],
+  "review": []
+}

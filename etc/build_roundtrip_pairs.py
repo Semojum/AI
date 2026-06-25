@@ -247,7 +247,78 @@ def build_symbols() -> dict:
     }
 
 
-_ALL_TYPES = list(_CLASSIFIERS) + ["symbols"]  # symbols는 symbol_table 직생성(별도 빌더)
+# 수학 — 큐레이션 (latex, 기대 읽기). 골드 점자 = convert_latex(정방향, decode와 독립).
+# 기대값은 **한국 점자 수학 표기 관례로 점자를 읽은 결과**를 손으로 적었다(decode 출력에서
+# 베끼지 않음 → 비순환). 예: 분수는 분모⠌분자 순서라 \frac{1}{2}=⠼⠃⠌⠼⠁ → "2분의1".
+# 요소 type=formula를 가정하므로 decode(math=True) 구역으로 검증한다.
+_MATH_CASES: list[tuple[str, str]] = [
+    (r"2 + 3 = 5", "2 + 3 = 5"),
+    (r"7 - 4 = 3", "7 - 4 = 3"),
+    (r"2 \times 3 = 6", "2 × 3 = 6"),
+    (r"10 \div 2 = 5", "10 ÷ 2 = 5"),
+    (r"x^2", "x^2"),
+    (r"2^{10}", "2^10"),
+    (r"a_1", "a_1"),
+    (r"a_1 + a_2", "a_1 + a_2"),
+    (r"x^2 + 2x + 1", "x^2 + 2x + 1"),
+    (r"n^2 - 1", "n^2 - 1"),
+    (r"\sqrt{2}", "√2"),
+    (r"\sqrt{3} \times 2", "√3 × 2"),
+    (r"\sqrt{x+1}", "√(x+1)"),
+    (r"\frac{1}{2}", "2분의1"),
+    (r"\frac{3}{4}", "4분의3"),
+    (r"\frac{a}{b} = c", "b분의a = c"),
+    (r"\pi", "π"),
+    (r"\alpha + \beta", "α + β"),
+    (r"\theta", "θ"),
+    (r"a = b", "a = b"),
+    (r"5 \geq 3", "5 ≥ 3"),
+    (r"2 \leq 4", "2 ≤ 4"),
+    (r"x \neq y", "x ≠ y"),
+]
+
+
+def build_math() -> dict:
+    """수학식 — 큐레이션 (latex→기대읽기). 골드 점자는 convert_latex(정방향)."""
+    from app.ai.braille.kor_math_rules import convert_latex
+    pairs, review = [], []
+    for latex, expected in _MATH_CASES:
+        try:
+            gold = _strip_pad(convert_latex(latex))
+        except Exception as e:  # noqa: BLE001
+            review.append({"latex": latex, "reason": f"convert_error:{e}"})
+            continue
+        if not gold or "[?" in gold:
+            review.append({"latex": latex, "gold": gold, "reason": "broken"})
+            continue
+        pairs.append({
+            "korean": expected,            # 점자 읽기(기대 디코드)
+            "latex": latex,                # 원본 식(출처)
+            "brf_ascii": None,
+            "braille_unicode": gold,
+            "split": _build_split(latex),
+            "ambiguous": False,
+            "math": True,                  # decode(math=True) 구역으로 검증
+            "source": "curated_math",
+        })
+    pairs.sort(key=lambda p: (p["split"], p["latex"]))
+    counts = {
+        "build": sum(1 for p in pairs if p["split"] == "build"),
+        "test": sum(1 for p in pairs if p["split"] == "test"),
+        "review_excluded": len(review),
+    }
+    return {
+        "type": "math",
+        "description": ("수학식 (사칙연산·첨자·근호·분수·그리스·관계). 골드=convert_latex(정방향). "
+                        "분수는 분모-우선 점자 관례로 '분의'로 읽음. decode(math=True)로 검증."),
+        "split_ratio": "build:test = 7:3 (md5 안정 해시)",
+        "counts": counts,
+        "pairs": pairs,
+        "review": review,
+    }
+
+
+_ALL_TYPES = list(_CLASSIFIERS) + ["symbols", "math"]  # symbols·math는 별도 빌더
 
 
 def main(argv: list[str]) -> int:
@@ -259,6 +330,8 @@ def main(argv: list[str]) -> int:
     for t in targets:
         if t == "symbols":
             out = build_symbols()
+        elif t == "math":
+            out = build_math()
         elif t in _CLASSIFIERS:
             out = build_type(t)
         else:

@@ -31,6 +31,9 @@ _FLOORS: dict[str, dict[str, float]] = {
     "punctuation": {"build": 0.85, "test": 0.90},
     # 고유 점형 기호는 100% 복원. 점형 충돌(한글 61·기호 41·원문자 22)은 ambiguous로 floor 제외.
     "symbols": {"build": 0.95, "test": 0.95},
+    # 수학식(첨자·근호·분수·연산자·그리스) — decode(math=True) 구역. 현재 build/test 1.0.
+    # 문맥 인식 디코딩(P7)으로 수식 셀이 한글로 오역되던 문제 해소 → 결정적이라 floor 높게.
+    "math": {"build": 0.95, "test": 0.90},
 }
 
 
@@ -46,7 +49,9 @@ def _accuracy(pairs: list[dict], split: str) -> tuple[int, int, list]:
     rows = [p for p in pairs if p["split"] == split and not p.get("ambiguous")]
     ok, fails = 0, []
     for p in rows:
-        if decode(p["braille_unicode"]).replace(" ", "") == p["korean"].replace(" ", ""):
+        # 수식 쌍(math=True)은 요소 type=formula를 가정해 수식 구역으로 디코드.
+        got = decode(p["braille_unicode"], math=p.get("math", False))
+        if got.replace(" ", "") == p["korean"].replace(" ", ""):
             ok += 1
         else:
             fails.append(p["korean"])

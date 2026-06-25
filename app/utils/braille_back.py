@@ -24,6 +24,7 @@ CLI:
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -60,6 +61,36 @@ _WORD_ABBR = {
     "⠁⠉": "그러나", "⠁⠒": "그러면", "⠁⠢": "그러므로", "⠁⠝": "그런데",
     "⠁⠎": "그래서", "⠁⠥": "그리고", "⠁⠱": "그리하여",
 }
+
+# ── 수학 점자 역맵 (수식 구역에서만 적용) ────────────────────────────────
+# 정방향 kor_math_rules가 쓰는 구조·연산자·그리스 셀의 역. 같은 점형이 한글 음절과
+# 겹치므로(⠘=바·⠜=야·⠌=예·⠡=연) **수식 토큰으로 판정된 경우에만** 이 맵을 적용한다.
+# (판정: 토큰에 수표 ⠼와 수학 셀이 함께 있거나, 호출자가 math=True로 요소가 수식임을
+#  알려줄 때. 한글 본문의 ⠘/⠜ 약자는 수표가 없어 텍스트로 남는다.)
+_MATH_REV_MULTI = {       # 다중 셀(긴 것 먼저 매칭)
+    "⠨⠒⠒": "≠", "⠸⠰⠑": "ln",
+    "⠸⠌": "/", "⠌⠌": "÷", "⠒⠒": "=", "⠦⠦": "≤", "⠲⠲": "≥",
+    "⠒⠕": "→", "⠸⠩": "∇",
+    # 그리스 소문자 (수학 제40항대 ⠨+자음)
+    "⠨⠁": "α", "⠨⠃": "β", "⠨⠛": "γ", "⠨⠙": "δ", "⠨⠑": "ε", "⠨⠵": "ζ",
+    "⠨⠓": "η", "⠨⠹": "θ", "⠨⠊": "ι", "⠨⠅": "κ", "⠨⠇": "λ", "⠨⠍": "μ",
+    "⠨⠝": "ν", "⠨⠭": "ξ", "⠨⠏": "π", "⠨⠗": "ρ", "⠨⠎": "σ", "⠨⠞": "τ",
+    "⠨⠥": "υ", "⠨⠋": "φ", "⠨⠉": "χ", "⠨⠽": "ψ", "⠨⠺": "ω",
+}
+_MATH_REV_SINGLE = {
+    "⠘": "^", "⠰": "_", "⠜": "√", "⠻": "√", "⠌": "분의",
+    "⠷": "(", "⠾": ")", "⠡": "×", "⠢": "+", "⠔": "-", "⠐": "·", "⠿": "∞",
+}
+_MATH_MAX = max(len(k) for k in _MATH_REV_MULTI)        # = 3
+# 토큰이 수식인지 판정 — 첨자·근호·분수 셀(⠘⠰⠜⠻⠌)이 **수식 피연산자**(수표 ⠼ 또는
+# 수식 여는괄호 ⠷)에 바로 이어질 때만 수식으로 본다. 한글 약자(바=⠘⠣·예=⠌⠣ 등)는
+# 뒤에 모음 셀이 와서 이 패턴에 안 걸리므로 '3반'·'1/2개' 같은 숫자+한글이 오판되지 않는다.
+_MATH_SIGNAL_RE = re.compile(r"[⠘⠰⠜⠻⠌][⠼⠷]")
+_MATH_PAREN_CELLS = ("⠷", "⠾")                           # 수식 괄호(텍스트 괄호와 다름)
+_BARE_OPS = {"⠡", "⠢", "⠔", "⠒⠒", "⠌⠌"}                 # 단독 토큰 연산자(×+−=÷)
+# 그리스 소문자 토큰(⠨+자음, 2셀) — 한글 음절과 겹쳐(π=줘) 단독으론 한글 우선,
+# 수식 토큰에 인접할 때만 수식으로 본다.
+_GREEK_TOKENS = {k for k in _MATH_REV_MULTI if k.startswith("⠨") and len(k) == 2}
 
 
 def _build_symbol_rev() -> dict[str, str]:
@@ -165,12 +196,121 @@ def _decode_number(s: str, i: int) -> tuple[str, int]:
     return "".join(out), j
 
 
-def decode(braille: str) -> str:
-    """점자 BRF 문자열 → 한국어 텍스트(근사). 줄바꿈은 보존."""
+def _decode_math_token(tok: str) -> str:
+    """수식 토큰을 수학 의미로 디코드 — 구조·연산자 셀을 ^ _ √ × + 등으로 복원.
+
+    수·로마자(변수)·그리스는 그대로 풀고, \\text 한글 등은 _COMBINED로 폴백한다.
+    한글 음절과 겹치는 셀(⠘⠜⠌⠡)도 여기서는 수학 기호로 본다(토큰이 이미 수식 판정).
+    """
+    out: list[str] = []
+    i, n = 0, len(tok)
+    while i < n:
+        c = tok[i]
+        if c == _NUMBER_SIGN:                       # 수표 → 숫자
+            txt, j = _decode_number(tok, i)
+            out.append(txt)
+            i = j
+            continue
+        matched = False                             # 다중 셀 수학 기호(≠·÷·그리스 등)
+        for ln in range(min(_MATH_MAX, n - i), 1, -1):
+            if tok[i:i + ln] in _MATH_REV_MULTI:
+                out.append(_MATH_REV_MULTI[tok[i:i + ln]])
+                i += ln
+                matched = True
+                break
+        if matched:
+            continue
+        if c in _MATH_REV_SINGLE:                    # 단일 셀 수학 기호
+            out.append(_MATH_REV_SINGLE[c])
+            i += 1
+            continue
+        if c in _ALPHA_REV:                          # 변수(로마자)
+            out.append(_ALPHA_REV[c])
+            i += 1
+            continue
+        best = 0                                     # \text 한글·기호 폴백(긴 셀 우선)
+        for ln in range(min(_MAX_CELLS, n - i), 0, -1):
+            if tok[i:i + ln] in _COMBINED:
+                best = ln
+                break
+        if best:
+            out.append(_COMBINED[tok[i:i + best]])
+            i += best
+            continue
+        out.append(f"⟨{ord(c):04X}⟩")
+        i += 1
+    return "".join(out)
+
+
+def _classify_token(tok: str) -> str:
+    """토큰을 MATH/NUM/OP/TEXT로 분류(인라인 수식 감지용).
+
+    · MATH = 수표 ⠼와 수학 셀(첨자·근호·괄호·분수·곱)이 함께 있음 → 명백한 수식.
+      (한글 본문 약자 ⠘/⠜는 수표가 없어 TEXT로 남음 — 오판 방지.)
+    · OP   = 토큰 전체가 단독 연산자 셀(× + − = ÷).
+    · NUM  = 수표만(평문 숫자).
+    """
+    if tok in _BARE_OPS:
+        return "OP"
+    if tok in _GREEK_TOKENS:
+        return "GREEK"
+    has_num = _NUMBER_SIGN in tok
+    if has_num and (_MATH_SIGNAL_RE.search(tok) or any(p in tok for p in _MATH_PAREN_CELLS)):
+        return "MATH"
+    return "NUM" if has_num else "TEXT"
+
+
+def _resolve_math_context(classes: list[str]) -> list[bool]:
+    """토큰별 수식 여부 확정. OP는 양옆이 수치/수식일 때만 연산자, NUM은 수식에 인접하면 수식."""
+    res = [c == "MATH" for c in classes]
+    n = len(classes)
+    for i, c in enumerate(classes):                 # 단독 연산자: 양옆이 수치·수식·연산자
+        if c == "OP":
+            left = classes[i - 1] if i > 0 else None
+            right = classes[i + 1] if i + 1 < n else None
+            if left in ("MATH", "NUM", "OP") and right in ("MATH", "NUM", "OP"):
+                res[i] = True
+    changed = True                                  # 수식 문맥에 인접한 숫자·그리스 흡수
+    while changed:
+        changed = False
+        for i, c in enumerate(classes):
+            if c in ("NUM", "GREEK") and not res[i]:
+                if (i > 0 and res[i - 1]) or (i + 1 < n and res[i + 1]):
+                    res[i] = True
+                    changed = True
+    return res
+
+
+def decode(braille: str, *, math: bool = False) -> str:
+    """점자 BRF 문자열 → 한국어 텍스트(근사). 줄바꿈은 보존.
+
+    math=True면 전체를 수식 구역으로 보고 디코드한다(요소 type이 formula일 때 호출자가 지정).
+    기본(False)은 공백 단위 토큰별로 수식/한글을 자동 판별한다(인라인 수식).
+    """
     out_lines = []
     for line in braille.split("\n"):
-        out_lines.append(_decode_line(line))
+        out_lines.append(_decode_line_router(line, math))
     return "\n".join(out_lines)
+
+
+def _decode_line_router(line: str, math: bool) -> str:
+    """줄을 공백 단위로 나눠 수식 토큰은 수학 디코더로, 나머지는 한글 디코더로 라우팅."""
+    if not line:
+        return ""
+    parts = re.split(r"([⠀ ]+)", line)              # 공백 런을 분리자로 보존
+    tokens = parts[0::2]
+    seps = parts[1::2]
+    if math:
+        is_math = [True] * len(tokens)
+    else:
+        is_math = _resolve_math_context([_classify_token(t) for t in tokens])
+    pieces = []
+    for idx, tok in enumerate(tokens):
+        if tok:
+            pieces.append(_decode_math_token(tok) if is_math[idx] else _decode_line(tok))
+        if idx < len(seps):
+            pieces.append(" " * len(seps[idx]))
+    return "".join(pieces)
 
 
 def _decode_line(s: str) -> str:
@@ -287,11 +427,15 @@ def main(argv: list[str] | None = None) -> int:
         n = regenerate_syllable_map()
         print(f"음절 역맵 재생성: {n}개 → {_MAP_PATH}")
         return 0
-    if argv[0] == "--file":
+    math = False
+    if argv and argv[0] == "--math":              # 수식 구역으로 디코드
+        math = True
+        argv = argv[1:]
+    if argv and argv[0] == "--file":
         text = Path(argv[1]).read_text(encoding="utf-8")
     else:
         text = " ".join(argv)
-    print(decode(text))
+    print(decode(text, math=math))
     return 0
 
 
