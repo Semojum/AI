@@ -12,7 +12,7 @@ class CriticalError(BaseModel):
     C4: 표 완전 실패           → 해당 요소 BLOCKED
     C5: 점자 숫자 오류         → 배포 전 테스트 차단 (런타임 발생 불가)
     C6: 32칸 초과율 > 30%     → 페이지 NEEDS_REVIEW
-    C7: 180초 타임아웃 초과    → 페이지 전체 BLOCKED
+    C7: 300초 타임아웃 초과    → 페이지 전체 BLOCKED
     """
 
     type: str       # C1~C7

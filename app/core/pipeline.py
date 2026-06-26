@@ -85,7 +85,7 @@ def _build_timeout_response(task: PageTask, elapsed_ms: int) -> dict:
             critical_errors=[CriticalError(
                 type="C7",
                 element_id="page",
-                message=f"180초 타임아웃 초과 ({elapsed_ms}ms)",
+                message=f"{config.page_timeout_seconds:.0f}초 타임아웃 초과 ({elapsed_ms}ms)",
             )],
         ).model_dump(),
     }
@@ -844,7 +844,7 @@ _DUMMY_ELEM = _DummyElem()
 # ── 파이프라인 진입점 ─────────────────────────────────────────────────────
 
 async def run(task: PageTask) -> dict:
-    """파이프라인 진입점. 180초 하드 타임아웃 강제."""
+    """파이프라인 진입점. 300초 하드 타임아웃 강제."""
     start_request()   # 요청 단위 API 카운터 초기화
     logger.info("━━ job=%s page=%d/%d mode=%s 처리 시작 ━━",
                 task.job_id, task.page_no, task.total_pages, task.mode)

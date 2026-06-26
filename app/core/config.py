@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     app_env: str = "production"  # "debug" 시 중간 산출물 JSON 저장
 
     # ── 타임아웃 / 임계값 ─────────────────────────────────────────
-    page_timeout_seconds: float = 180.0
+    page_timeout_seconds: float = 300.0
     ocr_confidence_threshold: float = 0.90
     max_grpc_message_mb: int = 20
 
