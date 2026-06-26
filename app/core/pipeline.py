@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from pathlib import Path
 from typing import Optional
@@ -253,6 +254,76 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
 
 # ── 태민 분해 (Phase 2) — 경계 파일 → LayoutResult + ExtractedContent ───────
 
+# 읽기순서 재배정 모드(오프라인 A/B용). off=원순서(MinerU content_list, 운영 기본) |
+#   geom=순수 기하 위→아래(H1, dev A/B net-negative라 폐기) | sidebar=외과적 사이드바 머지(H2).
+_REORDER_MODE = os.environ.get("READING_ORDER_MODE", "off")
+
+
+def _valid_bbox(b: BBoxItem) -> bool:
+    return b.bbox[2] > b.bbox[0] and b.bbox[3] > b.bbox[1]
+
+
+def _reorder_by_geometry(items: list[BBoxItem]) -> None:
+    """다단/사이드바 페이지의 읽기순서를 보정. 모드는 _REORDER_MODE.
+
+    배경: MinerU content_list 순서는 좁은 좌측 사이드바(보충설명)를 본문보다 먼저 방출해
+    읽기순서를 흩뜨린다(세계사 p086/p106). bbox 유효 요소가 과반인 MinerU 페이지만 손대고,
+    bbox (0,0,0,0)인 ZERO/TEXT_NATIVE는 원순서를 보존한다.
+    """
+    if _REORDER_MODE == "off":
+        return
+    valid = [b for b in items if _valid_bbox(b)]
+    if len(valid) < max(3, len(items) * 0.5):
+        return  # 기하정보 부족 → 원순서 유지
+
+    if _REORDER_MODE == "geom":
+        # H1(폐기): 전체를 위→아래·행내 좌→우로 정렬. MinerU가 옳던 페이지를 망가뜨림.
+        heights = sorted(b.bbox[3] - b.bbox[1] for b in valid)
+        band = max(1.0, heights[len(heights) // 2] * 0.5)
+        big = 10 ** 9
+        key = lambda b: ((round(b.bbox[1] / band), b.bbox[0]) if _valid_bbox(b)
+                         else (big, b.reading_order))
+        for i, b in enumerate(sorted(items, key=key), start=1):
+            b.reading_order = i
+        return
+
+    if _REORDER_MODE == "sidebar":
+        _reorder_sidebar(items, valid)
+
+
+def _reorder_sidebar(items: list[BBoxItem], valid: list[BBoxItem]) -> None:
+    """H2: 좌측 사이드바 컬럼만 본문 흐름에 y 위치로 끼워넣는다. 각 스트림 내부 순서는
+    MinerU 순서 그대로 보존(머지). 단일단 페이지는 사이드바 미검출 → 무변경(회귀 최소)."""
+    page_w = max(b.bbox[2] for b in valid)
+    # 좌측 컬럼 경계 = x_left 정렬 중 최대 간격(페이지폭 15% 이상). 없으면 사이드바 없음.
+    xs = sorted(b.bbox[0] for b in valid)
+    gap, split_x = 0.0, None
+    for a, c in zip(xs, xs[1:]):
+        if c - a > gap:
+            gap, split_x = c - a, (a + c) / 2
+    if split_x is None or gap < 0.15 * page_w:
+        return
+    # 사이드바 = split_x 완전 왼쪽(우변도 왼쪽). 머리말/쪽번호는 본문 스트림에 둬 y로 자연배치.
+    sidebar, main = [], []
+    for b in items:
+        if _valid_bbox(b) and b.bbox[2] <= split_x and b.type not in ("header_footer", "page_number"):
+            sidebar.append(b)
+        else:
+            main.append(b)
+    if not sidebar or not main:
+        return
+    # 두 스트림(원순서 보존)을 y_top 기준 머지.
+    merged, i, j = [], 0, 0
+    while i < len(sidebar) and j < len(main):
+        if sidebar[i].bbox[1] <= main[j].bbox[1]:
+            merged.append(sidebar[i]); i += 1
+        else:
+            merged.append(main[j]); j += 1
+    merged.extend(sidebar[i:]); merged.extend(main[j:])
+    for k, b in enumerate(merged, start=1):
+        b.reading_order = k
+
+
 def _parse_txt_result(
     extraction: dict, page_id: str
 ) -> tuple[LayoutResult, dict[UUID, ExtractedContent], str]:
@@ -314,6 +385,7 @@ def _parse_txt_result(
                 table_structure=el.get("table_structure"),
             )
 
+    _reorder_by_geometry(bbox_items)
     layout = LayoutResult(page_id=page_id, elements=bbox_items)
     return layout, ext_map, method
 

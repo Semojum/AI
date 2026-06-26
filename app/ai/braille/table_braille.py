@@ -156,9 +156,10 @@ def _render_linear(corrected_text: str) -> list[str]:
     for ln in corrected_text.splitlines():
         if "|" in ln:
             parts = [p.strip() for p in ln.split("|", 1)]
-            key_br = _translate(parts[0])
-            val_br = _translate(parts[1]) if len(parts) > 1 else ""
-            entry = f"{_GUIDE}{key_br}: {val_br}"
+            # '키: 값' 전체를 한 번에 점역해 콜론·공백이 점자 셀로 변환되게 한다.
+            # (예전엔 키/값만 점역하고 literal ': '를 끼워넣어 ASCII 콜론이 점자에 누출됐다.)
+            body = parts[0] + ": " + parts[1] if len(parts) > 1 else parts[0]
+            entry = f"{_GUIDE}{_translate(body)}"
         else:
             entry = _translate(ln)
         if len(entry) <= _COLS:

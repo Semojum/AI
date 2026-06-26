@@ -51,6 +51,10 @@ test/
 
 > 데모 러너: `test/demo_runner.py` (T5-2 스켈레톤) — demo_set 전 페이지를 파이프라인에 통과시켜 점역 출력·FALLBACK 집계·기대점역 대조. `python test/demo_runner.py [--id pNN] [--load-models]`.
 
+> **점역 규정 대조 분석**: `test/analysis/analysis_{report폴더}.html` — report의 점역 데이터를 「한국 점자 규정」·제작 지침과 대조해 발견한 문제를 6열(데이터 파일명·레이아웃·데이터 전문·왜 문제인지+근거 규정·교정 방향·관련 코드)로 정리한 분석 보고서. 첫 산출물 `analysis_0623_235521.html`(7대 문제군, 메모리 [[braille-system-bug-inventory]]). 생성기는 세션 scratchpad(일회성, 문제 카탈로그는 수작업 분석).
+
+> **E2E 점역 검수 보고서**: `test/report_builder.py` — **단일 진입점**(구 `report_generator.py`는 이 파일로 통합·삭제). 앞단에서 `storage/jobs/`를 스캔해 대상 job을 **선택**(대화형 번호선택 / `--all` / `--jobs 이름일부`)한 뒤 `test/report/{MMDD_HHMMSS}/`에 **자체완결 HTML 보고서**를 생성(페이지 이미지·블록 썸네일을 폴더 안으로 복사). 페이지 구성 = **원본 PDF 이미지 1장(통째)에 레이아웃 블록 번호 박스 오버레이** + 그 아래 **레이아웃 블록(요소)별 카드**(읽기순서 적층, 영역 썸네일 + 모드별 대조 열). **모드별 열**: a=원본텍스트/opt · b=opt/BRF/역점역 · c=원본텍스트/opt/BRF/역점역. 데이터 출처: 레이아웃·번호=`response.bounding_box_list`+`image_width/height`, 원본=경계파일, opt=`type/*/*_opt.json`(element_id별), BRF=`response.braille_text_list`, 역점역=`braille_back.decode`. `--run`을 주면 시각화 전에 `e2e_runner`로 파이프라인부터 실행(test/data PDF→storage/jobs; `--modes/--only/--no-scan/--reuse/--load-models`). MinerU 경로(수학/스캔) 문서는 `--run` 시 `MINERU_BIN`을 mineru env 바이너리로 지정해야 추출됨. 블록 썸네일은 Pillow 필요(없으면 생략·보고서는 정상). `python test/report_builder.py [--all|--jobs 국어복합,수학수식] [--run ...]`.
+
 > `unit_test/text/` 폴더는 **없다** — 텍스트 검증은 braille/(word_accuracy, mixed_input)와 pipeline/에 분산. (plan `디렉토리 구조.md`는 text/test_text_pipeline.py를 적었으나 코드엔 없음.)
 
 ---

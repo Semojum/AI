@@ -57,8 +57,9 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int) -> None:
         cmd += ["-b", "vlm-engine"]
     result = subprocess.run(cmd, capture_output=False, text=True)
     if result.returncode != 0:
-        print("[mineru_runner] MinerU 실행 실패", file=sys.stderr)
-        sys.exit(1)
+        # sys.exit 금지: 라이브러리가 프로세스를 죽이면 안 된다. 예외를 올려 호출자
+        # (pipeline 페이지 격리 / 러너)가 해당 페이지만 ERROR 처리하고 계속하게 한다.
+        raise RuntimeError(f"MinerU 실행 실패 (returncode={result.returncode}, page_idx={page_idx})")
 
 
 def _find_content_list(out_dir: Path) -> Path:
@@ -173,6 +174,15 @@ def run(
         mapped_type = TYPE_MAP.get(item_type, "text")
         if mapped_type == "image" and item.get("sub_type") == "flowchart":
             mapped_type = "chart_graph"
+        # 인쇄 캡션이 있는 시각자료는 생성 설명(GPT-4o+점역자주) 대신 인쇄 캡션을 그대로
+        # plain text(caption)로 방출한다 — 정답 점역 컨벤션 정렬(rule-based vs generation 분리).
+        # 캡션 없는 도식만 생성 경로로 남긴다.
+        printed_cap = item.get("image_caption")
+        if isinstance(printed_cap, list):
+            printed_cap = " ".join(x for x in printed_cap if x)
+        forced_caption = (printed_cap or "").strip() if mapped_type in ("image", "chart_graph", "cartoon") else ""
+        if forced_caption:
+            mapped_type = "caption"
         bb = item.get("bbox")
         if bb is None:
             continue
@@ -212,6 +222,10 @@ def run(
         # TEXT_NATIVE면 PyMuPDF 텍스트로 교체 (텍스트 타입만)
         if extraction_method == "TEXT_NATIVE" and mapped_type not in ("table", "image", "chart_graph", "cartoon"):
             content = _extract_text_native(fitz_page, bb) or content
+
+        # 인쇄 캡션 강제 적용(위 forced_caption) — 생성 placeholder/빈 content를 덮어쓴다.
+        if forced_caption:
+            content = forced_caption
 
         # page_number인데 숫자가 아닌 경우 type을 text로 정정
         if mapped_type == "page_number" and not content.strip().lstrip('-').isnumeric():
