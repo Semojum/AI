@@ -247,6 +247,32 @@ def _normalize_latex_input(latex: str) -> str:
     return s.strip()
 
 
+# 연산·비교 기호 앞뒤 붙임(수학 제45항) 대상. 11e 시점 표기 기준:
+#   +→⠢·(공백낀)-→⠔·=→⠒⠒ 는 이미 점자, ×÷<>≤≥≠±∓ 는 아직 유니코드/ASCII.
+# 화살표(⠒⠕)는 제51항(양쪽 한 칸)이라 제외 — ⠒⠒ 토큰만 정확히 매칭.
+_TIGHT_OPS_RE = re.compile(r"(\S)[ ⠀]*(⠒⠒|⠢|⠔|×|÷|<|>|≤|≥|≠|±|∓)[ ⠀]*(?=(\S))")
+
+
+def _hangul_or_sentinel(ch: str) -> bool:
+    """한글 음절/자모 또는 \\text 보호 sentinel(PUA) — 제46항 '한글 사이' 판정."""
+    return ("가" <= ch <= "힣") or ("ㄱ" <= ch <= "ㅣ") or (0xE000 <= ord(ch) <= 0xF8FF)
+
+
+def _tighten_operator_spacing(result: str) -> str:
+    """수학 제45항: 연산·비교 기호는 앞뒤를 붙여 쓴다(5+7=12 → #e5#g33#ab).
+
+    제46항: 기호가 한글 사이에 나올 때에는 앞뒤 한 칸 유지(나루 + 배 = 나룻배).
+    LaTeX 입력의 관습적 공백("x + 1")을 규정에 맞게 정리해 셀 과생성도 막는다.
+    """
+    def _repl(m: re.Match) -> str:
+        left, op, right = m.group(1), m.group(2), m.group(3)
+        if _hangul_or_sentinel(left) or _hangul_or_sentinel(right):
+            return m.group(0)
+        return f"{left}{op}"
+
+    return _TIGHT_OPS_RE.sub(_repl, result)
+
+
 def convert_latex(latex: str) -> str:
     """LaTeX 수식 문자열 → 점자 BRF.
 
@@ -464,6 +490,12 @@ def convert_latex(latex: str) -> str:
     for latex_cmd, braille_val in sorted(_LATEX_SIMPLE.items(), key=lambda x: -len(x[0])):
         result = result.replace(latex_cmd, braille_val)
 
+    # ── 10x. 뺄셈표: 남은 하이픈은 수식 문맥에선 뺄셈·음수 (수학 제2항 9=⠔) ──
+    # 숫자 변환 전에 처리 — _NUM_RE의 선행 '-?'가 이항 뺄셈("9-3")을 숫자 내
+    # 붙임표(⠤, 계좌번호용)로 삼키는 것을 막는다(제45항 예시 #i9#c33#f).
+    # 프라임(′→⠤, 제17항)은 _LATEX_SIMPLE에서 이미 치환됨. \text 한글은 sentinel로 보호됨.
+    result = result.replace("-", "⠔")
+
     # ── 11. 숫자 → 수표시 + 점자 ──────────────────────────────────────
     def _num_replace(m: re.Match) -> str:
         return digits_to_braille(m.group())
@@ -472,13 +504,18 @@ def convert_latex(latex: str) -> str:
 
     # ── 11b. 사칙연산 기호 변환 (수학 제2항) — 숫자 변환 후 처리 ──────────
     result = result.replace("+", "⠢")                        # 덧셈표 (수학 제2항, 폰트 "5"=⠢)
-    result = re.sub(r"(?<=\s)-(?=\s)", "⠔", result)          # 뺄셈표 (수학 제2항, 폰트 "9"=⠔)
     result = result.replace("=", "⠒⠒")                       # 등호 (수학 제3항, 폰트 "33"=⠒⠒)
 
     # ── 11c. 문맥 overload 분기: 수식 내 기호는 수학 의미로(텍스트 substitute_symbols와 분리) ──
     # ∼: 수식 논리부정·관계 = ⠈⠔ (명제 제61항, 폰트 "@9"). 텍스트 물결표는 symbol_table 담당.
     # →: 화살표·조건문 = ⠒⠕ (제38·61항, 폰트 "3o").
     result = result.replace("∼", "⠈⠔").replace("→", "⠒⠕")
+
+    # ── 11e. 연산·비교 기호 앞뒤 붙임 (수학 제45항: 5+7=12 → #e5#g33#ab) ──
+    # LaTeX 입력의 공백("x + 1")이 그대로 점자에 남아 규정 위반 + 셀 과생성.
+    # 단, 제46항: 한글(\text 보호 sentinel 포함)이 어느 한쪽에라도 오면 한 칸 유지.
+    # 화살표(⠒⠕)는 제51항이 양쪽 띄움을 요구하므로 대상에서 제외.
+    result = _tighten_operator_spacing(result)
 
     # ── 11d. 미처리 \cmd 제거(P3) — substitute_symbols가 백슬래시를 ⠸⠡로 음역하기 전에 정리.
     # 구조·텍스트 매크로는 위에서 내용으로 풀렸고, 여기 남은 건 미지원 명령 → 제거(음역 방지).
