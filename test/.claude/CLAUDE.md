@@ -38,8 +38,10 @@ test/
     ├── braille/test_word_accuracy.py        단어 점자 정확도 (word_pairs.json)
     ├── braille/test_mixed_input.py          텍스트+수식 혼합
     ├── braille/test_layout_braille.py       32칸×25줄 조판
-    ├── quality/test_quality_checker.py      ⚠ skip (단계4 미구현)
-    ├── quality/test_metrics_collector.py    ⚠ skip (단계4 미구현)
+    ├── quality/test_quality_checker.py      C1~C6·R 플래그·status 결정(plan §4-1 수동 도출)
+    ├── quality/test_metrics_collector.py    메트릭 레코드·JSONL 기록·비전파
+    ├── pipeline/test_mineru_fallback.py     MinerU 서브 타임아웃 + 텍스트레이어 폴백(C9)
+    ├── preprocessor/test_word_spacing.py    ZERO 어절 경계 복원(글자 간격 기반)
     ├── format/test_extracted_content.py     ExtractedContent 직렬화
     ├── format/test_llm_output.py            LLMOutput 직렬화
     ├── format/test_braille_output.py        BrailleOutput 직렬화
@@ -108,6 +110,6 @@ python test/local_runner.py                                # 로컬 E2E
 
 ## ⚠ plan 대비 상태
 
-- **품질(PART 11) 테스트 skip**: `quality_checker.py`/`metrics_collector.py` 스텁이라 테스트도 skip. plan 기준 단계4(=plan STEP5)에서 활성화.
+- ✅ **품질(PART 11) 테스트 활성**(2026-07-03): quality_checker/metrics_collector 구현으로 skip 해제, 기대값은 plan §4-1 status 표에서 수동 도출.
 - **분류기 테스트는 인터페이스 검증만**: `classifier.py` 스텁이라 실제 분류 정확도(≥90%, plan)는 미검증. 목 인터페이스 + `pipeline._TEXT_TYPES` 라우팅만 확인.
 - **파일명 정합**: `chart_graph_cap.json`(목) vs `cg_cap.json`(plan 런타임) 불일치 — plan 우선 통일 대상.

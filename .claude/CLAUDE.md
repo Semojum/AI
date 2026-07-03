@@ -66,9 +66,9 @@ app/
 │   │   ├── nested_block.py  중첩 시각자료(Q11) 공용: box_narrative(테두리 묶은 1단 narrative 텍스트)·append_nested(점자 끝에 덧붙임). diagram_braille: 도표 단일 출력(줄별 들여쓰기). 흐름도 도형 점형 디코드 표는 diagram_braille 주석(검증 대기)
 │   │   │   table_braille: _render_grid / _render_linear (render_mode별 표 조판)
 │   │   └── layout_braille.py PART 10 조판 본체. layout(braille, page_no, job_id, *, layout_result, llm_outputs)→line_overflow_rate. reading_order정렬·_break_line(32칸 단어경계+first_width 들여예약, 강제분리 카운트)·heading 빈줄(L1 2/1·L2 1/1·L3 1/0)·1단계 제목 가운데정렬·3·4단계 5칸·문단 3칸들여(text)·목록 3칸들여(list_item, tier추론X)·페이지행(원본번호 좌[page_number]·꼬리말 가운데[header_footer]·점자번호 우, 한 원본→여러 점자페이지 시 2번째부터 알파벳 접두 a,b,c)·_paginate(25줄,페이지첫줄 빈줄버림)·_save. 조판 rule_trail(heading_blank·line_wrap·indent)을 점자 좌표로 BrailleOutput.rule_trail에 emit(braille_text_list 귀속). 마커/글상자 헬퍼(BBPG 정본). ⚠촉각그래픽(table/chart SVG)·출전(citation 신호없음)·원본 페이지 변경선(여러 원본→한 점자페이지 중간 대시선, 콘텐츠 흐름 속 경계위치 메타 필요) 미배선
-│   ├── quality/                 # PART 11 — ⚠ 미구현 스텁 (TODO 단계4)
-│   │   ├── quality_checker.py   QualityChecker.check() 주석만 — 미구현
-│   │   └── metrics_collector.py MetricsCollector 주석만 — 미구현
+│   ├── quality/                 # PART 11 (2026-07-03 구현)
+│   │   ├── quality_checker.py   QualityChecker.check(page_id, layout_result·extracted·llm_outputs·braille_outputs·line_overflow_rate)→QualityReport. C1~C4·C6 감지 + R 플래그, plan §4-1 status 결정
+│   │   └── metrics_collector.py MetricsCollector.record(result, elapsed_ms) → storage/metrics/ai_metrics.jsonl (실패 비전파)
 │   └── (각 폴더 __init__.py)
 ├── utils/
 │   ├── file_merger.py   PART 10 후반. 페이지별 결과 → output/result.brf, result.txt 병합
@@ -144,8 +144,8 @@ app/
 14'. ✅ **마감 조판 REST `POST /finalize`**: 점역사 편집 블록 → BBPG 페이지 조립(`LayoutBraille.finalize`/`_assemble_pages`, 재-wrap 없음). 점자 규정은 AI 소유, BE/FE는 호출만.
 
 **B. 미구현 stub (plan 기준 구현 필요)**
-3. **PART 3-4 분류기**: `captioning/classifier.py` = `# TODO [단계3]` 스텁. `ImageClassifier.classify` 부재 → pipeline이 `ImportError` catch → image 고정, cartoon/chart_graph 미분류, visual_subtype/subtype_confidence 미생성. → plan §3-1 값으로 구현.
-4. **PART 11 품질검사**: `quality/quality_checker.py`·`metrics_collector.py` 스텁. pipeline이 status **하드코딩 "COMPLETED"**, QualityReport 빈 값. C/R 판정·status 분기·TimescaleDB 기록 전무. → plan §4-1 status 규칙·C1~C7/R1~R12 구현 후 pipeline 연결.
+3. ✅ **PART 3-4 분류기**(2026-07-03 확인): MinerU 경로의 `captioning/classifier.py`(GPT-4o, image/cartoon/chart 1-word 분류)를 `result_builder._do_caption`이 소비 — 구현 완료. 단 subtype_confidence는 미생성(1-word 응답이라 신뢰도 없음 → R2 플래그 미활용).
+4. ✅ **PART 11 품질검사**(2026-07-03 구현): `quality_checker.py` — placeholder(C2/C3/C4)·전체실패(C1)·32칸초과(C6) 감지 + flags(R1/R2/R5/R7) 승격, plan §4-1 status 규칙으로 페이지 status 결정(pipeline `_build_response` 연결, 하드코딩 제거). `metrics_collector.py` — 페이지 메트릭 JSONL(`storage/metrics/ai_metrics.jsonl`) 기록(TimescaleDB는 배포 인프라 확정 후 sink 교체). 테스트 `test/unit_test/quality/` 활성.
 5. **현주 파트(모델 의존)**: layout/ocr/captioning 일부 모델 미탑재 시 동작 안 함. pipeline이 `ImportError/AttributeError`로 격리 → `[처리 불가]` 플레이스홀더.
 11. **시각 복수초안(T4-2) 실모델 3안 생성**: `image/cartoon_opt`가 HCLOVA X 실모델에서 `[방식N]` 3줄 포맷을 안 따라 1안만 생성(파싱·토큰·폴백 인프라는 정상, chart는 동일 인프라로 3안 정상). → **Stage 5 프롬프트 튜닝 backlog**(메모리 `stage5-backlog-visual-3draft`). few-shot 강화·sampling·입력 복잡도별 분기.
 
