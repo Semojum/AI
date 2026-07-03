@@ -22,6 +22,75 @@ PUA_RATIO_THRESHOLD = 0.10
 # 유효 PDF는 항상 "%PDF-"로 시작한다(앞쪽 일부 공백/BOM 허용).
 _PDF_MAGIC = b"%PDF-"
 
+# ── ZERO 티어 어절 경계 복원 ────────────────────────────────────────────────
+# 교과서 PDF 다수가 공백 글리프 없이 글자 위치(커닝)로만 어절을 띄운다 → PyMuPDF
+# get_text()가 한국어를 통째로 붙여 추출("다음은가정환경…") → 점자 띄어쓰기 전멸.
+# 글자 bbox 간격은 이중분포(어절 경계 ≈ +0.2×폰트크기 vs 글자 내 ≈ -0.1×폰트크기)라
+# 줄별 기준 간격(중앙값) 대비 확실히 벌어진 지점에만 공백을 복원한다(rule-based).
+_WORD_GAP_RATIO = 0.12   # 어절 경계 판정: 기준 간격 + max(이 비율×폰트크기, 1.0pt)
+_WORD_GAP_MIN_PT = 1.0
+_MIN_GAP_SAMPLES = 4     # 줄에 간격 표본이 이보다 적으면 판단 보류(원문 유지)
+
+
+def _is_hangul(ch: str) -> bool:
+    return "가" <= ch <= "힣" or "ㄱ" <= ch <= "ㅣ"
+
+
+def _line_text_with_word_gaps(line: dict) -> str:
+    """rawdict 한 줄 → 글자 간격으로 어절 경계를 복원한 텍스트.
+
+    공백 글리프가 실제로 있는 자리는 그대로 두고, 한글이 낀 글자쌍에서만
+    '기준 간격(중앙값) + 임계'보다 벌어진 지점에 공백을 삽입한다.
+    자간이 고르게 넓은 제목(트래킹)은 기준 간격 자체가 커져 오분리되지 않는다.
+    """
+    chars: list[tuple[str, float, float, float]] = []  # (ch, x0, x1, size)
+    for span in line.get("spans", []):
+        size = float(span.get("size") or 0.0)
+        for c in span.get("chars", []):
+            bbox = c.get("bbox") or (0, 0, 0, 0)
+            chars.append((c.get("c", ""), float(bbox[0]), float(bbox[2]), size))
+    if not chars:
+        return ""
+
+    # 간격 표본: 공백이 아닌 인접 글자쌍의 (다음 x0 - 이전 x1)
+    gaps: list[float] = []
+    for i in range(1, len(chars)):
+        if chars[i - 1][0].isspace() or chars[i][0].isspace():
+            continue
+        gaps.append(chars[i][1] - chars[i - 1][2])
+    if len(gaps) < _MIN_GAP_SAMPLES:
+        return "".join(c[0] for c in chars)
+
+    base = sorted(gaps)[len(gaps) // 2]  # 글자 내 전형 간격(중앙값)
+    out: list[str] = [chars[0][0]]
+    for i in range(1, len(chars)):
+        ch, x0, _x1, size = chars[i]
+        prev_ch, _px0, px1, _psize = chars[i - 1]
+        if not ch.isspace() and not prev_ch.isspace() and (_is_hangul(ch) or _is_hangul(prev_ch)):
+            threshold = base + max(_WORD_GAP_RATIO * (size or 10.0), _WORD_GAP_MIN_PT)
+            if (x0 - px1) > threshold:
+                out.append(" ")
+        out.append(ch)
+    return "".join(out)
+
+
+def _page_text_blocks_spaced(page) -> list[dict]:
+    """페이지 텍스트 블록 추출(어절 경계 복원 포함) — get_text('blocks') 대체.
+
+    반환 요소: {"content": str, "bbox": [x0,y0,x1,y1] (PyMuPDF 포인트)}.
+    """
+    raw = page.get_text("rawdict")
+    blocks: list[dict] = []
+    for b in raw.get("blocks", []):
+        if b.get("type") != 0:      # 0 = 텍스트 블록
+            continue
+        lines = [_line_text_with_word_gaps(ln) for ln in b.get("lines", [])]
+        text = "\n".join(ln for ln in lines if ln).strip()
+        if not text:
+            continue
+        blocks.append({"content": text, "bbox": list(b.get("bbox") or (0, 0, 0, 0))})
+    return blocks
+
 
 def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int, int]:
     """텍스트레이어(ZERO) 추출 — PyMuPDF 블록 단위로 (content, bbox)를 뽑는다.
@@ -41,14 +110,10 @@ def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int,
             page = doc[page_idx]
             w, h = page.rect.width, page.rect.height
             blocks: list[dict] = []
-            for x0, y0, x1, y1, text, _bno, btype in page.get_text("blocks"):
-                if btype != 0:          # 0 = 텍스트 블록, 1 = 이미지 블록(여기선 제외)
-                    continue
-                t = (text or "").strip()
-                if not t:
-                    continue
+            for b in _page_text_blocks_spaced(page):
+                x0, y0, x1, y1 = b["bbox"]
                 blocks.append({
-                    "content": t,
+                    "content": b["content"],
                     "bbox": [round(x0 * 2), round(y0 * 2), round(x1 * 2), round(y1 * 2)],
                 })
         finally:
@@ -187,6 +252,10 @@ def analyze_pdf(
             page = doc[page_idx]
             text = page.get_text().strip()
             has_visual = _page_has_visual(page) if len(text) >= MIN_TEXT_LENGTH else False
+            # ZERO 후보면 어절 경계 복원 텍스트로 교체(공백 글리프 없는 교과서 PDF 대응)
+            if len(text) >= MIN_TEXT_LENGTH and not has_visual:
+                spaced = "\n".join(b["content"] for b in _page_text_blocks_spaced(page)).strip()
+                text = spaced or text
         finally:
             doc.close()
     finally:
