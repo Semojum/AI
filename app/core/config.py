@@ -20,6 +20,10 @@ class Settings(BaseSettings):
 
     # ── 타임아웃 / 임계값 ─────────────────────────────────────────
     page_timeout_seconds: float = 300.0
+    # MinerU 추출 서브 타임아웃(초). 0 = 자동(페이지 예산 - 60초 여유, 최소 60초).
+    # 병리적으로 무거운 페이지(C9)에서 MinerU가 페이지 예산을 다 태우고 C7 BLOCKED로
+    # 죽는 대신, 추출을 먼저 끊고 텍스트레이어 폴백으로 부분 초안을 살리기 위한 예산.
+    mineru_timeout_seconds: float = 0.0
     ocr_confidence_threshold: float = 0.90
     max_grpc_message_mb: int = 20
 
@@ -51,6 +55,13 @@ class Settings(BaseSettings):
     @property
     def is_debug(self) -> bool:
         return self.app_env.lower() == "debug"
+
+    @property
+    def mineru_timeout_resolved(self) -> float:
+        """MinerU 추출 서브 타임아웃 실효값. 0(자동)이면 페이지 예산 - 60초(최소 60초)."""
+        if self.mineru_timeout_seconds > 0:
+            return self.mineru_timeout_seconds
+        return max(60.0, self.page_timeout_seconds - 60.0)
 
     @property
     def max_grpc_message_bytes(self) -> int:

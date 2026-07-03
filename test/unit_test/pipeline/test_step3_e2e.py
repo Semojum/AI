@@ -140,10 +140,10 @@ class TestFormulaChainE2E:
         assert "⠼" in combined, f"수표 ⠼ 없음: {combined!r}"
 
     def test_negative_formula_uses_minus_cell(self, outputs, formula_items):
-        """수학 제17항: 음수 부호 → ⠤."""
+        """수학 제2항·제45항 4호: 음수 = 뺄셈표(⠔)+수표 (규정 예시 -1<x<3 → 9#a…)."""
         idx = next(i for i, e in enumerate(formula_items) if (e.latex_string or "") == "-3")
         combined = "".join(outputs[idx].braille_lines)
-        assert "⠤" in combined, f"음수 부호 ⠤ 없음: {combined!r}"
+        assert "⠔⠼" in combined, f"음수 표기(⠔+수표) 없음: {combined!r}"
 
     def test_sqrt_contains_root_indicator(self, outputs, formula_items):
         """\\sqrt{x} → 근호 시작자(⠜) 포함."""
@@ -393,8 +393,11 @@ class TestSixChainFaultIsolation:
         zero_meta = DocumentMeta(pdf_confidence=0.95, routing_tier="ZERO", scan_only=False)
 
         async def _run():
+            # extract_text_blocks도 패치 — 실제 구현은 빈 pdf_data를 InvalidPDFError로 거부
             with patch("app.ai.preprocessor.pdf_analyzer.analyze_pdf",
                        return_value=(zero_meta, "mock text")), \
+                 patch("app.ai.preprocessor.pdf_analyzer.extract_text_blocks",
+                       return_value=([], 0, 0)), \
                  patch.object(pipeline, "_run_text_chain", _text_chain), \
                  patch.object(pipeline, "_run_formula_chain", _fail_formula_chain):
                 return await pipeline._run_pipeline(task)

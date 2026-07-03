@@ -190,7 +190,8 @@ def _blocks_with_bbox(blocks: list[dict]) -> list[dict]:
 async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> tuple[list[dict], int, int]:
     """non-ZERO Tier(스캔 PDF): MinerU2.5-Pro 통합 추출 → (elements, page_w, page_h).
     result_builder가 이미지 분류·캡셔닝까지 거쳐 경계 elements(bbox 포함)를 만든다.
-    MinerU 미설치/실패 시 빈 결과로 격리(요소 격리 원칙)."""
+    MinerU 미설치/실패/타임아웃 시: 텍스트레이어가 있으면 PyMuPDF 폴백으로 본문을
+    살리고(표·그림 구조 손실 → 요소 R1 플래그), 스캔 전용이면 빈 결과로 격리."""
     import os
     import tempfile
     try:
@@ -203,6 +204,7 @@ async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> tuple[l
         try:
             merged = await asyncio.to_thread(
                 mineru_run, tmp_path, task.page_no, task.job_id, "OCR",
+                timeout=config.mineru_timeout_resolved,
             )
             result = await asyncio.to_thread(
                 build_result, merged, task.job_id, task.page_no, "OCR",
@@ -215,7 +217,32 @@ async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> tuple[l
         m = result.get("meta", {})
         return result.get("elements", []), int(m.get("image_width") or 0), int(m.get("image_height") or 0)
     except Exception as exc:
-        logger.warning("MinerU 추출 실패(빈 결과로 격리): %s", exc)
+        logger.warning("MinerU 추출 실패: %s", exc)
+        return await _fallback_text_layer(task, doc_meta)
+
+
+async def _fallback_text_layer(task: PageTask, doc_meta: DocumentMeta) -> tuple[list[dict], int, int]:
+    """MinerU 실패/타임아웃 폴백: 텍스트레이어가 있으면 PyMuPDF로 본문만 추출.
+
+    C9(무거운 페이지)의 페이지 전체 BLOCKED 대신 부분 초안을 살린다. 표·그림
+    구조는 잃으므로 각 요소에 C2_FALLBACK 플래그 → QualityChecker가 R1로 승격
+    → 페이지 NEEDS_REVIEW(점역사 확인). 스캔 전용(텍스트레이어 없음)은 빈 결과."""
+    if doc_meta.scan_only:
+        return [], 0, 0
+    try:
+        from app.ai.preprocessor.pdf_analyzer import extract_text_blocks
+        blocks, w, h = await asyncio.to_thread(extract_text_blocks, task.pdf_data, task.page_no)
+        elements = _blocks_with_bbox(blocks)
+        for el in elements:
+            el["flags"] = ["C2_FALLBACK"]
+        if elements:
+            logger.warning(
+                "텍스트레이어 폴백으로 %d요소 추출 — 표·그림 구조 손실, NEEDS_REVIEW (page=%d)",
+                len(elements), task.page_no,
+            )
+        return elements, w, h
+    except Exception as exc:
+        logger.warning("텍스트레이어 폴백도 실패(빈 결과로 격리): %s", exc)
         return [], 0, 0
 
 
@@ -371,7 +398,7 @@ def _parse_txt_result(
         if etype == "formula":
             ext_map[eid] = ExtractedContent(
                 element_id=eid, latex_string=content, corrected_text=content,
-                ocr_confidence=econf,
+                ocr_confidence=econf, flags=flags,
             )
         else:
             # 현주 구조화 입력(계약): structure(만화 panels·차트 axes 등)·table_structure 전달.
@@ -383,6 +410,7 @@ def _parse_txt_result(
                 subtype_confidence=float(raw_subconf) if isinstance(raw_subconf, (int, float)) else None,
                 structure=el.get("structure"),
                 table_structure=el.get("table_structure"),
+                flags=flags,
             )
 
     _reorder_by_geometry(bbox_items)
@@ -717,9 +745,20 @@ def _build_response(
     _order_of = {e.element_id: e.reading_order for e in layout_result.elements}
     llm_outputs = sorted(llm_outputs, key=lambda o: _order_of.get(o.element_id, 1_000_000))
 
+    # PART 11: 품질 판정 — C/R 감지 후 status 결정 (COMPLETED|NEEDS_REVIEW|BLOCKED)
+    from app.ai.quality.quality_checker import QualityChecker
+    quality_report = QualityChecker().check(
+        page_id,
+        layout_result=layout_result,
+        extracted=extracted,
+        llm_outputs=llm_outputs,
+        braille_outputs=braille_outputs,
+        line_overflow_rate=line_overflow_rate,
+    )
+
     response: dict = {
         "job_id": task.job_id,
-        "status": "COMPLETED",
+        "status": quality_report.status,
         "page_number": task.page_no,
         "processing_meta": {
             "processing_time_ms": 0,
@@ -727,10 +766,7 @@ def _build_response(
             "routing_tier_used": routing_tier,
             "scan_only": doc_meta.scan_only if doc_meta else False,
         },
-        "quality_report": QualityReport(
-            page_id=page_id, status="COMPLETED",
-            line_overflow_rate=line_overflow_rate,
-        ).model_dump(),
+        "quality_report": quality_report.model_dump(),
     }
 
     if task.mode in ("a", "c"):
@@ -862,16 +898,30 @@ async def run(task: PageTask) -> dict:
             result.get("status"), elapsed_ms / 1000, api_summary(), n_braille,
             task.job_id, task.page_no, task.mode,
         )
+        _record_metrics(result, elapsed_ms)
         return result
 
     except asyncio.TimeoutError:
         elapsed_ms = int((time.monotonic() - start) * 1000)
         logger.warning("⛔ BLOCKED(타임아웃) %.1fs · API %s  (job=%s page=%d)",
                        elapsed_ms / 1000, api_summary(), task.job_id, task.page_no)
-        return _build_timeout_response(task, elapsed_ms)
+        result = _build_timeout_response(task, elapsed_ms)
+        _record_metrics(result, elapsed_ms)
+        return result
 
     except Exception as exc:
         elapsed_ms = int((time.monotonic() - start) * 1000)
         logger.exception("⛔ BLOCKED(예외) %.1fs job=%s page=%d: %s",
                          elapsed_ms / 1000, task.job_id, task.page_no, exc)
-        return _build_exception_response(task, elapsed_ms, exc)
+        result = _build_exception_response(task, elapsed_ms, exc)
+        _record_metrics(result, elapsed_ms)
+        return result
+
+
+def _record_metrics(result: dict, elapsed_ms: int) -> None:
+    """PART 11 후반: 페이지 메트릭 기록. 실패해도 응답에 영향 금지."""
+    try:
+        from app.ai.quality.metrics_collector import MetricsCollector
+        MetricsCollector().record(result, elapsed_ms=elapsed_ms)
+    except Exception as exc:
+        logger.warning("메트릭 수집 실패(무시): %s", exc)

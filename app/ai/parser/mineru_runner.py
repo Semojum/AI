@@ -39,7 +39,7 @@ TYPE_MAP = {
 }
 
 
-def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int) -> None:
+def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | None = None) -> None:
     # MinerU는 별도 env에 설치(transformers 버전 충돌 회피). bare 'mineru'가 PATH에
     # 없을 수 있어 MINERU_BIN으로 실행 파일 경로를 덮어쓸 수 있게 한다(GCP는 심볼릭).
     mineru_bin = os.environ.get("MINERU_BIN", "mineru")
@@ -55,7 +55,14 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int) -> None:
         cmd += ["--api-url", api_url]
     else:
         cmd += ["-b", "vlm-engine"]
-    result = subprocess.run(cmd, capture_output=False, text=True)
+    try:
+        # timeout: 페이지 예산(C7)을 MinerU가 다 태우기 전에 서브프로세스를 끊는다(C9).
+        # 초과 시 subprocess가 프로세스를 kill하므로 고아 프로세스가 남지 않는다.
+        result = subprocess.run(cmd, capture_output=False, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"MinerU 추출 타임아웃 (>{exc.timeout:.0f}s, page_idx={page_idx}) — 텍스트레이어 폴백 대상"
+        ) from exc
     if result.returncode != 0:
         # sys.exit 금지: 라이브러리가 프로세스를 죽이면 안 된다. 예외를 올려 호출자
         # (pipeline 페이지 격리 / 러너)가 해당 페이지만 ERROR 처리하고 계속하게 한다.
@@ -119,6 +126,7 @@ def run(
     extraction_method: str,
     mineru_cache_dir: str | None = None,
     debug: bool = False,
+    timeout: float | None = None,
 ) -> list[dict]:
     """
     pdf_path: 전체 PDF 경로
@@ -127,6 +135,7 @@ def run(
     extraction_method: 'TEXT_NATIVE' | 'OCR'
     mineru_cache_dir: 이미 mineru 결과가 있으면 재사용 (None이면 새로 실행)
     debug: True이면 merged_layout.json을 test/results/page_{no:03d}/에 저장
+    timeout: MinerU 서브프로세스 타임아웃(초). None이면 무제한(오프라인 러너 호환)
 
     반환: merged_layout (list[dict])
     """
@@ -142,7 +151,7 @@ def run(
     raw_dir = Path(mineru_cache_dir) if mineru_cache_dir else base / "mineru_raw"
     if not list(raw_dir.rglob("*_content_list.json")):
         raw_dir.mkdir(parents=True, exist_ok=True)
-        _run_mineru(pdf_path, raw_dir, page_idx)
+        _run_mineru(pdf_path, raw_dir, page_idx, timeout=timeout)
         _cleanup_mineru_output(raw_dir)
         _flatten_mineru_output(raw_dir)
 
