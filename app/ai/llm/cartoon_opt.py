@@ -1,94 +1,73 @@
-"""PART 8-2 — 만화 점역 최적화 (rule-based 골격 조립, §5.3).
+"""PART 8-2 — 만화 점역 최적화 (§5.3 규정 + 대체텍스트 4안).
 
-규정(점자 자료 제작 지침 §5.3)이 만화의 형식을 단일 골격으로 정한다 — 자유서술 3안이 아니다.
-구조화 입력(structure.panels)에서 코드가 골격을 결정적으로 조립한다:
-  제목줄  : 5칸 <!점역자주>만화<!/점역자주> {제목}            §5.3.1(1)
-  장면    : 5칸 <!점역자주>장면 N<!/점역자주>                 §5.3.3(1) (여러 장면일 때)
-  장면설명: 3칸 <!점역자주>{설명}<!/점역자주>                 §5.3.3(2)(7)
-  대사    : 3칸 {인물명}:{대사}                               §5.3.3(2)(3)  (대사 전사)
-  말풍선 화자불명 → '말풍선:내용' (§6.3.4(3)), 인물 불명 특징명은 점역자주 미사용(§5.3.3(5))
-구조가 없으면(현주 미구현 등) caption을 단일 점역자주로 폴백한다.
+시각자료 대체텍스트 4안(QA 2026-07-05) — 생략 / 짧은 제목 / 개조식 / 줄글.
+만화는 구조(structure.panels)가 있으면 개조식이 곧 §5.3 골격(장면·대사 전사)이고, 줄글은
+이야기 흐름 설명이다. 대사(§5.3.3(2)(3))는 rule-based 전사, 캡션만 있으면 LLM이 채운다.
 """
 
 from __future__ import annotations
 
 from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import BaseOpt
-from app.ai.llm.draft_utils import ensure_tn_prefix
+from app.ai.llm.visual_drafts import build_visual_drafts
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
 _RULE_ID = "JAJAK-5.3"   # 만화 골격 (점자 자료 제작 지침 §5.3)
-_SCENE_INDENT = 3
-_PANEL_INDENT = 5
 
 
-def _min_trail(text: str) -> list[RuleApplication]:
+def _trail() -> list[RuleApplication]:
     return [make_rule(_RULE_ID)]
 
 
-def assemble_cartoon(structure: dict) -> tuple[str, list[int]]:
-    """structure(panels/title) → (§5.3 골격 텍스트, 줄별 들여쓰기). rule-based·결정적."""
-    title = (structure.get("title") or "").strip()
+def _panel_items(structure: dict) -> list[tuple[int, str]]:
+    """panels → 개조식 항목. 여러 장면이면 '장면 N'(level0)·설명/대사(level1). §5.3.3."""
     panels = structure.get("panels") or []
-    lines: list[str] = []
-    indents: list[int] = []
-
-    head = "<!점역자주>만화<!/점역자주>" + (f" {title}" if title else "")
-    lines.append(head); indents.append(_PANEL_INDENT)        # §5.3.1(1)
-
     multi = len(panels) > 1
+    items: list[tuple[int, str]] = []
     for p in panels:
         if multi:
-            lines.append(f"<!점역자주>장면 {p.get('order', '')}<!/점역자주>")
-            indents.append(_PANEL_INDENT)                    # §5.3.3(1)
+            items.append((0, f"장면 {p.get('order', '')}".strip()))
         scene = (p.get("scene_desc") or p.get("scene_src") or "").strip()
         if scene:
-            lines.append(f"<!점역자주>{scene}<!/점역자주>")
-            indents.append(_SCENE_INDENT)                    # §5.3.3(2)(7) 장면 설정/행동
+            items.append((1 if multi else 0, scene))          # §5.3.3(2)(7)
         for d in p.get("dialogues") or []:
-            speaker = (d.get("speaker") or "말풍선").strip()  # §6.3.4(3) 화자 불명
+            speaker = (d.get("speaker") or "말풍선").strip()   # §6.3.4(3) 화자 불명
             txt = (d.get("text") or "").strip()
-            lines.append(f"{speaker}:{txt}")                 # §5.3.3(2)(3) 인물명:대사(전사)
-            indents.append(_SCENE_INDENT)
-    return "\n".join(lines), indents
+            items.append((1 if multi else 0, f"{speaker}:{txt}"))  # §5.3.3(2)(3) 대사 전사
+    return items
 
 
 class CartoonOpt(BaseOpt):
-    """ExtractedContent 목록 → LLMOutput 목록 (만화). 규정 골격 rule-based 조립(단일 출력)."""
+    """ExtractedContent 목록 → LLMOutput 목록 (만화). 대체텍스트 4안."""
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
-        structure = ext.structure or {}
-        if structure.get("panels"):
-            text, indents = assemble_cartoon(structure)
-            return LLMOutput(
-                element_id=ext.element_id,
-                corrected_text=text,
-                render_mode="narrative",
-                tn_text=text,
-                routing_tier=routing_tier,
-                processing_time_ms=0,
-                rule_trail=_min_trail(text),
-                line_indents=indents,
-            )
-        # 폴백: 구조 없음 → caption 단일 점역자주
-        cap = (ext.corrected_text or "").strip()
-        if not cap:
+        st = ext.structure or {}
+        title = (st.get("title") or "").strip()
+        caption = (ext.corrected_text or "").strip()
+        items = _panel_items(st)
+
+        if not items and not caption and not title:
             return LLMOutput(
                 element_id=ext.element_id,
                 corrected_text="[처리 불가: 만화 캡션 없음]",
-                render_mode="narrative",
-                routing_tier="FALLBACK",
-                processing_time_ms=0,
-                rule_trail=_min_trail(""),
+                render_mode="narrative", routing_tier="FALLBACK",
+                processing_time_ms=0, rule_trail=_trail(),
             )
-        tn = ensure_tn_prefix(f"만화: {cap}")
+
+        drafts, selected_idx, line_indents, tier = await build_visual_drafts(
+            ext, routing_tier, label="만화", title=title, caption=caption, kind="만화",
+            struct_outline=items or None,
+        )
         return LLMOutput(
             element_id=ext.element_id,
-            corrected_text=tn,
+            corrected_text=drafts[selected_idx].text,
             render_mode="narrative",
-            tn_text=tn,
-            routing_tier=routing_tier,
+            tn_text=drafts[selected_idx].text,
+            routing_tier=tier,
             processing_time_ms=0,
-            rule_trail=_min_trail(tn),
+            rule_trail=_trail(),
+            drafts=drafts,
+            selected_idx=selected_idx,
+            line_indents=line_indents,
         )

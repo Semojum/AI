@@ -8,7 +8,7 @@
 - `generate_with_retry`                 : 3회 재시도 후 폴백 (모든 opt 동일 루프).
 - `decide_tier_timeout`                 : ocr_confidence → (tier, timeout).
 - `BaseOpt`                             : optimize() = 요소별 _optimize_one gather.
-- `VisualDraftOpt`                      : 시각자료 3안 생성 공통 흐름(이미지·만화·차트 공유).
+  (시각자료 대체텍스트 4안 공통 흐름은 `visual_drafts.build_visual_drafts`로 분리됨.)
 """
 
 from __future__ import annotations
@@ -19,24 +19,29 @@ import re
 import time
 from typing import Callable, Optional
 
-from app.ai.braille.regulations import make_rule
-from app.ai.llm.draft_utils import parse_labeled_drafts, single_draft
 from app.core.config import config
 from app.core.model_manager import model_manager
-from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
+from app.schemas.content import ExtractedContent, LLMOutput
 from app.schemas.layout import LayoutResult
 
 logger = logging.getLogger(__name__)
 
 FALLBACK_TIMEOUT = 45.0  # GPT-4o 폴백 제한
+_HCXT_MIN_SLICE = 3.0    # 이보다 예산이 적게 남으면 HCXT를 건너뛰고 바로 폴백(무의미한 짧은 추론 방지)
+
+
+class HcxtBudgetExceeded(Exception):
+    """페이지 누적 HCXT 예산 소진 — 이 요소는 HCXT를 건너뛰고 GPT-4o로 폴백."""
 
 
 def hcxt_generate_sync(prompt: str, max_new_tokens: int = 512, prefill: str = "") -> str:
-    """HyperCLOVA X 동기 추론. prefill이 있으면 답변 시작을 강제해 포맷을 고정한다."""
+    """HyperCLOVA X 동기 추론. prefill이 있으면 답변 시작을 강제해 포맷을 고정한다.
+
+    호출 집계(req_log)는 스레드 밖(async 컨텍스트)의 hcxt_optimize에서 한다 — 이 함수는
+    asyncio.to_thread로 별도 스레드에서 돌아 contextvar 쓰기가 요청 통계에 반영되지 않는다.
+    """
     import torch
 
-    from app.utils.req_log import inc_hcxt
-    inc_hcxt()
     model = model_manager.hcxt_model
     tokenizer = model_manager.hcxt_tokenizer
     device = next(model.parameters()).device
@@ -69,28 +74,69 @@ async def hcxt_optimize(
     prompt: str, timeout: float, *,
     prefill: str = "", max_new_tokens: int = 512, kind: str = "요소",
 ) -> str:
-    """단일 GPU 모델 추론 직렬화(inference_lock 공유) + 타임아웃."""
-    from app.ai.llm.inference_lock import hcxt_lock
-    async with hcxt_lock():
+    """HCXT 추론 + 타임아웃. 백엔드에 따라 경로가 갈린다(config.hcxt_backend).
+
+    - vllm: 별도 vLLM 서버로 오프로드. 서버가 배칭/동시성을 처리하므로 GPU 락·페이지 예산
+      없이 요소들이 병렬로 돈다. 타임아웃만 건다.
+    - transformers(기본): 인프로세스 단일 GPU 직렬(inference_lock 공유). 락 안에서만 실제 추론
+      시간을 재 파트별 사용량(req_log)에 기록한다(대기 시간 제외). 페이지 누적 예산도 여기서만.
+    """
+    from app.utils.req_log import record_hcxt
+
+    if config.hcxt_backend == "vllm":
+        from app.ai.llm.hcxt_client import vllm_generate
+        t0 = time.monotonic()
         try:
-            return await asyncio.wait_for(
-                asyncio.to_thread(hcxt_generate_sync, prompt, max_new_tokens, prefill),
-                timeout=timeout,
-            )
+            out = await asyncio.wait_for(
+                vllm_generate(prompt, max_new_tokens, prefill), timeout=timeout)
+            record_hcxt(kind, time.monotonic() - t0)
+            return out
         except asyncio.TimeoutError:
-            logger.warning("HyperCLOVA X %s 최적화 타임아웃 (%.0fs)", kind, timeout)
+            record_hcxt(kind, time.monotonic() - t0, timed_out=True)
+            logger.warning("HCXT(vLLM) %s 타임아웃 (%.0fs)", kind, timeout)
+            raise
+        except Exception:
+            record_hcxt(kind, time.monotonic() - t0, failed=True)
+            raise
+
+    from app.ai.llm.inference_lock import hcxt_lock
+    from app.utils.req_log import hcxt_budget_remaining
+    async with hcxt_lock():
+        # 페이지 누적 HCXT 예산 확인(락 획득 후 — 대기 중 다른 요소가 예산을 소진했을 수 있음).
+        # 예산이 거의 없으면 즉시 폴백, 남았으면 요소 상한을 남은 예산으로 클램프.
+        remaining = hcxt_budget_remaining()
+        if remaining is not None and remaining < _HCXT_MIN_SLICE:
+            logger.info("HCXT 페이지 예산 소진 → %s는 폴백(남은 %.1fs)", kind, remaining)
+            raise HcxtBudgetExceeded(kind)
+        eff_timeout = timeout if remaining is None else max(_HCXT_MIN_SLICE, min(timeout, remaining))
+        t0 = time.monotonic()
+        try:
+            out = await asyncio.wait_for(
+                asyncio.to_thread(hcxt_generate_sync, prompt, max_new_tokens, prefill),
+                timeout=eff_timeout,
+            )
+            record_hcxt(kind, time.monotonic() - t0)
+            return out
+        except asyncio.TimeoutError:
+            record_hcxt(kind, time.monotonic() - t0, timed_out=True)
+            logger.warning("HyperCLOVA X %s 최적화 타임아웃 (%.0fs)", kind, eff_timeout)
+            raise
+        except Exception:
+            record_hcxt(kind, time.monotonic() - t0, failed=True)
             raise
 
 
 async def fallback_optimize(prompt: str, *, max_tokens: int = 300, kind: str = "요소") -> str:
-    """GPT-4o 폴백. 실패 시 빈 문자열 반환(호출부가 원문으로 폴백)."""
+    """GPT-4o 폴백. 실패 시 빈 문자열 반환(호출부가 원문으로 폴백).
+
+    응답 usage(prompt/completion 토큰)를 파트별로 req_log에 기록해 실비용까지 집계한다.
+    """
     if not config.openai_api_key:
         logger.error("FALLBACK: OPENAI_API_KEY 미설정")
         return ""
     import openai
 
-    from app.utils.req_log import inc_gpt4o
-    inc_gpt4o()
+    from app.utils.req_log import record_gpt4o
     client = openai.AsyncOpenAI(api_key=config.openai_api_key)
     try:
         resp = await asyncio.wait_for(
@@ -102,8 +148,15 @@ async def fallback_optimize(prompt: str, *, max_tokens: int = 300, kind: str = "
             ),
             timeout=FALLBACK_TIMEOUT,
         )
+        usage = getattr(resp, "usage", None)
+        record_gpt4o(
+            kind,
+            getattr(usage, "prompt_tokens", 0) or 0,
+            getattr(usage, "completion_tokens", 0) or 0,
+        )
         return resp.choices[0].message.content.strip()
     except Exception as exc:
+        record_gpt4o(kind)  # 실패도 호출 1건으로 집계(근사 토큰)
         logger.error("FALLBACK %s 최적화 실패: %s", kind, exc)
         return ""
 
@@ -116,12 +169,22 @@ def numbers_grounded(original: str, output: str) -> bool:
 
 
 def decide_tier_timeout(
-    ocr_confidence: float, standard_timeout: float, quality_timeout: float
+    ocr_confidence: float,
+    standard_timeout: float | None = None,
+    quality_timeout: float | None = None,
 ) -> tuple[str, float]:
-    """ocr_confidence → (routing_tier, timeout). 저신뢰=QUALITY, 그 외=STANDARD."""
+    """ocr_confidence → (routing_tier, 요소당 HCXT 상한). 저신뢰=QUALITY, 그 외=STANDARD.
+
+    상한 기본값은 config(hcxt_element/quality_timeout_seconds) — 단일 GPU 직렬이라 작게 둔다.
+    호출부가 값을 주면 그 값을 쓰되(테스트/특수 케이스), 운영은 config 기본을 쓴다.
+    """
     if ocr_confidence < config.ocr_confidence_threshold:
-        return "QUALITY", quality_timeout
-    return "STANDARD", standard_timeout
+        return "QUALITY", quality_timeout if quality_timeout is not None else config.hcxt_quality_timeout_seconds
+    return "STANDARD", standard_timeout if standard_timeout is not None else config.hcxt_element_timeout_seconds
+
+
+# 일시적 예외(OOM 순간·CUDA 재시도 등) 재시도 횟수. 타임아웃은 여기 포함 안 됨.
+_TRANSIENT_RETRIES = 2
 
 
 async def generate_with_retry(
@@ -130,25 +193,36 @@ async def generate_with_retry(
     prefill: str = "", max_new_tokens: int = 512, fallback_max_tokens: int = 300,
     transform: Optional[Callable[[str], str]] = None,
 ) -> tuple[str, bool]:
-    """HCLOVA X 추론 3회 재시도 → 실패 시 GPT-4o 폴백. 반환: (응답, 폴백사용여부).
+    """HCLOVA X 추론 → 실패 시 GPT-4o 폴백. 반환: (응답, 폴백사용여부).
+
+    타임아웃 처리(성능 핵심): 타임아웃은 **재시도하지 않고 즉시 폴백**한다. hcxt_optimize는
+    GPU 락을 잡은 뒤에야 타이머를 시작하므로(대기 시간 제외), 타임아웃은 "이 요소 추론이
+    실제로 timeout보다 오래 걸린다"는 뜻 — 같은 예산으로 재시도하면 락을 잡은 채 timeout을
+    N배 낭비할 뿐이다(1페이지 요소 수십 개 직렬화 → 페이지 타임아웃의 주범이었다).
+    일시적 예외(OOM 순간 등)만 소수 재시도한다.
 
     transform은 HCLOVA X 응답에만 적용한다(폴백 응답은 그대로 — 기존 동작 보존).
     """
-    fail = 0
-    while fail < 3:
+    attempt = 0
+    while True:
         try:
             resp = await hcxt_optimize(
                 prompt, timeout, prefill=prefill, max_new_tokens=max_new_tokens, kind=kind
             )
             return (transform(resp) if transform else resp), False
+        except (asyncio.TimeoutError, HcxtBudgetExceeded) as exc:
+            # 느린 추론/예산 소진 재시도 금지 → 곧바로 폴백(락 점유 시간 최소화).
+            reason = "예산 소진" if isinstance(exc, HcxtBudgetExceeded) else "타임아웃"
+            logger.warning("HyperCLOVA X %s %s → 즉시 FALLBACK id=%s", kind, reason, element_id)
+            resp = await fallback_optimize(prompt, max_tokens=fallback_max_tokens, kind=kind)
+            return resp, True
         except Exception as exc:
-            fail += 1
-            logger.warning("HyperCLOVA X %s 실패 #%d id=%s: %s", kind, fail, element_id, exc)
-            if fail >= 3:
+            attempt += 1
+            logger.warning("HyperCLOVA X %s 실패 #%d id=%s: %s", kind, attempt, element_id, exc)
+            if attempt > _TRANSIENT_RETRIES:
                 logger.warning("FALLBACK 전환 id=%s", element_id)
                 resp = await fallback_optimize(prompt, max_tokens=fallback_max_tokens, kind=kind)
                 return resp, True
-    return "", True  # 도달하지 않음
 
 
 class BaseOpt:
@@ -164,93 +238,3 @@ class BaseOpt:
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
         raise NotImplementedError
-
-
-class VisualDraftOpt(BaseOpt):
-    """시각자료 3안 생성 공통 흐름(이미지·만화·차트). 하위 클래스는 프롬프트·라벨만 정의한다.
-
-    하위 클래스 설정 항목:
-      PROMPT             : {caption} 1개를 받는 프롬프트 문자열 (필수)
-      PREFILL            : 답변 프리필 (없으면 "")
-      METHODS            : [(render_mode, label), ...] 3안 (필수)
-      RULE_ID            : rule_trail 규정 id (필수)
-      EMPTY_MSG          : 캡션 없음 플레이스홀더
-      DEFAULT_LABEL      : 파싱 실패 시 단일안 라벨
-      KIND               : 로그용 유형명
-      STANDARD/QUALITY_TIMEOUT, FALLBACK_MAX_TOKENS, MAX_NEW_TOKENS
-    """
-
-    PROMPT: str = ""
-    PREFILL: str = ""
-    METHODS: list[tuple[str, str]] = []
-    RULE_ID: str = ""
-    EMPTY_MSG: str = "[처리 불가: 캡션 없음]"
-    DEFAULT_LABEL: str = "단일"
-    KIND: str = "시각자료"
-    STANDARD_TIMEOUT: float = 15.0
-    QUALITY_TIMEOUT: float = 60.0
-    FALLBACK_MAX_TOKENS: int = 300
-    MAX_NEW_TOKENS: int = 512
-    GROUND_NUMBERS: bool = False   # True면 초안에 원본 수치 누락 시 R5 표시(수치 변조 검출)
-
-    def _trail(self, text: str) -> list[RuleApplication]:
-        return [make_rule(self.RULE_ID)]
-
-    async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
-        caption = ext.corrected_text or ""
-        start = time.monotonic()
-
-        if not caption.strip():
-            return LLMOutput(
-                element_id=ext.element_id,
-                corrected_text=self.EMPTY_MSG,
-                render_mode="narrative",
-                routing_tier="FALLBACK",
-                processing_time_ms=0,
-                rule_trail=self._trail(self.EMPTY_MSG),
-            )
-
-        # ZERO/모델 미사용: 단일안으로 격리(생성 품질은 비ZERO에서만)
-        if routing_tier == "ZERO":
-            return self._build(ext.element_id, single_draft(caption[:120], "narrative", "원본"), "ZERO", 0)
-
-        tier, timeout = decide_tier_timeout(ext.ocr_confidence, self.STANDARD_TIMEOUT, self.QUALITY_TIMEOUT)
-        response, used_fb = await generate_with_retry(
-            self.PROMPT.format(caption=caption),
-            timeout=timeout, element_id=ext.element_id, kind=self.KIND,
-            prefill=self.PREFILL, max_new_tokens=self.MAX_NEW_TOKENS,
-            fallback_max_tokens=self.FALLBACK_MAX_TOKENS,
-        )
-        if used_fb:
-            tier = "FALLBACK"
-
-        drafts = parse_labeled_drafts(response, self.METHODS)
-        if not drafts:  # 파싱 실패 → 응답(또는 원본 캡션 전체) 단일안 — 캡션을 자르지 않는다
-            drafts = single_draft(response or caption, "narrative", self.DEFAULT_LABEL)
-
-        self._post_process(ext, caption, drafts)
-        elapsed_ms = int((time.monotonic() - start) * 1000)
-        return self._build(ext.element_id, drafts, tier, elapsed_ms)
-
-    def _post_process(self, ext: ExtractedContent, caption: str, drafts) -> None:
-        """초안 후처리 훅. GROUND_NUMBERS=True면 수치 누락 초안에 R5 표시(공통 안전망).
-
-        모델이 시각 캡션의 수치를 변조/누락(예: '3'→'5')해도 점역사가 R5로 검토하게 한다.
-        초안을 원본으로 덮어쓰지 않는다(방식별 수치 표현 차이 보존 — chart 방식2 등).
-        """
-        if self.GROUND_NUMBERS and any(not numbers_grounded(caption, d.text) for d in drafts):
-            logger.warning("수치 검증 경고 id=%s — 일부 초안에 원본 수치 누락 (R5)", ext.element_id)
-            ext.flags = list(getattr(ext, "flags", None) or []) + ["R5"]
-
-    def _build(self, element_id, drafts, tier, elapsed_ms) -> LLMOutput:
-        return LLMOutput(
-            element_id=element_id,
-            corrected_text=drafts[0].text,
-            render_mode=drafts[0].render_mode,
-            tn_text=drafts[0].text,
-            routing_tier=tier,
-            processing_time_ms=elapsed_ms,
-            rule_trail=self._trail(drafts[0].text),
-            drafts=drafts,
-            selected_idx=0,
-        )

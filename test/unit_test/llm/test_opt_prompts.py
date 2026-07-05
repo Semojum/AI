@@ -3,21 +3,14 @@ import pytest
 
 
 class TestPromptFormat:
-    def test_image_prompt_formats(self):
-        from app.ai.llm.image_opt import _PROMPT, _PREFILL
-        out = _PROMPT.format(caption="원 안에 삼각형")   # KeyError 나면 실패
-        assert "원 안에 삼각형" in out
-        assert _PREFILL.startswith("[방식1]")
+    def test_visual_drafts_prompt_formats(self):
+        # 시각자료 4안 공통 프롬프트는 {label}·{caption}을 받는다(KeyError 나면 실패).
+        from app.ai.llm.visual_drafts import _PROMPT, _PREFILL
+        out = _PROMPT.format(label="그림", caption="원 안에 삼각형")
+        assert "원 안에 삼각형" in out and "그림" in out
+        assert _PREFILL.startswith("[개조식]")   # 최적화 프롬프트: 개조식·줄글만 LLM 담당
 
-    def test_cartoon_is_rule_based(self):
-        # 만화는 자유 프롬프트가 아니라 규정 골격(§5.3) rule-based 조립이다.
-        from app.ai.llm.cartoon_opt import assemble_cartoon
-        text, indents = assemble_cartoon({"title": "T", "panels": [
-            {"order": 1, "dialogues": [{"speaker": "갑", "text": "안녕"}]}]})
-        assert "<!점역자주>만화<!/점역자주>" in text and "갑:안녕" in text
-        assert len(indents) == len(text.split("\n"))
-
-    @pytest.mark.parametrize("mod", ["text_opt", "table_opt", "chart_graph_opt"])
+    @pytest.mark.parametrize("mod", ["text_opt", "table_opt", "chart_graph_opt", "visual_drafts"])
     def test_other_opt_prompts_format(self, mod):
         import importlib
         m = importlib.import_module(f"app.ai.llm.{mod}")
@@ -26,8 +19,9 @@ class TestPromptFormat:
                 tmpl = getattr(m, name)
                 if not isinstance(tmpl, str) or "{" not in tmpl:
                     continue
-                # caption/text/table_text/ocr_confidence 등 흔한 필드로 포맷 시도(KeyError 없어야)
+                # 흔한 필드로 포맷 시도(KeyError 없어야) — label/caption/text/table_text 등
                 try:
-                    tmpl.format(caption="x", text="x", table_text="x", latex="x", ocr_confidence=0.5)
+                    tmpl.format(label="x", caption="x", text="x", table_text="x",
+                                latex="x", ocr_confidence=0.5)
                 except KeyError as e:
                     pytest.fail(f"{mod}.{name} 미이스케이프 중괄호: {e}")

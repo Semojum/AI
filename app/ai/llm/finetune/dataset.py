@@ -24,19 +24,19 @@ def _registry() -> dict[str, tuple[str, str]]:
     if _REGISTRY_CACHE:
         return _REGISTRY_CACHE
     # cartoon은 rule-based 골격 조립(§5.3)이라 프롬프트 기반 학습 대상이 아니다 — 레지스트리 제외.
+    # image·chart_graph의 설명문(개조식·줄글)은 공통 visual_drafts 프롬프트를 쓴다({label} 선치환).
     from app.ai.llm import (
-        chart_graph_opt,
         formula_opt,
-        image_opt,
         table_opt,
         text_opt,
+        visual_drafts,
     )
     _REGISTRY_CACHE.update({
         "text":        (text_opt._PROMPT_QUALITY, "text"),
         "formula":     (formula_opt._PROMPT, "latex"),
         "table":       (table_opt._PROMPT_TABLE_GRID, "table_text"),
-        "image":       (image_opt._PROMPT, "caption"),
-        "chart_graph": (chart_graph_opt._PROMPT, "caption"),
+        "image":       (visual_drafts._PROMPT.replace("{label}", "그림"), "caption"),
+        "chart_graph": (visual_drafts._PROMPT.replace("{label}", "그래프"), "caption"),
     })
     return _REGISTRY_CACHE
 

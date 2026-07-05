@@ -21,8 +21,6 @@ from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
 logger = logging.getLogger(__name__)
 
-_STANDARD_TIMEOUT = 15.0
-_QUALITY_TIMEOUT = 30.0
 
 
 def _min_trail(text: str) -> list[RuleApplication]:
@@ -129,7 +127,7 @@ class FormulaOpt(BaseOpt):
                 rule_trail=_min_trail(norm),
             )
 
-        tier, timeout = decide_tier_timeout(ext.ocr_confidence, _STANDARD_TIMEOUT, _QUALITY_TIMEOUT)
+        tier, timeout = decide_tier_timeout(ext.ocr_confidence)   # 요소당 상한 = config(작게)
         response, used_fb = await generate_with_retry(
             _PROMPT.format(latex=raw),
             timeout=timeout, element_id=ext.element_id, kind="수식",

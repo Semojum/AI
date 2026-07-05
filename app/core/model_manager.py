@@ -45,6 +45,14 @@ class ModelManager:
     # ── 내부 로더 ─────────────────────────────────────────────────
 
     def _load_hcxt(self) -> None:
+        if config.hcxt_backend == "vllm":
+            # 14B는 별도 vLLM 서버가 보유(AWQ self-host 권장). 파이프라인은 추론을 HTTP로 요청만
+            # 하므로 인프로세스 로드가 없다(VRAM은 서버가 사용). 추론 경로 = hcxt_client.vllm_generate.
+            self._gpu1_models["hcxt"] = None
+            self._gpu1_models["hcxt_tokenizer"] = None
+            logger.info("HCXT 백엔드=vLLM: 인프로세스 로드 생략 (서버 %s, 모델명 %s)",
+                        config.hcxt_vllm_url, config.hcxt_vllm_model)
+            return
         logger.info("HyperCLOVA X SEED Think 14B INT4 로드: %s", config.hcxt_model_path)
         try:
             from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -111,8 +119,11 @@ class ModelManager:
         return t
 
     def get_status(self) -> dict:
+        # vllm 백엔드는 별도 서버가 HCXT를 보유 → 사용 가능으로 본다(서버 다운 시 호출부가 폴백).
+        vllm = config.hcxt_backend == "vllm"
         return {
-            "hcxt_loaded": self._gpu1_models.get("hcxt") is not None,
+            "hcxt_loaded": vllm or (self._gpu1_models.get("hcxt") is not None),
+            "hcxt_backend": config.hcxt_backend,
             "extraction": "MinerU2.5-Pro (subprocess)",  # 레이아웃·OCR·표·수식
             "gpu_available": torch.cuda.is_available(),
             "gpu_count": torch.cuda.device_count() if torch.cuda.is_available() else 0,

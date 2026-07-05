@@ -1,24 +1,21 @@
-"""PART 9-2 — 차트/그래프 점역 최적화 (§6.4 규정 골격 + 2안).
+"""PART 9-2 — 차트/그래프 점역 최적화 (§6.4 규정 + 대체텍스트 4안).
 
-골격(rule-based): 제목 5칸(§6.3.3) + <!점역자주>{그래프유형}: {설명}<!/점역자주>(§6.3.4(1)).
-2안 (§6.4·QnA Q5):
-  [표 변환]   data_points를 "항목: 수치" 로 정리(rule-based, 데이터 多 권장 — 기본 선택)
-  [수학적 서술] 축 범위·단위 + 추세 1개를 문장으로 (축=전사, 추세=LLM/캡션)
-수치는 전사·보존(누락 시 R5). 데이터·축이 없으면 caption 폴백.
+시각자료 대체텍스트 4안(QA 2026-07-05) — 생략 / 짧은 제목 / 개조식 / 줄글.
+차트는 데이터가 있으면 개조식이 곧 '표 변환'(항목:수치 전사, §6.4·Q5)이고, 줄글은
+수학적 서술(축·추세). data_points/axes는 rule-based 전사, 캡션만 있으면 LLM이 채운다.
+수치는 보존(누락 시 R5).
 """
 
 from __future__ import annotations
 
 from app.ai.braille.regulations import make_rule
-from app.ai.llm.base_opt import BaseOpt, decide_tier_timeout, generate_with_retry
+from app.ai.llm.base_opt import BaseOpt
 from app.ai.llm.base_opt import numbers_grounded as _verify_numbers  # noqa: F401 (테스트가 import)
+from app.ai.llm.visual_drafts import PROSE_IDX, build_visual_drafts
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
-from app.schemas.content import Draft, ExtractedContent, LLMOutput, RuleApplication
+from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
 _RULE_ID = "JAJAK-6.4.1"   # 그래프 골격 (점자 자료 제작 지침 §6.4)
-_STANDARD_TIMEOUT = 15.0
-_QUALITY_TIMEOUT = 30.0
-_METHODS = ["표 변환", "수학적 서술"]   # §6.4·Q5 — 규정이 허용하는 2안만
 
 # 차트 하위유형 → 한국어 유형 라벨(전사용)
 _SUBTYPE_LABEL = {
@@ -26,15 +23,8 @@ _SUBTYPE_LABEL = {
     "scatter": "산점도", "pictograph": "그림그래프", "number_line": "수직선", "area": "선그래프",
 }
 
-# 수학적 서술 LLM 프롬프트(추세 1개). 설명문만 — 유형 라벨·점역자주는 코드가 붙임.
-_PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가입니다.
-다음 그래프를 수학적으로 1문장 서술하세요(축 범위·단위 + 가장 중요한 추세 1개). 설명문만, 유형 라벨·점역자주 금지.
-수치는 원문 그대로(추가·누락 금지).
 
-그래프: {caption}"""
-
-
-def _min_trail(text: str) -> list[RuleApplication]:
+def _trail() -> list[RuleApplication]:
     return [make_rule(_RULE_ID)]
 
 
@@ -42,19 +32,21 @@ def _label(structure: dict) -> str:
     return _SUBTYPE_LABEL.get((structure.get("chart_subtype") or "").strip(), "그래프")
 
 
-def _table_description(structure: dict) -> str:
-    """data_points → '항목: 수치' 표 변환 설명(rule-based 전사). §6.4·Q5."""
-    dps = structure.get("data_points") or []
+def _data_items(structure: dict) -> list[tuple[int, str]]:
+    """data_points → 개조식 항목 '항목: 수치'(rule-based 전사, §6.4·Q5 표 변환). 축은 머리 항목."""
+    items: list[tuple[int, str]] = []
+    axes = _axes_phrase(structure)
+    if axes:
+        items.append((0, axes))
     unit = ((structure.get("axes") or {}).get("y") or {}).get("unit", "") or ""
-    parts = []
-    for dp in dps:
+    for dp in structure.get("data_points") or []:
         label, value = dp.get("label", ""), dp.get("value", "")
-        parts.append(f"{label}: {value}{unit}".strip())
-    return ", ".join(parts)
+        items.append((1 if axes else 0, f"{label}: {value}{unit}".strip()))
+    return items
 
 
 def _axes_phrase(structure: dict) -> str:
-    """축 라벨·단위 전사 구절(수학적 서술의 rule-based 부분)."""
+    """축 라벨·단위 전사 구절."""
     axes = structure.get("axes") or {}
     x, y = axes.get("x") or {}, axes.get("y") or {}
     bits = []
@@ -65,21 +57,8 @@ def _axes_phrase(structure: dict) -> str:
     return ", ".join(bits)
 
 
-def assemble_chart(label: str, title: str, description: str) -> tuple[str, list[int]]:
-    """§6.4 골격 조립 → (텍스트, 줄별 들여쓰기). rule-based."""
-    lines: list[str] = []
-    indents: list[int] = []
-    if title:
-        lines.append(title); indents.append(5)                      # §6.3.3
-    desc = (description or "").strip()
-    body = (f"<!점역자주>{label}: {desc}<!/점역자주>" if desc
-            else f"<!점역자주>{label} 생략<!/점역자주>")            # §6.3.4(1)
-    lines.append(body); indents.append(0)
-    return "\n".join(lines), indents
-
-
 class ChartGraphOpt(BaseOpt):
-    """ExtractedContent 목록 → LLMOutput 목록 (차트/그래프). 골격 + 2안(표 변환/수학적 서술)."""
+    """ExtractedContent 목록 → LLMOutput 목록 (차트/그래프). 대체텍스트 4안."""
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
         st = ext.structure or {}
@@ -87,53 +66,39 @@ class ChartGraphOpt(BaseOpt):
         title = (st.get("title") or "").strip()
         caption = (st.get("caption_src") or ext.corrected_text or "").strip()
 
-        table_desc = _table_description(st)        # rule-based(데이터 전사)
+        data_items = _data_items(st)               # rule-based(데이터 전사)
         axes = _axes_phrase(st)
 
-        if not caption and not table_desc and not axes:
+        if not caption and not data_items and not axes:
             return LLMOutput(element_id=ext.element_id, corrected_text="[처리 불가: 차트 캡션 없음]",
                              render_mode="narrative", routing_tier="FALLBACK", processing_time_ms=0,
-                             rule_trail=_min_trail(""))
+                             rule_trail=_trail())
 
-        # 수학적 서술: 비ZERO면 LLM 추세, 아니면 축+캡션 규칙 문장
-        tier = routing_tier
-        if routing_tier == "ZERO" or not caption:
-            math_desc = ", ".join(p for p in (axes, caption) if p) or caption
-        else:
-            tier, timeout = decide_tier_timeout(ext.ocr_confidence, _STANDARD_TIMEOUT, _QUALITY_TIMEOUT)
-            response, used_fb = await generate_with_retry(
-                _PROMPT.format(caption=caption), timeout=timeout, element_id=ext.element_id,
-                kind="차트", max_new_tokens=256, fallback_max_tokens=256,
-            )
-            if used_fb:
-                tier = "FALLBACK"
-            math_desc = (response.strip() or ", ".join(p for p in (axes, caption) if p))
+        # 데이터가 있으면 개조식=표 변환(rule-based). 줄글(수학적 서술)은 LLM(또는 규칙 폴백).
+        struct_outline = data_items or None
+        # ZERO/캡션 없음: 생성 없이 축+데이터를 rule-based 줄글로(수치 보존).
+        rule_prose = ", ".join(p for p in ([axes] + [t for _, t in data_items]) if p) or caption
+        struct_prose = rule_prose if (routing_tier == "ZERO" or not caption) else None
+        drafts, selected_idx, line_indents, tier = await build_visual_drafts(
+            ext, routing_tier, label=label, title=title, caption=caption, kind="차트",
+            struct_outline=struct_outline, struct_prose=struct_prose,
+        )
 
-        # 2안 구성: [표 변환](데이터 있으면) + [수학적 서술]. 데이터 없으면 수학적 서술 단일.
-        variants: list[tuple[str, str]] = []
-        if table_desc:
-            variants.append(("표 변환", table_desc))
-        variants.append(("수학적 서술", math_desc))
-
-        # 수치 그라운딩 — 원본(표 변환/캡션)의 수치가 각 안에 보존되는지(누락 시 R5)
-        ref = table_desc or caption
-        if ref and any(not _verify_numbers(ref, d) for _, d in variants):
+        # 수치 그라운딩 — LLM이 생성한 줄글에서 원본 수치가 누락/변조됐는지(누락 시 R5).
+        # ZERO/rule-based 줄글은 전사라 검사 불필요(생성 환각 위험 없음).
+        ref = ", ".join(t for _, t in data_items) or caption
+        if tier not in ("ZERO",) and struct_prose is None and ref and not _verify_numbers(ref, drafts[PROSE_IDX].text):
             ext.flags = list(getattr(ext, "flags", None) or []) + ["R5"]
 
-        drafts: list[Draft] = []
-        indents: list[int] = []
-        for i, (lab, desc) in enumerate(variants):
-            text, indents = assemble_chart(label, title, desc)
-            drafts.append(Draft(option=i + 1, text=text, render_mode="narrative", label=lab))
         return LLMOutput(
             element_id=ext.element_id,
-            corrected_text=drafts[0].text,
+            corrected_text=drafts[selected_idx].text,
             render_mode="narrative",
-            tn_text=drafts[0].text,
+            tn_text=drafts[selected_idx].text,
             routing_tier=tier,
             processing_time_ms=0,
-            rule_trail=_min_trail(drafts[0].text),
+            rule_trail=_trail(),
             drafts=drafts,
-            selected_idx=0,
-            line_indents=indents,
+            selected_idx=selected_idx,
+            line_indents=line_indents,
         )

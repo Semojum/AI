@@ -29,8 +29,7 @@ from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
 logger = logging.getLogger(__name__)
 
-_QUALITY_TIMEOUT = 90.0
-_TAG_TIMEOUT = 30.0
+# 요소당 HCXT 상한은 config에서(단일 GPU 직렬 — 작게, 페이지 예산 보호). 구 90s/30s는 과도.
 
 # ── 점자 레이아웃 태깅 (LLM이 점역 직전 텍스트에 인라인 태그 삽입) ───────────────
 # 점역자주(BBPG-1.2.6)·글상자 테두리(BBPG-1.2.5)·빈칸을 LLM이 삽입하고 translator가
@@ -95,7 +94,7 @@ async def _tag_layout(text: str) -> str:
     if model_manager.get_status().get("hcxt_loaded"):
         try:
             out = _strip_fence(await hcxt_optimize(
-                prompt, _TAG_TIMEOUT, max_new_tokens=max_tokens, kind="태깅"))
+                prompt, config.hcxt_element_timeout_seconds, max_new_tokens=max_tokens, kind="태깅"))
             if _validate_tagging(text, out):
                 return out
             logger.info("HCXT 태깅 검증 실패 → GPT-4o 폴백")
@@ -177,7 +176,7 @@ class TextOpt(BaseOpt):
         max_new_tokens = min(512, max(64, int(len(text) * 1.3)))
         response, used_fb = await generate_with_retry(
             _PROMPT_QUALITY.format(text=text),
-            timeout=_QUALITY_TIMEOUT, element_id=ext.element_id, kind="텍스트",
+            timeout=config.hcxt_quality_timeout_seconds, element_id=ext.element_id, kind="텍스트",
             prefill=_PREFILL, max_new_tokens=max_new_tokens, fallback_max_tokens=1024,
             transform=_extract,
         )

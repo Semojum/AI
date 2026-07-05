@@ -5,15 +5,44 @@ LLMOutput.corrected_text → translator.translate_tagged_text() → BrailleOutpu
 
 from __future__ import annotations
 
+import re
+
 from app.ai.braille.isolation import safe_translate
-from app.ai.braille.regulations import make_rule_at
+from app.ai.braille.regulations import make_rule, make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import (
     box_borders_from_source,
     translate_with_breaks,
     tn_marker_spans,
 )
-from app.schemas.content import BoxBorder, BrailleOutput, LLMOutput
+from app.schemas.content import BoxBorder, BrailleOutput, LLMOutput, RuleApplication
+
+# 인라인 태그(<!이름>) 제거 — 숫자·문장부호 탐지는 점역 대상 '내용'만 본다.
+_TAG_TOKEN_RE = re.compile(r"<!(/?)([^>]+)>")
+# 문장 부호(원본 기준) — 있으면 문장부호 규정(KBR-6.13.49)을 블록 규정으로 표시.
+_PUNCT_RE = re.compile(r"[.?!,;:…·•（）()\[\]{}「」『』“”‘’\"'—~]")
+_NUM_INDICATOR = "⠼"   # 수표(kor_math_rules._NUMBER_INDICATOR와 동일)
+
+
+def _content_rules(source: str, lines: list[str]) -> list[RuleApplication]:
+    """점역된 '내용'에 적용된 구체 규정(수표·문장부호)을 rule_trail로 emit.
+
+    포괄 규칙(KBR-0.1)·조판 규칙은 정책상 제외하고(태민 2026-06-01), 점역사가 규정으로
+    확인할 실제 변환만 기록한다. FE 규정 패널이 평문에서도 비지 않도록 하는 핵심:
+      - 수표(⠼): 원본에 아라비아 숫자가 있으면 출력 점자의 ⠼ 위치를 정밀 span으로(KBR-5.11.40).
+      - 문장부호: 원본에 문장부호가 있으면 블록 규정(line_no=-1)으로(KBR-6.13.49).
+    """
+    clean = _TAG_TOKEN_RE.sub("", source or "")
+    joined = "\n".join(lines)
+    rules: list[RuleApplication] = []
+    if any(ch.isdigit() for ch in clean):   # 수표는 원본에 숫자가 있을 때만(오탐 방지)
+        i = joined.find(_NUM_INDICATOR)
+        while i != -1:
+            rules.append(make_rule_at("KBR-5.11.40", lines, i, i + 1, tag="number_sign"))
+            i = joined.find(_NUM_INDICATOR, i + 1)
+    if _PUNCT_RE.search(clean):
+        rules.append(make_rule("KBR-6.13.49", tag="punctuation"))
+    return rules
 
 
 class TextBraille:
@@ -40,6 +69,8 @@ class TextBraille:
             make_rule_at(rule_id, lines, s, e, tag="symbol")
             for s, e, rule_id in symbol_rule_spans(opt.corrected_text, joined)
         ]
+        # 수표·문장부호 규정 — 평문에서도 FE 규정 패널이 비지 않게 실제 변환을 기록.
+        trail += _content_rules(opt.corrected_text, lines)
         box_borders = [
             BoxBorder(kind=kind, level=level, title=title)
             for kind, level, title in box_borders_from_source(opt.corrected_text)

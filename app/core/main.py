@@ -92,6 +92,11 @@ async def main() -> None:
     else:
         logger.info("MinerU 영구 서비스 미사용 — 요청마다 CLI(폴백)")
 
+    # HCXT 백엔드가 vLLM이면 서버 헬스체크·(옵션)자동 기동. transformers(기본)면 no-op.
+    from app.ai.llm import hcxt_service
+    if await asyncio.to_thread(hcxt_service.ensure_started):
+        logger.info("HCXT vLLM 서버 사용(점역 최적화 가속)")
+
     await asyncio.gather(_run_grpc(), _run_rest())
 
 

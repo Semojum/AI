@@ -4,6 +4,7 @@ merged_layout + 캡셔닝 결과를 읽기 순서대로 병합하여
 debug=True 시 최종 order 기준 layout_viz.jpg를 test/results/page_{no:03d}/에 저장.
 """
 import json
+import time
 from pathlib import Path
 
 import fitz
@@ -11,6 +12,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 from app.ai.captioning.captioner import caption
 from app.ai.captioning.classifier import classify
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 _VISUAL_TYPES = {"image", "cartoon", "chart_graph"}
 _HF_TYPES = {"header_footer", "page_number"}
@@ -150,7 +154,11 @@ def build(
     order = 1
     for el in ordered:
         if el["type"] in _VISUAL_TYPES:
+            # 시각요소별 캡셔닝(GPT-4o 분류+설명) 소요시간 로깅 — "이미지당 몇 초" 디버깅용.
+            _t = time.monotonic()
             content, el_type = _do_caption(el)
+            logger.info("    캡셔닝 %s(%s→%s) %.1fs", str(el.get("element_id", ""))[:8],
+                        el["type"], el_type, time.monotonic() - _t)
         else:
             content = el.get("content", "")
             el_type = el["type"]

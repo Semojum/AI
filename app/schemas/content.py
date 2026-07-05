@@ -68,9 +68,9 @@ class LLMOutput(BaseModel):
 
     routing_tier:
         ZERO     → 모델 없음 (PyMuPDF 직접 추출, 변환 없음)
-        STANDARD → HyperCLOVA X SEED Think 14B (15s 제한)
-        QUALITY  → HyperCLOVA X SEED Think 14B (30s 제한)
-        FALLBACK → GPT-5.x / o3 API (45s 제한, 비율 < 15% 목표)
+        STANDARD → HyperCLOVA X SEED Think 14B (요소당 상한 = config.hcxt_element_timeout_seconds)
+        QUALITY  → HyperCLOVA X SEED Think 14B (요소당 상한 = config.hcxt_quality_timeout_seconds)
+        FALLBACK → GPT-4o API (45s 제한). HCXT 타임아웃·페이지 예산 소진 시 병렬 폴백.
     """
 
     element_id: UUID

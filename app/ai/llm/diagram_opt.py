@@ -42,13 +42,21 @@
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import BaseOpt
-from app.ai.llm.draft_utils import ensure_tn_prefix
+from app.ai.llm.visual_drafts import (
+    OUTLINE_IDX,
+    LABELS,
+    build_visual_drafts,
+    omission_draft,
+    prose_draft,
+    title_draft,
+)
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
-from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
+from app.schemas.content import Draft, ExtractedContent, LLMOutput, RuleApplication
 
 _RULE_ID = "JAJAK-6.6.1"   # 도표 골격 (점자 자료 제작 지침 §6.6)
 _TITLE_INDENT = 5         # §6.3.3(1)
@@ -330,12 +338,32 @@ _ASSEMBLERS = {
 }
 
 
+_TAG_RE = re.compile(r"<!(/?)([^>]+)>")
+
+
+def _skeleton_prose(text: str) -> str:
+    """§6.6 골격 텍스트 → 줄글(태그·글상자 테두리 제거 후 항목을 쉼표로 이음). rule-based."""
+    parts: list[str] = []
+    for ln in text.split("\n"):
+        clean = _TAG_RE.sub("", ln).strip()
+        if clean and not set(clean) <= {"⠿", " "}:   # 빈 테두리 줄 제외
+            parts.append(clean)
+    return ", ".join(parts)
+
+
 class DiagramOpt(BaseOpt):
-    """ExtractedContent 목록 → LLMOutput 목록 (개념도·흐름도). 규정 골격 rule-based 조립(단일 출력)."""
+    """ExtractedContent 목록 → LLMOutput 목록 (개념도·흐름도 등 도표). 대체텍스트 4안.
+
+    도표는 구조가 §6.6 골격(개조식)으로 결정적 전사되므로 개조식 초안은 그 골격을 그대로 쓰고,
+    생략·짧은 제목·줄글을 더해 4안을 만든다(모두 rule-based — 구조가 있으면 LLM 미사용).
+    구조가 없으면 캡션으로 공통 4안 빌더에 위임(제목·개조식·줄글을 LLM이 채움).
+    """
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
         structure = ext.structure or {}
         subtype = _subtype(ext)
+        label = _TYPE_LABEL.get(subtype, "도표")
+        title = (structure.get("title") or "").strip()
 
         assembled: Optional[tuple[str, list[int]]] = None
         entry = _ASSEMBLERS.get(subtype)
@@ -343,19 +371,28 @@ class DiagramOpt(BaseOpt):
             assembled = entry[0](structure)
 
         if assembled is not None:
-            text, indents = assembled
+            skeleton_text, skeleton_indents = assembled
+            # 개조식 = §6.6 골격 그대로(글상자 테두리·정밀 들여쓰기 보존). 나머지 3안은 파생.
+            drafts = [
+                omission_draft(label),
+                title_draft(label, title),
+                Draft(option=3, text=skeleton_text, render_mode="narrative", label=LABELS[OUTLINE_IDX]),
+                prose_draft(label, _skeleton_prose(skeleton_text)),
+            ]
             return LLMOutput(
                 element_id=ext.element_id,
-                corrected_text=text,
+                corrected_text=skeleton_text,
                 render_mode="narrative",
-                tn_text=text,
+                tn_text=skeleton_text,
                 routing_tier=routing_tier,
                 processing_time_ms=0,
-                rule_trail=_min_trail(text),
-                line_indents=indents,
+                rule_trail=_min_trail(skeleton_text),
+                drafts=drafts,
+                selected_idx=OUTLINE_IDX,
+                line_indents=skeleton_indents,
             )
 
-        # 폴백: 구조 없음 → caption 단일 점역자주(유형 라벨 보존)
+        # 폴백: 구조 없음 → 캡션으로 공통 4안 빌더(제목·개조식·줄글 LLM)
         cap = (ext.corrected_text or "").strip()
         if not cap:
             return LLMOutput(
@@ -366,14 +403,18 @@ class DiagramOpt(BaseOpt):
                 processing_time_ms=0,
                 rule_trail=_min_trail(""),
             )
-        label = _TYPE_LABEL.get(subtype, "도표")
-        tn = ensure_tn_prefix(f"{label}: {cap}")
+        drafts, selected_idx, line_indents, tier = await build_visual_drafts(
+            ext, routing_tier, label=label, caption=cap, kind="도표",
+        )
         return LLMOutput(
             element_id=ext.element_id,
-            corrected_text=tn,
+            corrected_text=drafts[selected_idx].text,
             render_mode="narrative",
-            tn_text=tn,
-            routing_tier=routing_tier,
+            tn_text=drafts[selected_idx].text,
+            routing_tier=tier,
             processing_time_ms=0,
-            rule_trail=_min_trail(tn),
+            rule_trail=_min_trail(drafts[selected_idx].text),
+            drafts=drafts,
+            selected_idx=selected_idx,
+            line_indents=line_indents,
         )

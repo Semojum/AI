@@ -23,8 +23,6 @@ from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
 logger = logging.getLogger(__name__)
 
-_STANDARD_TIMEOUT = 15.0
-_QUALITY_TIMEOUT = 30.0
 _NESTED_IMAGE_TYPES = {"image", "picture", "photo", "그림", "사진", "illustration"}
 
 
@@ -248,7 +246,7 @@ class TableOpt(BaseOpt):
                 nested_text=nested_text,
             )
 
-        tier, timeout = decide_tier_timeout(ext.ocr_confidence, _STANDARD_TIMEOUT, _QUALITY_TIMEOUT)
+        tier, timeout = decide_tier_timeout(ext.ocr_confidence)   # 요소당 상한 = config(작게)
         if is_irregular:
             prompt = _PROMPT_IRREGULAR.format(text=table_text[:500])
         else:

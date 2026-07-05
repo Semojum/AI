@@ -19,13 +19,33 @@ class Settings(BaseSettings):
     app_env: str = "production"  # "debug" 시 중간 산출물 JSON 저장
 
     # ── 타임아웃 / 임계값 ─────────────────────────────────────────
-    page_timeout_seconds: float = 300.0
+    page_timeout_seconds: float = 180.0   # 페이지 하드 타임아웃(C7). 운영 정본 = 180초.
     # MinerU 추출 서브 타임아웃(초). 0 = 자동(페이지 예산 - 60초 여유, 최소 60초).
     # 병리적으로 무거운 페이지(C9)에서 MinerU가 페이지 예산을 다 태우고 C7 BLOCKED로
     # 죽는 대신, 추출을 먼저 끊고 텍스트레이어 폴백으로 부분 초안을 살리기 위한 예산.
     mineru_timeout_seconds: float = 0.0
     ocr_confidence_threshold: float = 0.90
     max_grpc_message_mb: int = 20
+
+    # ── HCXT(단일 GPU 직렬 추론) 예산 ─────────────────────────────
+    # HCXT는 GPU 하나를 잠그고 요소를 하나씩 처리하므로, 요소당 시간이 크면 페이지 예산을
+    # 금방 소진한다(요소 N개 × 상한 = 페이지 초과). 요소당 상한은 작게 두고, 초과·저품질은
+    # GPT-4o(락 밖, 병렬)로 폴백한다.
+    hcxt_element_timeout_seconds: float = 8.0    # STANDARD 요소당 상한(초)
+    hcxt_quality_timeout_seconds: float = 14.0   # QUALITY(저신뢰 스캔) 요소당 상한(초)
+    # 페이지 누적 HCXT 상한 = page_timeout × 이 비율. 초과 후 요소는 HCXT를 건너뛰고
+    # 곧바로 GPT-4o 병렬 폴백 → 직렬 HCXT가 페이지 예산을 독점하지 못하게 한다.
+    hcxt_page_budget_ratio: float = 0.55
+
+    # ── HCXT 추론 백엔드 ─────────────────────────────────────────
+    # "transformers"(기본): 인프로세스 bitsandbytes 4bit(단일 GPU 직렬, 락 필요).
+    # "vllm": 별도 vLLM OpenAI 호환 서버로 오프로드 — AWQ 양자화 모델 self-host 권장
+    #   (bnb는 엔진 바꿔도 이득 없음, 실측 확인). 서버가 배칭/동시성 처리 → 인프로세스 GPU 락·
+    #   페이지 누적 예산 불필요, 요소들이 병렬 추론된다. 파이프라인은 토크나이저만 로드(14B는 서버).
+    hcxt_backend: str = "transformers"
+    hcxt_vllm_url: str = "http://127.0.0.1:8100/v1"   # vLLM OpenAI 호환 엔드포인트
+    hcxt_vllm_model: str = "hcxt"                       # --served-model-name 값
+    hcxt_vllm_serve_cmd: str = ""                       # 비면 외부 서버 사용, 있으면 이 명령으로 자동 기동
 
     # ── 모델 경로 ─────────────────────────────────────────────────
     qwen3_vl_model_path: str = "/models/qwen3-vl-8b-awq"

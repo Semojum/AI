@@ -30,7 +30,14 @@ from app.schemas.layout import BBoxItem, DocumentMeta, LayoutResult
 from app.schemas.quality import CriticalError, QualityReport
 from app.schemas.task import PageTask
 from app.utils.logger import get_logger
-from app.utils.req_log import api_summary, stage, start_request
+from app.utils.req_log import (
+    api_summary,
+    breakdown_lines,
+    elapsed,
+    set_hcxt_budget,
+    stage,
+    start_request,
+)
 
 logger = get_logger(__name__)
 
@@ -605,6 +612,33 @@ def _type_breakdown(layout: LayoutResult) -> str:
     return "·".join(f"{k}{v}" for k, v in c.items())
 
 
+_chain_done = 0  # 완료 체인 카운터(진행도 [n/total] 표기용, 요청 내 단일 루프라 안전)
+
+
+async def _run_chain_logged(label: str, elems: list, factory, idx: int, total: int) -> ChainResult:
+    """한 체인을 실행하며 세부 파트 진행도·소요시간을 로그로 남긴다(요소 있는 체인만 호출).
+
+    체인은 asyncio.gather로 동시 실행되므로 [n/total]은 '완료 순서'다. 예외는 gather가
+    return_exceptions=True로 잡도록 그대로 올린다(요소 격리 정책 유지).
+    """
+    global _chain_done
+    if idx == 0:
+        _chain_done = 0
+    from app.utils.req_log import step
+    t0 = time.monotonic()
+    try:
+        result = await factory(elems)
+    except Exception as exc:
+        _chain_done += 1
+        logger.error("    [%d/%d] %s 실패(%.1fs): %s", _chain_done, total, label,
+                     time.monotonic() - t0, exc)
+        raise
+    _chain_done += 1
+    n_llm = len(result[1]) if isinstance(result, tuple) else 0
+    step(_chain_done, total, label, f"{len(elems)}요소→{n_llm}블록 {time.monotonic() - t0:.1f}s")
+    return result
+
+
 async def _run_pipeline(task: PageTask) -> dict:
     page_id = f"p_{task.page_no:03d}"
 
@@ -666,16 +700,31 @@ async def _run_pipeline(task: PageTask) -> dict:
     )
     include_braille = task.mode == "c"
 
-    with stage("점역(7체인)") as st:
+    # 체인 팩토리(라벨 → coroutine). _run_formula_chain만 layout 인자가 없어 시그니처가 달라
+    # 람다로 통일한다. 요소가 있는 체인만 활성화해 로그·연산을 줄인다.
+    _factory = {
+        "텍스트": (_TEXT_TYPES, lambda e: _run_text_chain(e, layout_result, routing_tier, task, include_braille)),
+        "수식": ({"formula"}, lambda e: _run_formula_chain(e, routing_tier, task, include_braille)),
+        "표": ({"table"}, lambda e: _run_table_chain(e, layout_result, routing_tier, task, include_braille)),
+        "그림": ({"image"}, lambda e: _run_image_chain(e, layout_result, routing_tier, task, include_braille)),
+        "만화": ({"cartoon"}, lambda e: _run_cartoon_chain(e, layout_result, routing_tier, task, include_braille)),
+        "차트": ({"chart_graph"}, lambda e: _run_chart_graph_chain(e, layout_result, routing_tier, task, include_braille)),
+        "도표": ({"diagram"}, lambda e: _run_diagram_chain(e, layout_result, routing_tier, task, include_braille)),
+    }
+    active = [(label, _collect(layout_result, ext_map, types), fn)
+              for label, (types, fn) in _factory.items()
+              if _collect(layout_result, ext_map, types)]
+
+    # HCXT(단일 GPU 직렬)가 페이지 예산을 독점하지 못하게 누적 상한을 건다. 남은 페이지 시간
+    # (추출 경과 반영)과 config 비율 중 작은 값. 초과분 요소는 GPT-4o(병렬)로 폴백.
+    _remaining = config.page_timeout_seconds - elapsed() - 5.0   # 조판·응답 여유 5s
+    set_hcxt_budget(min(config.page_timeout_seconds * config.hcxt_page_budget_ratio, _remaining))
+
+    with stage("점역", gpu=True) as st:
         st.note = _type_breakdown(layout_result)
         chain_results = await asyncio.gather(
-            _run_text_chain(_collect(layout_result, ext_map, _TEXT_TYPES), layout_result, routing_tier, task, include_braille),
-            _run_formula_chain(_collect(layout_result, ext_map, {"formula"}), routing_tier, task, include_braille),
-            _run_table_chain(_collect(layout_result, ext_map, {"table"}), layout_result, routing_tier, task, include_braille),
-            _run_image_chain(_collect(layout_result, ext_map, {"image"}), layout_result, routing_tier, task, include_braille),
-            _run_cartoon_chain(_collect(layout_result, ext_map, {"cartoon"}), layout_result, routing_tier, task, include_braille),
-            _run_chart_graph_chain(_collect(layout_result, ext_map, {"chart_graph"}), layout_result, routing_tier, task, include_braille),
-            _run_diagram_chain(_collect(layout_result, ext_map, {"diagram"}), layout_result, routing_tier, task, include_braille),
+            *(_run_chain_logged(label, elems, fn, i, len(active))
+              for i, (label, elems, fn) in enumerate(active)),
             return_exceptions=True,
         )
 
@@ -898,6 +947,8 @@ async def run(task: PageTask) -> dict:
             result.get("status"), elapsed_ms / 1000, api_summary(), n_braille,
             task.job_id, task.page_no, task.mode,
         )
+        for _line in breakdown_lines():   # 파트별 LLM 사용 내역(디버깅·비용 추적)
+            logger.info(_line)
         _record_metrics(result, elapsed_ms)
         return result
 

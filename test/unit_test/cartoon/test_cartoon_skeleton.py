@@ -1,6 +1,7 @@
-"""만화 rule-based 골격(§5.3) 회귀 — 구조화 입력 → 규정 형식 조립 + 줄별 들여쓰기.
+"""만화 대체텍스트 4안 회귀 — 생략/짧은 제목/개조식/줄글 (QA 2026-07-05).
 
-§5.3.1(1) 제목 5칸·§5.3.3(1) 장면 5칸·§5.3.3(2)(3) 대사 3칸·§6.3.4(3) 화자불명 말풍선.
+개조식은 §5.3 골격(장면·대사 전사): §5.3.3(1) 장면·§5.3.3(2)(3) 대사·§6.3.4(3) 화자불명 말풍선.
+ZERO 티어는 LLM 미사용(결정적).
 """
 from __future__ import annotations
 
@@ -9,10 +10,11 @@ from uuid import uuid4
 
 from app.ai.braille.cartoon_braille import CartoonBraille
 from app.ai.braille.layout_braille import LayoutBraille
-from app.ai.llm.cartoon_opt import CartoonOpt, assemble_cartoon
-from app.utils.braille_back import decode
+from app.ai.llm.cartoon_opt import CartoonOpt
+from app.ai.llm.visual_drafts import LABELS
 from app.schemas.content import ExtractedContent
 from app.schemas.layout import BBoxItem, LayoutResult
+from app.utils.braille_back import decode
 
 _STRUCT = {
     "title": "우정",
@@ -23,47 +25,51 @@ _STRUCT = {
 }
 
 
-class TestAssemble:
-    def test_골격_줄_들여쓰기(self):
-        text, indents = assemble_cartoon(_STRUCT)
-        lines = text.split("\n")
-        assert len(indents) == len(lines)
-        assert lines[0] == "<!점역자주>만화<!/점역자주> 우정" and indents[0] == 5   # §5.3.1(1)
-        assert "<!점역자주>장면 1<!/점역자주>" in lines                             # §5.3.3(1)
-        assert indents[lines.index("<!점역자주>장면 1<!/점역자주>")] == 5
-        assert "학생:안녕?" in lines and indents[lines.index("학생:안녕?")] == 3     # §5.3.3(2)(3)
-        assert "말풍선:반가워" in lines                                             # §6.3.4(3) 화자 불명
+class TestFourDrafts:
+    def test_4안_라벨(self):
+        ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
+        opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
+        assert [d.label for d in opt.drafts] == list(LABELS)
+        assert opt.selected_idx == 2                                   # 기본=개조식
 
-    def test_단일장면은_장면번호_없음(self):
-        text, _ = assemble_cartoon({"title": "T", "panels": [{"order": 1, "dialogues": []}]})
-        assert "장면 1" not in text
+    def test_생략안(self):
+        ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
+        opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
+        assert opt.drafts[0].text == "<!점역자주>만화 생략<!/점역자주>"
+
+    def test_개조식_장면_대사_전사(self):
+        ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
+        outline = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0].drafts[2].text
+        assert "장면 1" in outline                                     # §5.3.3(1)
+        assert "학생:안녕?" in outline                                 # §5.3.3(2)(3) 대사 전사
+        assert "말풍선:반가워" in outline                              # §6.3.4(3) 화자 불명
+
+    def test_구조없음_캡션_4안(self):
+        ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, corrected_text="두 컷 만화")
+        opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
+        assert len(opt.drafts) == 4
+        assert "두 컷 만화" in opt.drafts[1].text                      # 캡션 → 짧은 제목
+
+    def test_전부_없음_처리불가(self):
+        ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, corrected_text="")
+        opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
+        assert "[처리 불가" in opt.corrected_text
 
 
 class TestEndToEnd:
-    def test_조판_줄별_들여쓰기(self, tmp_path, monkeypatch):
+    def test_조판_역점역_내용(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         eid = uuid4()
         ext = ExtractedContent(element_id=eid, ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))
-        assert opt[0].line_indents is not None                       # 골격 줄별 들여쓰기 전달
+        assert opt[0].line_indents is not None                         # 개조식 골격 들여쓰기
         bo = CartoonBraille().translate(opt)
+        assert len(bo[0].drafts) == 4
         lr = LayoutResult(page_id="p", elements=[
             BBoxItem(element_id=eid, type="cartoon", bbox=(0, 0, 0, 0), reading_order=1)])
         LayoutBraille().layout(bo, page_no=1, job_id="cartoon", layout_result=lr)
         result = (tmp_path / "storage/jobs/cartoon/temp/page_001/result/001_result.txt"
-                  ).read_text(encoding="utf-8").split("\n")
-        dec = decode("\n".join(result))
+                  ).read_text(encoding="utf-8")
+        dec = decode(result)
         for word in ("만화", "우정", "안녕", "반가워", "장면"):
             assert word in dec, f"역점역에 '{word}' 없음: {dec}"
-        content = [l for l in result if l.strip()]
-        assert any(l.startswith("     ") and not l.startswith("      ") for l in content)  # 5칸(제목/장면)
-        assert any(l.startswith("   ") and not l.startswith("    ") for l in content)      # 3칸(대사)
-
-
-class TestFallback:
-    def test_구조_없으면_caption_단일_점역자주(self):
-        eid = uuid4()
-        ext = ExtractedContent(element_id=eid, ocr_confidence=1.0, corrected_text="두 컷 만화")
-        opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))
-        assert opt[0].line_indents is None
-        assert "<!점역자주>" in opt[0].tn_text and "두 컷 만화" in opt[0].tn_text

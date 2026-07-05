@@ -80,7 +80,7 @@ class ChartGraphBraille:
                 element_id=opt.element_id,
                 braille_lines=out_drafts[sel].braille_lines,
                 break_points=draft_breaks[sel],
-                rule_trail=list(out_drafts[sel].rule_trail),
+                rule_trail=list(opt.rule_trail) + list(out_drafts[sel].rule_trail),
                 drafts=out_drafts,
                 selected_idx=sel,
                 box_borders=_box_borders(opt.drafts[sel].text),
@@ -92,7 +92,7 @@ class ChartGraphBraille:
             element_id=opt.element_id,
             braille_lines=lines,
             break_points=breaks,
-            rule_trail=_base_trail(lines, src),
+            rule_trail=list(opt.rule_trail) + _base_trail(lines, src),
             box_borders=_box_borders(src),
             line_indents=_match_indents(opt.line_indents, lines),
         )

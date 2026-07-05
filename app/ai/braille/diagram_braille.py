@@ -57,25 +57,51 @@ def _to_braille(text: str) -> tuple[list[str], list[list[int]]]:
     return translate_with_breaks(text)
 
 
+def _match_indents(line_indents, lines):
+    if line_indents is not None and len(line_indents) == len(lines):
+        return line_indents
+    return None
+
+
 class DiagramBraille:
-    """LLMOutput 목록 → BrailleOutput 목록 (개념도·흐름도). 단일 출력(줄별 들여쓰기)."""
+    """LLMOutput 목록 → BrailleOutput 목록 (개념도·흐름도 등 도표). 대체텍스트 4안별 점역."""
 
     def translate(self, optimized: list[LLMOutput]) -> list[BrailleOutput]:
         # 요소별 격리: 한 도표 점역 실패가 다른 요소를 막지 않는다.
         return safe_translate(optimized, self._translate_one)
 
     def _translate_one(self, opt: LLMOutput) -> BrailleOutput:
+        if opt.drafts:
+            out_drafts = []
+            draft_breaks: list[list[list[int]]] = []
+            for d in opt.drafts:
+                d_lines, d_breaks = _to_braille(d.text)
+                draft_breaks.append(d_breaks)
+                out_drafts.append(d.model_copy(update={
+                    "braille_lines": d_lines,
+                    "break_points": d_breaks,
+                    "rule_trail": _base_trail(d_lines, d.text),
+                }))
+            sel = opt.selected_idx if 0 <= opt.selected_idx < len(out_drafts) else 0
+            # 개조식(선택 초안)은 §6.6 골격 들여쓰기(line_indents)를 유지, 나머지는 단순 줄바꿈.
+            return BrailleOutput(
+                element_id=opt.element_id,
+                braille_lines=out_drafts[sel].braille_lines,
+                break_points=draft_breaks[sel],
+                rule_trail=list(opt.rule_trail) + list(out_drafts[sel].rule_trail),
+                drafts=out_drafts,
+                selected_idx=sel,
+                box_borders=_box_borders(opt.drafts[sel].text),
+                line_indents=_match_indents(opt.line_indents, out_drafts[sel].braille_lines),
+            )
+        # 단일(구조 없음·처리 불가 폴백)
         src = opt.tn_text or opt.corrected_text
         lines, breaks = _to_braille(src)
-        # 규정 골격(개념도 위계 5/3·7/5/3, 제목 5칸) 줄별 들여쓰기를 layout에 전달(줄 수 일치 시).
-        line_indents = (opt.line_indents
-                        if opt.line_indents is not None and len(opt.line_indents) == len(lines)
-                        else None)
         return BrailleOutput(
             element_id=opt.element_id,
             braille_lines=lines,
             break_points=breaks,
-            rule_trail=_base_trail(lines, src),
+            rule_trail=list(opt.rule_trail) + _base_trail(lines, src),
             box_borders=_box_borders(src),
-            line_indents=line_indents,
+            line_indents=_match_indents(opt.line_indents, lines),
         )
