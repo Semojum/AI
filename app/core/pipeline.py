@@ -288,9 +288,11 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
 
 # ── 태민 분해 (Phase 2) — 경계 파일 → LayoutResult + ExtractedContent ───────
 
-# 읽기순서 재배정 모드(오프라인 A/B용). off=원순서(MinerU content_list, 운영 기본) |
-#   geom=순수 기하 위→아래(H1, dev A/B net-negative라 폐기) | sidebar=외과적 사이드바 머지(H2).
-_REORDER_MODE = os.environ.get("READING_ORDER_MODE", "off")
+# 읽기순서 재배정 모드. off=원순서(MinerU content_list) | geom=순수 기하 위→아래(H1, 폐기)
+#   | sidebar=외과적 사이드바 머지(H2, 운영 기본).
+# dev 18p A/B(order_tau): off 0.764 · geom 0.744 · sidebar 0.778 — sidebar가 어느 과목에서도
+# 손해를 안 보고 소폭 이득(사회문화 0.755→0.775, 세계사 0.538→0.560, 언어 0.999 유지)이라 기본으로.
+_REORDER_MODE = os.environ.get("READING_ORDER_MODE", "sidebar")
 
 
 def _valid_bbox(b: BBoxItem) -> bool:

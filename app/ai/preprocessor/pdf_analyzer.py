@@ -124,6 +124,78 @@ def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int,
     return blocks, int(round(w * 2)), int(round(h * 2))
 
 
+# 벡터 그림 판정(교과서 지도·도표·그래프는 임베디드 이미지가 아니라 벡터로 그려진다).
+# 드로잉 프리미티브를 격자로 뭉친 덩어리가 아래 둘을 모두 넘으면 그림으로 본다.
+# 실측 근거(세계사 p022 지도 2개 / 사회문화 p035·외국어 p012 그림 없음, 렌더 확인):
+#   지도    = 4350개·면적 5.0% , 2669개·면적 3.4%
+#   장식    = 글상자 둥근모서리·머리말 배너 → 덩어리 없음 또는 225개·면적 1.7%
+_VEC_MIN_PRIMS = 200      # 덩어리 내 선/곡선 프리미티브 수
+_VEC_MIN_AREA = 0.03      # 덩어리가 덮는 페이지 면적 비율
+_VEC_GRID = 24            # 덩어리 병합용 격자 해상도
+
+
+def _has_vector_figure(page) -> bool:
+    """벡터로 그려진 그림(지도·도표·그래프)이 있으면 True.
+
+    ★ 이게 없으면 교과서 지도가 통째로 사라진다. 지도는 임베디드 이미지가 아니라 벡터라
+    get_image_info() 검사를 통과하지 못하고 ZERO(PyMuPDF)로 빠지는데, 그러면 (1) 그림이
+    시각자료로 잡히지 않아 캡션도 대체텍스트도 없고 (2) 지도 안 라벨(황해·흉노 등)이 본문
+    텍스트로 쏟아져 읽기순서를 흩뜨린다(세계사 order_tau 0.54의 주원인).
+
+    장식(머리말 배너·둥근 글상자)과 구분하려고 '덩어리 크기 + 면적'을 함께 본다 — 장식은
+    프리미티브가 적거나(<200) 면적이 작다(<3%).
+    """
+    W, H = page.rect.width, page.rect.height
+    page_area = (W * H) or 1.0
+    try:
+        drawings = page.get_drawings()
+    except Exception:  # noqa: BLE001
+        return False
+    if len(drawings) < 8:            # 밑줄·표선 몇 개는 그림이 아니다
+        return False
+
+    # 격자 셀별로 프리미티브 수와 bbox를 모은다.
+    cells: dict[tuple[int, int], list] = {}
+    for dr in drawings:
+        n = len(dr.get("items", []))
+        if not n:
+            continue
+        r = dr["rect"]
+        key = (int((r[0] + r[2]) / 2 / W * _VEC_GRID), int((r[1] + r[3]) / 2 / H * _VEC_GRID))
+        cell = cells.setdefault(key, [0, [1e9, 1e9, -1.0, -1.0]])
+        cell[0] += n
+        bb = cell[1]
+        bb[0] = min(bb[0], r[0]); bb[1] = min(bb[1], r[1])
+        bb[2] = max(bb[2], r[2]); bb[3] = max(bb[3], r[3])
+
+    # 인접 셀을 이어붙여(8방향) 덩어리 단위로 판정.
+    seen: set[tuple[int, int]] = set()
+    for start in cells:
+        if start in seen:
+            continue
+        stack, comp = [start], []
+        while stack:
+            c = stack.pop()
+            if c in seen or c not in cells:
+                continue
+            seen.add(c)
+            comp.append(c)
+            x, y = c
+            stack.extend([(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1),
+                          (x + 1, y + 1), (x - 1, y - 1), (x + 1, y - 1), (x - 1, y + 1)])
+        prims = sum(cells[c][0] for c in comp)
+        if prims < _VEC_MIN_PRIMS:
+            continue
+        bb = [1e9, 1e9, -1.0, -1.0]
+        for c in comp:
+            b = cells[c][1]
+            bb[0] = min(bb[0], b[0]); bb[1] = min(bb[1], b[1])
+            bb[2] = max(bb[2], b[2]); bb[3] = max(bb[3], b[3])
+        if (bb[2] - bb[0]) * (bb[3] - bb[1]) > _VEC_MIN_AREA * page_area:
+            return True
+    return False
+
+
 def _page_has_visual(page) -> bool:
     """텍스트레이어 페이지에 표·유의미한 이미지가 있으면 True → MinerU(OCR) 라우팅.
 
@@ -143,7 +215,7 @@ def _page_has_visual(page) -> bool:
             return True
     except Exception:  # noqa: BLE001
         pass
-    return False
+    return _has_vector_figure(page)     # 벡터 지도·도표·그래프
 
 
 def _pua_ratio(text: str) -> float:
