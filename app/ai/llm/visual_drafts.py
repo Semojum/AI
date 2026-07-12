@@ -197,9 +197,11 @@ async def build_visual_drafts(
         # 누적 예산이 총량을 막으므로 안전). 티어 라벨은 신뢰도 기준(decide_tier_timeout).
         t2, _ = decide_tier_timeout(ext.ocr_confidence)
         timeout = config.hcxt_quality_timeout_seconds
-        # 출력은 캡션보다 짧게(간결 재구성) → 토큰을 작게 잡아 HCXT가 상한 안에 끝나게 한다.
+        # 출력은 [개조식]+[줄글] 두 섹션을 한 번에 담는다 → 캡션의 0.9배(구 180 상한)로는
+        # 위계 개조식이 예산을 먹고 줄글이 문장 중간에 잘렸다(A/B에서 확인). 두 섹션 합계를
+        # 고려해 캡션의 ~1.6배로 잡고 상한을 320으로 올린다(vLLM 46tok/s면 ~7s, QUALITY 상한 내).
         src = caption or title
-        mnt = min(180, max(80, int(len(src) * 0.9)))
+        mnt = min(320, max(140, int(len(src) * 1.6)))
         response, used_fb = await generate_with_retry(
             _PROMPT.format(label=label, caption=src),
             timeout=timeout, element_id=ext.element_id, kind=kind,

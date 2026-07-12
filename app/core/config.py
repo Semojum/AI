@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     hcxt_vllm_url: str = "http://127.0.0.1:8100/v1"   # vLLM OpenAI 호환 엔드포인트
     hcxt_vllm_model: str = "hcxt"                       # --served-model-name 값
     hcxt_vllm_serve_cmd: str = ""                       # 비면 외부 서버 사용, 있으면 이 명령으로 자동 기동
+    # vLLM 종료 토큰 id — 문자열 stop(<|endofturn|>/<|stop|>)은 vLLM이 skip_special_tokens=True로
+    # 응답에서 지워 stop 매칭이 안 되므로(반복 생성 버그 원인), 특수토큰은 id로 끊어야 한다.
+    # HCXT generation_config 기준: 100273=<|endofturn|>, 100274=<|stop|>, 100275=<|endoftext|>.
+    hcxt_vllm_stop_token_ids: list[int] = [100273, 100274, 100275]
 
     # ── 모델 경로 ─────────────────────────────────────────────────
     qwen3_vl_model_path: str = "/models/qwen3-vl-8b-awq"

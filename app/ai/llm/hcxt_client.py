@@ -12,7 +12,8 @@ from __future__ import annotations
 
 from app.core.config import config
 
-# stop: 모델 generation_config와 동일(엔드오브턴/스톱). skip_special_tokens는 응답 정리.
+# 문자열 stop은 보조용(vLLM은 특수토큰을 응답에서 지워 실효 없음 — 실제 종료는
+# config.hcxt_vllm_stop_token_ids). 텍스트로 노출되는 종료 표지가 있을 때만 잡힌다.
 _STOP = ["<|endofturn|>", "<|stop|>"]
 
 
@@ -25,7 +26,12 @@ async def vllm_generate(prompt: str, max_new_tokens: int = 512, prefill: str = "
 
     client = openai.AsyncOpenAI(base_url=config.hcxt_vllm_url, api_key="EMPTY")
     messages: list[dict] = [{"role": "user", "content": prompt}]
-    extra_body: dict = {"chat_template_kwargs": {"skip_reasoning": True}}
+    # stop_token_ids 필수: vLLM은 skip_special_tokens=True로 <|endofturn|>/<|stop|> 문자열을
+    # 응답에서 지워 문자열 stop이 무효 → id로 끊지 않으면 종료 토큰 넘겨 반복 생성한다.
+    extra_body: dict = {
+        "chat_template_kwargs": {"skip_reasoning": True},
+        "stop_token_ids": config.hcxt_vllm_stop_token_ids,
+    }
     if prefill:
         # 답변 시작 강제(포맷 고정) — 마지막 assistant 메시지를 이어쓰기.
         messages.append({"role": "assistant", "content": prefill})
