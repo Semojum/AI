@@ -47,17 +47,14 @@ class CartoonOpt(BaseOpt):
         caption = (ext.corrected_text or "").strip()
         items = _panel_items(st)
 
-        if not items and not caption and not title:
-            return LLMOutput(
-                element_id=ext.element_id,
-                corrected_text="[처리 불가: 만화 캡션 없음]",
-                render_mode="narrative", routing_tier="FALLBACK",
-                processing_time_ms=0, rule_trail=_trail(),
-            )
+        # 시드가 전부 없으면(캡셔닝 실패 포함) 규정상 '생략' 표기가 정답이다(§6.3.4(2)②).
+        # 실패 문자열을 내면 그 한글이 점자로 찍혀 학생에게 나간다. 알림은 flags→R11로.
+        no_seed = not (items or caption or title)
 
         drafts, selected_idx, line_indents, tier = await build_visual_drafts(
             ext, routing_tier, label="만화", title=title, caption=caption, kind="만화",
             struct_outline=items or None,
+            decorative=no_seed,
         )
         return LLMOutput(
             element_id=ext.element_id,

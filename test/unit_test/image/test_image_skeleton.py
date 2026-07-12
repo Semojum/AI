@@ -52,10 +52,19 @@ class TestFourDrafts:
         assert opt.selected_idx == 0                            # 장식용 → 기본 생략(§6.3.4(2)②·Q7)
         assert opt.corrected_text == opt.drafts[0].text
 
-    def test_캡션_없음_처리불가(self):
+    def test_캡션_없음_생략표기(self):
+        """캡션·구조·제목이 없으면(캡셔닝 실패 포함) 규정상 '생략' 표기가 정답이다(§6.3.4(2)②).
+
+        구 동작은 "[처리 불가: …]"를 냈는데, 이 문자열은 마커가 아니라 그대로 점자로
+        인코딩돼 학생이 "처리 불가 이미지 캡션 없음"을 읽게 된다. 실패는 점자 본문이 아니라
+        품질검사 R11(CAPTION_FAILED)로 점역사에게 알린다.
+        """
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure={})
         opt = asyncio.run(ImageOpt().optimize([ext], "ZERO"))[0]
-        assert "[처리 불가" in opt.corrected_text
+        assert "[처리 불가" not in opt.corrected_text
+        assert "생략" in opt.corrected_text
+        assert opt.selected_idx == 0          # 0안 = 생략
+        assert len(opt.drafts) == 4           # 4안은 유지 — 점역사가 다른 안 선택 가능
 
 
 class TestEndToEnd:

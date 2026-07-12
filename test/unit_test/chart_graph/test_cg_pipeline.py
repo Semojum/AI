@@ -97,12 +97,18 @@ class TestChartGraphTNContent:
         for o in opt_outputs:
             assert o.tn_text is not None, f"tn_text 없음: {o.element_id}"
 
-    def test_empty_caption_produces_placeholder(self) -> None:
+    def test_empty_caption_produces_omission(self) -> None:
+        """캡션이 없으면 규정상 '생략' 표기(§6.3.4(2)②) — 실패 문자열을 점자로 찍지 않는다.
+
+        "[처리 불가: …]"는 마커가 아니라 그대로 점역돼 학생이 읽는다. 실패 통지는
+        품질검사 R11(CAPTION_FAILED) 담당.
+        """
         from uuid import uuid4
         empty = ExtractedContent(element_id=uuid4(), corrected_text="", ocr_confidence=0.9)
         with patch("app.ai.llm.chart_graph_opt.model_manager"):
             result = asyncio.run(ChartGraphOpt().optimize([empty], routing_tier="ZERO"))
-        assert "[처리 불가" in result[0].corrected_text
+        assert "[처리 불가" not in result[0].corrected_text
+        assert "생략" in result[0].corrected_text
 
     def test_round_trip_serialization(self, braille_outputs: list[BrailleOutput]) -> None:
         for o in braille_outputs:

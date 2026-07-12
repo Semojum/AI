@@ -69,10 +69,9 @@ class ChartGraphOpt(BaseOpt):
         data_items = _data_items(st)               # rule-based(데이터 전사)
         axes = _axes_phrase(st)
 
-        if not caption and not data_items and not axes:
-            return LLMOutput(element_id=ext.element_id, corrected_text="[처리 불가: 차트 캡션 없음]",
-                             render_mode="narrative", routing_tier="FALLBACK", processing_time_ms=0,
-                             rule_trail=_trail())
+        # 시드가 전부 없으면(캡셔닝 실패 포함) 규정상 '생략' 표기가 정답이다(§6.3.4(2)②).
+        # 실패 문자열을 내면 그 한글이 점자로 찍혀 학생에게 나간다. 알림은 flags→R11로.
+        no_seed = not (caption or data_items or axes)
 
         # 데이터가 있으면 개조식=표 변환(rule-based). 줄글(수학적 서술)은 LLM(또는 규칙 폴백).
         struct_outline = data_items or None
@@ -82,6 +81,7 @@ class ChartGraphOpt(BaseOpt):
         drafts, selected_idx, line_indents, tier = await build_visual_drafts(
             ext, routing_tier, label=label, title=title, caption=caption, kind="차트",
             struct_outline=struct_outline, struct_prose=struct_prose,
+            decorative=no_seed,          # 시드 없음 → 기본 선택 '생략'
         )
 
         # 수치 그라운딩 — LLM이 생성한 줄글에서 원본 수치가 누락/변조됐는지(누락 시 R5).

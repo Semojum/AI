@@ -41,17 +41,17 @@ class ImageOpt(BaseOpt):
         ocr = [str(t).strip() for t in (st.get("ocr_texts") or []) if str(t).strip()]
         caption = (st.get("caption_src") or ext.corrected_text or "").strip()
 
-        if not caption and not ocr and not title:
-            return LLMOutput(element_id=ext.element_id, corrected_text="[처리 불가: 이미지 캡션 없음]",
-                             render_mode="narrative", routing_tier="FALLBACK", processing_time_ms=0,
-                             rule_trail=_trail())
+        # 캡션·원본글자·제목이 전부 없다(캡셔닝 실패 포함) → 규정상 정답은 '생략' 표기다
+        # (§6.3.4(2)②). 실패 문자열("[처리 불가: …]")을 내면 그 한글이 그대로 점자로 찍혀
+        # 학생에게 나간다 — 어떤 경우에도 정당하지 않다. 점역사에겐 flags→R11로 알린다.
+        no_seed = not (caption or ocr or title)
 
         # 원본 글자(ocr_texts)가 있으면 개조식 항목으로 rule-based 전사(§6.3.4(2)①).
         struct_outline = [(0, t) for t in ocr] if ocr else None
         drafts, selected_idx, line_indents, tier = await build_visual_drafts(
             ext, routing_tier, label=label, title=title, caption=caption, kind="이미지",
             struct_outline=struct_outline,
-            decorative=bool(st.get("decorative")),
+            decorative=bool(st.get("decorative")) or no_seed,   # 시드 없음 → 기본 선택 '생략'
         )
         return LLMOutput(
             element_id=ext.element_id,

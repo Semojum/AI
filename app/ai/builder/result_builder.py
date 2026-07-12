@@ -66,17 +66,43 @@ _CLASSIFY_TYPE_MAP = {
 }
 
 
-def _do_caption(el: dict) -> tuple[str, str]:
+# API 일시 장애(쿼터·타임아웃·네트워크)는 재시도. 그 외(인증·잘못된 이미지)는 즉시 포기.
+_TRANSIENT_EXC = {"RateLimitError", "APITimeoutError", "APIConnectionError", "InternalServerError"}
+_CAPTION_RETRIES = 2
+_CAPTION_BACKOFF = 1.5   # 초, 지수 증가
+
+
+def _do_caption(el: dict) -> tuple[str, str, bool]:
+    """(캡션, 확정 타입, 성공여부).
+
+    ★ 실패 문자열을 본문으로 흘리지 않는다. 예전에는 "[캡셔닝 실패]"를 content로 반환해
+    그 다섯 글자가 그대로 점자로 찍혀 학생에게 나갔다(품질검사도 못 잡아 COMPLETED 처리).
+    실패는 빈 캡션 + 성공여부 False로만 알리고, 하위 opt가 규정상 '생략' 표기(§6.3.4(2)②)를
+    내며 품질검사가 R11로 점역사에게 띄운다.
+    """
     img_path = el.get("image_path")
     original_type = el.get("type", "image")
+    eid = str(el.get("element_id", ""))[:8]
+
     if not img_path or not Path(img_path).exists():
-        return "[이미지 경로 없음]", original_type
-    try:
-        image_type = classify(img_path)
-        mapped_type = _CLASSIFY_TYPE_MAP.get(image_type, "image")
-        return caption(img_path, image_type), mapped_type
-    except Exception:
-        return "[캡셔닝 실패]", original_type
+        logger.warning("캡셔닝 불가 — 이미지 경로 없음 id=%s path=%r", eid, img_path)
+        return "", original_type, False
+
+    last: Exception | None = None
+    for attempt in range(_CAPTION_RETRIES + 1):
+        try:
+            image_type = classify(img_path)
+            mapped_type = _CLASSIFY_TYPE_MAP.get(image_type, "image")
+            return caption(img_path, image_type), mapped_type, True
+        except Exception as exc:  # noqa: BLE001 — 요소 격리(불변규칙 3)
+            last = exc
+            if type(exc).__name__ not in _TRANSIENT_EXC or attempt == _CAPTION_RETRIES:
+                break
+            time.sleep(_CAPTION_BACKOFF * (2 ** attempt))
+
+    # 삼키지 않는다 — 원인(쿼터 소진·인증 실패 등)이 로그에 남아야 운영에서 추적된다.
+    logger.error("캡셔닝 실패 id=%s: %s: %s", eid, type(last).__name__, last)
+    return "", original_type, False
 
 
 def _render_page(pdf_path: str, page_no: int) -> Image.Image:
@@ -153,17 +179,22 @@ def build(
     elements = []
     order = 1
     for el in ordered:
+        caption_failed = False
         if el["type"] in _VISUAL_TYPES:
             # 시각요소별 캡셔닝(GPT-4o 분류+설명) 소요시간 로깅 — "이미지당 몇 초" 디버깅용.
             _t = time.monotonic()
-            content, el_type = _do_caption(el)
-            logger.info("    캡셔닝 %s(%s→%s) %.1fs", str(el.get("element_id", ""))[:8],
-                        el["type"], el_type, time.monotonic() - _t)
+            content, el_type, ok = _do_caption(el)
+            caption_failed = not ok
+            logger.info("    캡셔닝 %s(%s→%s) %.1fs%s", str(el.get("element_id", ""))[:8],
+                        el["type"], el_type, time.monotonic() - _t, "" if ok else " [실패]")
         else:
             content = el.get("content", "")
             el_type = el["type"]
 
-        if not content.strip():
+        # ★ 캡셔닝이 실패한 시각요소는 버리지 않는다. 요소째 사라지면 학생은 거기 그림이
+        # 있었다는 사실조차 모른다(불변규칙 1 빈 결과 금지). 빈 캡션 + CAPTION_FAILED로
+        # 넘기면 opt가 '생략' 표기를 내고 품질검사가 R11로 점역사에게 띄운다.
+        if not content.strip() and not caption_failed:
             continue
 
         # element_id를 그대로 사용 (새 UUID 생성 안 함)
@@ -176,6 +207,7 @@ def build(
             "content": content,
             "bbox": [int(round(v)) for v in bbox_px] if bbox_px else None,
             "caption_ref": "",   # 아래 _link_captions가 채움
+            "flags": ["CAPTION_FAILED"] if caption_failed else [],
         })
 
         if debug:

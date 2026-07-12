@@ -31,9 +31,13 @@ C6_OVERFLOW_THRESHOLD = 0.30
 R1_CONFIDENCE_THRESHOLD = 0.85
 
 # opt/점역 placeholder → Critical 유형 (구체 패턴을 먼저 검사한다 — "[처리 불가"가 가장 광범위)
+# 실패 문자열이 본문에 남으면 그대로 점자로 찍혀 학생에게 나간다 → 반드시 Critical로 잡는다.
+# (구 버전은 "[캡셔닝 실패]"를 목록에 두지 않아, API 쿼터 소진 페이지가 COMPLETED로 나갔다.)
 _PLACEHOLDER_CRITICALS: list[tuple[str, str, str]] = [
     ("[수식 재확인 필요", "C3", "수식 파손 — LaTeX 파서 실패로 placeholder 삽입"),
     ("[표 수동", "C4", "표 완전 실패 — 수동 입력 placeholder 삽입"),
+    ("[캡셔닝 실패", "C2", "시각자료 캡셔닝 실패 문자열이 본문에 삽입됨"),
+    ("[이미지 경로 없음", "C2", "시각자료 이미지 유실 — 경로 없음 문자열이 본문에 삽입됨"),
     ("[처리 불가", "C2", "콘텐츠 블록 소실 — 처리 불가 placeholder 삽입"),
 ]
 
@@ -44,6 +48,9 @@ _FLAG_TO_REVIEW: dict[str, tuple[str, str]] = {
     "C4_FALLBACK": ("R1", "FALLBACK 경로로 처리됨(표) — 신뢰도 확인 필요"),
     "VERTICAL_TEXT": ("R7", "세로쓰기 텍스트 — 읽기순서 확인 필요"),
     "SUBTYPE_UNCERTAIN": ("R2", "시각자료 세분류 불확실"),
+    # 캡셔닝 실패 → 규정상 '생략' 표기로 폴백하되(§6.3.4(2)②), 점역사가 직접 대체텍스트를
+    # 써야 하므로 반드시 검토로 띄운다. 조용히 COMPLETED로 나가면 안 된다.
+    "CAPTION_FAILED": ("R11", "시각자료 캡셔닝 실패 — 대체텍스트를 직접 작성해야 함"),
     "R5": ("R5", "초안에 원본 수치 누락 — 수치 변조 검토 필요"),
 }
 _GENERIC_R_FLAG = re.compile(r"^R([1-9]|1[0-2])$")

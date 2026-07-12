@@ -50,10 +50,13 @@ class TestFourDrafts:
         assert len(opt.drafts) == 4
         assert "두 컷 만화" in opt.drafts[1].text                      # 캡션 → 짧은 제목
 
-    def test_전부_없음_처리불가(self):
+    def test_전부_없음_생략표기(self):
+        """시드가 전부 없으면 규정상 '생략' 표기(§6.3.4(2)②). 실패 문자열은 점자로 찍지 않는다."""
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, corrected_text="")
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
-        assert "[처리 불가" in opt.corrected_text
+        assert "[처리 불가" not in opt.corrected_text
+        assert "생략" in opt.corrected_text
+        assert opt.selected_idx == 0
 
 
 class TestEndToEnd:
