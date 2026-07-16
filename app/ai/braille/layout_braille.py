@@ -69,6 +69,18 @@ _RULE_HIDDEN_SINGLE = "KBR-6.13.49"  # 숨김표 단일(제49항) — list_item 
 #   (2026-07-16 이전엔 상수를 시작 칸 숫자 그대로 써서 전 줄이 1칸씩 밀려 있었다.)
 _PARA_INDENT = 2        # BBPG 2장2절2 새 문단 "3칸에서 시작" = 앞 빈칸 2 (text)
 _BULLET_LINE_INDENT = 2  # BBPG 2장3절5 글머리/목록 "3칸에서 시작" = 앞 빈칸 2 (list_item)
+
+# ★ MinerU는 선택지(①②③…)를 한 요소로 묶어서 낸다. 요소 첫 줄만 들이면 ②③…이
+#   이어지는 줄(0칸)로 흘러 정답(각 항목 2칸 시작)과 어긋난다.
+#   dev 18p 실측: 줄머리 마커 2개 이상인 요소 31개 → 2칸을 94줄 놓침(실제 손실 112줄의 84%).
+#   문장 안의 참조("밑줄 친 ㉠~㉢에")를 항목으로 오인하면 안 되므로 *줄머리*만 본다.
+_ITEM_HEAD = re.compile(
+    r"^(?:[\u2460-\u2473]"          # ①-⑳
+    r"|[\u3260-\u327f]"             # ㉠-㉿
+    r"|\([가-힣0-9]\)"                # (가) (1)
+    r"|[가-힣]\.\s"                   # 가.
+    r"|\d+\.\s)"                    # 1.
+)
 _HEADING_DEEP_INDENT = 4  # BBPG 2장2절1 3·4단계 제목 "5칸에서 시작" = 앞 빈칸 4
 _HEADING_LEVEL2_INDENT = 6  # 2단계 제목 "7칸에서 시작" = 앞 빈칸 6 (BBPG 2장2절1 3)
 
@@ -431,6 +443,7 @@ class LayoutBraille:
             self._apply_bullet_marker(bo)
         is_heading = hlevel >= 1
         first_indent = self._first_indent(bo, etype, is_heading, hlevel)
+        self._mark_item_lines(bo, etype, first_indent)
         if first_indent and any(_is_border_line(ln) for ln in bo.braille_lines):
             # 정식 규칙(테두리 아키텍처 B안 확정 2026-06-02): 32칸 테두리 줄(글상자 BBPG-1.2.5·
             # 표 격자)은 layout이 폭을 소유하므로 들여쓰기를 적용하지 않는다. 들이면 35칸이 되어
@@ -619,6 +632,26 @@ class LayoutBraille:
                                            col_end=len(bullet), tag="bullet"))
             bo.rule_trail = new_trail
             return
+
+    def _mark_item_lines(self, bo, etype: str, first_indent: int) -> None:
+        """묶인 항목(①②③…)의 줄머리마다 들여쓰기를 준다.
+
+        MinerU는 선택지를 한 요소로 묶어서 낸다. 기본 동작(첫 줄만 들여)이면 ②③…이
+        이어지는 줄(0칸)로 흘러 정답(각 항목 2칸 시작)과 어긋난다.
+        원문(corrected_text) 줄과 braille_lines가 1:1이므로 원문 줄머리로 판정한다.
+        (점자만 보면 수표+숫자가 일반 숫자와 구분되지 않는다.)
+        """
+        if etype not in ("list_item", "text") or not first_indent:
+            return
+        if getattr(bo, "line_indents", None) is not None:  # 골격 들여쓰기 있으면 유지
+            return
+        src = (getattr(bo, "corrected_text", "") or "").split("\n")
+        if len(src) != len(bo.braille_lines) or len(src) < 2:
+            return
+        heads = [i for i, ln in enumerate(src) if _ITEM_HEAD.match(ln.strip())]
+        if len(heads) < 2:                   # 항목이 하나뿐이면 기본 동작으로 충분
+            return
+        bo.line_indents = [first_indent if i in set(heads) else 0 for i in range(len(src))]
 
     def _first_indent(
         self, bo: BrailleOutput, etype: str, is_heading: bool, hlevel: int

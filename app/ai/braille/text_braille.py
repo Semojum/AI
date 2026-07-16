@@ -77,6 +77,7 @@ class TextBraille:
         ]
         return BrailleOutput(
             element_id=opt.element_id,
+            corrected_text=opt.corrected_text,   # layout이 묶인 항목(①②③) 줄머리 판정에 쓴다
             braille_lines=lines,
             break_points=breaks,
             rule_trail=trail,

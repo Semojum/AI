@@ -112,6 +112,9 @@ class BrailleOutput(BaseModel):
     """점자 변환 출력 (PART 4-3 / 5-3 / 6-3 / ...)."""
 
     element_id: UUID
+    # 점역 전 원문. layout이 묶인 항목(①②③…)의 줄머리를 판정하는 데 쓴다 —
+    # 점자만 보면 수표+숫자가 일반 숫자와 구분되지 않기 때문. braille_lines와 줄 수가 같다.
+    corrected_text: str = ""
     braille_lines: list[str]  # 논리 줄(개행 단위). 32칸 줄바꿈은 PART 10 layout이 수행
     # 줄별 음절 줄바꿈 허용 offset(BBPG-1.2.1) — layout이 32칸 줄바꿈에 사용, 응답엔 미노출.
     # braille_lines와 길이가 같다(줄 i의 허용 offset 목록). 비면 layout이 어절 단위로 분리.
