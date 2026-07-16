@@ -15,6 +15,7 @@ LLM 파싱이 실패해도 캡션 폴백으로 4안이 보장된다(구 3안 포
 
 from __future__ import annotations
 
+import os
 import re
 import time
 
@@ -24,6 +25,14 @@ from app.schemas.content import Draft
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+# 시각자료 감싸기 스타일 A/B (2026-07-13 설계 재검토용 스위치, 기본=현행):
+#   tn  = 점역자주 ⠠⠄ 감싸기(현행 설계, 지침 §6.3.4(1))
+#   box = 글상자 테두리 ⠿⠛…/⠿⠶… 감싸기(실험용).
+# ⚠ box 근거였던 "정답 BRL ⠿ 95%"는 오독 — 정답의 ⠿(17,981회)는 전부 한글 약자 '옹'(동·통·종 등)이고
+#   테두리형 줄(⠿+단일 채움 반복)은 정답 1131p 전체에서 0줄. A/B에서도 box는 악화(cell_ns 0.709→0.682).
+#   → 기본 tn 유지. 스위치는 후속 실험 대비용으로만 남김.
+_WRAP_STYLE = os.environ.get("VISUAL_WRAP_STYLE", "tn")
 
 # 4안 라벨(FE 피커 표시) — 순서 = option 1..4
 LABELS = ("생략", "짧은 제목", "개조식 설명", "줄글 설명")
@@ -52,7 +61,9 @@ _SECTION_RE = re.compile(r"\[(제목|개조식|줄글)\]\s*(.*)")
 
 
 def _tn(text: str) -> str:
-    """단일 줄 점역자 주."""
+    """시각자료 감싸기 — tn(현행): 점역자주 / box(A/B): 글상자 테두리."""
+    if _WRAP_STYLE == "box":
+        return (f"<!테두리_위><!/테두리_위>\n{text}\n<!테두리_아래><!/테두리_아래>")
     return f"<!점역자주>{text}<!/점역자주>"
 
 
@@ -80,15 +91,22 @@ def _outline_text_indents(
     indents: list[int] = []
     title = (title or "").strip()
     desc = (desc or "").strip()
-    if title:
-        lines.append(title); indents.append(_TITLE_INDENT)          # §6.3.3(1) 제목 5칸(plain)
     head = f"{label}: {desc}" if (desc and desc != title) else label
-    lines.append(_tn(head)); indents.append(0)                      # §6.3.4(1) 유형/설명 점역자주
+    if _WRAP_STYLE == "box":
+        # box(A/B): 블록 전체를 글상자로 — 제목은 위 테두리 안(BBPG-1.2.5), 유형/설명은 첫 줄.
+        lines.append(f"<!테두리_위>{title}<!/테두리_위>"); indents.append(0)
+        lines.append(head); indents.append(0)
+    else:
+        if title:
+            lines.append(title); indents.append(_TITLE_INDENT)      # §6.3.3(1) 제목 5칸(plain)
+        lines.append(_tn(head)); indents.append(0)                   # §6.3.4(1) 유형/설명 점역자주
     for level, text in items:
         text = (text or "").strip()
         if not text:
             continue
         lines.append(text); indents.append(_OUTLINE_BASE + _OUTLINE_STEP * max(0, level))  # 전사 §6.3.4(2)①
+    if _WRAP_STYLE == "box":
+        lines.append("<!테두리_아래><!/테두리_아래>"); indents.append(0)
     return "\n".join(lines), indents
 
 

@@ -118,8 +118,8 @@ def test_image_captioning_result(monkeypatch):
         lambda img_path, img_type: "테스트 캡셔닝: 두 학생이 실험 도구를 사용하는 장면입니다.",
     )
     monkeypatch.setattr(
-        "app.ai.builder.result_builder.classify",
-        lambda img_path: "image",
+        "app.ai.builder.result_builder.classify_with_confidence",
+        lambda img_path: ("image", 0.99),
     )
 
     from app.ai.builder.result_builder import build

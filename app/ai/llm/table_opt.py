@@ -105,24 +105,61 @@ def _pipe_to_grid(text: str) -> list[list[str]]:
 
 
 # MinerU는 표를 <table><tr><td>… HTML로 낸다(P5). 셀을 보존하려면 격자로 파싱해야
-# narrative(산문 요약)로 오분류되지 않고 unfold/linear로 점역된다. colspan/rowspan은
-# 단순화(무시), <img> 등 비텍스트 셀은 내부 태그 제거 후 빈칸으로 남는다.
+# narrative(산문 요약)로 오분류되지 않고 unfold/linear로 점역된다.
+# ★ colspan/rowspan을 펼쳐야 한다 — 무시하면 행마다 셀 수가 달라져 열이 어긋나고
+#   빈칸(⠿⠿)이 엉뚱한 자리에 찍힌다(정답과 대조해 확인, 2026-07-13).
 _TR_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.DOTALL | re.IGNORECASE)
-_TD_RE = re.compile(r"<t[dh][^>]*>(.*?)</t[dh]>", re.DOTALL | re.IGNORECASE)
+_TD_RE = re.compile(r"<(t[dh])([^>]*)>(.*?)</\1>", re.DOTALL | re.IGNORECASE)
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
+_SPAN_RE = re.compile(r"(col|row)span\s*=\s*[\"']?(\d+)", re.IGNORECASE)
 
 
 def _is_html_table(text: str) -> bool:
     return "<table" in (text or "").lower()
 
 
+def _spans(attrs: str) -> tuple[int, int]:
+    """(colspan, rowspan)."""
+    col = row = 1
+    for kind, n in _SPAN_RE.findall(attrs or ""):
+        v = max(1, int(n))
+        if kind.lower() == "col":
+            col = v
+        else:
+            row = v
+    return col, row
+
+
 def _html_to_grid(html: str) -> list[list[str]]:
-    """MinerU <table> HTML → 행렬. 행/셀 단위 파싱, 내부 태그 제거(이미지 셀=빈칸)."""
+    """MinerU <table> HTML → 행렬(병합 셀 펼침). 내부 태그 제거(이미지 셀=빈칸).
+
+    colspan/rowspan은 같은 값을 복제해 채운다 — 점역은 격자를 전제하므로 병합을 그대로
+    두면 열 정렬이 무너진다. 풀어쓰기(_render_unfold)도 열 머리를 복제된 값에서 읽는다.
+    """
     grid: list[list[str]] = []
-    for tr in _TR_RE.findall(html):
-        row = [_HTML_TAG_RE.sub("", td).strip() for td in _TD_RE.findall(tr)]
+    pending: dict[tuple[int, int], str] = {}   # (row, col) → rowspan으로 내려오는 값
+    for r, tr in enumerate(_TR_RE.findall(html)):
+        row: list[str] = []
+        c = 0
+        for _tag, attrs, body in _TD_RE.findall(tr):
+            while (r, c) in pending:            # 위에서 내려온 rowspan 자리 먼저 채움
+                row.append(pending.pop((r, c)))
+                c += 1
+            text = _HTML_TAG_RE.sub("", body).strip()
+            colspan, rowspan = _spans(attrs)
+            for dc in range(colspan):
+                row.append(text)
+                for dr in range(1, rowspan):
+                    pending[(r + dr, c + dc)] = text
+            c += colspan
+        while (r, c) in pending:                 # 행 끝에 남은 rowspan 자리
+            row.append(pending.pop((r, c)))
+            c += 1
         if row:
             grid.append(row)
+    if grid:                                     # 행 길이 정규화
+        w = max(len(r) for r in grid)
+        grid = [r + [""] * (w - len(r)) for r in grid]
     return grid
 
 

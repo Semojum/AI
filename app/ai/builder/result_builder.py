@@ -4,6 +4,7 @@ merged_layout + 캡셔닝 결과를 읽기 순서대로 병합하여
 debug=True 시 최종 order 기준 layout_viz.jpg를 test/results/page_{no:03d}/에 저장.
 """
 import json
+import re
 import time
 from pathlib import Path
 
@@ -11,7 +12,7 @@ import fitz
 from PIL import Image, ImageDraw, ImageFont
 
 from app.ai.captioning.captioner import caption
-from app.ai.captioning.classifier import classify
+from app.ai.captioning.classifier import classify_with_confidence
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -72,13 +73,14 @@ _CAPTION_RETRIES = 2
 _CAPTION_BACKOFF = 1.5   # 초, 지수 증가
 
 
-def _do_caption(el: dict) -> tuple[str, str, bool]:
-    """(캡션, 확정 타입, 성공여부).
+def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
+    """(캡션, 확정 타입, 성공여부, 세분류 신뢰도).
 
     ★ 실패 문자열을 본문으로 흘리지 않는다. 예전에는 "[캡셔닝 실패]"를 content로 반환해
     그 다섯 글자가 그대로 점자로 찍혀 학생에게 나갔다(품질검사도 못 잡아 COMPLETED 처리).
     실패는 빈 캡션 + 성공여부 False로만 알리고, 하위 opt가 규정상 '생략' 표기(§6.3.4(2)②)를
     내며 품질검사가 R11로 점역사에게 띄운다.
+    세분류 신뢰도(logprob 기반)는 경계 JSON의 subtype_confidence로 나가 R2 판정에 쓰인다.
     """
     img_path = el.get("image_path")
     original_type = el.get("type", "image")
@@ -86,14 +88,14 @@ def _do_caption(el: dict) -> tuple[str, str, bool]:
 
     if not img_path or not Path(img_path).exists():
         logger.warning("캡셔닝 불가 — 이미지 경로 없음 id=%s path=%r", eid, img_path)
-        return "", original_type, False
+        return "", original_type, False, None
 
     last: Exception | None = None
     for attempt in range(_CAPTION_RETRIES + 1):
         try:
-            image_type = classify(img_path)
+            image_type, subconf = classify_with_confidence(img_path)
             mapped_type = _CLASSIFY_TYPE_MAP.get(image_type, "image")
-            return caption(img_path, image_type), mapped_type, True
+            return caption(img_path, image_type), mapped_type, True, subconf
         except Exception as exc:  # noqa: BLE001 — 요소 격리(불변규칙 3)
             last = exc
             if type(exc).__name__ not in _TRANSIENT_EXC or attempt == _CAPTION_RETRIES:
@@ -102,7 +104,7 @@ def _do_caption(el: dict) -> tuple[str, str, bool]:
 
     # 삼키지 않는다 — 원인(쿼터 소진·인증 실패 등)이 로그에 남아야 운영에서 추적된다.
     logger.error("캡셔닝 실패 id=%s: %s: %s", eid, type(last).__name__, last)
-    return "", original_type, False
+    return "", original_type, False, None
 
 
 def _render_page(pdf_path: str, page_no: int) -> Image.Image:
@@ -133,6 +135,29 @@ def _viz_page(page_img: Image.Image, elements: list[dict]) -> Image.Image:
         draw.rectangle([tx - 1, ty - 1, tx + len(lbl) * 7 + 2, ty + 14], fill=(*color, 170))
         draw.text((tx, ty), lbl, fill=(255, 255, 255), font=font)
     return img
+
+
+_TEXTUAL_TYPES = {"text", "title", "list_item", "caption", "footnote", "sidebar"}
+# 문항 번호는 큰 글씨/색 상자로 조판돼 있어 MinerU가 **앞 문항 본문 끝**에 붙여 내보낸다
+# ("…고른 것은?\n02"). 그대로 두면 번호가 엉뚱한 문항에 붙어 점역된다 → 다음 텍스트 요소 앞으로
+# 옮긴다(정답 배치 = "02. 다음은…"). dev 18p에서 14건.
+_TRAILING_QNUM_RE = re.compile(r"\n\s*(\d{1,2})\s*$")
+
+
+def _move_trailing_qnum(ordered: list[dict]) -> None:
+    """앞 요소 끝에 붙은 다음 문항 번호를 다음 텍스트 요소 앞으로 옮긴다(제자리 수정)."""
+    for i, el in enumerate(ordered[:-1]):
+        if el.get("type") not in _TEXTUAL_TYPES:
+            continue
+        text = (el.get("content") or "").rstrip()
+        m = _TRAILING_QNUM_RE.search(text)
+        if not m or len(text) < 10:
+            continue
+        nxt = ordered[i + 1]
+        if nxt.get("type") not in _TEXTUAL_TYPES:
+            continue
+        el["content"] = text[: m.start()].rstrip()
+        nxt["content"] = f"{m.group(1)}\n{(nxt.get('content') or '').lstrip()}"
 
 
 _CAPTIONABLE = _VISUAL_TYPES | {"table"}   # 캡션이 가리킬 수 있는 시각요소
@@ -175,15 +200,17 @@ def build(
     반환: 001_txt_result.json 내용 (dict)
     """
     ordered = _reorder(list(merged_layout))
+    _move_trailing_qnum(ordered)
 
     elements = []
     order = 1
     for el in ordered:
         caption_failed = False
+        subconf: float | None = None
         if el["type"] in _VISUAL_TYPES:
             # 시각요소별 캡셔닝(GPT-4o 분류+설명) 소요시간 로깅 — "이미지당 몇 초" 디버깅용.
             _t = time.monotonic()
-            content, el_type, ok = _do_caption(el)
+            content, el_type, ok, subconf = _do_caption(el)
             caption_failed = not ok
             logger.info("    캡셔닝 %s(%s→%s) %.1fs%s", str(el.get("element_id", ""))[:8],
                         el["type"], el_type, time.monotonic() - _t, "" if ok else " [실패]")
@@ -200,7 +227,7 @@ def build(
         # element_id를 그대로 사용 (새 UUID 생성 안 함)
         # bbox는 픽셀 좌표(bbox_px, 2x 렌더 기준)로 BE에 전달 — 없으면 0~1000 정규화 bbox.
         bbox_px = el.get("bbox_px") or el.get("bbox")
-        elements.append({
+        entry = {
             "id": el["element_id"],
             "order": order,
             "type": el_type,
@@ -208,7 +235,10 @@ def build(
             "bbox": [int(round(v)) for v in bbox_px] if bbox_px else None,
             "caption_ref": "",   # 아래 _link_captions가 채움
             "flags": ["CAPTION_FAILED"] if caption_failed else [],
-        })
+        }
+        if subconf is not None:
+            entry["subtype_confidence"] = subconf
+        elements.append(entry)
 
         if debug:
             el["final_order"] = order  # viz용 임시 필드

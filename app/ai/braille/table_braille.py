@@ -16,6 +16,7 @@ from app.ai.braille.isolation import safe_translate
 from app.ai.braille.nested_block import append_nested
 from app.ai.braille.regulations import make_rule, make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
+from app.ai.braille.translator import _BOOK_STYLE  # 도서 관행 스위치(BRAILLE_STYLE)
 from app.ai.braille.translator import translate_tagged_text as _translate
 from app.ai.braille.translator import tn_marker_spans, translate_with_breaks
 from app.schemas.content import BrailleOutput, Draft, LLMOutput, RuleApplication
@@ -43,6 +44,7 @@ def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
 
 from app.ai.braille.constants import COLS as _COLS  # noqa: E402 (공용 상수)
 _BORDER  = "⠿"  # 표 테두리
+_EMPTY_CELL = "⠿⠿"  # 빈 셀 (BBPG-3.1.2(4))
 _SEP     = "⠒"  # 행·셀 구분선
 
 # ── 표 구조 태그 (plan §3-5 확장) ─────────────────────────────────────────────
@@ -151,15 +153,23 @@ def _render_grid(corrected_text: str) -> list[str]:
 
 
 def _render_linear(corrected_text: str) -> list[str]:
-    """2열 표 → '⠄키: 값' 점자 형식."""
+    """2열 표 → 한 줄에 '키  값'.
+
+    정답 도서 관행(BRAILLE_STYLE=book, 기본): 3칸에서 시작하고 키와 값을 두 칸 띄운다.
+        `  언어 문제  64.9`   (유도점·콜론 없음 — 코퍼스 확인)
+    규정 모드(BRAILLE_STYLE=regulation): 기존 '⠄키: 값'(유도점 + 쌍점).
+    """
     result: list[str] = []
     for ln in corrected_text.splitlines():
         if "|" in ln:
             parts = [p.strip() for p in ln.split("|", 1)]
-            # '키: 값' 전체를 한 번에 점역해 콜론·공백이 점자 셀로 변환되게 한다.
-            # (예전엔 키/값만 점역하고 literal ': '를 끼워넣어 ASCII 콜론이 점자에 누출됐다.)
-            body = parts[0] + ": " + parts[1] if len(parts) > 1 else parts[0]
-            entry = f"{_GUIDE}{_translate(body)}"
+            if _BOOK_STYLE:
+                body = f"{parts[0]}  {parts[1]}" if len(parts) > 1 else parts[0]
+                entry = f"  {_translate(body)}"
+            else:
+                # '키: 값' 전체를 한 번에 점역해 콜론·공백이 점자 셀로 변환되게 한다.
+                body = parts[0] + ": " + parts[1] if len(parts) > 1 else parts[0]
+                entry = f"{_GUIDE}{_translate(body)}"
         else:
             entry = _translate(ln)
         if len(entry) <= _COLS:
@@ -169,26 +179,98 @@ def _render_linear(corrected_text: str) -> list[str]:
     return result or [""]
 
 
-def _render_unfold(corrected_text: str) -> list[str]:
-    """표 → 풀어쓰기 컬럼 정렬 (BBPG-3.1.2: 열 제목 3칸부터·두 칸씩 띄어 구분).
+_NUMERIC_CELL_RE = re.compile(r"^[\d.,()%~\-\s]+$")
 
-    각 열을 열별 최대 너비로 맞춰 2칸씩 띄어 구분하고, 줄 전체를 3칸(앞 2칸 빈칸)에서
-    시작한다. 열 제목 줄과 데이터 줄이 같은 열 위치에 정렬된다(셀 내용도 이와 같이).
-    한 줄이 32칸을 넘으면 layout이 음절 단위로 줄바꿈한다(넓은 표는 전치안 권장).
+
+def _header_extent(rows: list[list[str]]) -> tuple[int, int]:
+    """(머리 행 수, 머리 열 수). 값이 숫자인지로 데이터 영역을 가른다.
+
+    수능특강 표는 대분류/소분류 2단 머리(성별×나이수급분류 등)가 흔하다. 1단으로 가정하면
+    대분류가 데이터처럼 섞여 정답과 어긋난다.
+    """
+    def is_num(s: str) -> bool:
+        return bool(s.strip()) and bool(_NUMERIC_CELL_RE.match(s))
+
+    n_rows, n_cols = len(rows), len(rows[0])
+    h = 0
+    for r in rows:
+        if any(is_num(c) for c in r[1:]):
+            break
+        h += 1
+    h = max(1, min(h, n_rows - 1))
+
+    body = rows[h:]
+    k = 0
+    for j in range(n_cols):
+        if any(is_num(r[j]) for r in body):
+            break
+        k += 1
+    k = min(k, n_cols - 1)
+    return h, k
+
+
+def _render_unfold(corrected_text: str) -> list[str]:
+    """표 → 풀어쓰기 (BBPG-3.1.2). 정답 도서 관행 = **열 단위 전개**.
+
+    정답 도서(수능특강 점역본) 관찰:
+        수급 분류  60—64세      ← 모서리 라벨 + 열 머리
+        연금 수급자  68.3        ← 행 머리 + 값
+        기초 수급자  3.2
+    즉 열마다 "열 머리" 줄을 세우고 그 아래 "행 머리  값"을 한 줄씩 적는다. 32칸 안에
+    한 항목이 들어가 점역사가 표를 좌우로 훑지 않아도 된다.
+    (구현 전에는 격자를 그대로 폭 맞춤해 냈다 — 넓은 표가 줄바꿈으로 뭉개지고 빈 셀 ⠿⠿가
+     열 어긋남과 겹쳐 정답과 크게 벌어졌다.)
+    행이 1줄뿐이거나 열이 2개뿐인 표는 전개할 게 없으므로 값만 나열한다.
     """
     rows = [[c.strip() for c in ln.split("|")] for ln in corrected_text.splitlines() if ln.strip()]
     if not rows:
         return [""]
     n_cols = max(len(r) for r in rows)
     rows = [r + [""] * (n_cols - len(r)) for r in rows]
-    cells_br = [[(_translate(c) if c else "⠿⠿") for c in r] for r in rows]  # 빈 셀=⠿⠿(BBPG-3.1.2(4))
-    widths = [max((len(cells_br[i][j]) for i in range(len(cells_br))), default=0)
-              for j in range(n_cols)]
+
+    if len(rows) < 2 or n_cols < 2:              # 전개할 축이 없음 → 값 나열
+        return [f"  {_translate('  '.join(c for c in r if c))}" for r in rows] or [""]
+
+    n_head_rows, n_head_cols = _header_extent(rows)
+    body = rows[n_head_rows:]
+    col_names = rows[n_head_rows - 1]
+    # 모서리 라벨: 행 머리 축의 이름(예: "수급 분류") — 각 열 머리 줄 앞에 붙는다.
+    corner = col_names[n_head_cols - 1] if n_head_cols else ""
+    corner_br = _translate(corner) if corner else ""
+
+    def _cell(v: str) -> str:                    # 빈 셀 = ⠿⠿ (BBPG-3.1.2(4))
+        return _translate(v) if v else _EMPTY_CELL
+
+    # 행 그룹(예: 성별) — 행 머리 열 중 마지막을 뺀 나머지가 그룹 키
+    groups: list[tuple[tuple[str, ...], list[list[str]]]] = []
+    for r in body:
+        key = tuple(r[: max(0, n_head_cols - 1)])
+        if groups and groups[-1][0] == key:
+            groups[-1][1].append(r)
+        else:
+            groups.append((key, [r]))
+
     lines: list[str] = []
-    for r in cells_br:
-        parts = [r[j].ljust(widths[j]) for j in range(n_cols)]
-        line = "  " + "  ".join(parts)            # 3칸 시작(앞 2칸) + 2칸 구분
-        lines.append(line.rstrip() or "  ")        # 마지막 열 trailing 패딩 제거
+    prev_section = None
+    for key, rows_in in groups:
+        for j in range(n_head_cols, n_cols):
+            # 상위 열 머리(병합된 대분류) + 그룹 키 → 구간 제목
+            tops: list[str] = []
+            for h in range(n_head_rows - 1):
+                v = rows[h][j]
+                if v and v not in tops:
+                    tops.append(v)
+            section = " ".join([*tops, *(k for k in key if k)]).strip()
+            if section and section != prev_section:
+                lines.append(f"  {_translate(section)}")
+                prev_section = section
+            # 열 머리 줄: 모서리 라벨 + 열 이름 (빈 셀은 ⠿⠿로 남긴다 — 원본에 칸이 있었다는 신호)
+            head_br = (f"{corner_br}  " if corner_br else "") + _cell(col_names[j])
+            lines.append(f"  {head_br}")
+            for r in rows_in:
+                row_head = r[n_head_cols - 1] if n_head_cols else ""
+                row_br = f"{_translate(row_head)}  " if row_head else ""
+                lines.append(f"  {row_br}{_cell(r[j])}")
     return lines or [""]
 
 

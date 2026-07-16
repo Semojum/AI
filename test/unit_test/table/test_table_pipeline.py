@@ -47,7 +47,8 @@ def _grits(extracted: ExtractedContent, output: BrailleOutput, render_mode: str)
 
     순환 검증 방지: translate_tagged_text 사용 금지.
     대신 규정에서 직접 도출 가능한 구조 불변량만 검사:
-      - linear: 행 수만큼 ⠄(유도점) 행 존재 (출력 줄 수 == 입력 행 수)
+      - linear: 행 수만큼 3칸 시작 줄 존재 (출력 줄 수 == 입력 행 수).
+        정답 도서 관행 = "  키  값"(유도점·쌍점 없음) — BRAILLE_STYLE=regulation이면 ⠄키: 값.
       - table_grid: 테두리(⠿) 2줄 + 구분선(⠒) (row-1)줄 존재
       - 숫자 셀: 수표(⠼) + 규정 제41항 셀 값이 출력에 존재 (translator와 독립)
     """
@@ -63,14 +64,18 @@ def _grits(extracted: ExtractedContent, output: BrailleOutput, render_mode: str)
     checks: list[bool] = []
 
     if render_mode == "linear":
-        # linear: 각 행이 ⠄(유도점)으로 시작하는 줄로 출력됨
-        guide_lines = [ln for ln in output.braille_lines if ln.startswith("⠄")]
-        checks.append(len(guide_lines) == max_row)  # 행 수 정확히 일치
+        # linear(도서 관행): 각 행이 3칸(앞 2칸 빈칸)에서 시작하는 한 줄로 출력됨
+        indented = [ln for ln in output.braille_lines if ln.startswith("  ")]
+        checks.append(len(indented) == max_row)              # 행 수 정확히 일치
         checks.append(len(output.braille_lines) == max_row)  # 총 줄 수 일치
     elif render_mode == "unfold":
-        # 풀어쓰기(BBPG-3.1.2): 행당 한 줄, 3칸(앞 2칸 빈칸) 시작
+        # 풀어쓰기(BBPG-3.1.2) — 정답 도서 관행 = 열 단위 전개:
+        #   열마다 "열 머리" 한 줄 + 그 아래 "행 머리  값" 줄들.
+        #   → 줄 수 = (데이터 열 수) × (열 머리 1줄 + 데이터 행 수)
+        #     = (max_col - 1) × max_row   (병합 열 머리 없는 표 기준)
+        max_col = max(c.get("col", 0) for c in cells) + 1
         nonblank = [ln for ln in output.braille_lines if ln.strip()]
-        checks.append(len(output.braille_lines) == max_row)
+        checks.append(len(output.braille_lines) == (max_col - 1) * max_row)
         checks.append(all(ln.startswith("  ") for ln in nonblank))
     else:
         # table_grid: border(⠿×32) 2줄 + separator(⠒×32) (row-1)줄 + data row줄
@@ -157,7 +162,7 @@ class TestGriTS:
 
     translate_tagged_text 미사용 — 다음 불변량만 검사:
       1. 행 수가 출력 줄 수에 반영되었는지 (linear/grid 모드별)
-      2. 구조 기호(⠿ 테두리, ⠒ 구분선, ⠄ 유도점)가 규정 수에 맞는지
+      2. 구조 기호(⠿ 테두리, ⠒ 구분선, 3칸 들여쓰기)가 규정 수에 맞는지
       3. 숫자 셀: 제41항 수표(⠼) + 셀 값이 출력에 포함되는지
     """
 
@@ -230,12 +235,13 @@ class TestTableRenderModes:
         )
         assert has_grid, "격자형 대안 초안의 ⠿ 테두리 없음"
 
-    def test_linear_output_has_guide(self, braille_outputs: list[BrailleOutput]) -> None:
+    def test_linear_output_is_indented(self, braille_outputs: list[BrailleOutput]) -> None:
+        """2열 표는 3칸에서 시작하는 '키  값' 줄로 나온다(정답 도서 관행)."""
         linear_outputs = [
             o for o in braille_outputs
-            if any("⠄" in line for line in o.braille_lines)
+            if any(line.startswith("  ") for line in o.braille_lines)
         ]
-        assert len(linear_outputs) >= 1, "⠄ 유도점 없음"
+        assert len(linear_outputs) >= 1, "3칸 시작 줄 없음"
 
     def test_blocked_fallback_produces_placeholder(self) -> None:
         from uuid import uuid4

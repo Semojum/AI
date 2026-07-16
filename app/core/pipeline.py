@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Optional
@@ -71,6 +72,20 @@ _SUBTYPE_FROM_TYPE = {
 }
 
 ChainResult = tuple[list[ExtractedContent], list[LLMOutput], list[BrailleOutput]]
+
+# 판권·러닝헤드 보일러플레이트 — 정답 BRL 전수조사(1131p)에서 출현 0%: 점역사는 전부
+# 제거한다. 요소 content "전체"가 패턴일 때만 드롭(본문 문장 속 언급은 보존).
+_BOILERPLATE_RES = (
+    re.compile(r"^(?:https?://)?www\.[\w-]+(?:\.[\w-]+)+\S*$", re.IGNORECASE),  # URL 단독 요소
+    re.compile(r"^EBS$"),                                # 출판사 로고 텍스트
+    re.compile(r"^EBS\s*수능특강"),                       # 러닝헤드(과목·단원 접미 포함)
+    re.compile(r"^(?:ⓒ|©|Copyright\b)", re.IGNORECASE),  # 저작권 고지
+)
+
+
+def _is_boilerplate(content: str) -> bool:
+    c = content.strip()
+    return bool(c) and any(p.match(c) for p in _BOILERPLATE_RES)
 
 
 # ── 응답 빌더 ─────────────────────────────────────────────────────────────
@@ -289,10 +304,11 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
 # ── 태민 분해 (Phase 2) — 경계 파일 → LayoutResult + ExtractedContent ───────
 
 # 읽기순서 재배정 모드. off=원순서(MinerU content_list) | geom=순수 기하 위→아래(H1, 폐기)
-#   | sidebar=외과적 사이드바 머지(H2, 운영 기본).
-# dev 18p A/B(order_tau): off 0.764 · geom 0.744 · sidebar 0.778 — sidebar가 어느 과목에서도
-# 손해를 안 보고 소폭 이득(사회문화 0.755→0.775, 세계사 0.538→0.560, 언어 0.999 유지)이라 기본으로.
-_REORDER_MODE = os.environ.get("READING_ORDER_MODE", "sidebar")
+#   | sidebar=max-gap 사이드바 머지(H2, 폐기) | col=열 클러스터링(H3, 운영 기본).
+# dev 18p A/B(텍스트공간 τ, 2026-07-13): off 0.805 · sidebar 0.832 · col 0.965, off 대비 회귀 0건.
+# sidebar(H2)는 x0 최대간격 분할이라 분할선이 본문/사이드바를 관통하는 페이지에서 오발동·미발동
+# (세계사 p086 관통, p106 임계 3px 미달)이 잦아 col로 대체.
+_REORDER_MODE = os.environ.get("READING_ORDER_MODE", "col")
 
 
 def _valid_bbox(b: BBoxItem) -> bool:
@@ -325,6 +341,10 @@ def _reorder_by_geometry(items: list[BBoxItem]) -> None:
 
     if _REORDER_MODE == "sidebar":
         _reorder_sidebar(items, valid)
+        return
+
+    if _REORDER_MODE == "col":
+        _reorder_columns(items)
 
 
 def _reorder_sidebar(items: list[BBoxItem], valid: list[BBoxItem]) -> None:
@@ -348,6 +368,10 @@ def _reorder_sidebar(items: list[BBoxItem], valid: list[BBoxItem]) -> None:
             main.append(b)
     if not sidebar or not main:
         return
+    # 사이드바 = 좁은 보충설명 열(소수). "사이드바" 스트림이 다수면 본문을 사이드바로
+    # 오인한 것(우측 보조열 페이지에서 split이 본문 오른쪽에 잡히는 경우) → 무변경.
+    if len(sidebar) >= len(main):
+        return
     # 두 스트림(원순서 보존)을 y_top 기준 머지.
     merged, i, j = [], 0, 0
     while i < len(sidebar) and j < len(main):
@@ -357,6 +381,98 @@ def _reorder_sidebar(items: list[BBoxItem], valid: list[BBoxItem]) -> None:
             merged.append(main[j]); j += 1
     merged.extend(sidebar[i:]); merged.extend(main[j:])
     for k, b in enumerate(merged, start=1):
+        b.reading_order = k
+
+
+def _reorder_columns(items: list[BBoxItem]) -> None:
+    """H3: 열 클러스터링 읽기순서. 정답 BRL 관찰(2026-07-13)에 근거한 세 규칙:
+
+    (1) 점역사는 좁은 용어설명 열을 본문 뒤에 둔다 — MinerU가 이 열을 본문 앞에
+        통째로(연속 순번) 방출하는 것이 주 실패 양상(세계사 p086·p106).
+        반대로 순번이 본문 사이에 흩어진 좁은 요소(문항별 포인트 라벨 등)는
+        MinerU의 의도 배치 → 보존(세계사 p160).
+    (2) 대등한 2단 본문은 MinerU가 열 단위로 옳게 방출 — y-정렬하면 두 열이 섞여
+        파괴되므로, MinerU 순서가 y-흐름을 심하게 거스를 때만 열 내부를 y-정렬
+        (사회문화 p035: MinerU 순서 자체가 뒤죽박죽인 페이지).
+    (3) 페이지행 요소(header_footer/page_number)·빈 bbox는 원래 순번 슬롯 유지.
+    """
+    body = [b for b in items if _valid_bbox(b) and b.type not in ("header_footer", "page_number")]
+    if len(body) < 3:
+        return
+
+    # 1) x-구간 겹침(좁은 쪽 폭 50% 이상) union-find → 열 클러스터
+    parent = list(range(len(body)))
+
+    def _find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i, a in enumerate(body):
+        for j in range(i + 1, len(body)):
+            c = body[j]
+            ov = min(a.bbox[2], c.bbox[2]) - max(a.bbox[0], c.bbox[0])
+            w = min(a.bbox[2] - a.bbox[0], c.bbox[2] - c.bbox[0])
+            if w > 0 and ov >= 0.5 * w:
+                parent[_find(i)] = _find(j)
+    clusters: dict[int, list[BBoxItem]] = {}
+    for i, b in enumerate(body):
+        clusters.setdefault(_find(i), []).append(b)
+
+    # 2) main = 최대 클러스터(동수면 총면적). main 헐과 자기 폭 50% 이상 겹치는
+    #    클러스터(선지 ①②③ 조각 등)는 흡수.
+    main_key = max(clusters, key=lambda k: (len(clusters[k]),
+                                            sum((b.bbox[2] - b.bbox[0]) * (b.bbox[3] - b.bbox[1])
+                                                for b in clusters[k])))
+    main = clusters.pop(main_key)
+    hull0, hull1 = min(b.bbox[0] for b in main), max(b.bbox[2] for b in main)
+    sides: list[list[BBoxItem]] = []
+    for cl in clusters.values():
+        c0, c1 = min(b.bbox[0] for b in cl), max(b.bbox[2] for b in cl)
+        if min(hull1, c1) - max(hull0, c0) >= 0.5 * (c1 - c0):
+            main.extend(cl)
+        else:
+            sides.append(cl)
+
+    # 3) 연속 순번 + 좁은 폭(본문 헐의 절반 이하) 사이드 열만 본문 뒤로 이동
+    body_rank = {id(b): r for r, b in
+                 enumerate(sorted(body, key=lambda b: b.reading_order), start=1)}
+    deferred: list[list[BBoxItem]] = []
+    for cl in sides:
+        ranks = sorted(body_rank[id(b)] for b in cl)
+        contiguous = ranks[-1] - ranks[0] == len(ranks) - 1
+        narrow = (max(b.bbox[2] for b in cl) - min(b.bbox[0] for b in cl)) \
+            <= 0.5 * (hull1 - hull0)
+        if contiguous and narrow:
+            deferred.append(cl)
+        else:
+            main.extend(cl)
+    hull0, hull1 = min(b.bbox[0] for b in main), max(b.bbox[2] for b in main)
+
+    # 4) main: MinerU 순서가 y-흐름을 2회 넘게 거스를 때만 y-밴드 정렬.
+    #    위반 = y가 2밴드 이상 되돌아가는데 오른쪽 열 점프(2단 전환)도 아닌 연속 쌍.
+    heights = sorted(b.bbox[3] - b.bbox[1] for b in main)
+    band = max(1.0, heights[len(heights) // 2] * 0.5)
+
+    def _ykey(b: BBoxItem) -> tuple:
+        return (round(b.bbox[1] / band), b.bbox[0])
+
+    by_mineru = sorted(main, key=lambda b: b.reading_order)
+    viol = sum(
+        1 for a, c in zip(by_mineru, by_mineru[1:])
+        if c.bbox[1] < a.bbox[1] - 2 * band and c.bbox[0] < a.bbox[0] + 0.3 * (hull1 - hull0)
+    )
+    main = sorted(main, key=_ykey) if viol > 1 else by_mineru
+
+    # 5) 새 본문 순서 = main → 이동 열(x0 순, 각 y-정렬). 비본문은 원 슬롯 유지.
+    deferred.sort(key=lambda cl: min(b.bbox[0] for b in cl))
+    new_body = main + [b for cl in deferred for b in sorted(cl, key=lambda x: x.bbox[1])]
+    body_ids = {id(b) for b in body}
+    it = iter(new_body)
+    seq = [next(it) if id(b) in body_ids else b
+           for b in sorted(items, key=lambda b: b.reading_order)]
+    for k, b in enumerate(seq, start=1):
         b.reading_order = k
 
 
@@ -379,6 +495,9 @@ def _parse_txt_result(
         vsub = el.get("visual_subtype") or _SUBTYPE_FROM_TYPE.get(orig_type)
         order = int(el.get("order", idx))
         content = el.get("content", "") or ""
+        if etype in _TEXT_TYPES and _is_boilerplate(content):
+            logger.info("보일러플레이트 드롭(%s): %.60s", etype, content)
+            continue
         # heading_level: 현주 핸드오프가 주면 그 값, 없으면 title은 1단계 기본(PART 10 조판용)
         hlevel = el.get("heading_level")
         if hlevel in (None, 0) and etype == "title":

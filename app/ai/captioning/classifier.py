@@ -2,6 +2,7 @@
 GPT-4o로 크롭 이미지를 image / cartoon / chart 중 하나로 분류.
 """
 import base64
+import math
 import os
 from pathlib import Path
 
@@ -32,6 +33,17 @@ def classify(image_path: str) -> str:
     """
     Returns 'image' | 'cartoon' | 'chart'
     """
+    return classify_with_confidence(image_path)[0]
+
+
+def classify_with_confidence(image_path: str) -> tuple[str, float | None]:
+    """
+    Returns (label, confidence).
+    label = 'image' | 'cartoon' | 'chart'
+    confidence = 라벨 토큰들의 logprob 합을 exp한 확률(0~1).
+      - 응답이 세 라벨 밖이면 0.0 (형식 이탈 자체가 불확실 신호 → R2 대상)
+      - API가 logprobs를 안 주면 None (신뢰도 판단 불가 — 플래그 안 띄움)
+    """
     with open(image_path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode()
 
@@ -54,8 +66,20 @@ def classify(image_path: str) -> str:
         ],
         max_tokens=5,
         temperature=0,
+        logprobs=True,
     )
-    label = resp.choices[0].message.content.strip().lower()
+    choice = resp.choices[0]
+    label = choice.message.content.strip().lower()
     if label not in ("image", "cartoon", "chart"):
-        label = "image"
-    return label
+        return "image", 0.0
+
+    confidence: float | None = None
+    try:
+        tokens = choice.logprobs.content or []
+        # 공백·개행뿐인 스캐폴드 토큰은 제외하고 라벨 토큰의 확률만 본다.
+        lps = [t.logprob for t in tokens if t.token.strip()]
+        if lps:
+            confidence = math.exp(sum(lps))
+    except (AttributeError, TypeError):
+        pass  # logprobs 미제공 → None
+    return label, confidence

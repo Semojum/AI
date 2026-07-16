@@ -136,3 +136,53 @@ def test_regulation_pairs_has_decode_ok(filename: str) -> None:
     data = json.loads(path.read_text(encoding="utf-8"))
     ok = [p for p in data["pairs"] if p["decode_ok"]]
     assert len(ok) >= 1, f"{filename}: decode_ok 쌍 0개"
+
+
+class TestBookStyleConventions:
+    """정답 도서 표기 관행(BRAILLE_STYLE=book, 기본값) — 규정과 다른 자리.
+
+    근거: 정답 코퍼스(수능특강 점역본 1131p) 전수 관찰.
+      · 표시 문자 (가)/(1) → 붙임표로 감쌈: -가- 1217회 / -1- 281회
+      · 일반 소괄호는 규정대로: 730회. 영문 (A)(B)도 소괄호 유지: 124/74회
+      · 화살괄호 〈〉《》: 코퍼스에 0회 → 작은따옴표(3618회)로 적음
+    """
+
+    def _brf(self, text: str) -> str:
+        from app.ai.braille.translator import translate_tagged_text
+        from app.utils.braille_ascii import unicode_to_ascii
+        return unicode_to_ascii(translate_tagged_text(text))
+
+    def test_한글_표시문자는_붙임표(self):
+        assert self._brf("(가)") == "-$-"          # 가 = $ (약자)
+        assert self._brf("(나)") == "-c-"
+
+    def test_숫자_표시문자는_붙임표(self):
+        assert self._brf("(1)") == "-#a-"
+
+    def test_영문_괄호는_소괄호_유지(self):
+        assert self._brf("(A)") == "8',a,0"        # 여는 8' · 닫는 ,0 (규정 제49항)
+
+    def test_한글_괄호는_붙임표(self):
+        # 정답 도서는 표시 문자뿐 아니라 한글 괄호도 붙임표로 감싼다
+        # (예: "소계(해당 인구)" → "소계-해당 인구-", "(2,575)" → "-2,575-")
+        assert self._brf("(조사)").startswith("-")
+        assert self._brf("(2,575)").startswith("-")
+
+    def test_영문_섞인_괄호는_소괄호_유지(self):
+        assert self._brf("(SNS)").startswith("8'")
+
+    def test_화살괄호는_작은따옴표(self):
+        assert self._brf("〈보기〉") == ",8~u@o0'"   # ‘보기’
+        assert self._brf("<보기>") == ",8~u@o0'"
+
+    def test_규정모드로_되돌리기(self, monkeypatch):
+        import importlib
+        monkeypatch.setenv("BRAILLE_STYLE", "regulation")
+        from app.ai.braille import translator
+        importlib.reload(translator)
+        try:
+            from app.utils.braille_ascii import unicode_to_ascii
+            assert unicode_to_ascii(translator.translate_tagged_text("(가)")) == "8'$,0"
+        finally:
+            monkeypatch.delenv("BRAILLE_STYLE")
+            importlib.reload(translator)

@@ -40,6 +40,26 @@ class TestTable:
     def test_줄바꿈_보존(self):
         assert ascii_to_unicode("ab\ncd") == "⠁⠃\n⠉⠙"
 
+    def test_백틱_방언(self):
+        """백틱 관례가 출처마다 다르다 — 규정=칸 띄우기, 도서 코퍼스=⠈(초성 ㄱ).
+
+        코퍼스를 기본값("space")으로 읽으면 정답에서 ㄱ초성이 통째로 사라진다
+        (`ma$` = 국가 → '가'). 회귀로 못 박는다.
+        """
+        assert ascii_to_unicode("`", backtick="space") == "⠀"
+        assert ascii_to_unicode("`", backtick="cell") == "⠈"      # @의 시프트형(0x60↔0x40)
+        assert ascii_to_unicode("@") == "⠈"                        # 표준형은 방언 무관
+        # 코퍼스 실제 표기: '국가' = `ma$ (백틱=ㄱ초성)
+        assert ascii_to_unicode("`ma$", backtick="cell") == "⠈⠍⠁⠫"
+        assert ascii_to_unicode("`ma$", backtick="space") == "⠀⠍⠁⠫"   # 잘못 읽으면 ㄱ 소실
+        with pytest.raises(ValueError):
+            ascii_to_unicode("a", backtick="nope")
+
+    def test_역변환은_표준형_at(self):
+        """⠈는 `@`로 역변환한다 — 백틱은 공백 표기와 충돌하므로 쓰지 않는다."""
+        assert unicode_to_ascii("⠈") == "@"
+        assert unicode_to_ascii("⠈⠍⠁⠫") == "@ma$"
+
     def test_미지원_글자는_정직한_표시(self):
         assert ascii_to_unicode("§") == "[?§]"        # 64셀 밖 → [?x]
         with pytest.raises(ValueError):

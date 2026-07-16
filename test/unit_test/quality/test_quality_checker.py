@@ -8,6 +8,7 @@ from app.ai.quality.quality_checker import (
     C6_OVERFLOW_THRESHOLD,
     QualityChecker,
     R1_CONFIDENCE_THRESHOLD,
+    R2_SUBTYPE_CONFIDENCE_THRESHOLD,
 )
 from app.schemas.content import BrailleOutput, ExtractedContent, LLMOutput
 from app.schemas.layout import BBoxItem, LayoutResult
@@ -26,8 +27,10 @@ def _llm(eid, text="정상 텍스트"):
                      routing_tier="ZERO", processing_time_ms=0)
 
 
-def _ext(eid, conf=1.0, flags=None):
+def _ext(eid, conf=1.0, flags=None, visual_subtype=None, subtype_confidence=None):
     return ExtractedContent(element_id=eid, corrected_text="원문", ocr_confidence=conf,
+                            visual_subtype=visual_subtype,
+                            subtype_confidence=subtype_confidence,
                             flags=flags or [])
 
 
@@ -171,6 +174,125 @@ class TestBrailleFailure:
         )
         # 같은 요소는 C 1건만 (opt 단계에서 이미 감지)
         assert len([c for c in report.critical_errors if c.element_id == str(ids[0])]) == 1
+
+
+class TestC5RuntimeScanner:
+    """C5 2차 방어선: 원문에 아라비아 숫자가 있는데 요소 점자에 수표(⠼)가 0개면 C5.
+
+    기대값 근거: 한국 점자 규정 제43항 — 숫자는 수표(⠼)를 앞세운다. 3 = ⠼⠉.
+    """
+
+    def test_missing_number_indicator_is_c5(self):
+        layout, ids = _layout(1)
+        report = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(ids[0])],
+            llm_outputs=[_llm(ids[0], "정답은 3번")],
+            # ⠼ 없이 숫자 점형만 (수표 누락 회귀 상황)
+            braille_outputs=[BrailleOutput(element_id=ids[0], braille_lines=["⠨⠻⠊⠣⠃⠵⠀⠉⠘⠞"])],
+        )
+        assert report.status == "NEEDS_REVIEW"
+        assert [c.type for c in report.critical_errors] == ["C5"]
+        assert report.critical_errors[0].element_id == str(ids[0])
+
+    def test_number_indicator_present_no_c5(self):
+        layout, ids = _layout(1)
+        report = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(ids[0])],
+            llm_outputs=[_llm(ids[0], "정답은 3번")],
+            braille_outputs=[BrailleOutput(element_id=ids[0], braille_lines=["⠨⠻⠊⠣⠃⠵⠀⠼⠉⠘⠞"])],
+        )
+        assert report.status == "COMPLETED"
+
+    def test_no_digits_no_c5(self):
+        layout, ids = _layout(1)
+        report = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(ids[0])],
+            llm_outputs=[_llm(ids[0], "숫자 없는 문장")],
+            braille_outputs=[BrailleOutput(element_id=ids[0], braille_lines=["⠁⠃⠉"])],
+        )
+        assert report.status == "COMPLETED"
+
+    def test_visual_element_exempt(self):
+        # 시각자료 초안은 LLM 생성이라 수치가 정당하게 요약·생략될 수 있음(R5 소관) → C5 제외
+        layout, ids = _layout(1)
+        report = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(ids[0], visual_subtype="chart_graph")],
+            llm_outputs=[_llm(ids[0], "1990년 30% 상승 그래프")],
+            braille_outputs=[BrailleOutput(element_id=ids[0], braille_lines=["⠠⠄⠈⠪⠐⠗⠘⠪⠠⠄"])],
+        )
+        assert not any(c.type == "C5" for c in report.critical_errors)
+
+    def test_empty_braille_skipped(self):
+        # 점역 출력 자체가 없으면 C5가 아니라 상위 실패(C1/C2) 신호의 소관
+        layout, ids = _layout(1)
+        report = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(ids[0])],
+            llm_outputs=[_llm(ids[0], "정답은 3번")],
+            braille_outputs=[BrailleOutput(element_id=ids[0], braille_lines=[])],
+        )
+        assert not any(c.type == "C5" for c in report.critical_errors)
+
+    def test_blocked_element_not_double_flagged(self):
+        layout, ids = _layout(2)
+        report = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(i) for i in ids],
+            llm_outputs=[_llm(ids[0], "[처리 불가: OCR 실패] 3번"), _llm(ids[1])],
+            braille_outputs=[BrailleOutput(element_id=ids[0], braille_lines=["⠁⠃⠉"])],
+        )
+        # placeholder C2만 — 같은 요소에 C5 중복 없음
+        elem_criticals = [c for c in report.critical_errors if c.element_id == str(ids[0])]
+        assert [c.type for c in elem_criticals] == ["C2"]
+
+
+class TestR2SubtypeConfidence:
+    """R2: classifier logprob 신뢰도 < 0.75 → 세분류 불확실 검토 플래그."""
+
+    def test_low_confidence_fires_r2(self):
+        layout, ids = _layout(1)
+        report = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(ids[0], visual_subtype="cartoon",
+                            subtype_confidence=R2_SUBTYPE_CONFIDENCE_THRESHOLD - 0.1)],
+            llm_outputs=[_llm(ids[0])],
+        )
+        assert report.status == "NEEDS_REVIEW"
+        assert [r.type for r in report.review_flags] == ["R2"]
+
+    def test_high_confidence_no_r2(self):
+        layout, ids = _layout(1)
+        report = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(ids[0], visual_subtype="cartoon", subtype_confidence=0.98)],
+            llm_outputs=[_llm(ids[0])],
+        )
+        assert report.status == "COMPLETED"
+
+    def test_none_confidence_no_r2(self):
+        # logprobs 미제공 → 판단 불가, 플래그 안 띄움 (기존 동작 보존)
+        layout, ids = _layout(1)
+        report = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(ids[0], visual_subtype="image", subtype_confidence=None)],
+            llm_outputs=[_llm(ids[0])],
+        )
+        assert report.status == "COMPLETED"
+
+    def test_flag_and_confidence_no_duplicate_r2(self):
+        # 경계 파일 플래그 + 낮은 신뢰도 동시 → R2는 1건만
+        layout, ids = _layout(1)
+        report = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(ids[0], flags=["SUBTYPE_UNCERTAIN"], visual_subtype="image",
+                            subtype_confidence=0.5)],
+            llm_outputs=[_llm(ids[0])],
+        )
+        assert [r.type for r in report.review_flags] == ["R2"]
 
 
 class TestReportFields:

@@ -36,19 +36,68 @@ def _is_hangul(ch: str) -> bool:
     return "가" <= ch <= "힣" or "ㄱ" <= ch <= "ㅣ"
 
 
-def _line_text_with_word_gaps(line: dict) -> str:
+# ── 밑줄(드러냄표) 감지 ──────────────────────────────────────────────────────
+# 한국 점자 규정 제56항: 밑줄·드러냄표로 강조된 글자체는 ⠠⠤…⠤⠄로 적는다.
+# 정답 도서는 이걸 1204회 쓰는데(수능 문항 "밑줄 친 ㉠~㉤") 우리는 0회였다 — 밑줄이
+# 폰트 속성이 아니라 **벡터 선**으로 그려져 있어 텍스트 추출만으로는 안 보였기 때문.
+# 글자 바로 아래(0~6pt)에 깔린 얇은 가로선을 찾아 그 위 글자들을 강조로 본다.
+_UL_MAX_H = 2.0          # 선 두께 상한(pt) — 이보다 두꺼우면 밑줄이 아니라 도형/음영
+_UL_MIN_W = 4.0          # 너무 짧은 선(점·기호)은 제외
+_UL_GAP_MAX = 6.0        # 글자 아랫변에서 선까지 허용 거리(pt)
+_UL_GAP_MIN = -1.5       # 글자와 살짝 겹치는 밑줄도 허용
+_UL_PAGE_W_RATIO = 0.8   # 페이지 폭의 이 비율을 넘는 선은 머리말 구분선 등 → 제외
+_UL_COVER = 0.5          # 글자 폭이 선과 이만큼 겹쳐야 밑줄로 인정
+_UL_OPEN, _UL_CLOSE = "<!드러냄>", "<!/드러냄>"
+
+
+def underline_rects(page) -> list:
+    """페이지의 밑줄 후보 선(표시 좌표계 Rect)."""
+    rot = page.rotation_matrix
+    page_w = page.rect.width
+    out = []
+    for g in page.get_drawings():
+        r = fitz.Rect(g["rect"]) * rot
+        if r.height <= _UL_MAX_H and _UL_MIN_W <= r.width <= page_w * _UL_PAGE_W_RATIO:
+            out.append(r)
+    return out
+
+
+def _is_underlined(cb, underlines) -> bool:
+    """글자 bbox(표시 좌표)가 밑줄 위에 있는가."""
+    w = cb.x1 - cb.x0
+    if w <= 0:
+        return False
+    for u in underlines:
+        gap = u.y0 - cb.y1
+        if not (_UL_GAP_MIN <= gap <= _UL_GAP_MAX):
+            continue
+        overlap = min(cb.x1, u.x1) - max(cb.x0, u.x0)
+        if overlap / w >= _UL_COVER:
+            return True
+    return False
+
+
+def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None) -> str:
     """rawdict 한 줄 → 글자 간격으로 어절 경계를 복원한 텍스트.
 
     공백 글리프가 실제로 있는 자리는 그대로 두고, 한글이 낀 글자쌍에서만
     '기준 간격(중앙값) + 임계'보다 벌어진 지점에 공백을 삽입한다.
     자간이 고르게 넓은 제목(트래킹)은 기준 간격 자체가 커져 오분리되지 않는다.
+
+    matrix: 회전된 페이지의 rotation_matrix. rawdict 좌표는 회전 전 기준이라 270° 페이지에서는
+    글자들이 세로로 늘어서 x 간격이 무의미해진다(어절 복원이 전멸). 표시 좌표로 옮겨서 잰다.
     """
-    chars: list[tuple[str, float, float, float]] = []  # (ch, x0, x1, size)
+    chars: list[tuple[str, float, float, float, bool]] = []  # (ch, x0, x1, size, underlined)
     for span in line.get("spans", []):
         size = float(span.get("size") or 0.0)
         for c in span.get("chars", []):
             bbox = c.get("bbox") or (0, 0, 0, 0)
-            chars.append((c.get("c", ""), float(bbox[0]), float(bbox[2]), size))
+            if matrix is not None:
+                bbox = fitz.Rect(bbox) * matrix
+            else:
+                bbox = fitz.Rect(bbox)
+            ul = bool(underlines) and _is_underlined(bbox, underlines)
+            chars.append((c.get("c", ""), float(bbox[0]), float(bbox[2]), size, ul))
     if not chars:
         return ""
 
@@ -58,19 +107,28 @@ def _line_text_with_word_gaps(line: dict) -> str:
         if chars[i - 1][0].isspace() or chars[i][0].isspace():
             continue
         gaps.append(chars[i][1] - chars[i - 1][2])
-    if len(gaps) < _MIN_GAP_SAMPLES:
-        return "".join(c[0] for c in chars)
+    have_base = len(gaps) >= _MIN_GAP_SAMPLES
+    base = sorted(gaps)[len(gaps) // 2] if have_base else 0.0
 
-    base = sorted(gaps)[len(gaps) // 2]  # 글자 내 전형 간격(중앙값)
-    out: list[str] = [chars[0][0]]
-    for i in range(1, len(chars)):
-        ch, x0, _x1, size = chars[i]
-        prev_ch, _px0, px1, _psize = chars[i - 1]
-        if not ch.isspace() and not prev_ch.isspace() and (_is_hangul(ch) or _is_hangul(prev_ch)):
-            threshold = base + max(_WORD_GAP_RATIO * (size or 10.0), _WORD_GAP_MIN_PT)
-            if (x0 - px1) > threshold:
-                out.append(" ")
+    out: list[str] = []
+    in_ul = False
+    for i, (ch, x0, _x1, size, ul) in enumerate(chars):
+        # 밑줄 구간 여닫이 (규정 제56항) — 공백에서 열지 않는다(마커가 어절 밖으로 새는 것 방지)
+        if ul and not in_ul and not ch.isspace():
+            out.append(_UL_OPEN)
+            in_ul = True
+        elif in_ul and not ul:
+            out.append(_UL_CLOSE)
+            in_ul = False
+        if i and have_base:
+            prev_ch, _px0, px1, _psize, _pul = chars[i - 1]
+            if not ch.isspace() and not prev_ch.isspace() and (_is_hangul(ch) or _is_hangul(prev_ch)):
+                threshold = base + max(_WORD_GAP_RATIO * (size or 10.0), _WORD_GAP_MIN_PT)
+                if (x0 - px1) > threshold:
+                    out.insert(len(out) - 1 if (ul and not _pul) else len(out), " ")
         out.append(ch)
+    if in_ul:
+        out.append(_UL_CLOSE)
     return "".join(out)
 
 
@@ -80,11 +138,13 @@ def _page_text_blocks_spaced(page) -> list[dict]:
     반환 요소: {"content": str, "bbox": [x0,y0,x1,y1] (PyMuPDF 포인트)}.
     """
     raw = page.get_text("rawdict")
+    rot = page.rotation_matrix
+    uls = underline_rects(page)
     blocks: list[dict] = []
     for b in raw.get("blocks", []):
         if b.get("type") != 0:      # 0 = 텍스트 블록
             continue
-        lines = [_line_text_with_word_gaps(ln) for ln in b.get("lines", [])]
+        lines = [_line_text_with_word_gaps(ln, rot, uls) for ln in b.get("lines", [])]
         text = "\n".join(ln for ln in lines if ln).strip()
         if not text:
             continue

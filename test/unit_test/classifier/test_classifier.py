@@ -15,7 +15,10 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 from uuid import UUID
 
 import pytest
@@ -135,3 +138,68 @@ class TestPipelineChainRouting:
         elem = BBoxItem(type="image", bbox=(0, 0, 100, 100), reading_order=1)
         _ = elem.model_copy(update={"type": "chart_graph"})
         assert elem.type == "image"
+
+
+class TestClassifyWithConfidence:
+    """classify_with_confidence — logprob 기반 세분류 신뢰도 (R2 발화 근거).
+
+    OpenAI 응답은 목 — 실 API 검증은 크레딧 복구 후.
+    """
+
+    @staticmethod
+    def _mock_resp(content: str, logprob_tokens: list[tuple[str, float]] | None):
+        logprobs = None
+        if logprob_tokens is not None:
+            logprobs = SimpleNamespace(content=[
+                SimpleNamespace(token=t, logprob=lp) for t, lp in logprob_tokens
+            ])
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content=content), logprobs=logprobs,
+        )])
+
+    def _run(self, tmp_path, resp):
+        from test.conftest import DUMMY_PNG_BYTES
+        from app.ai.captioning import classifier
+
+        img = tmp_path / "crop.png"
+        img.write_bytes(DUMMY_PNG_BYTES)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
+            create=lambda **kw: resp,
+        )))
+        with patch.object(classifier, "_get_client", return_value=client):
+            return classifier.classify_with_confidence(str(img))
+
+    def test_confidence_from_logprob(self, tmp_path) -> None:
+        label, conf = self._run(tmp_path, self._mock_resp("chart", [("chart", -0.05)]))
+        assert label == "chart"
+        assert conf == pytest.approx(math.exp(-0.05))
+
+    def test_multi_token_logprobs_summed(self, tmp_path) -> None:
+        # 공백 스캐폴드 토큰은 제외, 라벨 토큰 logprob은 합산
+        resp = self._mock_resp("cartoon", [("\n", -0.9), ("car", -0.2), ("toon", -0.1)])
+        label, conf = self._run(tmp_path, resp)
+        assert label == "cartoon"
+        assert conf == pytest.approx(math.exp(-0.3))
+
+    def test_invalid_label_zero_confidence(self, tmp_path) -> None:
+        # 세 라벨 밖 응답 = 형식 이탈 → image 폴백 + 신뢰도 0.0 (R2 대상)
+        label, conf = self._run(tmp_path, self._mock_resp("photograph", [("photograph", -0.1)]))
+        assert label == "image"
+        assert conf == 0.0
+
+    def test_missing_logprobs_returns_none(self, tmp_path) -> None:
+        label, conf = self._run(tmp_path, self._mock_resp("image", None))
+        assert label == "image"
+        assert conf is None
+
+    def test_classify_wrapper_returns_label_only(self, tmp_path) -> None:
+        from app.ai.captioning import classifier
+        from test.conftest import DUMMY_PNG_BYTES
+
+        img = tmp_path / "crop.png"
+        img.write_bytes(DUMMY_PNG_BYTES)
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
+            create=lambda **kw: self._mock_resp("cartoon", [("cartoon", -0.01)]),
+        )))
+        with patch.object(classifier, "_get_client", return_value=client):
+            assert classifier.classify(str(img)) == "cartoon"

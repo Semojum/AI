@@ -9,9 +9,13 @@ status 결정 규칙 (plan V2_기술명세서 §4-1):
     C 오류 없음 + R 플래그 1개 이상   → NEEDS_REVIEW
     오류/플래그 없음                  → COMPLETED
 
-C5(수표 누락)는 런타임 발생 불가 — 배포 전 test_rule_engine.py 전수 통과로 차단.
+C5(수표 누락)는 배포 전 test_rule_engine.py 전수 통과가 1차 방어선, 여기 런타임
+스캐너가 2차 방어선: opt 텍스트에 아라비아 숫자가 있는데 해당 요소 점자에 수표(⠼)가
+하나도 없으면 C5. 현 엔진은 모든 숫자 경로(수식 지수·분수·소수·연도 포함)에 수표를
+넣으므로 미검출 = 회귀다. 플래그 신뢰성(30초 케이스: COMPLETED를 믿고 스킴)의 전제라
+조용히 COMPLETED로 나가면 안 된다.
 C7(타임아웃)은 pipeline.run()의 asyncio.wait_for가 직접 BLOCKED 응답을 만들므로
-이 검사기는 C1~C4·C6만 판정한다.
+이 검사기는 C1~C6을 판정한다.
 """
 from __future__ import annotations
 
@@ -29,6 +33,12 @@ logger = get_logger(__name__)
 C6_OVERFLOW_THRESHOLD = 0.30
 # R1: OCR 신뢰도 미달 임계
 R1_CONFIDENCE_THRESHOLD = 0.85
+# R2: 시각자료 세분류 신뢰도 미달 임계 (classifier logprob 기반, test_classifier 경계 기준)
+R2_SUBTYPE_CONFIDENCE_THRESHOLD = 0.75
+
+# C5: 수표(⠼) 런타임 스캐너 — 아라비아 숫자와 수표 기호
+_C5_DIGIT_RE = re.compile(r"[0-9]")
+_NUMBER_INDICATOR = "⠼"
 
 # opt/점역 placeholder → Critical 유형 (구체 패턴을 먼저 검사한다 — "[처리 불가"가 가장 광범위)
 # 실패 문자열이 본문에 남으면 그대로 점자로 찍혀 학생에게 나간다 → 반드시 Critical로 잡는다.
@@ -100,6 +110,30 @@ class QualityChecker:
                 ))
                 blocked_ids.add(eid)
 
+        # ── 요소 단위: C5 런타임 스캐너 — 원문에 숫자가 있는데 점자에 수표(⠼) 0개 ──
+        # rule-based 그대로 옮기는 요소(텍스트·수식·표)만 검사. 시각자료(visual_subtype
+        # 있음)는 LLM 생성 초안이라 수치가 정당하게 요약·생략될 수 있고(R5 소관) 제외.
+        ext_by_id = {str(e.element_id): e for e in extracted}
+        braille_by_id = {str(b.element_id): b for b in braille_outputs}
+        for o in llm_outputs:
+            eid = str(o.element_id)
+            if eid in blocked_ids:
+                continue
+            if not _C5_DIGIT_RE.search(o.corrected_text or ""):
+                continue
+            ext = ext_by_id.get(eid)
+            if ext is not None and ext.visual_subtype:
+                continue
+            b = braille_by_id.get(eid)
+            if b is None or not any(ln.strip() for ln in b.braille_lines):
+                continue  # 점역 출력 자체가 없으면 상위 실패 신호(C1/C2)의 소관
+            if _NUMBER_INDICATOR not in "".join(b.braille_lines):
+                criticals.append(CriticalError(
+                    type="C5", element_id=eid,
+                    message="수표(⠼) 누락 — 원문에 아라비아 숫자가 있으나 요소 점자에 수표 없음",
+                ))
+                blocked_ids.add(eid)
+
         # ── 요소 단위: 추출 신호 → R 플래그 ──────────────────────────────
         for e in extracted:
             eid = str(e.element_id)
@@ -113,6 +147,21 @@ class QualityChecker:
                 reviews.append(ReviewFlag(
                     type="R1", element_id=eid,
                     message=f"OCR 신뢰도 미달 ({e.ocr_confidence:.2f} < {R1_CONFIDENCE_THRESHOLD})",
+                ))
+            # R2: 세분류 신뢰도 미달 (경계 파일에 SUBTYPE_UNCERTAIN 플래그가 이미 있으면
+            # 위 플래그 매핑이 R2를 냈으므로 중복 발화하지 않는다)
+            if (
+                eid not in blocked_ids
+                and e.subtype_confidence is not None
+                and e.subtype_confidence < R2_SUBTYPE_CONFIDENCE_THRESHOLD
+                and "SUBTYPE_UNCERTAIN" not in (e.flags or [])
+            ):
+                reviews.append(ReviewFlag(
+                    type="R2", element_id=eid,
+                    message=(
+                        f"시각자료 세분류 신뢰도 미달 "
+                        f"({e.subtype_confidence:.2f} < {R2_SUBTYPE_CONFIDENCE_THRESHOLD})"
+                    ),
                 ))
 
         # ── 페이지 단위 ───────────────────────────────────────────────────

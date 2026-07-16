@@ -19,6 +19,7 @@ braillify 미설치 시 (폴백):
 from __future__ import annotations
 
 import logging
+import os
 import re
 
 from app.ai.braille.kor_math_rules import convert_latex, digits_to_braille
@@ -263,6 +264,56 @@ def _preprocess_units(text: str) -> str:
     return _DIGIT_ALPHA_RE.sub(" ", text)
 
 
+# ── 점자 도서 표기 관행(BOOK_STYLE) ────────────────────────────────────────────
+# 정답 도서(수능특강 점역본 1131p 전수 관찰)는 「한국 점자 규정」 제49항과 다르게 적는 자리가
+# 있다. 점역사가 검수하는 기준이 도서 관행이므로 기본값을 관행으로 둔다.
+# BRAILLE_STYLE=regulation 이면 규정 표기(제49항 그대로)로 되돌린다.
+#
+#   1) 표시 문자 괄호: (가)·(1) → 붙임표로 감싼다  -가-  (정답: -가- 1217회 / -1- 281회.
+#      일반 괄호는 규정 소괄호를 그대로 쓴다 — 730회. 영문 (A)(B)도 소괄호 유지 — 124/74회)
+#   2) 화살괄호: 〈보기〉·《…》 → 작은따옴표 ‘보기’ (정답 코퍼스에 화살괄호 0회, 작은따옴표 3618회)
+#   3) 물결표: ~·∼ → 줄표 ― (정답에 물결표 0회 / 줄표 2004회. 범위 표기 "㉠~㉤"도 줄표)
+#   4) 표시 문자 자모 뒤 마침표 생략: "ㄱ. 내용" → "ㄱ 내용" (정답은 온표+자모만 적고 마침표 없음)
+#   5) 동그라미 문자: 규정 제64항은 ⠶…⠶로 묶으라 하지만(㉠=⠶⠿⠁⠶, ⓐ=⠶⠴⠁⠶), 도서는 묶음 없이
+#      맨 글자로 적는다(㉠=⠿⠁ 온표+자모(제8항), ⓐ=⠴⠁⠠⠤ 로마자표+글자+종료표).
+#      → 원문에서 동그라미를 벗겨 맨 글자로 넘긴다. symbol_table.json은 규정 정본이라 손대지 않는다.
+_BOOK_STYLE = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
+
+# 동그라미 문자 → 맨 글자 (숫자 ①은 규정=도서 일치(수표+숫자)라 건드리지 않는다)
+_CIRCLED = {chr(0x3260 + i): ch for i, ch in enumerate("ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ")}
+_CIRCLED.update({chr(0x326E + i): ch for i, ch in enumerate("가나다라마바사아자차카타파하")})
+_CIRCLED.update({chr(0x24D0 + i): chr(ord("a") + i) for i in range(26)})   # ⓐ~ⓩ
+_CIRCLED.update({chr(0x24B6 + i): chr(ord("A") + i) for i in range(26)})   # Ⓐ~Ⓩ
+_CIRCLED_RE = re.compile("[" + "".join(_CIRCLED) + "]")
+
+# 괄호 안이 한글·숫자면 붙임표로 감싼다. 영문이 섞이면 규정 소괄호를 유지한다.
+# 정답: -가- 1217 · -나- 663 · -1- 281 · "소계-해당 인구-  100.0-2,575-"(표) …
+#       소괄호(⠦⠄…⠠⠴)는 730회로 (A)(B) 같은 로마자 표기에 남아 있다.
+_MARK_PAREN_RE = re.compile(r"\(([^()A-Za-z\n]{1,12})\)")
+_ANGLE_RE = re.compile(r"[〈《<]([^〈《<>》〉\n]{1,20})[〉》>]")
+_TILDE_RE = re.compile(r"[~∼〜]")
+# 어절 경계에 홀로 선 자모 + 마침표 (항목 머리표 "ㄱ." "ㄴ.")
+_JAMO_MARK_RE = re.compile(r"(?<![가-힣A-Za-z0-9])([ㄱ-ㅎ])\.(?=\s|$)")
+# 문항 번호: 요소 첫머리 숫자 뒤에 본문이 이어질 때만 마침표를 붙인다("3\n다음은…" → "3.").
+# 뒤에 아무것도 없는 숫자(페이지 번호 "16")는 그대로 둔다 — 정답도 마침표를 안 찍는다.
+_QNUM_RE = re.compile(r"^(\d{1,2})(?=\s+\S)")
+# 줄머리 불릿(•·▪): 정답은 글머리 기호를 점자로 찍지 않고 들여쓰기로만 구분한다
+_BULLET_RE = re.compile(r"(?m)^[\s]*[•▪·◦]\s*")
+
+
+def _apply_book_style(text: str) -> str:
+    """도서 관행 표기로 원문을 다듬는다(점역 경로 전용 — text_list 원문은 그대로 둔다)."""
+    if not _BOOK_STYLE:
+        return text
+    text = _BULLET_RE.sub("", text)
+    text = _QNUM_RE.sub(r"\1.", text)
+    text = _CIRCLED_RE.sub(lambda m: _CIRCLED[m.group()], text)
+    text = _MARK_PAREN_RE.sub(r"-\1-", text)
+    text = _ANGLE_RE.sub(r"‘\1’", text)
+    text = _TILDE_RE.sub("―", text)
+    return _JAMO_MARK_RE.sub(r"\1", text)
+
+
 def _collapse_spaces(braille: str) -> str:
     """이중 점자 공백(⠀⠀) → 단일 공백(⠀) — 숫자/영어 모드 전환 시 발생."""
     while "⠀⠀" in braille:
@@ -296,6 +347,12 @@ _TAG_INLINE_MARKER: dict[str, str] = {
     "점역자주": "⠠⠄",   # BBPG-1.2.6 점역자 주 — 양끝 동일(대칭)
     "빈칸_표":   "⠿⠿",   # 표 기입칸
     "빈칸_네모": "⠸⠦",   # 체크박스 □
+}
+
+# 비대칭 인라인 마커: (여는, 닫는)
+_TAG_PAIR_MARKER: dict[str, tuple[str, str]] = {
+    # 규정 제56항: 밑줄·드러냄표로 강조된 글자체 = ⠠⠤ … ⠤⠄ (정답 도서 1204회)
+    "드러냄": ("⠠⠤", "⠤⠄"),
 }
 
 # 테두리(글상자 = 표, BBPG-1.2.5): (캡, 채움) 글리프. 32칸 한 줄로 렌더.
@@ -408,10 +465,13 @@ def substitute_tags(text: str) -> str:
 
     # 2) 단일·대칭 인라인 마커 + 미지 태그 제거
     def _token_sub(m: re.Match) -> str:
-        name = _tag_name(m.group(0))  # "<!" ... ">" 안쪽, 닫기 슬래시 제거
+        tok = m.group(0)
+        name = _tag_name(tok)  # "<!" ... ">" 안쪽, 닫기 슬래시 제거
         if name in _TAG_INLINE_MARKER:
             return _TAG_INLINE_MARKER[name]
-        logger.warning("translator: 미지 태그 제거 %s", m.group(0))
+        if name in _TAG_PAIR_MARKER:
+            return _TAG_PAIR_MARKER[name][1 if tok.startswith("<!/") else 0]
+        logger.warning("translator: 미지 태그 제거 %s", tok)
         return ""
 
     text = _TAG_TOKEN_RE.sub(_token_sub, text)
@@ -433,7 +493,7 @@ def _translate_with_braillify(text: str) -> str:
             if i < len(parts) - 1:  # 수식 직전: 뒤 공백 제거
                 clean = clean.rstrip()
             if clean:
-                preprocessed = _preprocess_units(clean)
+                preprocessed = _preprocess_units(_apply_book_style(clean))
                 substituted = substitute_symbols(preprocessed)
                 text_result: list[str] = []
                 _emit_mixed(substituted, text_result)

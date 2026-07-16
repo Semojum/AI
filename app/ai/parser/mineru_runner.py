@@ -10,6 +10,7 @@ MinerU VLM 백엔드로 PDF 단일 페이지 처리.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -119,6 +120,140 @@ def _extract_text_native(fitz_page: fitz.Page, bbox: list[float]) -> str:
     return fitz_page.get_text("text", clip=rect).strip()
 
 
+# ── 텍스트 레이어 우선(하이브리드) ────────────────────────────────────────────
+# MinerU는 레이아웃(블록 경계·읽기순서·시각자료 탐지)에 쓰고, 글자는 PDF 텍스트 레이어에서
+# 가져온다. 교과서 PDF는 대부분 텍스트 레이어가 있는데도 표·그림 때문에 STANDARD(OCR)로
+# 라우팅돼 VLM이 글자를 다시 읽었고, 그 과정에서 오탈자가 났다
+# (예: "내동댕이치고"→"내동 Charging이치고", "불을 살랐다"→"붙을 살랐다").
+# dev 18p 측정: 무수정 실패 요소의 절반 이상이 이 추출 오탈자였다.
+_NATIVE_TEXT_TYPES = frozenset({
+    "text", "title", "caption", "list_item", "footnote", "sidebar",
+    "header_footer", "page_number",
+})
+# 수식은 제외 — 한컴 수식 폰트 PDF는 수식을 PUA로 인코딩해 텍스트 레이어가 깨진다.
+# 표도 제외 — MinerU가 내는 건 HTML 구조(table_body)라 평문으로 대체하면 구조가 사라진다.
+_PUA_RATIO_MAX = 0.05     # 사설 영역 글리프가 이 비율을 넘으면 텍스트 레이어를 믿지 않는다
+_SIM_MIN = 0.45           # MinerU 결과와 이만큼도 안 닮으면 bbox가 어긋난 것 → 대체 안 함
+
+
+def _pua_ratio(s: str) -> float:
+    if not s:
+        return 0.0
+    pua = sum(1 for ch in s if 0xE000 <= ord(ch) <= 0xF8FF)
+    return pua / len(s)
+
+
+def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
+    """bbox 안의 텍스트를 어절 경계 복원해서 뽑는다.
+
+    ⚠ get_text("text")를 그대로 쓰면 안 된다 — 교과서 PDF 다수가 공백 글리프 없이 글자
+    위치(커닝)로만 어절을 띄우므로 "명중기왕수인이성리학의"처럼 붙어 나온다. 점자는 띄어쓰기가
+    규칙이라 그대로 점역하면 정답과 크게 어긋난다(세계사 p086 실측: cell_ns 0.87→0.39).
+    pdf_analyzer의 글자 간격 기반 복원(_page_text_blocks_spaced)을 재사용한다.
+    """
+    from app.ai.preprocessor.pdf_analyzer import _line_text_with_word_gaps, underline_rects
+
+    w, h = fitz_page.rect.width, fitz_page.rect.height
+    uls = underline_rects(fitz_page)   # 밑줄(드러냄표, 규정 제56항) — 벡터 선으로만 존재
+    rect = fitz.Rect(bbox[0] / 1000 * w, bbox[1] / 1000 * h,
+                     bbox[2] / 1000 * w, bbox[3] / 1000 * h)
+    # ⚠ 회전된 페이지(교과서 PDF에 흔함 — 언어 영역은 270°): rawdict의 줄 bbox는 회전 전
+    # 좌표계라 MinerU가 쓰는 렌더(표시) 좌표와 어긋난다. rotation_matrix로 표시 좌표로 옮긴다.
+    # (이걸 빠뜨리면 회전 페이지에서 매칭이 전부 실패해 OCR 오탈자가 그대로 남는다.)
+    rot = fitz_page.rotation_matrix
+    lines: list[str] = []
+    for blk in fitz_page.get_text("rawdict").get("blocks", []):
+        if blk.get("type") != 0:      # 0 = 텍스트 블록
+            continue
+        for ln in blk.get("lines", []):
+            lb = fitz.Rect(ln.get("bbox") or (0, 0, 0, 0)) * rot
+            # 줄 단위로 고른다(블록 단위는 다단 레이아웃에서 요소 경계와 어긋난다).
+            # 줄 면적의 과반이 요소 bbox 안에 들어와야 채택 — 이웃 단 글자 혼입 방지.
+            if lb.get_area() <= 0 or (lb & rect).get_area() / lb.get_area() < 0.6:
+                continue
+            t = _line_text_with_word_gaps(ln, rot, uls)
+            if t:
+                lines.append(t)
+    return "\n".join(lines).strip()
+
+
+def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) -> str | None:
+    """텍스트 레이어로 대체할 값. 못 믿으면 None(= MinerU 결과 유지)."""
+    native = _native_text_spaced(fitz_page, bbox)
+    if not native or _pua_ratio(native) > _PUA_RATIO_MAX:
+        return None
+    base = (mineru_text or "").strip()
+    if not base:
+        return native
+    # 같은 블록을 가리키는지 확인 — clip은 겹치는 글리프를 다 가져오므로 bbox가 어긋나면
+    # 옆 블록 글자가 섞여 들어온다. 그런 경우는 MinerU 쪽을 그대로 둔다.
+    from difflib import SequenceMatcher
+    a = "".join(native.split())
+    b = "".join(base.split())
+    if SequenceMatcher(None, a, b).ratio() < _SIM_MIN:
+        return None
+    return native
+
+
+_MD_SEP_RE = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
+
+
+def _chart_data_table(md: str) -> str:
+    """MinerU가 차트에서 뽑은 markdown 표 → 표 점역이 먹는 '|' 격자. 표가 아니면 "".
+
+    MinerU는 그래프(막대·원·꺾은선)를 읽어 `| Category | Value |` 형태의 데이터 표를 낸다.
+    정답 도서도 그래프를 이렇게 전사하므로(수치가 본문에 살아 있어야 함) 그대로 표로 넘긴다.
+    """
+    if not md or "|" not in md:
+        return ""
+    if "mermaid" in md or "-->" in md:
+        return ""   # 흐름도(mermaid)는 라벨에 '|'를 쓴다 — 표로 오인하면 도식이 깨진다
+    rows: list[str] = []
+    for ln in md.splitlines():
+        s = ln.strip()
+        if not s or "|" not in s or _MD_SEP_RE.match(s):   # markdown 구분선(|---|) 제거
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        if any(cells):
+            rows.append(" | ".join(cells))
+    return "\n".join(rows) if len(rows) >= 2 else ""
+
+
+# mermaid 노드 선언: A["영국"] · B(청) — 따옴표형을 먼저 잡는다("청 (광저우)"처럼 괄호가
+# 라벨 안에 들어 있어 따옴표 없이 자르면 잘린다).
+_MM_NODE_Q = re.compile(r'(\w+)\s*[\[({]\s*"([^"]*)"\s*[\])}]')
+_MM_NODE_U = re.compile(r'(\w+)\s*[\[({]\s*([^"\])}]+?)\s*[\])}]')
+_MM_ARROW = re.compile(r"(?:-->|---|==>|-\.->)")
+_MM_EDGE_RE = re.compile(r"(\w+)\s*(?:-->|---|==>|-\.->)\s*(?:\|([^|]*)\|)?\s*(\w+)")
+_HANGUL_RE = re.compile(r"[가-힣]")
+
+
+def _flowchart_lines(md: str) -> str:
+    """MinerU가 흐름도에서 뽑은 mermaid → 정답 도서식 화살표 줄.
+
+    정답 표기: "영국-은-→청"(라벨 있는 간선) · "영국→청"(라벨 없음).
+    MinerU가 도식을 이미 구조로 읽어 주므로 캡셔닝 없이 그대로 옮긴다(rule-based).
+    """
+    if not md or ("mermaid" not in md and not _MM_ARROW.search(md)):
+        return ""
+    names: dict[str, str] = {}
+    for k, v in _MM_NODE_U.findall(md):
+        names[k] = v.strip()
+    for k, v in _MM_NODE_Q.findall(md):      # 따옴표형이 우선
+        names[k] = v.strip()
+    # 노드 선언을 식별자만 남기고 지운다 — 안 지우면 `A["영국"] --> B` 의 첫 간선이 안 잡힌다
+    stripped = _MM_NODE_Q.sub(r"\1", md)
+    stripped = _MM_NODE_U.sub(r"\1", stripped)
+    lines: list[str] = []
+    for src, label, dst in _MM_EDGE_RE.findall(stripped):
+        a, b = names.get(src, src), names.get(dst, dst)
+        lab = (label or "").strip()
+        lines.append(f"{a}-{lab}-→{b}" if lab else f"{a}→{b}")
+    text = "\n".join(lines)
+    return text if _HANGUL_RE.search(text) else ""
+
+
+
 def run(
     pdf_path: str,
     page_no: int,
@@ -186,11 +321,15 @@ def run(
         # 인쇄 캡션이 있는 시각자료는 생성 설명(GPT-4o+점역자주) 대신 인쇄 캡션을 그대로
         # plain text(caption)로 방출한다 — 정답 점역 컨벤션 정렬(rule-based vs generation 분리).
         # 캡션 없는 도식만 생성 경로로 남긴다.
+        # ★ 단, MinerU가 도식/그래프에서 데이터를 뽑아 준 경우에는 캡션으로 갈아치우지 않는다.
+        #   ("(가)" 캡션 하나만 남고 삼각무역 도식이 통째로 사라지던 버그 — 세계사 p160)
         printed_cap = item.get("image_caption")
         if isinstance(printed_cap, list):
             printed_cap = " ".join(x for x in printed_cap if x)
         forced_caption = (printed_cap or "").strip() if mapped_type in ("image", "chart_graph", "cartoon") else ""
-        if forced_caption:
+        has_data = bool(_chart_data_table(item.get("content", ""))
+                        or _flowchart_lines(item.get("content", "")))
+        if forced_caption and not has_data:
             mapped_type = "caption"
         bb = item.get("bbox")
         if bb is None:
@@ -218,7 +357,25 @@ def run(
             if item_type == "table":
                 content = item.get("table_body", "")
             elif mapped_type in ("image", "chart_graph", "cartoon"):
-                content = "이미지 캡셔닝 대기"
+                # ★ MinerU가 차트에서 데이터 표를 뽑아 주면(markdown) 그걸 쓴다 — 정답 도서도
+                #   그래프를 데이터 표로 전사한다("언어 문제  64.9"). 이걸 버리고 캡셔닝을
+                #   기다리면 API 없이는 요소가 통째로 비고, 있어도 생성 설명이 수치를 놓친다.
+                #   (rule-based vs generation 분리 원칙: 추출된 데이터는 규칙으로 옮긴다)
+                raw_content = item.get("content", "")
+                data = _chart_data_table(raw_content)
+                flow = _flowchart_lines(raw_content) if not data else ""
+                if data:
+                    content, mapped_type = data, "table"
+                elif flow:
+                    # 흐름도(삼각무역 도식 등) — 정답도 화살표 줄로 전사한다.
+                    # 인쇄 캡션("(가)")이 있으면 앞에 붙여 어느 도식인지 알 수 있게 한다.
+                    content = f"{forced_caption}\n{flow}" if forced_caption else flow
+                    mapped_type = "text"
+                else:
+                    # ⚠ 그림 속 평문(지도 지명 라벨 등)은 쓰지 않는다. MinerU가 "전(합)"처럼
+                    #   같은 라벨을 수십 번 게워내고, 정답 도서도 지명을 그렇게 나열하지 않는다
+                    #   (실측: 세계사 p022 정밀도 0.954→0.518). 지도 설명은 캡셔닝 소관.
+                    content = "이미지 캡셔닝 대기"
             else:
                 content = item.get("content", "")
         elif mapped_type in ("image", "chart_graph", "cartoon"):
@@ -228,12 +385,16 @@ def run(
         else:
             content = item.get("text", "")
 
-        # TEXT_NATIVE면 PyMuPDF 텍스트로 교체 (텍스트 타입만)
-        if extraction_method == "TEXT_NATIVE" and mapped_type not in ("table", "image", "chart_graph", "cartoon"):
-            content = _extract_text_native(fitz_page, bb) or content
+        # 글자는 PDF 텍스트 레이어 우선(하이브리드) — 티어와 무관하게 블록별로 시도한다.
+        # TEXT_NATIVE(스캔 아님이 확실)면 가드 없이 대체, 그 외(OCR 라우팅)는 가드 통과 시만.
+        if mapped_type in _NATIVE_TEXT_TYPES:
+            if extraction_method == "TEXT_NATIVE":
+                content = _native_text_spaced(fitz_page, bb) or content
+            else:
+                content = _native_override(fitz_page, bb, content) or content
 
         # 인쇄 캡션 강제 적용(위 forced_caption) — 생성 placeholder/빈 content를 덮어쓴다.
-        if forced_caption:
+        if forced_caption and mapped_type == "caption":
             content = forced_caption
 
         # page_number인데 숫자가 아닌 경우 type을 text로 정정
