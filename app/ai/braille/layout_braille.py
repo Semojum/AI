@@ -62,10 +62,15 @@ _HIDDEN_TO_BULLET: dict[str, str] = {
 _RULE_BULLET = "KBR-6.14.72"   # 글머리 기호 (제72항)
 _RULE_HIDDEN_SINGLE = "KBR-6.13.49"  # 숨김표 단일(제49항) — list_item 첫머리면 글머리로 정정
 
-_PARA_INDENT = 3        # BBPG 2장2절2 새 문단 첫 줄 3칸 (text)
-_BULLET_LINE_INDENT = 3  # BBPG 2장3절5 글머리/목록 3칸 (list_item)
-_HEADING_DEEP_INDENT = 5  # BBPG 2장2절1 3·4단계 제목 5칸
-_HEADING_LEVEL2_INDENT = 7  # 2단계 제목 7칸 (BBPG 2장2절1 3): 쪽바꿈하여 7칸에서 시작)
+# ★ 들여쓰기 상수는 "빈칸 개수"다 (규정의 '시작 칸' 숫자가 아님).
+#   BBPG "3칸에서 시작" = 글자가 3번째 칸부터 = 앞에 빈칸 2개.
+#   정답 코퍼스 1131p/85,600줄 전수 검증: 빈칸은 0(66.0%)·2(31.3%)·4(2.2%)·6(0.4%)칸만
+#   나오고 홀수는 사실상 없다 → 규정의 1·3·5·7칸 시작과 정확히 일치.
+#   (2026-07-16 이전엔 상수를 시작 칸 숫자 그대로 써서 전 줄이 1칸씩 밀려 있었다.)
+_PARA_INDENT = 2        # BBPG 2장2절2 새 문단 "3칸에서 시작" = 앞 빈칸 2 (text)
+_BULLET_LINE_INDENT = 2  # BBPG 2장3절5 글머리/목록 "3칸에서 시작" = 앞 빈칸 2 (list_item)
+_HEADING_DEEP_INDENT = 4  # BBPG 2장2절1 3·4단계 제목 "5칸에서 시작" = 앞 빈칸 4
+_HEADING_LEVEL2_INDENT = 6  # 2단계 제목 "7칸에서 시작" = 앞 빈칸 6 (BBPG 2장2절1 3)
 
 _DEFAULT_META: tuple[str, int, int] = ("text", 1_000_000, 0)
 _PAGE_LINE_TYPES = {"header_footer", "page_number"}
@@ -82,10 +87,10 @@ _BULLET_MARKERS: dict[int, str] = {1: "⠸⠴", 2: "⠤"}
 _BULLET_INDENT = 2  # 3칸에 표기(2칸 들여 후 3번째 칸)
 
 # ── BBPG 2장2절2 문단 형식 ──────────────────────────────────────────────────
-_PARAGRAPH_INDENT = 3  # 새 문단은 3칸에서 시작
+_PARAGRAPH_INDENT = 2  # 새 문단은 "3칸에서 시작" = 앞 빈칸 2
 
 # ── BBPG 2장2절6 출전 ──────────────────────────────────────────────────────
-_CITATION_INDENT = 3
+_CITATION_INDENT = 2  # 인용 "3칸에서 시작" = 앞 빈칸 2
 
 # ── BBPG 2장2절2-3) 원본 페이지 변경선 ─────────────────────────────────────
 _PAGE_CHANGE_FILL = "⠤"  # 변경선 채움 점형(BBPG는 ⠤ 또는 ⠒ 허용 — ⠤ 채택)
