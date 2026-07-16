@@ -50,6 +50,9 @@ def classify_with_confidence(image_path: str) -> tuple[str, float | None]:
     ext = Path(image_path).suffix.lstrip(".").lower()
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
+    if os.getenv("CAPTION_BACKEND", "openai") == "anthropic":
+        return _classify_anthropic(b64, mime)
+
     from app.utils.req_log import inc_gpt4o
     inc_gpt4o()
     resp = _get_client().chat.completions.create(
@@ -83,3 +86,24 @@ def classify_with_confidence(image_path: str) -> tuple[str, float | None]:
     except (AttributeError, TypeError):
         pass  # logprobs 미제공 → None
     return label, confidence
+
+
+def _classify_anthropic(b64: str, mime: str):
+    """Anthropic 백엔드 분류. logprobs API가 없어 confidence=None을 준다.
+    quality_checker는 confidence None이면 R2를 띄우지 않는다(설계된 경로)."""
+    import anthropic
+    from app.utils.req_log import inc_gpt4o
+    inc_gpt4o()
+    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    resp = client.messages.create(
+        model=os.getenv("CAPTION_MODEL", "claude-sonnet-5"),
+        max_tokens=10,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
+        ]}],
+    )
+    label = "".join(b.text for b in resp.content if b.type == "text").strip().lower()
+    if label not in ("image", "cartoon", "chart"):
+        return "image", 0.0        # 형식 이탈 = 불확실 신호(R2 대상)
+    return label, None
