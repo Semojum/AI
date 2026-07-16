@@ -297,15 +297,17 @@ _JAMO_MARK_RE = re.compile(r"(?<![가-힣A-Za-z0-9])([ㄱ-ㅎ])\.(?=\s|$)")
 # 문항 번호: 요소 첫머리 숫자 뒤에 본문이 이어질 때만 마침표를 붙인다("3\n다음은…" → "3.").
 # 뒤에 아무것도 없는 숫자(페이지 번호 "16")는 그대로 둔다 — 정답도 마침표를 안 찍는다.
 _QNUM_RE = re.compile(r"^(\d{1,2})(?=\s+\S)")
-# 줄머리 불릿(•·▪): 정답은 글머리 기호를 점자로 찍지 않고 들여쓰기로만 구분한다
-_BULLET_RE = re.compile(r"(?m)^[\s]*[•▪·◦]\s*")
+# 줄머리 불릿(•▪·◦)은 지우지 않는다 — layout._apply_bullet_marker가 ○□△와 같은 방식으로
+# 정답 도서의 글머리표 ⠔⠔로 정정한다(아래 근거). 여기서 지우면 그 기회가 사라진다.
+#   규정 제72항은 •를 ⠸⠲(_4)로 지정하지만 정답 코퍼스 1131p에 _4는 0회,
+#   ⠔⠔(99)가 2,642회(줄머리 454 / 중간 20). 원문 '•' 시작 줄 ↔ 정답 대조 10/11 일치.
+#   (2026-07-16 이전엔 "정답은 글머리를 안 찍는다"고 보고 지웠으나 전수 확인 결과 오판)
 
 
 def _apply_book_style(text: str) -> str:
     """도서 관행 표기로 원문을 다듬는다(점역 경로 전용 — text_list 원문은 그대로 둔다)."""
     if not _BOOK_STYLE:
         return text
-    text = _BULLET_RE.sub("", text)
     text = _QNUM_RE.sub(r"\1.", text)
     text = _CIRCLED_RE.sub(lambda m: _CIRCLED[m.group()], text)
     text = _MARK_PAREN_RE.sub(r"-\1-", text)

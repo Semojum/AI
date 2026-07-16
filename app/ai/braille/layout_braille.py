@@ -58,6 +58,10 @@ _HIDDEN_TO_BULLET: dict[str, str] = {
     "⠸⠴⠇": "⠸⠴",  # ○ 숨김표 → 글머리 (제72항 _0=⠸⠴)
     "⠸⠶⠇": "⠸⠶",  # □ → 글머리 (제72항 _7=⠸⠶)
     "⠸⠬⠇": "⠸⠬",  # △ → 글머리 (제72항 _+=⠸⠬)
+    # ★ • (가운뎃점 ⠐⠆) → 정답 도서 글머리표 ⠔⠔ + 공백.
+    #   규정 제72항은 ⠸⠲(_4)를 지정하나 정답 코퍼스 1131p에 0회, ⠔⠔가 2,642회.
+    #   도서 관행 우선(BRAILLE_STYLE=regulation이면 규정값으로 되돌릴 것 — 2-4 백로그).
+    "⠐⠆": "⠔⠔⠀",
 }
 _RULE_BULLET = "KBR-6.14.72"   # 글머리 기호 (제72항)
 _RULE_HIDDEN_SINGLE = "KBR-6.13.49"  # 숨김표 단일(제49항) — list_item 첫머리면 글머리로 정정
@@ -439,7 +443,9 @@ class LayoutBraille:
         self._expand_box_borders(bo)
         if not any(ln.strip() for ln in bo.braille_lines):
             return [], 0
-        if etype == "list_item":
+        # 글머리표는 요소 타입이 아니라 "줄머리에 글머리 글리프가 있는가"로 결정된다.
+        # dev 18p 실측: 불릿을 가진 요소가 list_item 5 / text 5로 반반이라 둘 다 본다.
+        if etype in ("list_item", "text"):
             self._apply_bullet_marker(bo)
         is_heading = hlevel >= 1
         first_indent = self._first_indent(bo, etype, is_heading, hlevel)
@@ -595,43 +601,43 @@ class LayoutBraille:
         (6.13.49→6.14.72)을 정정한다. (태민 정책: 위계 추론 없이 단일 글머리형.)
         """
         lines = bo.braille_lines
-        idx = next((i for i, ln in enumerate(lines) if ln.strip()), None)
-        if idx is None:
-            return
-        line = lines[idx]
-        for hidden, bullet in _HIDDEN_TO_BULLET.items():
-            if not line.startswith(hidden):
+        # ★ 요소 안의 *모든* 줄머리를 본다. MinerU가 여러 글머리 항목을 한 요소로 묶어
+        #   내므로(선택지와 동일 구조), 첫 줄만 보면 나머지를 놓친다.
+        #   dev 11p 실측: 첫 줄만 보면 ⠔⠔ 7개(정답 44개).
+        for idx, line in enumerate(lines):
+            if not line.strip():
                 continue
-            lines[idx] = bullet + line[len(hidden):]
-            # rule_trail: 선두 숨김표(6.13.49, idx줄 col0) → 글머리(6.14.72)로 교체.
-            # 글리프가 축소(delta)되므로 같은 줄 뒤 내용 규칙의 칸도 보정(요소-로컬 좌표 유지).
-            delta = len(hidden) - len(bullet)
-            # break_points도 글리프 축소만큼 당김(숨김표 내부 offset은 없음 → >= len(hidden)만 보정).
-            if delta and idx < len(bo.break_points):
-                bo.break_points[idx] = [
-                    (b - delta) if b >= len(hidden) else b
-                    for b in bo.break_points[idx]
-                ]
-            new_trail = []
-            replaced = False
-            for r in bo.rule_trail:
-                if (not replaced and r.rule_id == _RULE_HIDDEN_SINGLE
-                        and r.line_no == idx and r.col_start == 0):
+            for hidden, bullet in _HIDDEN_TO_BULLET.items():
+                if not line.startswith(hidden):
+                    continue
+                lines[idx] = bullet + line[len(hidden):]
+                # 글리프 길이 변화(delta)만큼 같은 줄 뒤 좌표·break offset을 보정.
+                delta = len(hidden) - len(bullet)
+                if delta and idx < len(bo.break_points):
+                    bo.break_points[idx] = [
+                        (b - delta) if b >= len(hidden) else b
+                        for b in bo.break_points[idx]
+                    ]
+                new_trail = []
+                replaced = False
+                for r in bo.rule_trail:
+                    if (not replaced and r.rule_id == _RULE_HIDDEN_SINGLE
+                            and r.line_no == idx and r.col_start == 0):
+                        new_trail.append(make_rule(_RULE_BULLET, line_no=idx, col_start=0,
+                                                   col_end=len(bullet), tag="bullet"))
+                        replaced = True
+                    else:
+                        if delta and r.line_no == idx and r.col_start > 0:
+                            r = r.model_copy(update={
+                                "col_start": max(0, r.col_start - delta),
+                                "col_end": max(0, r.col_end - delta),
+                            })
+                        new_trail.append(r)
+                if not replaced:
                     new_trail.append(make_rule(_RULE_BULLET, line_no=idx, col_start=0,
                                                col_end=len(bullet), tag="bullet"))
-                    replaced = True
-                else:
-                    if delta and r.line_no == idx and r.col_start > 0:
-                        r = r.model_copy(update={
-                            "col_start": max(0, r.col_start - delta),
-                            "col_end": max(0, r.col_end - delta),
-                        })
-                    new_trail.append(r)
-            if not replaced:
-                new_trail.append(make_rule(_RULE_BULLET, line_no=idx, col_start=0,
-                                           col_end=len(bullet), tag="bullet"))
-            bo.rule_trail = new_trail
-            return
+                bo.rule_trail = new_trail
+                break          # 이 줄은 처리됨 → 다음 줄로
 
     def _mark_item_lines(self, bo, etype: str, first_indent: int) -> None:
         """묶인 항목(①②③…)의 줄머리마다 들여쓰기를 준다.
