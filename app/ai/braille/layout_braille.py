@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Optional
 
 from app.ai.braille.kor_math_rules import _NUMBER_INDICATOR, _DIGIT_MAP
 from app.ai.braille.regulations import make_rule
+from app.ai.braille.translator import _BOOK_STYLE  # 도서 관행 스위치(BRAILLE_STYLE)
 from app.schemas.content import BrailleOutput
 
 if TYPE_CHECKING:  # 런타임 import 회피 (annotations 지연 평가)
@@ -55,13 +56,15 @@ _RULE_BULLET_INDENT = "BBPG-2.3.5"  # 글머리 3칸, tag=indent
 # ○□△가 list_item 글머리로 쓰이면 숨김표(제49항)가 아니라 글머리형(제72항)이어야 한다.
 # text 체인은 문맥을 몰라 숨김표로 변환·emit하므로 여기서 글리프·rule을 글머리로 정정한다.
 _HIDDEN_TO_BULLET: dict[str, str] = {
-    "⠸⠴⠇": "⠸⠴",  # ○ 숨김표 → 글머리 (제72항 _0=⠸⠴)
+    "⠸⠴⠇": "⠸⠴",  # ○ 숨김표 → 글머리 (제72항 _0=⠸⠴) — 규정=도서 일치(정답 27회)
     "⠸⠶⠇": "⠸⠶",  # □ → 글머리 (제72항 _7=⠸⠶)
     "⠸⠬⠇": "⠸⠬",  # △ → 글머리 (제72항 _+=⠸⠬)
-    # ★ • (가운뎃점 ⠐⠆) → 정답 도서 글머리표 ⠔⠔ + 공백.
-    #   규정 제72항은 ⠸⠲(_4)를 지정하나 정답 코퍼스 1131p에 0회, ⠔⠔가 2,642회.
-    #   도서 관행 우선(BRAILLE_STYLE=regulation이면 규정값으로 되돌릴 것 — 2-4 백로그).
-    "⠐⠆": "⠔⠔⠀",
+    # ★ • (가운뎃점 ⠐⠆): 규정 제72항 ⠸⠲(_4) vs 정답 도서 ⠔⠔(99).
+    #   정답 코퍼스 1131p 원본 ASCII 직접 스캔: _4는 0회, 줄머리 99가 2,343줄.
+    #   같은 스캔에서 _0(○)은 27회 잡히므로 _4=0은 측정 실패가 아니라 도서가 안 쓰는 것.
+    #   기본은 규정(⠸⠲) — 도서는 한 출판사 관행이고 규정이 국가 표준이라는 판단(태민 2026-07-17).
+    #   BRAILLE_STYLE=book 이면 도서 관행 ⠔⠔로 되돌린다.
+    "⠐⠆": "⠔⠔⠀" if _BOOK_STYLE else "⠸⠲⠀",
 }
 _RULE_BULLET = "KBR-6.14.72"   # 글머리 기호 (제72항)
 _RULE_HIDDEN_SINGLE = "KBR-6.13.49"  # 숨김표 단일(제49항) — list_item 첫머리면 글머리로 정정

@@ -4,7 +4,7 @@
 (stage4_complex.md 'T4-2 공통 규약' — 표=레이아웃 차이, 셀 값 동일):
   table_grid : ⠿ 테두리 + ⠒ 행 구분선 (격자 원형)
   transposed : 행↔열 전치 (점자 도서 제작 지침 3장1절 BBPG-3.1.2, 점역자 주 동반)
-  linear     : '⠄키: 값' 선형 풀어쓰기
+  linear     : '  키  값' 선형 풀어쓰기 (3칸 시작, 유도점·콜론 없음)
 격자 구조가 아닌 비정형(narrative)·처리불가는 단일안으로 처리한다.
 """
 
@@ -16,7 +16,6 @@ from app.ai.braille.isolation import safe_translate
 from app.ai.braille.nested_block import append_nested
 from app.ai.braille.regulations import make_rule, make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
-from app.ai.braille.translator import _BOOK_STYLE  # 도서 관행 스위치(BRAILLE_STYLE)
 from app.ai.braille.translator import translate_tagged_text as _translate
 from app.ai.braille.translator import tn_marker_spans, translate_with_breaks
 from app.schemas.content import BrailleOutput, Draft, LLMOutput, RuleApplication
@@ -76,7 +75,8 @@ def parse_table_tags(text: str):
             cells = cells[1:]   # 첫 <!칸> 앞 빈 셀 제거
         rows.append([c.strip() for c in cells])
     return rows or None
-_GUIDE   = "⠄"  # 유도점
+# 유도점: 지침 §(5)는 열 항목 간격이 5칸 이상일 때 열 **사이**에 `"`를 연속으로 적으라 한다
+# (열 제목 사이는 제외). 줄머리에 무조건 붙이던 옛 구현을 제거 — 진짜 규정 유도점은 미구현.
 _TN_TRANSPOSE = "표의 가로와 세로를 바꾸어 점역함."
 _TITLE_INDENT = 5  # 도서 제작 지침 제3장 5)(1): 표 제목은 5칸에서 시작
 
@@ -153,23 +153,23 @@ def _render_grid(corrected_text: str) -> list[str]:
 
 
 def _render_linear(corrected_text: str) -> list[str]:
-    """2열 표 → 한 줄에 '키  값'.
-
-    정답 도서 관행(BRAILLE_STYLE=book, 기본): 3칸에서 시작하고 키와 값을 두 칸 띄운다.
+    """2열 표 → 한 줄에 '키  값'. 3칸에서 시작하고 키와 값을 두 칸 띄운다.
         `  언어 문제  64.9`   (유도점·콜론 없음 — 코퍼스 확인)
-    규정 모드(BRAILLE_STYLE=regulation): 기존 '⠄키: 값'(유도점 + 쌍점).
+
+    ★ BRAILLE_STYLE을 타지 않는다(2026-07-17). 다른 항목은 기본이 규정이지만 표는 아니다 —
+      여기 있던 '규정 모드' 분기(`⠄키: 값`)가 규정이 아니었기 때문이다:
+        · 지침 §(5)는 유도점을 "열 항목 **사이**, 간격이 **5칸 이상일 때만**" 넣으라 하는데
+          그 분기는 **줄 맨 앞에 무조건** 붙였다. 열 제목 사이엔 아예 넣지 말라는 단서도 무시.
+        · 유도점 글리프도 지침은 `"`인데 `⠄`를 썼고, 쌍점 `:`은 근거를 못 찾았다.
+      즉 "기존 구현"에 규정 라벨이 붙어 있었을 뿐이라, 켜면 GriTS가 0.88→0.667로 떨어진다.
+      진짜 규정 유도점(간격≥5칸일 때 열 사이 삽입)은 미구현 — 구현 후 다시 스위치에 걸 것.
     """
     result: list[str] = []
     for ln in corrected_text.splitlines():
         if "|" in ln:
             parts = [p.strip() for p in ln.split("|", 1)]
-            if _BOOK_STYLE:
-                body = f"{parts[0]}  {parts[1]}" if len(parts) > 1 else parts[0]
-                entry = f"  {_translate(body)}"
-            else:
-                # '키: 값' 전체를 한 번에 점역해 콜론·공백이 점자 셀로 변환되게 한다.
-                body = parts[0] + ": " + parts[1] if len(parts) > 1 else parts[0]
-                entry = f"{_GUIDE}{_translate(body)}"
+            body = f"{parts[0]}  {parts[1]}" if len(parts) > 1 else parts[0]
+            entry = f"  {_translate(body)}"
         else:
             entry = _translate(ln)
         if len(entry) <= _COLS:

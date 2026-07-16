@@ -139,13 +139,28 @@ def test_regulation_pairs_has_decode_ok(filename: str) -> None:
 
 
 class TestBookStyleConventions:
-    """정답 도서 표기 관행(BRAILLE_STYLE=book, 기본값) — 규정과 다른 자리.
+    """정답 도서 표기 관행(BRAILLE_STYLE=book) — 규정과 다른 자리.
+
+    ★ 기본값이 아니다. 기본은 규정(태민 2026-07-17) — 보유 도서가 규정을 완벽히 준수하진
+      않으므로 규정을 정답으로 본다. 관행 경로는 지우지 않고 스위치로 남겼고, 이 클래스가
+      그 경로를 검증한다. 지우면 관행 모드가 무검증이 된다.
 
     근거: 정답 코퍼스(수능특강 점역본 1131p) 전수 관찰.
       · 표시 문자 (가)/(1) → 붙임표로 감쌈: -가- 1217회 / -1- 281회
       · 일반 소괄호는 규정대로: 730회. 영문 (A)(B)도 소괄호 유지: 124/74회
       · 화살괄호 〈〉《》: 코퍼스에 0회 → 작은따옴표(3618회)로 적음
     """
+
+    @pytest.fixture(autouse=True)
+    def _book_mode(self, monkeypatch):
+        """_BOOK_STYLE은 import 시점 상수라 env만 바꿔선 안 먹는다 — reload가 필요하다."""
+        import importlib
+        from app.ai.braille import translator
+        monkeypatch.setenv("BRAILLE_STYLE", "book")
+        importlib.reload(translator)
+        yield
+        monkeypatch.delenv("BRAILLE_STYLE")
+        importlib.reload(translator)
 
     def _brf(self, text: str) -> str:
         from app.ai.braille.translator import translate_tagged_text
@@ -175,14 +190,26 @@ class TestBookStyleConventions:
         assert self._brf("〈보기〉") == ",8~u@o0'"   # ‘보기’
         assert self._brf("<보기>") == ",8~u@o0'"
 
-    def test_규정모드로_되돌리기(self, monkeypatch):
-        import importlib
-        monkeypatch.setenv("BRAILLE_STYLE", "regulation")
-        from app.ai.braille import translator
-        importlib.reload(translator)
-        try:
-            from app.utils.braille_ascii import unicode_to_ascii
-            assert unicode_to_ascii(translator.translate_tagged_text("(가)")) == "8'$,0"
-        finally:
-            monkeypatch.delenv("BRAILLE_STYLE")
-            importlib.reload(translator)
+
+class TestRegulationIsDefault:
+    """스위치 없이도 규정 표기가 나와야 한다 — 기본값이 규정이라는 계약(태민 2026-07-17).
+
+    ★ 이 클래스가 통과해야 "규정이 정답"이 실제로 배선된 것이다. TestBookStyleConventions는
+      env를 켰을 때만 관행이 나오는지 보므로, 기본값 자체는 여기서만 검증된다.
+    """
+
+    def _brf(self, text: str) -> str:
+        from app.ai.braille.translator import translate_tagged_text
+        from app.utils.braille_ascii import unicode_to_ascii
+        return unicode_to_ascii(translate_tagged_text(text))
+
+    def test_표시문자는_규정_소괄호(self):
+        assert self._brf("(가)") == "8'$,0"          # 제49항 소괄호 (관행이면 -$-)
+
+    def test_화살괄호는_규정_기호(self):
+        # 제63항 〈…〉 — 관행(작은따옴표 ,8~u@o0')로 새지 않아야 한다
+        assert self._brf("〈보기〉") != ",8~u@o0'"
+
+    def test_글머리표는_규정_제72항(self):
+        from app.ai.braille.layout_braille import _HIDDEN_TO_BULLET
+        assert _HIDDEN_TO_BULLET["⠐⠆"] == "⠸⠲⠀"    # _4 (관행이면 ⠔⠔)
