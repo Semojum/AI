@@ -2,7 +2,7 @@
 
 > 전역/프로젝트 규칙은 상위 `~/.claude/CLAUDE.md` + `V2/.claude/CLAUDE.md` + `code/.claude/CLAUDE.md`에서 자동 로드. 여기서 반복 안 함.
 > 이 파일은 **현재 코드의 실제 상태**(어디에 무엇이 있고 무엇이 stub인지)를 기술한다.
-> **권위 순서(이 프로젝트 지침)**: 설계 의도가 충돌하면 `../../plan/`이 우선이다. 즉 코드가 plan과 다르면 **plan이 정본이고 코드를 고쳐야 한다**(아래 "plan 대비 코드 변경 필요" 섹션). 이 파일은 "코드가 지금 이렇다"를 알려주되, "이렇게 되어야 한다"는 plan을 따른다.
+> **권위 순서(이 프로젝트 지침)**: 설계 의도가 충돌하면 `../../docs/plan/`이 우선이다. 즉 코드가 plan과 다르면 **plan이 정본이고 코드를 고쳐야 한다**(아래 "plan 대비 코드 변경 필요" 섹션). 이 파일은 "코드가 지금 이렇다"를 알려주되, "이렇게 되어야 한다"는 plan을 따른다.
 
 목적: 다음 세션 AI가 파일을 전부 열지 않고도 **어디에 무엇이 있고, 공개 진입점이 무엇이며, 무엇이 plan과 어긋나거나 미구현인지** 파악하게 한다.
 
@@ -74,7 +74,7 @@ app/
 │   ├── file_merger.py   PART 10 후반. 페이지별 결과 → output/result.brf, result.txt 병합
 │   └── logger.py        get_logger(name), setup_root_logging()
 ├── protos/
-│   ├── braille_service.proto        BE↔AI 계약 (= ../../plan/braille_service.proto.txt)
+│   ├── braille_service.proto        BE↔AI 계약 (= ../../docs/archive/braille_service.proto.txt)
 │   ├── formulanet_service.proto     AI↔FormulaNet
 │   ├── build.sh                     protoc 생성 스크립트
 │   └── generated/                   braille_service_pb2(_grpc).py, formulanet_service_pb2(_grpc).py (직접 수정 금지)
@@ -89,7 +89,7 @@ app/
 
 `run(task)` → `asyncio.wait_for(_run_pipeline, timeout=180)`. **현주↔태민 경계는 파일**:
 `storage/jobs/{job}/temp/page_{no:03d}/data/{no:03d}_txt_result.json`
-형식 `{meta:{job_id,page_no,extraction_method}, elements:[{id,order,type,content}]}` (현주 산출 형식 = `../../step3_hyunju_output.md`).
+형식 `{meta:{job_id,page_no,extraction_method}, elements:[{id,order,type,content}]}` (현주 산출 형식 = `../../assets/양식/step3_hyunju_output.md`).
 
 - **mode a/c — Phase 1 (현주 추출)**: 경계 파일이 **없으면** `_extract_with_hyunju` 실행 → ZERO는 `analyze_pdf` PyMuPDF 텍스트를 `_blocks_from_text`로 요소화(`extraction_method=TEXT_NATIVE`), non-ZERO는 `_extract_via_models`(QwenLayout/YOLO/QwenOCR, 모델 미탑재 시 빈 결과로 격리, `OCR`) → `data/NNN_txt_result.json` 기록. 파일이 **이미 있으면 그대로 사용**(현주가 별도 생성한 핸드오프).
 - **mode a/c — Phase 2 (태민)**: `_read_txt_result` → `_parse_txt_result`(id→element_id, order→reading_order, content→corrected_text/formula는 latex_string, `chart`→`chart_graph`·`개념도/흐름도/도표/concept_map/flowchart`→`diagram`+visual_subtype 매핑) → 타입별 **7-체인 `asyncio.gather(return_exceptions=True)`**(`_run_*_chain`은 opt→braille만, 현주 OCR 없음) → 각 단계 json 기록(`type/{type}/*_ocr|cap, *_opt, *_braille.json`) → `LayoutBraille.layout` → `_build_response`.
@@ -120,7 +120,7 @@ app/
 1. **빈 결과 금지**: 실패 시 `[처리 불가: {사유}]` 플레이스홀더. pipeline의 `_placeholder_extracted`가 표준.
 2. **rule_trail 필수**: 점자 출력에 `{rule_id, source, section, title, excerpt, priority}` 기록.
 3. **요소 단위 격리**: 6-체인은 반드시 `asyncio.gather(return_exceptions=True)`. 한 요소 실패가 페이지를 막지 않음.
-4. **C5 배포 블로커**: 아라비아 숫자는 수표(⠼) 없이 점형 시작 불가. 로직은 `kor_math_rules.digits_to_braille`/`_num_replace`(`_NUMBER_INDICATOR="⠼"`). **런타임 스캐너는 없고** `test/unit_test/braille/test_rule_engine.py` 전수 통과로만 강제 → 통과 못 하면 배포 차단.
+4. **C5 배포 블로커**: 아라비아 숫자는 수표(⠼) 없이 점형 시작 불가. 로직은 `kor_math_rules.digits_to_braille`/`_num_replace`(`_NUMBER_INDICATOR="⠼"`). `test/unit_test/braille/test_rule_engine.py` 전수 통과(1차 방어선, 미통과=배포 차단) + `quality_checker`의 런타임 C5 스캐너(2차, 2026-07-13: opt 텍스트에 숫자가 있는데 요소 점자에 ⠼ 0개면 C5 — rule-based 요소만, 시각자료는 R5 소관이라 제외).
 5. **2-GPU 정적 배치**: VRAM Swap 코드 금지. `model_manager.load_all` 1회 로드 후 상주. GPU0=Qwen3-VL+YOLO+TableFormer, GPU1=HyperCLOVA X.
 6. **이미지 캡셔닝=GPT-4o**: image/cartoon/chart_graph 캡셔닝(7/8/9-1)은 GPT-4o. Qwen3-VL로 캡셔닝 금지(레이아웃·OCR 전담).
 7. **Pydantic v2**: `.model_dump()`/`.model_validate()` 사용. `.dict()` 금지.
@@ -144,7 +144,7 @@ app/
 14'. ✅ **마감 조판 REST `POST /finalize`**: 점역사 편집 블록 → BBPG 페이지 조립(`LayoutBraille.finalize`/`_assemble_pages`, 재-wrap 없음). 점자 규정은 AI 소유, BE/FE는 호출만.
 
 **B. 미구현 stub (plan 기준 구현 필요)**
-3. ✅ **PART 3-4 분류기**(2026-07-03 확인): MinerU 경로의 `captioning/classifier.py`(GPT-4o, image/cartoon/chart 1-word 분류)를 `result_builder._do_caption`이 소비 — 구현 완료. 단 subtype_confidence는 미생성(1-word 응답이라 신뢰도 없음 → R2 플래그 미활용).
+3. ✅ **PART 3-4 분류기**(2026-07-03 확인): MinerU 경로의 `captioning/classifier.py`(GPT-4o, image/cartoon/chart 1-word 분류)를 `result_builder._do_caption`이 소비 — 구현 완료. subtype_confidence는 logprobs 기반 생성(2026-07-13, `classify_with_confidence`) → 경계 JSON `subtype_confidence` → quality_checker가 <0.75면 R2. 라벨 형식 이탈 응답은 신뢰도 0.0, logprobs 미제공은 None(플래그 안 띄움).
 4. ✅ **PART 11 품질검사**(2026-07-03 구현): `quality_checker.py` — placeholder(C2/C3/C4)·전체실패(C1)·32칸초과(C6) 감지 + flags(R1/R2/R5/R7) 승격, plan §4-1 status 규칙으로 페이지 status 결정(pipeline `_build_response` 연결, 하드코딩 제거). `metrics_collector.py` — 페이지 메트릭 JSONL(`storage/metrics/ai_metrics.jsonl`) 기록(TimescaleDB는 배포 인프라 확정 후 sink 교체). 테스트 `test/unit_test/quality/` 활성.
 5. **현주 파트(모델 의존)**: layout/ocr/captioning 일부 모델 미탑재 시 동작 안 함. pipeline이 `ImportError/AttributeError`로 격리 → `[처리 불가]` 플레이스홀더.
 11. **시각 복수초안(T4-2) 실모델 3안 생성**: `image/cartoon_opt`가 HCLOVA X 실모델에서 `[방식N]` 3줄 포맷을 안 따라 1안만 생성(파싱·토큰·폴백 인프라는 정상, chart는 동일 인프라로 3안 정상). → **Stage 5 프롬프트 튜닝 backlog**(메모리 `stage5-backlog-visual-3draft`). few-shot 강화·sampling·입력 복잡도별 분기.
@@ -156,7 +156,7 @@ app/
 8. **TLS 기본 on**: `config.tls_enabled=True` → `serve()`가 인증서 로드. 로컬은 `.env`에서 `TLS_ENABLED=false`.
 9. **요소유형 11 vs 13**: BBoxItem 주석 "11종"은 PART3 *초기 감지* 집합. PART3-4 후 cartoon/chart_graph 확정 → 최종 13종(plan §3-1). 주석에 "분류 후 13종" 명시 권장.
 
-> plan(`../../plan/`)과 코드가 다르면 plan을 정본으로 코드를 맞춘다. (이 디렉토리는 model_manager/health_check가 이미 존재 — plan STEP2 산출물 선반영.)
+> plan(`../../docs/plan/`)과 코드가 다르면 plan을 정본으로 코드를 맞춘다. (이 디렉토리는 model_manager/health_check가 이미 존재 — plan STEP2 산출물 선반영.)
 
 ---
 
