@@ -78,9 +78,24 @@ _PREFILL = "교정된 LaTeX: "
 #   2 0)도 한 수가 맞아 함께 붙는다.
 _DIGIT_GAP_RE = re.compile(r"(?<=\d)\s+(?=[\d.,]\b|\d)")
 
+# MinerU는 수식 속 한글도 음절마다 띄운다("이 므 로"). 정답은 붙인다(수학2 p005 '이므로').
+# 1음절 토큰 2개 이상의 연속만 붙인다 — "일의 양"처럼 다음절 어절이 낀 진짜 띄어쓰기는 유지
+# (정답 '시간당 일의 양'도 공백 유지).
+_KOR_SYL_GAP_RE = re.compile(r"(?<![가-힣])((?:[가-힣] )+[가-힣])(?![가-힣])")
+
+
+# MinerU가 수학 선지 머리 자모를 기호로 오인한다(수학2 p070 실측): ㄱ.→\neg . / ㄴ.→\llcorner . /
+# ㄷ.→\sqsubset . 논리 부정 \neg은 뒤에 마침표가 오지 않으므로 ". " 동반일 때만 자모로 되돌린다.
+_JAMO_ALIAS = [(re.compile(r"\\neg\s*\."), "ㄱ."),
+               (re.compile(r"\\llcorner\s*\."), "ㄴ."),
+               (re.compile(r"\\sqsubset\s*\."), "ㄷ.")]
+
 
 def _normalize(latex: str) -> str:
     latex = _DIGIT_GAP_RE.sub("", latex)
+    latex = _KOR_SYL_GAP_RE.sub(lambda m: m.group(1).replace(" ", ""), latex)
+    for pat, repl in _JAMO_ALIAS:
+        latex = pat.sub(repl, latex)
     for pattern, replacement in _LATEX_NORMALIZE:
         latex = re.sub(pattern, replacement, latex)
     return latex

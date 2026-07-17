@@ -176,16 +176,23 @@ def register_text_hook(fn) -> None:
     _text_hook = fn
 
 
+# 맨 한글 구간: MinerU는 수식 속 한글을 \text{} 없이 그대로 낸다("(시간) = \frac{(거리)}…").
+# 안 잡으면 날문자가 점자 문자열에 섞여 나간다(2026-07-17 dev 수식 실패 92건 중 45건의 원인).
+# 다단어("시간당 일의 양")를 한 sentinel로 묶어야 훅이 한글 어절 공백을 옳게 점역한다.
+_BARE_KOR_RE = re.compile(r"[가-힣ㄱ-ㅎㅏ-ㅣ]+(?: [가-힣ㄱ-ㅎㅏ-ㅣ]+)*")
+
+
 def _protect_text(latex: str) -> tuple[str, list[str]]:
-    r"""\text{한글}을 점자로 변환해 PUA sentinel로 치환(이후 수식 처리에서 보호).
+    r"""수식 속 자연어(\text{한글}·맨 한글)를 점자로 변환해 PUA sentinel로 치환.
 
     반환: (sentinel 치환된 latex, 점자 저장 리스트). convert_latex 끝에서 복원한다.
     중첩(\boxed{\text{…}})·다중 \text를 위해 안정될 때까지 반복한다.
+    sentinel은 _hangul_or_sentinel이 '한글'로 판정해 제46항 띄어쓰기에 참여하고,
+    괄호로 묶인 경우엔 인접 문자가 괄호라 수학편 [붙임]대로 연산·등호가 붙는다.
     """
     store: list[str] = []
 
-    def _repl(m: re.Match) -> str:
-        content = m.group(1)
+    def _stash(content: str) -> str:
         brailled = content
         if _text_hook is not None:
             try:
@@ -198,7 +205,8 @@ def _protect_text(latex: str) -> tuple[str, list[str]]:
     prev = None
     while prev != latex:
         prev = latex
-        latex = _TEXT_CMD_RE.sub(_repl, latex)
+        latex = _TEXT_CMD_RE.sub(lambda m: _stash(m.group(1)), latex)
+    latex = _BARE_KOR_RE.sub(lambda m: _stash(m.group(0)), latex)
     return latex, store
 
 
@@ -293,6 +301,12 @@ def convert_latex(latex: str) -> str:
 
     # ── 1. 수학 괄호 치환 (substitute_symbols보다 먼저) ─────────────────
     result = result.replace("(", _MATH_PAREN_S).replace(")", _MATH_PAREN_E)
+    # 괄호 인접 공백 제거: 정답·규정 모두 f⠦x⠴·⠦x−1⠴f⠦x⠴처럼 붙인다(수학2 p070 셀 대조,
+    # MinerU는 "f (x)"로 띄워 낸다). 한글(sentinel) 인접은 제46항 몫이라 라틴·숫자·괄호만.
+    result = re.sub(rf"(?<=[A-Za-z0-9{_MATH_PAREN_E}]) +(?={_MATH_PAREN_S})", "", result)
+    result = re.sub(rf"(?<={_MATH_PAREN_E}) +(?=[A-Za-z0-9{_MATH_PAREN_S}])", "", result)
+    # 숫자·문자 곱도 붙인다: "1 6 x"→16x (정답 수학2 p009 '…16옥=옥…' — 곱 생략 인접 표기).
+    result = re.sub(r"(?<=\d) +(?=[A-Za-z])", "", result)
 
     # ── 2. 분수: \frac{...}{...} → 분모⠌분자 (수학 제7항, 중첩 중괄호 대응) ──
     result = _apply_fracs(result)
