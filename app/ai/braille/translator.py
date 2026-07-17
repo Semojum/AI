@@ -319,6 +319,11 @@ _TILDE_RE = re.compile(r"[~∼〜]")
 # MinerU는 〈보기〉 상자를 괄호 없이 '보기\x00'로 낸다(생물 p011 실측 '것은?\n보기\x00').
 # 단독 줄의 '보기'만 관행 표기 '보기'(작은따옴표)로 — 문장 속 '보기'는 건드리지 않는다.
 _BOGI_LINE_RE = re.compile(r"(?m)^[ \t]*(보기)[ \t\x00]*$")
+# MinerU 마크다운 잔재 백틱이 숫자·한글 사이에 끼면 수가 갈라진다('41`쪽'→#d#a, 수학2 p061).
+_NOISE_BACKTICK_RE = re.compile(r"(?<=[0-9가-힣])`(?=[0-9가-힣])")
+# 앰퍼샌드: 규정 [다만]은 한글 사이 &를 로마자표 감쌈 ⠴⠈⠯⠲(0@&4 예시 명시)으로, 정답
+# 도서는 ⠯ 단독(이탈 — regulation_vs_book 기록). book=⠯, regulation=규정 그대로(symbol_table).
+_AMP_RE = re.compile(r"\s*&\s*")
 # 어절 경계에 홀로 선 자모 + 마침표 (항목 머리표 "ㄱ." "ㄴ.")
 _JAMO_MARK_RE = re.compile(r"(?<![가-힣A-Za-z0-9])([ㄱ-ㅎ])\.(?=\s|$)")
 # 문항 번호: 요소 첫머리 숫자 뒤에 본문이 이어질 때만 마침표를 붙인다("3\n다음은…" → "3.").
@@ -342,6 +347,8 @@ def _apply_book_style(text: str) -> str:
     text = _MARK_PAREN_RE.sub(_paren_repl, text)
     text = _ANGLE_RE.sub(r"‘\1’", text)
     text = _BOGI_LINE_RE.sub(r"‘\1’", text)
+    text = _NOISE_BACKTICK_RE.sub("", text)
+    text = _AMP_RE.sub("⠯", text)
     text = _BOX_BLANK_RE.sub(lambda m: "⠸" + "⠭" * len(m.group()) + "⠇", text)
     text = _TILDE_RE.sub("―", text)
     # 줄머리 하이픈 글머리: 정답은 ⠤⠤ + 공백 없이 내용을 붙인다(사회문화 p030 실측 '--.ul').
