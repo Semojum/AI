@@ -16,3 +16,10 @@ DUMMY_PNG_BYTES = (
     b"\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18"
     b"\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
 )
+
+
+# 단위 테스트는 실 API로 새면 안 된다(2026-07-17: 기본 backend가 anthropic으로 바뀌며
+# openai 목(mock) 경로를 벗어나 실호출 5건 발생). 테스트는 목이 있는 openai 경로로 고정.
+import os as _os
+_os.environ.setdefault("CAPTION_BACKEND", "openai")
+_os.environ["ANTHROPIC_API_KEY"] = ""

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import logging
 import re
 import time
@@ -127,16 +128,38 @@ async def hcxt_optimize(
 
 
 async def fallback_optimize(prompt: str, *, max_tokens: int = 300, kind: str = "요소") -> str:
-    """GPT-4o 폴백. 실패 시 빈 문자열 반환(호출부가 원문으로 폴백).
+    """LLM 폴백 — Anthropic(claude-sonnet-5) 우선, 없으면 GPT-4o, 둘 다 없으면 "".
 
-    응답 usage(prompt/completion 토큰)를 파트별로 req_log에 기록해 실비용까지 집계한다.
+    태민 지시(2026-07-17): openai 대신 anthropic을 쓴다. OpenAI 경로는 무료 티어(RPM 3)
+    호환용으로만 남긴다. usage는 파트별 req_log에 기록(카운터 이름은 record_gpt4o지만 공용).
     """
+    from app.utils.req_log import record_gpt4o
+
+    if config.anthropic_api_key:
+        import anthropic
+        client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
+        try:
+            resp = await asyncio.wait_for(
+                client.messages.create(
+                    model=os.environ.get("FALLBACK_MODEL", "claude-sonnet-5"),
+                    max_tokens=max_tokens,
+                    messages=[{"role": "user", "content": prompt}],
+                ),
+                timeout=FALLBACK_TIMEOUT,
+            )
+            u = getattr(resp, "usage", None)
+            record_gpt4o(kind, getattr(u, "input_tokens", 0) or 0,
+                         getattr(u, "output_tokens", 0) or 0)
+            return "".join(b.text for b in resp.content if b.type == "text").strip()
+        except Exception as exc:  # noqa: BLE001 — 폴백 실패는 원문 폴백으로 격리
+            record_gpt4o(kind)
+            logger.error("FALLBACK(anthropic) %s 최적화 실패: %s", kind, exc)
+            return ""
+
     if not config.openai_api_key:
-        logger.error("FALLBACK: OPENAI_API_KEY 미설정")
+        logger.error("FALLBACK: ANTHROPIC/OPENAI_API_KEY 모두 미설정")
         return ""
     import openai
-
-    from app.utils.req_log import record_gpt4o
     client = openai.AsyncOpenAI(api_key=config.openai_api_key)
     try:
         resp = await asyncio.wait_for(
@@ -149,14 +172,11 @@ async def fallback_optimize(prompt: str, *, max_tokens: int = 300, kind: str = "
             timeout=FALLBACK_TIMEOUT,
         )
         usage = getattr(resp, "usage", None)
-        record_gpt4o(
-            kind,
-            getattr(usage, "prompt_tokens", 0) or 0,
-            getattr(usage, "completion_tokens", 0) or 0,
-        )
+        record_gpt4o(kind, getattr(usage, "prompt_tokens", 0) or 0,
+                     getattr(usage, "completion_tokens", 0) or 0)
         return resp.choices[0].message.content.strip()
-    except Exception as exc:
-        record_gpt4o(kind)  # 실패도 호출 1건으로 집계(근사 토큰)
+    except Exception as exc:  # noqa: BLE001
+        record_gpt4o(kind)
         logger.error("FALLBACK %s 최적화 실패: %s", kind, exc)
         return ""
 

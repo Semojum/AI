@@ -50,7 +50,7 @@ def classify_with_confidence(image_path: str) -> tuple[str, float | None]:
     ext = Path(image_path).suffix.lstrip(".").lower()
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
-    if os.getenv("CAPTION_BACKEND", "openai") == "anthropic":
+    if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
         return _classify_anthropic(b64, mime)
 
     from app.utils.req_log import inc_gpt4o

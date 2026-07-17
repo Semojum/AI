@@ -75,6 +75,7 @@ class Settings(BaseSettings):
 
     # ── API (GPT-4o 캡셔닝/분류, GPT-5.x FALLBACK) ───────────────
     openai_api_key: str = ""
+    anthropic_api_key: str = ""   # 폴백·캡셔닝 기본(태민 2026-07-17: openai 대신 anthropic)
 
     @property
     def is_debug(self) -> bool:

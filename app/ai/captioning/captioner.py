@@ -137,7 +137,7 @@ def caption(image_path: str, image_type: str = "image") -> str:
     ext = Path(image_path).suffix.lstrip(".").lower()
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
-    if os.getenv("CAPTION_BACKEND", "openai") == "anthropic":
+    if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
         return _ensure_type_word(_caption_anthropic(b64, mime, prompt), image_type)
 
     from app.utils.req_log import inc_gpt4o
