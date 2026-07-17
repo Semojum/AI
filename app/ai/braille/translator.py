@@ -309,6 +309,8 @@ def _paren_repl(m: re.Match) -> str:
     inner = m.group(1)
     if any(c.isalpha() and c.isascii() for c in inner) and _UPPER_ONLY_RE.match(inner):
         return m.group(0)          # 대문자 약어는 소괄호 유지
+    if len(inner) == 1 and inner.isalpha() and inner.isascii():
+        return m.group(0)          # 단일 알파벳 (x)·(a)도 소괄호 유지(수학2 p061 정답 8x0)
     return f"-{inner}-"
 _ANGLE_RE = re.compile(r"[〈《<「『]([^〈《<>》〉「」『』\n]{1,20})[〉》>」』]")
 # 문중 빈칸 네모 □ — 숨김표(제49항 표: ×=_xl=⠸⠭⠇)로 적되 ⠭를 글자 수만큼 반복한다
