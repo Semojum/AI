@@ -305,8 +305,13 @@ _MARK_PAREN_RE = re.compile(r"\(([^()\n]{1,20})\)")
 _UPPER_ONLY_RE = re.compile(r"^[A-Z0-9 ,.·]+$")
 
 
+_HANJA_ONLY_RE = re.compile(r"^[\u4e00-\u9fff\s·]+$")
+
+
 def _paren_repl(m: re.Match) -> str:
     inner = m.group(1)
+    if _HANJA_ONLY_RE.match(inner):
+        return ""                  # 한자 병기 괄호는 통째 생략 (정답 언어 p053 '과목(果木)'→'과목')
     if any(c.isalpha() and c.isascii() for c in inner) and _UPPER_ONLY_RE.match(inner):
         return m.group(0)          # 대문자 약어는 소괄호 유지
     if len(inner) == 1 and inner.isalpha() and inner.isascii():
