@@ -684,6 +684,21 @@ def _safe_to_unicode(seg: str) -> str:
     try:
         return lead + _braillify_lib.translate_to_unicode(seg) + trail
     except Exception:  # noqa: BLE001 — 미지 글자 격리(줄 보존)
+        # ★ 글자 단위 폴백은 약자·어절 공백을 깨뜨린다(䤎 하나로 '하였'의 ⠣ 소실,
+        #   세계사 p019·021 실측 — 교차 31건). 먼저 변환 불가 글자만 제거하고 세그먼트를
+        #   통짜로 재시도해 약자를 보존한다. 그래도 실패하면 글자 단위 최후 폴백.
+        bad = set()
+        for ch in set(seg):
+            try:
+                _braillify_lib.translate_to_unicode(ch)
+            except Exception:  # noqa: BLE001
+                bad.add(ch)
+        if bad:
+            cleaned = "".join(ch for ch in seg if ch not in bad)
+            try:
+                return lead + _braillify_lib.translate_to_unicode(cleaned) + trail
+            except Exception:  # noqa: BLE001
+                pass
         out = []
         for ch in seg:
             try:
