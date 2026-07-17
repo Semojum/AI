@@ -24,14 +24,23 @@ _client: OpenAI | None = None
 # 6.3.4(2): 점역자 주표 안에 '시각 자료 유형: 추가 설명문' 형식.
 # ★ 색상·분위기 같은 시각적 인상은 규정이 요구하지 않는다(핵심 내용 아님).
 #   마크다운·머리말 금지 — 점자로 옮길 평문이어야 한다.
+# ★ 규정 정답과 대조해 보니(kpi_regulation.py, 2026-07-17) 우리 캡션은 R 22% / P 11% —
+#   내용은 담는데 2~4배 길다. 원인 두 가지가 규정 원문에 그대로 있다:
+#     (1) "간결한 **어구**나 문장" — 완전한 문장을 강요할 필요가 없다.
+#     (6) "과정 흐름에 대한 설명은 위계가 있는 **개조식 항목**으로" — 산문으로 풀면 안 된다.
+#   그리고 (2) "핵심 내용"은 **무엇을 뜻하는지**다. 규정 정답은 "현재: 학교에 다니고 있다"인데
+#   우리는 "교복을 입고 책가방을 멘 학생이 서 있음"이라 적었다 — 외형은 핵심이 아니다.
 _COMMON = (
     "당신은 시각장애 학생용 점자 교과서를 만드는 점역사입니다.\n"
     "「점자 자료 제작 지침」 6.1.4에 따라 설명하세요.\n"
-    "- 가능한 적은 수의 단어로 간결하게 (규정 1)\n"
-    "- 핵심 내용에 초점 (규정 2)\n"
-    "- 한 번 읽고 이해되도록 명료하게 (규정 3)\n"
-    "- 전체 윤곽을 먼저, 그 다음 부분을 단계적으로 (규정 4)\n"
-    "- 색상·분위기·시각적 인상은 쓰지 마세요. 정보가 아닙니다.\n"
+    "- 이 자료가 **무엇을 뜻하는지**를 쓰세요. 무엇이 보이는지가 아닙니다 (규정 2).\n"
+    "  옷차림·자세·표정·위치·색은 그 뜻에 필요할 때만 씁니다. 대개는 필요 없습니다.\n"
+    "  예: '학교에 다니고 있다'(O) / '교복을 입고 책가방을 멘 학생이 서 있다'(X)\n"
+    "- 가능한 적은 수의 단어로. 완전한 문장이 아니라 어구여도 됩니다 (규정 1).\n"
+    "- 과정·흐름은 산문으로 풀지 말고 개조식으로. 화살표 →를 쓰세요 (규정 6).\n"
+    "- 한 번 읽고 이해되도록 명료하게 (규정 3).\n"
+    "- 전체 윤곽을 한 줄로 먼저, 그 다음 부분을 나누어 (규정 4).\n"
+    "- 자료에 있는 제목·글자·수치는 그대로 옮기세요. 지어내지 마세요.\n"
     "- 마크다운(#, **, 목록 기호)·머리말·인사말 없이 평문만 출력하세요.\n"
 )
 
@@ -99,6 +108,22 @@ def usage_report() -> dict:
     return dict(_USAGE)
 
 
+# 유형 제시어(§6.3.4(1)): 캡션 첫머리를 자료 유형으로 시작한다. LLM 프롬프트가 아니라
+# rule-based로 붙인다 — 분류기가 유형을 이미 알고, 규정 틀 검증(kpi_regulation.py)에서
+# LLM이 제시어를 자주 빼먹는 게 최대 실패 항목이었다(2026-07-17, 틀 통과 8/18의 주원인).
+_TYPE_WORD = {"image": "그림", "cartoon": "만화", "chart": "그래프", "chart_graph": "그래프"}
+_TYPE_WORDS_ALL = ("그림", "사진", "그래프", "삽화", "만화", "지도", "표", "도표")
+
+
+def _ensure_type_word(text: str, image_type: str) -> str:
+    t = (text or "").strip()
+    if not t:
+        return t
+    if any(t.startswith(w) for w in _TYPE_WORDS_ALL):
+        return t
+    return f"{_TYPE_WORD.get(image_type, '그림')}: {t}"
+
+
 def caption(image_path: str, image_type: str = "image") -> str:
     """
     image_type: 'image' | 'cartoon' | 'chart'
@@ -113,7 +138,7 @@ def caption(image_path: str, image_type: str = "image") -> str:
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
     if os.getenv("CAPTION_BACKEND", "openai") == "anthropic":
-        return _caption_anthropic(b64, mime, prompt)
+        return _ensure_type_word(_caption_anthropic(b64, mime, prompt), image_type)
 
     from app.utils.req_log import inc_gpt4o
     inc_gpt4o()
@@ -131,4 +156,4 @@ def caption(image_path: str, image_type: str = "image") -> str:
         max_tokens=500,
         temperature=0.3,
     )
-    return resp.choices[0].message.content.strip()
+    return _ensure_type_word(resp.choices[0].message.content.strip(), image_type)
