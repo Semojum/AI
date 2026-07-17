@@ -420,8 +420,13 @@ def convert_latex(latex: str) -> str:
     # ── 8. 위첨자: base^{exp} → base⠘exp (수학 제18항) ──────────────
     def _sup_replace(m: re.Match) -> str:
         base = m.group(1) or m.group(3) or ""
-        exp  = convert_latex(m.group(2) or m.group(4) or "")
-        exp_w = f"{_MATH_PAREN_S}{exp}{_MATH_PAREN_E}" if _needs_wrap(m.group(2) or m.group(4) or "") else exp
+        raw_exp = (m.group(2) or m.group(4) or "").strip()
+        # 관행(book): 제곱(^2)은 ⠣ 한 셀 약기 — 정답 코퍼스에서 규정형 ⠘⠼⠃은 0회,
+        # ⠣형만 관측(수학2 p009 'x<9#b'·p039 'x<5y<' 실측). 규정 모드는 제18항 그대로.
+        if _IS_BOOK_STYLE and raw_exp == "2":
+            return f"{base}⠣"
+        exp  = convert_latex(raw_exp)
+        exp_w = f"{_MATH_PAREN_S}{exp}{_MATH_PAREN_E}" if _needs_wrap(raw_exp) else exp
         return f"{base}{_SUPERSCRIPT_IND}{exp_w}"
 
     result = _SUP_RE.sub(_sup_replace, result)

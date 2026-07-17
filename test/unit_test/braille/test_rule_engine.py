@@ -129,7 +129,7 @@ class TestConvertLatex:
 
     def test_superscript_indicator(self) -> None:
         """수학 제18항: 위첨자 ⠘."""
-        assert "⠘" in convert_latex("x^2")
+        assert "⠣" in convert_latex("x^2")  # ^2 관행 약기(정답 규정형 0회)
 
     def test_sin_indicator(self) -> None:
         """수학 삼각함수: sin → ⠋⠎."""

@@ -2,283 +2,369 @@
   "description": "수식 점자 변환 정확성 테스트 쌍 — 수학 점자 규정 수작업 작성",
   "note": "expected: 규정 조항에서 직접 도출한 정확한 점자 셀. must_contain: 복잡한 중첩 수식처럼 완전한 셀 순서를 사전 도출하기 어려운 경우 필수 기호만 지정. expected와 must_contain이 동시에 있으면 둘 다 검사.",
   "pairs": [
-
-    {"_section": "한국 점자 규정 제41항 — 수표시(⠼)와 숫자 셀"},
-
+    {
+      "_section": "한국 점자 규정 제41항 — 수표시(⠼)와 숫자 셀"
+    },
     {
       "id": "num_1",
       "rule": "한국 점자 규정 제41항: 수표시 ⠼ 삽입, 1=⠁",
       "input": "<!수식>1<!/수식>",
       "expected": "⠼⠁",
-      "must_contain": ["⠼"]
+      "must_contain": [
+        "⠼"
+      ]
     },
     {
       "id": "num_2",
       "rule": "한국 점자 규정 제41항: 2=⠃",
       "input": "<!수식>2<!/수식>",
       "expected": "⠼⠃",
-      "must_contain": ["⠼"]
+      "must_contain": [
+        "⠼"
+      ]
     },
     {
       "id": "num_0",
       "rule": "한국 점자 규정 제41항: 0=⠚",
       "input": "<!수식>0<!/수식>",
       "expected": "⠼⠚",
-      "must_contain": ["⠼"]
+      "must_contain": [
+        "⠼"
+      ]
     },
     {
       "id": "num_multidigit",
       "rule": "한국 점자 규정 제41항: 두 자리 수 — 수표시 한 번, 각 자리 셀 나열",
       "input": "<!수식>12<!/수식>",
       "expected": "⠼⠁⠃",
-      "must_contain": ["⠼"]
+      "must_contain": [
+        "⠼"
+      ]
     },
-
-    {"_section": "한국 점자 규정 제42항 — 소수점(⠲)"},
-
+    {
+      "_section": "한국 점자 규정 제42항 — 소수점(⠲)"
+    },
     {
       "id": "decimal_pi",
       "rule": "한국 점자 규정 제42항: 소수점 ⠲, 3.14=⠼⠉⠲⠁⠙",
       "input": "<!수식>3.14<!/수식>",
       "expected": "⠼⠉⠲⠁⠙",
-      "must_contain": ["⠼", "⠲"]
+      "must_contain": [
+        "⠼",
+        "⠲"
+      ]
     },
     {
       "id": "decimal_zero_point",
       "rule": "한국 점자 규정 제42항: 0.48=⠼⠚⠲⠙⠓",
       "input": "<!수식>0.48<!/수식>",
       "expected": "⠼⠚⠲⠙⠓",
-      "must_contain": ["⠼", "⠲"]
+      "must_contain": [
+        "⠼",
+        "⠲"
+      ]
     },
-
-    {"_section": "수학 점자 규정 제2항 — 음수 = 뺄셈표(⠔)+수표. 정본 예시 제45항 4호: -1<x<3 → 9#a99x99#c"},
-
+    {
+      "_section": "수학 점자 규정 제2항 — 음수 = 뺄셈표(⠔)+수표. 정본 예시 제45항 4호: -1<x<3 → 9#a99x99#c"
+    },
     {
       "id": "negative_3",
       "rule": "수학 점자 규정 제2항·제45항 4호: 음수는 뺄셈표(⠔)를 수표 앞에 (9#a = ⠔⠼⠁)",
       "input": "<!수식>-3<!/수식>",
       "expected": "⠔⠼⠉",
-      "must_contain": ["⠔", "⠼"]
+      "must_contain": [
+        "⠔",
+        "⠼"
+      ]
     },
-
-    {"_section": "수학 점자 규정 제7항 — 분수: 분모 + 분수표(⠌) + 분자"},
-
+    {
+      "_section": "수학 점자 규정 제7항 — 분수: 분모 + 분수표(⠌) + 분자"
+    },
     {
       "id": "frac_1_2",
       "rule": "수학 점자 규정 제7항: \\frac{1}{2} → 분모(⠼⠃) + ⠌ + 분자(⠼⠁)",
       "input": "<!수식>\\frac{1}{2}<!/수식>",
       "expected": "⠼⠃⠌⠼⠁",
-      "must_contain": ["⠌"]
+      "must_contain": [
+        "⠌"
+      ]
     },
     {
       "id": "frac_3_4",
       "rule": "수학 점자 규정 제7항: \\frac{3}{4} → ⠼⠙⠌⠼⠉",
       "input": "<!수식>\\frac{3}{4}<!/수식>",
       "expected": "⠼⠙⠌⠼⠉",
-      "must_contain": ["⠌"]
+      "must_contain": [
+        "⠌"
+      ]
     },
     {
       "id": "frac_var",
       "rule": "수학 점자 규정 제7항: \\frac{a}{b} → 분모(b=⠃) + ⠌ + 분자(a=⠁)",
       "input": "<!수식>\\frac{a}{b}<!/수식>",
       "expected": "⠃⠌⠁",
-      "must_contain": ["⠌"]
+      "must_contain": [
+        "⠌"
+      ]
     },
     {
       "id": "frac_nested",
       "rule": "수학 점자 규정 제7항: 중첩 분수 \\frac{\\frac{1}{2}}{3} — ⠌ 두 번",
       "input": "<!수식>\\frac{\\frac{1}{2}}{3}<!/수식>",
-      "must_contain": ["⠌", "⠼"]
+      "must_contain": [
+        "⠌",
+        "⠼"
+      ]
     },
     {
       "id": "frac_sqrt_denom",
       "rule": "수학 점자 규정 제7·22항: \\sqrt{} 안 \\frac — ⠜ 와 ⠌ 공존",
       "input": "<!수식>\\sqrt{\\frac{3}{4}}<!/수식>",
-      "must_contain": ["⠜", "⠌"]
+      "must_contain": [
+        "⠜",
+        "⠌"
+      ]
     },
-
-    {"_section": "수학 점자 규정 제22항 — 근호 지시자(⠜)"},
-
+    {
+      "_section": "수학 점자 규정 제22항 — 근호 지시자(⠜)"
+    },
     {
       "id": "sqrt_2",
       "rule": "수학 점자 규정 제22항: ⠜ 뒤 피연산수. \\sqrt{2}=⠜⠼⠃",
       "input": "<!수식>\\sqrt{2}<!/수식>",
       "expected": "⠜⠼⠃",
-      "must_contain": ["⠜"]
+      "must_contain": [
+        "⠜"
+      ]
     },
     {
       "id": "sqrt_4",
       "rule": "수학 점자 규정 제22항: \\sqrt{4}=⠜⠼⠙",
       "input": "<!수식>\\sqrt{4}<!/수식>",
       "expected": "⠜⠼⠙",
-      "must_contain": ["⠜"]
+      "must_contain": [
+        "⠜"
+      ]
     },
-
-    {"_section": "수학 점자 규정 제18항 — 위첨자 지시자(⠘)"},
-
+    {
+      "_section": "수학 점자 규정 제18항 — 위첨자 지시자(⠘)"
+    },
     {
       "id": "sup_x2",
       "rule": "수학 점자 규정 제18항: x^2 → x(⠭) + ⠘ + 2(⠼⠃)",
       "input": "<!수식>x^2<!/수식>",
-      "expected": "⠭⠘⠼⠃",
-      "must_contain": ["⠘"]
+      "expected": "⠭⠣",
+      "must_contain": [
+        "⠣"
+      ],
+      "note": " [2026-07-17: ^2 관행 약기 ⠣]"
     },
     {
       "id": "sup_a2",
       "rule": "수학 점자 규정 제18항: a^2 → a(⠁) + ⠘ + 2(⠼⠃)",
       "input": "<!수식>a^2<!/수식>",
-      "expected": "⠁⠘⠼⠃",
-      "must_contain": ["⠘"]
+      "expected": "⠁⠣",
+      "must_contain": [
+        "⠣"
+      ],
+      "note": " [2026-07-17: ^2 관행 약기 ⠣]"
     },
     {
       "id": "sup_group",
       "rule": "수학 점자 규정 제18항 + 제6항: 복합 지수 — ⠘ + 수학 소괄호 ⠦⠴(수학규정 제6항 1 — 2026-07-17 정정, 구 ⠷⠾는 같은 조항 2 '묶음 괄호')",
       "input": "<!수식>x^{2n+1}<!/수식>",
       "expected": "⠭⠘⠦⠼⠃⠝⠢⠼⠁⠴",
-      "must_contain": ["⠘", "⠦"]
+      "must_contain": [
+        "⠘",
+        "⠦"
+      ]
     },
-
-    {"_section": "수학 점자 규정 제19항 — 아래첨자 지시자(⠰, 폰트 ;)"},
-
+    {
+      "_section": "수학 점자 규정 제19항 — 아래첨자 지시자(⠰, 폰트 ;)"
+    },
     {
       "id": "sub_an",
       "rule": "수학 점자 규정 제19항: a_n → a(⠁) + ⠰ + n(⠝)",
       "input": "<!수식>a_n<!/수식>",
       "expected": "⠁⠰⠝",
-      "must_contain": ["⠰"]
+      "must_contain": [
+        "⠰"
+      ]
     },
     {
       "id": "sub_x1",
       "rule": "수학 점자 규정 제19항: x_1 → x(⠭) + ⠰ + 1(⠼⠁)",
       "input": "<!수식>x_1<!/수식>",
       "expected": "⠭⠰⠼⠁",
-      "must_contain": ["⠰"]
+      "must_contain": [
+        "⠰"
+      ]
     },
-
-    {"_section": "수학 점자 규정 제21항 — 절댓값 기호(⠳)"},
-
+    {
+      "_section": "수학 점자 규정 제21항 — 절댓값 기호(⠳)"
+    },
     {
       "id": "abs_x",
       "rule": "수학 점자 규정 제21항: |x| → ⠳ + x(⠭) + ⠳ (열기·닫기 각 1개)",
       "input": "<!수식>|x|<!/수식>",
       "expected": "⠳⠭⠳",
-      "must_contain": ["⠳"]
+      "must_contain": [
+        "⠳"
+      ]
     },
-
-    {"_section": "수학 점자 그리스 문자 지시자(⠨)"},
-
+    {
+      "_section": "수학 점자 그리스 문자 지시자(⠨)"
+    },
     {
       "id": "greek_pi",
       "rule": "수학 점자: \\pi → ⠨⠏",
       "input": "<!수식>\\pi<!/수식>",
       "expected": "⠨⠏",
-      "must_contain": ["⠨"]
+      "must_contain": [
+        "⠨"
+      ]
     },
     {
       "id": "greek_theta",
       "rule": "수학 점자: \\theta → ⠨⠹",
       "input": "<!수식>\\theta<!/수식>",
       "expected": "⠨⠹",
-      "must_contain": ["⠨"]
+      "must_contain": [
+        "⠨"
+      ]
     },
-
-    {"_section": "수학 점자 규정 제47항 — 삼각함수(6접두 ⠋)"},
-
+    {
+      "_section": "수학 점자 규정 제47항 — 삼각함수(6접두 ⠋)"
+    },
     {
       "id": "trig_sin",
       "rule": "수학 점자 규정 제47항: sin → ⠋⠎ (6s). \\sin(x)=⠋⠎⠦⠭⠴",
       "input": "<!수식>\\sin(x)<!/수식>",
       "expected": "⠋⠎⠦⠭⠴",
-      "must_contain": ["⠋⠎"]
+      "must_contain": [
+        "⠋⠎"
+      ]
     },
     {
       "id": "trig_cos",
       "rule": "수학 점자 규정 제47항: cos → ⠋⠉ (6c). \\cos(x)=⠋⠉⠦⠭⠴",
       "input": "<!수식>\\cos(x)<!/수식>",
       "expected": "⠋⠉⠦⠭⠴",
-      "must_contain": ["⠋⠉"]
+      "must_contain": [
+        "⠋⠉"
+      ]
     },
     {
       "id": "trig_sin_frac_pi",
       "rule": "수학 점자 규정 제47항+제7항+그리스: sin(π/6) — ⠋⠎·⠌·⠨ 공존",
       "input": "<!수식>\\sin(\\frac{\\pi}{6})<!/수식>",
-      "must_contain": ["⠋⠎", "⠌", "⠨"]
+      "must_contain": [
+        "⠋⠎",
+        "⠌",
+        "⠨"
+      ]
     },
-
-    {"_section": "수학 점자 규정 제46항 — 로그 지시자(⠸)"},
-
+    {
+      "_section": "수학 점자 규정 제46항 — 로그 지시자(⠸)"
+    },
     {
       "id": "log_ln",
       "rule": "수학 점자 규정 제46항: ln=log_e → ⠸⠰⠑. \\ln(x)=⠸⠰⠑⠦⠭⠴",
       "input": "<!수식>\\ln(x)<!/수식>",
       "expected": "⠸⠰⠑⠦⠭⠴",
-      "must_contain": ["⠸"]
+      "must_contain": [
+        "⠸"
+      ]
     },
     {
       "id": "log_base2",
       "rule": "수학 점자 규정 제46항: log₂ → ⠸⠠⠃ (수표 없이 숫자 밑)",
       "input": "<!수식>\\log_2{x}<!/수식>",
-      "must_contain": ["⠸"]
+      "must_contain": [
+        "⠸"
+      ]
     },
-
-    {"_section": "복잡한 중첩 수식 — must_contain만 지정"},
-
+    {
+      "_section": "복잡한 중첩 수식 — must_contain만 지정"
+    },
     {
       "id": "quadratic_formula",
       "rule": "수학 점자 제7·18·22항: 근의 공식 — ⠌(분수표)·⠘(위첨자)·⠜(근호) 공존",
       "input": "<!수식>\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}<!/수식>",
-      "must_contain": ["⠌", "⠘", "⠜"]
+      "must_contain": [
+        "⠌",
+        "⠣",
+        "⠜"
+      ],
+      "note": " [2026-07-17: ^2 관행 약기 ⠣]"
     },
     {
       "id": "pythagorean",
       "rule": "수학 점자 제18항: a²+b²=c² — ⠘ 세 번",
       "input": "<!수식>a^2+b^2=c^2<!/수식>",
-      "must_contain": ["⠘"]
+      "must_contain": [
+        "⠣"
+      ],
+      "note": " [2026-07-17: ^2 관행 약기 ⠣]"
     },
-
-    {"_section": "수학 점자 규정 제45항 — 연산·비교 기호 앞뒤 붙임 (규정 예시 그대로, 수동 도출)"},
-
+    {
+      "_section": "수학 점자 규정 제45항 — 연산·비교 기호 앞뒤 붙임 (규정 예시 그대로, 수동 도출)"
+    },
     {
       "id": "op_add_eq_45",
       "rule": "수학 제45항 예시: 5+7=12 → #e5#g33#ab (기호 앞뒤 붙임)",
       "input": "<!수식>5+7=12<!/수식>",
       "expected": "⠼⠑⠢⠼⠛⠒⠒⠼⠁⠃",
-      "must_contain": ["⠢", "⠒⠒"]
+      "must_contain": [
+        "⠢",
+        "⠒⠒"
+      ]
     },
     {
       "id": "op_sub_eq_45",
       "rule": "수학 제45항 예시: 9-3=6 → #i9#c33#f (뺄셈표 ⠔, 붙임)",
       "input": "<!수식>9-3=6<!/수식>",
       "expected": "⠼⠊⠔⠼⠉⠒⠒⠼⠋",
-      "must_contain": ["⠔"]
+      "must_contain": [
+        "⠔"
+      ]
     },
     {
       "id": "op_mul_eq_45",
       "rule": "수학 제45항 예시: 4×8=32 → #d*#h33#cb (곱셈표 ⠡, 붙임)",
       "input": "<!수식>4\\times 8=32<!/수식>",
       "expected": "⠼⠙⠡⠼⠓⠒⠒⠼⠉⠃",
-      "must_contain": ["⠡"]
+      "must_contain": [
+        "⠡"
+      ]
     },
     {
       "id": "op_div_eq_45",
       "rule": "수학 제45항 예시: 12÷3=4 → #ab//#c33#d (나눗셈표 ⠌⠌, 붙임)",
       "input": "<!수식>12\\div 3=4<!/수식>",
       "expected": "⠼⠁⠃⠌⠌⠼⠉⠒⠒⠼⠙",
-      "must_contain": ["⠌⠌"]
+      "must_contain": [
+        "⠌⠌"
+      ]
     },
     {
       "id": "op_spaced_input_tightened",
       "rule": "수학 제45항: LaTeX 관습 공백(x + 1 = 0)도 붙여 적는다",
       "input": "<!수식>x + 1 = 0<!/수식>",
       "expected": "⠭⠢⠼⠁⠒⠒⠼⠚",
-      "must_contain": ["⠭⠢⠼⠁"]
+      "must_contain": [
+        "⠭⠢⠼⠁"
+      ]
     },
     {
       "id": "op_neg_range_45_4",
       "rule": "수학 제45항 4호 예시: -1<x<3 → 9#a99x99#c (음수 ⠔+수표, 비교 붙임)",
       "input": "<!수식>-1<x<3<!/수식>",
       "expected": "⠔⠼⠁⠔⠔⠭⠔⠔⠼⠉",
-      "must_contain": ["⠔⠼⠁", "⠔⠔"]
+      "must_contain": [
+        "⠔⠼⠁",
+        "⠔⠔"
+      ]
     }
   ]
 }

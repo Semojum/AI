@@ -152,10 +152,10 @@ class TestFormulaChainE2E:
         assert "⠜" in combined
 
     def test_superscript_contains_indicator(self, outputs, formula_items):
-        """a^2 → 위첨자 표시(⠘) 포함."""
+        """위첨자: ^2는 관행 약기 ⠣(정답 코퍼스 규정형 0회 실측), 그 외는 제18항 ⠘."""
         idx = next(i for i, e in enumerate(formula_items) if "^" in (e.latex_string or "") and "frac" not in (e.latex_string or ""))
         combined = "".join(outputs[idx].braille_lines)
-        assert "⠘" in combined
+        assert "⠘" in combined or "⠣" in combined
 
     def test_trig_contains_function_indicator(self, outputs, formula_items):
         """\\sin → 삼각함수 표시(⠋) 포함."""
