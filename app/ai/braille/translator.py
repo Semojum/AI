@@ -318,8 +318,10 @@ _ANGLE_RE = re.compile(r"[〈《<「『]([^〈《<>》〉「」『』\n]{1,20})[
 # ⚠ 첫 구현은 ⠭⠭ 고정이었는데 정답 오독 — 정답은 ⠸…⠇ 숨김표 틀이다(2026-07-17 정정).
 _BOX_BLANK_RE = re.compile(r"(?<!^)□+", re.M)
 _TILDE_RE = re.compile(r"[~∼〜]")
-# MinerU는 〈보기〉 상자를 괄호 없이 '보기\x00'로 낸다(생물 p011 실측 '것은?\n보기\x00').
-# 단독 줄의 '보기'만 관행 표기 '보기'(작은따옴표)로 — 문장 속 '보기'는 건드리지 않는다.
+# MinerU는 〈보기〉 상자를 괄호 없이 '보기\x00'로 낸다. 정답 관행은 위치별로 다르다
+# (생물 p011 원본 27-28행 실측): **문중 참조 = ‘보기’(따옴표), 박스 제목 줄 = 맨 '보기'**.
+# 단독 줄은 잡음(\x00·공백)만 정리하고 맨 글자로 둔다 — ‘보기’ 감쌈은 val 99건 역효과로
+# 판명된 과적합이었다(2026-07-17 정정).
 _BOGI_LINE_RE = re.compile(r"(?m)^[ \t]*(보기)[ \t\x00]*$")
 # MinerU가 문중 〈보기〉를 박스로 떼어내면 문장에 "…만을 에서 …" 구멍이 남는다
 # (생물 p011·026·053 실측, 수능 정형구 "옳은 것만을 〈보기〉에서 있는 대로 고른 것은?").
@@ -356,7 +358,7 @@ def _apply_book_style(text: str) -> str:
     text = _CIRCLED_RE.sub(lambda m: _CIRCLED[m.group()], text)
     text = _MARK_PAREN_RE.sub(_paren_repl, text)
     text = _ANGLE_RE.sub(r"‘\1’", text)
-    text = _BOGI_LINE_RE.sub(r"‘\1’", text)
+    text = _BOGI_LINE_RE.sub(r"\1", text)
     text = _BOGI_GAP_RE.sub(r"\1 ‘보기’\2", text)
     text = _NOISE_BACKTICK_RE.sub("", text)
     text = _AMP_RE.sub("⠯", text)
