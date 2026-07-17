@@ -334,6 +334,10 @@ _BOGI_LINE_RE = re.compile(r"(?m)^[ \t]*(보기)[ \t\x00]*$")
 _BOGI_GAP_RE = re.compile(r"(만을)\s+(에서)")
 # MinerU 마크다운 잔재 백틱이 숫자·한글 사이에 끼면 수가 갈라진다('41`쪽'→#d#a, 수학2 p061).
 _NOISE_BACKTICK_RE = re.compile(r"(?<=[0-9가-힣])`(?=[0-9가-힣])")
+# 한컴 수식 마크 백틱: `f(x)=0 처럼 백틱+영문 시작 구간은 인라인 수식이다(수학2 p016·036·052
+# 실측 — 정답은 수학 괄호 ⠦…⠴, 텍스트 괄호로 점역하면 어긋 dev11/val44). 한글 앞까지를
+# 수식 태그로 라우팅해 convert_latex가 처리하게 한다.
+_BACKTICK_MATH_RE = re.compile(r"`\s*([A-Za-z][A-Za-z0-9(){}\[\]=+\-*/^'′,.\s]*?)(?=[가-힣]|$|\n)")
 # 앰퍼샌드: 규정 [다만]은 한글 사이 &를 로마자표 감쌈 ⠴⠈⠯⠲(0@&4 예시 명시)으로, 정답
 # 도서는 ⠯ 단독(이탈 — regulation_vs_book 기록). book=⠯, regulation=규정 그대로(symbol_table).
 _AMP_RE = re.compile(r"\s*&\s*")
@@ -714,6 +718,7 @@ _CHOICE_HEAD_RE = re.compile(r"(?m)^([①-⑳])\s*")
 def translate_tagged_text(text: str) -> str:
     """<!수식> 태그가 포함된 텍스트를 점자 BRF로 변환."""
     text = _CHOICE_HEAD_RE.sub(r"\1 ", text)
+    text = _BACKTICK_MATH_RE.sub(lambda m: f"<!수식>{m.group(1).rstrip()}<!/수식> ", text)
     text = _normalize_inline_math(text)     # $…$/\(…\) → <!수식> (P1: 수식 라우팅)
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     text = sanitize_for_braille(text)        # PUA·제어문자 정화(요소 전체 소실 방지)
