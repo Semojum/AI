@@ -168,8 +168,18 @@ def _render_linear(corrected_text: str) -> list[str]:
     for ln in corrected_text.splitlines():
         if "|" in ln:
             parts = [p.strip() for p in ln.split("|", 1)]
-            body = f"{parts[0]}  {parts[1]}" if len(parts) > 1 else parts[0]
-            entry = f"  {_translate(body)}"
+            if len(parts) > 1:
+                head_br, val_br = _translate(parts[0]), _translate(parts[1])
+                entry = f"  {head_br}⠀⠀{val_br}"
+                if len(entry) > _COLS:
+                    # 정답 관행(세계사 p009 실측): 키+값이 32칸을 넘치면 키를 단독 줄로
+                    # 세우고 값을 다음 줄부터 — 한 줄에 이어붙이지 않는다.
+                    result.append(f"  {head_br}")
+                    result.extend(_split_lines(f"  {val_br}") if len(val_br) + 2 > _COLS
+                                  else [f"  {val_br}"])
+                    continue
+            else:
+                entry = f"  {_translate(parts[0])}"
         else:
             entry = _translate(ln)
         if len(entry) <= _COLS:
@@ -270,7 +280,14 @@ def _render_unfold(corrected_text: str) -> list[str]:
             for r in rows_in:
                 row_head = r[n_head_cols - 1] if n_head_cols else ""
                 row_br = f"{_translate(row_head)}  " if row_head else ""
-                lines.append(f"  {row_br}{_cell(r[j])}")
+                entry = f"  {row_br}{_cell(r[j])}"
+                if len(entry) <= _COLS or not row_br:
+                    lines.append(entry)
+                else:
+                    # 정답 관행(세계사 p009 실측): 값이 32칸을 넘치면 행 머리를 단독
+                    # 줄로 세우고 값을 다음 줄부터 — 머리+값을 한 줄에 이어붙이지 않는다.
+                    lines.append(f"  {row_br.rstrip()}")
+                    lines.append(f"  {_cell(r[j])}")
     return lines or [""]
 
 
