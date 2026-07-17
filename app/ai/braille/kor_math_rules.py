@@ -161,6 +161,11 @@ _TEXT_CMD_RE = re.compile(r"\\text(?:rm|bf|it|sf|tt|normal|md)?\s*\{([^{}]*)\}")
 # 식 번호 \tag{N} → (N), 배열 환경 \begin{array}{l}…\end{array} → 제거(행 \\는 공백)
 _TAG_CMD_RE = re.compile(r"\\tag\s*\*?\s*\{([^{}]*)\}")
 _ENV_RE = re.compile(r"\\(?:begin|end)\s*\{[^{}]*\}(?:\s*\[[^\]]*\])?(?:\s*\{[^{}]*\})?")
+# 연립식 괄호(수학 규정 제6항): 여는 ⠶⠄(7')·닫는 ⠠⠶(,7). \left\{ 동반 array 또는 cases.
+_SYS_OPEN, _SYS_CLOSE = "⠶⠄", "⠠⠶"
+_SYS_ENV_RE = re.compile(
+    r"\\left\s*\\?\{\s*\\begin\{array\}(?:\{[^{}]*\})?(.*?)\\end\{array\}(?:\s*\\right\s*\.?)?"
+    r"|\\begin\{cases\}(.*?)\\end\{cases\}", re.DOTALL)
 
 # \text{한글} 점역용 훅(translator가 런타임 주입 — 순환 import 회피).
 _text_hook = None
@@ -235,6 +240,16 @@ def _normalize_latex_input(latex: str) -> str:
     s = _MATH_DELIM_RE.sub(" ", s)
     s = s.replace("\r", " ").replace("\n", " ")
     s = _SPACING_CMD_RE.sub(" ", s)
+    # 연립식(수학 규정 제6항): \left\{ \begin{array}… → 여는 ⠶⠄ … 닫는 ⠠⠶.
+    # 정답 실측(수학2 p070): f⠦x⠴=⠶⠄√⠦x−1⠴ ⠦x≥1⠴ … ⠠⠶ — 행은 공백으로 잇는다.
+    # ⚠ 평탄화(_ENV_RE)보다 먼저 잡아야 한다. \begin{cases}도 같은 구조다.
+    def _sys_repl(m: re.Match) -> str:
+        body = (m.group(1) or m.group(2) or "").replace("\\\\", " ").replace("&", " ")
+        body = " ".join(body.split())
+        # 여는 ⠶⠄는 첫 행에, 닫는 ⠠⠶는 마지막 행에 붙인다(정답 p070: 7'> … -,7)
+        return f" {_SYS_OPEN}{body}{_SYS_CLOSE} "
+
+    s = _SYS_ENV_RE.sub(_sys_repl, s)
     # 배열 환경 평탄화: \begin{array}{l}…\end{array} 제거, 행 구분 \\·열 구분 & → 공백
     s = _ENV_RE.sub(" ", s)
     s = s.replace("\\\\", " ").replace("&", " ")
