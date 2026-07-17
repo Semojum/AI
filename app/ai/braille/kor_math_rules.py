@@ -7,6 +7,7 @@ C5-critical: _DIGIT_MAP 오류 시 단위 테스트에서 즉시 차단.
 
 from __future__ import annotations
 
+import os
 import re
 
 from app.ai.braille.symbol_rules import substitute_symbols
@@ -163,6 +164,8 @@ _TAG_CMD_RE = re.compile(r"\\tag\s*\*?\s*\{([^{}]*)\}")
 _ENV_RE = re.compile(r"\\(?:begin|end)\s*\{[^{}]*\}(?:\s*\[[^\]]*\])?(?:\s*\{[^{}]*\})?")
 # 연립식 괄호(수학 규정 제6항): 여는 ⠶⠄(7')·닫는 ⠠⠶(,7). \left\{ 동반 array 또는 cases.
 _SYS_OPEN, _SYS_CLOSE = "⠶⠄", "⠠⠶"
+# 관행 스위치 — translator._BOOK_STYLE과 같은 판정을 env에서 직접 읽는다(순환 import 회피).
+_IS_BOOK_STYLE = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
 _SYS_ENV_RE = re.compile(
     r"\\left\s*\\?\{\s*\\begin\{array\}(?:\{[^{}]*\})?(.*?)\\end\{array\}(?:\s*\\right\s*\.?)?"
     r"|\\begin\{cases\}(.*?)\\end\{cases\}", re.DOTALL)
@@ -246,7 +249,10 @@ def _normalize_latex_input(latex: str) -> str:
     def _sys_repl(m: re.Match) -> str:
         body = (m.group(1) or m.group(2) or "").replace("\\\\", " ").replace("&", " ")
         body = " ".join(body.split())
-        # 여는 ⠶⠄는 첫 행에, 닫는 ⠠⠶는 마지막 행에 붙인다(정답 p070: 7'> … -,7)
+        # 관행(book): 연립식 각 행의 조건 괄호는 붙임표 ⠤…⠤ (정답 p070 실측 '-x≥1-').
+        # 일반 수식 괄호는 관행에서도 ⠦⠴ 그대로(p009 '40⠦x+30⠴')라 연립식 body만 바꾼다.
+        if _IS_BOOK_STYLE:
+            body = body.replace("(", "⠤").replace(")", "⠤")
         return f" {_SYS_OPEN}{body}{_SYS_CLOSE} "
 
     s = _SYS_ENV_RE.sub(_sys_repl, s)
