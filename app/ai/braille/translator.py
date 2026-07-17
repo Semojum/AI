@@ -350,6 +350,9 @@ _JAMO_MARK_RE = re.compile(r"(?<![가-힣A-Za-z0-9])([ㄱ-ㅎ])\.(?=\s|$)")
 _QNUM_RE = re.compile(r"^(\d{1,2})(?=\s+\S)")
 # 줄머리 하이픈 글머리("- 내용") — 관행: ⠤⠤ 붙임(위 _apply_book_style 참조)
 _HYPHEN_BULLET_RE = re.compile(r"(?m)^[ \t]*-[ \t]+")
+# 어휘 뒤 각주 참조 *: 정답은 번호 붙임표 -1-(⠤⠼⠁⠤)로 적는다(세계사 p019·021·040 실측,
+# dev·val 교차 71건). 줄머리 * (글머리·각주 설명부)는 보존. 요소 내 등장 순으로 번호.
+_FOOTNOTE_STAR_RE = re.compile(r"(?<=[가-힣])\*")
 # 줄머리 불릿(•▪·◦)은 지우지 않는다 — layout._apply_bullet_marker가 ○□△와 같은 방식으로
 # 정답 도서의 글머리표 ⠔⠔로 정정한다(아래 근거). 여기서 지우면 그 기회가 사라진다.
 #   규정 제72항은 •를 ⠸⠲(_4)로 지정하지만 정답 코퍼스 1131p에 _4는 0회,
@@ -375,6 +378,11 @@ def _apply_book_style(text: str) -> str:
     # 줄머리 하이픈 글머리: 정답은 ⠤⠤ + 공백 없이 내용을 붙인다(사회문화 p030 실측 '--.ul').
     # 줄표 ―로 바꾸면 braillify가 ⠤⠤로 점역한다. BBPG의 ⠤ 1셀·뒤 1칸과 다른 도서 관행.
     text = _HYPHEN_BULLET_RE.sub("―", text)
+    _fn = [0]
+    def _star_num(m):
+        _fn[0] += 1
+        return f"-{_fn[0]}-"
+    text = _FOOTNOTE_STAR_RE.sub(_star_num, text)
     return _JAMO_MARK_RE.sub(r"\1", text)
 
 
