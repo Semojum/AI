@@ -328,6 +328,9 @@ _NOISE_BACKTICK_RE = re.compile(r"(?<=[0-9가-힣])`(?=[0-9가-힣])")
 # 앰퍼샌드: 규정 [다만]은 한글 사이 &를 로마자표 감쌈 ⠴⠈⠯⠲(0@&4 예시 명시)으로, 정답
 # 도서는 ⠯ 단독(이탈 — regulation_vs_book 기록). book=⠯, regulation=규정 그대로(symbol_table).
 _AMP_RE = re.compile(r"\s*&\s*")
+# 한컴 수식폰트 잡음: MinerU가 ≥를 æ로 낸다('(분자의 차수)æ(분모의 차수)', 수학2 p005).
+# 외국어 발음기호 [dæd]와 충돌하지 않게 수학 문맥(괄호·숫자·한글 인접)만 복원.
+_AE_GEQ_RE = re.compile(r"(?<=[)\d가-힣])\s*æ\s*(?=[(\d가-힣])")
 # 어절 경계에 홀로 선 자모 + 마침표 (항목 머리표 "ㄱ." "ㄴ.")
 _JAMO_MARK_RE = re.compile(r"(?<![가-힣A-Za-z0-9])([ㄱ-ㅎ])\.(?=\s|$)")
 # 문항 번호: 요소 첫머리 숫자 뒤에 본문이 이어질 때만 마침표를 붙인다("3\n다음은…" → "3.").
@@ -346,6 +349,7 @@ def _apply_book_style(text: str) -> str:
     """도서 관행 표기로 원문을 다듬는다(점역 경로 전용 — text_list 원문은 그대로 둔다)."""
     if not _BOOK_STYLE:
         return text
+    text = _AE_GEQ_RE.sub("≥", text)   # 괄호→붙임표보다 먼저(인접 판정이 원문 괄호 기준)
     text = _QNUM_RE.sub(r"\1.", text)
     text = _CIRCLED_RE.sub(lambda m: _CIRCLED[m.group()], text)
     text = _MARK_PAREN_RE.sub(_paren_repl, text)
