@@ -307,6 +307,8 @@ _JAMO_MARK_RE = re.compile(r"(?<![가-힣A-Za-z0-9])([ㄱ-ㅎ])\.(?=\s|$)")
 # 문항 번호: 요소 첫머리 숫자 뒤에 본문이 이어질 때만 마침표를 붙인다("3\n다음은…" → "3.").
 # 뒤에 아무것도 없는 숫자(페이지 번호 "16")는 그대로 둔다 — 정답도 마침표를 안 찍는다.
 _QNUM_RE = re.compile(r"^(\d{1,2})(?=\s+\S)")
+# 줄머리 하이픈 글머리("- 내용") — 관행: ⠤⠤ 붙임(위 _apply_book_style 참조)
+_HYPHEN_BULLET_RE = re.compile(r"(?m)^[ \t]*-[ \t]+")
 # 줄머리 불릿(•▪·◦)은 지우지 않는다 — layout._apply_bullet_marker가 ○□△와 같은 방식으로
 # 정답 도서의 글머리표 ⠔⠔로 정정한다(아래 근거). 여기서 지우면 그 기회가 사라진다.
 #   규정 제72항은 •를 ⠸⠲(_4)로 지정하지만 정답 코퍼스 1131p에 _4는 0회,
@@ -323,6 +325,9 @@ def _apply_book_style(text: str) -> str:
     text = _MARK_PAREN_RE.sub(r"-\1-", text)
     text = _ANGLE_RE.sub(r"‘\1’", text)
     text = _TILDE_RE.sub("―", text)
+    # 줄머리 하이픈 글머리: 정답은 ⠤⠤ + 공백 없이 내용을 붙인다(사회문화 p030 실측 '--.ul').
+    # 줄표 ―로 바꾸면 braillify가 ⠤⠤로 점역한다. BBPG의 ⠤ 1셀·뒤 1칸과 다른 도서 관행.
+    text = _HYPHEN_BULLET_RE.sub("―", text)
     return _JAMO_MARK_RE.sub(r"\1", text)
 
 
@@ -605,9 +610,20 @@ def sanitize_for_braille(text: str) -> str:
 
 def _safe_to_unicode(seg: str) -> str:
     """braillify 변환 + 최후 폴백. 정규화 후에도 남은 미지 글자가 줄 전체를 깨지 않도록,
-    세그먼트가 실패하면 글자 단위로 변환하고 변환 불가 글자만 공백으로 대체한다."""
+    세그먼트가 실패하면 글자 단위로 변환하고 변환 불가 글자만 공백으로 대체한다.
+
+    ★ braillify는 세그먼트 가장자리 공백을 삼킨다(' 질문은'=='질문은' 실측 2026-07-17).
+      점자런과 텍스트런 경계의 공백(예: 선지 번호 ⠼⠁ 뒤 한 칸)이 사라져 정답과 어긋나므로
+      가장자리 공백을 점자 빈칸으로 보존한다.
+    """
+    core = seg.strip(" ")
+    lead = "⠀" * (len(seg) - len(seg.lstrip(" ")))
+    trail = "⠀" * (len(seg) - len(seg.rstrip(" ")))
+    if not core:
+        return lead
+    seg = core
     try:
-        return _braillify_lib.translate_to_unicode(seg)
+        return lead + _braillify_lib.translate_to_unicode(seg) + trail
     except Exception:  # noqa: BLE001 — 미지 글자 격리(줄 보존)
         out = []
         for ch in seg:
@@ -615,7 +631,7 @@ def _safe_to_unicode(seg: str) -> str:
                 out.append(_braillify_lib.translate_to_unicode(ch))
             except Exception:  # noqa: BLE001
                 out.append(" ")
-        return "".join(out)
+        return lead + "".join(out) + trail
 
 
 def _normalize_inline_math(text: str) -> str:
@@ -634,8 +650,15 @@ def _normalize_inline_math(text: str) -> str:
     return _INLINE_MATH_RE.sub(_wrap, text)
 
 
+# 줄머리 선지 번호(①-⑳) 뒤 공백 1 보장. 정답 도서는 원문에 공백이 없어도 넣는다
+# (사회문화 p101 '①2000년' → #1 #bjjj — listitem_diff.md 실측, ①선지 실패 56건의 주범).
+# 문중 참조("㉠과")는 붙어야 하므로 줄머리만 잡는다.
+_CHOICE_HEAD_RE = re.compile(r"(?m)^([①-⑳])\s*")
+
+
 def translate_tagged_text(text: str) -> str:
     """<!수식> 태그가 포함된 텍스트를 점자 BRF로 변환."""
+    text = _CHOICE_HEAD_RE.sub(r"\1 ", text)
     text = _normalize_inline_math(text)     # $…$/\(…\) → <!수식> (P1: 수식 라우팅)
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     text = sanitize_for_braille(text)        # PUA·제어문자 정화(요소 전체 소실 방지)
