@@ -301,9 +301,10 @@ _CIRCLED_RE = re.compile("[" + "".join(_CIRCLED) + "]")
 #       소괄호(⠦⠄…⠠⠴)는 730회로 (A)(B) 같은 로마자 표기에 남아 있다.
 _MARK_PAREN_RE = re.compile(r"\(([^()A-Za-z\n]{1,12})\)")
 _ANGLE_RE = re.compile(r"[〈《<「『]([^〈《<>》〉「」『』\n]{1,20})[〉》>」』]")
-# 문중 빈칸 네모 □ — 정답은 ⠭⠭(xx)로 적는다(생물 p046 '독성 □□' 실측). 줄머리 □는
-# 글머리(제72항 ⠸⠶)라 손대지 않는다.
-_BOX_BLANK_RE = re.compile(r"(?<!^)□", re.M)
+# 문중 빈칸 네모 □ — 숨김표(제49항 표: ×=_xl=⠸⠭⠇)로 적되 ⠭를 글자 수만큼 반복한다
+# (정답 생물 p046 실측: _xl·_xxl·_xxxl — □ 1·2·3글자). 줄머리 □(글머리 제72항)는 제외.
+# ⚠ 첫 구현은 ⠭⠭ 고정이었는데 정답 오독 — 정답은 ⠸…⠇ 숨김표 틀이다(2026-07-17 정정).
+_BOX_BLANK_RE = re.compile(r"(?<!^)□+", re.M)
 _TILDE_RE = re.compile(r"[~∼〜]")
 # 어절 경계에 홀로 선 자모 + 마침표 (항목 머리표 "ㄱ." "ㄴ.")
 _JAMO_MARK_RE = re.compile(r"(?<![가-힣A-Za-z0-9])([ㄱ-ㅎ])\.(?=\s|$)")
@@ -327,7 +328,7 @@ def _apply_book_style(text: str) -> str:
     text = _CIRCLED_RE.sub(lambda m: _CIRCLED[m.group()], text)
     text = _MARK_PAREN_RE.sub(r"-\1-", text)
     text = _ANGLE_RE.sub(r"‘\1’", text)
-    text = _BOX_BLANK_RE.sub("⠭⠭", text)
+    text = _BOX_BLANK_RE.sub(lambda m: "⠸" + "⠭" * len(m.group()) + "⠇", text)
     text = _TILDE_RE.sub("―", text)
     # 줄머리 하이픈 글머리: 정답은 ⠤⠤ + 공백 없이 내용을 붙인다(사회문화 p030 실측 '--.ul').
     # 줄표 ―로 바꾸면 braillify가 ⠤⠤로 점역한다. BBPG의 ⠤ 1셀·뒤 1칸과 다른 도서 관행.
