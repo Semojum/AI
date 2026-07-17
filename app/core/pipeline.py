@@ -268,6 +268,26 @@ async def _fallback_text_layer(task: PageTask, doc_meta: DocumentMeta) -> tuple[
         return [], 0, 0
 
 
+def _page_image_path(task: PageTask):
+    """Opus 폴백용 페이지 이미지 — 저장분(input/page_NNN.jpg) 우선, 없으면 즉석 렌더."""
+    from pathlib import Path
+    p = Path(f"storage/jobs/{task.job_id}/input/page_{task.page_no:03d}.jpg")
+    if p.exists():
+        return p
+    try:
+        import fitz
+        d = fitz.open(stream=task.pdf_data, filetype="pdf")
+        idx = min(max(task.page_no - 1, 0), len(d) - 1)
+        pix = d[idx].get_pixmap(matrix=fitz.Matrix(150 / 72, 150 / 72))
+        p.parent.mkdir(parents=True, exist_ok=True)
+        pix.save(str(p))
+        d.close()
+        return p
+    except Exception as exc:  # noqa: BLE001 — 렌더 실패면 폴백 생략(원 추출 유지)
+        logger.warning("Opus 폴백용 렌더 실패: %s", exc)
+        return None
+
+
 async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     """현주 추출 단계: analyze_pdf + (ZERO 텍스트 | non-ZERO 모델) → 경계 dict(크기·bbox 포함)."""
     from app.ai.preprocessor.pdf_analyzer import analyze_pdf, extract_text_blocks
@@ -287,6 +307,19 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     else:
         method = "OCR"
         elements, image_width, image_height = await _extract_via_models(task, doc_meta)
+
+    # Opus 비전 폴백(D-05, 기본 off — OPUS_EXTRACT_FALLBACK=1 opt-in): 추출이 빈약한
+    # 페이지만 claude-opus-4-8이 직접 읽는다. 실측상 저품질 페이지에서만 유효(3~4배),
+    # 중간 품질은 득실 반반이라 빈약 신호(요소 수·글자수)일 때만 트리거.
+    from app.ai.parser import opus_fallback
+    if opus_fallback.enabled() and opus_fallback.is_meager(elements):
+        img = _page_image_path(task)
+        if img:
+            better = await asyncio.to_thread(opus_fallback.extract, str(img))
+            if better and not opus_fallback.is_meager(better):
+                logger.warning("Opus 추출 폴백 채택: %d→%d요소 (page=%d)",
+                               len(elements), len(better), task.page_no)
+                elements, method = better, "OPUS_VISION"
 
     extraction = {
         "meta": {
