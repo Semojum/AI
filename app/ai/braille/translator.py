@@ -462,11 +462,36 @@ def tn_marker_spans(braille: str, source_text: str | None = None) -> list[tuple[
     return spans
 
 
+# 리터럴 점역자주 마커 방어: LLM·외부 입력이 태그 대신 리터럴(【점역자주】·[점역자주])을
+# 내면 대괄호+한글 음절 21셀이 통째로 점자화된다(2026-07-17 실측 — <!태그> 형식을 쓰는 이유).
+# 쌍 단위로 <!점역자주>/<!/점역자주>로 승격하고, 홀수 잔여는 제거한다.
+_LITERAL_TN_RE = re.compile(r"【점역자주】|\[점역자주\]")
+
+
+def _promote_literal_tn(text: str) -> str:
+    n = [0]
+
+    def _sub(m: re.Match) -> str:
+        n[0] += 1
+        return "<!점역자주>" if n[0] % 2 else "<!/점역자주>"
+
+    out = _LITERAL_TN_RE.sub(_sub, text)
+    if n[0] % 2:                       # 홀수 — 마지막으로 승격된 여는 태그가 짝이 없다
+        i = out.rfind("<!점역자주>")
+        if i >= 0:
+            out = out[:i] + out[i + len("<!점역자주>"):]
+        logger.warning("translator: 리터럴 점역자주 마커 홀수(%d) — 마지막 1개 제거", n[0])
+    if n[0]:
+        logger.info("translator: 리터럴 점역자주 마커 %d개를 태그로 승격", n[0])
+    return out
+
+
 def substitute_tags(text: str) -> str:
     """인라인 태그(<!이름>/<!/이름>)를 점자 마커로 치환. 미지 태그는 안전 제거.
 
     치환 결과는 점자 Unicode이므로 이후 _emit_mixed/braillify가 보존한다(이중 변환 없음).
     """
+    text = _promote_literal_tn(text)
     # 1) 테두리 쌍 (중간 제목 가능) → 32칸 줄(위치 마커). 위계는 box_borders로 layout이 재렌더.
     for name, pat in _BORDER_PAIR_RE.items():
         text = pat.sub(
