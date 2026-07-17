@@ -183,8 +183,10 @@ class TestBookStyleConventions:
         assert self._brf("(조사)").startswith("-")
         assert self._brf("(2,575)").startswith("-")
 
-    def test_영문_섞인_괄호는_소괄호_유지(self):
-        assert self._brf("(SNS)").startswith("8'")
+    def test_영문_약어_괄호도_붙임표(self):
+        # 2026-07-18 정정: 대문자 약어도 정답은 붙임표(-⠴SNS-, 사회문화 p062 실측).
+        # 소괄호 유지는 단일 알파벳 (A)·(x)만.
+        assert self._brf("(SNS)").startswith("-")
 
     def test_화살괄호는_작은따옴표(self):
         assert self._brf("〈보기〉") == ",8~u@o0'"   # ‘보기’

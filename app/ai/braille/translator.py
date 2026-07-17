@@ -312,10 +312,10 @@ def _paren_repl(m: re.Match) -> str:
     inner = m.group(1)
     if _HANJA_ONLY_RE.match(inner):
         return ""                  # 한자 병기 괄호는 통째 생략 (정답 언어 p053 '과목(果木)'→'과목')
-    if any(c.isalpha() and c.isascii() for c in inner) and _UPPER_ONLY_RE.match(inner):
-        return m.group(0)          # 대문자 약어는 소괄호 유지
     if len(inner) == 1 and inner.isalpha() and inner.isascii():
-        return m.group(0)          # 단일 알파벳 (x)·(a)도 소괄호 유지(수학2 p061 정답 8x0)
+        return m.group(0)          # 단일 알파벳 (A)·(x)만 소괄호 유지(정답 124/74회·p061 8x0)
+    # 대문자 약어 (SNS)도 붙임표 — "약어는 소괄호" 가정은 dev·val 교차 스캔에서 어긋
+    # 최다(21건)로 판명, 정답 실측 '-⠴SNS-' (사회문화 p062, 2026-07-18 정정).
     return f"-{inner}-"
 _ANGLE_RE = re.compile(r"[〈《<「『]([^〈《<>》〉「」『』\n]{1,20})[〉》>」』]")
 # 문중 빈칸 네모 □ — 숨김표(제49항 표: ×=_xl=⠸⠭⠇)로 적되 ⠭를 글자 수만큼 반복한다
