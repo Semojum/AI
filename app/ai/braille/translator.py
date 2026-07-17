@@ -247,16 +247,26 @@ def _emit_mixed(text: str, result: list[str]) -> None:
     braillify 2.0.0은 \x00, PUA(U+E000+) 등 제어문자를 거부하므로
     플레이스홀더 방식 대신 이 세그먼트 분리 방식을 사용한다.
     """
+    def _seg(seg: str) -> str:
+        out = _safe_to_unicode(seg)
+        # 붙임표(⠤) 뒤 순수 로마자 세그: 세그 분리로 한글 문맥이 사라져 braillify가
+        # 로마자표를 못 붙인다. 정답 관행은 여는 ⠴만·종료표 생략(-⠴UN- , 사회문화
+        # p100·108 실측, 교차 59건). 직전 결과가 ⠤로 끝날 때만 ⠴를 접두한다.
+        if (result and result[-1].endswith("⠤")
+                and seg.strip() and all(c.isalpha() and c.isascii() for c in seg.strip())):
+            out = "⠴" + out
+        return out
+
     last = 0
     for m in _BRAILLE_RE.finditer(text):
         pre = text[last:m.start()]
         if pre:
-            result.append(_safe_to_unicode(pre))
+            result.append(_seg(pre))
         result.append(m.group())
         last = m.end()
     tail = text[last:]
     if tail:
-        result.append(_safe_to_unicode(tail))
+        result.append(_seg(tail))
 
 
 def _preprocess_units(text: str) -> str:
