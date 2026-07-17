@@ -301,7 +301,9 @@ _CIRCLED_RE = re.compile("[" + "".join(_CIRCLED) + "]")
 #       소괄호(⠦⠄…⠠⠴)는 730회로 (A)(B) 같은 로마자 표기에 남아 있다.
 # 붙임표 감쌈 대상: 한글·숫자 괄호 + 소문자 포함 영문(단어·구 — 정답 p133 '(Yir Yoront)'
 # → -⠴yir yoront- 실측). 대문자·숫자만인 약어 (A)·(SNS)는 소괄호 유지(코퍼스 124/74회).
-_MARK_PAREN_RE = re.compile(r"\(([^()\n]{1,20})\)")
+# 개행 허용·상한 60: MinerU가 괄호 안에 줄바꿈을 넣거나 긴 문장 괄호(정답 p026 실측:
+# 문장 전체 괄호도 붙임표)가 있어 줄 단위·20자 규칙이 교차 131건을 놓쳤다(2026-07-18).
+_MARK_PAREN_RE = re.compile(r"\(([^()]{1,60})\)")
 _UPPER_ONLY_RE = re.compile(r"^[A-Z0-9 ,.·]+$")
 
 
@@ -795,9 +797,11 @@ def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
     칸 중간에서 쪼개지 않기 위함, §1.2.1). 각 줄의 break offset은 layout `_wrap_line`이
     32칸 줄바꿈에 사용한다.
     """
-    # ★ '만을\n에서' 같은 MinerU 소실 구멍은 개행을 끼고 있어 줄 단위 관행 정규화가
-    #   못 잡는다 — 요소 전체 수준에서 선적용(이 개행은 원문 구조가 아니라 추출 산물).
+    # ★ '만을\n에서' 소실 구멍·개행 낀 괄호는 줄 단위 관행 정규화가 못 잡는다 —
+    #   요소 전체 수준에서 선적용(이 개행은 원문 구조가 아니라 추출 산물).
     text = _BOGI_GAP_RE.sub(r"\1 ‘보기’\2", text)
+    if _BOOK_STYLE:
+        text = _MARK_PAREN_RE.sub(_paren_repl, text)
     lines: list[str] = []
     breaks: list[list[int]] = []
     for src_line in text.split("\n"):
