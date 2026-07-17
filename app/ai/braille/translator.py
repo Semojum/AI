@@ -299,7 +299,17 @@ _CIRCLED_RE = re.compile("[" + "".join(_CIRCLED) + "]")
 # 괄호 안이 한글·숫자면 붙임표로 감싼다. 영문이 섞이면 규정 소괄호를 유지한다.
 # 정답: -가- 1217 · -나- 663 · -1- 281 · "소계-해당 인구-  100.0-2,575-"(표) …
 #       소괄호(⠦⠄…⠠⠴)는 730회로 (A)(B) 같은 로마자 표기에 남아 있다.
-_MARK_PAREN_RE = re.compile(r"\(([^()A-Za-z\n]{1,12})\)")
+# 붙임표 감쌈 대상: 한글·숫자 괄호 + 소문자 포함 영문(단어·구 — 정답 p133 '(Yir Yoront)'
+# → -⠴yir yoront- 실측). 대문자·숫자만인 약어 (A)·(SNS)는 소괄호 유지(코퍼스 124/74회).
+_MARK_PAREN_RE = re.compile(r"\(([^()\n]{1,20})\)")
+_UPPER_ONLY_RE = re.compile(r"^[A-Z0-9 ,.·]+$")
+
+
+def _paren_repl(m: re.Match) -> str:
+    inner = m.group(1)
+    if any(c.isalpha() and c.isascii() for c in inner) and _UPPER_ONLY_RE.match(inner):
+        return m.group(0)          # 대문자 약어는 소괄호 유지
+    return f"-{inner}-"
 _ANGLE_RE = re.compile(r"[〈《<「『]([^〈《<>》〉「」『』\n]{1,20})[〉》>」』]")
 # 문중 빈칸 네모 □ — 숨김표(제49항 표: ×=_xl=⠸⠭⠇)로 적되 ⠭를 글자 수만큼 반복한다
 # (정답 생물 p046 실측: _xl·_xxl·_xxxl — □ 1·2·3글자). 줄머리 □(글머리 제72항)는 제외.
@@ -326,7 +336,7 @@ def _apply_book_style(text: str) -> str:
         return text
     text = _QNUM_RE.sub(r"\1.", text)
     text = _CIRCLED_RE.sub(lambda m: _CIRCLED[m.group()], text)
-    text = _MARK_PAREN_RE.sub(r"-\1-", text)
+    text = _MARK_PAREN_RE.sub(_paren_repl, text)
     text = _ANGLE_RE.sub(r"‘\1’", text)
     text = _BOX_BLANK_RE.sub(lambda m: "⠸" + "⠭" * len(m.group()) + "⠇", text)
     text = _TILDE_RE.sub("―", text)
