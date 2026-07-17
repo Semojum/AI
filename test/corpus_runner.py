@@ -113,13 +113,13 @@ def page_text(pdf: Path) -> str:
 
 
 # ── 상태바 ───────────────────────────────────────────────────────────────
-def bar(cur: int, total: int, *, ok: int, blocked: int, fail: int, to: int, eta: float, label: str):
+def bar(cur: int, total: int, *, ok: int, review: int, blocked: int, fail: int, to: int, eta: float, label: str):
     w = 26
     fill = int(w * cur / total) if total else w
     etas = f"{int(eta//60)}m{int(eta%60):02d}s" if eta > 0 else "--"
     sys.stdout.write(
         f"\r[{'#'*fill}{'.'*(w-fill)}] {cur}/{total} "
-        f"ok{ok} blk{blocked} fail{fail} to{to} ETA{etas} {label[:30]:<30}"
+        f"ok{ok} rv{review} blk{blocked} fail{fail} to{to} ETA{etas} {label[:30]:<30}"
     )
     sys.stdout.flush()
 
@@ -148,7 +148,7 @@ async def run_subject(subject: str, pages: list[str], tag: str, *,
         prog["cur"] += 1
         elapsed = time.time() - prog["t0"]
         eta = (elapsed / prog["cur"]) * (prog["total"] - prog["cur"]) if prog["cur"] else 0
-        bar(prog["cur"], prog["total"], ok=prog["ok"], blocked=prog["blocked"],
+        bar(prog["cur"], prog["total"], ok=prog["ok"], review=prog["review"], blocked=prog["blocked"],
             fail=prog["fail"], to=prog["to"], eta=eta, label=f"{subject} p{pg}")
 
         if pg in done:  # 재개: 이미 완료
@@ -179,8 +179,10 @@ async def run_subject(subject: str, pages: list[str], tag: str, *,
                              res.get("quality_report", {}).get("critical_errors", [])],
                 "error": None,
             })
-            # BLOCKED(C7 타임아웃 등)는 ok가 아니다 — 상태별로 분리 집계.
-            prog["ok" if rec["status"] == "COMPLETED" else "blocked"] += 1
+            # ★ NEEDS_REVIEW를 blocked로 세면 안 된다. 점자를 정상 생성하고 검토 플래그만
+            #   붙은 상태라, 초안 생성기에선 정상 결과다. 한데 묶었더니 진행바가 "blk18"로
+            #   찍혀 44%가 막힌 것처럼 보였다(2026-07-17). BLOCKED(C1·C7 등)만 blocked다.
+            prog[{"COMPLETED": "ok", "NEEDS_REVIEW": "review"}.get(rec["status"], "blocked")] += 1
         except asyncio.TimeoutError:
             rec.update({"status": "TIMEOUT", "time_ms": int((time.time() - t0) * 1000),
                         "error": f"timeout>{PAGE_TIMEOUT}s"})
@@ -246,6 +248,14 @@ def main():
     if not os.environ.get("MINERU_BIN"):
         print("⚠ MINERU_BIN 미설정 — STANDARD 라우팅 페이지는 빈 추출이 될 수 있음.")
 
+    # ★ 영구 MinerU 서비스 연결. ensure_started는 main.py(서버 모드)만 부르고 있어서
+    #   오프라인 러너는 get_url()=None → 페이지마다 vLLM 엔진을 새로 띄웠다(기동 ~45s/페이지,
+    #   2026-07-17 실측: api-url 사용 0회·자체 기동 31회). MINERU_API_URL이 있으면 health만
+    #   확인하고 즉시 연결, 없으면 자동 기동을 시도한다(실패해도 CLI 폴백으로 동작은 한다).
+    from app.ai.parser import mineru_service
+    url = mineru_service.ensure_started()
+    print(f"MinerU 서비스: {url or 'CLI 폴백(페이지마다 엔진 기동 — 느림)'}")
+
     rows = load_manifest()
     subjects = set(args.subjects.split(",")) if args.subjects else None
     sel = select(rows, args.split, subjects, args.limit, args.purposive)
@@ -259,7 +269,7 @@ def main():
         print(f"  {sub:<8} {len(pgs)}p: {' '.join(pgs)}")
     print("-" * 60)
 
-    prog = {"cur": 0, "total": total, "ok": 0, "blocked": 0, "fail": 0, "to": 0, "t0": time.time()}
+    prog = {"cur": 0, "total": total, "ok": 0, "review": 0, "blocked": 0, "fail": 0, "to": 0, "t0": time.time()}
     summaries = []
     for sub in sorted(sel):
         s = asyncio.run(run_subject(sub, sel[sub], tag, reuse=args.reuse,
@@ -267,7 +277,7 @@ def main():
         summaries.append(s)
     print()  # 상태바 줄바꿈
     print("-" * 60)
-    print(f"완료: COMPLETED{prog['ok']} BLOCKED{prog['blocked']} fail{prog['fail']} "
+    print(f"완료: COMPLETED{prog['ok']} NEEDS_REVIEW{prog['review']} BLOCKED{prog['blocked']} fail{prog['fail']} "
           f"timeout{prog['to']} / {total}  ({int(time.time()-prog['t0'])}s)")
     # 실패/타임아웃 페이지 목록
     bad = [(s["job_id"], p["page"], p["status"], p.get("error"))

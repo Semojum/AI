@@ -71,7 +71,16 @@ LaTeX:
 _PREFILL = "교정된 LaTeX: "
 
 
+# ★ MinerU LaTeX는 숫자를 자릿수마다 띄운다: \frac {8 0 0}{x}. 그대로 점역하면 수마다
+#   수표(⠼)가 붙어 정답(⠼⠓⠚⠚=800 수표 1개)과 전부 어긋난다 — dev 전수에서 수식 무수정
+#   1.1%의 주원인(2026-07-17, 수학2 p009 정답 'x분의800' 대조). 숫자-공백-숫자를 붙인다.
+#   소수점·쉼표 낀 것(1 2. 5, 1, 2 0 0)도 한 수다. 단어 경계의 진짜 띄움(연산 뒤 "= 2 0"의
+#   2 0)도 한 수가 맞아 함께 붙는다.
+_DIGIT_GAP_RE = re.compile(r"(?<=\d)\s+(?=[\d.,]\b|\d)")
+
+
 def _normalize(latex: str) -> str:
+    latex = _DIGIT_GAP_RE.sub("", latex)
     for pattern, replacement in _LATEX_NORMALIZE:
         latex = re.sub(pattern, replacement, latex)
     return latex
