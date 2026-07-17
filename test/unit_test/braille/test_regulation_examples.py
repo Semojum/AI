@@ -139,11 +139,11 @@ def test_regulation_pairs_has_decode_ok(filename: str) -> None:
 
 
 class TestBookStyleConventions:
-    """정답 도서 표기 관행(BRAILLE_STYLE=book) — 규정과 다른 자리.
+    """정답 도서 표기 관행(BRAILLE_STYLE=book, 기본값) — 규정과 다른 자리.
 
-    ★ 기본값이 아니다. 기본은 규정(태민 2026-07-17) — 보유 도서가 규정을 완벽히 준수하진
-      않으므로 규정을 정답으로 본다. 관행 경로는 지우지 않고 스위치로 남겼고, 이 클래스가
-      그 경로를 검증한다. 지우면 관행 모드가 무검증이 된다.
+    ★ 기본=관행(태민 2026-07-17 재판정). 텍스트 축의 잣대가 정답 도서라 정답 표기가 기본.
+      시각자료의 관행/규정 갈림은 4안 제공으로 해소(모드 선택 불필요). 규정 경로는
+      BRAILLE_STYLE=regulation 스위치로 유지 — TestRegulationSwitch가 검증한다.
 
     근거: 정답 코퍼스(수능특강 점역본 1131p) 전수 관찰.
       · 표시 문자 (가)/(1) → 붙임표로 감쌈: -가- 1217회 / -1- 281회
@@ -191,12 +191,22 @@ class TestBookStyleConventions:
         assert self._brf("<보기>") == ",8~u@o0'"
 
 
-class TestRegulationIsDefault:
-    """스위치 없이도 규정 표기가 나와야 한다 — 기본값이 규정이라는 계약(태민 2026-07-17).
+class TestRegulationSwitch:
+    """BRAILLE_STYLE=regulation 스위치가 살아 있다는 계약(기본=관행, 태민 2026-07-17 재판정).
 
-    ★ 이 클래스가 통과해야 "규정이 정답"이 실제로 배선된 것이다. TestBookStyleConventions는
-      env를 켰을 때만 관행이 나오는지 보므로, 기본값 자체는 여기서만 검증된다.
+    기본 동작은 TestBookStyleConventions가 검증한다(이제 autouse env 없이도 기본이 관행).
+    여기서는 규정 모드로 전환했을 때 규정 표기가 나오는지만 본다.
     """
+
+    @pytest.fixture(autouse=True)
+    def _reg_mode(self, monkeypatch):
+        import importlib
+        from app.ai.braille import translator
+        monkeypatch.setenv("BRAILLE_STYLE", "regulation")
+        importlib.reload(translator)
+        yield
+        monkeypatch.delenv("BRAILLE_STYLE")
+        importlib.reload(translator)
 
     def _brf(self, text: str) -> str:
         from app.ai.braille.translator import translate_tagged_text
@@ -209,7 +219,3 @@ class TestRegulationIsDefault:
     def test_화살괄호는_규정_기호(self):
         # 제63항 〈…〉 — 관행(작은따옴표 ,8~u@o0')로 새지 않아야 한다
         assert self._brf("〈보기〉") != ",8~u@o0'"
-
-    def test_글머리표는_규정_제72항(self):
-        from app.ai.braille.layout_braille import _HIDDEN_TO_BULLET
-        assert _HIDDEN_TO_BULLET["⠐⠆"] == "⠸⠲⠀"    # _4 (관행이면 ⠔⠔)
