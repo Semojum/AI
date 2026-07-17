@@ -751,6 +751,9 @@ def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
     칸 중간에서 쪼개지 않기 위함, §1.2.1). 각 줄의 break offset은 layout `_wrap_line`이
     32칸 줄바꿈에 사용한다.
     """
+    # ★ '만을\n에서' 같은 MinerU 소실 구멍은 개행을 끼고 있어 줄 단위 관행 정규화가
+    #   못 잡는다 — 요소 전체 수준에서 선적용(이 개행은 원문 구조가 아니라 추출 산물).
+    text = _BOGI_GAP_RE.sub(r"\1 ‘보기’\2", text)
     lines: list[str] = []
     breaks: list[list[int]] = []
     for src_line in text.split("\n"):
