@@ -132,12 +132,12 @@ class TestConvertLatex:
         assert "⠣" in convert_latex("x^2")  # ^2 관행 약기(정답 규정형 0회)
 
     def test_sin_indicator(self) -> None:
-        """수학 삼각함수: sin → ⠋⠎."""
-        assert "⠋⠎" in convert_latex("\\sin(x)")
+        """수학 삼각함수 제47항: sin → ⠖⠎ (6s)."""
+        assert "⠖⠎" in convert_latex("\\sin(x)")
 
     def test_cos_indicator(self) -> None:
-        """수학 삼각함수: cos → ⠋⠉."""
-        assert "⠋⠉" in convert_latex("\\cos(x)")
+        """수학 삼각함수 제47항: cos → ⠖⠉ (6c)."""
+        assert "⠖⠉" in convert_latex("\\cos(x)")
 
     def test_pi_indicator(self) -> None:
         """\\pi → 그리스 문자 표시 포함."""

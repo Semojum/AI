@@ -126,7 +126,7 @@
       "description": "수식: sin(π/6)",
       "input": "<!수식>\\sin(\\frac{\\pi}{6})<!/수식>",
       "must_contain": [
-        "⠋⠎",
+        "⠖⠎",
         "⠌",
         "⠨"
       ]
@@ -136,7 +136,7 @@
       "description": "수식: cos(x)",
       "input": "<!수식>\\cos(x)<!/수식>",
       "must_contain": [
-        "⠋⠉"
+        "⠖⠉"
       ]
     },
     {
@@ -218,7 +218,7 @@
       "description": "삼각함수와 한국어",
       "input": "삼각형에서 <!수식>\\sin(\\frac{\\pi}{6})<!/수식>의 값",
       "must_contain": [
-        "⠋⠎",
+        "⠖⠎",
         "⠌"
       ]
     },
