@@ -60,6 +60,20 @@ _PREFILL = "[개조식]\n"
 _SECTION_RE = re.compile(r"\[(제목|개조식|줄글)\]\s*(.*)")
 
 
+_TYPE_DUP_RE = None  # 지연 컴파일
+
+
+def _strip_dup_type(text: str, label: str) -> str:
+    """캡션이 이미 유형 제시어로 시작하면 떼서 라벨 이중화를 막는다.
+
+    captioner._ensure_type_word(§6.3.4 rule-based)가 붙인 '그래프: …'에 여기서 또
+    라벨을 붙이면 '그래프: 그래프: …'가 된다(2026-07-17 dev 캡셔닝 첫 실행 실측).
+    """
+    import re
+    t = (text or "").strip()
+    return re.sub(rf"^{re.escape(label)}\s*[:：]\s*", "", t)
+
+
 def _tn(text: str) -> str:
     """시각자료 감싸기 — tn(현행): 점역자주 / box(A/B): 글상자 테두리."""
     if _WRAP_STYLE == "box":
@@ -91,6 +105,7 @@ def _outline_text_indents(
     indents: list[int] = []
     title = (title or "").strip()
     desc = (desc or "").strip()
+    desc = _strip_dup_type(desc, label)
     head = f"{label}: {desc}" if (desc and desc != title) else label
     if _WRAP_STYLE == "box":
         # box(A/B): 블록 전체를 글상자로 — 제목은 위 테두리 안(BBPG-1.2.5), 유형/설명은 첫 줄.
@@ -132,6 +147,7 @@ def outline_draft(
 def prose_draft(label: str, prose: str) -> Draft:
     """3안: 줄글 자세한 설명."""
     body = (prose or "").strip()
+    body = _strip_dup_type(body, label)
     return Draft(option=4, text=_tn(f"{label}: {body}" if body else f"{label} 생략"),
                  render_mode="narrative", label=LABELS[PROSE_IDX])
 
