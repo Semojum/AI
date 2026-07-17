@@ -319,6 +319,10 @@ _TILDE_RE = re.compile(r"[~∼〜]")
 # MinerU는 〈보기〉 상자를 괄호 없이 '보기\x00'로 낸다(생물 p011 실측 '것은?\n보기\x00').
 # 단독 줄의 '보기'만 관행 표기 '보기'(작은따옴표)로 — 문장 속 '보기'는 건드리지 않는다.
 _BOGI_LINE_RE = re.compile(r"(?m)^[ \t]*(보기)[ \t\x00]*$")
+# MinerU가 문중 〈보기〉를 박스로 떼어내면 문장에 "…만을 에서 …" 구멍이 남는다
+# (생물 p011·026·053 실측, 수능 정형구 "옳은 것만을 〈보기〉에서 있는 대로 고른 것은?").
+# 조사 '만을' 바로 뒤 '에서'는 이 소실뿐이라 ‘보기’를 복원한다.
+_BOGI_GAP_RE = re.compile(r"(만을)\s+(에서)")
 # MinerU 마크다운 잔재 백틱이 숫자·한글 사이에 끼면 수가 갈라진다('41`쪽'→#d#a, 수학2 p061).
 _NOISE_BACKTICK_RE = re.compile(r"(?<=[0-9가-힣])`(?=[0-9가-힣])")
 # 앰퍼샌드: 규정 [다만]은 한글 사이 &를 로마자표 감쌈 ⠴⠈⠯⠲(0@&4 예시 명시)으로, 정답
@@ -347,6 +351,7 @@ def _apply_book_style(text: str) -> str:
     text = _MARK_PAREN_RE.sub(_paren_repl, text)
     text = _ANGLE_RE.sub(r"‘\1’", text)
     text = _BOGI_LINE_RE.sub(r"‘\1’", text)
+    text = _BOGI_GAP_RE.sub(r"\1 ‘보기’\2", text)
     text = _NOISE_BACKTICK_RE.sub("", text)
     text = _AMP_RE.sub("⠯", text)
     text = _BOX_BLANK_RE.sub(lambda m: "⠸" + "⠭" * len(m.group()) + "⠇", text)
