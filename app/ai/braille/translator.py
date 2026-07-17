@@ -340,6 +340,10 @@ _AMP_RE = re.compile(r"\s*&\s*")
 # 한컴 수식폰트 잡음: MinerU가 ≥를 æ로 낸다('(분자의 차수)æ(분모의 차수)', 수학2 p005).
 # 외국어 발음기호 [dæd]와 충돌하지 않게 수학 문맥(괄호·숫자·한글 인접)만 복원.
 _AE_GEQ_RE = re.compile(r"(?<=[)\d가-힣])\s*æ\s*(?=[(\d가-힣])")
+# 문항 지시문의 부정어 강조는 드러냄표를 안 친다(정답 사회문화 p024·생물 p023 실측:
+# '옳지 않은 것은?'의 밑줄 → 맨 글자). 지문 속 어휘 드러냄(p035·p062)은 정답도 치므로
+# 부정어+의문 문맥만 좁게 벗긴다.
+_NEG_EMPH_RE = re.compile(r"<!드러냄>(않은|않는|없는|틀린|아닌)<!/드러냄>(?=\s*것)")
 # 어절 경계에 홀로 선 자모 + 마침표 (항목 머리표 "ㄱ." "ㄴ.")
 _JAMO_MARK_RE = re.compile(r"(?<![가-힣A-Za-z0-9])([ㄱ-ㅎ])\.(?=\s|$)")
 # 문항 번호: 요소 첫머리 숫자 뒤에 본문이 이어질 때만 마침표를 붙인다("3\n다음은…" → "3.").
@@ -543,6 +547,7 @@ def substitute_tags(text: str) -> str:
     치환 결과는 점자 Unicode이므로 이후 _emit_mixed/braillify가 보존한다(이중 변환 없음).
     """
     text = _promote_literal_tn(text)
+    text = _NEG_EMPH_RE.sub(r"\1", text)   # 태그가 마커로 바뀌기 전에
     # 1) 테두리 쌍 (중간 제목 가능) → 32칸 줄(위치 마커). 위계는 box_borders로 layout이 재렌더.
     for name, pat in _BORDER_PAIR_RE.items():
         text = pat.sub(
