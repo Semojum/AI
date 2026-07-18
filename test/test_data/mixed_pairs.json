@@ -152,7 +152,7 @@
       "description": "수식: ln(x)",
       "input": "<!수식>\\ln(x)<!/수식>",
       "must_contain": [
-        "⠸"
+        "⠇⠝"
       ]
     },
     {
