@@ -2,6 +2,7 @@
 GPT-4o로 크롭 이미지를 한국어 텍스트로 묘사.
 image/cartoon/chart 각각 다른 프롬프트 사용.
 """
+import re
 import base64
 import os
 from pathlib import Path
@@ -115,13 +116,45 @@ _TYPE_WORD = {"image": "그림", "cartoon": "만화", "chart": "그래프", "cha
 _TYPE_WORDS_ALL = ("그림", "사진", "그래프", "삽화", "만화", "지도", "표", "도표")
 
 
+_TYPE_COLON_RES = None  # lazy — 유형 제시어+쌍점 패턴
+
+
+def _has_type_colon(s: str) -> bool:
+    """유형 제시어(그림·그래프 등)+쌍점으로 시작하는가 — 지침 §6.3.4 '유형, 쌍점, 내용'."""
+    global _TYPE_COLON_RES
+    if _TYPE_COLON_RES is None:
+        _TYPE_COLON_RES = re.compile(
+            r"^(?:" + "|".join(map(re.escape, _TYPE_WORDS_ALL)) + r")\s*[:：]")
+    return bool(_TYPE_COLON_RES.match(s))
+
+
+# 제목줄 패턴: 유형+번호("그림 2-1." "표 1.") — 제시어가 아니라 자료 제목이다(지침 예3-20).
+_TITLE_LINE_RE = re.compile(
+    r"^(?:" + "|".join(map(re.escape, _TYPE_WORDS_ALL)) + r")\s*\d+(?:[.\-]\d+)*\.?\s")
+
+
 def _ensure_type_word(text: str, image_type: str) -> str:
+    """지침 §6.3.4: 설명 본문은 '유형 제시어 + 쌍점'으로 시작해야 한다.
+
+    ⚠ 단순 startswith(유형) 판정은 제목줄("그림 2-1. …")을 제시어로 오판해 본문
+    제시어를 생략시켰다(지침 예3-20 프레임 검사 실측, 2026-07-19). 쌍점까지 요구하고,
+    제목줄이면 제목은 유지한 채 다음 본문 앞에 제시어를 삽입한다.
+    """
     t = (text or "").strip()
     if not t:
         return t
-    if any(t.startswith(w) for w in _TYPE_WORDS_ALL):
+    if _has_type_colon(t):
         return t
-    return f"{_TYPE_WORD.get(image_type, '그림')}: {t}"
+    tw = _TYPE_WORD.get(image_type, "그림")
+    if _TITLE_LINE_RE.match(t):
+        nl = t.find("\n")
+        if nl > 0:
+            title, body = t[:nl].rstrip(), t[nl + 1:].strip()
+            if body and not _has_type_colon(body):
+                return f"{title}\n{tw}: {body}"
+            return t
+        return t  # 제목 한 줄뿐 — 본문 없음, 그대로
+    return f"{tw}: {t}"
 
 
 def caption(image_path: str, image_type: str = "image") -> str:

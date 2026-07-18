@@ -158,10 +158,10 @@ class TestFormulaChainE2E:
         assert "⠘" in combined or "⠣" in combined
 
     def test_trig_contains_function_indicator(self, outputs, formula_items):
-        """\\sin → 삼각함수 표시(⠋) 포함."""
+        """\\sin → 삼각함수 접두 ⠖(6s, 규정 제47항) 포함."""
         idx = next(i for i, e in enumerate(formula_items) if "sin" in (e.latex_string or ""))
         combined = "".join(outputs[idx].braille_lines)
-        assert "⠋" in combined
+        assert "⠖⠎" in combined
 
     def test_pi_contains_greek_indicator(self, outputs, formula_items):
         """\\pi → 그리스문자 표시(⠨) 포함."""
