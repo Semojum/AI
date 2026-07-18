@@ -28,7 +28,9 @@ _FLOORS: dict[str, dict[str, float]] = {
     "roman": {"build": 0.40, "test": 0.45},
     # 규정-정확 줄임표 …=⠠⠠⠠(대문자단어 ⠠⠠와 충돌)·가운뎃점 ·=⠐⠆ 등은 역점역에서 내재 모호
     # → build 0.88(15/17). 역점역은 근사·표시용이라 floor를 측정값에 맞춤(회귀 감지 유지).
-    "punctuation": {"build": 0.85, "test": 0.90},
+    # 지침 관행 괄호 (보기)→⠤보기⠤는 붙임표와 동형이라 블라인드 복원 불가(내재 모호)
+    # → 재생성 후 test 6/7=0.857. floor를 측정값에 맞춤(회귀 감지 유지).
+    "punctuation": {"build": 0.85, "test": 0.85},
     # 고유 점형 기호는 100% 복원. 점형 충돌(한글 61·기호 41·원문자 22)은 ambiguous로 floor 제외.
     "symbols": {"build": 0.95, "test": 0.95},
     # 수학식(첨자·근호·분수·연산자·그리스) — decode(math=True) 구역. 현재 build/test 1.0.

@@ -214,10 +214,9 @@
       "brf_ascii": null,
       "braille_unicode": "⠜⠦⠭⠢⠼⠁⠴",
       "split": "test",
-      "ambiguous": true,
+      "ambiguous": false,
       "math": true,
-      "source": "curated_math",
-      "ambiguous_reason": "관행 다대일(괄호 관행 소실/근호 조합) — 역점역 불가 항목(2026-07-19)"
+      "source": "curated_math"
     },
     {
       "korean": "a = b",
