@@ -166,7 +166,7 @@ class TestMathOperators:
         assert "⠒⠒" in convert_latex("x=y")              # 등호 ⠒⠒(폰트 33), ⠉⠉ 아님
 
     def test_leq(self) -> None:
-        assert "⠦⠦" in convert_latex("x \\leq 5")        # ≤ ⠦⠦(폰트 66)
+        assert "⠖⠖" in convert_latex("x \\leq 5")        # ≤ ⠖⠖(66, ASCII 6=⠖ — 구 ⠦ 폰트 오독 정정)
 
     def test_geq(self) -> None:
         assert "⠲⠲" in convert_latex("x \\geq 5")        # ≥ ⠲⠲(폰트 44)
@@ -237,10 +237,10 @@ class TestSymbolGlyphs:
     """
 
     @pytest.mark.parametrize("symbol,expected", [
-        ("=", "⠒⠒"), ("≤", "⠦⠦"), ("≥", "⠲⠲"), ("≠", "⠨⠒⠒"),
+        ("=", "⠒⠒"), ("≤", "⠖⠖"), ("≥", "⠲⠲"), ("≠", "⠨⠒⠒"),
         ("<", "⠔⠔"), (">", "⠢⠢"),
         ("→", "⠒⠕"), ("←", "⠪⠒"),
-        ("∈", "⠦"), ("⊂", "⠦⠂"), ("≡", "⠶⠶"),
+        ("∈", "⠖"), ("⊂", "⠖⠂"), ("≡", "⠶⠶"),
         ("…", "⠠⠠⠠"), ("《", "⠰⠶"), ("※", "⠐⠔"), ("〃", "⠴⠴"),
         ("○", "⠸⠴⠇"), ("□", "⠸⠶⠇"),
         ("①", "⠼⠂"), ("⑩", "⠼⠂⠴"), ("⑳", "⠼⠆⠴"),  # 제64항 한 단 내림
