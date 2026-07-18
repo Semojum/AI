@@ -225,14 +225,20 @@ def build(
             continue
 
         # element_id를 그대로 사용 (새 UUID 생성 안 함)
-        # bbox는 픽셀 좌표(bbox_px, 2x 렌더 기준)로 BE에 전달 — 없으면 0~1000 정규화 bbox.
-        bbox_px = el.get("bbox_px") or el.get("bbox")
+        # ★경계 bbox는 0~1000 정규화로 통일(2026-07-19). 구판이 rect×2 픽셀(bbox_px)을
+        #   "bbox"로 저장해, 0~1000을 가정하는 소비처(수식 crop·opus_extract·caption 링크)가
+        #   전부 어긋났다 — 수학2 p008 실측: 원본 y=556이 820으로 저장돼 crop이 다른 수식을
+        #   가리킴. MinerU 경로(bbox_px 존재)는 원본 정규화 bbox를 쓰고, 그 외 경로는 종전 유지.
+        if el.get("bbox_px") and el.get("bbox"):
+            bbox_out = el["bbox"]                    # 0~1000 원본
+        else:
+            bbox_out = el.get("bbox_px") or el.get("bbox")
         entry = {
             "id": el["element_id"],
             "order": order,
             "type": el_type,
             "content": content,
-            "bbox": [int(round(v)) for v in bbox_px] if bbox_px else None,
+            "bbox": [int(round(v)) for v in bbox_out] if bbox_out else None,
             "caption_ref": "",   # 아래 _link_captions가 채움
             "flags": ["CAPTION_FAILED"] if caption_failed else [],
         }

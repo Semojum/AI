@@ -150,11 +150,11 @@ def _mk_el(bbox, bbox_px, content="텍스트"):
 
 
 class TestBBoxPassthrough:
-    def test_경계요소에_bbox_픽셀_포함(self):
+    def test_경계요소에_bbox_정규화_포함(self):
         res = _build([_mk_el([120, 87, 392, 104], [202.4, 146.2, 658.6, 174.7])],
                      "t_bbox1", 1, "OCR")
         el = res["elements"][0]
-        assert el["bbox"] == [202, 146, 659, 175]   # bbox_px 반올림
+        assert el["bbox"] == [120, 87, 392, 104]   # 0~1000 정규화(2026-07-19 규약 통일 — 구 픽셀 저장은 소비처 어긋남)
 
     def test_meta에_페이지크기(self):
         res = _build([_mk_el([0, 0, 500, 500], [0, 0, 840, 840])], "t_bbox2", 1, "OCR")
