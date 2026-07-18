@@ -121,34 +121,26 @@ def _split_lines(text: str) -> list[str]:
 
 
 def _render_grid(corrected_text: str) -> list[str]:
-    """텍스트 표현("|"구분) → 점자 격자 레이아웃."""
+    """지침 §3.1 표 표기(행 단위 전개, 예3-4·3-6 실측 형식, 2026-07-19 정정).
+
+    위 테두리 ⠿⠛…⠿ · 아래 테두리 ⠿⠶…⠿ 안에, 각 행을 3칸(앞 빈칸 2)에서
+    '행제목: 값  값'(쌍점 ⠐⠂ + 한 칸, 값 사이 두 칸)으로 적는다. 빈 셀 = ⠿⠿(§3.1.2(4)).
+    (구 격자형 — 전체 ⠿ 채움 테두리·세로 ⠿ 벽·행 구분선 — 은 지침 예시와 달랐다.
+     layout._is_border_line이 이 테두리 형을 정식 인정해 들여쓰기 미적용도 유지된다.)
+    """
     rows = [ln for ln in corrected_text.splitlines() if ln.strip()]
+    top = "⠿" + "⠛" * (_COLS - 2) + "⠿"
+    bot = "⠿" + "⠶" * (_COLS - 2) + "⠿"
     if not rows:
-        return [_border_line()]
-
-    n_cols = max(len(r.split("|")) for r in rows) if rows else 1
-    col_w = max(1, (_COLS - n_cols - 1) // n_cols)
-
-    lines: list[str] = [_border_line()]
-    for i, row in enumerate(rows):
-        raw_cells = [c.strip() for c in row.split("|")]
-        raw_cells += [""] * (n_cols - len(raw_cells))
-
-        cell_lines = [_split_cell(_translate(c) if c else "⠿⠿", col_w) for c in raw_cells]  # 빈 셀=⠿⠿
-        max_h = max(len(cl) for cl in cell_lines)
-
-        for h in range(max_h):
-            parts = []
-            for cl in cell_lines:
-                txt = cl[h] if h < len(cl) else ""
-                parts.append(txt.ljust(col_w)[:col_w])
-            line = _BORDER + _SEP.join(parts) + _BORDER
-            lines.append(line[:_COLS])
-
-        if i < len(rows) - 1:
-            lines.append(_row_sep())
-
-    lines.append(_border_line())
+        return [top, bot]
+    lines: list[str] = [top]
+    for row in rows:
+        cells = [c.strip() for c in row.split("|")]
+        head = _translate(cells[0]) if cells[0] else "⠿⠿"
+        vals = [(_translate(c) if c else "⠿⠿") for c in cells[1:]]
+        body = head + ("⠐⠂⠀" + "⠀⠀".join(vals) if vals else "")
+        lines.append("⠀⠀" + body)
+    lines.append(bot)
     return lines
 
 

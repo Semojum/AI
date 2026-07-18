@@ -9,7 +9,11 @@ from __future__ import annotations
 import asyncio
 from uuid import uuid4
 
-from app.ai.braille.table_braille import TableBraille, _border_line
+from app.ai.braille.table_braille import TableBraille
+
+# 지침 §3.1(예3-4·3-6) 표 테두리 — 위 ⠿⠛…⠿ / 아래 ⠿⠶…⠿ (2026-07-19 지침형 정정)
+_TBL_TOP = "⠿" + "⠛" * 30 + "⠿"
+_TBL_BOT = "⠿" + "⠶" * 30 + "⠿"
 from app.ai.llm.table_opt import TableOpt, _table_to_text, _infer_render_mode, _table_title
 from app.schemas.content import ExtractedContent
 
@@ -54,7 +58,8 @@ class TestOptimize:
         bo = TableBraille().translate(opt)[0]
         labels = [d.label for d in bo.drafts]
         assert labels == ["풀어쓰기(3칸·2칸)", "격자형", "행↔열 전치", "선형(키:값)"]  # 기본=풀어쓰기
-        assert _border_line() in bo.drafts[1].braille_lines        # 격자형(대안) 테두리 ⠿
+        assert _TBL_TOP in bo.drafts[1].braille_lines              # 지침형 위 테두리
+        assert _TBL_BOT in bo.drafts[1].braille_lines              # 지침형 아래 테두리
 
 
 class TestTitle:
@@ -90,7 +95,7 @@ class TestTitle:
         # 제목 줄이 위 테두리보다 먼저(§3 5)(2)), 5칸 들여(§3 5)(1))
         assert lines[0].startswith(" " * 5) and not lines[0].startswith(" " * 6)
         assert lines[0].strip() and not _is_border(lines[0])
-        assert _border_line() == lines[1]                      # 제목 다음 줄 = 위 테두리
+        assert lines[1] == _TBL_TOP                            # 제목 다음 줄 = 위 테두리(지침형)
 
     def test_제목_없으면_기존동작(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, table_structure=_CELLS)
@@ -100,4 +105,6 @@ class TestTitle:
 
 
 def _is_border(line: str) -> bool:
-    return set(line.strip()) <= {"⠿"}
+    """지침형 테두리(⠿⠛…⠿·⠿⠶…⠿) 포함 판정."""
+    t = line.strip()
+    return bool(t) and t[0] == "⠿" and t[-1] == "⠿" and set(t) <= {"⠿", "⠛", "⠶"}
