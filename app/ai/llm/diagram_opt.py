@@ -120,7 +120,7 @@ def assemble_concept_map(structure: dict) -> tuple[str, list[int]]:
 
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!점역자주>개념도<!/점역자주>"); indents.append(0)        # §6.3.4(1)
+    lines.append("<!점역자주>개념도<!/점역자주>:"); indents.append(0)        # §6.3.4(1)
 
     depth = _tree_depth(nodes)
     _flatten_concept(nodes, 0, depth, lines, indents)                        # §6.6.1(2)(3)
@@ -142,7 +142,7 @@ def assemble_flowchart(structure: dict) -> tuple[str, list[int]]:
 
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!점역자주>흐름도<!/점역자주>"); indents.append(0)        # §6.3.4(1)
+    lines.append("<!점역자주>흐름도<!/점역자주>:"); indents.append(0)        # §6.3.4(1)
 
     for box in boxes:
         no = box.get("no", "")
@@ -182,7 +182,8 @@ def assemble_org_chart(structure: dict) -> tuple[str, list[int]]:
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
     # §6.3.4(1) 유형 + §6.6.5(3) 들여쓰기 방식 점역자 주
-    lines.append("<!점역자주>조직도: 들여쓰기로 상하 위계를 나타냄<!/점역자주>"); indents.append(0)
+    lines.append("<!점역자주>조직도<!/점역자주>:"); indents.append(0)
+    lines.append("<!점역자주>들여쓰기로 상하 위계를 나타냄<!/점역자주>"); indents.append(0)
     _flatten_hier(structure.get("nodes") or [], 0, lines, indents)           # §6.6.5(1)(2)
     return "\n".join(lines), indents
 
@@ -201,13 +202,15 @@ def assemble_family_tree(structure: dict) -> tuple[str, list[int]]:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
 
     if (structure.get("mode") or "top_down").strip() == "bottom_up":
-        lines.append("<!점역자주>가계도(상향식): 후손에서 선조 순<!/점역자주>"); indents.append(0)
+        lines.append("<!점역자주>가계도<!/점역자주>:"); indents.append(0)
+        lines.append("<!점역자주>후손에서 선조 순(상향식)<!/점역자주>"); indents.append(0)
         for it in structure.get("items") or []:                             # §6.6.4(3)①
             t = (it.get("text") or "").strip()
             if t:
                 lines.append(t); indents.append(_BOTTOMUP_INDENT)           # §6.6.4(3)②
     else:
-        lines.append("<!점역자주>가계도(하향식): 선조에서 후손 순<!/점역자주>"); indents.append(0)
+        lines.append("<!점역자주>가계도<!/점역자주>:"); indents.append(0)
+        lines.append("<!점역자주>선조에서 후손 순(하향식)<!/점역자주>"); indents.append(0)
         _flatten_hier(structure.get("nodes") or [], 0, lines, indents)      # §6.6.4(2)①②
     return "\n".join(lines), indents
 
@@ -234,7 +237,7 @@ def assemble_timeline(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!점역자주>연대표<!/점역자주>"); indents.append(0)        # §6.3.4(1)
+    lines.append("<!점역자주>연대표<!/점역자주>:"); indents.append(0)        # §6.3.4(1)
 
     for date, texts in _group_timeline(structure.get("events") or []):
         texts = [t for t in texts if t]
@@ -262,7 +265,7 @@ def assemble_form(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!점역자주>양식<!/점역자주>"); indents.append(0)          # §6.3.4(1)
+    lines.append("<!점역자주>양식<!/점역자주>:"); indents.append(0)          # §6.3.4(1)
     lines.append(_BOX_TOP); indents.append(0)                               # §6.6.3(2) 글상자
     for it in structure.get("items") or []:
         t = (it.get("text") or it.get("label") or "").strip()
@@ -285,7 +288,7 @@ def assemble_screen_image(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!점역자주>화면 이미지<!/점역자주>"); indents.append(0)  # §6.3.4(1)
+    lines.append("<!점역자주>화면 이미지<!/점역자주>:"); indents.append(0)  # §6.3.4(1)
     lines.append(_BOX_TOP); indents.append(0)                               # §6.6.7(1) 글상자 테두리
     for sec in structure.get("sections") or []:
         name = (sec.get("name") or "").strip()
@@ -311,7 +314,7 @@ def assemble_slide(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!점역자주>발표용 슬라이드<!/점역자주>"); indents.append(0)  # §6.3.4(1)
+    lines.append("<!점역자주>발표용 슬라이드<!/점역자주>:"); indents.append(0)  # §6.3.4(1)
     for it in structure.get("items") or []:                                 # §6.6.8(2)
         t = (it.get("text") or "").strip()
         if t:

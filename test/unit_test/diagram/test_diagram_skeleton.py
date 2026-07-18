@@ -59,7 +59,7 @@ class TestConceptAssemble:
     def test_3단계_개조식_전사(self):
         text, indents = assemble_concept_map(_CONCEPT_3)
         lines = text.split("\n")
-        assert lines[0] == "<!점역자주>개념도<!/점역자주>" and indents[0] == 0   # §6.3.4(1)
+        assert lines[0] == "<!점역자주>개념도<!/점역자주>:" and indents[0] == 0   # §6.3.4(1)
         # 중심개념부터 하위로(§6.6.1(2)), 7/5/3 들여쓰기
         assert lines[1:] == ["생물", "동물", "포유류", "조류", "식물", "속씨식물"]
         assert indents[1:] == [7, 5, 3, 3, 5, 3]
@@ -68,7 +68,7 @@ class TestConceptAssemble:
         text, indents = assemble_concept_map(_CONCEPT_2)
         lines = text.split("\n")
         assert lines[0] == "먹이 사슬" and indents[0] == 5                      # §6.3.3(1)
-        assert lines[1] == "<!점역자주>개념도<!/점역자주>"
+        assert lines[1] == "<!점역자주>개념도<!/점역자주>:"
         assert (lines[2], indents[2]) == ("생산자", 5) and (lines[3], indents[3]) == ("소비자", 3)
 
 
@@ -76,7 +76,7 @@ class TestFlowAssemble:
     def test_번호_한줄_분기3칸(self):
         text, indents = assemble_flowchart(_FLOW)
         lines = text.split("\n")
-        assert lines[0] == "<!점역자주>흐름도<!/점역자주>"                      # §6.3.4(1)
+        assert lines[0] == "<!점역자주>흐름도<!/점역자주>:"                      # §6.3.4(1)
         assert lines[1:] == ["1 시작", "2 조건?", "예: 3", "아니오: 4", "3 처리", "4 종료"]
         # 상자 indent 0, 분기 선택지 3칸(§6.6.2(4)⑥)
         assert indents[1:] == [0, 0, 3, 3, 0, 0]
