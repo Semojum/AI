@@ -385,6 +385,13 @@ def run(
         else:
             content = item.get("text", "")
 
+        # MinerU 첨자 마크업 정화(2026-07-19): 외국어 장식 타이포("Reaching beyond…"의
+        # 글자 크기 변주)를 MinerU가 <sub>/<sup>로 도배 — 태그가 그대로 점역돼 페이지가
+        # 폭주했다(외국어 p014: 6045셀 vs gold 1434, CER 201%). 태그만 벗기고 글자는 보존.
+        # 진짜 수식 첨자는 interline_equation(LaTeX) 경로라 여기 영향 없다.
+        if content and "<su" in content:
+            content = re.sub(r"</?su[bp]>", "", content)
+
         # 글자는 PDF 텍스트 레이어 우선(하이브리드) — 티어와 무관하게 블록별로 시도한다.
         # TEXT_NATIVE(스캔 아님이 확실)면 가드 없이 대체, 그 외(OCR 라우팅)는 가드 통과 시만.
         if mapped_type in _NATIVE_TEXT_TYPES:
