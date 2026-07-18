@@ -376,10 +376,55 @@ _FOOTNOTE_STAR_RE = re.compile(r"(?<=[가-힣])\*")
 #   (2026-07-16 이전엔 "정답은 글머리를 안 찍는다"고 보고 지웠으나 전수 확인 결과 오판)
 
 
+# ── 보기 마커 원문 복원 (근거 tier ②: OCR가 망친 ㄱㄴㄷㄹ 자모 회복) ─────────
+# 보기 상자의 항목 라벨 ㄱ. ㄴ. ㄷ. ㄹ. 은 OCR이 시각 유사 글자로 자주 오독한다:
+#   ㄱ→'7', ㄴ→'L'/'l', ㄷ→'c'/'C', ㄹ→'己'. 규정은 ㄱㄴㄷㄹ을 =a·=3·=9·=1로 점역하나
+# 오독 입력('7.'·'L.'…)은 엉뚱한 점형이 된다. 정답은 자모형이므로 원문 복원이 맞다.
+# ★ 과적합·오탐 가드 2중: (1) 한 요소에 라벨 줄이 2개 이상이고 (2) 매핑 결과가
+#   ㄱㄴㄷㄹㅁ 순서로 단조 증가하는 '보기 나열'이며 (3) 최소 하나가 명백한 오독 문자일 때만
+#   발동. 진짜 '7.'·'c.' 단독 항목은 건드리지 않는다.
+_BOGI_MARK_MAP = {"7": "ㄱ", "L": "ㄴ", "l": "ㄴ", "c": "ㄷ", "C": "ㄷ", "己": "ㄹ",
+                  "ㄱ": "ㄱ", "ㄴ": "ㄴ", "ㄷ": "ㄷ", "ㄹ": "ㄹ", "ㅁ": "ㅁ"}
+_BOGI_MISREAD = "7LlcC己"
+_BOGI_ORDER = "ㄱㄴㄷㄹㅁ"
+# 후행: 공백 또는 보기 내용 시작(원문자·괄호·한글). 숫자 제외 → '7.5' 소수점 오탐 방지.
+_BOGI_MARK_LINE = re.compile(
+    r"(?m)^([ \t]*)([7LlcC己ㄱㄴㄷㄹㅁ])([.．·])(?=[ \t　(（①-⑳㉠-㉿가-힣])")
+
+
+# 원문자 자모 참조 복원: ㉠㉡㉢ 을 OCR이 원문자 숫자 ⑦⑧⑨로 오독한다(원 안 글자 혼동).
+# 선택지는 ①~⑤라 ⑦⑧⑨는 선택지가 아니고, 뒤에 조사(은/는/이/가/을/를/의/에)가 붙으면
+# 지시 참조 자모(㉠…)가 거의 확실하다. gold 대조로 ⑦→㉠ 확인(사회문화 p140 =az).
+_CIRCLED_JAMO_MISREAD = {"⑦": "㉠", "⑧": "㉡", "⑨": "㉢", "⑩": "㉣"}
+_CIRCLED_JAMO_RE = re.compile(r"([⑦⑧⑨⑩])(?=[은는이가을를의에도만])")
+
+
+def _restore_circled_jamo(text: str) -> str:
+    return _CIRCLED_JAMO_RE.sub(lambda m: _CIRCLED_JAMO_MISREAD[m.group(1)], text)
+
+
+def _normalize_bogi_markers(text: str) -> str:
+    text = _restore_circled_jamo(text)
+    ms = list(_BOGI_MARK_LINE.finditer(text))
+    if len(ms) < 2:
+        return text
+    mapped = [_BOGI_MARK_MAP.get(m.group(2), "") for m in ms]
+    idxs = [_BOGI_ORDER.find(x) for x in mapped]
+    if any(i < 0 for i in idxs):
+        return text
+    if not any(m.group(2) in _BOGI_MISREAD for m in ms):
+        return text  # 이미 전부 올바른 자모면 손대지 않음
+    if not all(idxs[i] < idxs[i + 1] for i in range(len(idxs) - 1)):
+        return text  # 단조 증가(보기 나열)가 아니면 보수적으로 스킵
+    return _BOGI_MARK_LINE.sub(
+        lambda m: m.group(1) + _BOGI_MARK_MAP[m.group(2)] + m.group(3), text)
+
+
 def _apply_book_style(text: str) -> str:
     """도서 관행 표기로 원문을 다듬는다(점역 경로 전용 — text_list 원문은 그대로 둔다)."""
     if not _BOOK_STYLE:
         return text
+    text = _normalize_bogi_markers(text)   # 원문 복원은 다른 치환보다 먼저(줄머리 기준)
     text = _AE_GEQ_RE.sub("≥", text)   # 괄호→붙임표보다 먼저(인접 판정이 원문 괄호 기준)
     text = _QNUM_RE.sub(r"\1.", text)
     text = _CIRCLED_RE.sub(lambda m: _CIRCLED[m.group()], text)
@@ -811,6 +856,9 @@ def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
     #   요소 전체 수준에서 선적용(이 개행은 원문 구조가 아니라 추출 산물).
     text = _BOGI_GAP_RE.sub(r"\1 ‘보기’\2", text)
     if _BOOK_STYLE:
+        # ★ 보기 마커 원문 복원(ㄱㄴㄷㄹ)은 나열 시퀀스가 필요해 요소 전체에서 선적용해야
+        #   한다 — 줄 분리 후엔 줄당 마커 1개라 ≥2 가드에 걸려 발동 못 한다(2026-07-18).
+        text = _normalize_bogi_markers(text)
         text = _MARK_PAREN_RE.sub(_paren_repl, text)
     lines: list[str] = []
     breaks: list[list[int]] = []
