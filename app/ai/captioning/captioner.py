@@ -79,7 +79,7 @@ def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
     import anthropic
     from app.utils.req_log import inc_gpt4o
     inc_gpt4o()                       # 호출 수 집계는 공용
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), timeout=60.0, max_retries=1)  # 행 방지(2026-07-19 스톨 실측)
     resp = client.messages.create(
         model=os.getenv("CAPTION_MODEL", "claude-sonnet-5"),
         max_tokens=500,
