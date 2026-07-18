@@ -130,6 +130,17 @@ def _spans(attrs: str) -> tuple[int, int]:
     return col, row
 
 
+# MinerU가 밀집 숫자표에서 소수점 '.'을 쉼표 ','로 자주 오독한다(PDF 원문 대조로 확정:
+# '42.8'→'42,8'). 규정 제48항 소수점은 ⠲, 제41항 자릿점(천단위)은 ⠂로 서로 다르므로
+# 오독을 그대로 두면 엉뚱한 점형이 된다. 쉼표 뒤 1~2자리+경계면 소수(복원 '.'),
+# 3자리면 천단위(그대로)로 판별 — '2,575'(천단위)는 건드리지 않고 '42,8'만 '42.8'로.
+_DECIMAL_COMMA_RE = re.compile(r"(?<=\d),(?=\d{1,2}(?:\D|$))")
+
+
+def _fix_decimal_comma(text: str) -> str:
+    return _DECIMAL_COMMA_RE.sub(".", text)
+
+
 def _html_to_grid(html: str) -> list[list[str]]:
     """MinerU <table> HTML → 행렬(병합 셀 펼침). 내부 태그 제거(이미지 셀=빈칸).
 
@@ -145,7 +156,7 @@ def _html_to_grid(html: str) -> list[list[str]]:
             while (r, c) in pending:            # 위에서 내려온 rowspan 자리 먼저 채움
                 row.append(pending.pop((r, c)))
                 c += 1
-            text = _HTML_TAG_RE.sub("", body).strip()
+            text = _fix_decimal_comma(_HTML_TAG_RE.sub("", body).strip())
             colspan, rowspan = _spans(attrs)
             for dc in range(colspan):
                 row.append(text)
