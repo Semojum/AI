@@ -714,14 +714,34 @@ def _normalize_special(s: str) -> str:
     return "".join(out)
 
 
+def _sanitize_repl(m: re.Match) -> str:
+    """hostile 런을 문자별로: braillify가 처리 가능하면 보존(옛한글 PUA 등),
+    못 하는 것(수식 글리프·제어문자)만 공백. 규정 08절 옛한글 PUA 소실 버그 수정(2026-07-18)."""
+    out = []
+    for ch in m.group():
+        # PUA(옛한글 자모 등)만 braillify 가능 여부로 보존 판정. 나머지(제어문자·hyphen 등)는
+        # 기존대로 공백 — hyphen 처리 등 다른 동작을 건드리지 않는다(roundtrip 회귀 방지).
+        is_pua = 0xE000 <= ord(ch) <= 0xF8FF or 0xF0000 <= ord(ch) <= 0x10FFFD
+        if is_pua:
+            try:
+                _braillify_lib.translate_to_unicode(ch)
+                out.append(ch)      # braillify 처리 가능 PUA → 보존
+                continue
+            except Exception:       # noqa: BLE001
+                pass
+        out.append(" ")            # 제어문자·미처리 PUA·hyphen 등 → 공백
+    return "".join(out)
+
+
 def sanitize_for_braille(text: str) -> str:
     """braillify가 거부하는 문자를 안전화(요소 격리·빈 결과 금지).
 
-    1) PUA·제어문자 런 → 단일 공백.
+    1) 제어문자·braillify 미처리 PUA(수식 글리프) → 단일 공백.
+       단, braillify가 처리 가능한 PUA(옛한글 자모 등)는 보존한다.
     2) 전각 문장부호·반각괄호·불릿 → 받아들이는 등가물(품질 보존).
     주변 한글·영문·숫자는 보존하고, 이중 공백은 이후 _collapse_spaces가 정리한다.
     """
-    text = _BRAILLIFY_HOSTILE_RE.sub(" ", text)
+    text = _BRAILLIFY_HOSTILE_RE.sub(_sanitize_repl, text)
     return _normalize_special(text)
 
 

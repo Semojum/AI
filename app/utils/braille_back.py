@@ -345,23 +345,9 @@ def _decode_line(s: str) -> str:
             out.append("【점역자주】")
             i += 2
             continue
-        # 대문자 로마자: ⠠⠠+런 = 대문자 단어, ⠠+알파 = 대문자 한 글자 (A·B 보기 라벨).
-        # ⠠⠄(점역자주)는 위에서 이미 처리됨.
-        if ch == _CAPITAL:
-            if s[i + 1:i + 2] == _CAPITAL:               # ⠠⠠ 대문자 단어
-                j = i + 2
-                word = []
-                while j < n and s[j] in _ALPHA_REV:
-                    word.append(_ALPHA_REV[s[j]].upper())
-                    j += 1
-                if word:
-                    out.append("".join(word))
-                    i = j
-                    continue
-            elif s[i + 1:i + 2] in _ALPHA_REV:           # ⠠ + 알파 = 대문자 한 글자
-                out.append(_ALPHA_REV[s[i + 1]].upper())
-                i += 2
-                continue
+        # 대문자 로마자 처리는 폐기(2026-07-18): ⠠는 한글 음절 구성요소(수=⠠⠍)이기도 해
+        # ⠠+알파를 대문자로 보면 정상 한글을 깬다(국수→국M, 따님→I님). roundtrip 회귀.
+        # 로마자 대문자는 ⠴…⠲ 로마자 런 안에서만 처리(맥락 있음).
         # 동그라미 숫자·문자·낱자(제64항) — 수표/온표보다 먼저(①=⠼⠂ 가 평문 숫자로,
         # ㉠=⠿⠁ 이 ∞로 오인되지 않게). 긴 셀 우선.
         _sp = 0
