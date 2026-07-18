@@ -111,6 +111,23 @@ def _load_syllable_rev() -> dict[str, str]:
 
 _SYMBOL_REV = _build_symbol_rev()
 _SYLLABLE_REV = _load_syllable_rev()
+
+
+def _load_special_rev() -> dict:
+    """동그라미 숫자(①=⠼⠂, 제64항)·동그라미 문자·낱자(㉠=⠿⠁) 역맵.
+
+    정방향 번역기로 생성(braille_special_rev.json). 이 문자들은 수표 ⠼·온표 ⠿ 뒤에
+    특수 점형이 와서 평문 숫자·∞로 오인됐다 — _decode_line에서 수표보다 먼저 검사한다.
+    """
+    p = Path(__file__).with_name("braille_special_rev.json")
+    try:
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    except Exception:
+        return {}
+
+
+_SPECIAL_REV = _load_special_rev()
+_SPECIAL_MAX = max((len(k) for k in _SPECIAL_REV), default=0)
 # 통합 역맵(약어 + 음절 + 기호). 긴 셀 우선 매칭을 위해 최대 길이 기록.
 _COMBINED: dict[str, str] = {**_SYMBOL_REV, **_SYLLABLE_REV, **_WORD_ABBR}
 # 단독 문장부호(마침표·쉼표·느낌표)도 풀리도록 — 기존 기호 매핑은 덮지 않는다.
@@ -327,6 +344,34 @@ def _decode_line(s: str) -> str:
         if s[i:i + 2] == _TN_MARKER:
             out.append("【점역자주】")
             i += 2
+            continue
+        # 대문자 로마자: ⠠⠠+런 = 대문자 단어, ⠠+알파 = 대문자 한 글자 (A·B 보기 라벨).
+        # ⠠⠄(점역자주)는 위에서 이미 처리됨.
+        if ch == _CAPITAL:
+            if s[i + 1:i + 2] == _CAPITAL:               # ⠠⠠ 대문자 단어
+                j = i + 2
+                word = []
+                while j < n and s[j] in _ALPHA_REV:
+                    word.append(_ALPHA_REV[s[j]].upper())
+                    j += 1
+                if word:
+                    out.append("".join(word))
+                    i = j
+                    continue
+            elif s[i + 1:i + 2] in _ALPHA_REV:           # ⠠ + 알파 = 대문자 한 글자
+                out.append(_ALPHA_REV[s[i + 1]].upper())
+                i += 2
+                continue
+        # 동그라미 숫자·문자·낱자(제64항) — 수표/온표보다 먼저(①=⠼⠂ 가 평문 숫자로,
+        # ㉠=⠿⠁ 이 ∞로 오인되지 않게). 긴 셀 우선.
+        _sp = 0
+        for ln in range(min(_SPECIAL_MAX, n - i), 0, -1):
+            if s[i:i + ln] in _SPECIAL_REV:
+                _sp = ln
+                break
+        if _sp:
+            out.append(_SPECIAL_REV[s[i:i + _sp]])
+            i += _sp
             continue
         # 수표 숫자 — 동그라미숫자 기호(①=⠼⠉ 등)보다 먼저(평문 숫자가 흔함).
         if ch == _NUMBER_SIGN:
