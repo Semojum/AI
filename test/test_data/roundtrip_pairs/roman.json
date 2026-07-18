@@ -3,9 +3,9 @@
   "description": "로마자 (로마자표·대문자표·정자/약자, 한글 혼용). 규정 제8·11절.",
   "split_ratio": "build:test = 7:3 (md5 안정 해시)",
   "counts": {
-    "build": 7,
+    "build": 8,
     "test": 4,
-    "review_excluded": 9
+    "review_excluded": 8
   },
   "pairs": [
     {
@@ -57,6 +57,14 @@
       "source": "section_10_marks"
     },
     {
+      "korean": "Roma [ㄹㄹ로마]",
+      "brf_ascii": "0,roma4`82_1_1\"ue;0",
+      "braille_unicode": "⠴⠠⠗⠕⠍⠁⠲⠀⠦⠆⠸⠂⠸⠂⠐⠥⠑⠰⠴",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_04_abbreviations"
+    },
+    {
       "korean": "비타민 B₉의 이름은 엽산이다.",
       "brf_ascii": "``~oheq`0,b;#iw`o\"{5z`:bl3oi4```",
       "braille_unicode": "⠘⠕⠓⠑⠟⠀⠴⠠⠃⠰⠼⠊⠺⠀⠕⠐⠪⠢⠵⠀⠱⠃⠇⠒⠕⠊⠲",
@@ -99,24 +107,17 @@
   ],
   "review": [
     {
-      "korean": "Roma [ㄹㄹ로마]",
-      "brf_ascii": "0,roma4`82_1_1\"ue;0",
-      "gold": "⠴⠠⠗⠕⠍⠁⠲⠀⠦⠆⠸⠂⠸⠂⠐⠥⠑⠰⠴",
-      "forward": "⠴⠠⠗⠕⠍⠁⠦⠆⠸⠂⠸⠂⠐⠥⠑⠰⠴⠲",
-      "reason": "forward_mismatch"
-    },
-    {
       "korean": "carro [까ㄹㄹ로]",
       "brf_ascii": "0c>ro4`82,$_1_1\"u;0",
       "gold": "⠴⠉⠜⠗⠕⠲⠀⠦⠆⠠⠫⠸⠂⠸⠂⠐⠥⠰⠴",
-      "forward": "⠉⠜⠗⠕⠦⠆⠠⠫⠸⠂⠸⠂⠐⠥⠰⠴",
+      "forward": "⠉⠜⠗⠕⠀⠦⠆⠠⠫⠸⠂⠸⠂⠐⠥⠰⠴",
       "reason": "forward_mismatch"
     },
     {
       "korean": "WHO: 세계 보건 기구",
       "brf_ascii": "0,,who\"1`,n@/`~u@)`@o@m",
       "gold": "⠴⠠⠠⠺⠓⠕⠐⠂⠀⠠⠝⠈⠌⠀⠘⠥⠈⠾⠀⠈⠕⠈⠍",
-      "forward": "⠴⠠⠠⠺⠓⠕⠐⠂⠠⠝⠈⠌⠲⠀⠘⠥⠈⠾⠀⠈⠕⠈⠍",
+      "forward": "⠴⠠⠠⠺⠓⠕⠐⠂⠲⠀⠠⠝⠈⠌⠀⠘⠥⠈⠾⠀⠈⠕⠈⠍",
       "reason": "forward_mismatch"
     },
     {
@@ -137,7 +138,7 @@
       "korean": "Summary~연습 문제",
       "brf_ascii": "0,summ>y4@9*,{b`eg.n",
       "gold": "⠴⠠⠎⠥⠍⠍⠜⠽⠲⠈⠔⠡⠠⠪⠃⠀⠑⠛⠨⠝",
-      "forward": "⠴⠠⠎⠥⠍⠍⠜⠽⠐⠠⠤⠡⠠⠪⠃⠲⠀⠑⠛⠨⠝",
+      "forward": "⠴⠠⠎⠥⠍⠍⠜⠽⠤⠤⠡⠠⠪⠃⠀⠑⠛⠨⠝",
       "reason": "forward_mismatch"
     },
     {
@@ -151,7 +152,7 @@
       "korean": "5 %와 6 %의 차이는 1 %p다.",
       "brf_ascii": "``#e`0p`v`#f`0p`w`;<ocz`#a`0pp``",
       "gold": "⠼⠑⠀⠴⠏⠀⠧⠀⠼⠋⠀⠴⠏⠀⠺⠀⠰⠣⠕⠉⠵⠀⠼⠁⠀⠴⠏⠏",
-      "forward": "⠼⠑⠴⠏⠧⠀⠼⠋⠴⠏⠺⠀⠰⠣⠕⠉⠵⠀⠼⠁⠴⠏⠴⠏⠲⠊⠲",
+      "forward": "⠼⠑⠲⠀⠴⠏⠧⠀⠼⠋⠀⠴⠏⠺⠀⠰⠣⠕⠉⠵⠀⠼⠁⠀⠴⠏⠴⠏⠲⠊⠲",
       "reason": "forward_mismatch"
     },
     {

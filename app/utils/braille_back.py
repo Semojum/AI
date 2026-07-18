@@ -244,6 +244,11 @@ def _decode_math_token(tok: str) -> str:
         if c in _ALPHA_REV:                          # 변수(로마자)
             out.append(_ALPHA_REV[c])
             i += 1
+            # 관행 제곱 약기: 변수 직후 ⠣ = ^2 (도서 관행, 정방향 book 모드와 대칭.
+            #   한글 ㅏ와 충돌하므로 **로마자 직후**로 한정. 2026-07-19)
+            if i < n and tok[i] == "⠣":
+                out.append("^2")
+                i += 1
             continue
         best = 0                                     # \text 한글·기호 폴백(긴 셀 우선)
         for ln in range(min(_MAX_CELLS, n - i), 0, -1):
@@ -380,7 +385,10 @@ def _decode_line(s: str) -> str:
             seg = s[i:i + best_ln]
             # 마침표가 음절 뒤에 붙어 다른 음절로 오인된 경우 분리(다.=닾 → 다 + .).
             # ?·!(⠦·⠖)은 받침과 충돌(같=⠫⠦)하므로 **어말일 때만** 분리(요?=⠬⠦ → 요 + ?).
-            if seg[-1] == "⠲" and seg[:-1] in _COMBINED:
+            # ★기호로 등록된 시퀀스(≥=⠲⠲, ⊃=⠐⠲, ㎏=…⠲ 등)는 분리하지 않는다(2026-07-19).
+            if seg[-1] == "⠲" and seg in _SYMBOL_REV:
+                out.append(_SYMBOL_REV[seg])
+            elif seg[-1] == "⠲" and seg[:-1] in _COMBINED:
                 out.append(_COMBINED[seg[:-1]])
                 out.append(".")
             elif (seg in _SYLLABLE_REV and seg[-1] in _SENT_END
