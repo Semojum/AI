@@ -104,8 +104,10 @@ _SQRT_RE   = re.compile(r"\\sqrt\{([^{}]*)\}")
 _SUP_RE    = re.compile(r"([A-Za-z0-9⠁-⠿])\^\{([^{}]*)\}|([A-Za-z0-9⠁-⠿])\^([A-Za-z0-9])")
 # 아래첨자: base_{sub} 또는 base_x
 _SUB_RE    = re.compile(r"([A-Za-z0-9⠁-⠿])_\{([^{}]*)\}|([A-Za-z0-9])_([A-Za-z0-9])")
-# 숫자 (음수 포함, 소수 포함)
-_NUM_RE    = re.compile(r"-?\d+(?:[.,]\d+)*")
+# 숫자 (음수 포함, 소수 포함). 쉼표는 **3자리 자릿점만** 수 내부로 본다(제41항 "자릿점").
+# {2,4,6} 같은 나열 쉼표를 자릿점 ⠂로 삼키던 버그 정정(2026-07-19, 규정 집합 예시
+# ,a337#b"#d"#f7 — 나열 쉼표는 문장부호 ⠐·다음 수에 수표 재삽입).
+_NUM_RE    = re.compile(r"-?\d+(?:,\d{3})*(?:\.\d+)?")
 # \to 또는 \rightarrow
 _TO_RE     = re.compile(r"\\(?:to|rightarrow)")
 # \lim_{var \to val} 또는 \lim_{var→val}
@@ -336,6 +338,12 @@ def convert_latex(latex: str) -> str:
     result = _normalize_latex_input(latex)
 
     # ── 1. 수학 괄호 치환 (substitute_symbols보다 먼저) ─────────────────
+    # 중괄호 \{ \} = ⠶…⠶ (수학 제6항 1: 중괄호 '7 7', 집합 예시 ,a337#b…7 실측).
+    #   구현엔 이스케이프 미처리로 백슬래시(⠸⠡)가 새어나가던 버그(2026-07-19 정정).
+    result = result.replace("\\{", "⠶").replace("\\}", "⠶")
+    # 대괄호 [ ] = ⠷⠄…⠠⠾ (수학 제6항 1: 대괄호 (' ,) — y=[x] 예시 y33('x,) 실측).
+    #   한글 문장부호 대괄호(⠦⠆…⠰⠴)와 다르다 — 수식 내에서는 수학 대괄호.
+    result = result.replace("[", "⠷⠄").replace("]", "⠠⠾")
     result = result.replace("(", _MATH_PAREN_S).replace(")", _MATH_PAREN_E)
     # 괄호 인접 공백 제거: 정답·규정 모두 f⠦x⠴·⠦x−1⠴f⠦x⠴처럼 붙인다(수학2 p070 셀 대조,
     # MinerU는 "f (x)"로 띄워 낸다). 한글(sentinel) 인접은 제46항 몫이라 라틴·숫자·괄호만.
@@ -567,6 +575,9 @@ def convert_latex(latex: str) -> str:
     # ∼: 수식 논리부정·관계 = ⠈⠔ (명제 제61항, 폰트 "@9"). 텍스트 물결표는 symbol_table 담당.
     # →: 화살표·조건문 = ⠒⠕ (제38·61항, 폰트 "3o").
     result = result.replace("∼", "⠈⠔").replace("→", "⠒⠕")
+    # 나열 쉼표(자릿점 아님 — _NUM_RE가 3자리 그룹만 수 내부로 흡수) = 문장부호 쉼표 ⠐
+    # (규정 집합 예시 ,a337#b"#d"#f7 의 " = ⠐, 2026-07-19)
+    result = result.replace(",", "⠐")
 
     # ── 11e. 연산·비교 기호 앞뒤 붙임 (수학 제45항: 5+7=12 → #e5#g33#ab) ──
     # LaTeX 입력의 공백("x + 1")이 그대로 점자에 남아 규정 위반 + 셀 과생성.
