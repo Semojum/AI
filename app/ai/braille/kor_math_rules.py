@@ -230,6 +230,12 @@ def _digit_no_indicator(ch: str) -> str:
 
 
 # MinerU/마크다운 입력 정규화용 패턴 ─────────────────────────────────────
+# ── MinerU 수식 OCR의 '글자 띄어쓰기' 정규화 ────────────────────────────────
+# \operatorname* { l i m } → \lim  ·  { l i m } → {lim}  ·  { = } → =
+_OPERATORNAME_RE = re.compile(r"\\operatorname\s*\*?\s*\{([^{}]*)\}")
+_SPACED_LETTERS_RE = re.compile(r"\{\s*([a-zA-Z](?:\s+[a-zA-Z])+)\s*\}")
+_BRACED_OP_RE = re.compile(r"\{\s*([-+=<>*/])\s*\}")
+
 _CODE_FENCE_RE = re.compile(r"```[a-zA-Z]*\n?|```")        # ```latex … ``` 펜스
 _MATH_DELIM_RE = re.compile(r"\${1,2}")                    # $$ … $$ / $ … $
 _CMD_BRACE_SP_RE = re.compile(r"(\\[a-zA-Z]+)\s+(?=[{[(])")  # \frac { → \frac{
@@ -344,6 +350,18 @@ def _normalize_latex_input(latex: str) -> str:
     """
     s = _CODE_FENCE_RE.sub("", latex)
     s = _MATH_DELIM_RE.sub(" ", s)
+    # MinerU 수식 OCR은 토큰을 글자 단위로 띄어 낸다 — `\operatorname* { l i m }`,
+    # `{ = }`, `f ^ { \prime } ( a )`. 이 형태를 못 풀면 \lim이 낱글자 l·i·m으로
+    # 흩어져 수식이 통째로 깨진다(수학2 실측 2026-07-19: operatorname 88건·
+    # 띄어쓴 글자 116건·{ = } 92건, 해당 페이지 정렬률 2~7%).
+    s = _OPERATORNAME_RE.sub(lambda m: "\\" + re.sub(r"\s+", "", m.group(1)), s)
+    s = _SPACED_LETTERS_RE.sub(lambda m: "{" + re.sub(r"\s+", "", m.group(1)) + "}", s)
+    s = _BRACED_OP_RE.sub(lambda m: m.group(1), s)
+    # 괄호 안쪽과 쉼표 앞의 공백도 MinerU가 넣은 것이다: `( x )` → `(x)`, `α , β` → `α, β`.
+    # 이 단계는 원문 LaTeX의 군더더기 공백만 지운다 — 제51·57항의 구조 칸은 뒤 단계에서
+    # 따로 넣으므로 영향받지 않는다.
+    s = re.sub(r"(?<=[(\[])\s+|\s+(?=[)\]])", "", s)
+    s = re.sub(r"\s+(?=[,;])", "", s)
     s = s.replace("\r", " ").replace("\n", " ")
     s = _SPACING_CMD_RE.sub(" ", s)
     # 각도 ^{\circ}·^\circ → °(제50항 예시 0d=⠴⠙, 단위) — \circ(합성 ∘) 별칭보다 먼저.
