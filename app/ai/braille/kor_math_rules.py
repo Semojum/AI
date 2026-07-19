@@ -47,11 +47,17 @@ _MATH_PAREN_S = "⠦"  # ( 여는 소괄호 (수학 제6항)
 _MATH_PAREN_E = "⠴"  # ) 닫는 소괄호
 
 # 점역자 삽입 묶음(제6항 2호 ⠷⠾): 규정 예시는 ⠷⠾(제7항3·18항붙임·22항붙임2)이나
-# 정답 도서는 소괄호꼴로 적는다(수학2 근호 랩 >8… 93회 vs >(… 2회 실측, 2026-07-19).
-# → book 모드는 ⠦⠴, regulation 모드만 규정 원형 ⠷⠾. (스위치는 아래 _IS_BOOK_STYLE)
+# 정답 도서는 **⠶…⠶**로 적는다 — 우리가 묶음을 넣은 자리에서 gold가 ⠶인 경우 53건
+# (정렬 opcode 실측 2026-07-19). ⚠ 같은 날 오전엔 ⠦⠴로 판정했는데, 그때는 후보에서
+# ⠶를 빼고 ⠦ 93 : ⠷ 2로만 세는 오류였다(수식 구간 재측정: 근호 뒤 ⠦ 9 : ⠶ 8로 팽팽,
+# 삽입 위치 대조에서는 ⠶ 우세). **인쇄 소괄호는 ⠦⠴ 그대로** — 삽입 묶음만 ⠶다.
+# → book 모드는 ⠶⠶, regulation 모드는 규정 원형 ⠷⠾.
 _BOOK_STYLE_ENV = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
-_WRAP_S = "⠦" if _BOOK_STYLE_ENV else "⠷"
-_WRAP_E = "⠴" if _BOOK_STYLE_ENV else "⠾"
+# ∴ 관행: 규정 제65항 2호는 ,*(⠠⠡)이나 정답 도서는 ⠌⠄만 쓴다(gold 86회 vs 규정형 0회,
+# 2026-07-19 실측). ∵(⠈⠌)은 gold 용례가 없어 규정형 유지.
+_THEREFORE = "⠌⠄" if _BOOK_STYLE_ENV else "⠠⠡"
+_WRAP_S = "⠶" if _BOOK_STYLE_ENV else "⠷"
+_WRAP_E = "⠶" if _BOOK_STYLE_ENV else "⠾"
 
 # ── 삼각함수 (수학 점자 제47항): 접두 6(⠖) + 접미 ─────────────────
 # ⚠ 접두는 ⠖(ASCII "6")다. 규정 제47항 예시가 sin=6S·cos=6c·tan=6t로 명시
@@ -626,8 +632,10 @@ def convert_latex(latex: str) -> str:
         raw_exp = (m.group(2) or m.group(4) or "").strip()
         # 관행(book): 제곱(^2)은 ⠣ 한 셀 약기 — 정답 코퍼스에서 규정형 ⠘⠼⠃은 0회,
         # ⠣형만 관측(수학2 p009 'x<9#b'·p039 'x<5y<' 실측). 규정 모드는 제18항 그대로.
-        if _IS_BOOK_STYLE and raw_exp == "2":
-            return f"{base}⠣"
+        # 관행 지수 약기: ²=⠣(gold 107회)·³=⠩(9건 중 7건, 2026-07-19 실측).
+        # ⁴ 이상은 gold도 규정형 ⠘⠼N을 쓰므로 약기하지 않는다.
+        if _IS_BOOK_STYLE and raw_exp in ("2", "3"):
+            return base + ("⠣" if raw_exp == "2" else "⠩")
         exp  = convert_latex(raw_exp)
         exp_w = f"{_WRAP_S}{exp}{_WRAP_E}" if _needs_wrap(raw_exp) else exp
         return f"{base}{_SUPERSCRIPT_IND}{exp_w}"
@@ -698,7 +706,7 @@ def convert_latex(latex: str) -> str:
         "\\ldots":    "⠠⠠⠠",  # … (제12항 [붙임1])
         "\\vdots":    "⠠⠠⠠",  # ⋮
         "\\ddots":    "⠨⠨⠨",  # ⋱
-        "\\therefore":"⠠⠡",   # ∴ (수학 제65항 2호: ,*)
+        "\\therefore":_THEREFORE,  # ∴ (제65항 2호 ,* / 도서 관행 ⠌⠄)
         "\\because":  "⠈⠌",   # ∵ (수학 제65항 3호: @/)
         "\\rightarrow": "⠒⠕", # → (3o)
         "\\uparrow":   "⠰⠒⠕",  # ↑ (제10항 ;3o)
@@ -765,7 +773,13 @@ def convert_latex(latex: str) -> str:
     # ∼: 수식 논리부정·관계 = ⠈⠔ (명제 제61항, 폰트 "@9"). 텍스트 물결표는 symbol_table 담당.
     # →: 화살표·조건문 = ⠒⠕ (제38·61항, 폰트 "3o").
     result = result.replace("∼", "⠈⠔").replace("→", "⠒⠕")
-    # 나열 쉼표(자릿점 아님 — _NUM_RE가 3자리 그룹만 수 내부로 흡수) = 문장부호 쉼표 ⠐
+    result = result.replace("∴", _THEREFORE)
+    # 숫자 사이 쉼표(제41항): ⠂로 적고 **뒤 숫자에 수표를 다시 적지 않는다**(제43항).
+    # 구현이 제12항 [붙임1]의 *로마자* 나열 쉼표(⠐)를 숫자에까지 적용하던 규정 위반 정정
+    # (2026-07-19, gold 실측도 숫자⠂숫자 249 : 숫자⠐숫자 117로 규정 편).
+    result = re.sub(f"(?<=[{''.join(_DIGIT_MAP.values())}]),⠼(?=[{''.join(_DIGIT_MAP.values())}])",
+                    "⠂", result)
+    # 나머지 나열 쉼표(로마자·식 사이) = 문장부호 쉼표 ⠐
     # (규정 집합 예시 ,a337#b"#d"#f7 의 " = ⠐, 2026-07-19)
     result = result.replace(",", "⠐")
     # 계승(제62항 1호): 수식의 ! = ⠖ (gold 실측 #D6=4! 일치). 텍스트 느낌표와 분리.
