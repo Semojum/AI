@@ -23,6 +23,7 @@ import os
 import re
 
 from app.ai.braille.kor_math_rules import convert_latex, digits_to_braille
+from app.ai.braille import eng_braille
 from app.ai.braille.symbol_rules import substitute_symbols
 
 logger = logging.getLogger(__name__)
@@ -751,7 +752,46 @@ def sanitize_for_braille(text: str) -> str:
     return _normalize_special(text)
 
 
-def _safe_to_unicode(seg: str) -> str:
+_ENG_RUN_RE = re.compile(r"[A-Za-z][A-Za-z'\- ]*[A-Za-z]|[A-Za-z]")
+
+
+def _split_english(seg: str) -> str | None:
+    r"""세그먼트 안의 영어 구간을 eng_braille(Grade 2)로, 나머지는 braillify로 점역.
+
+    규정 [부록 1] 제1항이 외국어를 해당 국가 규정에 위임하므로 영어 약자는 영어 점자
+    표준을 따라야 하는데, braillify는 letter-group 약자만 구현한다(the→⠹⠑, 정답 ⠮).
+    그래서 영어 구간만 이 경로로 분리한다 — 코퍼스 A/B에서 영어 구절 완전일치가
+    7/561 → 168/481, 최장일치 40.3% → 75.4%로 올랐다(2026-07-19).
+
+    로마자표는 규정 제2항(⠴ … 종료표 ⠲)·제4항(전체가 외국어면 생략)을 따른다.
+    braillify의 기존 동작과 같은 판정이다 — 세그먼트에 한글이 섞였을 때만 붙인다.
+
+    영어가 없으면 None을 돌려 호출부가 종전 braillify 경로를 그대로 쓰게 한다.
+    """
+    if not _ENG_RUN_RE.search(seg):
+        return None
+    has_hangul = any(_is_hangul(c) for c in seg)
+    out: list[str] = []
+    last = 0
+    for m in _ENG_RUN_RE.finditer(seg):
+        pre = seg[last:m.start()]
+        if pre:
+            out.append(_braillify_korean(pre))
+        # 낱말 사이 공백은 점자 빈칸으로 — 한글 구간(braillify) 출력과 통일한다.
+        eng = eng_braille.translate(m.group()).replace(" ", "⠀")
+        out.append(f"⠴{eng}⠲" if has_hangul else eng)
+        last = m.end()
+    if seg[last:]:
+        out.append(_braillify_korean(seg[last:]))
+    return "".join(out)
+
+
+def _braillify_korean(seg: str) -> str:
+    """영어를 뺀 구간(한글·숫자·기호) → braillify. 영어 분리 경로가 재사용한다."""
+    return _safe_to_unicode(seg, _split_eng=False)
+
+
+def _safe_to_unicode(seg: str, _split_eng: bool = True) -> str:
     """braillify 변환 + 최후 폴백. 정규화 후에도 남은 미지 글자가 줄 전체를 깨지 않도록,
     세그먼트가 실패하면 글자 단위로 변환하고 변환 불가 글자만 공백으로 대체한다.
 
@@ -759,6 +799,10 @@ def _safe_to_unicode(seg: str) -> str:
       점자런과 텍스트런 경계의 공백(예: 선지 번호 ⠼⠁ 뒤 한 칸)이 사라져 정답과 어긋나므로
       가장자리 공백을 점자 빈칸으로 보존한다.
     """
+    if _split_eng and _BRAILLIFY_AVAILABLE:
+        split = _split_english(seg)
+        if split is not None:
+            return split
     core = seg.strip(" ")
     lead = "⠀" * (len(seg) - len(seg.lstrip(" ")))
     trail = "⠀" * (len(seg) - len(seg.rstrip(" ")))
