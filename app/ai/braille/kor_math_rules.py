@@ -47,17 +47,19 @@ _MATH_PAREN_S = "⠦"  # ( 여는 소괄호 (수학 제6항)
 _MATH_PAREN_E = "⠴"  # ) 닫는 소괄호
 
 # 점역자 삽입 묶음(제6항 2호 ⠷⠾): 규정 예시는 ⠷⠾(제7항3·18항붙임·22항붙임2)이나
-# 정답 도서는 **⠶…⠶**로 적는다 — 우리가 묶음을 넣은 자리에서 gold가 ⠶인 경우 53건
-# (정렬 opcode 실측 2026-07-19). ⚠ 같은 날 오전엔 ⠦⠴로 판정했는데, 그때는 후보에서
-# ⠶를 빼고 ⠦ 93 : ⠷ 2로만 세는 오류였다(수식 구간 재측정: 근호 뒤 ⠦ 9 : ⠶ 8로 팽팽,
-# 삽입 위치 대조에서는 ⠶ 우세). **인쇄 소괄호는 ⠦⠴ 그대로** — 삽입 묶음만 ⠶다.
-# → book 모드는 ⠶⠶, regulation 모드는 규정 원형 ⠷⠾.
+# 정답 도서는 소괄호꼴 ⠦⠴로 적는다 — 재점역 A/B로 확정(수식 164개, ⠦⠴ hit 51 vs
+# ⠶⠶ 45 · 유사 58.3 vs 52.0, temp/wrap_variant_ab.py).
+# ⚠ 방법론 교훈(2026-07-19): 한때 ⠶로 바꿨다가 되돌렸다. 근거였던 opcode 치환표
+# (우리 ⠦ → gold ⠶ 53건)는 **불일치만 세고 일치는 안 보여준다** — ⠦를 내고 gold도
+# ⠦인 다수가 표에 안 잡혀 소수 반례가 다수처럼 보였다. 매핑 판정은 치환 빈도가 아니라
+# 재점역 A/B로 해야 한다. **인쇄 소괄호도 ⠦⠴** — 도서는 둘을 같은 점형으로 쓴다.
+# → book 모드는 ⠦⠴, regulation 모드는 규정 원형 ⠷⠾.
 _BOOK_STYLE_ENV = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
 # ∴ 관행: 규정 제65항 2호는 ,*(⠠⠡)이나 정답 도서는 ⠌⠄만 쓴다(gold 86회 vs 규정형 0회,
 # 2026-07-19 실측). ∵(⠈⠌)은 gold 용례가 없어 규정형 유지.
 _THEREFORE = "⠌⠄" if _BOOK_STYLE_ENV else "⠠⠡"
-_WRAP_S = "⠶" if _BOOK_STYLE_ENV else "⠷"
-_WRAP_E = "⠶" if _BOOK_STYLE_ENV else "⠾"
+_WRAP_S = "⠦" if _BOOK_STYLE_ENV else "⠷"
+_WRAP_E = "⠴" if _BOOK_STYLE_ENV else "⠾"
 
 # ── 삼각함수 (수학 점자 제47항): 접두 6(⠖) + 접미 ─────────────────
 # ⚠ 접두는 ⠖(ASCII "6")다. 규정 제47항 예시가 sin=6S·cos=6c·tan=6t로 명시
@@ -1003,7 +1005,13 @@ def _needs_wrap(expr: str) -> bool:
             depth -= 1
         elif ch in ("+", "-") and depth == 0 and 0 < i < len(expr) - 1:
             return True
-    # 곱 판정: 첨자 그룹 제거 후 인수(문자·수·명령·괄호군) 2개 이상 (제22항 >(xy))
+    # 곱 판정: 첨자 그룹 제거 후 인수(문자·수·명령·괄호군) 2개 이상.
+    # 규정은 곱도 묶으라 하지만(제7항 3호·제22항 [붙임2]) 정답 도서는 묶지 않는다 —
+    # A/B에서 곱 묶음 해제가 유사도 +2.1p(temp/wrap_variant_ab.py). 관행이라 book 모드
+    # 한정으로 해제하고, regulation 모드는 규정대로 묶는다.
+    # (근호 안·삼각 인수의 명시 묶음은 _TRIG_ARG_RE 등 별도 경로가 규정대로 처리한다.)
+    if _IS_BOOK_STYLE:
+        return False
     flat = re.sub(r"[\^_](?:\{[^{}]*\}|[A-Za-z0-9])", "", expr)
     factors = re.findall(r"\\[a-zA-Z]+|\d+(?:[.,]\d+)*|[A-Za-z]|\([^()]*\)", flat)
     return len(factors) >= 2
