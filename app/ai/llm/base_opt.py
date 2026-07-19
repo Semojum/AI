@@ -132,8 +132,18 @@ async def fallback_optimize(prompt: str, *, max_tokens: int = 300, kind: str = "
 
     태민 지시(2026-07-17): openai 대신 anthropic을 쓴다. OpenAI 경로는 무료 티어(RPM 3)
     호환용으로만 남긴다. usage는 파트별 req_log에 기록(카운터 이름은 record_gpt4o지만 공용).
+
+    ★ 오프라인 차단 스위치(2026-07-19): `DISABLE_LLM_FALLBACK=1`이면 호출하지 않는다.
+      측정·재추출 같은 오프라인 배치는 HCXT가 없어 요소마다 이 폴백을 타는데, 키가 환경에
+      남아 있으면 그대로 과금된다(실제 사고: 재추출 도구 2개가 키를 안 비워 폴백 790회
+      ≈$9.5 발생, 원장과 청구액이 $12 어긋남). 도구마다 키를 비우는 규약은 하나만
+      빠뜨려도 뚫리므로, 호출 길목에서 한 번에 막는다.
     """
     from app.utils.req_log import record_gpt4o
+
+    if os.environ.get("DISABLE_LLM_FALLBACK") == "1":
+        logger.warning("LLM 폴백 차단됨(DISABLE_LLM_FALLBACK=1) — %s", kind)
+        return ""
 
     if config.anthropic_api_key:
         import anthropic
