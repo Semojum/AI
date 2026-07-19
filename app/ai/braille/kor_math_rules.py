@@ -396,9 +396,11 @@ def _normalize_latex_input(latex: str) -> str:
     s = _SUBSUP_SP_RE.sub(r"\1", s)
     s = _BRACE_IN_SP_RE.sub("{", s)
     s = _BRACE_OUT_SP_RE.sub("}", s)
-    # 긴 명령 우선 치환(접두 충돌 방지: \notin>\ni, \subseteq>\subset 등)
+    # 명령 경계까지 봐야 한다 — 단순 replace면 `\le`가 **`\left`의 앞부분을 먹어**
+    # `≤ft`가 된다(2026-07-19 실측 `⠖⠖⠋⠞`, \le 별칭 추가 때 생긴 회귀).
+    # 뒤에 영문자가 오면 다른 명령이므로 치환하지 않는다.
     for cmd, uni in sorted(_CMD_ALIAS.items(), key=lambda kv: -len(kv[0])):
-        s = s.replace(cmd, uni)
+        s = re.sub(re.escape(cmd) + r"(?![a-zA-Z])", uni, s)
     s = _MULTISPACE_RE.sub(" ", s)
     s = s.strip()
     # 식 끝에 매달린 합성 ∘: 이항 연산자인데 우변이 없으면 문법적 불능 — MinerU가
@@ -549,6 +551,11 @@ def convert_latex(latex: str) -> str:
     def _lim_replace(m: re.Match) -> str:
         var = convert_latex(m.group(1).strip())
         val = convert_latex(m.group(2).strip())
+        # 도서 관행(2026-07-19 실측): gold의 lim 420건 **전부** 화살표 없이
+        # `lim⠰변수 점근값 본식`으로 적는다(0%). 규정 제51항은 화살표를 명시하므로
+        # regulation 모드는 규정형을 유지하고 book 모드만 생략한다.
+        if _IS_BOOK_STYLE:
+            return f"{_LIM_BRAILLE}{_SUBSCRIPT_IND}{var} {val} "
         return f"{_LIM_BRAILLE}{_SUBSCRIPT_IND}{var} {_ARROW_RIGHT} {val} "
 
     result = _LIM_RE.sub(_lim_replace, result)
@@ -634,6 +641,12 @@ def convert_latex(latex: str) -> str:
         raw_exp = (m.group(2) or m.group(4) or "").strip()
         # 관행(book): 제곱(^2)은 ⠣ 한 셀 약기 — 정답 코퍼스에서 규정형 ⠘⠼⠃은 0회,
         # ⠣형만 관측(수학2 p009 'x<9#b'·p039 'x<5y<' 실측). 규정 모드는 제18항 그대로.
+        # 프라임(제17항): f^{\prime}(x)는 위첨자표 없이 본문자 뒤에 바로 ⠤를 적는다
+        # (규정 예시 `f-8x0`). 구현이 ⠘⠤로 내보내 39건이 어긋났다(2026-07-19).
+        if raw_exp in ("\\prime", "'", "′"):
+            return f"{base}⠤"
+        if raw_exp in ("\\prime\\prime", "''", "″"):
+            return f"{base}⠤⠤"
         # 관행 지수 약기: ²=⠣(gold 107회)·³=⠩(9건 중 7건, 2026-07-19 실측).
         # ⁴ 이상은 gold도 규정형 ⠘⠼N을 쓰므로 약기하지 않는다.
         if _IS_BOOK_STYLE and raw_exp in ("2", "3"):
