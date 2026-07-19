@@ -56,6 +56,11 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | N
         cmd += ["--api-url", api_url]
     else:
         cmd += ["-b", "vlm-engine"]
+    # hybrid 백엔드의 파싱 강도. 기본 medium이며 high는 GPU 시간을 더 쓰는 대신
+    # 인식 정확도를 올린다(API 비용은 없다). 과목별로 득실이 달라 env로 켠다.
+    effort = os.environ.get("MINERU_EFFORT")
+    if effort in ("medium", "high"):
+        cmd += ["--effort", effort]
     try:
         # timeout: 페이지 예산(C7)을 MinerU가 다 태우기 전에 서브프로세스를 끊는다(C9).
         # 초과 시 subprocess가 프로세스를 kill하므로 고아 프로세스가 남지 않는다.
