@@ -1060,6 +1060,16 @@ def _build_response(
             for i, o in enumerate(llm_outputs)
         ]
 
+    # 요소별 검수 등급 — 점역사가 어디부터 볼지 정하는 신호(정답 없이 런타임 계산).
+    # HIGH도 실측 정확도 88.7%라 "확인 불필요"가 아니다 — 순서·주의 표시 용도다.
+    try:
+        from app.ai.quality import confidence as _conf
+        from app.utils.braille_back import decode as _decode
+        _srcs = {t.get("id"): t for t in (response.get("text_list") or [])}
+        _conf.annotate(response.get("braille_text_list") or [], _srcs, _decode)
+    except Exception as exc:  # noqa: BLE001 — 등급 실패가 점역 결과를 막지 않는다
+        logger.warning("검수 등급 산출 실패(무시): %s", exc)
+
     return response
 
 
