@@ -141,6 +141,17 @@ def _fix_decimal_comma(text: str) -> str:
     return _DECIMAL_COMMA_RE.sub(".", text)
 
 
+# 대각선으로 나뉜 머리칸(`현상\특징`)의 백슬래시는 인쇄 구획선이지 옮길 문자가 아니다.
+# MinerU가 그 선을 `\`로 표기해 넘기면 점역이 ⠸⠡(백슬래시)를 찍는데, 정답 도서에는
+# 이 점형이 **전 코퍼스 0회**다(우리 표 출력에는 60회, 2026-07-19 실측). 두 머리말을
+# 한 칸 띄어 잇는 형태가 정답의 표기다.
+_DIAGONAL_HEAD_RE = re.compile(r"(?<=[^\s\\])\s*\\\s*(?=[^\s\\])")
+
+
+def _strip_diagonal_rule(text: str) -> str:
+    return _DIAGONAL_HEAD_RE.sub(" ", text)
+
+
 def _html_to_grid(html: str) -> list[list[str]]:
     """MinerU <table> HTML → 행렬(병합 셀 펼침). 내부 태그 제거(이미지 셀=빈칸).
 
@@ -156,7 +167,8 @@ def _html_to_grid(html: str) -> list[list[str]]:
             while (r, c) in pending:            # 위에서 내려온 rowspan 자리 먼저 채움
                 row.append(pending.pop((r, c)))
                 c += 1
-            text = _fix_decimal_comma(_HTML_TAG_RE.sub("", body).strip())
+            text = _strip_diagonal_rule(
+                _fix_decimal_comma(_HTML_TAG_RE.sub("", body).strip()))
             colspan, rowspan = _spans(attrs)
             for dc in range(colspan):
                 row.append(text)
