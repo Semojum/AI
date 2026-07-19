@@ -39,12 +39,16 @@ STRONG_GROUPS: dict[str, str] = {
     "st": "⠌", "ing": "⠬", "ar": "⠜", "ble": "⠶",
     "bb": "⠆", "cc": "⠒", "dd": "⠲", "ff": "⠖", "gg": "⠶",
     "in": "⠔", "en": "⠢",
+    "ea": "⠂",
 }
+# 아래칸 약자(ea·bb·cc·dd·ff·gg)는 **낱말 첫머리·끝에 못 쓴다**(영어 점자 표준).
+# 위아래 칸이 비어 다른 셀과 혼동되기 때문이다.
+_LOWER_CELL = {"ea", "bb", "cc", "dd", "ff", "gg"}
 # 낱말 첫머리 전용 음절 약자 — 같은 셀이 낱말 중간에서는 겹자음(bb·cc·dd) 뜻이라
 # 위치로 갈린다(영어 점자 표준). be/con/dis 는 첫머리에서만 쓴다.
-WORD_INITIAL_SYLLABLE: dict[str, str] = {"be": "⠆", "con": "⠒", "dis": "⠲"}
+WORD_INITIAL_SYLLABLE: dict[str, str] = {"be": "⠆", "con": "⠒", "dis": "⠲", "com": "⠤"}
 # 위치 제약: 낱말 첫머리에는 쓰지 않는 약자(영어 점자 표준).
-_NOT_WORD_INITIAL = {"ing", "ble", "bb", "cc", "dd", "ff", "gg"}
+_NOT_WORD_INITIAL = {"ing", "ble"} | _LOWER_CELL
 
 # ── 2. 단독 단어 약자(alone) — 그 낱말 하나로 설 때만 ────────────────────────
 WORDSIGNS: dict[str, str] = {
@@ -55,6 +59,8 @@ WORDSIGNS: dict[str, str] = {
     "you": "⠽", "as": "⠵", "child": "⠡", "shall": "⠩", "this": "⠹",
     "which": "⠱", "out": "⠳", "still": "⠌", "enough": "⠢", "were": "⠶",
     "his": "⠦", "in": "⠔", "was": "⠴", "be": "⠆",
+    # 아래칸 단어기호 — 앞뒤 낱말에 붙여 적는다(영어 점자 표준)
+    "to": "⠖", "by": "⠴", "into": "⠔⠖",
 }
 
 # ── 3. 첫글자 약자 — 기호표 + 첫 글자 ────────────────────────────────────────
@@ -130,6 +136,8 @@ def _apply_groups(word: str) -> str:
             elif k in STRONG_GROUPS:
                 if i == 0 and k in _NOT_WORD_INITIAL:
                     continue
+                if k in _LOWER_CELL and i + len(k) >= len(word):
+                    continue        # 아래칸 약자는 낱말 끝에도 못 온다
                 out.append(STRONG_GROUPS[k])
             elif k in FINAL_EBAE_ONLY:
                 if i == 0:          # 끝글자 약자는 낱말 첫머리에 못 온다
