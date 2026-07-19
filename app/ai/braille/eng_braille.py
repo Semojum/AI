@@ -156,10 +156,41 @@ def _apply_groups(word: str) -> str:
     return "".join(out)
 
 
+def _is_abbrev(word: str) -> bool:
+    """약어·단위인가 — 전부 대문자(ATP·DNA)이거나 대소문자가 섞인 형태(mV·pH·mmHg).
+
+    영어 점자에서 약어·기호는 약자로 줄이지 않는다. 첫 글자만 대문자인 보통 낱말
+    (The·Korea)은 약어가 아니므로 제외한다.
+    """
+    letters = [c for c in word if c.isalpha()]
+    if len(letters) < 2:
+        return False
+    if all(c.isupper() for c in letters):
+        return True
+    return any(c.isupper() for c in letters[1:])
+
+
 def translate_word(word: str) -> str:
-    """영어 낱말 하나 → Grade 2 점자. 대문자표는 원 낱말의 대소문자로 판단."""
+    """영어 낱말 하나 → Grade 2 점자.
+
+    약어·단위는 축약하지 않고 글자 그대로 적는다 — 축약하면 ATP·mV·pH·mmHg 같은
+    과학 표기가 깨진다(표 축 실측 2026-07-19: 악화 셀이 전부 이 계열이었다).
+    전부 대문자인 낱말은 대문자 단어표 ⠠⠠를 앞세운다(규정 제35항 [붙임]과 동형).
+    """
     if not word:
         return ""
+    letters = [c for c in word if c.isalpha()]
+    if _is_abbrev(word):
+        if all(c.isupper() for c in letters):
+            return "⠠⠠" + "".join(ALPHABET.get(c.lower(), c) for c in word)
+        # 대소문자 혼합(mV·mmHg) — 대문자마다 대문자표를 붙이고 약자는 쓰지 않는다
+        out = []
+        for c in word:
+            if c.isupper():
+                out.append(_CAPITAL + ALPHABET.get(c.lower(), c))
+            else:
+                out.append(ALPHABET.get(c, c))
+        return "".join(out)
     low = word.lower()
     caps = _CAPITAL if word[0].isupper() else ""
     if low in WORDSIGNS:
