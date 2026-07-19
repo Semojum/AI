@@ -118,10 +118,12 @@ _WORD_RE = re.compile(r"[A-Za-z']+")
 
 def _apply_groups(word: str) -> str:
     """소문자 낱말 → 약자 적용 셀열. 긴 약자 우선, 위치 제약 준수."""
+    # 긴 약자 우선, 길이가 같으면 **윗칸 약자가 아래칸 약자보다 우선**한다.
+    # year·near·clear에서 ar(⠜)이 ea(⠂)를 이겨야 한다(실측 12건: 우리 ⠂⠗ vs 정답 ⠑⠜).
     keys = sorted(set(STRONG_GROUPS) | set(FINAL_EBAE_ONLY) | set(WORD_INITIAL_SYLLABLE)
                   | set(FINAL_46) | set(FINAL_56)
                   | set(INITIAL_5) | set(INITIAL_45) | set(INITIAL_456),
-                  key=len, reverse=True)
+                  key=lambda k: (-len(k), k in _LOWER_CELL))
     out: list[str] = []
     i = 0
     while i < len(word):
@@ -136,8 +138,14 @@ def _apply_groups(word: str) -> str:
             elif k in STRONG_GROUPS:
                 if i == 0 and k in _NOT_WORD_INITIAL:
                     continue
-                if k in _LOWER_CELL and i + len(k) >= len(word):
-                    continue        # 아래칸 약자는 낱말 끝에도 못 온다
+                if k in _LOWER_CELL:
+                    if i + len(k) >= len(word):
+                        continue    # 아래칸 약자는 낱말 끝에도 못 온다
+                    # 한 칸 물러서면 윗칸 약자가 시작되는 자리면 그쪽을 쓴다.
+                    # year는 y+ea+r(⠽⠂⠗)이 아니라 y+e+ar(⠽⠑⠜)이다(실측 12건).
+                    if any(word.startswith(k2, i + 1)
+                           for k2 in STRONG_GROUPS if k2 not in _LOWER_CELL):
+                        continue
                 out.append(STRONG_GROUPS[k])
             elif k in FINAL_EBAE_ONLY:
                 if i == 0:          # 끝글자 약자는 낱말 첫머리에 못 온다
