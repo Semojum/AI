@@ -23,7 +23,7 @@ import os
 import re
 
 from app.ai.braille.kor_math_rules import convert_latex, digits_to_braille
-from app.ai.braille import eng_braille
+from app.ai.braille import eng_braille, inline_math
 from app.ai.braille.symbol_rules import substitute_symbols
 
 logger = logging.getLogger(__name__)
@@ -863,6 +863,9 @@ def translate_tagged_text(text: str) -> str:
     text = _CHOICE_HEAD_RE.sub(r"\1 ", text)
     text = _BACKTICK_MATH_RE.sub(lambda m: f"<!수식>{m.group(1).rstrip()}<!/수식> ", text)
     text = _normalize_inline_math(text)     # $…$/\(…\) → <!수식> (P1: 수식 라우팅)
+    # 구분자 없는 평문 수식(cos 2α=1-2 sin² α)도 같은 경로로 보낸다 — 수학 본문의
+    # 16%가 이 형태다(inline_math 모듈이 오탐 없이 구간만 골라 태그를 붙인다).
+    text = inline_math.wrap(text)
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     text = sanitize_for_braille(text)        # PUA·제어문자 정화(요소 전체 소실 방지)
     if _BRAILLIFY_AVAILABLE:
