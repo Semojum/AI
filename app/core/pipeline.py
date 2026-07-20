@@ -541,6 +541,68 @@ def _reorder_columns(items: list[BBoxItem]) -> None:
         b.reading_order = k
 
 
+# ── 선택지·보기 하위항목 분절(P2a, opt 직전) ─────────────────────────────────
+# 4분류: ① 규칙 미비 — MinerU는 선택지(①~⑤)·보기(ㄱㄴㄷㄹ)를 줄바꿈만 있는 한 list_item
+#   요소로 묶어 내지만, 정답 도서는 항목마다 별도 줄(2칸 들여)로 조판한다(BBPG-2.3.5).
+#   결합 요소를 그대로 두면 항목 하나의 사소한 차이가 전체 블록을 통째로 miss 처리한다
+#   (채점기는 요소 단위 연속부분열 일치를 본다 — 5항목 중 1개만 달라도 5개 전부 실패).
+#   줄머리 마커가 뚜렷이 2개 이상 있을 때만 쪼갠다: 선택지 원문자(①~⑳)·보기 자음(ㄱ.~ㅎ.)
+#   두 계열만 앵커로 인정해 산문 list_item(마커 없음, 예: 도입문 단독 요소)은 불가침.
+#   "(가)"·"1." 같은 범용 열거 패턴은 산문 열거와 구분이 안 돼 앵커에서 제외했다(과분할 위험).
+#   문장 속 참조("밑줄 친 ㉠~㉢에")는 마커가 줄 첫머리가 아니거나 다른 문자군(㉠~㉿)이라
+#   애초에 매치되지 않는다(줄머리만 검사).
+#   실측(라운드3, dev 18p 재현): list_item 무수정 사용률 38.4%→68.5~74.3%.
+_LIST_SPLIT_MARKER_RE = re.compile(
+    r"^(?:[①-⑳]"      # ①-⑳ (선택지 원문자)
+    r"|[ㄱ-ㅎ]\.\s)"    # ㄱ.~ㅎ. (보기 자음, 뒤에 공백 필수 — 오탐 방지)
+)
+
+
+def _split_list_marker_items(elements: list[dict]) -> list[dict]:
+    """list_item 요소 중 줄머리 마커가 2개 이상이면 항목별로 쪼갠다(원소 dict 목록 변환).
+
+    각 항목 = 마커 줄 + 다음 마커 전까지의 후속 줄(원문 줄바꿈 그대로, 인쇄 줄바꿈 포함).
+    마커 앞 도입 문장(있으면)은 별도의 미분할 list_item으로 보존한다.
+    """
+    out: list[dict] = []
+    for el in elements:
+        if el.get("type") != "list_item":
+            out.append(dict(el))
+            continue
+        content = el.get("content", "") or ""
+        lines = content.split("\n")
+        heads = {i for i, ln in enumerate(lines) if _LIST_SPLIT_MARKER_RE.match(ln.strip())}
+        if len(heads) < 2:
+            out.append(dict(el))
+            continue
+        groups: list[list[str]] = [[]]
+        for i, ln in enumerate(lines):
+            if i in heads:
+                groups.append([ln])
+            else:
+                groups[-1].append(ln)
+        if not groups[0]:
+            groups.pop(0)
+        for grp in groups:
+            child = dict(el)
+            child.pop("id", None)     # 새 UUID로 재발급(_parse_txt_result가 uuid4 폴백)
+            child["flags"] = list(el.get("flags") or [])
+            child["content"] = "\n".join(grp)
+            out.append(child)
+    # ★ 분절로 늘어난 요소 전부를 최종 리스트 위치로 재부여한다(원본 order 폐기).
+    #   버그 이력(2026-07-20): 분절 자식만 order를 지워 idx 폴백을 태우면, 뒤이은
+    #   미분절 요소는 원본(작은) order를 그대로 유지해 두 번호 체계가 섞인다 —
+    #   예: list_item(order=3)을 4개로 쪼개면 자식은 idx=3~6인데 바로 다음 요소는
+    #   원본 order=4를 유지해 자식④(order=6)보다 앞선 것처럼 역전된다. 이 비단조
+    #   순서가 _reorder_columns의 연속성/y-위반 판정에 새어 들어가 다단 페이지의
+    #   본문·사이드바 열 순서를 완전히 뒤섞었다(세계사 p105 실측: ee 342→1698).
+    #   전 요소를 리스트 위치로 재부여하면 상대 순서가 그대로 보존되고 분절 유무와
+    #   무관하게 단조 수열이 유지된다.
+    for i, el2 in enumerate(out, start=1):
+        el2["order"] = i
+    return out
+
+
 def _parse_txt_result(
     extraction: dict, page_id: str
 ) -> tuple[LayoutResult, dict[UUID, ExtractedContent], str]:
@@ -550,7 +612,7 @@ def _parse_txt_result(
     bbox_items: list[BBoxItem] = []
     ext_map: dict[UUID, ExtractedContent] = {}
 
-    for idx, el in enumerate(extraction.get("elements", []), start=1):
+    for idx, el in enumerate(_split_list_marker_items(extraction.get("elements", [])), start=1):
         try:
             eid = UUID(str(el.get("id")))
         except (ValueError, TypeError):
