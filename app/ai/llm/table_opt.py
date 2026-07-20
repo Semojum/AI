@@ -152,11 +152,34 @@ def _strip_diagonal_rule(text: str) -> str:
     return _DIAGONAL_HEAD_RE.sub(" ", text)
 
 
+# 병합 헤더 코너의 범용(의미 없는) 라벨 — 점역은 반복하지 않는다(2026-07-20 실측).
+# '구분'은 행·열 축 이름이 따로 없을 때 표 좌상단을 채우는 관용적 필러 단어로, 정보값이
+# 없다. 사회문화·생물 8개 표(15건, val+dev 양쪽)를 정답과 대조: colspan/rowspan으로
+# 펼쳐진 '구분' 복제 중 정답에 그대로 남아 있는 사례는 0/8 — 나머지는 좌표만 다른
+# 실제 열/행 라벨(예 '어느 계층에 속한다고 생각하는가?', '소득 계층')로 대체돼 있었다.
+# 대조군: 같은 방식으로 반복되는 '제재'(표 주제, 언어 7개 표)는 정답에 그대로
+# 유지된다(개수까지 일치) — 의미 있는 열 그룹 제목은 유지, 값 없는 필러만 접는다.
+# 앵커(펼침의 첫 칸)만 남기고 나머지 칸은 빈칸으로 접는다 — 격자 폭(열 정렬)은 그대로
+# 유지되므로 _render_grid/_render_unfold 등 다른 렌더러의 폭 계산에 영향 없다.
+_GENERIC_CORNER_LABELS = {"구분"}
+
+# 표 안 유도점(leader dots) — 인쇄본은 열 항목 사이 긴 간격을 점선으로 시각 정렬하지만
+# 그 점선 자체가 MinerU에서 독립된 <td>로 추출된다(외국어 p014/p236 실측, colspan 없음
+# — 병합 복제가 아니라 원본 HTML 자체가 빈 칸을 별도 셀로 낸 것). 정답은 이 칸을 아예
+# 없는 것처럼 취급하고 값 칸 사이를 그냥 빈칸으로 잇는다("EXAMPLE␣␣MOREOVER", 점형
+# 없음, 2026-07-20 실측) — 표 안 말줄임표(⠲⠲⠲, 문장부호 규정)로 잘못 옮기면 안 된다.
+# 규정(점자 자료 제작 지침 §3.2.1(5))의 진짜 유도점(열 간격 5칸 이상일 때 " 연속)은
+# 열 너비 인지가 필요해 미구현(table_braille.py 기존 주석) — 여기서는 최소한 오기호
+# (⠲⠲⠲)를 내지 않도록 빈 칸으로만 접는다.
+_LEADER_DOTS_RE = re.compile(r"^\.{3,}$")
+
+
 def _html_to_grid(html: str) -> list[list[str]]:
     """MinerU <table> HTML → 행렬(병합 셀 펼침). 내부 태그 제거(이미지 셀=빈칸).
 
     colspan/rowspan은 같은 값을 복제해 채운다 — 점역은 격자를 전제하므로 병합을 그대로
     두면 열 정렬이 무너진다. 풀어쓰기(_render_unfold)도 열 머리를 복제된 값에서 읽는다.
+    단, 값 없는 범용 코너 라벨(_GENERIC_CORNER_LABELS)은 앵커 칸에만 남긴다.
     """
     grid: list[list[str]] = []
     pending: dict[tuple[int, int], str] = {}   # (row, col) → rowspan으로 내려오는 값
@@ -169,11 +192,16 @@ def _html_to_grid(html: str) -> list[list[str]]:
                 c += 1
             text = _strip_diagonal_rule(
                 _fix_decimal_comma(_HTML_TAG_RE.sub("", body).strip()))
+            if _LEADER_DOTS_RE.match(text):
+                text = ""                        # 유도점 칸 — 값처럼 옮기지 않는다
             colspan, rowspan = _spans(attrs)
+            is_generic_merge = (
+                text in _GENERIC_CORNER_LABELS and (colspan > 1 or rowspan > 1))
             for dc in range(colspan):
-                row.append(text)
+                keep = (not is_generic_merge) or (dc == 0)
+                row.append(text if keep else "")
                 for dr in range(1, rowspan):
-                    pending[(r + dr, c + dc)] = text
+                    pending[(r + dr, c + dc)] = "" if is_generic_merge else text
             c += colspan
         while (r, c) in pending:                 # 행 끝에 남은 rowspan 자리
             row.append(pending.pop((r, c)))
