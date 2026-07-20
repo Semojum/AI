@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 
 from app.ai.braille.isolation import safe_translate
@@ -77,8 +78,52 @@ def parse_table_tags(text: str):
     return rows or None
 # 유도점: 지침 §(5)는 열 항목 간격이 5칸 이상일 때 열 **사이**에 `"`를 연속으로 적으라 한다
 # (열 제목 사이는 제외). 줄머리에 무조건 붙이던 옛 구현을 제거 — 진짜 규정 유도점은 미구현.
-_TN_TRANSPOSE = "표의 가로와 세로를 바꾸어 점역함."
+
+# ── 도서 관행 / 규정 스위치 (BRAILLE_STYLE) ───────────────────────────────────
+# 수식 축(kor_math_rules)·텍스트 축(translator)과 같은 형태의 게이팅을 표 축에도 둔다
+# (2026-07-21). 그전까지 표는 스위치가 없어 **규정 모드를 아예 제공하지 못했다**.
+# 기본값은 book — 우리 KPI 정답이 도서(수능특강 점역본)이고 점역사도 그 표기로 검수한다.
+#
+# 무엇이 관행이고 무엇이 규정인지 (자료지침 =「2025년도 개정 …점자교과서 및 교수학습
+# 자료 제작 지침」 3장, 도서지침 =「점자 도서 제작 지침」 3장):
+#
+#   규정 근거가 있어 **게이팅하지 않는** 것
+#     · 표 제목 5칸                자료지침 §3.1.3(1) "위 테두리 이전 줄 5칸에 적는다"
+#     · 빈 셀 ⠿⠿                  자료지침 §3.1.3(9) "내용이 없는 빈칸은 =="
+#     · 위/아래 테두리 ⠿⠛…⠿·⠿⠶…⠿  자료지침 §3.1.3(2) =GGG…= / =777…=
+#     · 행 제목 3칸에서 시작        자료지침 §3.3.1(3) "행 제목은 3칸에 적고"
+#     · 열 항목 두 칸 구분          자료지침 §3.1.1(1)②·§3.3.1(3) "두 칸씩 띄어"
+#     · 전치 시 점역자 주           자료지침 §3.1.1(2) "변경한 내용은 점역자 주로 알린다"
+#                                  (예 3-2 실물과 셀 단위 일치 — 아래 _TN_TRANSPOSE)
+#
+#   규정 근거 없이 gold 실측으로 정한 것 = **관행, book 모드 한정**
+#     · _ROWWISE_MAX_WIDTH 40      규정 ①은 32칸. 40은 "32 + 한 번 접힘" 실측
+#     · 문장 수준 구분자 쌍점        규정에 없음(§3.3.3은 번호 체계, §3.3.1(5)는 세로선)
+#     · 전치 발동 조건 "열 수 > 행 수"  규정 (2)의 조건은 "원본 형태대로 점역할 수 없다면"
+#     · 32칸 초과 시 행 머리 단독 줄  규정은 §3.3.1(4)+도서지침 §3 6)(3) 첫 칸 이어적기
+#
+#   조판 선택이 아니라 **입력 한계 보완**이라 게이팅 대상이 아닌 것
+#     · _header_extent 숫자 휴리스틱 — 규정은 원본의 열/행 제목을 그대로 쓰지만 우리
+#       입력(<!표> 태그)에는 머리 메타가 없어 추론한다. 모드와 무관한 구조 추론이다.
+#     · _render_grid / _render_linear — option 2·4 초안. 점역사가 손으로 고르는 대안이라
+#       자동 경로의 규정 준수와 층이 다르다(_render_linear 독스트링 참조).
+_BOOK_STYLE = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
+
+# 전치 점역자 주 — 자료지침 §3.1.1(2) "이때 변경한 내용은 점역자 주로 알린다".
+# 문구는 같은 지침 예 3-2 '행과 열을 변경한 표'가 실제로 실은 것을 그대로 쓴다:
+#   원문 BRF  ,'jr7@v`\!`^,@ms`d+@oj5,'  (지침 문서는 backtick=빈칸)
+#   →         ⠠⠄⠚⠗⠶⠈⠧⠀⠳⠮⠀⠘⠠⠈⠍⠎⠀⠙⠬⠈⠕⠚⠢⠠⠄
+# 우리 translator가 내는 점자와 셀 단위로 일치함을 확인했다(25셀).
+# 옛 문구 "표의 가로와 세로를 바꾸어 점역함."은 지침에 없는 자작 표현이고 8셀 더 길었다.
+_TN_TRANSPOSE = "행과 열을 바꾸어 표기함"
+_TN_SRC = f"<!점역자주>{_TN_TRANSPOSE}<!/점역자주>"   # 태그 형식(§3-5) — rule_trail emit용
+_TN_SRC_MARK = "⠠⠄"                                  # 점역자 주 마커(양끝) — 출력 검출용
 _TITLE_INDENT = 5  # 도서 제작 지침 제3장 5)(1): 표 제목은 5칸에서 시작
+
+
+def _tn_transpose_line() -> str:
+    """전치 점역자 주 한 줄. 지침 예 3-2는 3칸(빈칸 2)에서 적고 표 본문 위에 둔다."""
+    return "  " + _translate(_TN_SRC)
 
 
 def _title_line(title: str) -> str:
@@ -148,8 +193,10 @@ def _render_linear(corrected_text: str) -> list[str]:
     """2열 표 → 한 줄에 '키  값'. 3칸에서 시작하고 키와 값을 두 칸 띄운다.
         `  언어 문제  64.9`   (유도점·콜론 없음 — 코퍼스 확인)
 
-    ★ BRAILLE_STYLE을 타지 않는다(2026-07-17). 다른 항목은 기본이 규정이지만 표는 아니다 —
-      여기 있던 '규정 모드' 분기(`⠄키: 값`)가 규정이 아니었기 때문이다:
+    ★ 이 렌더러만은 BRAILLE_STYLE을 타지 않는다(2026-07-17 판단, 2026-07-21 재확인).
+      표 축 전체가 스위치를 안 탄다는 옛 주석은 이제 사실이 아니다 — 모듈 상단 _BOOK_STYLE
+      게이팅 표를 볼 것. 여기가 예외인 이유는 따로다: 전에 여기 있던 '규정 모드'
+      분기(`⠄키: 값`)가 실은 규정이 아니었다.
         · 지침 §(5)는 유도점을 "열 항목 **사이**, 간격이 **5칸 이상일 때만**" 넣으라 하는데
           그 분기는 **줄 맨 앞에 무조건** 붙였다. 열 제목 사이엔 아예 넣지 말라는 단서도 무시.
         · 유도점 글리프도 지침은 `"`인데 `⠄`를 썼고, 쌍점 `:`은 근거를 못 찾았다.
@@ -224,8 +271,23 @@ def _header_extent(rows: list[list[str]]) -> tuple[int, int]:
     return h, k
 
 
-_WORD_CELL_MAX = 14      # 셀이 '낱말 수준'인지 '문장 수준'인지 가르는 점자 길이
-_ROWWISE_MAX_WIDTH = 40  # 한 행을 통째로 한 줄에 적을 때 허용 폭(§3.1.1(1)① 32칸 + 한 번 접힘)
+# 셀이 '낱말 수준'인지 '문장 수준'인지 가르는 점자 길이 — **규정에서 유도한 값**이다.
+#   자료지침 §3.1.1(1)①  한 행을 32칸 안에 배열할 수 있어야 한다      → 줄 폭 _COLS=32
+#   자료지침 §3.3.1(3)    행 제목은 3칸에 적는다                      → 줄머리 빈칸 2
+#   자료지침 §3.1.1(1)②·§3.3.1(3)  열 항목은 두 칸씩 띄어 적는다      → 구분자 2
+# 즉 '행 제목 + 두 칸 + 열 항목' 한 쌍이 한 줄에 들어가려면
+#     2(들여쓰기) + L(제목) + 2(구분자) + L(항목) ≤ 32  →  L ≤ 14
+# 14 = (32 − 2 − 2) // 2 로 딱 떨어진다. 아래 식은 그 유도를 코드로 남긴 것이다.
+# ⚠ 정직하게 밝혀 둔다 — 이 값은 2026-07-20 도입 당시엔 근거 없이 14로 적혀 있었고(5f7eeca),
+#   유도는 2026-07-21에 사후 확인했다. 값이 바뀌지 않으므로 A/B는 불필요하다.
+#   규정 모드에서는 애초에 쓰이지 않는다(_rowwise_ok·_sep_word_level 독스트링 참조).
+_WORD_CELL_MAX = (_COLS - 2 - 2) // 2   # = 14
+
+# 한 행을 통째로 한 줄에 적을 때 허용 폭.
+#   규정(§3.1.1(1)①)은 32칸이다. 40은 "32 + 한 번 접힘"까지 행 단위로 적는 도서 관행으로,
+#   gold 실측(폭 32–40 구간의 행 단위 채택률 58%가 최고)으로 정했다 → book 모드 한정.
+_ROWWISE_MAX_WIDTH = 40 if _BOOK_STYLE else _COLS
+
 _COLON = "⠐⠂⠀"          # 쌍점 + 한 칸 (정답 도서 실측: 사회문화 p087 '의미⠐⠂⠀하층의…')
 
 
@@ -263,7 +325,13 @@ def _sep_word_level(rows: list[list[str]]) -> bool:
         **중앙값 ≤14**           64% (23/36)   70% (120/171)   ← 채택
     현행의 오류는 한쪽으로 쏠려 있었다(gold가 두 칸인데 쌍점으로 적음 dev 20·val 103건,
     반대는 dev 1·val 0건). 중앙값은 새 상수를 들이지 않고 같은 _WORD_CELL_MAX를 쓴다.
+
+    ★ 규정 모드에서는 항상 True — 즉 늘 두 칸이다. 쌍점은 규정 어디에도 없다. 자료지침이
+      '여러 단어와 문장'인 표에 주는 답은 §3.3.3 번호 체계(미구현)와 §3.3.1(5) 세로선
+      (조건부 '할 수 있다')이고, 기본형은 §3.1.1(1)②·§3.3.1(3)의 두 칸이다.
     """
+    if not _BOOK_STYLE:
+        return True
     lens = sorted(len(_translate(c)) for r in rows for c in r if c.strip())
     return not lens or lens[len(lens) // 2] <= _WORD_CELL_MAX
 
@@ -296,7 +364,13 @@ def _rowwise_ok(rows: list[list[str]]) -> bool:
         생물 p119(gold 열 인접 123/123)·수학2 p016이 그렇게 깨진다.
       · '폭 245·435 표도 gold는 행 단위'라는 직전 라운드 관찰은 재현되지 않았다 — 그 표들
         (사회문화 p192·p107 등)은 `_word_level`이 False라 임계와 무관하게 열 단위로 간다.
+
+    ★ 규정 모드는 폭 조건만 본다. §3.1.1(1)①이 거는 조건은 "한 행을 32칸 안에 배열할 수
+      있는가" 하나뿐이고, 셀이 낱말 수준인지(_word_level)는 ③의 갈림길이지 ①의 조건이
+      아니다. 즉 규정 모드에서 _WORD_CELL_MAX는 쓰이지 않는다.
     """
+    if not _BOOK_STYLE:
+        return _row_width(rows) <= _ROWWISE_MAX_WIDTH      # = 32
     return _word_level(rows) and _row_width(rows) <= _ROWWISE_MAX_WIDTH
 
 
@@ -350,11 +424,24 @@ def _should_transpose(rows: list[list[str]], n_cols: int) -> bool:
     9건(사회문화 p125 -504, 생물 p006 -129, 세계사 p190 -96 … 합 -1085셀)을 막아서
     dev가 순악화(+90)했다. gold는 T폭이 원본보다 넓어도 전치하는 표가 많다.
 
-    ⚠ 점역자 주는 붙이지 않는다. 지침 §3.1.1(2)는 "변경한 내용은 점역자 주로 알린다"고
-    하지만 정답 도서는 전치한 46페이지 전수에서 전치 점역자 주를 **한 번도** 적지 않았다
-    (0/46 실측). 프로젝트 규칙 "도서 관행이 규정과 다르면 관행 우선"에 따라 관행을 따른다.
-    (점역사가 명시적으로 고르는 option 3 'transposed' 초안은 종전대로 주를 동반한다.)
+    ★ 점역자 주는 **반드시 붙인다**(2026-07-21 복원, b04aba7의 생략을 되돌림). 직전 판단은
+      "gold가 전치 46페이지에서 0회" → 관행 우선이었으나, 재감사에서 전제가 무너졌다:
+      정답 도서는 전치뿐 아니라 **점역자 주 자체를 거의 안 쓴다**(마커 ⠠⠄가 전 코퍼스
+      1131p 중 1p). 즉 0/46은 '전치에 주를 안 단다'는 관행의 증거가 아니라 그 출판사가
+      점역자 주를 통째로 생략한다는 사실의 부분집합이다. 반면 §3.1.1(2)는 명시적으로
+      요구하고 지침 예 3-2는 실물까지 싣는다. 무엇보다 이건 표기 형태 문제가 아니라
+      **독자가 표의 가로세로가 바뀐 사실 자체를 모르게 되는** 정확성 문제다.
+      두 모드 공통 — 규정이 요구하는 것이므로 book 모드에서도 뺀다.
+
+    모드별 발동 조건:
+      book       열 수 > 행 수 (위 실측 근거)
+      regulation §3.1.1(2)의 조건 그대로 — "원본 형태대로 점역할 수 없다면"(호출부가 ①을
+                 먼저 보므로 이미 참) 행과 열을 바꿔 "가로 방향으로 풀어 적는다". 전치해서
+                 한 행이 32칸에 들어갈 때만 목적이 달성되므로 그것을 조건으로 쓴다.
+                 (이 조건은 book 모드에선 실측으로 기각됐다 — 위 ⚠ 참조.)
     """
+    if not _BOOK_STYLE:
+        return _row_width([list(col) for col in zip(*rows)]) <= _COLS
     return n_cols > len(rows)
 
 
@@ -407,10 +494,12 @@ def _render_unfold(corrected_text: str) -> list[str]:
     if _rowwise_ok(rows):                        # §3.1.1(1)① 원본 정렬 유지 → 행 단위
         return _render_rowwise(rows, orig_len)
 
+    head: list[str] = []                         # 전치 점역자 주(§3.1.1(2))가 들어갈 자리
     if _should_transpose(rows, n_cols):          # §3.1.1(2) 넓은 표 → 행↔열 교환
         rows, orig_len, n_cols = _transpose_rows(rows, orig_len)
+        head = [_tn_transpose_line()]            # "변경한 내용은 점역자 주로 알린다"
         if _rowwise_ok(rows):                    # 전치 후 한 행이 들어가면 행 단위
-            return _render_rowwise(rows, orig_len)
+            return head + _render_rowwise(rows, orig_len)
     # 열 단위 전개의 구분자: 낱말 수준이면 두 칸, 문장 수준이면 쌍점(정답 도서 실측).
     sep = "⠀⠀" if _sep_word_level(rows) else _COLON
 
@@ -467,12 +556,16 @@ def _render_unfold(corrected_text: str) -> list[str]:
                 entry = f"  {row_br}{_cell(r[j])}"
                 if len(entry) <= _COLS or not row_br:
                     lines.append(entry)
-                else:
+                elif _BOOK_STYLE:
                     # 정답 관행(세계사 p009·사회문화 p174 실측): 값이 32칸을 넘치면 행 머리를
                     # 단독 줄로 세우고(이때는 쌍점 없이) 값을 다음 줄부터 적는다.
                     lines.append(f"  {_translate(row_head)}")
                     lines.append(f"  {_cell(r[j])}")
-    return lines or [""]
+                else:
+                    # 규정: 행 제목 단위로 줄을 바꾸고(§3.3.1(4)) 한 셀이 두 줄로 나뉘면
+                    # 다음 줄 **첫 칸부터** 이어 적는다(도서지침 제3장 6)(3)).
+                    lines.extend(_split_lines(entry))
+    return head + lines if lines else (head or [""])
 
 
 def _transpose_text(corrected_text: str) -> str:
@@ -533,17 +626,23 @@ class TableBraille:
         # 표 유형별 레이아웃 (셀 값 동일, 조판만 다름). 기본=풀어쓰기(BBPG-3.1.2 원칙).
         unfold_lines = _wt(_render_unfold(text))
         grid_lines = _wt(_render_grid(text))
-        transposed_lines = _wt(_split_lines(_translate(_TN_TRANSPOSE)) + _render_grid(_transpose_text(text)))
+        # 전치 초안도 점역자 주를 태그로 낸다 — 옛 구현은 _translate(_TN_TRANSPOSE)라
+        # 양끝 마커 ⠠⠄가 빠져 '그냥 한 줄 문장'으로 나갔고 rule_trail도 안 잡혔다.
+        transposed_lines = _wt([_tn_transpose_line()] + _render_grid(_transpose_text(text)))
         linear_lines = _wt(_render_linear(text))
+        # 자동 경로가 전치했으면 그 점역자 주가 출력에 실린다 → 태그를 트레일 원본에 얹어
+        # BBPG-1.2.6이 emit되게 한다(_base_trail은 원본에 태그가 있을 때만 emit).
+        unfold_src = text + ("\n" + _TN_SRC if any(_TN_SRC_MARK in ln for ln in unfold_lines) else "")
         drafts = [
             Draft(option=1, text=text, render_mode="unfold", label="풀어쓰기(3칸·2칸)",
                   braille_lines=unfold_lines,
-                  rule_trail=_base_trail(unfold_lines, text) + [make_rule("BBPG-3.1.2")]),
+                  rule_trail=_base_trail(unfold_lines, unfold_src) + [make_rule("BBPG-3.1.2")]),
             Draft(option=2, text=text, render_mode="table_grid", label="격자형",
                   braille_lines=grid_lines, rule_trail=_base_trail(grid_lines, text)),
             Draft(option=3, text=text, render_mode="transposed", label="행↔열 전치",
                   braille_lines=transposed_lines,
-                  rule_trail=_base_trail(transposed_lines, text) + [make_rule("BBPG-3.1.2")]),
+                  rule_trail=_base_trail(transposed_lines, text + "\n" + _TN_SRC)
+                             + [make_rule("BBPG-3.1.2")]),
             Draft(option=4, text=text, render_mode="linear", label="선형(키:값)",
                   braille_lines=linear_lines, rule_trail=_base_trail(linear_lines, text)),
         ]
