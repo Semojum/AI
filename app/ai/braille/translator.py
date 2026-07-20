@@ -154,6 +154,31 @@ def _normalize_roman_numerals(text: str) -> str:
     """로마 숫자 유니코드 → 해당 로마자(제36항). 멱등 — 재적용해도 변화 없음."""
     return _ROMAN_NUMERAL_RE.sub(lambda m: _ROMAN_NUMERAL_MAP[m.group()], text)
 
+
+# 섹션번호 로마 숫자(Ⅱ. Ⅲ. …)의 도서 관행: gold는 로마자표(⠴…⠲)·이중 대문자표 없이
+# 대문자표 ⠠ 한 번 + 낱자 점형으로 적는다(Ⅱ→⠠⠊⠊, Ⅴ→⠠⠧ 실측 — 사회문화 p046·154,
+# 세계사 p016). 영어 단어 경로(_english_run/braillify)는 ⠴⠠⠠⠊⠊⠲로 로만표·이중대문자·
+# 종료표를 붙여 gold와 어긋난다(잉여 ⠲·⠴). 낱자 점형을 직접 주입해 관행에 맞춘다.
+# 소문자 로마자(ⅰⅱ 하위항목)는 대문자표 없이 낱자만. <!수식> 안 로마자는 건드리지 않는다.
+_ROMAN_CELL_UPPER = {r: "⠠" + "".join(_ALPHA_MAP[c] for c in ascii_low.lower())
+                     for r, ascii_low in _ROMAN_NUMERAL_MAP.items() if ascii_low[0].isupper()}
+_ROMAN_CELL_LOWER = {r: "".join(_ALPHA_MAP[c] for c in ascii_low)
+                     for r, ascii_low in _ROMAN_NUMERAL_MAP.items() if ascii_low[0].islower()}
+_ROMAN_CELL = {**_ROMAN_CELL_UPPER, **_ROMAN_CELL_LOWER}
+_ROMAN_CELL_RE = re.compile("[" + "".join(_ROMAN_CELL) + "]")
+
+
+def _book_roman_to_cells(text: str) -> str:
+    """도서 관행 로마 숫자 섹션번호 → 낱자 점형 직접 주입(book 모드). <!수식> 세그는 보존."""
+    parts = _FORMULA_RE.split(text)
+    for i in range(0, len(parts), 2):   # 짝수 인덱스 = 수식 밖 일반 텍스트
+        parts[i] = _ROMAN_CELL_RE.sub(lambda m: _ROMAN_CELL[m.group()], parts[i])
+    # split이 캡처그룹 때문에 [text, formula_inner, text, ...] 형태 → 재조립
+    out = []
+    for i, seg in enumerate(parts):
+        out.append(seg if i % 2 == 0 else f"<!수식>{seg}<!/수식>")
+    return "".join(out)
+
 _FORMULA_RE      = re.compile(r"<!수식>(.*?)<!/수식>", re.DOTALL)
 _TAG_RE          = re.compile(r"<[^>]+>")
 # 잔여 <!…> 정식 태그만 안전 제거(아래 _ANGLE_LABEL_RE가 본문 <…>를 살린 뒤).
@@ -323,6 +348,25 @@ _CIRCLED_RE = re.compile("[" + "".join(_CIRCLED) + "]")
 _MARK_PAREN_RE = re.compile(r"\(([^()]{1,60})\)")
 _UPPER_ONLY_RE = re.compile(r"^[A-Z0-9 ,.·]+$")
 
+# 출처/연도 대괄호 → 소괄호 관행(정답 도서 실측: 생물 p009 '[2011학년도 대수능]',
+# p012 '[실험 과정]'·'[실험 결과]' → gold는 소괄호 셀 ⠦⠄…⠠⠴로 적는다. 대괄호 셀
+# ⠦⠆…⠰⠴가 아니다). ⚠ 세계사 '[1096~1270]' 같은 연대 범위 대괄호는 gold가 대괄호를
+# 그대로 유지하므로(⠦⠆…⠰⠴, 33/35회 실측) 건드리면 안 된다 — 출처/실험 표제 키워드가
+# 든 대괄호만 소괄호로 바꾼다(문맥 가드). 소괄호를 '문자'로 넣으면 _MARK_PAREN_RE가
+# 붙임표 -…-로 감싸버리므로(gold는 붙임표 아님), 소괄호 셀을 직접 주입한다.
+_OPEN_PAREN_CELL = "⠦⠄"
+_CLOSE_PAREN_CELL = "⠠⠴"
+_SRC_BRACKET_RE = re.compile(r"\[([^\[\]\n]{1,40})\]")
+_SRC_ATTR_RE = re.compile(
+    r"수능|학년도|평가원|모의평가|모의고사|모평|학력평가|학평|기출|교육청|실험\s*과정|실험\s*결과")
+
+
+def _src_bracket_repl(m: re.Match) -> str:
+    inner = m.group(1)
+    if _SRC_ATTR_RE.search(inner):
+        return _OPEN_PAREN_CELL + inner + _CLOSE_PAREN_CELL
+    return m.group(0)
+
 
 _HANJA_ONLY_RE = re.compile(r"^[\u4e00-\u9fff\s·]+$")
 
@@ -434,6 +478,7 @@ def _apply_book_style(text: str) -> str:
         return text
     text = _normalize_bogi_markers(text)   # 원문 복원은 다른 치환보다 먼저(줄머리 기준)
     text = _AE_GEQ_RE.sub("≥", text)   # 괄호→붙임표보다 먼저(인접 판정이 원문 괄호 기준)
+    text = _SRC_BRACKET_RE.sub(_src_bracket_repl, text)  # 출처 대괄호→소괄호 셀(가드)
     text = _QNUM_RE.sub(r"\1.", text)
     text = _CIRCLED_RE.sub(lambda m: _CIRCLED[m.group()], text)
     text = _MARK_PAREN_RE.sub(_paren_repl, text)
@@ -866,6 +911,8 @@ def translate_tagged_text(text: str) -> str:
     # 구분자 없는 평문 수식(cos 2α=1-2 sin² α)도 같은 경로로 보낸다 — 수학 본문의
     # 16%가 이 형태다(inline_math 모듈이 오탐 없이 구간만 골라 태그를 붙인다).
     text = inline_math.wrap(text)
+    if _BOOK_STYLE:
+        text = _book_roman_to_cells(text)   # 로마 숫자 섹션번호 → 낱자 점형(도서 관행, 수식 밖만)
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     text = sanitize_for_braille(text)        # PUA·제어문자 정화(요소 전체 소실 방지)
     if _BRAILLIFY_AVAILABLE:
