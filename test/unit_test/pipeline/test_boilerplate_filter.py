@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from app.core.pipeline import _is_boilerplate, _parse_txt_result, _reorder_sidebar
+from app.core.pipeline import (
+    _is_boilerplate,
+    _is_running_foot,
+    _parse_txt_result,
+    _reorder_sidebar,
+)
 from app.schemas.layout import BBoxItem
 
 
@@ -39,6 +44,41 @@ class TestIsBoilerplate:
             "",
         ]:
             assert not _is_boilerplate(c), c
+
+
+# ── _is_running_foot (header_footer 전용 인쇄 러닝풋) ────────────────────
+
+class TestIsRunningFoot:
+    def test_observed_running_feet_suppressed(self):
+        # 코퍼스 실측(2026-07-20): gold BRF에 재현되지 않는 인쇄 러닝풋 변형들
+        for c in [
+            "SCIENCE",                       # 생물 러닝풋
+            "수능 SCIENCE 29 테 스트",        # OCR 변형
+            "SCIENCE\n수능\n점",
+            "<!드러냄>SCIENCE<!/드러냄>",     # 태그 감쌈 변형
+            "테스트",                         # 생물 단독 배너
+            "中",                             # 사회문화·세계사 장식 OCR 노이즈
+            "04 | 혈액의 구성과 혈액형",       # 생물 강 러닝헤더
+            "<!드러냄>13 | 유전 형질과 염색체 이상<!/드러냄>",
+            "www e b si co k r",              # ebsi URL OCR 흩뿌림 변형
+            "w w w e b s i c o k r",
+            "www. e b s i . co . k r",
+        ]:
+            assert _is_running_foot(c), c
+
+    def test_gold_reproduced_headers_kept(self):
+        # gold가 유지하는 헤더 — 억제하면 CER 악화(실측)라 반드시 보존
+        for c in [
+            "Level 1 기초연습",               # 수학2 섹션 배너
+            "PartⅢ 테스트편",                 # 외국어 — '테스트' 부분 포함해도 전체일치 아님
+            "수능 기본 문제",
+            "Exercises",
+            "Ⅱ. 개인과 사회 구조",            # 장 표제(도서별 관행 갈림 → 유지)
+            "정답과 해설 3쪽",
+            "테스트 결과 분석",               # '테스트' 시작이지만 전체 일치 아님
+            "",
+        ]:
+            assert not _is_running_foot(c), c
 
 
 # ── _parse_txt_result 통합 ───────────────────────────────────────────────
@@ -72,6 +112,24 @@ class TestParseDropsBoilerplate:
         }
         layout, _, _ = _parse_txt_result(extraction, "p-test")
         assert len(layout.elements) == 1
+
+    def test_running_foot_only_dropped_for_header_footer(self):
+        # 러닝풋 패턴은 header_footer 타입에만 적용 — 본문 text의 동일 문자열은 보존
+        extraction = {
+            "meta": {"extraction_method": "OCR"},
+            "elements": [
+                _el("테스트", etype="header_footer", order=1),
+                _el("테스트", etype="text", order=2),
+                _el("04 | 혈액의 구성과 혈액형", etype="header_footer", order=3),
+                _el("사회 조사 과정과 자료 수집 방법", etype="header_footer", order=4),
+            ],
+        }
+        layout, ext_map, _ = _parse_txt_result(extraction, "p-test")
+        kept = [(b.type, ext_map[b.element_id].corrected_text) for b in layout.elements]
+        assert ("header_footer", "테스트") not in kept
+        assert ("text", "테스트") in kept
+        assert ("header_footer", "04 | 혈액의 구성과 혈액형") not in kept
+        assert ("header_footer", "사회 조사 과정과 자료 수집 방법") in kept
 
 
 # ── _reorder_sidebar 다수-스트림 가드 ────────────────────────────────────

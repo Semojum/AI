@@ -88,6 +88,38 @@ def _is_boilerplate(content: str) -> bool:
     return bool(c) and any(p.match(c) for p in _BOILERPLATE_RES)
 
 
+# ── 인쇄 러닝풋(가구) 억제 — header_footer 전용 ─────────────────────────────
+# 4분류: ① 규칙 미비 — 도서 관행(점자책은 인쇄 장식 러닝풋을 옮기지 않음) 미구현.
+# 실측(2026-07-20, dev 36p·val 951p 코퍼스 채점기 대조): 아래 패턴의 header_footer는
+# gold BRF에 재현되지 않는다(억제 대상 166요소 중 gold 존재 2건뿐 — '테스트' 4셀 우연
+# 부분일치). 반대로 gold가 유지하는 헤더는 목록에 넣지 않는다:
+#   · 'Level N ○○연습'(수학2)·'PartⅡ/Ⅲ ○○편'(외국어) — 섹션 배너로 재현됨(억제 시 CER 악화)
+#   · '수능 기본 문제'·'Exercises' 등 반복 배너 — 매 등장이 섹션 시작이라 gold 유지
+#   · 장 표제(Ⅱ. …) 반복 — 도서별 관행이 갈림(사회문화=장 시작 1회, 세계사=매 페이지
+#     유지). 잡-반복 억제(첫 등장만 유지)는 세계사에서 손해라 기각, 패턴 목록만 쓴다.
+# header_footer 타입에만 적용 — 본문(text 등)의 동일 문자열은 건드리지 않는다.
+_RUNNING_FOOT_RES = (
+    re.compile(r"science", re.IGNORECASE),  # 생물 러닝풋 배너(OCR 변형 '수능 SCIENCE 29 테 스트' 포함)
+    re.compile(r"^테스트$"),                 # 생물 러닝풋 단독 배너(전체 일치만)
+    re.compile(r"^中$"),                    # 사회문화·세계사 러닝풋 장식의 OCR 노이즈
+    re.compile(r"^\d{1,3}\s*\|"),           # 생물 강 러닝헤더 '04 | 혈액의 구성과 혈액형'
+)
+_HF_TAG_RE = re.compile(r"<!/?[^>]+>")      # 러닝풋 판정 전 <!드러냄> 등 인라인 태그 제거
+
+
+def _is_running_foot(content: str) -> bool:
+    """header_footer 요소가 인쇄 전용 러닝풋인가(실측 패턴 목록 기반)."""
+    c = re.sub(r"\s+", " ", _HF_TAG_RE.sub("", content or "")).strip()
+    if not c:
+        return False
+    # ebsi URL 러닝풋 — OCR이 글자를 흩뿌린 변형('www e b si co k r'·'w w w e b s i c o k r'
+    # ·'www. e b s i . co . k r')이 많아 공백·구두점을 걷어낸 평탄형으로 대조한다.
+    flat = re.sub(r"[\s.·]", "", c).lower()
+    if "wwwebsicokr" in flat or "ebsicokr" in flat:
+        return True
+    return any(p.search(c) for p in _RUNNING_FOOT_RES)
+
+
 # ── 응답 빌더 ─────────────────────────────────────────────────────────────
 
 def _build_timeout_response(task: PageTask, elapsed_ms: int) -> dict:
@@ -530,6 +562,9 @@ def _parse_txt_result(
         content = el.get("content", "") or ""
         if etype in _TEXT_TYPES and _is_boilerplate(content):
             logger.info("보일러플레이트 드롭(%s): %.60s", etype, content)
+            continue
+        if etype == "header_footer" and _is_running_foot(content):
+            logger.info("러닝풋 억제(header_footer): %.60s", content)
             continue
         # heading_level: 현주 핸드오프가 주면 그 값, 없으면 title은 1단계 기본(PART 10 조판용)
         hlevel = el.get("heading_level")
@@ -1067,6 +1102,12 @@ def _build_response(
         from app.utils.braille_back import decode as _decode
         _srcs = {t.get("id"): t for t in (response.get("text_list") or [])}
         _conf.annotate(response.get("braille_text_list") or [], _srcs, _decode)
+        # 페이지 수준 '내용 누락 의심' 고지(R11) — gold 없이 런타임 계산, 셀 출력 불변
+        # 메타데이터라 KPI에 영향 없음. 시각자료·표에 내용이 몰린 페이지를 저오탐으로 짚음.
+        _risk = _conf.page_content_risk(response.get("braille_text_list") or [])
+        if _risk and "quality_report" in response:
+            response["quality_report"].setdefault("review_flags", []).append(
+                {"type": "R11", "element_id": "page", "message": _risk})
     except Exception as exc:  # noqa: BLE001 — 등급 실패가 점역 결과를 막지 않는다
         logger.warning("검수 등급 산출 실패(무시): %s", exc)
 
