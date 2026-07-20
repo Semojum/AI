@@ -238,8 +238,34 @@ def _word_level(rows: list[list[str]]) -> bool:
 
     정답 도서 실측도 같다 — 낱말 수준 표(생물 p119·p122, 사회문화 p185)는 열 항목을
     **두 칸** 띄어 적고, 문장 수준 표(사회문화 p087·p174)는 **쌍점**으로 잇는다.
+
+    ★ 이 '전 셀 ≤14' 판정은 **행 단위 전개 가능 여부**(`_rowwise_ok`) 전용이다. 구분자
+      선택에는 `_sep_word_level`(중앙값)을 쓴다 — 근거는 그쪽 독스트링.
     """
     return all(len(_translate(c)) <= _WORD_CELL_MAX for r in rows for c in r if c.strip())
+
+
+def _sep_word_level(rows: list[list[str]]) -> bool:
+    """열 단위 전개의 구분자를 두 칸으로 할 것인가 — **중앙값** 셀로 판정한다.
+
+    §3.1.1(1)③의 갈림길은 '열 항목이 여러 단어와 문장으로 되어 있는가', 즉 표의
+    **전형적인** 셀이 어느 수준인가다. 그런데 `_word_level`은 전 셀 검사(all)라 셀 하나가
+    14셀을 넘으면 표 전체가 쌍점으로 돌았다 — 긴 머리 셀 하나 때문에 나머지 수십 셀이
+    전부 쌍점이 되는 병리가 실제로 있었다(사회문화 p114: 49셀 중 15셀짜리 **1개**가
+    초과인데 우리는 쌍점 45개, gold는 페이지 전체에 1개. 생물 p067·p124도 같은 꼴).
+
+    gold 실측으로 정한다 — 열 단위 표에서 셀 쌍 (a,b)가 gold에 `a+b`로 붙어 있으면 두 칸,
+    `a⠐⠂b`면 쌍점으로 세어 표별 정답 구분자를 확정하고 규칙을 검정했다(판정 가능
+    dev 36 · val 171요소):
+        규칙                     dev 정합      val 정합
+        전 셀 ≤14 (구현)         42% (15/36)   40% ( 68/171)   ← 쌍점 오판 dev 20·val 103
+        초과비율 ≤0.25           61% (22/36)   61% (104/171)
+        **중앙값 ≤14**           64% (23/36)   70% (120/171)   ← 채택
+    현행의 오류는 한쪽으로 쏠려 있었다(gold가 두 칸인데 쌍점으로 적음 dev 20·val 103건,
+    반대는 dev 1·val 0건). 중앙값은 새 상수를 들이지 않고 같은 _WORD_CELL_MAX를 쓴다.
+    """
+    lens = sorted(len(_translate(c)) for r in rows for c in r if c.strip())
+    return not lens or lens[len(lens) // 2] <= _WORD_CELL_MAX
 
 
 def _row_width(rows: list[list[str]]) -> int:
@@ -257,6 +283,19 @@ def _rowwise_ok(rows: list[list[str]]) -> bool:
     §3.1.1(1)①은 '표의 한 행을 32칸 안에 배열할 수 있다면' 원본 정렬대로 적으라 한다.
     정답 도서는 조금 넘쳐 한 번 접히는 정도(생물 p122, 37칸)까지 행 단위로 적고, 크게
     넘치는 넓은 표(사회문화 p185, 8열 ~90칸)는 열 단위로 돌린다.
+
+    ⚠ 임계 40 완화(50·60)는 gold 실측·전 코퍼스 A/B 양쪽에서 **기각**했다(2026-07-21).
+      · gold 실측: 표를 행 단위로 적었는지를 '한 행의 셀 3개가 gold에 잇달아 나오는가'로
+        판정(각 셀이 gold에 있는 구간만 모수에 넣는 조건부 검정, 확증 dev 40·val 195요소).
+        폭 구간별 행 단위 채택률(val)은 32–40이 **58%로 최고**고 40을 넘으면 19~38%로
+        떨어진다(100–150 12%, 150+ 4%). 즉 도서가 가르는 지점이 40 부근이다. 정책 정합률도
+        현행이 최적(dev 78%·val 76%)이고 임계를 올리면 어느 값에서도 내려간다.
+      · 전 코퍼스 A/B(재점역+채점): 편집셀 dev 57,178 → 50에서 57,212(+34) · 60에서
+        57,196(+18)로 **악화**, val만 −717·−1,047. 한쪽 악화라 채택 규칙 미달.
+      · 원인: ①이 (2)전치보다 먼저라 임계를 올리면 폭 40~w 표의 **전치가 사라진다**.
+        생물 p119(gold 열 인접 123/123)·수학2 p016이 그렇게 깨진다.
+      · '폭 245·435 표도 gold는 행 단위'라는 직전 라운드 관찰은 재현되지 않았다 — 그 표들
+        (사회문화 p192·p107 등)은 `_word_level`이 False라 임계와 무관하게 열 단위로 간다.
     """
     return _word_level(rows) and _row_width(rows) <= _ROWWISE_MAX_WIDTH
 
@@ -373,7 +412,7 @@ def _render_unfold(corrected_text: str) -> list[str]:
         if _rowwise_ok(rows):                    # 전치 후 한 행이 들어가면 행 단위
             return _render_rowwise(rows, orig_len)
     # 열 단위 전개의 구분자: 낱말 수준이면 두 칸, 문장 수준이면 쌍점(정답 도서 실측).
-    sep = "⠀⠀" if _word_level(rows) else _COLON
+    sep = "⠀⠀" if _sep_word_level(rows) else _COLON
 
     n_head_rows, n_head_cols = _header_extent(rows)
     body = rows[n_head_rows:]
