@@ -261,6 +261,14 @@ _ENV_RE = re.compile(r"\\(?:begin|end)\s*\{[^{}]*\}(?:\s*\[[^\]]*\])?(?:\s*\{[^{
 _SYS_OPEN, _SYS_CLOSE = "⠶⠄", "⠠⠶"
 # 관행 스위치 — translator._BOOK_STYLE과 같은 판정을 env에서 직접 읽는다(순환 import 회피).
 _IS_BOOK_STYLE = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
+# 대문자 그리스 접두(F3, 2026-07-20 실측): 규정 제30항·수학 제25항은 ,.(⠠⠨)이나
+# 도서 관행은 대문자표 ⠠를 생략 — gold 수학2에서 ⠨⠎ 426·⠨⠙ 142회 vs ⠠⠨ 계열 3회
+# (Σ=.S·Δx=.DX, output_수학2_page091.brl 원문 실측). regulation 모드는 규정형 유지.
+_CAP_GREEK = "⠨" if _IS_BOOK_STYLE else "⠠⠨"
+_SUM_BASE = _CAP_GREEK + "⠎"   # 총합 Σ (수학 제25항 ,.S / 도서 관행 .S)
+# ≠(F4, 2026-07-20 실측): 규정 수학 제4항 1호는 .33(⠨⠒⠒)이나 도서 관행은 .3(⠨⠒)
+# — gold 수학2에서 .3 91회 vs .33 0회(x≠1=`X.3#A`·f(x)≠0=`F8X0.3#J` 원문 실측).
+_NEQ = "⠨⠒" if _IS_BOOK_STYLE else "⠨⠒⠒"
 _SYS_ENV_RE = re.compile(
     r"\\left\s*\\?\{\s*\\begin\{array\}(?:\{[^{}]*\})?(.*?)\\end\{array\}(?:\s*\\right\s*\.?)?"
     r"|\\begin\{cases\}(.*?)\\end\{cases\}", re.DOTALL)
@@ -477,7 +485,7 @@ def convert_latex(latex: str) -> str:
     def _sqrt_n_replace(m: re.Match) -> str:
         n_part = convert_latex(m.group(1))
         inner  = convert_latex(m.group(2))
-        inner_w = f"{_WRAP_S}{inner}{_WRAP_E}" if _needs_wrap(m.group(2)) else inner
+        inner_w = _wrap_ins(inner) if _needs_wrap(m.group(2)) else inner
         return f"{n_part}{_SQRT_N_IND}{inner_w}"
 
     result = _SQRT_N_RE.sub(_sqrt_n_replace, result)
@@ -560,7 +568,7 @@ def convert_latex(latex: str) -> str:
     # ── 2c. 제곱근: \sqrt{내용} → ⠜내용 (수학 제22항; n제곱근은 0b에서 선처리) ──
     def _sqrt_replace(m: re.Match) -> str:
         inner = convert_latex(m.group(1))
-        inner_w = f"{_WRAP_S}{inner}{_WRAP_E}" if _needs_wrap(m.group(1)) else inner
+        inner_w = _wrap_ins(inner) if _needs_wrap(m.group(1)) else inner
         return f"{_SQRT_IND}{inner_w}"
 
     result = _SQRT_RE.sub(_sqrt_replace, result)
@@ -602,7 +610,7 @@ def convert_latex(latex: str) -> str:
             return f"{head}{tail}"
         # 밑이 소수/분수인 경우 묶음 괄호 (수학 제46항 붙임1)
         if _needs_wrap(base_raw) or re.fullmatch(r"\d+\.\d+", base_raw):
-            return f"{_LOG_IND}{_SUBSCRIPT_IND}{_WRAP_S}{base}{_WRAP_E}{tail}"
+            return f"{_LOG_IND}{_SUBSCRIPT_IND}{_wrap_ins(base)}{tail}"
         # [다만] 밑이 문자면 괄호 진수는 그대로 잇는다
         return f"{_LOG_IND}{_SUBSCRIPT_IND}{base}{tail}"
 
@@ -645,13 +653,15 @@ def convert_latex(latex: str) -> str:
         lower = convert_latex(m.group(1))
         upper = convert_latex(m.group(2)) if m.group(2) else ""
         # ,.S;lower upper 본식 형태: 여기서는 범위 표시만
-        base = "⠠⠨⠎"   # ,.S (총합 기호, 수학 제25항)
+        # 규정 제25항은 ,.S(⠠⠨⠎)이나 도서 관행은 대문자표 ⠠를 생략한 .S(⠨⠎)
+        # — gold 수학2 ⠨⠎ 426회 vs ⠠⠨ 계열 3회(F3, 2026-07-20 실측).
+        base = _SUM_BASE   # 총합 기호 (수학 제25항 / 도서 관행)
         if upper:
             return f"{base}{_SUBSCRIPT_IND}{lower} {upper} "
         return f"{base}{_SUBSCRIPT_IND}{lower} "
 
     result = _SUM_RE.sub(_sum_replace, result)
-    result = result.replace("\\sum", "⠠⠨⠎")
+    result = result.replace("\\sum", _SUM_BASE)
 
     # ── 8. 위첨자: base^{exp} → base⠘exp (수학 제18항) ──────────────
     def _sup_replace(m: re.Match) -> str:
@@ -670,7 +680,7 @@ def convert_latex(latex: str) -> str:
         if _IS_BOOK_STYLE and raw_exp in ("2", "3"):
             return base + ("⠣" if raw_exp == "2" else "⠩")
         exp  = convert_latex(raw_exp)
-        exp_w = f"{_WRAP_S}{exp}{_WRAP_E}" if _needs_wrap(raw_exp) else exp
+        exp_w = _wrap_ins(exp) if _needs_wrap(raw_exp) else exp
         return f"{base}{_SUPERSCRIPT_IND}{exp_w}"
 
     result = _SUP_RE.sub(_sup_replace, result)
@@ -679,7 +689,7 @@ def convert_latex(latex: str) -> str:
     def _sub_replace(m: re.Match) -> str:
         base = m.group(1) or m.group(3) or ""
         sub  = convert_latex(m.group(2) or m.group(4) or "")
-        sub_w = f"{_WRAP_S}{sub}{_WRAP_E}" if _needs_wrap(m.group(2) or m.group(4) or "") else sub
+        sub_w = _wrap_ins(sub) if _needs_wrap(m.group(2) or m.group(4) or "") else sub
         return f"{base}{_SUBSCRIPT_IND}{sub_w}"
 
     result = _SUB_RE.sub(_sub_replace, result)
@@ -693,7 +703,7 @@ def convert_latex(latex: str) -> str:
         "\\cdot":     "⠐",    # · (수학 제2항 붙임, 폰트 '"'=⠐)
         "\\leq":      "⠖⠖",   # ≤ (수학 제4항 8호, 폰트 66=⠖⠖ — ⠦는 8 오독이었음)
         "\\geq":      "⠲⠲",   # ≥ (수학 제4항 6호, 폰트 "44"=⠲⠲)
-        "\\neq":      "⠨⠒⠒",  # ≠ (수학 제4항 1호, 폰트 ".33"=⠨⠒⠒)
+        "\\neq":      _NEQ,   # ≠ (수학 제4항 1호 .33 / 도서 관행 .3 — F4 실측 주석 참조)
         "\\approx":   "⠈⠔⠈⠔", # ≈ 이중물결 (제29항 @9@9, 앞뒤 한 칸)
         "\\equiv":    "⠶⠶",   # ≡ 합동 (기하 제43항 77=⠶⠶ — ⠛은 폰트 g 오독)
         "\\sim":      "⠈⠔",   # ∼ 관계·분포 (제34항 @9). 닮음 ∽(⠠⠄)는 유니코드 경유
@@ -751,19 +761,19 @@ def convert_latex(latex: str) -> str:
         "\\Rightarrow":  "⠒⠒⠕",     # ⇒ (명제 제61항, "33o")
         "\\Leftarrow":   "⠐⠉⠉",     # ⇐ (미확인 — 규정 원문 재확인 필요)
         "\\Leftrightarrow": "⠪⠒⠒⠕", # ⇔ (명제 제61항, "[33o")
-        # 대문자 그리스 문자
-        "\\Alpha":   "⠠⠨⠁", "\\Beta":    "⠠⠨⠃",
-        "\\Gamma":   "⠠⠨⠛", "\\Delta":   "⠠⠨⠙",
-        "\\Epsilon": "⠠⠨⠑", "\\Zeta":    "⠠⠨⠵",
-        "\\Eta":     "⠠⠨⠱", "\\Theta":   "⠠⠨⠹",
-        "\\Iota":    "⠠⠨⠊", "\\Kappa":   "⠠⠨⠅",
-        "\\Lambda":  "⠠⠨⠇", "\\Mu":      "⠠⠨⠍",
-        "\\Nu":      "⠠⠨⠝", "\\Xi":      "⠠⠨⠭",
-        "\\Pi":      "⠠⠨⠏", "\\Rho":     "⠠⠨⠗",
-        "\\Sigma":   "⠠⠨⠎", "\\Tau":     "⠠⠨⠞",
-        "\\Upsilon": "⠠⠨⠥", "\\Phi":     "⠠⠨⠋",
-        "\\Chi":     "⠠⠨⠯", "\\Psi":     "⠠⠨⠽",
-        "\\Omega":   "⠠⠨⠺",
+        # 대문자 그리스 문자 — 접두는 _CAP_GREEK(규정 ,. / 도서 관행 . — F3 실측 주석 참조)
+        "\\Alpha":   _CAP_GREEK + "⠁", "\\Beta":    _CAP_GREEK + "⠃",
+        "\\Gamma":   _CAP_GREEK + "⠛", "\\Delta":   _CAP_GREEK + "⠙",
+        "\\Epsilon": _CAP_GREEK + "⠑", "\\Zeta":    _CAP_GREEK + "⠵",
+        "\\Eta":     _CAP_GREEK + "⠱", "\\Theta":   _CAP_GREEK + "⠹",
+        "\\Iota":    _CAP_GREEK + "⠊", "\\Kappa":   _CAP_GREEK + "⠅",
+        "\\Lambda":  _CAP_GREEK + "⠇", "\\Mu":      _CAP_GREEK + "⠍",
+        "\\Nu":      _CAP_GREEK + "⠝", "\\Xi":      _CAP_GREEK + "⠭",
+        "\\Pi":      _CAP_GREEK + "⠏", "\\Rho":     _CAP_GREEK + "⠗",
+        "\\Sigma":   _CAP_GREEK + "⠎", "\\Tau":     _CAP_GREEK + "⠞",
+        "\\Upsilon": _CAP_GREEK + "⠥", "\\Phi":     _CAP_GREEK + "⠋",
+        "\\Chi":     _CAP_GREEK + "⠯", "\\Psi":     _CAP_GREEK + "⠽",
+        "\\Omega":   _CAP_GREEK + "⠺",
         # 선적분 (수학 제59항: )으로 적는다)
         "\\oint":    "⠾",
         # 절댓값 (수학 제21항: \ \)
@@ -806,6 +816,8 @@ def convert_latex(latex: str) -> str:
     # ∼: 수식 논리부정·관계 = ⠈⠔ (명제 제61항, 폰트 "@9"). 텍스트 물결표는 symbol_table 담당.
     # →: 화살표·조건문 = ⠒⠕ (제38·61항, 폰트 "3o").
     result = result.replace("∼", "⠈⠔").replace("→", "⠒⠕")
+    # ≠: 수식 문맥은 도서 관행 .3(_NEQ 주석 참조) — symbol_table(규정형 .33)보다 먼저 치환.
+    result = result.replace("≠", _NEQ)
     result = result.replace("∴", _THEREFORE)
     # 숫자 사이 쉼표(제41항): ⠂로 적고 **뒤 숫자에 수표를 다시 적지 않는다**(제43항).
     # 구현이 제12항 [붙임1]의 *로마자* 나열 쉼표(⠐)를 숫자에까지 적용하던 규정 위반 정정
@@ -992,6 +1004,21 @@ def latex_rule_ids(latex: str) -> list[str]:
     return out
 
 
+def _wrap_ins(inner_braille: str) -> str:
+    """점역자 삽입 묶음을 씌운다 — 묶을지 판정(_needs_wrap)이 끝난 내용에만 호출.
+
+    도서 관행(F1, 2026-07-20 실측): 묶을 내용에 소괄호 점형(⠦·⠴)이 있으면 묶음을
+    중괄호꼴 동형 ⠶…⠶로 승격한다 — ⠦⠴ 묶음이 내용의 실제 괄호와 겹쳐 읽히는 것을
+    피하는 표기. gold 수학2: 분수 인접 ⠶⠌·⠌⠶ 146회·⠴⠶ 145회 vs 동형 겹침 ⠦⠦ 2회.
+    예: \\frac{g(x)+1}{x+2} → 분자 ⠶⠛⠦⠭⠴⠢⠼⠁⠶ · 분모 ⠦⠭⠢⠼⠃⠴ (수학2 p094).
+    ⚠ 리터럴 중첩 괄호 f(g(x))는 이 함수와 무관 — gold도 ⠦⠦…⠴⠴ 그대로 겹친다
+    (수학2 p056·p091 ⠋⠦⠛⠦⠭⠴⠴ 실측). regulation 모드는 항상 규정 원형 ⠷…⠾(제6항 2호).
+    """
+    if _IS_BOOK_STYLE and ("⠦" in inner_braille or "⠴" in inner_braille):
+        return f"⠶{inner_braille}⠶"
+    return f"{_WRAP_S}{inner_braille}{_WRAP_E}"
+
+
 def _needs_wrap(expr: str) -> bool:
     """점역자 삽입 묶음 괄호 필요 판정 (수학 제7항 3호·제18항 붙임·제22항 붙임2).
 
@@ -1084,8 +1111,8 @@ def _apply_fracs(latex: str) -> str:
                 den_raw, after_den = _extract_brace_content(latex, after_num)
                 num = convert_latex(num_raw)
                 den = convert_latex(den_raw)
-                den_wrapped = f"{_WRAP_S}{den}{_WRAP_E}" if _needs_wrap(den_raw) else den
-                num_wrapped = f"{_WRAP_S}{num}{_WRAP_E}" if _needs_wrap(num_raw) else num
+                den_wrapped = _wrap_ins(den) if _needs_wrap(den_raw) else den
+                num_wrapped = _wrap_ins(num) if _needs_wrap(num_raw) else num
                 result.append(f"{den_wrapped}{_FRACTION_MID}{num_wrapped}")
                 i = after_den
                 continue

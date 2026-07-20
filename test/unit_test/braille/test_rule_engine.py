@@ -172,7 +172,10 @@ class TestMathOperators:
         assert "⠲⠲" in convert_latex("x \\geq 5")        # ≥ ⠲⠲(폰트 44)
 
     def test_neq(self) -> None:
-        assert "⠨⠒⠒" in convert_latex("x \\neq y")       # ≠ ⠨⠒⠒(폰트 .33)
+        # ≠ 규정(수학 제4항 1호)은 .33(⠨⠒⠒)이나 도서 관행은 .3(⠨⠒) —
+        # gold 수학2 .3 91회 vs .33 0회(2026-07-20 실측, F4). book 모드 기본.
+        assert "⠨⠒" in convert_latex("x \\neq y")
+        assert "⠨⠒⠒" not in convert_latex("x \\neq y")
 
     def test_times(self) -> None:
         assert "⠡" in convert_latex("3 \\times 4")       # × ⠡(폰트 *)
