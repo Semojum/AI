@@ -285,6 +285,59 @@ def _render_rowwise(rows: list[list[str]], orig_len: list[int]) -> list[str]:
     return lines or [""]
 
 
+def _should_transpose(rows: list[list[str]], n_cols: int) -> bool:
+    """§3.1.1(2) 발동 여부 — 행↔열을 바꿔 가로로 풀어 적을 표인가.
+
+    지침: "원본 자료에서 열 항목을 세로 방향으로 읽어야 하고, 이를 원본 형태대로 점역할 수
+    없다면 행과 열 제목의 배열을 바꾸어 가로 방향으로 풀어 적는다." 즉 세로로 긴 축을 행으로
+    돌려 한 줄이 32칸에 들어가게 만드는 조작이다.
+
+    조건 = **열 수 > 행 수**(넓은 표). 단 호출부가 §3.1.1①(원본 정렬 유지)을 먼저 보므로
+    실효 규칙은 "원본이 행 단위로 안 들어가고 + 열 수 > 행 수"다. gold 실측으로 확정했다 —
+    dev+val 표 396요소 중 방향이 확증되는 119요소(정답 도서가 표를 실었고 셀 인접이 한
+    방향으로 잡히는 것)에 라벨을 붙여 후보 규칙을 검정한 결과:
+        ①먼저 → C > R        정확 87.4%  (적중 24 / 오발동 5 / 미발동 10)  ← 채택
+        C > R (①무시)        정확 88.2%  — 수치는 비슷하나 생물 p122를 깨서 기각
+        ①먼저 → C>R and T폭<폭  정확 86.6%
+        T폭 < 폭              정확 84.9%
+        not _rowwise_ok and 전치 후 ok  정확 73.1%  (발동 3건뿐 — 너무 좁다)
+    "전치 안 함" 고정이 71.4%이므로 +16.0p. 대표 근거는 생물 p119(3×6 → 6×3):
+    gold가 열 인접쌍 123/123(100%)으로 전치본을 적었고, 원본 행 폭 52칸(>32)이 전치 후
+    28칸(≤32)으로 줄어 §3.1.1(1)①을 만족한다.
+
+    ⚠ "전치 후 행이 더 좁아질 때만"이라는 추가 가드는 검정 후 **기각**했다. 목적론적으로는
+    그럴듯하지만(전치는 행을 줄 안에 넣으려고 하는 것) 실측은 반대였다 — 전 코퍼스 재점역
+    A/B로 10페이지가 움직였는데, 사회문화 p100의 병리(+1372셀)를 없애는 대신 정당한 전치
+    9건(사회문화 p125 -504, 생물 p006 -129, 세계사 p190 -96 … 합 -1085셀)을 막아서
+    dev가 순악화(+90)했다. gold는 T폭이 원본보다 넓어도 전치하는 표가 많다.
+
+    ⚠ 점역자 주는 붙이지 않는다. 지침 §3.1.1(2)는 "변경한 내용은 점역자 주로 알린다"고
+    하지만 정답 도서는 전치한 46페이지 전수에서 전치 점역자 주를 **한 번도** 적지 않았다
+    (0/46 실측). 프로젝트 규칙 "도서 관행이 규정과 다르면 관행 우선"에 따라 관행을 따른다.
+    (점역사가 명시적으로 고르는 option 3 'transposed' 초안은 종전대로 주를 동반한다.)
+    """
+    return n_cols > len(rows)
+
+
+def _transpose_rows(
+    rows: list[list[str]], orig_len: list[int]
+) -> tuple[list[list[str]], list[int], int]:
+    """행↔열 교환. 폭 맞춤(패딩)으로 채운 자리는 '실제 칸'에서 빼고 돌린다.
+
+    패딩을 실제 칸으로 착각한 채 전치하면 없던 빈 셀 ⠿⠿가 생긴다(BBPG-3.1.2(4)는
+    '내용이 없는 빈칸'에만 쓴다). 전치 후 각 행의 꼬리 패딩만 잘라낸다.
+    """
+    real = [[j < orig_len[i] for j in range(len(rows[i]))] for i in range(len(rows))]
+    t_rows = [list(col) for col in zip(*rows)]
+    t_len = []
+    for col in zip(*real):
+        n = len(col)
+        while n > 0 and not col[n - 1]:
+            n -= 1
+        t_len.append(n)
+    return t_rows, t_len, (len(t_rows[0]) if t_rows else 0)
+
+
 def _render_unfold(corrected_text: str) -> list[str]:
     """표 → 풀어쓰기 (BBPG-3.1.2). 셀 길이에 따라 행 단위 / 열 단위로 갈린다(§3.1.1(1)).
 
@@ -308,8 +361,17 @@ def _render_unfold(corrected_text: str) -> list[str]:
     if len(rows) < 2 or n_cols < 2:              # 전개할 축이 없음 → 값 나열
         return [f"  {_translate('  '.join(c for c in r if c))}" for r in rows] or [""]
 
-    if _rowwise_ok(rows):                        # §3.1.1(1)② 낱말 수준·좁은 표 → 행 단위
+    # §3.1.1은 순서가 있는 판정이다 — ①"한 행을 32칸 안에 배열할 수 있다면 표의 정렬
+    # 형태대로" 가 먼저고, (2)전치는 "원본 형태대로 점역할 수 **없다면**" 쓰는 뒷수단이다.
+    # 이 순서를 뒤집어 전치를 먼저 보면 원본대로 잘 적히던 표까지 돌아간다(생물 p122 실측:
+    # 3×4라 C>R이 참이지만 gold는 원본 정렬 그대로 — 행 인접 79/79).
+    if _rowwise_ok(rows):                        # §3.1.1(1)① 원본 정렬 유지 → 행 단위
         return _render_rowwise(rows, orig_len)
+
+    if _should_transpose(rows, n_cols):          # §3.1.1(2) 넓은 표 → 행↔열 교환
+        rows, orig_len, n_cols = _transpose_rows(rows, orig_len)
+        if _rowwise_ok(rows):                    # 전치 후 한 행이 들어가면 행 단위
+            return _render_rowwise(rows, orig_len)
     # 열 단위 전개의 구분자: 낱말 수준이면 두 칸, 문장 수준이면 쌍점(정답 도서 실측).
     sep = "⠀⠀" if _word_level(rows) else _COLON
 

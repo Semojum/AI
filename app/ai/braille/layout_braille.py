@@ -224,16 +224,30 @@ def _center(text: str, width: int = _COLS) -> str:
 
 
 def _break_line(
-    line: str, width: int = _COLS, first_width: Optional[int] = None
+    line: str, width: int = _COLS, first_width: Optional[int] = None,
+    keep_indent: bool = False,
 ) -> tuple[list[str], int, list[int]]:
     """한 줄을 width(32) 셀 이하로 분리. 단어 경계 우선, 초과 단어는 하이픈 없이 강제 분리.
 
     first_width: 첫 출력 줄에 허용할 폭(들여쓰기 칸 예약용). None이면 width.
+    keep_indent: 줄머리 빈칸을 첫 출력 줄에 보존한다(기본 False = 종전 동작).
     반환: (분리된 줄 목록, 강제분리 횟수, 줄바꿈이 삽입된 원본 char 오프셋 목록).
     """
     fw = width if first_width is None else first_width
     if _cell_count(line) <= fw:
         return ([line], 0, [])
+    if keep_indent:
+        # 어절 정규식이 `[^ ⠀]+`라 줄머리 빈칸은 어느 어절에도 안 들어가고 그대로 버려진다.
+        # 안 접히는 줄은 위 조기반환으로 들여쓰기를 지키는데 접히는 줄만 잃어서, 같은 표
+        # 안에서 들여쓰기가 들쭉날쭉해졌다. 들여쓰기를 떼어 재귀 호출하고 첫 줄에 되붙인다.
+        body = line.lstrip(" ⠀")
+        lead = line[: len(line) - len(body)]
+        if lead:
+            out, forced, wraps = _break_line(
+                body, width=width, first_width=max(1, fw - _cell_count(lead)))
+            if out:
+                out[0] = lead + out[0]
+            return (out, forced, [w + len(lead) for w in wraps])
     words = [(m.group(), m.start(), m.end()) for m in _WORD_RE.finditer(line)]
     if not words:  # 공백뿐인 줄
         return ([line], 0, [])
@@ -284,18 +298,22 @@ def _safe_forced_cut(line: str, limit: int) -> int:
 
 
 def _wrap_line(
-    line: str, breaks: list[int], width: int = _COLS, first_width: Optional[int] = None
+    line: str, breaks: list[int], width: int = _COLS, first_width: Optional[int] = None,
+    keep_indent: bool = False,
 ) -> tuple[list[str], int]:
     """break offset(음절·어절 경계)에서만 width 이하로 줄바꿈. (분리 줄, 강제분리 수).
 
     breaks가 비면 어절(공백) 단위 `_break_line`으로 폴백(안전 — 단위 내부 미분리).
     한 단위가 width 초과면 §1.2.1(2)대로 셀 경계 강제 분리(지시부호 보호).
+    keep_indent는 그 폴백 경로에만 의미가 있다 — breaks가 있는 주 경로는 `line[start:b]`
+    슬라이스라 첫 조각이 줄머리 빈칸을 이미 그대로 물고 간다.
     """
     fw = width if first_width is None else first_width
     if _cell_count(line) <= fw:
         return [line], 0
     if not breaks:
-        out, forced, _ = _break_line(line, width=width, first_width=first_width)
+        out, forced, _ = _break_line(line, width=width, first_width=first_width,
+                                     keep_indent=keep_indent)
         return out, forced
 
     cand = sorted(b for b in set(breaks) if 0 < b < len(line))
@@ -478,11 +496,17 @@ class LayoutBraille:
         out: list[str] = []
         line_slices: list[tuple[int, int]] = []  # orig 줄 → out 줄 범위 [start, end)
         forced_total = 0
+        # 표는 들여쓰기를 줄 문자열에 직접 박아 낸다(3칸 = 앞 빈칸 2, §3.1.1(1)②; 제목은
+        # 5칸 §3.1.3(1)). 다른 타입은 _first_indent/line_indents로 layout이 들여쓰기를
+        # 소유하므로 문자열 줄머리가 비어 있다 — 그래서 이 보존은 표 경로에만 건다.
+        # 정답 도서 실측(생물 p122): 접힌 표 줄은 첫 줄 2칸·이어지는 줄 0칸이다.
+        keep_indent = etype == "table"
         for li, orig in enumerate(orig_lines):
             indent = per_line[li] if per_line is not None else (first_indent if li == 0 else 0)
             fw = (_COLS - indent) if indent else None
             br = bo.break_points[li] if li < len(bo.break_points) else []
-            broken, forced = _wrap_line(orig, br, _COLS, first_width=fw)
+            broken, forced = _wrap_line(orig, br, _COLS, first_width=fw,
+                                        keep_indent=keep_indent)
             if indent and broken:               # 표시용 들여쓰기
                 broken[0] = " " * indent + broken[0]
             if is_heading and hlevel == 1:       # 1단계 제목 가운데 정렬
