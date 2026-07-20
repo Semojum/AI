@@ -189,6 +189,14 @@ def _header_extent(rows: list[list[str]]) -> tuple[int, int]:
 
     수능특강 표는 대분류/소분류 2단 머리(성별×나이수급분류 등)가 흔하다. 1단으로 가정하면
     대분류가 데이터처럼 섞여 정답과 어긋난다.
+
+    ★ 숫자는 '데이터 영역이 여기서 시작한다'는 **양성 신호**일 뿐이다. 신호가 없다고
+      해서 표 전체가 머리인 것은 아니다 — 2026-07-20 이전 구현은 숫자가 하나도 없는
+      축에서 루프가 break되지 않아 h=n_rows-1 · k=n_cols-1까지 번졌고, 그 결과
+      `_render_unfold`가 **마지막 행·열만 데이터로 취급**해 나머지 칸을 통째로 버렸다
+      (생물 p122: 3x4 표에서 h=2·k=3 → 12칸 중 8칸 유실, 머리행·데이터행이
+      '동공 B 억제'처럼 한 줄에 뒤섞임). 순수 텍스트 표는 이 코퍼스에서 흔하므로
+      전체 표의 57%가 이 상태였다. 신호가 없는 축은 머리 1단으로 되돌린다.
     """
     def is_num(s: str) -> bool:
         return bool(s.strip()) and bool(_NUMERIC_CELL_RE.match(s))
@@ -199,6 +207,8 @@ def _header_extent(rows: list[list[str]]) -> tuple[int, int]:
         if any(is_num(c) for c in r[1:]):
             break
         h += 1
+    else:
+        h = 1          # 숫자 신호 없음 → 머리 1행(기본). 전체를 머리로 삼지 않는다.
     h = max(1, min(h, n_rows - 1))
 
     body = rows[h:]
@@ -207,12 +217,76 @@ def _header_extent(rows: list[list[str]]) -> tuple[int, int]:
         if any(is_num(r[j]) for r in body):
             break
         k += 1
+    else:
+        k = 1          # 숫자 신호 없음 → 머리 1열(기본).
+    # k==0(첫 열부터 숫자)은 그대로 둔다 — 행 머리 없이 전 열을 데이터로 펴며 칸 유실이 없다.
     k = min(k, n_cols - 1)
     return h, k
 
 
+_WORD_CELL_MAX = 14      # 셀이 '낱말 수준'인지 '문장 수준'인지 가르는 점자 길이
+_ROWWISE_MAX_WIDTH = 40  # 한 행을 통째로 한 줄에 적을 때 허용 폭(§3.1.1(1)① 32칸 + 한 번 접힘)
+_COLON = "⠐⠂⠀"          # 쌍점 + 한 칸 (정답 도서 실측: 사회문화 p087 '의미⠐⠂⠀하층의…')
+
+
+def _word_level(rows: list[list[str]]) -> bool:
+    """셀이 낱말 수준인가(↔ 여러 단어·문장).
+
+    지침 §3.1.1(1)②는 '열 항목을 두 칸씩 띄어 풀어 적는다', ③은 '열 항목이 여러 단어와
+    문장으로 되어 있어 가로로 풀어 적을 경우 표를 이해하기 어렵다면' 다른 방식으로 적으라
+    한다. 즉 갈림길은 셀이 낱말 수준인가다.
+
+    정답 도서 실측도 같다 — 낱말 수준 표(생물 p119·p122, 사회문화 p185)는 열 항목을
+    **두 칸** 띄어 적고, 문장 수준 표(사회문화 p087·p174)는 **쌍점**으로 잇는다.
+    """
+    return all(len(_translate(c)) <= _WORD_CELL_MAX for r in rows for c in r if c.strip())
+
+
+def _row_width(rows: list[list[str]]) -> int:
+    """행을 통째로(두 칸 구분) 한 줄에 적었을 때의 최대 점자 폭."""
+    widths = []
+    for r in rows:
+        cs = [_translate(c) for c in r if c.strip()]
+        widths.append(sum(len(c) for c in cs) + 2 * max(0, len(cs) - 1))
+    return max(widths) if widths else 0
+
+
+def _rowwise_ok(rows: list[list[str]]) -> bool:
+    """행 단위(가로) 전개가 가능한 표인가 — 낱말 수준 + 한 행이 좁을 것.
+
+    §3.1.1(1)①은 '표의 한 행을 32칸 안에 배열할 수 있다면' 원본 정렬대로 적으라 한다.
+    정답 도서는 조금 넘쳐 한 번 접히는 정도(생물 p122, 37칸)까지 행 단위로 적고, 크게
+    넘치는 넓은 표(사회문화 p185, 8열 ~90칸)는 열 단위로 돌린다.
+    """
+    return _word_level(rows) and _row_width(rows) <= _ROWWISE_MAX_WIDTH
+
+
+def _render_rowwise(rows: list[list[str]], orig_len: list[int]) -> list[str]:
+    """행 단위 전개 — 원본 한 행을 한 줄에, 열 항목을 두 칸씩 띄어 3칸에서 적는다.
+
+    정답 도서 실측(생물 p122 표12):
+        ⠀⠀자율 신경⠀⠀침 분비⠀⠀폐의 기관지⠀⠀동공     ← 32칸에서 layout이 접는다
+        ⠀⠀A⠀⠀촉진⠀⠀수축⠀⠀축소
+        ⠀⠀B⠀⠀억제⠀⠀이완⠀⠀확대
+    (생물 p119도 같은 형식. 열 단위 전개와 달리 모서리·행 머리를 되풀이하지 않아
+     원본 칸 수만큼만 찍힌다 — 과잉생산이 없다.)
+
+    orig_len = 폭 맞춤(패딩) 전 각 행의 실제 칸 수. 원본에 있던 빈 칸은 ⠿⠿로 남기고
+    (BBPG-3.1.2(4)), 짧은 행을 늘리려고 붙인 패딩만 버린다 — 둘을 구분하지 않으면
+    진짜 빈 칸이 사라지거나 없던 ⠿⠿가 생긴다.
+    """
+    lines: list[str] = []
+    for r, n in zip(rows, orig_len):
+        cells = r[:n]
+        if not any(c.strip() for c in cells):
+            continue
+        lines.append("  " + "⠀⠀".join(_translate(c) if c.strip() else _EMPTY_CELL
+                                      for c in cells))
+    return lines or [""]
+
+
 def _render_unfold(corrected_text: str) -> list[str]:
-    """표 → 풀어쓰기 (BBPG-3.1.2). 정답 도서 관행 = **열 단위 전개**.
+    """표 → 풀어쓰기 (BBPG-3.1.2). 셀 길이에 따라 행 단위 / 열 단위로 갈린다(§3.1.1(1)).
 
     정답 도서(수능특강 점역본) 관찰:
         수급 분류  60—64세      ← 모서리 라벨 + 열 머리
@@ -228,16 +302,31 @@ def _render_unfold(corrected_text: str) -> list[str]:
     if not rows:
         return [""]
     n_cols = max(len(r) for r in rows)
+    orig_len = [len(r) for r in rows]            # 패딩 전 실제 칸 수(빈 칸 ⠿⠿ 판정용)
     rows = [r + [""] * (n_cols - len(r)) for r in rows]
 
     if len(rows) < 2 or n_cols < 2:              # 전개할 축이 없음 → 값 나열
         return [f"  {_translate('  '.join(c for c in r if c))}" for r in rows] or [""]
 
+    if _rowwise_ok(rows):                        # §3.1.1(1)② 낱말 수준·좁은 표 → 행 단위
+        return _render_rowwise(rows, orig_len)
+    # 열 단위 전개의 구분자: 낱말 수준이면 두 칸, 문장 수준이면 쌍점(정답 도서 실측).
+    sep = "⠀⠀" if _word_level(rows) else _COLON
+
     n_head_rows, n_head_cols = _header_extent(rows)
     body = rows[n_head_rows:]
     col_names = rows[n_head_rows - 1]
     # 모서리 라벨: 행 머리 축의 이름(예: "수급 분류") — 각 열 머리 줄 앞에 붙는다.
-    corner = col_names[n_head_cols - 1] if n_head_cols else ""
+    # 머리가 2단 이상이면 모서리 블록(머리 행 × 머리 열)의 이름을 순서대로 모두 잇는다.
+    # 옛 구현은 col_names[n_head_cols-1] 한 칸만 썼기 때문에 나머지 모서리 칸("구분",
+    # "혈액 성분" 등)이 출력 어디에도 실리지 않고 사라졌다.
+    corner_cells: list[str] = []
+    for hi in range(n_head_rows):
+        for c in rows[hi][:n_head_cols]:
+            c = c.strip()
+            if c and c not in corner_cells:
+                corner_cells.append(c)
+    corner = " ".join(corner_cells)
     corner_br = _translate(corner) if corner else ""
 
     def _cell(v: str) -> str:                    # 빈 셀 = ⠿⠿ (BBPG-3.1.2(4))
@@ -266,19 +355,21 @@ def _render_unfold(corrected_text: str) -> list[str]:
             if section and section != prev_section:
                 lines.append(f"  {_translate(section)}")
                 prev_section = section
-            # 열 머리 줄: 모서리 라벨 + 열 이름 (빈 셀은 ⠿⠿로 남긴다 — 원본에 칸이 있었다는 신호)
-            head_br = (f"{corner_br}  " if corner_br else "") + _cell(col_names[j])
-            lines.append(f"  {head_br}")
+            # 열 머리 줄 = 구간 머리. 정답 도서 실측(사회문화 p087·p174)은 5칸(빈칸 4)에
+            # 적고, 그 아래 딸린 줄은 3칸에서 '행 머리{쌍점}{한 칸}값'으로 적는다.
+            # 쌍점 ⠐⠂ + 한 칸은 gold 원문과 셀 단위로 일치(p087 3행 ⠺⠑⠕⠐⠂⠀…).
+            head_br = (f"{corner_br}{sep}" if corner_br else "") + _cell(col_names[j])
+            lines.append(f"    {head_br}")
             for r in rows_in:
                 row_head = r[n_head_cols - 1] if n_head_cols else ""
-                row_br = f"{_translate(row_head)}  " if row_head else ""
+                row_br = f"{_translate(row_head)}{sep}" if row_head else ""
                 entry = f"  {row_br}{_cell(r[j])}"
                 if len(entry) <= _COLS or not row_br:
                     lines.append(entry)
                 else:
-                    # 정답 관행(세계사 p009 실측): 값이 32칸을 넘치면 행 머리를 단독
-                    # 줄로 세우고 값을 다음 줄부터 — 머리+값을 한 줄에 이어붙이지 않는다.
-                    lines.append(f"  {row_br.rstrip()}")
+                    # 정답 관행(세계사 p009·사회문화 p174 실측): 값이 32칸을 넘치면 행 머리를
+                    # 단독 줄로 세우고(이때는 쌍점 없이) 값을 다음 줄부터 적는다.
+                    lines.append(f"  {_translate(row_head)}")
                     lines.append(f"  {_cell(r[j])}")
     return lines or [""]
 

@@ -234,7 +234,7 @@ def _break_line(
     fw = width if first_width is None else first_width
     if _cell_count(line) <= fw:
         return ([line], 0, [])
-    words = [(m.group(), m.start()) for m in _WORD_RE.finditer(line)]
+    words = [(m.group(), m.start(), m.end()) for m in _WORD_RE.finditer(line)]
     if not words:  # 공백뿐인 줄
         return ([line], 0, [])
 
@@ -242,9 +242,16 @@ def _break_line(
     wraps: list[int] = []
     forced = 0
     cur = ""
-    for word, start in words:
+    prev_end = -1
+    for word, start, end in words:
         cap = fw if not out else width        # 첫 줄만 first_width 적용
-        candidate = word if not cur else f"{cur} {word}"
+        # 어절 사이 간격은 **원본 그대로** 유지한다. 늘 한 칸으로 이어붙이면 표의
+        # '열 항목을 두 칸씩 띄어'(지침 §3.1.1(1)②)가 32칸을 넘겨 접히는 순간 한 칸으로
+        # 뭉개져 셀 경계가 사라진다(생물 p122 표 첫 줄 실측). 보통 텍스트는 간격이
+        # 한 칸이라 동작이 바뀌지 않는다.
+        gap = line[prev_end:start] if prev_end >= 0 else " "
+        prev_end = end
+        candidate = word if not cur else f"{cur}{gap}{word}"
         if _cell_count(candidate) <= cap:
             cur = candidate
             continue

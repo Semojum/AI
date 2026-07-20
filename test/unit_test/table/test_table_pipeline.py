@@ -69,13 +69,19 @@ def _grits(extracted: ExtractedContent, output: BrailleOutput, render_mode: str)
         checks.append(len(indented) == max_row)              # 행 수 정확히 일치
         checks.append(len(output.braille_lines) == max_row)  # 총 줄 수 일치
     elif render_mode == "unfold":
-        # 풀어쓰기(BBPG-3.1.2) — 정답 도서 관행 = 열 단위 전개:
-        #   열마다 "열 머리" 한 줄 + 그 아래 "행 머리  값" 줄들.
-        #   → 줄 수 = (데이터 열 수) × (열 머리 1줄 + 데이터 행 수)
-        #     = (max_col - 1) × max_row   (병합 열 머리 없는 표 기준)
+        # 풀어쓰기(BBPG-3.1.2)는 지침 §3.1.1(1)에 따라 **두 조판**이 다 정답이다
+        # (2026-07-20 정정 — 정답 도서 실측으로 확인):
+        #   ② 낱말 수준·좁은 표 → 행 단위: 원본 한 행이 한 줄  → 줄 수 = max_row
+        #      (생물 p122 '자율 신경  침 분비  폐의 기관지  동공' / p119 동일 형식)
+        #   ③ 문장 수준·넓은 표 → 열 단위: 열머리 1줄 + 데이터 행들
+        #      → 줄 수 = (max_col - 1) × max_row   (사회문화 p185)
+        # 예전에는 열 단위 줄 수만 정답으로 봤는데, 그 가정이 렌더러를 열 단위로 묶어
+        # 두는 근거로 쓰였다. 조판이 둘 중 무엇이든 **모든 원본 셀이 실려야** 한다는 게
+        # 진짜 불변량이므로 그것도 함께 본다.
         max_col = max(c.get("col", 0) for c in cells) + 1
         nonblank = [ln for ln in output.braille_lines if ln.strip()]
-        checks.append(len(output.braille_lines) == (max_col - 1) * max_row)
+        n_lines = len(output.braille_lines)
+        checks.append(n_lines in (max_row, (max_col - 1) * max_row))
         checks.append(all(ln.startswith("  ") for ln in nonblank))
     else:
         # table_grid: border(⠿×32) 2줄 + separator(⠒×32) (row-1)줄 + data row줄
