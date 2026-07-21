@@ -724,11 +724,34 @@ class LayoutBraille:
     def _partition(
         self, braille_outputs: list[BrailleOutput], meta: dict
     ) -> tuple[list[BrailleOutput], list[BrailleOutput]]:
-        """본문 요소와 페이지행 요소(header_footer/page_number) 분리."""
+        """본문 요소와 페이지행 요소(header_footer/page_number) 분리.
+
+        페이지행은 슬롯이 셋뿐이다 — 원본 페이지 번호(좌)·꼬리말(가운데)·점자 페이지
+        번호(우) (BBPG 1장2절1). 즉 header_footer·page_number 타입에서 **각각 한 요소만**
+        페이지행에 쓰이는데, 종전에는 타입이 같다는 이유로 나머지 요소까지 전부 이 통에
+        담겨 **본문에도 페이지행에도 찍히지 않고 사라졌다.**
+
+        실측(2026-07-21 dev+val 1,131p): 페이지행 타입이 2개 이상인 페이지가
+        val 495/951·dev 97/180. 버려진 요소 val 517·dev 98 중 정답 도서에 실재하는 것이
+        val 340·dev 68이다. 이 타입이 러닝헤더라는 보장이 없다 — 실제 인쇄 러닝풋은
+        pipeline._is_running_foot가 이미 위에서 걸러 내고, 여기까지 오는 것은
+        **강 도입부 본문**인 경우가 많다(세계사 p054: header_footer 10개가 강 번호·강
+        제목·대단원·핵심 주제 목록이고, 정답 도서는 이를 ⠔⠔ 접두 목록으로 본문에 싣는다).
+
+        그래서 페이지행에는 타입별 첫 비어있지 않은 요소만 남기고(_first_nonempty가
+        고르던 바로 그 요소 — 꼬리말·원본 페이지 번호는 불변) 나머지는 본문으로 되돌린다.
+        되돌린 요소는 _format_element를 타므로 32칸 조판도 정상 적용된다.
+        """
         body, page_line = [], []
+        taken: set[str] = set()
         for bo in braille_outputs:
             etype = meta.get(bo.element_id, _DEFAULT_META)[0]
-            (page_line if etype in _PAGE_LINE_TYPES else body).append(bo)
+            if (etype in _PAGE_LINE_TYPES and etype not in taken
+                    and any(ln.strip() for ln in bo.braille_lines)):
+                taken.add(etype)
+                page_line.append(bo)
+            else:
+                body.append(bo)
         return body, page_line
 
     def _first_nonempty(self, page_line_items: list[BrailleOutput], meta: dict, want: str) -> str:
