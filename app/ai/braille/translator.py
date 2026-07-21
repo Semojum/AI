@@ -1108,3 +1108,7 @@ def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
 from app.ai.braille import kor_math_rules as _kor_math_rules  # noqa: E402
 
 _kor_math_rules.register_text_hook(translate_tagged_text)
+# 잔류 정화용 비재귀 훅 — _braillify는 수식 라우팅을 타지 않아 convert_latex로 되돌아오지
+# 않는다(잔류 조각 '_'·'.'을 translate_tagged_text로 넘기면 inline_math.wrap이 다시
+# 수식으로 감싸 무한 재귀가 된다).
+_kor_math_rules.w2c_register_plain_hook(_braillify)

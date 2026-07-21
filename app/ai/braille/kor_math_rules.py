@@ -258,6 +258,11 @@ _BRACE_IN_SP_RE = re.compile(r"\{\s+")                      # { x → {x
 _BRACE_OUT_SP_RE = re.compile(r"\s+\}")                     # x } → x}
 # \left( \right) 류 — 구분자만 남기고 \left·\right 제거(단, \left| … \right| 절댓값은 보존)
 _LEFTRIGHT_RE = re.compile(r"\\(?:left|right)\s*(?=[()\[\].])")
+# LaTeX 널 구분자 `\left.` / `\right.` — 점(.)은 "구분자 없음"을 뜻하는 **문법**이지 문자가
+# 아니다. _LEFTRIGHT_RE는 명령만 지우고 점을 남겨, 최종 점자에 ASCII '.'이 그대로 실렸다
+# (연립식 `\left\{…\right.` 형태, 코퍼스 잔류 '.' 55건 중 최다). 명령과 점을 함께 지운다.
+# ⚠ _LEFTRIGHT_RE보다 **먼저** 돌아야 한다 — 뒤에 두면 점만 남아 매칭이 안 된다.
+_W2C_NULL_DELIM_RE = re.compile(r"\\(?:left|right)\s*\.")
 # 간격 명령(\quad \, \; \! \:) → 공백
 _SPACING_CMD_RE = re.compile(r"\\(?:quad|qquad|[,;:!])")
 # 서식 래퍼: \boxed{…}·\mathrm{…} 등 → 내용만 남김(수식 식별자 보존). \text는 별도(P2 한글 점역).
@@ -295,6 +300,17 @@ _SYS_ENV_RE = re.compile(
 # \text{한글} 점역용 훅(translator가 런타임 주입 — 순환 import 회피).
 _text_hook = None
 
+# 잔류 정화용 **평문** 훅(translator._braillify 주입). _text_hook(=translate_tagged_text)은
+# 수식 라우팅(inline_math.wrap)을 다시 타므로 잔류 한 조각을 넘기면 convert_latex로
+# 되돌아와 무한 재귀가 된다. 이 훅은 braillify만 부르는 비재귀 경로다.
+_w2c_plain_hook = None
+
+
+def w2c_register_plain_hook(fn) -> None:
+    """비재귀 평문 점역 훅 주입(잔류 정화 전용). translator가 로드 시 호출."""
+    global _w2c_plain_hook
+    _w2c_plain_hook = fn
+
 
 def register_text_hook(fn) -> None:
     r"""\text{…} 내부 자연어(한글·영문)를 점자로 바꾸는 함수를 주입한다(translator가 호출).
@@ -310,6 +326,12 @@ def register_text_hook(fn) -> None:
 # 안 잡으면 날문자가 점자 문자열에 섞여 나간다(2026-07-17 dev 수식 실패 92건 중 45건의 원인).
 # 다단어("시간당 일의 양")를 한 sentinel로 묶어야 훅이 한글 어절 공백을 옳게 점역한다.
 _BARE_KOR_RE = re.compile(r"[가-힣ㄱ-ㅎㅏ-ㅣ]+(?: [가-힣ㄱ-ㅎㅏ-ㅣ]+)*")
+# 보기 항목 머리의 낱자 + 마침표("ㄱ. f(x)=x[x]"). _BARE_KOR_RE는 낱자만 떼어가고 점을
+# 남겨 최종 점자에 ASCII '.'이 실렸다. 텍스트 경로는 translator._JAMO_MARK_RE가 이미
+# 같은 형태를 처리하므로 **점까지 묶어** 훅에 넘겨 같은 결과를 얻는다.
+# 정답 실측: 수학2 p063·p064·p070 gold가 "ㄱ."을 ⠿⠁ + 빈칸으로 적고 마침표 셀을 안 쓴다
+# (같은 페이지 선택지 줄의 쉼표는 ⠐로 또렷이 구분됨 — '⠼⠲ ⠿⠁⠐ ⠿⠒' = "④ ㄱ, ㄴ").
+_W2C_JAMO_ITEM_RE = re.compile(r"(?<![가-힣A-Za-z0-9])([ㄱ-ㅎ])\s*\.(?=\s|$)")
 
 
 def _protect_text(latex: str) -> tuple[str, list[str]]:
@@ -336,13 +358,18 @@ def _protect_text(latex: str) -> tuple[str, list[str]]:
     while prev != latex:
         prev = latex
         latex = _TEXT_CMD_RE.sub(lambda m: _stash(m.group(1)), latex)
+    latex = _W2C_JAMO_ITEM_RE.sub(lambda m: _stash(m.group(0)), latex)  # "ㄱ." 통째로
     latex = _BARE_KOR_RE.sub(lambda m: _stash(m.group(0)), latex)
     return latex, store
 
 
 def _restore_text(result: str, store: list[str]) -> str:
-    for i, val in enumerate(store):
-        result = result.replace(chr(0xE000 + i), val)
+    # ★ 내림차순 — 중첩 \text(`\text{|\(\text{旦}\text{로}\)}`)는 안쪽이 먼저 stash돼
+    #   **바깥 저장값이 안쪽 sentinel을 품는다**. 오름차순으로 되돌리면 안쪽 인덱스를
+    #   이미 지나친 뒤에 그 sentinel이 삽입돼 U+E001 등이 최종 점자에 그대로 실렸다
+    #   (수학2 p053 실측). 내림차순이면 품은 sentinel이 삽입된 뒤 차례가 온다.
+    for i in range(len(store) - 1, -1, -1):
+        result = result.replace(chr(0xE000 + i), store[i])
     return result
 
 # MinerU가 자주 내는 명령 별칭 → 유니코드(이후 substitute_symbols 또는 수식 문맥 분기가 점자화)
@@ -527,6 +554,7 @@ def _normalize_latex_input(latex: str) -> str:
     while prev != s:
         prev = s
         s = _TEXT_WRAP_RE.sub(r"\1", s)
+    s = _W2C_NULL_DELIM_RE.sub("", s)   # \left. \right. — 널 구분자는 점까지 제거
     s = _LEFTRIGHT_RE.sub("", s)
     # 공백 축약(명령/첨자/중괄호 주변) — 정규식이 토큰을 인식하도록
     s = _CMD_BRACE_SP_RE.sub(r"\1", s)
@@ -553,6 +581,37 @@ def _normalize_latex_input(latex: str) -> str:
 # 뺄셈·덧셈이 아니므로 제외(lookbehind).
 _TIGHT_OPS_RE = re.compile(
     r"(\S)[ ⠀]*((?<![⠈⠸])⠒⠒|(?<![⠈⠸])⠢|(?<![⠈⠸])⠔|×|÷|<|>|≤|≥|≠|±|∓)[ ⠀]*(?=(\S))")
+
+
+# ── 비점자 잔류 정화 (2026-07-21, w2c) ──────────────────────────────────────
+# convert_latex는 처리 못 한 문자를 **원문 그대로 통과**시킨다. 그 결과 최종 점자에
+# ASCII가 섞여 나갔다(전 코퍼스 실측 55줄: '.' 47 · '_' 6 · PUA 2 · '?' 1).
+# 점역사에게는 즉시 이물질로 보이고, BRF로는 점형이 아닌 바이트가 된다.
+# 여기서 마지막으로 훑어 braillify가 아는 문자는 점자로 바꾸고, 모르는 것(미복원 PUA·
+# 제어문자)은 버린다. 정상 경로가 이미 처리한 것은 점자 셀이라 이 그물에 걸리지 않는다.
+# ⚠ 근본 원인은 개별 단계에서 고치는 게 우선이고(위 _W2C_NULL_DELIM_RE·_W2C_JAMO_ITEM_RE),
+#   이건 놓친 것을 붙잡는 안전망이다 — 여기서만 막으면 점형이 어긋난 채 통과할 수 있다.
+# ★ _protect_text의 PUA sentinel(U+E000~)은 **반드시 제외**한다. convert_latex는 분수
+#   분자·근호 안에서 자기 자신을 재귀 호출하는데, 그 하위 호출의 _text_store는 비어 있어
+#   바깥 호출의 sentinel이 복원되지 않은 채 지나간다(설계상 정상 — 바깥이 복원한다).
+#   제외하지 않으면 하위 호출의 이 그물이 sentinel을 먹어 한글이 통째로 깨진다
+#   (실측: `\frac{(거리)}{(속력)}` → ⠠⠭⠐⠱⠁·⠈⠎⠐⠕ 가 ⠰⠤·⠤⠄ 로, 수학2 p001).
+_W2C_RESIDUE_RUN_RE = re.compile(r"[^⠀-⣿\s-]+")
+
+
+def _w2c_sweep_residue(result: str) -> str:
+    """최종 점자열에 남은 비점자 문자를 점자로 치환하거나 제거한다."""
+    if _w2c_plain_hook is None:
+        return result
+
+    def _rep(m: re.Match) -> str:
+        try:
+            out = _w2c_plain_hook(m.group())
+        except Exception:  # noqa: BLE001 — 정화 실패는 제거로 수렴(빈 결과는 상위가 막음)
+            return ""
+        return "".join(ch for ch in out if "⠀" <= ch <= "⣿")
+
+    return _W2C_RESIDUE_RUN_RE.sub(_rep, result)
 
 
 def _hangul_or_sentinel(ch: str) -> bool:
@@ -1277,7 +1336,8 @@ def convert_latex(latex: str) -> str:
     result = _stage14_letters(result)               # 14. 남은 로마자
     result = _stage15_spaces(result)                # 15. 공백 → ⠀
 
-    return _restore_text(result, _text_store)       # 16. P2 한글 복원
+    result = _restore_text(result, _text_store)     # 16. P2 한글 복원
+    return _w2c_sweep_residue(result)               # 17. 비점자 잔류 정화(마지막 그물)
 
 # ── 수식 구조 → rule_id (rule_trail emit용, Phase B) ────────────────────────
 # 항→장→KBR-수학-{장}.{항}. 규정 원문 + 장 경계로 검증(환각 0). 모두 regulations.json 실재.
