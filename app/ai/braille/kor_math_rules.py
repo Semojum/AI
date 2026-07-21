@@ -195,6 +195,14 @@ _BRACKET_RANGE_RE = re.compile(
     rf"(⠠⠾)_({_BRACE1}|[A-Za-z0-9])(?:\^({_BRACE1}|[A-Za-z0-9]))?")
 # 구조 공백 sentinel: 제51·57항 범위 구분 칸이 연산 붙임(11e)에 지워지지 않게 보호
 _SP = "\x1f"
+# 다행 환경 행 구분자 sentinel(2026-07-22, w2r): array·aligned·cases의 행 전환(\\)을
+# 점자 빈칸 2개(⠀⠀)로 낸다. gold 실측 — 연립식 ⠶⠄…⠠⠶ 스팬 37개 안에서 행 전환이
+# 한 줄에 병기될 때는 전부 ⠀⠀(예: 수학2 p020 `…⠖⠖⠼⠚⠀⠀⠭⠩⠢…`)이고, 행 내부 칸은
+# 1칸이다(조건 괄호 앞 등). 규정(수학 제6항)은 행을 줄 정렬로 예시할 뿐 한 줄 병기
+# 폭은 안 정하므로 이 2칸은 도서 관행이다. ASCII 공백으로 넣으면 _MULTISPACE_RE(0a)와
+# _stage15_spaces의 다중 공백 접기가 1칸으로 뭉개므로 sentinel로 나르고 15단계 끝에서
+# 복원한다. ⚠ _w2c_sweep_residue(17단계)가 비점자 문자를 지우므로 반드시 그 전에 복원.
+_W2R_ROW_SEP = "\x1e"
 
 
 def _unbrace(s: str) -> str:
@@ -545,8 +553,13 @@ def _normalize_latex_input(latex: str) -> str:
     def _sys_repl(m: re.Match) -> str:
         # group(1)=환경명(\left\{ 갈래) · group(2)=그 본문 · group(3)=cases 본문.
         # ⚠ group 번호는 _SYS_ENV_RE에 환경명 캡처가 생기며 1칸씩 밀렸다(2026-07-21).
-        body = (m.group(2) or m.group(3) or "").replace("\\\\", " ").replace("&", " ")
-        body = " ".join(body.split())
+        # 행 전환(\\)은 _W2R_ROW_SEP로 나른다 — gold는 행 병기 시 ⠀⠀ 2칸(수학2 p020
+        # `…⠼⠚⠀⠀⠭⠩⠢…`)인데 종전 코드는 1칸으로 넣고 다중 공백 접기·연산 붙임(11e)이
+        # 그마저 지워 행이 0칸으로 붙었다(p020 실측 `⠼⠚⠭` — 0과 x가 밀착).
+        raw = m.group(2) or m.group(3) or ""
+        rows = [" ".join(r.replace("&", " ").split())
+                for r in raw.split("\\\\") if r.strip()]
+        body = f" {_W2R_ROW_SEP} ".join(rows)
         # 관행(book): 연립식 각 행의 조건 괄호는 붙임표 ⠤…⠤ (정답 p070 실측 '-x≥1-').
         # 일반 수식 괄호는 관행에서도 ⠦⠴ 그대로(p009 '40⠦x+30⠴')라 연립식 body만 바꾼다.
         # ⚠ 알려진 결함(2026-07-21 실측, 이번 라운드 미채택): 이 blanket 치환은 조건이
@@ -560,9 +573,11 @@ def _normalize_latex_input(latex: str) -> str:
         return f" {_SYS_OPEN}{body}{_SYS_CLOSE} "
 
     s = _SYS_ENV_RE.sub(_sys_repl, s)
-    # 배열 환경 평탄화: \begin{array}{l}…\end{array} 제거, 행 구분 \\·열 구분 & → 공백
+    # 배열 환경 평탄화: \begin{array}{l}…\end{array} 제거, 열 구분 & → 공백.
+    # 행 구분 \\는 행 전환 sentinel(→⠀⠀)로 — 유도 사슬(= 로 시작하는 행)·라벨 행이
+    # 1칸/0칸으로 붙는 것을 막는다(연립식 _sys_repl과 동일 취급).
     s = _ENV_RE.sub(" ", s)
-    s = s.replace("\\\\", " ").replace("&", " ")
+    s = s.replace("\\\\", f" {_W2R_ROW_SEP} ").replace("&", " ")
     # 식 번호 \tag{N} → (N)
     s = _TAG_CMD_RE.sub(r"(\1)", s)
     # 서식 래퍼(\boxed{…} 등) → 내용만. 중첩 대응으로 안정될 때까지 반복.
@@ -1258,10 +1273,14 @@ def _stage15_spaces(result: str) -> str:
     ⚠ **문맥 소실 지점 5 — 이 단계 이후 구조 칸과 입력 칸을 구별할 수 없다.**
       칸을 근거로 판단하는 규칙(11e 연산 붙임 등)은 전부 이 앞에 있어야 한다.
     """
+    # 행 구분자(\x1e) 주변 칸을 흡수해 정확히 ⠀⠀ 2칸으로 — 이웃 공백·구조 칸·기존
+    # 점자 빈칸을 함께 접어 3칸 이상으로 불어나는 것을 막는다(연속 sentinel도 1개로).
+    result = re.sub(r"[ \x1f⠀]*\x1e[ \x1f⠀\x1e]*", _W2R_ROW_SEP, result)
     result = re.sub(r" *\x1f *", _SP, result)
     result = re.sub(r" {2,}", " ", result)
     result = result.replace(" ", "⠀")
-    return result.replace(_SP, "⠀")
+    result = result.replace(_SP, "⠀")
+    return result.replace(_W2R_ROW_SEP, "⠀⠀")
 
 
 def convert_latex(latex: str) -> str:
