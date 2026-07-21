@@ -356,6 +356,66 @@ _CMD_ALIAS = {
     r"\ast": "∗", r"\star": "∗",
 }
 
+# ── MinerU 백슬래시 유실 복원 (2026-07-21 실측) ──────────────────────────
+# MinerU 수식 OCR이 명령의 `\`를 잃고 이름만 남기는 사례가 있다.
+#   `$ textcircled{7}$` · `$ frac{1}{2600}$` · `$ cdots$` · `$2n rightarrow 2n$`
+# `\`가 없으니 아래 어느 정규식에도 안 걸리고 **명령 이름이 로마자 점자로 그대로
+# 박혀 나간다** — ` textcircled{7}` → ⠞⠑⠭⠞⠉⠊⠗⠉⠇⠑⠙⠦⠂⠼⠛⠐⠴("textcircled(7)").
+# 셀 유실보다 나쁘다(원문에 없는 잡음을 만들어냄). 전 코퍼스 실측 87회/14p.
+#
+# 오탐 방지 3중:
+#   (1) 중괄호를 끄는 이름(`frac{`)은 영어 단어가 될 수 없다 → 무조건 복원.
+#   (2) 맨 이름은 **영어 동음이의어를 뺀** 목록만(to·in·left·right·text·end·begin·
+#       log·min·max·bar·hat·dot 제외). 외국어 지문의 통화 표기 `$50 … spending to $`가
+#       `\to`로 깨지는 것을 막는다(실측 val 외국어 p175).
+#   (3) 그래도 남는 homograph(times·square·star·circ·sim)를 위해 **산문 가드** —
+#       명령이 아닌 영단어가 3개 이상이면 수식이 아니라 산문으로 보고 통째로 건너뛴다.
+_LOSTBS_BRACED = ("textcircled|operatorname|widetilde|underline|overline|widehat|"
+                  "mathrm|mathbf|mathit|mathbb|mathcal|mathsf|textbf|textit|"
+                  "boxed|dfrac|tfrac|frac|sqrt|vec|hat|bar|tilde")
+_LOSTBS_BARE = ("longrightarrow|Longrightarrow|rightarrow|leftarrow|Rightarrow|Leftarrow|"
+                "varepsilon|epsilon|triangle|parallel|infty|partial|approx|equiv|propto|"
+                "varphi|lambda|sigma|omega|Gamma|Delta|Theta|Lambda|Sigma|Omega|"
+                "alpha|beta|gamma|delta|zeta|theta|iota|kappa|"
+                "qquad|quad|cdots|ldots|cdot|times|circ|square|bullet|star|perp|angle|"
+                "hline|fallingdotseq|doteq|neq|leq|geq|div|pm|mp|sim|"
+                "xi|pi|rho|tau|phi|chi|psi|eta|mu|nu")
+_LOSTBS_BRACED_RE = re.compile(r"(?<![\\A-Za-z])(" + _LOSTBS_BRACED + r")(?=\s*\{)")
+_LOSTBS_BARE_RE = re.compile(r"(?<![\\A-Za-z])(" + _LOSTBS_BARE + r")(?![A-Za-z])")
+_LOSTBS_ALL = set((_LOSTBS_BRACED + "|" + _LOSTBS_BARE).split("|"))
+_PROSE_WORD_RE = re.compile(r"(?<![\\A-Za-z])[A-Za-z]{3,}(?![A-Za-z])")
+
+
+def _restore_lost_backslash(s: str) -> str:
+    """MinerU가 잃은 LaTeX 백슬래시를 되살린다(위 주석의 3중 가드)."""
+    if len([w for w in _PROSE_WORD_RE.findall(s) if w not in _LOSTBS_ALL]) >= 3:
+        return s                      # 산문 — 손대지 않는다
+    s = _LOSTBS_BRACED_RE.sub(lambda m: "\\" + m.group(1), s)
+    return _LOSTBS_BARE_RE.sub(lambda m: "\\" + m.group(1), s)
+
+
+# ── 원문자 \textcircled{…} (한국점자규정 제64항) ────────────────────────
+# 규정 원문: "동그라미 숫자는 수표 뒤에 숫자의 점형을 한 단 내려 적고, 그 밖의
+#            동그라미 문자는 7 7으로, 네모 문자는 _8 0l으로 묶어 나타낸다."
+# 규정 예시 디코드: ① = #1(⠼⠂) · ㉠ = 7=a7(⠶⠿⠁⠶) · ⓐ = 70a7(⠶⠴⠁⠶).
+# 기존 translator의 유니코드 경로(①→⠼⠂, ⓐ→⠶⠴⠁⠶)와 같은 점형을 낸다 — 원문자가
+# 유니코드로 왔든 \textcircled로 왔든 출력이 갈리지 않게.
+_CIRCLED_OPEN, _CIRCLED_CLOSE = "⠶", "⠶"
+_ROMAN_CELL = dict(zip("abcdefghijklmnopqrstuvwxyz",
+                       "⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵"))
+_TEXTCIRCLED_RE = re.compile(r"\\textcircled\s*\*?\s*\{([^{}]*)\}")
+
+
+def _textcircled_repl(m: re.Match) -> str:
+    """\\textcircled{X} → 제64항 원문자 점형. 못 다루는 인자는 원문 보존."""
+    arg = m.group(1).strip()
+    if arg.isdigit():                                  # ① ⑩ ㉘ — 수표 + 내린 숫자
+        return "⠼" + "".join(_DROPPED_DIGIT[c] for c in arg)
+    if len(arg) == 1 and arg.lower() in _ROMAN_CELL:   # ⓐ Ⓐ — 7 로마자표 x 7
+        cap = "⠠" if arg.isupper() else ""
+        return _CIRCLED_OPEN + "⠴" + cap + _ROMAN_CELL[arg.lower()] + _CIRCLED_CLOSE
+    return arg                                         # 그 밖 — 인자만 남긴다
+
 
 def _normalize_latex_input(latex: str) -> str:
     """MinerU/마크다운식 LaTeX를 convert_latex가 다룰 수 있게 정규화.
@@ -365,6 +425,10 @@ def _normalize_latex_input(latex: str) -> str:
     """
     s = _CODE_FENCE_RE.sub("", latex)
     s = _MATH_DELIM_RE.sub(" ", s)
+    # ★ 다른 어떤 규칙보다 먼저 — 백슬래시가 없으면 아래 정규식이 하나도 안 걸린다.
+    s = _restore_lost_backslash(s)
+    # 원문자(제64항). \text{…} 래퍼보다 먼저 잡아야 \textcircled가 \text로 오인되지 않는다.
+    s = _TEXTCIRCLED_RE.sub(_textcircled_repl, s)
     # MinerU 수식 OCR은 토큰을 글자 단위로 띄어 낸다 — `\operatorname* { l i m }`,
     # `{ = }`, `f ^ { \prime } ( a )`. 이 형태를 못 풀면 \lim이 낱글자 l·i·m으로
     # 흩어져 수식이 통째로 깨진다(수학2 실측 2026-07-19: operatorname 88건·
