@@ -1107,6 +1107,41 @@ def _drop_nonkorean_emphasis(text: str) -> str:
     )
 
 
+EMPHASIS_OPEN, EMPHASIS_CLOSE = _TAG_PAIR_MARKER["드러냄"]  # ⠠⠤ … ⠤⠄ (제56항)
+
+
+def emphasis_marker_spans(
+    braille: str, source_text: str
+) -> list[tuple[int, int, str]]:
+    """점역 결과에서 드러냄표 마커(⠠⠤…⠤⠄, KBR-6.13.56) 위치 → (start, end, tag) 목록.
+
+    source-gate(tn_marker_spans와 같은 원칙): 출력만 스캔하면 붙임표(⠤)·점역자 주(⠠⠄)
+    등 유사 점형을 오인하므로, 원본의 **한글 든 드러냄 쌍 개수만큼만** 앞에서부터
+    쌍(open→close)으로 짝지어 emit한다. 한글 없는 쌍은 _drop_nonkorean_emphasis가
+    태그를 걷어내 마커 자체가 없다(개수 일치). 표 격자 경로는 drop 미적용이라 이
+    게이트가 보수적 — 부족 emit은 허용, 과잉 emit(환각) 금지.
+    """
+    n = sum(
+        1 for m in _EMPH_PAIR_RE.finditer(source_text)
+        if _HANGUL_ANY_RE.search(m.group(1))
+    )
+    if n == 0:
+        return []
+    spans: list[tuple[int, int, str]] = []
+    pos = 0
+    for _ in range(n):
+        i = braille.find(EMPHASIS_OPEN, pos)
+        if i == -1:
+            break
+        j = braille.find(EMPHASIS_CLOSE, i + len(EMPHASIS_OPEN))
+        if j == -1:
+            break
+        spans.append((i, i + len(EMPHASIS_OPEN), "emphasis_open"))
+        spans.append((j, j + len(EMPHASIS_CLOSE), "emphasis_close"))
+        pos = j + len(EMPHASIS_CLOSE)
+    return spans
+
+
 def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
     """텍스트 → (논리 줄별 점자, 줄별 음절 줄바꿈 offset). 32칸 분리는 layout이 수행.
 

@@ -19,7 +19,11 @@ from app.ai.braille.regulations import make_rule, make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.text_braille import content_rules
 from app.ai.braille.translator import translate_tagged_text as _translate
-from app.ai.braille.translator import tn_marker_spans, translate_with_breaks
+from app.ai.braille.translator import (
+    emphasis_marker_spans,
+    tn_marker_spans,
+    translate_with_breaks,
+)
 from app.schemas.content import BrailleOutput, Draft, LLMOutput, RuleApplication
 
 
@@ -45,6 +49,11 @@ def _base_trail(
     trail += [
         make_rule_at(rule_id, lines, s, e, tag="symbol")
         for s, e, rule_id in symbol_rule_spans(source, joined)
+    ]
+    # 드러냄표 ⠠⠤…⠤⠄ (제56항) — text 경로와 동일 배선(원본 태그 gate, r12).
+    trail += [
+        make_rule_at("KBR-6.13.56", lines, s, e, tag=tag)
+        for s, e, tag in emphasis_marker_spans(joined, source)
     ]
     if content:
         trail += content_rules(source, lines)

@@ -12,6 +12,7 @@ from app.ai.braille.regulations import make_rule, make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import (
     box_borders_from_source,
+    emphasis_marker_spans,
     translate_with_breaks,
     tn_marker_spans,
 )
@@ -69,6 +70,11 @@ class TextBraille:
         trail += [
             make_rule_at(rule_id, lines, s, e, tag="symbol")
             for s, e, rule_id in symbol_rule_spans(opt.corrected_text, joined)
+        ]
+        # 드러냄표 ⠠⠤…⠤⠄ (제56항) — 원본 태그 개수 gate(오탐 방지, r12).
+        trail += [
+            make_rule_at("KBR-6.13.56", lines, s, e, tag=tag)
+            for s, e, tag in emphasis_marker_spans(joined, opt.corrected_text)
         ]
         # 수표·문장부호 규정 — 평문에서도 FE 규정 패널이 비지 않게 실제 변환을 기록.
         trail += content_rules(opt.corrected_text, lines)
