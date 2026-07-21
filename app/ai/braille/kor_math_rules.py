@@ -410,10 +410,38 @@ _ROMAN_CELL = dict(zip("abcdefghijklmnopqrstuvwxyz",
                        "⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵"))
 _TEXTCIRCLED_RE = re.compile(r"\\textcircled\s*\*?\s*\{([^{}]*)\}")
 
+# ── 원문자 자모 ㉠~㉣의 OCR 오독 복원 (2026-07-21 원본 PDF 전수 대조) ──────
+# MinerU가 원 안의 **한글 자모**를 자형이 닮은 로마자·숫자·기호로 읽는다. 전 코퍼스
+# \textcircled 출현 7페이지를 원본 PDF 크롭으로 육안 확인한 결과:
+#   사회문화 p052  7·L·E·B = ㉠㉡㉢㉣      언어 p231  T·L·E = ㉠㉡㉢
+#   언어 p171     7·L    = ㉠㉡            수학2 p058 \neg  = ㉠
+# 자형 대응: ㄱ→7·T·¬ · ㄴ→L · ㄷ→E · ㄹ→B.
+#
+# ★ 반례도 같은 방법으로 확인했다 — 아래 둘은 **고치면 안 된다**:
+#   생물 p089  \textcircled{a} = 진짜 ⓐ (원문에 동그라미 소문자 a가 실재)
+#   수학2 p040 \textcircled{\circ} = 원문자가 아니라 "이"의 오독(ㅇ+ㅣ)
+# 그래서 **대문자 로마자·기호만** 자모로 돌리고 소문자(ⓐ~ⓩ)와 숫자는 손대지 않는다.
+# 근거: 코퍼스 유니코드 원문자 로마자는 소문자 274회(ⓐ98·ⓑ66·ⓒ48·ⓓ33·ⓔ29) 대
+#       대문자 3회뿐이고, 그 3회(Ⓥ·Ⓓ·Ⓐ)마저 p052 크롭에서 ㉡·㉢의 오독으로 확인됐다.
+#       "7"은 유니코드 ⑦이 125회로 ⑥ 43회보다 3배 많은 역전이 나는데, ①…⑦ 순번이라면
+#       불가능한 분포다 — 초과분이 곧 ㉠ 오독이다(translator._CIRCLED_JAMO_MISREAD와 동일 판단).
+# 숫자는 매핑하지 않는다: 수학2 p020의 \textcircled{2}는 실제로 ㉣이지만(크롭 확인),
+#   ②는 선택지로 흔해서 일반 매핑하면 진짜 ②를 조용히 망친다. 잔여 오류로 남긴다.
+#
+# 점형은 유니코드 경로와 1:1로 맞춘다(translator 실측: ㉠⠿⠁ ㉡⠿⠒ ㉢⠿⠔ ㉣⠿⠂ — 제8항 온표+자모).
+_TC_JAMO_CELLS = {
+    "7": "⠿⠁", "T": "⠿⠁", "\\neg": "⠿⠁",   # ㉠
+    "L": "⠿⠒",                              # ㉡
+    "E": "⠿⠔",                              # ㉢
+    "B": "⠿⠂",                              # ㉣
+}
+
 
 def _textcircled_repl(m: re.Match) -> str:
     """\\textcircled{X} → 제64항 원문자 점형. 못 다루는 인자는 원문 보존."""
     arg = m.group(1).strip()
+    if arg in _TC_JAMO_CELLS:                          # ㉠~㉣ 자형 오독 복원
+        return _TC_JAMO_CELLS[arg]
     if arg.isdigit():                                  # ① ⑩ ㉘ — 수표 + 내린 숫자
         return "⠼" + "".join(_DROPPED_DIGIT[c] for c in arg)
     if len(arg) == 1 and arg.lower() in _ROMAN_CELL:   # ⓐ Ⓐ — 7 로마자표 x 7
