@@ -154,8 +154,13 @@ class TestConvertLatex:
         assert "⠖⠉" in convert_latex("\\cos(x)")
 
     def test_pi_indicator(self) -> None:
-        """\\pi → 그리스 문자 표시 포함."""
-        assert "⠨" in convert_latex("\\pi")
+        """\\pi → 그리스 문자 표시 포함.
+
+        접두는 모드별로 다르다 — 규정 제30항·수학 제13항은 ⠨(`.p`), 도서 관행은
+        ⠈(`@p`, gold 수학2 실측 2026-07-21). 어느 쪽이든 '접두 + 낱자 ⠏' 2셀이어야 한다.
+        """
+        got = convert_latex("\\pi")
+        assert got in ("⠨⠏", "⠈⠏"), got
 
     def test_decimal_in_formula(self) -> None:
         """제43항: 수식 내 소수점은 ⠲ (convert_latex 경유)."""

@@ -8,6 +8,7 @@ import pytest
 
 from app.ai.braille.formula_braille import FormulaBraille
 from app.ai.braille.symbol_rules import substitute_symbols
+from test.braille_style_equiv import canon_greek
 from app.ai.braille.text_braille import TextBraille
 from app.ai.braille.translator import translate_tagged_text
 from app.schemas.content import BrailleOutput, LLMOutput, RuleApplication
@@ -137,7 +138,8 @@ class TestFormulaBrailleOutput:
 class TestSymbolSubstitution:
 
     def test_greek_alpha_substituted(self):
-        assert substitute_symbols("α") == "⠨⠁"
+        # 그리스 소문자 접두: 규정 제30항 ⠨ / 도서 관행 ⠈ 둘 다 정당(모드별).
+        assert canon_greek(substitute_symbols("α")) == "⠨⠁"
 
     def test_arrow_substituted(self):
         assert substitute_symbols("→") == "⠒⠕"
@@ -150,7 +152,7 @@ class TestSymbolSubstitution:
         assert substitute_symbols("①") == "⠼⠂"
 
     def test_symbols_in_translation(self):
-        result = translate_tagged_text("α + β")
+        result = canon_greek(translate_tagged_text("α + β"))
         assert "⠨⠁" in result
         assert "⠨⠃" in result
 
@@ -159,16 +161,16 @@ class TestSymbolSubstitution:
         assert "⠴⠙⠠⠉" in result
 
     def test_symbol_at_start_of_text(self):
-        result = substitute_symbols("α는 각도이다")
+        result = canon_greek(substitute_symbols("α는 각도이다"))
         assert result.startswith("⠨⠁"), f"문자열 시작 기호 치환 실패: {result!r}"
 
     def test_symbol_at_end_of_text(self):
-        result = substitute_symbols("각도는 α")
+        result = canon_greek(substitute_symbols("각도는 α"))
         assert result.endswith("⠨⠁"), f"문자열 끝 기호 치환 실패: {result!r}"
 
     def test_consecutive_symbols_both_present(self):
         """연속 기호 α, β 모두 치환."""
-        result = translate_tagged_text("α + β")
+        result = canon_greek(translate_tagged_text("α + β"))
         assert "⠨⠁" in result, f"α(⠨⠁) 없음: {result!r}"
         assert "⠨⠃" in result, f"β(⠨⠃) 없음: {result!r}"
 

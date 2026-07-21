@@ -21,6 +21,7 @@ from typing import Any
 import pytest
 
 from app.ai.braille.translator import translate_tagged_text
+from test.braille_style_equiv import canon_greek
 
 _DATA_DIR = Path(__file__).parent.parent.parent / "test_data"
 _FORMULA_PATH = _DATA_DIR / "formula_pairs.json"
@@ -72,7 +73,8 @@ def test_formula_exact_pairs_nonempty() -> None:
 def test_formula_exact(case_id: str, rule: str, inp: str, expected: str) -> None:
     """규정에서 도출한 expected 와 번역기 출력이 일치해야 함."""
     result = translate_tagged_text(inp)
-    assert result == expected, (
+    # 그리스 소문자 접두는 규정형(⠨)·관행형(⠈) 둘 다 정당 → 양쪽을 접고 비교
+    assert canon_greek(result) == canon_greek(expected), (
         f"[{case_id}] {rule}\n"
         f"  입력:     {inp!r}\n"
         f"  expected: {expected!r}\n"
@@ -91,7 +93,7 @@ def test_formula_must_contain(case_id: str, inp: str, must_contain: list[str]) -
     """복잡 수식에서 규정 필수 기호가 결과에 포함되어야 함."""
     result = translate_tagged_text(inp)
     for symbol in must_contain:
-        assert symbol in result, (
+        assert canon_greek(symbol) in canon_greek(result), (
             f"[{case_id}] 입력: {inp!r}\n"
             f"  필수 기호 {symbol!r} 누락\n"
             f"  결과: {result!r}"
@@ -110,7 +112,7 @@ def test_mixed_must_contain(case_id: str, inp: str, must_contain: list[str]) -> 
     result = translate_tagged_text(inp)
     assert len(result) > 0, f"[{case_id}] 빈 결과"
     for symbol in must_contain:
-        assert symbol in result, (
+        assert canon_greek(symbol) in canon_greek(result), (
             f"[{case_id}] 입력: {inp!r}\n"
             f"  필수 기호 {symbol!r} 누락\n"
             f"  결과: {result!r}"

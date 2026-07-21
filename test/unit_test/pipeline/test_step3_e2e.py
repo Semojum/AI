@@ -164,10 +164,10 @@ class TestFormulaChainE2E:
         assert "⠖⠎" in combined
 
     def test_pi_contains_greek_indicator(self, outputs, formula_items):
-        """\\pi → 그리스문자 표시(⠨) 포함."""
+        """\\pi → 그리스문자 표시 포함(규정 ⠨ / 도서 관행 ⠈)."""
         idx = next(i for i, e in enumerate(formula_items) if "pi" in (e.latex_string or "") and "sin" not in (e.latex_string or ""))
         combined = "".join(outputs[idx].braille_lines)
-        assert "⠨" in combined
+        assert "⠨" in combined or "⠈" in combined
 
     def test_element_ids_preserved_in_order(self, outputs, formula_items):
         assert [str(e.element_id) for e in formula_items] == [str(o.element_id) for o in outputs]

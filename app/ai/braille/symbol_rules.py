@@ -13,9 +13,18 @@ braillify 미설치 폴백에서는 substitute_symbols()로 직접 치환한다.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 
 _TABLE_PATH = pathlib.Path(__file__).parent / "symbol_table.json"
+
+# 그리스 소문자 접두 관행(2026-07-21 실측): 규정 제30항·수학 제13항은 `.x`(⠨)이나
+# 코퍼스 도서는 `@x`(⠈)를 쓴다 — gold 수학2 원문 실측 val 263회 vs ⠨ 0회(판정가능
+# 265건 중), dev 24회 vs 0회. output_수학2_page028.brl 원시 BRF에서 θ=`@?`,
+# 같은 줄의 ≠=`.3`으로 두 접두를 **구분해** 쓰는 것이 확인된다(대문자는 ⠨ 유지).
+# regulation 모드는 규정형 ⠨를 유지한다.
+_IS_BOOK_STYLE = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
+_LC_GREEK_CHARS = "αβγδεζηθικλμνξοπρστυφχψω"
 
 # \x00 은 braillify가 변환하지 않는 제어문자 → 플레이스홀더로 안전
 _PH_FMT = "\x00SYM_{idx}\x00"
@@ -33,6 +42,12 @@ def _load_flat_table() -> dict[str, str]:
         for symbol, braille in entries.items():
             if not symbol.startswith("_") and isinstance(braille, str):
                 flat[symbol] = braille
+    # 그리스 소문자 접두 관행 전환(book 모드 한정) — 대문자(⠠⠨x)는 건드리지 않는다.
+    if _IS_BOOK_STYLE:
+        for ch in _LC_GREEK_CHARS:
+            b = flat.get(ch)
+            if b and b.startswith("⠨") and len(b) == 2:
+                flat[ch] = "⠈" + b[1]
     # 긴 키 우선 → '……'가 '…'보다 먼저 치환되도록
     return dict(sorted(flat.items(), key=lambda x: len(x[0]), reverse=True))
 

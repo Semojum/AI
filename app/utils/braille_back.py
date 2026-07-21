@@ -24,6 +24,7 @@ CLI:
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -95,9 +96,21 @@ _MATH_MAX = max(len(k) for k in _MATH_REV_MULTI)        # = 3
 _MATH_SIGNAL_RE = re.compile(r"[⠘⠰⠜⠻⠌][⠼⠷]")
 _MATH_PAREN_CELLS = ("⠷", "⠾")                           # 수식 괄호(텍스트 괄호와 다름)
 _BARE_OPS = {"⠡", "⠢", "⠔", "⠒⠒", "⠌⠌"}                 # 단독 토큰 연산자(×+−=÷)
-# 그리스 소문자 토큰(⠨+자음, 2셀) — 한글 음절과 겹쳐(π=줘) 단독으론 한글 우선,
+# 그리스 소문자 접두 관행(2026-07-21): book 모드 정방향은 ⠈x를 낸다(kor_math_rules
+# ._LC_GREEK 주석 참조). 역점역도 같은 판본을 읽어야 왕복이 성립하므로 ⠈x 별칭을 더한다.
+# ⚠ ⠈은 초성 ㄱ이라 ⠈⠍=구·⠈⠎=거·⠈⠗=개처럼 흔한 한글 음절과 겹친다. 아래 GREEK 분류가
+# '수식 토큰에 인접할 때만 수식'이라는 보수 규칙이라 단독 한글은 보존된다.
+_LC_GREEK_REV = "⠈" if os.environ.get("BRAILLE_STYLE", "book") != "regulation" else "⠨"
+if _LC_GREEK_REV != "⠨":
+    _MATH_REV_MULTI.update({
+        _LC_GREEK_REV + k[1]: v
+        for k, v in list(_MATH_REV_MULTI.items())
+        if k.startswith("⠨") and len(k) == 2 and v in "αβγδεζηθικλμνξοπρστυφχψω"
+    })
+# 그리스 소문자 토큰(접두+자음, 2셀) — 한글 음절과 겹쳐(π=줘) 단독으론 한글 우선,
 # 수식 토큰에 인접할 때만 수식으로 본다.
-_GREEK_TOKENS = {k for k in _MATH_REV_MULTI if k.startswith("⠨") and len(k) == 2}
+_GREEK_TOKENS = {k for k, v in _MATH_REV_MULTI.items()
+                 if len(k) == 2 and k[0] in "⠨⠈" and v in "αβγδεζηθικλμνξοπρστυφχψω"}
 
 
 def _build_symbol_rev() -> dict[str, str]:
@@ -106,6 +119,13 @@ def _build_symbol_rev() -> dict[str, str]:
     for sym, braille in SYMBOL_TABLE.items():
         if braille and braille not in rev:
             rev[braille] = sym
+    # 그리스 소문자는 **두 접두 판본을 모두 읽는다**(2026-07-21). 정방향은 모드에 따라
+    # 한 판본만 내지만, 역점역의 입력은 남의 점자책이라 규정형 ⠨x와 관행형 ⠈x가 섞여
+    # 들어온다. 역방향은 다대일이라 둘 다 받는 게 정보 손실이 없다. 기존 키는 안 덮는다.
+    for cells, sym in list(rev.items()):          # rev은 점자→문자 방향이다
+        if len(cells) == 2 and cells[0] in "⠨⠈" and sym in "αβγδεζηθικλμνξοπρστυφχψω":
+            alt = ("⠨" if cells[0] == "⠈" else "⠈") + cells[1]
+            rev.setdefault(alt, sym)
     return rev
 
 

@@ -277,6 +277,13 @@ _IS_BOOK_STYLE = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
 # 도서 관행은 대문자표 ⠠를 생략 — gold 수학2에서 ⠨⠎ 426·⠨⠙ 142회 vs ⠠⠨ 계열 3회
 # (Σ=.S·Δx=.DX, output_수학2_page091.brl 원문 실측). regulation 모드는 규정형 유지.
 _CAP_GREEK = "⠨" if _IS_BOOK_STYLE else "⠠⠨"
+# 소문자 그리스 접두(2026-07-21 실측): 규정 제30항·수학 제13항은 `.x`(⠨)이나 도서는
+# `@x`(⠈)를 쓴다 — gold 판정가능 265건 중 ⠈ 263 vs ⠨ 2(val)·24 vs 0(dev), 전부 수학2.
+# output_수학2_page028.brl 원시 BRF에서 θ=`@?`와 ≠=`.3`이 같은 줄에 공존 → 도서가 두
+# 접두를 의도적으로 구분해 쓴다는 증거(대문자 그리스는 ⠨ 유지 = _CAP_GREEK).
+# ⚠ 모수가 작다: val 663회·dev 179회(gold 152.7만/29.0만 셀)라 CER 상한 기여는
+# +0.04~0.06%p뿐이다. 규정 정합이 아니라 관행 정합 목적의 변경이다.
+_LC_GREEK = "⠈" if _IS_BOOK_STYLE else "⠨"
 _SUM_BASE = _CAP_GREEK + "⠎"   # 총합 Σ (수학 제25항 ,.S / 도서 관행 .S)
 # ≠(F4, 2026-07-20 실측): 규정 수학 제4항 1호는 .33(⠨⠒⠒)이나 도서 관행은 .3(⠨⠒)
 # — gold 수학2에서 .3 91회 vs .33 0회(x≠1=`X.3#A`·f(x)≠0=`F8X0.3#J` 원문 실측).
@@ -959,31 +966,31 @@ _LATEX_SIMPLE: dict[str, str] = {
     "\\partial":  "⠫",    # ∂ (편도함수, 제54항)
     "\\nabla":    "⠸⠩",   # ∇ (델연산자, 제55항)
     "\\int":      "⠮",    # ∫ (부정적분, 제56항: ! = ⠮)
-    "\\alpha":    "⠨⠁",   # α
-    "\\beta":     "⠨⠃",   # β
-    "\\gamma":    "⠨⠛",   # γ
-    "\\delta":    "⠨⠙",   # δ
-    "\\epsilon":  "⠨⠑",   # ε
-    "\\varepsilon":"⠨⠑",  # ε (변형)
-    "\\zeta":     "⠨⠵",   # ζ
-    "\\eta":      "⠨⠱",   # η (수학 제13항 표 .:)
-    "\\theta":    "⠨⠹",   # θ
-    "\\iota":     "⠨⠊",   # ι
-    "\\kappa":    "⠨⠅",   # κ
-    "\\lambda":   "⠨⠇",   # λ
-    "\\mu":       "⠨⠍",   # μ
-    "\\nu":       "⠨⠝",   # ν
-    "\\xi":       "⠨⠭",   # ξ
-    "\\pi":       "⠨⠏",   # π
-    "\\rho":      "⠨⠗",   # ρ
-    "\\sigma":    "⠨⠎",   # σ
-    "\\tau":      "⠨⠞",   # τ
-    "\\upsilon":  "⠨⠥",   # υ
-    "\\phi":      "⠨⠋",   # φ
-    "\\varphi":   "⠨⠋",   # φ (변형)
-    "\\chi":      "⠨⠯",   # χ (수학 제13항 표 .&)
-    "\\psi":      "⠨⠽",   # ψ
-    "\\omega":    "⠨⠺",   # ω
+    "\\alpha":    _LC_GREEK + "⠁",   # α
+    "\\beta":     _LC_GREEK + "⠃",   # β
+    "\\gamma":    _LC_GREEK + "⠛",   # γ
+    "\\delta":    _LC_GREEK + "⠙",   # δ
+    "\\epsilon":  _LC_GREEK + "⠑",   # ε
+    "\\varepsilon":_LC_GREEK + "⠑",  # ε (변형)
+    "\\zeta":     _LC_GREEK + "⠵",   # ζ
+    "\\eta":      _LC_GREEK + "⠱",   # η (수학 제13항 표 .:)
+    "\\theta":    _LC_GREEK + "⠹",   # θ
+    "\\iota":     _LC_GREEK + "⠊",   # ι
+    "\\kappa":    _LC_GREEK + "⠅",   # κ
+    "\\lambda":   _LC_GREEK + "⠇",   # λ
+    "\\mu":       _LC_GREEK + "⠍",   # μ
+    "\\nu":       _LC_GREEK + "⠝",   # ν
+    "\\xi":       _LC_GREEK + "⠭",   # ξ
+    "\\pi":       _LC_GREEK + "⠏",   # π
+    "\\rho":      _LC_GREEK + "⠗",   # ρ
+    "\\sigma":    _LC_GREEK + "⠎",   # σ
+    "\\tau":      _LC_GREEK + "⠞",   # τ
+    "\\upsilon":  _LC_GREEK + "⠥",   # υ
+    "\\phi":      _LC_GREEK + "⠋",   # φ
+    "\\varphi":   _LC_GREEK + "⠋",   # φ (변형)
+    "\\chi":      _LC_GREEK + "⠯",   # χ (수학 제13항 표 .&)
+    "\\psi":      _LC_GREEK + "⠽",   # ψ
+    "\\omega":    _LC_GREEK + "⠺",   # ω
     "\\cdots":    "⠠⠠⠠",  # ⋯ 수식 줄임표 (제12항 [붙임1] ,,,)
     "\\ldots":    "⠠⠠⠠",  # … (제12항 [붙임1])
     "\\vdots":    "⠠⠠⠠",  # ⋮
