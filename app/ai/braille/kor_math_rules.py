@@ -1450,7 +1450,10 @@ def latex_rule_ids(latex: str) -> list[str]:
     if _SUB_RE.search(residual):
         add("KBR-수학-2.19")
     # 단순 기호 명령(\in, \leq, 그리스 등) — \cmd 토큰 단위로 추출(substring 충돌 없음)
-    for cmd in set(re.findall(r"\\([A-Za-z]+)", s)):
+    # sorted 필수 — set 순회 순서는 프로세스마다 다르고(문자열 해시 시드), _STRUCT_RULES에
+    # 없는 규칙은 정렬 키가 모두 같아 stable sort가 그 순서를 그대로 남긴다. 점자 출력은
+    # 안 바뀌지만 rule_trail 순서가 실행마다 흔들려 점역사에게 보이는 검수 근거가 비재현적이 된다.
+    for cmd in sorted(set(re.findall(r"\\([A-Za-z]+)", s))):
         rid = _LATEX_SYMBOL_RULES.get(cmd)
         if rid:
             add(rid)
