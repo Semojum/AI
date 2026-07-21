@@ -1314,18 +1314,22 @@ def _needs_wrap(expr: str) -> bool:
     expr = expr.strip()
     if not expr:
         return False
-    # 이미 완전 괄호 → 추가 묶음 불필요
-    if expr.startswith("(") and expr.endswith(")"):
-        depth = 0
-        for i, ch in enumerate(expr):
-            if ch == "(":
-                depth += 1
-            elif ch == ")":
-                depth -= 1
-                if depth == 0 and i < len(expr) - 1:
-                    break
-        else:
-            return False
+    # 이미 완전 괄호 → 추가 묶음 불필요 (제53항 y^(4) — 이중 괄호 방지).
+    # ASCII ( ) 와 **1단계 이후의 점형 소괄호 ⠦ ⠴ 를 모두** 본다: 6개 호출부 중
+    # 0b만 1단계 앞이고 나머지 5개(2·2c·4·8·9)는 뒤라 점형 괄호를 넘긴다.
+    # 점형을 안 보던 구판은 x^{(a+b)} → ⠭⠘⠶⠦⠁⠢⠃⠴⠶ 로 묶음이 겹쳤다(2026-07-21).
+    for _op, _cl in (("(", ")"), ("⠦", "⠴")):
+        if expr.startswith(_op) and expr.endswith(_cl):
+            depth = 0
+            for i, ch in enumerate(expr):
+                if ch == _op:
+                    depth += 1
+                elif ch == _cl:
+                    depth -= 1
+                    if depth == 0 and i < len(expr) - 1:
+                        break
+            else:
+                return False
     # 단일 원자: 수(소수·자릿점·앞뒤 부호 허용)·문자(첨자 허용)·미분소·단일 명령·sentinel
     if re.fullmatch(r"[+-]?\d+(?:[.,]\d+)*[+-]?", expr):
         return False

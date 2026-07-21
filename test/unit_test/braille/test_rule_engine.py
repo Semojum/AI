@@ -131,6 +131,20 @@ class TestConvertLatex:
         """수학 제18항: 위첨자 ⠘."""
         assert "⠣" in convert_latex("x^2")  # ^2 관행 약기(정답 규정형 0회)
 
+    def test_no_double_wrap_on_parenthesized(self) -> None:
+        """제53항: 이미 괄호로 묶인 식에 점역자 삽입 묶음을 겹치지 않는다.
+
+        규정 4호 `y^8#d0`(= y^(4))는 지수의 리터럴 괄호 ⠦⠴ 하나뿐이다.
+        _needs_wrap 가드가 ASCII 괄호만 보던 구판은 1단계에서 괄호가 점형으로
+        바뀐 뒤(2·2c·4·8·9단계) 이를 못 알아보고 겹쳐 묶었다(2026-07-21).
+        구판 실측: x^{(a+b)} → ⠭⠘⠶⠦⠁⠢⠃⠴⠶.
+        ※ 아래 3건은 관행/규정 모드에서 결과가 같다(묶음 자체가 사라지므로).
+        """
+        assert convert_latex("x^{(a+b)}") == "⠭⠘⠦⠁⠢⠃⠴"       # ⠶…⠶ 겹묶음 없음
+        assert convert_latex("\\sqrt{(a+b)}") == "⠜⠦⠁⠢⠃⠴"
+        assert convert_latex("x_{(i+1)}") == "⠭⠰⠦⠊⠢⠼⠁⠴"
+        assert convert_latex("f(g(x))") == "⠋⠦⠛⠦⠭⠴⠴"        # 리터럴 중첩은 그대로
+
     def test_sin_indicator(self) -> None:
         """수학 삼각함수 제47항: sin → ⠖⠎ (6s)."""
         assert "⠖⠎" in convert_latex("\\sin(x)")
@@ -253,3 +267,37 @@ class TestSymbolGlyphs:
         from app.ai.braille.symbol_rules import substitute_symbols
         got = substitute_symbols(symbol)
         assert got == expected, f"{symbol!r} → {got!r}, 기대 {expected!r}"
+
+
+class TestWrapPromotionBookStyle:
+    """F1 관행(점역자 삽입 묶음 ⠶ 승격)이 제53항 겹묶음 가드에 안 깎이는지.
+
+    F1(2cceeb0): 묶을 내용에 소괄호 점형(⠦·⠴)이 있으면 바깥 묶음을 ⠶…⠶로 승격.
+    제53항 가드(2026-07-21)는 '괄호가 식 **전체**를 감쌀 때'만 묶음을 생략하므로
+    부분 괄호(g(x)+1)는 종전대로 묶고 승격까지 간다 — 두 규칙은 겹치지 않는다.
+    관행 전용이라 BRAILLE_STYLE=regulation에서는 ⠷…⠾가 나온다(스위치 계약).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _book_mode(self, monkeypatch):
+        """_IS_BOOK_STYLE은 import 시점 상수라 env만 바꿔선 안 먹는다 — reload가 필요하다."""
+        import importlib
+
+        from app.ai.braille import kor_math_rules
+        monkeypatch.setenv("BRAILLE_STYLE", "book")
+        importlib.reload(kor_math_rules)
+        yield
+        monkeypatch.delenv("BRAILLE_STYLE")
+        importlib.reload(kor_math_rules)
+
+    def _cv(self, latex: str) -> str:
+        from app.ai.braille.kor_math_rules import convert_latex as cv
+        return cv(latex)
+
+    def test_partial_paren_still_wraps_and_promotes(self) -> None:
+        # 분자 g(x)+1 은 괄호가 전체를 감싸지 않으므로 묶고, 내용에 ⠦가 있어 ⠶ 승격
+        assert self._cv("\\frac{g(x)+1}{x+2}") == "⠦⠭⠢⠼⠃⠴⠌⠶⠛⠦⠭⠴⠢⠼⠁⠶"
+
+    def test_two_adjacent_groups_still_wrap(self) -> None:
+        # (a+b)(c+d)는 한 쌍이 전체를 감싸지 않는다 → 묶음 유지 + ⠶ 승격
+        assert self._cv("x^{(a+b)(c+d)}") == "⠭⠘⠶⠦⠁⠢⠃⠴⠦⠉⠢⠙⠴⠶"
