@@ -25,8 +25,11 @@ from __future__ import annotations
 import re
 
 # 수식 구간을 이룰 수 있는 문자 — 한글이 나오면 여기서 끊긴다.
+# `|`(절댓값·조건제시 세로바)를 포함한다: 없으면 |α-β| 같은 구간이 막대에서 끊겨
+# 막대만 텍스트 경로로 새고, symbol_table의 텍스트 세로선 ⠸⠳(제71항, 2셀)가 나간다.
+# 정답은 제21항 절댓값 ⠳ 1셀 — gold 실측도 ⠳⠈⠁⠔⠈⠃⠳(=|α-β|)로 ⠸⠳는 1131p 0회다.
 _ATOM = r"[A-Za-z0-9αβγδεζηθικλμνξπρστυφχψωΑΒΓΔΘΛΞΠΣΦΨΩ" \
-        r"⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉+\-=×÷<>≤≥≠±∞√∑∫·^_(){}\[\]/,.'\\ ]"
+        r"⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉+\-=×÷<>≤≥≠±∞√∑∫·^_(){}\[\]/,.'\\| ]"
 _SPAN_RE = re.compile(rf"{_ATOM}{{3,}}")
 
 # 강한 수식 신호 — 이게 없으면 수식으로 보지 않는다.
@@ -38,6 +41,21 @@ _STRONG = re.compile(
     r"|[√∑∫∞≤≥≠±×÷]"
     r"|[A-Za-z0-9)\]]\s*=\s*[-A-Za-z0-9(\\]"            # 등식(양쪽에 피연산자)
 )
+
+# 절댓값 쌍(제21항) — |x|·|f(x)|·|α-β|. 이것만으로도 수식 신호로 친다.
+# 오탐 방지 두 겹: (1) 막대 안쪽 가장자리에 공백이 없어야 하고 (2) 안에 문자가 있어야 한다.
+# 표 draft의 마크다운 칸 구분자 `| 89.2 |`는 둘 다 어겨서 걸리지 않는다(숫자만·양끝 공백).
+_ABS_PAIR_RE = re.compile(
+    r"\|[^|가-힣\s](?:[^|가-힣]*[^|가-힣\s])?\|"
+)
+_LETTER_RE = re.compile(r"[A-Za-zαβγδεζηθικλμνξπρστυφχψωΑΒΓΔΘΛΞΠΣΦΨΩ]")
+
+
+def _has_strong(core: str) -> bool:
+    """구간이 수식인지 — 강한 신호가 하나라도 있으면 참."""
+    if _STRONG.search(core):
+        return True
+    return any(_LETTER_RE.search(m.group()) for m in _ABS_PAIR_RE.finditer(core))
 _FUNCS = ("arcsin", "arccos", "arctan", "sinh", "cosh", "tanh",
           "sin", "cos", "tan", "sec", "csc", "cot", "log", "ln", "lim")
 _SUP = {"⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4",
@@ -62,7 +80,9 @@ def normalize(span: str) -> str:
 
 
 # 구간 앞에 붙은 문항·선택지 번호는 수식이 아니다 — 떼어내고 원문에 남긴다.
-_ENUM_HEAD_RE = re.compile(r"^(\(\s*\d+\s*\)|\d+\s*[.)]|[①-⑳])\s*")
+# 홑따옴표 없는 `.`·`,`도 뗀다: 자모 문항표 "ㄱ. |f(x)|"의 마침표는 표지의 일부라
+# 수식에 딸려 들어가면 자모 표지 규칙(ㄱ.→⠿⠁)의 뒤보기가 깨져 `.`가 그대로 남는다.
+_ENUM_HEAD_RE = re.compile(r"^(\(\s*\d+\s*\)|\d+\s*[.)]|[①-⑳]|[.,])\s*")
 
 
 def _wrap_segment(seg: str) -> str:
@@ -73,7 +93,7 @@ def _wrap_segment(seg: str) -> str:
         em = _ENUM_HEAD_RE.match(core)
         if em:
             head, core = em.group(), core[em.end():]
-        if len(core) < 3 or not _STRONG.search(core):
+        if len(core) < 3 or not _has_strong(core):
             return span
         lead = span[:len(span) - len(span.lstrip())]
         trail = span[len(span.rstrip()):]
