@@ -60,6 +60,8 @@ _BOOK_STYLE_ENV = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
 _THEREFORE = "⠌⠄" if _BOOK_STYLE_ENV else "⠠⠡"
 _WRAP_S = "⠦" if _BOOK_STYLE_ENV else "⠷"
 _WRAP_E = "⠴" if _BOOK_STYLE_ENV else "⠾"
+# ⇔ 관행: 규정 제61항 ⠪⠒⠒⠕ 대신 정답 도서는 ↔형 ⠪⠒⠕(gold 17 vs 0, 2026-07-22).
+_IFF_CELLS = "⠪⠒⠕" if _BOOK_STYLE_ENV else "⠪⠒⠒⠕"
 
 # 병치 닫음표 생략(T2, 2026-07-20 실측): 묶음이 끝나자마자 빈칸 없이 다른 함수 호출
 # 묶음이 시작되면 정답 도서는 **앞 묶음의 닫음표 ⠴를 적지 않는다**.
@@ -130,7 +132,7 @@ _SQRT_RE   = re.compile(r"\\sqrt\{([^{}]*)\}")
 # HCO_{3}^{-}·[Fe(CN)6]^{4-}는 ^ 앞이 닫는 괄호라 구판이 못 잡고 ^가 symbol_table의
 # 캐럿(⠈⠑)으로 샜다. 지수에 부호를 허용하는 것도 같은 이유 — 화학 제2항은 이온을
 # "위첨자 기호 ^ 뒤에 + 는 5(⠢), - 는 9(⠔)"로 적는다(규정 예시 H+ = ,h^5).
-_SUP_RE    = re.compile(r"([A-Za-z0-9⠁-⠿})\]])\^\{([^{}]*)\}"
+_SUP_RE    = re.compile(r"([A-Za-z0-9⠁-⠿})\]])\^\{((?:[^{}]|\{[^{}]*\})*)\}"
                         r"|([A-Za-z0-9⠁-⠿})\]])\^([+\-−][A-Za-z0-9]*|[A-Za-z0-9])")
 # 아래첨자: base_{sub} 또는 base_x
 _SUB_RE    = re.compile(r"([A-Za-z0-9⠁-⠿])_\{([^{}]*)\}|([A-Za-z0-9])_([A-Za-z0-9])")
@@ -534,6 +536,12 @@ def _normalize_latex_input(latex: str) -> str:
     s = re.sub(r"\s+(?=[,;])", "", s)
     s = s.replace("\r", " ").replace("\n", " ")
     s = _SPACING_CMD_RE.sub(" ", s)
+    # 행머리 문항 라벨 "(1) …" — 정답 도서는 붙임표 감쌈 ⠤⠼⠁⠤(행머리 실측 192회 vs
+    # 소괄호꼴 1회, 2026-07-22 · (가)→⠤가⠤ 관행과 동형). 뒤에 본문이 있을 때만 라벨로
+    # 본다. `\ `(이스케이프 공백) 제거 뒤에 와야 '(1)\ sin…' 형태가 걸린다.
+    if _BOOK_STYLE_ENV:
+        s = re.sub(r"^\s*\(\s*(\d)\s*\)(?=\s+\S)",
+                   lambda m: "⠤⠼" + _DIGIT_MAP[m.group(1)] + "⠤", s)
     # 각도 ^{\circ}·^\circ → °(제50항 예시 0d=⠴⠙, 단위) — \circ(합성 ∘) 별칭보다 먼저.
     s = re.sub(r"\^\s*(?:\{\s*\\circ\s*\}|\\circ)", "°", s)
     # 적분 명령 보호: \iint·\int을 유니코드로 먼저 — \in 별칭이 \int를 ∈t로 깨는 것 방지.
@@ -610,6 +618,11 @@ def _normalize_latex_input(latex: str) -> str:
     # 뒤에 영문자가 오면 다른 명령이므로 치환하지 않는다.
     for cmd, uni in sorted(_CMD_ALIAS.items(), key=lambda kv: -len(kv[0])):
         s = re.sub(re.escape(cmd) + r"(?![a-zA-Z])", uni, s)
+    # 연속 줄임표 접기 — 인쇄물 '⋯⋯'(\dots\dots·\cdots\cdots)는 한 줄임표다.
+    # 규정 제53항: "가운뎃점으로 쓴 줄임표(……, …)는 ⠠⠠⠠으로" — 점 개수 불문 한 부호.
+    # gold 실측도 전부 3셀(⠂⠂⠂/⠐⠐⠐ 변형 포함, 수학2 p020·p095·p108 등 — 6셀 0회).
+    # 접지 않으면 ⠠⠠⠠⠠⠠⠠ 6셀이 나가 9건이 어긋났다(2026-07-22 S/M 전수).
+    s = re.sub(r"[⋯…](?:\s*[⋯…])+", "⋯", s)
     s = _MULTISPACE_RE.sub(" ", s)
     s = s.strip()
     # 식 끝에 매달린 합성 ∘: 이항 연산자인데 우변이 없으면 문법적 불능 — MinerU가
@@ -1040,8 +1053,14 @@ def _stage9_subscript(result: str) -> str:
     """
     def _sub_replace(m: re.Match) -> str:
         base = m.group(1) or m.group(3) or ""
-        sub  = convert_latex(m.group(2) or m.group(4) or "")
-        sub_w = _wrap_ins(sub) if _needs_wrap(m.group(2) or m.group(4) or "") else sub
+        sub_raw = (m.group(2) or m.group(4) or "").strip()
+        # 관행(book): 숫자 아래첨자는 첨자표·수표 없이 **내린 숫자**만 적는다 —
+        # m₁=⠍⠂·m₂=⠍⠆(수학2 p119 4·5·40행 실측). 규정형 ⠰⠼N은 gold 전권 0회
+        # (2026-07-22 전수 검색). 문자 첨자(g_k=⠛⠰⠅)는 규정대로 ⠰ 유지(p077 실측).
+        if _IS_BOOK_STYLE and sub_raw.isdigit():
+            return base + "".join(_DROPPED_DIGIT[c] for c in sub_raw)
+        sub  = convert_latex(sub_raw)
+        sub_w = _wrap_ins(sub) if _needs_wrap(sub_raw) else sub
         return f"{base}{_SUBSCRIPT_IND}{sub_w}"
 
     return _SUB_RE.sub(_sub_replace, result)
@@ -1114,7 +1133,12 @@ _LATEX_SIMPLE: dict[str, str] = {
     "\\leftrightarrow": "⠪⠒⠕",  # ↔ (폰트 "[3o")
     "\\Rightarrow":  "⠒⠒⠕",     # ⇒ (명제 제61항, "33o")
     "\\Leftarrow":   "⠐⠉⠉",     # ⇐ (미확인 — 규정 원문 재확인 필요)
-    "\\Leftrightarrow": "⠪⠒⠒⠕", # ⇔ (명제 제61항, "[33o")
+    # ⇔·⟺: 규정 제61항은 ⠪⠒⠒⠕이나 정답 도서는 ↔형 ⠪⠒⠕만 쓴다
+    # (수학2 gold ⠪⠒⠕ 17회 vs ⠪⠒⠒⠕ 0회, 2026-07-22 실측 — p020 12·19행 등).
+    # 구현 전에는 \iff가 어느 표에도 없어 통째로 사라졌다(수학2 p020 ⟺ 무음 유실).
+    "\\Leftrightarrow": _IFF_CELLS,
+    "\\iff": _IFF_CELLS,
+    "\\Longleftrightarrow": _IFF_CELLS,
     # 대문자 그리스 문자 — 접두는 _CAP_GREEK(규정 ,. / 도서 관행 . — F3 실측 주석 참조)
     "\\Alpha":   _CAP_GREEK + "⠁", "\\Beta":    _CAP_GREEK + "⠃",
     "\\Gamma":   _CAP_GREEK + "⠛", "\\Delta":   _CAP_GREEK + "⠙",
@@ -1546,6 +1570,12 @@ def _needs_wrap(expr: str) -> bool:
     안 묶는다: 단일 수(소수·자릿점 포함, 제18항 x^#j4c)·단일 문자·문자^단일첨자
     (제22항 #c]x^#c)·미분소 dx·d²y(제53항 dx/dy 실측)·앞뒤 부호뿐인 수(이온 2−)·
     이미 완전히 괄호로 묶인 식(제53항 y^(4) — 이중 괄호 방지)·단일 명령(\\pi 등).
+
+    ⚠ 분수 분자·분모의 곱 묶음을 book 모드에서 되살리는 시도는 기각됐다(2026-07-22
+    A/B: 요소 win 4 vs lose 42). gold는 계수×함수(2cosθ, p044)만 묶고 √3·f(x)·
+    sin2x 같은 단일 함수값은 안 묶는데, 아래 인수 셈은 \\sqrt{3}·f(x)를 2인수로
+    세어 과잉 묶음이 텍스트 인라인 수식 38건을 깨뜨렸다. 되살리려면 함수 적용
+    경계를 아는 원자 파서가 먼저다.
     """
     expr = expr.strip()
     if not expr:
@@ -1571,8 +1601,8 @@ def _needs_wrap(expr: str) -> bool:
         return False
     if re.fullmatch(r"[A-Za-z](?:\^(?:\{[^{}]*\}|[A-Za-z0-9]))?", expr):
         return False
-    if re.fullmatch(r"[+-]?d(?:\^(?:\{[^{}]*\}|[A-Za-z0-9]))?[A-Za-z]", expr):
-        return False   # 미분소 dx·d²y (제53항 — 곱으로 세지 않음)
+    if re.fullmatch(r"[+-]?(?:d|\\Delta ?|Δ ?)(?:\^(?:\{[^{}]*\}|[A-Za-z0-9]))?[A-Za-z]", expr):
+        return False   # 미분소 dx·d²y·증분 Δx (제53항·p146 gold ⠨⠙⠞⠌⠨⠙⠭ — 곱으로 세지 않음)
     if re.fullmatch(r"\\[a-zA-Z]+|[-]", expr):
         return False
     # 분수 → 묶음 (제7항 3호·제46항 붙임)

@@ -203,7 +203,10 @@ class TestMathOperators:
         assert "⠌⠌" in convert_latex("6 \\div 2")        # ÷ ⠌⠌(폰트 //)
 
     def test_subscript(self) -> None:
-        assert "⠰" in convert_latex("a_2")               # 아래첨자 ⠰(폰트 ;), ⠆ 아님
+        # 문자 첨자는 규정 제19항 ⠰ 유지, 숫자 첨자는 도서 관행 내린 숫자
+        # (gold ⠰⠼N 전권 0회·m₁=⠍⠂ 실측, 2026-07-22 — formula_pairs sub_x1과 정합).
+        assert "⠰" in convert_latex("a_n")               # 아래첨자 ⠰(폰트 ;)
+        assert convert_latex("a_2").endswith("⠆")        # 숫자 첨자 = 내린 2(⠆) 관행
 
     def test_arrow_right(self) -> None:
         assert "⠒⠕" in convert_latex("x \\to y")         # → ⠒⠕(폰트 3o)
