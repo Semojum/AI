@@ -272,7 +272,11 @@ _LEFTRIGHT_RE = re.compile(r"\\(?:left|right)\s*(?=[()\[\].])")
 # ⚠ _LEFTRIGHT_RE보다 **먼저** 돌아야 한다 — 뒤에 두면 점만 남아 매칭이 안 된다.
 _W2C_NULL_DELIM_RE = re.compile(r"\\(?:left|right)\s*\.")
 # 간격 명령(\quad \, \; \! \:) → 공백
-_SPACING_CMD_RE = re.compile(r"\\(?:quad|qquad|[,;:!])")
+# `\ `(이스케이프 공백) 포함 — 안 지우면 '\'가 잔류해 ⠸⠡ 이물질로 점역됐다
+# (수학2 p041 '(1)\ \sin…'·p067 'f(a),\ \lim…' 실측, 2026-07-22).
+# ⚠ 행 구분자 `\\ `의 둘째 백슬래시를 먹지 않도록 lookbehind — 이 정규식은
+#   `\\\\`→행전환 치환(아래)보다 먼저 돌기 때문이다.
+_SPACING_CMD_RE = re.compile(r"\\(?:quad|qquad|[,;:!])|(?<!\\)\\ ")
 # 서식 래퍼: \boxed{…}·\mathrm{…} 등 → 내용만 남김(수식 식별자 보존). \text는 별도(P2 한글 점역).
 _TEXT_WRAP_RE = re.compile(
     r"\\(?:boxed|fbox|mbox|mathrm|mathbf|mathit|mathbb|mathcal|mathsf|operatorname)\s*\{([^{}]*)\}"
@@ -485,6 +489,10 @@ _TC_JAMO_CELLS = {
     "E": "⠿⠔",                              # ㉢
     "B": "⠿⠂",                              # ㉣
 }
+# 마침표 딸린 항목 마커("ㄴ." 자리의 오독 'L.'·'七.')용 — 자형 대응은 위와 동일,
+# 七은 ㄷ 자형(2026-07-22 gold 실측: 수학2 p083 '\text{七.}' ↔ ⠿⠔).
+_TC_JAMO_CELLS_DOT = {**{k: v for k, v in _TC_JAMO_CELLS.items() if k != "\\neg"},
+                      "七": "⠿⠔"}
 
 
 def _textcircled_repl(m: re.Match) -> str:
@@ -578,8 +586,13 @@ def _normalize_latex_input(latex: str) -> str:
     # 1칸/0칸으로 붙는 것을 막는다(연립식 _sys_repl과 동일 취급).
     s = _ENV_RE.sub(" ", s)
     s = s.replace("\\\\", f" {_W2R_ROW_SEP} ").replace("&", " ")
-    # 식 번호 \tag{N} → (N)
-    s = _TAG_CMD_RE.sub(r"(\1)", s)
+    # 식 번호 \tag{N} → (N). 단, 자모 오독 인자(7·T·L·E·B — 원문자 ㉠~㉣ 자형 대응,
+    # gold 실측: p121 '\tag{7}'↔⠿⠁·p023 '\tag{L}'↔⠿⠒, 2026-07-22)는 ⠿+자모로 복원.
+    # 진짜 숫자·원문자 번호(①… — 실재 글리프)는 b010c72 판단대로 손대지 않는다.
+    s = _TAG_CMD_RE.sub(
+        lambda m: (" " + _TC_JAMO_CELLS[m.group(1).strip()]
+                   if m.group(1).strip() in ("7", "T", "L", "E", "B", "\\neg")
+                   else f"({m.group(1)})"), s)
     # 서식 래퍼(\boxed{…} 등) → 내용만. 중첩 대응으로 안정될 때까지 반복.
     prev = None
     while prev != s:
@@ -999,10 +1012,15 @@ def _stage8_superscript(result: str) -> str:
         # ⠣형만 관측(수학2 p009 'x<9#b'·p039 'x<5y<' 실측). 규정 모드는 제18항 그대로.
         # 프라임(제17항): f^{\prime}(x)는 위첨자표 없이 본문자 뒤에 바로 ⠤를 적는다
         # (규정 예시 `f-8x0`). 구현이 ⠘⠤로 내보내 39건이 어긋났다(2026-07-19).
-        if raw_exp in ("\\prime", "'", "′"):
+        # MinerU는 토큰을 띄어 낸다("\prime \prime") — 공백을 걷고 판정(2026-07-22,
+        # 수학2 p135 f″가 ⠘⠤⠤로 새던 원인).
+        exp_key = raw_exp.replace(" ", "")
+        if exp_key in ("\\prime", "'", "′"):
             return f"{base}⠤"
-        if raw_exp in ("\\prime\\prime", "''", "″"):
+        if exp_key in ("\\prime\\prime", "''", "″"):
             return f"{base}⠤⠤"
+        if exp_key in ("\\prime\\prime\\prime", "'''", "‴"):
+            return f"{base}⠤⠤⠤"
         # 관행 지수 약기: ²=⠣(gold 107회)·³=⠩(9건 중 7건, 2026-07-19 실측).
         # ⁴ 이상은 gold도 규정형 ⠘⠼N을 쓰므로 약기하지 않는다.
         if _IS_BOOK_STYLE and raw_exp in ("2", "3"):
@@ -1340,6 +1358,14 @@ def convert_latex(latex: str) -> str:
     ⚠ 각 단계의 하위 내용 변환은 convert_latex를 **재귀 호출**한다(분수 분자·근호 안 등).
       재귀분은 전 파이프라인을 다 통과해 이미 완성 점자로 되돌아온다.
     """
+    # 0-전: MinerU 오독 복원 — _protect_text가 \text 내용을 격리하기 **전에** 고쳐야
+    # 훅이 옳은 한글을 점역한다(2026-07-22. 王亡·且="또는" 자형 오독, gold 대조 확정 —
+    # 수학2 p009·p010·p144. 수식 경로 한정이라 진짜 한문이 섞일 여지가 없다).
+    latex = latex.replace("王亡", "또는").replace("且", "또는")
+    # 보기 항목 머리 자모 마커 오독('ㄴ.' 자리의 'L.'·'七.' 등) — \text 격리 전에 ⠿+자모로.
+    # gold 실측: p073·p083 '\text{L.}'↔⠿⠒·'\text{七.}'↔⠿⠔·p047 동일(2026-07-22).
+    latex = re.sub(r"^\s*(?:\$\$|\$)?\s*\\text\s*\{\s*(7|T|L|E|B|七)\s*\.\s*\}",
+                   lambda m: _TC_JAMO_CELLS_DOT[m.group(1)] + " ", latex)
     latex, _text_store = _protect_text(latex)   # 0.  P2: \text{한글} → 한글 점자 sentinel
     result = _normalize_latex_input(latex)      # 0a. MinerU/마크다운 입력 정규화
 
