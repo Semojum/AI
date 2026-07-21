@@ -359,11 +359,24 @@ _CLOSE_PAREN_CELL = "⠠⠴"
 _SRC_BRACKET_RE = re.compile(r"\[([^\[\]\n]{1,40})\]")
 _SRC_ATTR_RE = re.compile(
     r"수능|학년도|평가원|모의평가|모의고사|모평|학력평가|학평|기출|교육청|실험\s*과정|실험\s*결과")
+# 지문 라벨 대괄호 [A]~[Z] → 소괄호 관행(정답 도서 실측: gold ⠦⠄⠴⠠x⠠⠴ = 소괄호+로마자표+
+# 대문자표+글자. val 170/172·dev 38/38이 소괄호. 언어 지문 "[A]의 '갑'은…" 라벨이 대표).
+# 대괄호 셀 ⠦⠆…⠰⠴로 내면 어긋나므로 소괄호 셀을 직접 주입(출처 대괄호와 동형 처리).
+_BR_UPPER_RE = re.compile(r"^[A-Z]$")
+# 문항 번호·범위 대괄호 [01~03]·[16] → 소괄호 관행(gold 범위 57/57·10/10, 숫자 20/20).
+# ⚠ 4자리 연대 범위 [1096~1270]은 gold가 대괄호 유지(33/35 실측)라 \d{1,2}로 제외한다.
+_BR_NUMRANGE_RE = re.compile(r"^\d{1,2}(?:\s*[~∼〜]\s*\d{1,2})?$")
 
 
 def _src_bracket_repl(m: re.Match) -> str:
-    inner = m.group(1)
+    inner = m.group(1).strip()
     if _SRC_ATTR_RE.search(inner):
+        return _OPEN_PAREN_CELL + inner + _CLOSE_PAREN_CELL
+    if _BR_UPPER_RE.match(inner):
+        # gold 정확형 ⠦⠄⠴⠠x⠠⠴ 직접 주입(로마자표+대문자표 포함, CER·텍스트 축 동시 정합)
+        return _OPEN_PAREN_CELL + "⠴⠠" + _ALPHA_MAP[inner.lower()] + _CLOSE_PAREN_CELL
+    if _BR_NUMRANGE_RE.match(inner):
+        # 소괄호 셀 + 원문 숫자(수표·범위 줄표는 이후 단계가 부여)
         return _OPEN_PAREN_CELL + inner + _CLOSE_PAREN_CELL
     return m.group(0)
 
