@@ -17,19 +17,25 @@ from app.ai.braille.isolation import safe_translate
 from app.ai.braille.nested_block import append_nested
 from app.ai.braille.regulations import make_rule, make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
+from app.ai.braille.text_braille import content_rules
 from app.ai.braille.translator import translate_tagged_text as _translate
 from app.ai.braille.translator import tn_marker_spans, translate_with_breaks
 from app.schemas.content import BrailleOutput, Draft, LLMOutput, RuleApplication
 
 
-def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
-    """점역자 주 마커(BBPG-1.2.6)만 점자 좌표로 emit.
+def _base_trail(
+    lines: list[str], source: str = "", *, content: bool = True
+) -> list[RuleApplication]:
+    """점역자 주 마커(BBPG-1.2.6)·특수기호·수표·문장부호를 점자 좌표로 emit.
 
     rule_trail은 '내용 변환'만 기록한다(태민 정책 2026-06-01). 포괄·조판 규칙 제외.
-    표 내용 속 특수기호·수식 규칙은 Phase B에서 추가 예정.
+    수표(KBR-5.11.40)·문장부호(KBR-6.13.49)는 text 경로와 같은 content_rules 공용 —
+    표 셀 숫자·문장부호만 근거가 빠지던 비대칭 해소(r12).
 
     source = 점역 전 원본 텍스트. 원본에 점역자 주 태그가 있을 때만 emit하여
     ∽·ː 등 동일 점형(⠠⠄)을 오인하지 않는다(B1 오탐 방지).
+    content=False = 점역되지 않은 원문 그대로인 줄(처리 불가 플레이스홀더) —
+    변환이 없으므로 내용 규정을 붙이지 않는다(환각 0).
     """
     joined = "\n".join(lines)
     trail = [
@@ -40,6 +46,8 @@ def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
         make_rule_at(rule_id, lines, s, e, tag="symbol")
         for s, e, rule_id in symbol_rule_spans(source, joined)
     ]
+    if content:
+        trail += content_rules(source, lines)
     return trail
 
 from app.ai.braille.constants import COLS as _COLS  # noqa: E402 (공용 상수)
@@ -593,7 +601,8 @@ class TableBraille:
             lines = [text]
             return BrailleOutput(
                 element_id=opt.element_id, braille_lines=lines,
-                rule_trail=_base_trail(lines, text),
+                # 플레이스홀더는 점역 안 된 원문 그대로 — 내용 규정 emit 금지(환각 0).
+                rule_trail=_base_trail(lines, text, content=False),
             )
 
         # <!표> 구조 태그 → 내부 '|' 격자로 변환해 기존 4안 렌더러에 위임(1:1).

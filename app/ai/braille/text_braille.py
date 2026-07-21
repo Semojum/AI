@@ -24,13 +24,14 @@ _PUNCT_RE = re.compile(r"[.?!,;:…·•（）()\[\]{}「」『』“”‘’\"
 _NUM_INDICATOR = "⠼"   # 수표(kor_math_rules._NUMBER_INDICATOR와 동일)
 
 
-def _content_rules(source: str, lines: list[str]) -> list[RuleApplication]:
+def content_rules(source: str, lines: list[str]) -> list[RuleApplication]:
     """점역된 '내용'에 적용된 구체 규정(수표·문장부호)을 rule_trail로 emit.
 
     포괄 규칙(KBR-0.1)·조판 규칙은 정책상 제외하고(태민 2026-06-01), 점역사가 규정으로
     확인할 실제 변환만 기록한다. FE 규정 패널이 평문에서도 비지 않도록 하는 핵심:
       - 수표(⠼): 원본에 아라비아 숫자가 있으면 출력 점자의 ⠼ 위치를 정밀 span으로(KBR-5.11.40).
       - 문장부호: 원본에 문장부호가 있으면 블록 규정(line_no=-1)으로(KBR-6.13.49).
+    표 경로(table_braille._base_trail)도 이 함수를 공용으로 쓴다 — text/table 비대칭 금지.
     """
     clean = _TAG_TOKEN_RE.sub("", source or "")
     joined = "\n".join(lines)
@@ -70,7 +71,7 @@ class TextBraille:
             for s, e, rule_id in symbol_rule_spans(opt.corrected_text, joined)
         ]
         # 수표·문장부호 규정 — 평문에서도 FE 규정 패널이 비지 않게 실제 변환을 기록.
-        trail += _content_rules(opt.corrected_text, lines)
+        trail += content_rules(opt.corrected_text, lines)
         box_borders = [
             BoxBorder(kind=kind, level=level, title=title)
             for kind, level, title in box_borders_from_source(opt.corrected_text)
