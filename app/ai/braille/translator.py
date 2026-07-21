@@ -382,9 +382,22 @@ def _paren_repl(m: re.Match) -> str:
     return f"-{inner}-"
 _ANGLE_RE = re.compile(r"[〈《<「『]([^〈《<>》〉「」『』\n]{1,20})[〉》>」』]")
 # 문중 빈칸 네모 □ — 숨김표(제49항 표: ×=_xl=⠸⠭⠇)로 적되 ⠭를 글자 수만큼 반복한다
-# (정답 생물 p046 실측: _xl·_xxl·_xxxl — □ 1·2·3글자). 줄머리 □(글머리 제72항)는 제외.
-# ⚠ 첫 구현은 ⠭⠭ 고정이었는데 정답 오독 — 정답은 ⠸…⠇ 숨김표 틀이다(2026-07-17 정정).
-_BOX_BLANK_RE = re.compile(r"(?<!^)□+", re.M)
+# (정답 생물 p046 실측: _xl·_xxl·_xxxl — □ 1·2·3글자).
+# 줄머리 □은 원래 전부 제외(글머리 제72항 불릿)했으나, 오디코딩 복원(⇂→□) 후 줄머리
+# 빈칸이 200건 나타나면서 재검토 — 실측상 진짜 불릿은 '단독 □ + 공백'뿐이고, 줄머리
+# '□는·□이라고'(붙은 조사)·'□□…'(복수)는 전부 빈칸이다(genuine □ 14건도 모두 빈칸).
+# 그래서 '줄머리 단독 □ + (공백|줄끝)'만 불릿으로 남기고 나머지는 빈칸으로 본다.
+_BOX_BLANK_RE = re.compile(r"□+", re.M)
+
+
+def _box_blank_repl(m: re.Match) -> str:
+    """□런 → 숨김표 틀 ⠸⠭ⁿ⠇. 줄머리 단독 □+공백은 제72항 불릿이라 braillify에 맡긴다."""
+    s, run = m.string, m.group()
+    at_line_start = m.start() == 0 or s[m.start() - 1] == "\n"
+    after = s[m.end():m.end() + 1]
+    if at_line_start and len(run) == 1 and (after == "" or after in " \t\n"):
+        return run                      # 줄머리 단독 □ + 공백/줄끝 = 글머리 불릿
+    return "⠸" + "⠭" * len(run) + "⠇"
 _TILDE_RE = re.compile(r"[~∼〜]")
 # MinerU는 〈보기〉 상자를 괄호 없이 '보기\x00'로 낸다. 정답 관행은 위치별로 다르다
 # (생물 p011 원본 27-28행 실측): **문중 참조 = ‘보기’(따옴표), 박스 제목 줄 = 맨 '보기'**.
@@ -497,7 +510,7 @@ def _apply_book_style(text: str) -> str:
     text = _BOGI_GAP_RE.sub(r"\1 ‘보기’\2", text)
     text = _NOISE_BACKTICK_RE.sub("", text)
     text = _AMP_RE.sub("⠯", text)
-    text = _BOX_BLANK_RE.sub(lambda m: "⠸" + "⠭" * len(m.group()) + "⠇", text)
+    text = _BOX_BLANK_RE.sub(_box_blank_repl, text)
     text = _TILDE_RE.sub("―", text)
     # 줄머리 하이픈 글머리: 정답은 ⠤⠤ + 공백 없이 내용을 붙인다(사회문화 p030 실측 '--.ul').
     # 줄표 ―로 바꾸면 braillify가 ⠤⠤로 점역한다. BBPG의 ⠤ 1셀·뒤 1칸과 다른 도서 관행.
@@ -764,6 +777,30 @@ _SPECIAL_MAP = {
     "　": " ",                       # 전각 공백
 }
 
+# ── 한컴 레거시 심볼 폰트 오디코딩 복원 ──────────────────────────────────────
+# 교과서 PDF의 심볼 폰트는 글리프를 엉뚱한 코드포인트로 인코딩한다. 매핑이 없어
+# braillify·symbol_table 어느 쪽도 못 받고 **예외도 플래그도 없이 사라진다** —
+# 원문 글자가 조용히 없어지는 유일한 경로라 cosmetic이 아니다(Ca²⁺→Ca⁺, 40°C→40C).
+# PUA 수식 글리프(_sanitize_repl)와 같은 계열, 다른 코드 영역.
+# 정체는 코퍼스 원문 문맥으로 개별 확인했다:
+#   ⇂  빈칸 네모 □ — "과정을 ⇂⇂라고 한다"(소화)·"혈액형은 ⇂⇂ 형"(AB).
+#      정답 도서도 네모 수만큼 ⠸⠭ⁿ⠇로 적는다(생물 p049 gold 7군 전수 일치).
+#   ¤  위첨자 2 — "a¤ -ab+b¤"(a²-ab+b²)·"x¤ +1>0". 수학2에 집중.
+#   ‹  위첨자 3 — "a‹ +b‹ =(a+b)(a¤ -ab+b¤ )"(a³+b³ 인수분해 공식).
+#   ˘  도 ° — "37˘C"·"45˘"·"0˘<A<90˘".
+#   ⇨  함의 화살표 ⇒ — "y=cosx ⇨y'=-sinx"(전량 수학2 도함수 공식).
+# ※ 첨자군(¡₁ ™₂ £₃ ¢₄ º₀)·백틱·▶◀는 정체 확증이 부족하거나 A/B 이득이 없어 제외.
+_LEGACY_GLYPH_MAP = {
+    "⇂": "□", "¤": "²", "‹": "³", "˘": "°", "⇨": "⇒",
+}
+_LEGACY_GLYPH_RE = re.compile("[" + "".join(_LEGACY_GLYPH_MAP) + "]")
+_SPECIAL_MAP.update(_LEGACY_GLYPH_MAP)   # sanitize 경로(다른 호출자)에도 같은 표를 건다
+
+
+def _restore_legacy_glyphs(s: str) -> str:
+    """오디코딩 글리프를 원래 문자로. 수식 라우팅 전에 돌려야 제곱이 ⠣로 나간다."""
+    return _LEGACY_GLYPH_RE.sub(lambda m: _LEGACY_GLYPH_MAP[m.group()], s)
+
 
 def _normalize_special(s: str) -> str:
     out = []
@@ -928,19 +965,24 @@ _CHOICE_HEAD_RE = re.compile(r"(?m)^([①-⑳])\s*")
 #     반올림 이하(~416셀)라 이번엔 보류.
 # ⚠ _SPECIAL_MAP(sanitize)와 분리한 전용 경로 — 병합 충돌 회피.
 _LEGACY_CIRCLED_BLACK = {"❶": "①", "❷": "②", "❸": "③", "❹": "④", "❺": "⑤", "❻": "⑥"}
-_LEGACY_GLYPH_RE = re.compile(r"[❶-❻]")
+_LEGACY_CIRCLED_RE = re.compile(r"[❶-❻]")
 
 
-def _restore_legacy_glyphs(text: str) -> str:
+def _restore_circled_black(text: str) -> str:
     # 인용 콜아웃 ❶[…]은 gold가 번호를 안 붙임 → 제거, 그 밖은 흰 원문자로 정규화.
+    # ⚠ _restore_legacy_glyphs(:800)와 이름·정규식을 반드시 분리할 것 — 한때 양쪽이
+    #   같은 이름을 써서 나중 정의가 5자 복원을 통째로 가리는 사고가 있었다.
     def _rep(m: re.Match) -> str:
         return "" if text[m.end():m.end() + 1] == "[" else _LEGACY_CIRCLED_BLACK[m.group()]
-    return _LEGACY_GLYPH_RE.sub(_rep, text)
+    return _LEGACY_CIRCLED_RE.sub(_rep, text)
 
 
 def translate_tagged_text(text: str) -> str:
     """<!수식> 태그가 포함된 텍스트를 점자 BRF로 변환."""
-    text = _restore_legacy_glyphs(text)     # 레거시 폰트 글리프 복원(선지머리 정규화보다 먼저)
+    # 레거시 심볼 폰트 복원은 **수식 라우팅보다 먼저** 해야 한다. 뒤에 두면 "x¤ +1>0"이
+    # 수식으로 안 잡혀 위첨자표(⠘⠼⠃)로 나가는데, 정답 도서는 제곱을 ⠣로 적는다.
+    text = _restore_legacy_glyphs(text)     # 오디코딩 5자(⇂¤‹˘⇨)
+    text = _restore_circled_black(text)     # 검은 원문자 ❶-❻ (선지머리 정규화보다 먼저)
     text = _CHOICE_HEAD_RE.sub(r"\1 ", text)
     text = _BACKTICK_MATH_RE.sub(lambda m: f"<!수식>{m.group(1).rstrip()}<!/수식> ", text)
     text = _normalize_inline_math(text)     # $…$/\(…\) → <!수식> (P1: 수식 라우팅)
