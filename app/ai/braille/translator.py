@@ -1044,6 +1044,26 @@ def _break_offsets(src: str, braille: str) -> list[int]:
     return sorted(offs)
 
 
+# ── 드러냄표(제56항) 오검출 억제 ─────────────────────────────────────────────
+# 밑줄 감지는 '글자 아래 얇은 가로선'이라 분수 가로선·선지 밑줄·영문 빈칸선까지 집는다.
+# 실측(전 코퍼스): 한글이 없는 드러냄 태그 389건 중 354건(91%)이 **정답에 드러냄표가
+# 한 번도 없는 페이지**에 찍힌다. 과목 분해가 원인을 확정한다 —
+#   수학2 우리 142회 / 정답 0회(97p 전수 0). 태그 내용이 '6'·'x'·'f(x)'·'1+cosb' 로
+#   전부 분수 분자다(가로선=분수선 오인). 외국어 175건은 영문 빈칸선, 생물 40건은 선지 ①ㄱ.
+# 근본 수정은 pdf_analyzer.underline_rects(분수선 배제)지만 그건 재추출이 필요하다.
+# 여기서는 '한글 없는 드러냄'만 태그를 걷어낸다(내용은 보존 — 글자를 잃지 않는다).
+_EMPH_PAIR_RE = re.compile(r"<!드러냄>(.*?)<!/드러냄>", re.S)
+_HANGUL_ANY_RE = re.compile(r"[가-힣]")
+
+
+def _drop_nonkorean_emphasis(text: str) -> str:
+    """한글이 없는 드러냄 구간은 밑줄 오검출로 보고 태그만 제거(내용은 유지)."""
+    return _EMPH_PAIR_RE.sub(
+        lambda m: m.group(1) if not _HANGUL_ANY_RE.search(m.group(1)) else m.group(0),
+        text,
+    )
+
+
 def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
     """텍스트 → (논리 줄별 점자, 줄별 음절 줄바꿈 offset). 32칸 분리는 layout이 수행.
 
@@ -1054,6 +1074,7 @@ def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
     # ★ '만을\n에서' 소실 구멍·개행 낀 괄호는 줄 단위 관행 정규화가 못 잡는다 —
     #   요소 전체 수준에서 선적용(이 개행은 원문 구조가 아니라 추출 산물).
     text = _BOGI_GAP_RE.sub(r"\1 ‘보기’\2", text)
+    text = _drop_nonkorean_emphasis(text)
     if _BOOK_STYLE:
         # ★ 보기 마커 원문 복원(ㄱㄴㄷㄹ)은 나열 시퀀스가 필요해 요소 전체에서 선적용해야
         #   한다 — 줄 분리 후엔 줄당 마커 1개라 ≥2 가드에 걸려 발동 못 한다(2026-07-18).
