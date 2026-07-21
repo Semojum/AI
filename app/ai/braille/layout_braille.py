@@ -396,6 +396,7 @@ class LayoutBraille:
             total += len(el_lines)
             forced_total += forced
 
+        self._c6_clip_page_line_items(page_line_items, meta)
         footer = self._footer_text(page_line_items, meta)
         orig_page = self._orig_page_text(page_line_items, meta)
         pages = self._assemble_pages(formatted, footer, orig_page, page_no)
@@ -739,6 +740,48 @@ class LayoutBraille:
                 if ln.strip():
                     return ln.strip()
         return ""
+
+    def _c6_clip_page_line_items(
+        self, page_line_items: list[BrailleOutput], meta: dict
+    ) -> None:
+        """페이지행 요소(원본 페이지 번호·꼬리말)의 점자 줄을 32칸으로 절단(in-place). C6.
+
+        **C6 근본 원인**: 페이지행 요소는 _partition에서 본문과 갈라져 나가
+        _format_element(=_wrap_line 32칸 조판)를 **타지 않는 유일한 경로**다. 조립되는
+        페이지행 자체는 _compose_page_line이 절단해 32칸을 지켰지만, 요소의 braille_lines는
+        점역 원문 길이 그대로 braille_text_list(=FE가 편집하는 화면)에 실려 나갔다.
+        전수 실측(dev+val 1,131p): 32칸 초과 50줄(header_footer 43·page_number 7),
+        최장 165칸. 본문 타입(text·list_item)은 0줄 — 일반 조판은 정상이었다.
+
+        **왜 줄바꿈이 아니라 절단인가(BBPG 1장3절4)**: "제목이 길어 전체를 꼬리말로 적을 수
+        없는 경우에는 핵심 단어를 선택하여 꼬리말이 들어갈 수 있는 칸수만큼만 적는다.
+        다만, 분명한 핵심어 선택이 어려운 경우에는 앞에서부터 내용의 일부를 적어 준다."
+        핵심어 자동 선택은 근거 없는 추측이 되므로 규정이 명시한 폴백(앞에서부터)을 쓴다.
+        정답 도서 실측도 32칸 상한을 뒷받침한다 — gold 51,581줄 중 초과 0줄(33칸으로
+        세어지던 451줄은 전부 줄머리 \\x0c 페이지 구분자이고 점자 셀이 아니다).
+
+        **왜 페이지행 슬롯폭이 아니라 32칸인가**: 슬롯폭(꼬리말이 실제로 차지하는 칸,
+        보통 22~24)으로 자르는 판본을 먼저 만들어 전수 측정했더니, 원본 페이지 번호 요소가
+        OCR 오분류로 길어진 페이지에서 꼬리말 슬롯이 0이 되어 요소 9건(val 7·dev 2)이
+        통째로 소멸했다(dev 텍스트 축 69.6→69.5). 32칸(=점자 페이지 폭)은 C6를 똑같이
+        해소하면서 요소를 소멸시키지 않는다. 인쇄면에 실제로 나가는 더 좁은 절단은
+        _compose_page_line이 이미 규정대로 하고 있으므로 이중으로 걸 필요가 없다.
+
+        절단 폭 32 ≥ _compose_page_line의 슬롯폭이고 접두 절단이라 **조립되는 페이지행은
+        불변**이다 — 이 수정은 braille_text_list만 바꾸고 BRF는 바이트 동일하다
+        (전수 대조 1,131p 전부 일치 확인).
+        """
+        def clip(lines: list[str]) -> list[str]:
+            # 32칸 안에 드는 줄은 손대지 않는다(들여쓰기·빈 줄 보존).
+            return [ln.strip()[:_COLS] if _cell_count(ln.strip()) > _COLS else ln
+                    for ln in lines]
+
+        for bo in page_line_items:
+            if meta.get(bo.element_id, _DEFAULT_META)[0] not in _PAGE_LINE_TYPES:
+                continue
+            bo.braille_lines = clip(bo.braille_lines)
+            for d in bo.drafts:                     # 현재 페이지행 요소엔 초안이 없으나 방어
+                d.braille_lines = clip(d.braille_lines)
 
     def _footer_text(self, page_line_items: list[BrailleOutput], meta: dict) -> str:
         """페이지행 꼬리말(가운데). header_footer 요소의 첫 줄."""

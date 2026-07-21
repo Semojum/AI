@@ -135,6 +135,45 @@ class TestLayoutRulesSpec:
         assert len(last_line) == _COLS
         assert last_line.endswith("⠼⠁")  # 점자 페이지번호 ⠼1 (마침표 없음, 예 1-6)
 
+    def test_c6_페이지행_요소도_32칸_이하(self, lb) -> None:
+        """C6 — header_footer/page_number 요소의 contents도 32칸을 넘지 않는다.
+
+        페이지행 요소는 _format_element(32칸 조판)를 타지 않는 유일한 경로라
+        braille_text_list에 원문 길이 그대로(실측 최장 165칸) 실려 나갔다.
+        절단은 BBPG 1장3절4("꼬리말이 들어갈 수 있는 칸수만큼만 … 앞에서부터").
+        """
+        hf, pn = uuid4(), uuid4()
+        long_hf = "⠔⠔" + "⠇⠚⠽" * 20          # 62칸
+        long_pn = "⠼⠚⠙⠋" + "⠠⠍⠉⠪" * 10      # 44칸
+        outs = [_out([long_hf], hf), _out([long_pn], pn)]
+        lb.layout(outs, page_no=1, job_id="c6",
+                  layout_result=_layout((hf, "header_footer", 1, 0),
+                                        (pn, "page_number", 2, 0)))
+        for bo in outs:
+            for line in bo.braille_lines:
+                assert _cell_count(line) <= _COLS, f"C6 위반 {_cell_count(line)}칸: {line!r}"
+        # 앞에서부터 절단 — 뒤를 버리고 앞을 남긴다
+        assert outs[0].braille_lines[0] == long_hf[:_COLS]
+
+    def test_c6_짧은_페이지행_요소는_불변(self, lb) -> None:
+        """32칸 안에 드는 페이지행 요소는 손대지 않는다(과잉 절단 방지)."""
+        hf = uuid4()
+        short = "⠔⠔⠇⠚⠽⠚⠧"
+        outs = [_out([short], hf)]
+        lb.layout(outs, page_no=1, job_id="c6b",
+                  layout_result=_layout((hf, "header_footer", 1, 0)))
+        assert outs[0].braille_lines == [short]
+
+    def test_c6_절단해도_조립된_페이지행은_불변(self, lb, tmp_path) -> None:
+        """절단 폭 32 ≥ _compose_page_line 슬롯폭이라 인쇄면(BRF)은 바뀌지 않는다."""
+        hf = uuid4()
+        long_hf = "⠇⠚⠽" * 20
+        page_line = lb._compose_page_line(long_hf, "", 1)      # 절단 전 기준선
+        outs = [_out([long_hf], hf)]
+        lb.layout(outs, page_no=1, job_id="c6c",
+                  layout_result=_layout((hf, "header_footer", 1, 0)))
+        assert _read_lines(tmp_path, "c6c")[-1] == page_line
+
     def test_double_sided_페이지행_홀수만(self, lb, monkeypatch) -> None:
         """양면 제본(DOUBLE_SIDED): 홀수 점자페이지만 페이지행, 짝수는 26줄 본문 (BBPG 1장2절2)."""
         monkeypatch.setattr("app.ai.braille.layout_braille.DOUBLE_SIDED", True)
