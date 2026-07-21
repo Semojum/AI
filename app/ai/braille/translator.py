@@ -912,9 +912,35 @@ def _normalize_inline_math(text: str) -> str:
 # 문중 참조("㉠과")는 붙어야 하므로 줄머리만 잡는다.
 _CHOICE_HEAD_RE = re.compile(r"(?m)^([①-⑳])\s*")
 
+# ── 레거시 폰트 오디코딩 복원 (w1, 2026-07-21) ──────────────────────────────
+# 교재 PDF의 사설 인코딩 폰트(딩뱃)가 매핑 없는 코드포인트로 추출돼 braillify가 요소
+# 전체를 거부(→약자 없는 폴백)하는 것을 원래 글자로 복원한다. 원본 PDF 크롭으로 자형을,
+# gold BRF로 점형을 확인하고 전 코퍼스 독립 A/B로 검증했다.
+#   · 검은 원문자 ❶–❻(U+2776–U+277B)는 흰 원문자 ①–⑥과 동형으로 점역(생물 p019
+#     정답목록 ❶미량… → gold ⠼⠂·⠼⠆… 확정, 자형은 생물 p019 크롭으로 흑원 숫자 확인).
+#     braillify가 ①–⑥→⠼⠂…를 정확히 처리하므로 ①–⑥으로 정규화해 맡긴다. 단 인용 콜아웃
+#     '❶[2013 수능]…'(언어)은 gold가 번호를 붙이지 않으므로 '[' 직전의 흑원 문자는 삭제한다.
+#     독립 A/B(부분문자열 flip): dev gain45/loss0, val gain310/loss6 — 양쪽 net-positive.
+#   ⚠ 미채택: 䤎(U+490E, 둥근 불릿)은 세계사·생물 목록(list_item)에선 gold ⠔⠔로 맞지만
+#     외국어 어휘 사이드바(text)에선 gold가 불릿 없이 ⠴표제어로 적어 문자 문맥만으론 못
+#     가른다(독립 A/B val net-negative). 요소 타입 배선 시 list_item 한정 재도입 후보.
+#     䤋(U+490B, 어휘 표제 별표→관행상 불릿 ⠔⠔)은 gold-correct·0 loss지만 효과가 코퍼스
+#     반올림 이하(~416셀)라 이번엔 보류.
+# ⚠ _SPECIAL_MAP(sanitize)와 분리한 전용 경로 — 병합 충돌 회피.
+_LEGACY_CIRCLED_BLACK = {"❶": "①", "❷": "②", "❸": "③", "❹": "④", "❺": "⑤", "❻": "⑥"}
+_LEGACY_GLYPH_RE = re.compile(r"[❶-❻]")
+
+
+def _restore_legacy_glyphs(text: str) -> str:
+    # 인용 콜아웃 ❶[…]은 gold가 번호를 안 붙임 → 제거, 그 밖은 흰 원문자로 정규화.
+    def _rep(m: re.Match) -> str:
+        return "" if text[m.end():m.end() + 1] == "[" else _LEGACY_CIRCLED_BLACK[m.group()]
+    return _LEGACY_GLYPH_RE.sub(_rep, text)
+
 
 def translate_tagged_text(text: str) -> str:
     """<!수식> 태그가 포함된 텍스트를 점자 BRF로 변환."""
+    text = _restore_legacy_glyphs(text)     # 레거시 폰트 글리프 복원(선지머리 정규화보다 먼저)
     text = _CHOICE_HEAD_RE.sub(r"\1 ", text)
     text = _BACKTICK_MATH_RE.sub(lambda m: f"<!수식>{m.group(1).rstrip()}<!/수식> ", text)
     text = _normalize_inline_math(text)     # $…$/\(…\) → <!수식> (P1: 수식 라우팅)
