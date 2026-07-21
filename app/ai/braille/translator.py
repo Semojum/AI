@@ -436,6 +436,15 @@ _JAMO_MARK_RE = re.compile(r"(?<![가-힣A-Za-z0-9])([ㄱ-ㅎ])\.(?=\s|$)")
 # 문항 번호: 요소 첫머리 숫자 뒤에 본문이 이어질 때만 마침표를 붙인다("3\n다음은…" → "3.").
 # 뒤에 아무것도 없는 숫자(페이지 번호 "16")는 그대로 둔다 — 정답도 마침표를 안 찍는다.
 _QNUM_RE = re.compile(r"^(\d{1,2})(?=\s+\S)")
+# 음수·뺄셈표(수학 제45항·제45항 4호): 부호 = 뺄셈표 ⠔. symbol_table의 붙임표 -=⠤가
+# 음수 부호까지 삼켜 ①-4가 ⠤⠼⠙(붙임표)로 나가던 것을 바로잡는다(gold ⠔⠼⠙, 수학2 p119).
+# 앞머리 부호만 잡는다 — 앞이 숫자·문자·한글·소수점·쉼표가 아닌 - + 숫자. 숫자 사이
+# -(2-3·02-123·날짜·계좌)와 물결표 범위(~→―→⠤⠤)는 붙임표/범위 관행이라 건드리지 않는다.
+# braillify에 ⠔(점자 셀)를 넘기면 _emit_mixed가 뒤 숫자에 수표 ⠼를 정상 부여한다.
+# ★ 뒤에 닫는 -가 오는 -N- 은 제외한다. translate_with_breaks가 요소 단위로 (N)→-N-
+# 붙임표 감쌈을 먼저 걸어 두기 때문에, 그걸 음수로 오인하면 감쌈 관행이 통째로 깨진다
+# (실측: 오인 시 valall 텍스트 66.4→64.9p).
+_NEG_NUM_RE = re.compile(r"(?<![0-9A-Za-z가-힣.,])-(?=\d+(?![\d-]))")
 # 줄머리 하이픈 글머리("- 내용") — 관행: ⠤⠤ 붙임(위 _apply_book_style 참조)
 _HYPHEN_BULLET_RE = re.compile(r"(?m)^[ \t]*-[ \t]+")
 # 어휘 뒤 각주 참조 *: 정답은 번호 붙임표 -1-(⠤⠼⠁⠤)로 적는다(세계사 p019·021·040 실측,
@@ -727,6 +736,10 @@ def _translate_with_braillify(text: str) -> str:
             if i < len(parts) - 1:  # 수식 직전: 뒤 공백 제거
                 clean = clean.rstrip()
             if clean:
+                # 음수 부호(제45항 4호)를 뺄셈표 셀 ⠔로 미리 고정 — symbol_table의 붙임표
+                # -=⠤가 삼키기 전에. ★ book_style의 (N)→붙임표 -N- 감쌈보다 먼저 원문에
+                # 적용해야 감쌈용 붙임표를 음수로 오인하지 않는다(-1- 감쌈 281회 보호).
+                clean = _NEG_NUM_RE.sub("⠔", clean)
                 preprocessed = _preprocess_units(_apply_book_style(clean))
                 substituted = substitute_symbols(preprocessed)
                 text_result: list[str] = []
