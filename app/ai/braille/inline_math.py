@@ -64,6 +64,10 @@ _SUB = {"₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4",
         "₅": "5", "₆": "6", "₇": "7", "₈": "8", "₉": "9"}
 _TAGGED_RE = re.compile(r"<!수식>.*?<!/수식>", re.DOTALL)
 
+# 계수분수(1/2x 등)는 인쇄 원문이 세로분수라 gold도 분수형(제7항 1호)으로 적는다.
+# 날짜·비율·연도범위(3/4분기·1/4)와·2005/2006)는 뒤에 변수·여는 괄호가 없어 빗금 유지.
+_COEF_FRAC_RE = re.compile(r"(?<![\d.)])(\d+)/(\d+)(?=[A-Za-z(])")
+
 
 def normalize(span: str) -> str:
     r"""평문 수식 표기를 kor_math_rules가 아는 LaTeX으로 맞춘다.
@@ -76,6 +80,7 @@ def normalize(span: str) -> str:
         s = re.sub(rf"(?<![A-Za-z\\]){f}(?![A-Za-z])", rf"\\{f}", s)
     s = re.sub(f"[{''.join(_SUP)}]+", lambda m: "^{" + "".join(_SUP[c] for c in m.group()) + "}", s)
     s = re.sub(f"[{''.join(_SUB)}]+", lambda m: "_{" + "".join(_SUB[c] for c in m.group()) + "}", s)
+    s = _COEF_FRAC_RE.sub(r"\\frac{\1}{\2}", s)
     return s
 
 
