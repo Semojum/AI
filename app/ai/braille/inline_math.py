@@ -30,7 +30,12 @@ import re
 # 정답은 제21항 절댓값 ⠳ 1셀 — gold 실측도 ⠳⠈⠁⠔⠈⠃⠳(=|α-β|)로 ⠸⠳는 1131p 0회다.
 _ATOM = r"[A-Za-z0-9αβγδεζηθικλμνξπρστυφχψωΑΒΓΔΘΛΞΠΣΦΨΩ" \
         r"⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉+\-=×÷<>≤≥≠±∞√∑∫·^_(){}\[\]/,.'\\| ]"
-_SPAN_RE = re.compile(rf"{_ATOM}{{3,}}")
+_SPAN_RE = re.compile(rf"{_ATOM}{{2,}}")
+# 아래첨자를 지닌 2자 토큰(O₂·t₂ 등 원소·변수)도 수식으로 잡기 위한 신호.
+# 3자 임계는 유지하되 아래첨자만 예외로 2자를 허용한다 — 아래첨자 유니코드는 한글
+# 본문에 안 나오고(코퍼스 실측 0건, r15) 깨진 글리프 정화 후에만 생기므로 오탐이 없다.
+# 없으면 짧은 O₂·t₂가 라우팅을 못 타 규정형 ⠰⠼(gold 0회)로 나가 되레 어긋난다(r16 생물 p073).
+_SUB_CHARS = re.compile(r"[₀₁₂₃₄₅₆₇₈₉]")
 
 # 강한 수식 신호 — 이게 없으면 수식으로 보지 않는다.
 _STRONG = re.compile(
@@ -98,7 +103,10 @@ def _wrap_segment(seg: str) -> str:
         em = _ENUM_HEAD_RE.match(core)
         if em:
             head, core = em.group(), core[em.end():]
-        if len(core) < 3 or not _has_strong(core):
+        if not _has_strong(core):
+            return span
+        # 2자 토큰은 아래첨자를 지닌 것만 허용(원소·변수 O₂·t₂). 그 밖은 3자 임계 유지.
+        if len(core) < 3 and not _SUB_CHARS.search(core):
             return span
         lead = span[:len(span) - len(span.lstrip())]
         trail = span[len(span.rstrip()):]
