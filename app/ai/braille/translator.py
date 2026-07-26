@@ -754,12 +754,54 @@ def substitute_tags(text: str) -> str:
     return _ANGLE_LABEL_RE.sub(r"〈\1〉", text)
 
 
+# ── 국어 문장 안 인라인 첨자 토큰 (r22, 2026-07-26) ──────────────────────────
+# O₂·t₁·PCO₂처럼 **글자와 아래첨자만으로 된 토큰**은 수식이라기보다 국어 문장 안의 로마자
+# 표기다. gold도 그렇게 적는다 — 우리 수식 경로가 붙이던 제11항 두 칸과 대문자 구절표는
+# 정답 도서에 없고, 대신 로마자표 ⠴가 붙는다.
+#   규정: 「한글 점자」 제29항(국어 문장 안 로마자 = 로마자표) · 수학 제12항 3호
+#         "국어 문장 안의 로마자는 제29항에 따르되 **대문자 구절표를 사용하지 않는다**".
+#         제11항 두 칸은 '수식'에 붙는 규정인데, gold는 단독 첨자 토큰을 수식으로 조판하지
+#         않는다(아래 실측). 제12항 1호의 '로마자표 생략'은 진짜 수식 안에만 적용된다.
+#   gold 실측(dev+val, 어절 초두 568건 — temp/r22_measure_gold.py):
+#         로마자표 있음 463 · 없음 105(81.5%)   대문자표 홑 ⠠ 351 · 없음 217 · 겹 ⠠⠠ **0**
+#         앞 공백 0칸 36 · 1칸 88 · 2칸 5   뒤 공백 0칸 101 · 1칸 37 · 2칸 2
+#         → 두 칸(제11항)은 사실상 0. 대표형 CO₂=`0,CO2`(⠴⠠⠉⠕⠆) · t₁=`0T1`(⠴⠞⠂).
+#   범위: 연산자·등호가 하나라도 있으면 진짜 수식이라 제외(S₁+S₂=10은 종전대로 제11항).
+#         한글이 없는 요소(순수 수식·표 셀)도 제외 — '국어 문장 안'이 규정 전제다.
+_INLINE_SUB_TOKEN_RE = re.compile(r"^(?:[A-Za-z]+_\{?\d+\}?)+[A-Za-z]*$")
+# 괄호로 묶인 첨자 토큰 '산소(O₂)와' — gold는 수학 괄호 ⠦…⠴가 아니라 **붙임표 ⠤…⠤**로
+# 감싼다(생물 p087 `L3,U-O2-V`=산소-O₂-와 · p030 `-0,NAHCO3-`, dev+val 붙임표 25건 대
+# 수학괄호 0건). (가)→⠤가⠤와 같은 도서 관행(D-01)이다.
+# ⚠ 실제로 도달하는 형태는 `-O₂-`다: translate_with_breaks가 _paren_repl로 (X)→-X-를
+#   먼저 적용하고, 그 붙임표까지 inline_math가 수식 구간에 삼켜 convert_latex이 **뺄셈
+#   ⠔**로 내보내고 있었다(생물 p087 실측 `⠔⠠⠕⠆⠔`, gold `⠤⠕⠆⠤`). 두 형태 모두 받는다.
+_INLINE_SUB_PAREN_RE = re.compile(r"^\((?:[A-Za-z]+_\{?\d+\}?)+[A-Za-z]*\)$")
+_INLINE_SUB_HYPHEN_RE = re.compile(r"^-(?:[A-Za-z]+_\{?\d+\}?)+[A-Za-z]*-$")
+_BOOK_HYPHEN = "⠤"
+
+
+def _has_hangul_outside_math(parts: list[str]) -> bool:
+    """수식 밖 본문에 한글이 있는가 — 태그명(<!수식>)은 제외하고 본다."""
+    return any(_HANGUL_SYL_RE.search(_RESIDUAL_BANG_TAG_RE.sub("", parts[i]))
+               for i in range(0, len(parts), 2))
+
+
+def _inline_sub_braille(b: str) -> str:
+    """인라인 첨자 토큰 점형: 로마자표 ⠴ 접두 + 대문자 구절표 ⠠⠠ → 홑 대문자표 ⠠."""
+    return _ROMAN_START + b.replace(_CAPITAL_IND * 2, _CAPITAL_IND)
+
+
 def _translate_with_braillify(text: str) -> str:
     parts = _FORMULA_RE.split(text)
-    chunks: list[tuple[bool, str]] = []  # (is_formula, braille)
+    # (종류, 점자, 앞 원문공백, 뒤 원문공백). 종류: "t"=텍스트 "f"=수식 "i"=인라인 첨자 토큰
+    chunks: list[tuple[str, str, bool, bool]] = []
+    # 국어 문장 안일 때만 인라인 첨자 관행 적용(제12항 2·3호 전제)
+    inline_sub = _has_hangul_outside_math(parts)
 
     for i, part in enumerate(parts):
         if i % 2 == 0:  # 일반 텍스트 세그먼트
+            lead_ws = bool(part[:1].strip() == "" and part[:1])
+            trail_ws = bool(part[-1:].strip() == "" and part[-1:])
             clean = substitute_tags(part)
             if i > 0:                # 수식 직후: 앞 공백 제거
                 clean = clean.lstrip()
@@ -774,16 +816,42 @@ def _translate_with_braillify(text: str) -> str:
                 substituted = substitute_symbols(preprocessed)
                 text_result: list[str] = []
                 _emit_mixed(substituted, text_result)
-                chunks.append((False, _collapse_spaces("".join(text_result))))
+                chunks.append(("t", _collapse_spaces("".join(text_result)),
+                               lead_ws, trail_ws))
+            else:
+                # 빈 텍스트(공백뿐)라도 띄어쓰기 정보는 다음 구분에 넘긴다
+                chunks.append(("t", "", lead_ws, trail_ws))
         else:  # 수식 세그먼트
-            chunks.append((True, convert_latex(part)))
+            core = part.strip()
+            if inline_sub and _INLINE_SUB_TOKEN_RE.match(core):
+                chunks.append(("i", _inline_sub_braille(convert_latex(core)),
+                               False, False))
+            elif inline_sub and (_INLINE_SUB_PAREN_RE.match(core)
+                                 or _INLINE_SUB_HYPHEN_RE.match(core)):
+                inner = _inline_sub_braille(convert_latex(core[1:-1]))
+                chunks.append(("i", _BOOK_HYPHEN + inner + _BOOK_HYPHEN,
+                               False, False))
+            else:
+                chunks.append(("f", convert_latex(part), False, False))
 
-    # 수학 점자 규정 제11항: 수식 앞뒤 두 칸 공백(⠀⠀)
+    # 수학 점자 규정 제11항: 수식 앞뒤 두 칸 공백(⠀⠀).
+    # 단 인라인 첨자 토큰(O₂·t₁)은 gold가 두 칸을 쓰지 않으므로 원문 띄어쓰기를 그대로 둔다.
     result_parts: list[str] = []
-    for j, (_, braille) in enumerate(chunks):
-        if j > 0:
-            result_parts.append("⠀⠀")
+    prev_kind: str | None = None
+    pending_ws = False
+    for kind, braille, lead_ws, trail_ws in chunks:
+        if not braille:
+            pending_ws = pending_ws or lead_ws or trail_ws
+            continue
+        if prev_kind is not None:
+            if kind == "i" or prev_kind == "i":
+                if pending_ws or lead_ws:
+                    result_parts.append("⠀")
+            else:
+                result_parts.append("⠀⠀")
         result_parts.append(braille)
+        prev_kind = kind
+        pending_ws = trail_ws
 
     braille = "".join(result_parts)
     braille = _fix_leading_roman(text, braille)
