@@ -136,7 +136,8 @@ def _is_running_foot(content: str) -> bool:
 #        of a bookshelf ... Therefore, no OCR output can be generated."   (183자)
 #       "... Therefore, the correct OCR output is an empty string."        (200자)
 #   · 아래 패턴의 오검출 0건 — 검출은 위 2건뿐이고, 영문 위주(ASCII 90%↑)·60자 이상인
-#     요소 957개가 오검출 위험 모수다. 외국어 지문이 'There is no question…',
+#     요소 약 960개가 오검출 위험 모수다(집계 정의에 따라 957~963 — 독립 검증 재집계
+#     2026-07-26. 판정에 쓰는 수치가 아니라 위험 규모 감각용이다). 외국어 지문이 'There is no question…',
 #     'It is not uncommon…'처럼 부정문을 흔히 쓰므로, 패턴은 **OCR/판독 작업 자체를
 #     자기언급하는 표현**만 잡도록 좁혔다(단순 부정문·'The image shows…' 류는 제외).
 #     (재현: temp/r29_census.py)

@@ -165,10 +165,15 @@ class TestLayoutRulesSpec:
         assert outs[0].braille_lines == [short]
 
     def test_c6_절단해도_조립된_페이지행은_불변(self, lb, tmp_path) -> None:
-        """절단 폭 32 ≥ _compose_page_line 슬롯폭이라 인쇄면(BRF)은 바뀌지 않는다."""
+        """절단 폭 32 ≥ _compose_page_line 슬롯폭이라 인쇄면(BRF)은 바뀌지 않는다.
+
+        절단 전/후 어느 쪽으로 조립해도 같은 페이지행이 나와야 절단이 '무해'하다 —
+        절단 후만 기준선으로 삼으면 "조판이 같은 절단을 한다"만 확인하게 된다(2026-07-26).
+        """
         pn = uuid4()
         long_pn = "⠼⠚⠙⠋" * 15
-        page_line = lb._compose_page_line("", long_pn[:_COLS], 1)   # 절단 후 기준선
+        page_line = lb._compose_page_line("", long_pn, 1)            # 절단 전 기준선
+        assert page_line == lb._compose_page_line("", long_pn[:_COLS], 1)
         outs = [_out([long_pn], pn)]
         lb.layout(outs, page_no=1, job_id="c6c",
                   layout_result=_layout((pn, "page_number", 1, 0)))
