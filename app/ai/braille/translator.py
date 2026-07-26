@@ -24,6 +24,7 @@ import re
 
 from app.ai.braille.kor_math_rules import convert_latex, digits_to_braille
 from app.ai.braille import eng_braille, inline_math
+from app.ai.braille.constants import WRAP_HYPHEN_CLOSE, WRAP_HYPHEN_OPEN
 from app.ai.braille.symbol_rules import substitute_symbols
 
 logger = logging.getLogger(__name__)
@@ -348,6 +349,28 @@ _CIRCLED_RE = re.compile("[" + "".join(_CIRCLED) + "]")
 _MARK_PAREN_RE = re.compile(r"\(([^()]{1,60})\)")
 _UPPER_ONLY_RE = re.compile(r"^[A-Z0-9 ,.·]+$")
 
+# ── 감쌈 붙임표 자리표시자 (x2-a) ─────────────────────────────────────────────
+# _paren_repl이 내는 감쌈용 붙임표는 '원문 하이픈'이 아니라 조판 기호다. 그런데
+# translate_with_breaks가 요소 단위로 감쌈을 먼저 적용하므로, 그 결과 하이픈이
+# 뒤따르는 줄 단위 경로의 _NEG_NUM_RE(음수 부호)에 다시 걸린다 —
+# "(2010 수능)" → "-2010 수능-" → ⠔(뺄셈표)⠼⠃⠚⠁⠚…. _NEG_NUM_RE의 가드는 바로
+# 붙은 닫는 하이픈("-2010-")만 배제해서 공백이 끼면 뚫린다.
+# 그래서 감쌈 하이픈만 비-ASCII 자리표시자로 표시해 음수 판정 구간을 통과시키고,
+# 판정이 끝난 자리에서 원래 하이픈으로 되돌린다(symbol_table의 -=⠤를 그대로 태우기
+# 위함). 자리표시자는 유니코드 비문자(U+FDD0/1) — 실문서에 나올 수 없고
+# sanitize_for_braille의 PUA·제어문자 범위에도 걸리지 않는다.
+# ★ inline_math는 이 표식을 하이픈과 같은 수식 원자로 친다 — 아니면 수식 구간이
+#   표식에서 쪼개져 라우팅이 달라진다(수학2 173요소 실측). 정의는 constants 공유.
+_WRAP_OPEN = WRAP_HYPHEN_OPEN
+_WRAP_CLOSE = WRAP_HYPHEN_CLOSE
+_WRAP_RESTORE = {ord(_WRAP_OPEN): "-", ord(_WRAP_CLOSE): "-"}
+
+
+def _restore_wrap_hyphen(s: str) -> str:
+    """감쌈 자리표시자 → 원래 붙임표(-). 자리표시자가 없으면 무해한 no-op."""
+    return s.translate(_WRAP_RESTORE)
+
+
 # 출처/연도 대괄호 → 소괄호 관행(정답 도서 실측: 생물 p009 '[2011학년도 대수능]',
 # p012 '[실험 과정]'·'[실험 결과]' → gold는 소괄호 셀 ⠦⠄…⠠⠴로 적는다. 대괄호 셀
 # ⠦⠆…⠰⠴가 아니다). ⚠ 세계사 '[1096~1270]' 같은 연대 범위 대괄호는 gold가 대괄호를
@@ -409,7 +432,9 @@ def _paren_repl(m: re.Match) -> str:
         return m.group(0)          # 소문자 (x)는 종전 유지(수식 변수 회귀 방지)
     # 대문자 약어 (SNS)도 붙임표 — "약어는 소괄호" 가정은 dev·val 교차 스캔에서 어긋
     # 최다(21건)로 판명, 정답 실측 '-⠴SNS-' (사회문화 p062, 2026-07-18 정정).
-    return f"-{inner}-"
+    # 감쌈 붙임표는 자리표시자로 낸다(위 _WRAP_OPEN 주석) — 하류의 음수 판정이
+    # 이 하이픈을 뺄셈표로 재해석하지 못하게 하고, 판정 뒤 원래 -로 되돌린다.
+    return f"{_WRAP_OPEN}{inner}{_WRAP_CLOSE}"
 _ANGLE_RE = re.compile(r"[〈《<「『]([^〈《<>》〉「」『』\n]{1,20})[〉》>」』]")
 # 문중 빈칸 네모 □ — 숨김표(제49항 표: ×=_xl=⠸⠭⠇)로 적되 ⠭를 글자 수만큼 반복한다
 # (정답 생물 p046 실측: _xl·_xxl·_xxxl — □ 1·2·3글자).
@@ -443,7 +468,11 @@ _NOISE_BACKTICK_RE = re.compile(r"(?<=[0-9가-힣])`(?=[0-9가-힣])")
 # 한컴 수식 마크 백틱: `f(x)=0 처럼 백틱+영문 시작 구간은 인라인 수식이다(수학2 p016·036·052
 # 실측 — 정답은 수학 괄호 ⠦…⠴, 텍스트 괄호로 점역하면 어긋 dev11/val44). 한글 앞까지를
 # 수식 태그로 라우팅해 convert_latex가 처리하게 한다.
-_BACKTICK_MATH_RE = re.compile(r"`\s*([A-Za-z][A-Za-z0-9(){}\[\]=+\-*/^'′,.\s]*?)(?=[가-힣]|$|\n)")
+# 문자 집합에 감쌈 자리표시자를 하이픈과 같이 넣는다 — 빼면 "`f(1)의"처럼 감쌈이 낀
+# 백틱 수식이 구간을 못 이뤄 텍스트 경로로 새고 로마자표가 붙는다(수학2 실측).
+_BACKTICK_MATH_RE = re.compile(
+    r"`\s*([A-Za-z][A-Za-z0-9(){}\[\]=+\-*/^'′,.\s"
+    + WRAP_HYPHEN_OPEN + WRAP_HYPHEN_CLOSE + r"]*?)(?=[가-힣]|$|\n)")
 # 앰퍼샌드: 규정 [다만]은 한글 사이 &를 로마자표 감쌈 ⠴⠈⠯⠲(0@&4 예시 명시)으로, 정답
 # 도서는 ⠯ 단독(이탈 — regulation_vs_book 기록). book=⠯, regulation=규정 그대로(symbol_table).
 _AMP_RE = re.compile(r"\s*&\s*")
@@ -544,6 +573,9 @@ def _apply_book_style(text: str) -> str:
     text = _QNUM_RE.sub(r"\1.", text)
     text = _CIRCLED_RE.sub(lambda m: _CIRCLED[m.group()], text)
     text = _MARK_PAREN_RE.sub(_paren_repl, text)
+    # 이 단계는 이미 음수 판정(_NEG_NUM_RE) 뒤라 자리표시자를 유지할 이유가 없다 —
+    # 여기서 만들어진 감쌈만 되돌린다(밖에서 온 것은 앞서 복원돼 no-op).
+    text = _restore_wrap_hyphen(text)
     text = _ANGLE_RE.sub(r"‘\1’", text)
     text = _BOGI_LINE_RE.sub(r"\1", text)
     text = _BOGI_GAP_RE.sub(r"\1 ‘보기’\2", text)
@@ -816,6 +848,9 @@ def _translate_with_braillify(text: str) -> str:
                 # -=⠤가 삼키기 전에. ★ book_style의 (N)→붙임표 -N- 감쌈보다 먼저 원문에
                 # 적용해야 감쌈용 붙임표를 음수로 오인하지 않는다(-1- 감쌈 281회 보호).
                 clean = _NEG_NUM_RE.sub("⠔", clean)
+                # 음수 판정이 끝났으니 감쌈 자리표시자를 원래 붙임표로 되돌린다
+                # (뒤의 _apply_book_style·substitute_symbols의 -=⠤ 매핑을 그대로 태운다).
+                clean = _restore_wrap_hyphen(clean)
                 preprocessed = _preprocess_units(_apply_book_style(clean))
                 substituted = substitute_symbols(preprocessed)
                 text_result: list[str] = []
@@ -826,6 +861,9 @@ def _translate_with_braillify(text: str) -> str:
                 # 빈 텍스트(공백뿐)라도 띄어쓰기 정보는 다음 구분에 넘긴다
                 chunks.append(("t", "", lead_ws, trail_ws))
         else:  # 수식 세그먼트
+            # 수식 구간은 _NEG_NUM_RE를 타지 않으므로 여기서 바로 되돌린다
+            # (_INLINE_SUB_HYPHEN_RE가 '-O₂-' 형을 그대로 받도록).
+            part = _restore_wrap_hyphen(part)
             core = part.strip()
             if inline_sub and _INLINE_SUB_TOKEN_RE.match(core):
                 chunks.append(("i", _inline_sub_braille(convert_latex(core)),
@@ -868,6 +906,7 @@ def _translate_fallback(text: str) -> str:
         return convert_latex(m.group(1))
 
     result = _FORMULA_RE.sub(_formula_sub, text)
+    result = _restore_wrap_hyphen(result)   # 폴백 경로엔 음수 판정이 없다 — 즉시 복원
     result = substitute_tags(result)
     result = substitute_symbols(result)
     return _braillify_fallback(result)
@@ -1392,6 +1431,12 @@ def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
     칸 중간에서 쪼개지 않기 위함, §1.2.1). 각 줄의 break offset은 layout `_wrap_line`이
     32칸 줄바꿈에 사용한다.
     """
+    # ★ 문항 번호 마침표(_QNUM_RE)는 요소 전체에서 먼저 본다 — 아래 split("\n")이
+    #   줄을 쪼개면 추출이 흔히 번호를 자기 줄에 홀로 주는 탓에 '\s+\S' 룩어헤드가
+    #   사라져 _apply_book_style 안의 같은 규칙이 영영 발동하지 못한다("2\n다음은…").
+    #   _apply_book_style의 호출은 그대로 둔다 — 치환 뒤엔 '2.' 다음이 '.'이라
+    #   룩어헤드가 실패하므로 이중 적용되지 않는다(멱등).
+    text = _QNUM_RE.sub(r"\1.", text)
     # ★ '만을\n에서' 소실 구멍·개행 낀 괄호는 줄 단위 관행 정규화가 못 잡는다 —
     #   요소 전체 수준에서 선적용(이 개행은 원문 구조가 아니라 추출 산물).
     text = _BOGI_GAP_RE.sub(r"\1 ‘보기’\2", text)
