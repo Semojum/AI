@@ -142,14 +142,37 @@ def _fix_decimal_comma(text: str) -> str:
     return _DECIMAL_COMMA_RE.sub(".", text)
 
 
-# 대각선으로 나뉜 머리칸(`현상\특징`)의 백슬래시는 인쇄 구획선이지 옮길 문자가 아니다.
-# MinerU가 그 선을 `\`로 표기해 넘기면 점역이 ⠸⠡(백슬래시)를 찍는데, 정답 도서에는
-# 이 점형이 **전 코퍼스 0회**다(우리 표 출력에는 60회, 2026-07-19 실측). 두 머리말을
-# 한 칸 띄어 잇는 형태가 정답의 표기다.
-_DIAGONAL_HEAD_RE = re.compile(r"(?<=[^\s\\])\s*\\\s*(?=[^\s\\])")
+# 대각선으로 나뉜 머리칸(`문항\학생`·`인구 구조 \ 연도`) — 인쇄본의 구획선이다.
+# MinerU가 그 선을 `\`로 넘기면 점역이 ⠸⠡(역빗금)을 찍는다. 두 머리말은 남기고 선만
+# 없앤다(한 칸으로).
+#
+# ⚠ 규정과 도서 관행이 갈리는 자리다. 규정은 이 자리를 직접 정한다 —
+#     「2025년도 개정 …점자교과서 및 교수학습 자료 제작 지침」 §3.1.3(4)
+#       "표의 1행 1열의 대각선은 빗금 _/으로 적는다."   (_/ = ⠸⠌)
+#   그런데 정답 도서는 빗금도 역빗금도 쓰지 않는다(⠸⠌·⠸⠡ 둘 다 대각선 자리에 0회).
+#   두 라벨을 아예 **다른 자리에 나눠 적는다** — 사회문화 p100 gold는 표를 연도별로
+#   묶고 `연도`를 각 묶음 머리로, `인구 구조`를 그 다음 줄 제목으로 올린다. 우리 렌더러
+#   (unfold/linear)에는 그 재구조화가 없다.
+#   규정형(빗금)을 실제로 발행해 전 코퍼스 재점역·채점한 결과는 **양쪽 악화**였다
+#   (2026-07-27 실측: dev 편집 +138 · val +358, 표 축 dev -0.1p · val -0.2p) — gold에
+#   없는 2셀을 더 찍기 때문이다. 그래서 관행 우선으로 '없앤다'까지만 한다.
+#   ★ 규정형 채택은 점역사 확인 사항으로 남긴다(제29항 종료표 건과 같은 성격).
+#
+# ★ 적용 범위는 규정이 말하는 **1행 1열**뿐이고, 양옆이 라벨(글자)일 때만이다. 대각선은
+#   두 머리말을 가르는 선이므로 앞뒤가 글자다. 이 조건을 빼면 대각선이 아닌 백슬래시를
+#   망가뜨린다 — 실측: 표 안 LaTeX(`$\frac{1}{2600}$`·`$\alpha$` 등 dev+val 71칸)이
+#   셀 단위 배선에 걸려 `$ frac{1}{2600}$`로 뭉개지고 있었다. 추출이 흘리는 마크다운
+#   이스케이프(`32\~33`·`\- 항목`)도 같은 꼴이다.
+#   '글자'에는 그리스 문자와 성별 기호도 넣는다 — 표 머리 라벨로 실제로 쓰인다
+#   (생물 p161 격자 머리 `♀\δ`). 반대로 LaTeX·마크다운 이스케이프의 백슬래시 앞은
+#   늘 `$ { [ = , ~ -` 같은 구분자라 이 집합에 들지 않는다.
+_LABEL_CH = r"0-9A-Za-z가-힣Ͱ-Ͽ♀♂"
+_DIAGONAL_HEAD_RE = re.compile(
+    rf"(?<=[{_LABEL_CH}])\s*\\\s*(?=[{_LABEL_CH}])")
 
 
 def _strip_diagonal_rule(text: str) -> str:
+    """1행 1열 대각선 `\\` 제거 — 두 머리말을 한 칸으로 잇는다."""
     return _DIAGONAL_HEAD_RE.sub(" ", text)
 
 
@@ -176,7 +199,7 @@ _LEADER_DOTS_RE = re.compile(r"^\.{3,}$")
 
 
 def _cell_text(body: str) -> str:
-    """<td> 본문 → 셀 원문. 태그 제거 → **엔티티 해제** → 오독·구획선 정정.
+    """<td> 본문 → 셀 원문. 태그 제거 → **엔티티 해제** → 소수점 오독 정정.
 
     ★ 엔티티 해제(html.unescape)가 없으면 마크업 이스케이프가 본문 글자로 새어 나간다.
       MinerU가 셀 안의 부등호를 HTML 규약대로 `&gt;`/`&lt;`로 내는데, 그대로 점역하면
@@ -188,8 +211,7 @@ def _cell_text(body: str) -> str:
       unescape는 태그 제거 **뒤에** 해야 한다 — 먼저 하면 `&lt;`가 `<`로 풀려
       _HTML_TAG_RE에 태그로 잡아먹힌다.
     """
-    return _strip_diagonal_rule(
-        _fix_decimal_comma(_html_unescape(_HTML_TAG_RE.sub("", body)).strip()))
+    return _fix_decimal_comma(_html_unescape(_HTML_TAG_RE.sub("", body)).strip())
 
 
 def _html_to_grid(html: str) -> list[list[str]]:
@@ -231,6 +253,30 @@ def _html_to_grid(html: str) -> list[list[str]]:
     return grid
 
 
+def _normalize_grid(grid: list[list[str]]) -> list[list[str]]:
+    """격자 소스 3종(table_structure·HTML·파이프) 공통 정정.
+
+    지금은 1행 1열 대각선뿐이다 — 규정이 **1행 1열**만 다루므로 셀 단위 파서가 아니라
+    격자 좌표를 아는 여기서 건다. 셀 단위로 걸면 대각선이 아닌 백슬래시(표 안 LaTeX
+    `$\\frac{1}{2600}$`·`$\\alpha$` 등 dev+val 71칸)까지 망가뜨린다.
+
+    ★ 병합 복제분도 같이 바꾼다. 대각선 머리칸은 2단 머리에서 rowspan/colspan을 갖는
+      일이 흔해(사회문화 p185·p092, 생물 p024 …) _html_to_grid가 같은 값을 아래·옆
+      칸에 복제한다. 코너만 고치면 복제분에 역빗금이 그대로 남는다.
+    """
+    if not (grid and grid[0] and grid[0][0]):
+        return grid
+    src = grid[0][0]
+    dst = _strip_diagonal_rule(src)
+    if dst == src:
+        return grid
+    for row in grid:
+        for i, cell in enumerate(row):
+            if cell == src:              # 코너 자신 + 병합 복제분
+                row[i] = dst
+    return grid
+
+
 def _table_tags(table_structure, table_text: str) -> str:
     """표 구조 → <!표> 태그(stage② 표시·table_braille 입력). 비정형은 원문 유지."""
     grid = _table_to_grid(table_structure) if table_structure else []
@@ -238,7 +284,7 @@ def _table_tags(table_structure, table_text: str) -> str:
         grid = _html_to_grid(table_text)
     if not grid and "|" in table_text:
         grid = _pipe_to_grid(table_text)
-    return build_table_tags(grid) if grid else table_text
+    return build_table_tags(_normalize_grid(grid)) if grid else table_text
 
 
 def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
