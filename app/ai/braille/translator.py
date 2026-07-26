@@ -1033,6 +1033,26 @@ def _restore_broken_subscripts(s: str) -> str:
     return _BROKEN_SUBSCRIPT_RE.sub(_rep, s)
 
 
+# ── 아래아 ㆍ(U+318D)를 가운뎃점으로 쓰는 조판 관행 정규화 ────────────────────
+# 교재 조판이 가운뎃점 ·(U+00B7) 자리에 **한글 자모 아래아 ㆍ(U+318D)** 를 쓰는 자리가 있다
+# (같은 페이지 안에서 '사회·문화'와 '사회ㆍ문화'가 섞여 나온다 — 사회문화 p043 실측).
+# 코드포인트가 다르니 braillify는 이걸 자모로 보고 **⠐⠼** 로 적는데, 뒤 셀 ⠼가 수표라
+# 이어지는 한글이 통째로 숫자로 읽힌다: '사회ㆍ문화' → ⠇⠚⠽⠐⠼⠑⠛⠚⠧ → 역점역 '사회,570와'.
+# C5(수표) 계열 오류이고, 한 글자 차이가 뒷 낱말을 통째로 깨뜨린다.
+#   규정 제50항: 가운뎃점은 ⠐⠆("2), 앞뒤를 모두 붙여 적는다(규정_텍스트.txt:2327).
+#   정답 도서도 같은 자리에서 ⠐⠆를 쓴다(사회문화 p045 ⠇⠚⠽⠐⠆⠑⠛⠚⠧ = 사회·문화).
+# **한글 음절 사이에 낀 것만** 바꾼다 — 국어 교재가 진짜 아래아(옛한글 모음)를 다루는
+# 자리는 홑따옴표·자모 나열이라 이 문맥에 걸리지 않는다. 코퍼스 실측 6건(dev 2·val 4,
+# 4쪽)은 전부 '사회ㆍ문화'·'생각ㆍ원망ㆍ감정'으로 가운뎃점 용법이고 아래아 용법은 0건.
+# 길이 1:1 치환이라 translate_with_breaks의 원문↔점자 offset 대응이 어긋나지 않는다.
+_ARAEA_MIDDOT_RE = re.compile("(?<=[가-힣])ㆍ(?=[가-힣])")
+
+
+def _normalize_araea_middot(s: str) -> str:
+    """한글 음절 사이 아래아 ㆍ → 가운뎃점 ·(제50항 ⠐⠆)."""
+    return _ARAEA_MIDDOT_RE.sub("·", s)
+
+
 def _normalize_special(s: str) -> str:
     out = []
     for ch in s:
@@ -1321,6 +1341,7 @@ def translate_tagged_text(text: str) -> str:
     text = _restore_legacy_glyphs(text)     # 오디코딩 5자(⇂¤‹˘⇨)
     text = _restore_broken_subscripts(text)  # 깨진 아래첨자 ¡™£¢§ → ₁₂₃₄₆ (수식 라우팅 전, r16)
     text = _restore_circled_black(text)     # 검은 원문자 ❶-❻ (선지머리 정규화보다 먼저)
+    text = _normalize_araea_middot(text)    # 아래아 ㆍ → 가운뎃점 ·(제50항, 수표 혼입 차단)
     text = _CHOICE_HEAD_RE.sub(r"\1 ", text)
     # 단위 앞 좁은 공백 백틱 제거는 수식 라우팅보다 **먼저** — 뒤에 두면 이미 수식으로
     # 먹힌 뒤라 제69항 로마자표 경로가 실행되지 않는다.
