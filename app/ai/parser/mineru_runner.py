@@ -141,6 +141,116 @@ _PUA_RATIO_MAX = 0.05     # 사설 영역 글리프가 이 비율을 넘으면 �
 _SIM_MIN = 0.45           # MinerU 결과와 이만큼도 안 닮으면 bbox가 어긋난 것 → 대체 안 함
 
 
+# ── 표 셀 글머리 기호 복원 ───────────────────────────────────────────────────
+# 「한국 점자 규정」 제72항(규정_텍스트.txt:2892)은 ○ □ △ •를 **글머리 기호**로 규정한다.
+# 즉 표 셀 안의 •는 장식이 아니라 항목 경계다. MinerU가 이를 놓치면(통째 소실 또는
+# 가운뎃점 ·로 하향 오독) 셀이 "…가능함연구 대상에…"처럼 항목이 들러붙은 런온 문장이 되고,
+# 점자에서도 항목 구분이 사라진다.
+# 표는 위 _NATIVE_TEXT_TYPES에서 제외돼 있다(HTML 구조를 평문으로 덮으면 표가 깨진다).
+# 그래서 텍스트 전면 대체 대신 **글머리 글리프만** 텍스트 레이어를 근거로 되돌린다.
+# 판단 근거는 PDF 원문(레이어)이지 정답 코퍼스가 아니며, 특정 페이지·과목 조건은 쓰지 않는다.
+_BULLET_GLYPHS = "•‣▪▫●■∙⁃"      # 원문이 글머리로 쓰는 글리프
+_BULLET_DEGRADED = "·・･‧"        # 글머리가 하향 오독되는 가운뎃점 계열
+_BULLET_KEY_LEN = 10              # 글머리 뒤 본문 n글자를 '항목 지문'으로 삼아 셀에서 찾는다
+_BULLET_KEY_MIN = 6               # 이보다 짧아지면 우연 일치 위험 → 셀 첫머리에서만 인정
+_BULLET_ANY_RE = re.compile(f"[{_BULLET_GLYPHS}]")
+# 레이어 대조에서 무시할 마크업: MinerU가 셀 안 수식에 두르는 $ (묵자 원문에 없다)
+_BULLET_SKIP_CHARS = " \t\r\n\f\v$　"
+
+
+def _bullet_item_keys(layer: str) -> list[str]:
+    """레이어 텍스트에서 '글머리 뒤 본문 지문'을 등장 순서대로 뽑는다(공백 제거 기준).
+
+    항목이 짧으면(예 '배우자') 지문도 짧다 — 버리지 않고 그대로 두고, 대조 쪽에서
+    셀 첫머리 조건으로 안전을 확보한다.
+    """
+    ns = re.sub(r"\s+", "", layer)
+    keys: list[str] = []
+    for m in _BULLET_ANY_RE.finditer(ns):
+        tail = ns[m.end():m.end() + _BULLET_KEY_LEN]
+        keys.append(_BULLET_ANY_RE.split(tail)[0])   # 다음 글머리 전까지만
+    return keys
+
+
+def _restore_table_bullets(fitz_page: fitz.Page, bbox: list[float], html: str) -> str:
+    """표 셀에서 유실·오독된 글머리 기호를 텍스트 레이어를 근거로 되살린다.
+
+    레이어에 글머리가 없으면 아무것도 하지 않는다(대다수 표는 여기서 끝난다).
+    ★ 부분 복원 금지: 한 항목이라도 못 찾으면 그 표는 통째로 손대지 않는다. 같은 셀에서
+    항목 하나만 글머리를 달면 나머지 항목이 그 항목의 이어짐처럼 읽혀, 아무것도 안 한
+    것보다 위계가 더 어긋난다(생물 p180 실측: 10개 중 4개만 복원 시 편집 +36셀).
+    """
+    if not html or not bbox:
+        return html
+    layer = _extract_text_native(fitz_page, bbox)
+    if not layer or not _BULLET_ANY_RE.search(layer):
+        return html
+    if _pua_ratio(layer) > _PUA_RATIO_MAX:
+        return html
+    keys = _bullet_item_keys(layer)
+    if not keys or not all(keys):
+        return html
+
+    # 공백·수식 구분자를 뺀 대조본 ↔ 원문 인덱스 대응표
+    # (지문은 이 대조본에서 찾고, 수정은 원문 자리에 한다)
+    ns_chars, ns_idx = [], []
+    for i, ch in enumerate(html):
+        if ch not in _BULLET_SKIP_CHARS:
+            ns_chars.append(ch)
+            ns_idx.append(i)
+    ns = "".join(ns_chars)
+
+    ops: dict[int, int] = {}   # 원문 위치 → 덮어쓸 길이(0=삽입, 1=글리프 교체)
+    cur = 0
+    for key in keys:
+        # 지문 꼬리는 레이어 줄바꿈 때문에 옆 블록 글자를 물고 올 수 있다 → 뒤에서 줄여 가며
+        # 확실히 공유되는 앞부분만 쓴다.
+        occ: list[int] = []
+        used_len = len(key)
+        for ln_ in range(len(key), 0, -1):
+            occ = [m.start() for m in re.finditer(re.escape(key[:ln_]), ns)]
+            if occ:
+                used_len = ln_
+                break
+        if not occ:
+            return html                     # 한 항목이라도 못 찾으면 이 표는 포기
+        if len(occ) == 1:
+            p = occ[0]                      # 유일하면 순서와 무관하게 확정
+        else:
+            later = [x for x in occ if x >= cur]   # 같은 문구가 여러 행에 반복되는 표
+            if not later:
+                return html
+            p = later[0]
+        cur = max(cur, p + 1)
+        start = ns_idx[p]
+        j = start - 1                       # 항목 바로 앞의 '내용' 글자(공백·$ 건너뜀)
+        while j >= 0 and html[j] in _BULLET_SKIP_CHARS:
+            j -= 1
+        if j >= 0 and html[j] in _BULLET_GLYPHS:
+            continue                        # 이미 살아 있다
+        if used_len < _BULLET_KEY_MIN and not (j >= 0 and html[j] in ">" + _BULLET_DEGRADED):
+            return html   # 짧은 지문은 셀 첫머리(또는 남은 글머리 자리)에서만 믿는다
+        if j >= 0 and html[j] in _BULLET_DEGRADED:
+            pos, ln_over = j, 1             # 가운뎃점으로 하향 오독 → 글머리로 환원
+        else:
+            # 통째 소실 → 항목 앞 빈 구간 중 **수식 밖**인 가장 이른 자리에 되살린다.
+            # ($ 짝 안쪽에 넣으면 수식이 깨진다 — MinerU가 셀 안 수식을 $…$로 감싼다.)
+            pos, ln_over = start, 0
+            for k in range(j + 1, start + 1):
+                if html.count("$", 0, k) % 2 == 0:
+                    pos = k
+                    break
+        if pos in ops:
+            return html                     # 두 항목이 같은 자리를 가리킨다 → 신뢰 불가
+        ops[pos] = ln_over
+    if not ops:
+        return html
+    out = html
+    for pos in sorted(ops, reverse=True):
+        out = out[:pos] + "•" + out[pos + ops[pos]:]
+    return out
+
+
 def _pua_ratio(s: str) -> float:
     if not s:
         return 0.0
@@ -404,6 +514,9 @@ def run(
                 content = _native_text_spaced(fitz_page, bb) or content
             else:
                 content = _native_override(fitz_page, bb, content) or content
+        elif mapped_type == "table":
+            # 표는 구조 때문에 전면 대체를 못 하므로 글머리 기호(제72항)만 되돌린다.
+            content = _restore_table_bullets(fitz_page, bb, content)
 
         # 인쇄 캡션 강제 적용(위 forced_caption) — 생성 placeholder/빈 content를 덮어쓴다.
         if forced_caption and mapped_type == "caption":
