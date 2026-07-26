@@ -160,15 +160,52 @@ def _bbox_map(resp: dict) -> dict[str, dict]:
     return {str(b.get("id")): b for b in (resp.get("bounding_box_list") or [])}
 
 
-def _crop_thumb(img, bbox: dict, dst: Path) -> bool:
-    """원본 이미지에서 bbox 영역만 잘라 dst에 저장. 성공 시 True."""
+# ⚠ bbox 좌표계가 추출 경로마다 다르다(2026-07-27 발견 — 그 전까지 MinerU 페이지의
+#   오버레이·썸네일이 전부 어긋나 있었다).
+#   · MinerU(OCR) 경로 : **축별 0~1000 정규화 좌표**. 근거 — 사회문화 p010 '자료탐구'가
+#     preproc_blocks에선 [127,47,198,69](지면 595×737pt)인데 content_list에선
+#     [213,63,332,93]이고, 127/595×1000=213.4 · 47/737×1000=63.8로 정확히 일치한다.
+#     devall MinerU 페이지의 x2·y2 최댓값이 전부 ≤1000인데 이미지는 1166~1190×1474다.
+#   · ZERO(TEXT_NATIVE) 경로 : 이미지 **픽셀** 좌표(세계사 p185 x2 max 1076 / 이미지 1190).
+#   판정은 extraction_method가 정확하고, 없으면 "bbox 최댓값이 1000 이하인데 이미지가
+#   그보다 크면 정규화"로 폴백한다.
+_NORM_DENOM = 1000.0
+
+
+def _bbox_denom(resp: dict, page_dir: Path, pno: int, iw: int, ih: int) -> tuple[float, float]:
+    """bbox를 비율로 바꿀 때 나눌 분모 — (가로, 세로)."""
+    meta = (_load(page_dir / "data" / f"{pno:03d}_txt_result.json") or {}).get("meta") or {}
+    method = (meta.get("extraction_method") or "").upper()
+    if method == "TEXT_NATIVE":
+        return float(iw or 1), float(ih or 1)
+    if method:                                   # OCR·MinerU 계열
+        return _NORM_DENOM, _NORM_DENOM
+    bb = resp.get("bounding_box_list") or []     # 폴백: 값 범위로 추정
+    if bb and iw and ih:
+        mx = max(b.get("x2", 0) for b in bb)
+        my = max(b.get("y2", 0) for b in bb)
+        if mx <= _NORM_DENOM and my <= _NORM_DENOM and (iw > _NORM_DENOM or ih > _NORM_DENOM):
+            return _NORM_DENOM, _NORM_DENOM
+    return float(iw or 1), float(ih or 1)
+
+
+def _crop_thumb(img, bbox: dict, dst: Path, denom: tuple[float, float] | None = None) -> bool:
+    """원본 이미지에서 bbox 영역만 잘라 dst에 저장. 성공 시 True.
+
+    denom = (가로, 세로) 분모. 지정하면 bbox를 비율로 환산해 이미지 픽셀로 되돌린다
+    (MinerU 정규화 좌표 대응). 생략하면 bbox를 픽셀로 본다(구 동작).
+    """
     if img is None or not bbox:
         return False
     x, y, x2, y2 = bbox.get("x", 0), bbox.get("y", 0), bbox.get("x2", 0), bbox.get("y2", 0)
     if x2 - x < 2 or y2 - y < 2:  # 0,0,0,0 등 무효 bbox
         return False
     iw, ih = img.size
-    box = (max(0, x), max(0, y), min(iw, x2), min(ih, y2))
+    if denom:
+        dw, dh = denom
+        x, x2 = x / dw * iw, x2 / dw * iw
+        y, y2 = y / dh * ih, y2 / dh * ih
+    box = (max(0, int(x)), max(0, int(y)), min(iw, int(x2)), min(ih, int(y2)))
     try:
         crop = img.crop(box)
         crop.thumbnail((480, 480))  # 과대 영역 축소(파일 경량)
@@ -179,17 +216,22 @@ def _crop_thumb(img, bbox: dict, dst: Path) -> bool:
         return False
 
 
-def _overlay_markers(markers: list[tuple[int, dict]], iw: int, ih: int) -> str:
-    """번호 박스 오버레이(원본 이미지 위, 퍼센트 절대좌표)."""
-    if not iw or not ih:
+def _overlay_markers(markers: list[tuple[int, dict]], iw: int, ih: int,
+                     denom: tuple[float, float] | None = None) -> str:
+    """번호 박스 오버레이(원본 이미지 위, 퍼센트 절대좌표).
+
+    denom = bbox를 비율로 바꿀 분모(_bbox_denom). 생략 시 이미지 픽셀 기준(구 동작).
+    """
+    dw, dh = denom if denom else (float(iw or 0), float(ih or 0))
+    if not dw or not dh:
         return ""
     out = []
     for idx, b in markers:
         x, y, x2, y2 = b.get("x", 0), b.get("y", 0), b.get("x2", 0), b.get("y2", 0)
         if x2 - x < 2 or y2 - y < 2:
             continue
-        left, top = x / iw * 100, y / ih * 100
-        w, h = (x2 - x) / iw * 100, (y2 - y) / ih * 100
+        left, top = x / dw * 100, y / dh * 100
+        w, h = (x2 - x) / dw * 100, (y2 - y) / dh * 100
         out.append(
             f'<div class="mk" style="left:{left:.2f}%;top:{top:.2f}%;'
             f'width:{w:.2f}%;height:{h:.2f}%"><b>{idx}</b></div>'
@@ -333,20 +375,21 @@ def build_job(job_dir: Path, out_dir: Path) -> dict | None:
 
         # 블록 썸네일 크롭(a/c, PIL 있을 때)
         crop_rel: dict[str, str] = {}
+        denom = _bbox_denom(resp, page_dir, pno, iw, ih)   # 좌표계 판정(2026-07-27)
         img_src = job_dir / "input" / f"page_{pno:03d}.jpg"
         if mode in ("a", "c") and Image is not None and img_src.exists() and bbox_map:
             with Image.open(img_src) as pim:
                 pim = pim.convert("RGB")
                 for eid, bbox in bbox_map.items():
                     rel = f"assets/{job_id}/crops/p{pno:03d}_{eid[:8]}.jpg"
-                    if _crop_thumb(pim, bbox, out_dir / rel):
+                    if _crop_thumb(pim, bbox, out_dir / rel, denom):
                         crop_rel[eid] = rel
 
         cards, markers = _block_cards(resp, raw, opt, mode, bbox_map, crop_rel)
 
         img_rel = f"assets/{job_id}/page_{pno:03d}.jpg"
         if mode in ("a", "c") and (out_dir / img_rel).exists():
-            overlay = _overlay_markers(markers, iw, ih)
+            overlay = _overlay_markers(markers, iw, ih, denom)
             img_col = (f'<div class="imgcol"><div class="imgwrap">'
                        f'<img class="pageimg" src="{img_rel}">{overlay}</div></div>')
         else:
