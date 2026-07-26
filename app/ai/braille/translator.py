@@ -1219,6 +1219,50 @@ def _drop_nonkorean_emphasis(text: str) -> str:
     )
 
 
+# ── ASCII 작은따옴표 복원(제49항 표) ─────────────────────────────────────────
+# 규정 제49항 표: 여는 작은따옴표 ‘=`,8`(⠠⠦) · 닫는 작은따옴표 ’=`0'`(⠴⠄).
+# 제61항: 아포스트로피(’)=`'`(⠄). 즉 **같은 묵자 글자가 문맥에 따라 두 점형**이고,
+# symbol_table의 `'`→⠄는 제61항(아포스트로피) 쪽 매핑이다.
+# 문제: 추출(PyMuPDF·MinerU)이 곡선 따옴표 ‘ ’를 ASCII '로 평탄화해 올 때가 있어,
+# 인용부호로 쓰인 따옴표가 통째로 아포스트로피 한 셀(⠄)로 뭉개진다.
+#   언어 p197 '배열' → 우리 ⠄⠘⠗⠳⠄ / 정답·braillify ⠠⠦⠘⠗⠳⠴⠄
+# 그래서 **인용부호가 확실한 짝만** 곡선 따옴표로 되돌려 symbol_table의 ‘·’ 매핑에 태운다.
+# ⚠ 코퍼스의 ASCII '는 대부분 따옴표가 아니다(dev 63요소·val 223요소 중 한글 감쌈은
+#   13·64요소뿐). 나머지는 한컴 수식 폰트 오독 — 근호 '3=√3·'ƒ2x+1=√(2x+1) 와
+#   도함수/유전자 프라임 f'(x)·y'·X'Y 다. 그래서 조건을 아래로 좁힌다:
+#     ① 짝을 이루고 ② 안쪽에 한글이 있고 ③ 안쪽에 수식 잔재(= ( ) ƒ ∂ ¤ ` $ \ 태그)가 없고
+#     ④ 여는 따옴표 앞이 영숫자가 아니며(f'·y'·X'·2'5 배제)
+#     ⑤ 여는 따옴표 앞이 '로마자 한 글자 + 공백'이 아니다(깨진 표기 `f '(x)` 배제).
+# 실측(코퍼스 요소 단위 재점역 대조): 뒤집힘 dev 11요소 중 +1 / val 58요소 중 +20,
+# 역전(적중→미스) dev·val 모두 0.
+_ASCII_SQ_PAIR_RE = re.compile(r"(?<![0-9A-Za-z])'([^'\n]{1,40}?)'(?!\()")
+_SQ_INNER_BAN_RE = re.compile(r"[=()ƒ∂¤`$\\<>⠀-⣿]|<!")
+_SQ_PRIME_LEAD_RE = re.compile(r"[A-Za-z][ \t]$")
+
+
+def _restore_ascii_single_quotes(text: str) -> str:
+    """인용부호가 확실한 ASCII ' 짝만 곡선 따옴표 ‘ ’로 되돌린다(제49항)."""
+    if "'" not in text:
+        return text
+    out: list[str] = []
+    pos = 0
+    for m in _ASCII_SQ_PAIR_RE.finditer(text):
+        if m.start() < pos:
+            continue
+        inner = m.group(1)
+        if not _HANGUL_ANY_RE.search(inner) or _SQ_INNER_BAN_RE.search(inner):
+            continue
+        if _SQ_PRIME_LEAD_RE.search(text[:m.start()]):
+            continue
+        out.append(text[pos:m.start()])
+        out.append("‘" + inner + "’")
+        pos = m.end()
+    if not out:
+        return text
+    out.append(text[pos:])
+    return "".join(out)
+
+
 EMPHASIS_OPEN, EMPHASIS_CLOSE = _TAG_PAIR_MARKER["드러냄"]  # ⠠⠤ … ⠤⠄ (제56항)
 
 
@@ -1265,6 +1309,8 @@ def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
     #   요소 전체 수준에서 선적용(이 개행은 원문 구조가 아니라 추출 산물).
     text = _BOGI_GAP_RE.sub(r"\1 ‘보기’\2", text)
     text = _drop_nonkorean_emphasis(text)
+    # 추출이 평탄화한 ASCII 작은따옴표 복원 — 줄 분리 전에 요소 전체에서 짝을 본다.
+    text = _restore_ascii_single_quotes(text)
     if _BOOK_STYLE:
         # ★ 보기 마커 원문 복원(ㄱㄴㄷㄹ)은 나열 시퀀스가 필요해 요소 전체에서 선적용해야
         #   한다 — 줄 분리 후엔 줄당 마커 1개라 ≥2 가드에 걸려 발동 못 한다(2026-07-18).
