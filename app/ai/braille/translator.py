@@ -371,37 +371,47 @@ def _restore_wrap_hyphen(s: str) -> str:
     return s.translate(_WRAP_RESTORE)
 
 
-# 출처/연도 대괄호 → 소괄호 관행(정답 도서 실측: 생물 p009 '[2011학년도 대수능]',
-# p012 '[실험 과정]'·'[실험 결과]' → gold는 소괄호 셀 ⠦⠄…⠠⠴로 적는다. 대괄호 셀
-# ⠦⠆…⠰⠴가 아니다). ⚠ 세계사 '[1096~1270]' 같은 연대 범위 대괄호는 gold가 대괄호를
-# 그대로 유지하므로(⠦⠆…⠰⠴, 33/35회 실측) 건드리면 안 된다 — 출처/실험 표제 키워드가
-# 든 대괄호만 소괄호로 바꾼다(문맥 가드). 소괄호를 '문자'로 넣으면 _MARK_PAREN_RE가
-# 붙임표 -…-로 감싸버리므로(gold는 붙임표 아님), 소괄호 셀을 직접 주입한다.
+# ── 원문 대괄호 [ ] 점형 ─────────────────────────────────────────────────────
+# 기본은 **규정형**이다(2026-07-27 결정). 규정 제49항 표가 소괄호와 대괄호를 서로 다른
+# 점형으로 못박는다 — braille-source/text/규정_텍스트.txt 2163~2168행:
+#     ( = 8'(⠦⠄) · ) = ,0(⠠⠴)  |  [ = 82(⠦⠆) · ] = ;0(⠰⠴)
+# 규정 본문 예문도 그대로 쓴다(2266~2271행 "…[윤석중 전집(1988), 70쪽 참조]" →
+# 82…8'#aihh,0…;0 — 바깥 대괄호와 안쪽 소괄호가 한 줄에서 대비된다). 「점자 도서 제작
+# 지침」 [예 3-57](3058행)의 배점 [3점]도 82#c.s5;0 = ⠦⠆⠼⠉⠨⠎⠢⠰⠴로 대괄호 셀이다.
+# 규정형은 별도 치환이 필요 없다 — symbol_table.json의 [=⠦⠆ · ]=⠰⠴가 그대로 나간다.
+# ★ 수식 경로는 무관하다: _apply_book_style은 _translate_with_braillify가 <!수식> 태그로
+#   쪼갠 **텍스트 세그먼트에만** 걸리고(_FORMULA_RE.split의 짝수 인덱스), 수식 세그먼트는
+#   convert_latex로 간다. 수식 안 대괄호는 「한국 점자 규정」 제6항의 수학 대괄호
+#   ⠷⠄…⠠⠾라 문장부호 대괄호와 다른 체계다(실측: <!수식>[3,5]<!/수식> → ⠷⠄⠼⠉⠂⠑⠠⠾).
+#
+# ⚠ 아래 관행 분기는 기본값에서 **꺼져 있다**. 정답 코퍼스(2012 EBS 수능특강 점역본)는
+#   원문 대괄호를 소괄호 셀 ⠦⠄…⠠⠴로 적어(형태 확정 471/471, 6과목 예외 0건, 지문라벨·
+#   출처·문항범위·배점·번호 부류 무관) 규정형과 전면으로 어긋난다. 즉 이 스위치를 끄면
+#   코퍼스 대조 지표는 내려간다 — 규정 준수를 택한 결과이지 회귀가 아니다.
+#   점역사·점자도서관 회신이 "관행"으로 오면 아래 한 줄만 True로 되돌리면 복귀한다.
+# 커밋 157e55a의 키워드 화이트리스트(출처 키워드·[A]·2자리 범위만 소괄호)는 제거했다 —
+# 좁은 조건으로 규정형과 관행형이 한 문서에 섞여 있던 상태라, 어느 쪽을 택하든 일관된
+# 편이 낫다. 복귀 시에도 코퍼스 실측대로 원문 대괄호 **전량**을 소괄호 셀로 낸다.
+_BRACKET_BOOK_STYLE = False
+
 _OPEN_PAREN_CELL = "⠦⠄"
 _CLOSE_PAREN_CELL = "⠠⠴"
 _SRC_BRACKET_RE = re.compile(r"\[([^\[\]\n]{1,40})\]")
-_SRC_ATTR_RE = re.compile(
-    r"수능|학년도|평가원|모의평가|모의고사|모평|학력평가|학평|기출|교육청|실험\s*과정|실험\s*결과")
-# 지문 라벨 대괄호 [A]~[Z] → 소괄호 관행(정답 도서 실측: gold ⠦⠄⠴⠠x⠠⠴ = 소괄호+로마자표+
-# 대문자표+글자. val 170/172·dev 38/38이 소괄호. 언어 지문 "[A]의 '갑'은…" 라벨이 대표).
-# 대괄호 셀 ⠦⠆…⠰⠴로 내면 어긋나므로 소괄호 셀을 직접 주입(출처 대괄호와 동형 처리).
+# 단일 대문자 라벨 [A]의 코퍼스 정확형은 ⠦⠄⠴⠠x⠠⠴(로마자표 ⠴ + 대문자표 ⠠ 포함).
+# 관행 복귀 시에만 쓰인다.
 _BR_UPPER_RE = re.compile(r"^[A-Z]$")
-# 문항 번호·범위 대괄호 [01~03]·[16] → 소괄호 관행(gold 범위 57/57·10/10, 숫자 20/20).
-# ⚠ 4자리 연대 범위 [1096~1270]은 gold가 대괄호 유지(33/35 실측)라 \d{1,2}로 제외한다.
-_BR_NUMRANGE_RE = re.compile(r"^\d{1,2}(?:\s*[~∼〜]\s*\d{1,2})?$")
 
 
 def _src_bracket_repl(m: re.Match) -> str:
+    """도서 관행 복귀용 — 원문 대괄호 [X] → 소괄호 셀 ⠦⠄X⠠⠴.
+
+    소괄호를 '문자' ( ) 로 넣으면 _MARK_PAREN_RE가 붙임표 -…-로 다시 감싸므로
+    (코퍼스는 대괄호를 붙임표로 적지 않는다) 소괄호 셀을 직접 주입한다.
+    """
     inner = m.group(1).strip()
-    if _SRC_ATTR_RE.search(inner):
-        return _OPEN_PAREN_CELL + inner + _CLOSE_PAREN_CELL
     if _BR_UPPER_RE.match(inner):
-        # gold 정확형 ⠦⠄⠴⠠x⠠⠴ 직접 주입(로마자표+대문자표 포함, CER·텍스트 축 동시 정합)
         return _OPEN_PAREN_CELL + "⠴⠠" + _ALPHA_MAP[inner.lower()] + _CLOSE_PAREN_CELL
-    if _BR_NUMRANGE_RE.match(inner):
-        # 소괄호 셀 + 원문 숫자(수표·범위 줄표는 이후 단계가 부여)
-        return _OPEN_PAREN_CELL + inner + _CLOSE_PAREN_CELL
-    return m.group(0)
+    return _OPEN_PAREN_CELL + inner + _CLOSE_PAREN_CELL
 
 
 _HANJA_ONLY_RE = re.compile(r"^[\u4e00-\u9fff\s·]+$")
@@ -579,7 +589,8 @@ def _apply_book_style(text: str) -> str:
     text = _LABEL_BOX_RE.sub(r"-\1-", text)      # 박스 표제 |정답| → ⠤정답⠤ (표제 판정이 먼저)
     text = _BAR_RESIDUE_RE.sub(" ", text)        # 남은 구획선 잔재 → 공백
     text = _AE_GEQ_RE.sub("≥", text)   # 괄호→붙임표보다 먼저(인접 판정이 원문 괄호 기준)
-    text = _SRC_BRACKET_RE.sub(_src_bracket_repl, text)  # 출처 대괄호→소괄호 셀(가드)
+    if _BRACKET_BOOK_STYLE:              # 기본 꺼짐 — 대괄호는 규정 제49항 셀 그대로 나간다
+        text = _SRC_BRACKET_RE.sub(_src_bracket_repl, text)
     text = _QNUM_RE.sub(r"\1.", text)
     text = _CIRCLED_RE.sub(lambda m: _CIRCLED[m.group()], text)
     text = _MARK_PAREN_RE.sub(_paren_repl, text)

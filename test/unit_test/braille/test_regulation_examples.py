@@ -138,6 +138,62 @@ def test_regulation_pairs_has_decode_ok(filename: str) -> None:
     assert len(ok) >= 1, f"{filename}: decode_ok 쌍 0개"
 
 
+class TestBracketRegulation:
+    """원문 대괄호 [ ] → 규정 제49항 대괄호 셀 82…;0 (⠦⠆…⠰⠴). 2026-07-27 결정.
+
+    기대값은 **규정·지침 원문의 점자 예시에서 그대로 옮겼다**(순환검증 금지) —
+    우리 출력으로 만들지 않았다. 인용 위치는 각 케이스 주석에 적는다.
+
+    · 「한국 점자 규정」 제49항 표(braille-source/text/규정_텍스트.txt 2163~2168행)
+        ( = 8' · ) = ,0   |   [ = 82 · ] = ;0
+    · 정답 코퍼스는 원문 대괄호를 소괄호 셀로 적어(471/471) 이 기대값과 어긋난다.
+      코퍼스가 아니라 규정을 따르기로 한 결정이므로, 코퍼스 대조 지표는 내려간다.
+    """
+
+    def _brf(self, text: str) -> str:
+        from app.ai.braille.translator import translate_tagged_text
+        from app.utils.braille_ascii import unicode_to_ascii
+        return unicode_to_ascii(translate_tagged_text(text))
+
+    # ── 지침 원문이 점자까지 실어 둔 예시 — 셀 단위 전부 대조 ──────────────────
+    # 「점자 도서 제작 지침」 발음 표기 예(braille-source/text/점자 도서 제작 지침_text.txt
+    # 1299~1301행). 네 쌍이 한 문단 안에 연달아 있고 모두 대괄호 셀 82…;0이다.
+    @pytest.mark.parametrize("korean,expected", [
+        ("나뭇가지[나무까지]", "cem'$.o82cem,$.o;0"),
+        ("머릿기름[머리끼름]", "es\"o'@o\"{582es\"o,@o\"{5;0"),
+        ("귓병[귀뼝]", "@mr'~}82@mr,~};0"),
+        ("전셋집[전세찝]", ".),n'.ob82.),n,.ob;0"),
+    ])
+    def test_지침_발음표기_대괄호(self, korean: str, expected: str) -> None:
+        assert self._brf(korean) == expected
+
+    def test_지침_배점_대괄호(self) -> None:
+        # 「점자 자료 제작 지침」 [예] 배점(점자 자료 제작 지침_text.txt 1627행) = 82#a.s5;0
+        assert self._brf("[1점]") == "82#a.s5;0"
+        # 「점자 도서 제작 지침」 [예 3-57] 발문(점자 도서 제작 지침_text.txt 3058행) = 82#c.s5;0
+        assert self._brf("[3점]") == "82#c.s5;0"
+
+    # ── 화이트리스트가 소괄호로 내리던 부류 — 이제 규정형이어야 한다 ────────────
+    # 안쪽 점형은 이 테스트의 주장이 아니므로 여닫는 괄호 셀만 본다(비순환).
+    @pytest.mark.parametrize("korean", ["[2012 수능]", "[16]", "[A]", "[실험 과정]"])
+    def test_화이트리스트_부류도_규정_대괄호(self, korean: str) -> None:
+        brf = self._brf(korean)
+        assert brf.startswith("82") and brf.endswith(";0"), brf
+        assert not brf.startswith("8'"), f"소괄호 셀로 새고 있다: {brf}"
+
+    def test_수식_대괄호는_별도_점형(self) -> None:
+        # 「한국 점자 규정」 수학 제6항(규정_텍스트.txt 3100~3112행)의 수학 대괄호 ('…,).
+        # 문장부호 대괄호(82…;0)와 다른 체계라 이 변경이 수식 경로를 건드리면 안 된다.
+        assert self._brf("<!수식>[3,5]<!/수식>") == "('#c1e,)"
+
+    def test_관행_복귀_스위치(self, monkeypatch) -> None:
+        """_BRACKET_BOOK_STYLE=True 한 줄로 코퍼스 관행(소괄호 셀)으로 되돌아간다."""
+        from app.ai.braille import translator
+        monkeypatch.setattr(translator, "_BRACKET_BOOK_STYLE", True)
+        assert self._brf("[3점]") == "8'#c.s5,0"
+        assert self._brf("[2012 수능]").startswith("8'")
+
+
 class TestBookStyleConventions:
     """정답 도서 표기 관행(BRAILLE_STYLE=book, 기본값) — 규정과 다른 자리.
 
