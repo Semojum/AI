@@ -1,0 +1,57 @@
+    0,ZOOM ,\4 #A
+  0,BUILD+ ,BLOCKS & ,TOOLS =
+,R1D+4
+
+    0,VOCABUL>Y & ,GRAMM>4
+  I3SV EG^SBZ @!! O1A@U ,,[CZ IN
+N O/S $.7 @O^(.?Q IU@MOI4 I3SI!O
+EG^SB @%;OAN WJR S@M"! J],]J@U"
+O"S0@N J],]IY3 S@MCZ I,O I"Z I3S
+C S@MV @\JBIYS IS FZ S@M"! O"M@U
+@M7@[A.?["U EG.7! O"GI4 ,I"<,S
+DO1+J3 I3SW ,,[O5 EO2 ,I['@V EG
+^SB @%;OA! <1.O EU'JE* EG.7! OJR
+J@SC L+7J1 ,IR ERM FZ S":M5!
+@:AA! ,M^AAN SB'I4
+  O1^3.?["U C[7,MAJ3 IX.CZ I"Z L
+"<5I!^UI IS E30Z SJMR .O,OA! $.O
+@U O/@U" EG^SB! JV1+7JCZ C[7":AO
+,IMRSCI4 J.OE3 O"SJ3 .O,OA! ,L0
+@U C[7":A! @O"[CZ O1Z @!! O1A@U
+OJRJCZ @V.]! H=JR,SE3 $C[7JI4 @!
+! O1A@U OJRJ":E*  SJMRV EG^SB .O
+,OAO DO1+J3IN" O DO1+J3 SJMRV EG
+^SB .O,OAZ I,O @! O1A@O"! H=JR,S
+#BF      ,MH[AY@MAS #1       #DG
+E3 @O1"S.OCZ ,GJV3 @M.U"! $.O@U
+O/I4
+  O"SJ3 ,GJV3 @M.UN,S M"O 8,MC[7
+H[A$70 IX.I!O C[7,MAJ3 IX.$ IY@O
+MRJR,SCZ I<[5 ,N $.O"! $K;MS> J3
+I4
+  ;S',.R @O^( SJMR #A1JJJ I3SCZ
+S,IS0@N JR,SIZ.O OAJ:> J3I4 O @O
+^( SJMR"! EU"[@U,SCZ S,ISJ3 O1A
+@O .)">AIU J++7O SB'I4
+  I&,.R @O^( SJMR"! ,MA.OJ3 JMN
+CZ I3SW WEO"! EGERAN,S %;MJCZ
+C[7":A! @O1"S> J3I4
+  ,N',.R E.OEA["U" EG^SB @%;OAW
+,TE] @[ .;N$ <CO"< ,TE]O WEOJCZ
+_S! CR.RJVJ<:" @!! O1A@U ,,! ,IR
+@[ .O,OA! JV1+7J1 ,M O/S> J3I4
+
+    0,GUESS+ ,NEW ,^WS F ,3TEXT4
+  E).S" @!N,S ,R"UG I3S"! ^U@N
+IY1 ,IR EGERA! H=JR,S @[ I3SW W
+EO"! %;MJ1 ,M O/CZ.O ,[,["UN@N
+E&S ^U"<4
+  0,YES 3O L.)! ;<K.O E,N+4
+  0,NO 3O ,[,["UN@N E&S ^U,N+4 O
+I3S$ .M7+J3$8
+  0,YES"1 L.)! ;<K< ^U,N+4 ,),R7
+CO5O IUV.M,O1 _SON+4
+  0,NO"1 @?.] E1@U @/,X O1AS C$
+,N+4  E],O5J,N+4 EUIZ I3SW .]JVA
+J3 ,I['! <1.O EU'JRIU @VR3;<30<
++4

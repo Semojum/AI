@@ -1,0 +1,556 @@
+{
+  "type": "punctuation",
+  "description": "문장부호 (마침표·쉼표·물음표·느낌표·따옴표·괄호·줄임표 등). 규정 제7·10절.",
+  "split_ratio": "build:test = 7:3 (md5 안정 해시)",
+  "counts": {
+    "build": 17,
+    "test": 7,
+    "review_excluded": 82
+  },
+  "pairs": [
+    {
+      "korean": "(여기)",
+      "brf_ascii": null,
+      "braille_unicode": "⠦⠄⠱⠈⠕⠠⠴",
+      "split": "build",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "(참고)",
+      "brf_ascii": null,
+      "braille_unicode": "⠦⠄⠰⠣⠢⠈⠥⠠⠴",
+      "split": "build",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "끝.",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠈⠪⠦⠲",
+      "split": "build",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "만약 결과가 그러면 어떻게 할 거니?",
+      "brf_ascii": "``e3>a`@|@v$`a3`s,is0@n`j1`@sco8",
+      "braille_unicode": "⠑⠒⠜⠁⠀⠈⠳⠈⠧⠫⠀⠁⠒⠀⠎⠠⠊⠎⠴⠈⠝⠀⠚⠂⠀⠈⠎⠉⠕⠦",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_07_punctuation"
+    },
+    {
+      "korean": "맞다!",
+      "brf_ascii": null,
+      "braille_unicode": "⠑⠅⠊⠖",
+      "split": "build",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "사과, 배, 감.",
+      "brf_ascii": null,
+      "braille_unicode": "⠇⠈⠧⠐⠀⠘⠗⠐⠀⠫⠢⠲",
+      "split": "build",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "안녕?",
+      "brf_ascii": null,
+      "braille_unicode": "⠣⠒⠉⠻⠦",
+      "split": "build",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "어디 가?",
+      "brf_ascii": null,
+      "braille_unicode": "⠎⠊⠕⠀⠫⠦",
+      "split": "build",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "왜 그러나요?",
+      "brf_ascii": "vr`ac+8",
+      "braille_unicode": "⠧⠗⠀⠁⠉⠬⠦",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_07_punctuation"
+    },
+    {
+      "korean": "왜?",
+      "brf_ascii": null,
+      "braille_unicode": "⠧⠗⠦",
+      "split": "build",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "응?",
+      "brf_ascii": null,
+      "braille_unicode": "⠪⠶⠦",
+      "split": "build",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "이거 정말 큰일이 났구나!",
+      "brf_ascii": "``o@s`.]e1`fzo1o`c/@mc6`````````",
+      "braille_unicode": "⠕⠈⠎⠀⠨⠻⠑⠂⠀⠋⠵⠕⠂⠕⠀⠉⠌⠈⠍⠉⠖",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_13_misc"
+    },
+    {
+      "korean": "이것?",
+      "brf_ascii": null,
+      "braille_unicode": "⠕⠸⠎⠦",
+      "split": "build",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "이번에 가시면 언제 돌아오세요?",
+      "brf_ascii": "``o^)n`$,oe*`).n`iu1<u,n+8``````",
+      "braille_unicode": "⠕⠘⠾⠝⠀⠫⠠⠕⠑⠡⠀⠾⠨⠝⠀⠊⠥⠂⠣⠥⠠⠝⠬⠦",
+      "split": "build",
+      "ambiguous": false,
+      "source": "section_13_misc"
+    },
+    {
+      "korean": "정말!",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠻⠑⠂⠖",
+      "split": "build",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "좋아요?",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠥⠴⠣⠬⠦",
+      "split": "build",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "참 좋다.",
+      "brf_ascii": null,
+      "braille_unicode": "⠰⠣⠢⠀⠨⠥⠴⠊⠲",
+      "split": "build",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "(보기)",
+      "brf_ascii": null,
+      "braille_unicode": "⠦⠄⠘⠥⠈⠕⠠⠴",
+      "split": "test",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "그만!",
+      "brf_ascii": null,
+      "braille_unicode": "⠈⠪⠑⠒⠖",
+      "split": "test",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "맞아!",
+      "brf_ascii": null,
+      "braille_unicode": "⠑⠅⠣⠖",
+      "split": "test",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "쉼표, 마침표.",
+      "brf_ascii": null,
+      "braille_unicode": "⠠⠍⠗⠢⠙⠬⠐⠀⠑⠰⠕⠢⠙⠬⠲",
+      "split": "test",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "와!",
+      "brf_ascii": null,
+      "braille_unicode": "⠧⠖",
+      "split": "test",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "잘 가!",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠂⠀⠫⠖",
+      "split": "test",
+      "ambiguous": false,
+      "source": "curated"
+    },
+    {
+      "korean": "정말 좋아!",
+      "brf_ascii": null,
+      "braille_unicode": "⠨⠻⠑⠂⠀⠨⠥⠴⠣⠖",
+      "split": "test",
+      "ambiguous": false,
+      "source": "curated"
+    }
+  ],
+  "review": [
+    {
+      "korean": "ㅈ’ 앞에 된소리표 ,을 적어 나타낸다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠿⠅⠴⠄⠣⠲⠝⠀⠊⠽⠒⠠⠥⠐⠕⠙⠬⠀⠐⠮⠀⠨⠹⠎⠀⠉⠓⠉⠗⠒⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "‘ㅖ’로 적는다.",
+      "brf_ascii": "``,8@/\"`\"/\"`e/\"`d/\"`j/0'w`,8=/0'",
+      "gold": "⠠⠦⠈⠌⠐⠀⠐⠌⠐⠀⠑⠌⠐⠀⠙⠌⠐⠀⠚⠌⠴⠄⠺⠀⠠⠦⠿⠌⠴⠄",
+      "forward": "⠠⠦⠿⠌⠴⠄⠐⠥⠀⠨⠹⠉⠵⠊⠲",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "의 약자 }을 적어 나타낸다",
+      "brf_ascii": ".",
+      "gold": "⠨",
+      "forward": "⠺⠀⠜⠁⠨⠐⠴⠮⠀⠨⠹⠎⠀⠉⠓⠉⠗⠒⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(아우)",
+      "brf_ascii": "<\".\"#",
+      "gold": "⠣⠐⠨⠐⠼",
+      "forward": "⠦⠄⠣⠍⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(여우의 가죽)",
+      "brf_ascii": ":\"kw`$2",
+      "gold": "⠱⠐⠅⠺⠀⠫⠆",
+      "forward": "⠦⠄⠱⠍⠺⠀⠫⠨⠍⠁⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(여기)",
+      "brf_ascii": "o\"ds@w",
+      "gold": "⠕⠐⠙⠎⠈⠺",
+      "forward": "⠦⠄⠱⠈⠕⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(굼벵이)",
+      "brf_ascii": "@m5^s\"4",
+      "gold": "⠈⠍⠢⠘⠎⠐⠲",
+      "forward": "⠦⠄⠈⠍⠢⠘⠝⠶⠕⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "훈민(訓民正音",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": null,
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(훈민정음)",
+      "brf_ascii": "jgeq.:\"4\"j[5",
+      "gold": "⠚⠛⠑⠟⠨⠱⠐⠲⠐⠚⠪⠢",
+      "forward": "⠦⠄⠚⠛⠑⠟⠨⠻⠪⠢⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(할 바가)",
+      "brf_ascii": "ju1\"0`^r",
+      "gold": "⠚⠥⠂⠐⠴⠀⠘⠗",
+      "forward": "⠦⠄⠚⠂⠀⠘⠫⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(‘군(君)’ 자)",
+      "brf_ascii": "@G_9,.\"#\"7",
+      "gold": "⠈⠛⠸⠔⠠⠨⠐⠼⠐⠶",
+      "forward": "⠦⠄⠠⠦⠈⠛⠦⠄⠈⠛⠠⠴⠴⠄⠨⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(‘홍(洪)’ 자)",
+      "brf_ascii": "\"JJu\"4_A,.\"#\"7",
+      "gold": "⠐⠚⠚⠥⠐⠲⠸⠁⠠⠨⠐⠼⠐⠶",
+      "forward": "⠦⠄⠠⠦⠚⠿⠦⠄⠐⠚⠚⠥⠐⠲⠠⠴⠴⠄⠨⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(‘두(斗)’ 자)",
+      "brf_ascii": "im\"57_\"b7,.\"#\"7",
+      "gold": "⠊⠍⠐⠢⠶⠸⠐⠃⠶⠠⠨⠐⠼⠐⠶",
+      "forward": "⠦⠄⠠⠦⠊⠍⠦⠄⠊⠍⠐⠢⠶⠠⠴⠴⠄⠨⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(홀로)",
+      "brf_ascii": "j\"#\"^7\"#\".<",
+      "gold": "⠚⠐⠼⠐⠘⠶⠐⠼⠐⠨⠣",
+      "forward": "⠦⠄⠚⠥⠂⠐⠥⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(방",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠘⠶",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(닿는다)",
+      "brf_ascii": "i\"cc\"#co\"<",
+      "gold": "⠊⠐⠉⠉⠐⠼⠉⠕⠐⠣",
+      "forward": "⠦⠄⠊⠴⠉⠵⠊⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(하여금)",
+      "brf_ascii": "j\"#r\"gg:",
+      "gold": "⠚⠐⠼⠗⠐⠛⠛⠱",
+      "forward": "⠦⠄⠚⠣⠱⠈⠪⠢⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(도리어)",
+      "brf_ascii": "iu\"\"#\"jj:",
+      "gold": "⠊⠥⠐⠐⠼⠐⠚⠚⠱",
+      "forward": "⠦⠄⠊⠥⠐⠕⠎⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(감싸더라, 보호하더라",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠫⠢⠠⠇⠊⠎⠐⠣⠐⠀⠘⠥⠚⠥⠚⠊⠎⠐⠣",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(뜻이시니",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠠⠊⠪⠄⠕⠠⠕⠉⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(싸우는",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠠⠇⠍⠉⠵",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(짝",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠠⠨⠁",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(터지며",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠓⠎⠨⠕⠑⠱",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(틈",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠓⠪⠢",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(때, 시각",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠠⠊⠗⠐⠀⠠⠕⠫⠁",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(꺼져서, 무너져서",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠠⠈⠎⠨⠱⠠⠎⠐⠀⠑⠍⠉⠎⠨⠱⠠⠎",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(사나이",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠇⠉⠣⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(딸",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠠⠊⠂",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(뽕나무",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠠⠘⠿⠉⠑⠍",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(째어지고",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠠⠨⠗⠎⠨⠕⠈⠥",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(유시(酉時))",
+      "brf_ascii": "i\"#1a'\"^,ir",
+      "gold": "⠊⠐⠼⠂⠁⠄⠐⠘⠠⠊⠗",
+      "forward": null,
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(열쇠)",
+      "brf_ascii": "|',y",
+      "gold": "⠳⠄⠠⠽",
+      "forward": "⠦⠄⠳⠠⠽⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(‘금(禽)’은 날짐승이다)",
+      "brf_ascii": "@[5z`c\"#1\"0.%\"4,\"#r\"4o\"<",
+      "gold": "⠈⠪⠢⠵⠀⠉⠐⠼⠂⠐⠴⠨⠩⠐⠲⠠⠐⠼⠗⠐⠲⠕⠐⠣",
+      "forward": "⠦⠄⠠⠦⠈⠪⠢⠦⠄⠈⠪⠢⠵⠠⠴⠴⠄⠵⠀⠉⠂⠨⠕⠢⠠⠪⠶⠕⠊⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(짐대에)",
+      "brf_ascii": ".O5'IR-/",
+      "gold": "⠨⠕⠢⠄⠊⠗⠤⠌",
+      "forward": "⠦⠄⠨⠕⠢⠊⠗⠝⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(예사 더러운 것들을)",
+      "brf_ascii": ",>\"4'`is\"sg`_si\"#1j\"#1",
+      "gold": "⠠⠜⠐⠲⠄⠀⠊⠎⠐⠎⠛⠀⠸⠎⠊⠐⠼⠂⠚⠐⠼⠂",
+      "forward": "⠦⠄⠌⠇⠀⠊⠎⠐⠎⠛⠀⠸⠎⠊⠮⠮⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(‘침(侵)’ 자)",
+      "brf_ascii": ";O5_B,.\"#\"7",
+      "gold": "⠰⠕⠢⠸⠃⠠⠨⠐⠼⠐⠶",
+      "forward": "⠦⠄⠠⠦⠰⠕⠢⠦⠄⠰⠕⠢⠠⠴⠴⠄⠨⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(‘허(虛)’ 자)",
+      "brf_ascii": "js\"7_\"0,.\"#\"7",
+      "gold": "⠚⠎⠐⠶⠸⠐⠴⠠⠨⠐⠼⠐⠶",
+      "forward": "⠦⠄⠠⠦⠚⠎⠦⠄⠚⠎⠐⠶⠠⠴⠴⠄⠨⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(훗날)",
+      "brf_ascii": "jm_\"kc1",
+      "gold": "⠚⠍⠸⠐⠅⠉⠂",
+      "forward": "⠦⠄⠚⠍⠄⠉⠂⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(적인(狄人) 사이에)",
+      "brf_ascii": ".?q_'`,s\"o-/",
+      "gold": "⠨⠹⠟⠸⠄⠀⠠⠎⠐⠕⠤⠌",
+      "forward": "⠦⠄⠨⠹⠟⠦⠄⠨⠹⠟⠸⠄⠠⠴⠇⠕⠝⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(임금의 자리를 버리시어)",
+      "brf_ascii": "co5@[5`mr_1`^\"#\"o,>",
+      "gold": "⠉⠕⠢⠈⠪⠢⠀⠍⠗⠸⠂⠀⠘⠐⠼⠐⠕⠠⠜",
+      "forward": "⠦⠄⠕⠢⠈⠪⠢⠺⠀⠨⠐⠕⠐⠮⠀⠘⠎⠐⠕⠠⠕⠎⠠⠴",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(혼자",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠚⠷⠨",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(새삼스럽게",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠠⠗⠇⠢⠠⠪⠐⠎⠃⠈⠝",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(낱낱이",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠉⠦⠉⠦⠕",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(아우이다",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠣⠍⠕⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(발바닥",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠘⠂⠘⠊⠁",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(바탕이다",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠘⠓⠶⠕⠊",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(강물이거나",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠫⠶⠑⠯⠕⠈⠎⠉",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(가까워",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠫⠠⠫⠏",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(받아 일으켜",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠘⠔⠣⠀⠕⠂⠪⠋⠱",
+      "reason": "forward_mismatch"
+    },
+    {
+      "korean": "(대나무밭",
+      "brf_ascii": ")",
+      "gold": "⠾",
+      "forward": "⠦⠄⠊⠗⠉⠑⠍⠘⠦",
+      "reason": "forward_mismatch"
+    }
+  ]
+}

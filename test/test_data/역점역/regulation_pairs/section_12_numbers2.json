@@ -1,0 +1,113 @@
+{
+  "section_id": "제12절",
+  "section_name": "숫자와 함께 사용된 기호",
+  "extracted_at": "2026-05-25T01:59:20",
+  "source_lines": "2026–2111",
+  "pairs": [
+    {
+      "item": "제45항 연산 기",
+      "korean": "등호",
+      "brf_ascii": ">",
+      "braille_unicode": "⠜",
+      "decode_ok": true
+    },
+    {
+      "item": "제45항 연산 기",
+      "korean": "보다 작다",
+      "brf_ascii": "5+7=12",
+      "braille_unicode": "⠢⠬⠶⠿⠂⠆",
+      "decode_ok": true
+    },
+    {
+      "item": "제46항 연산 기",
+      "korean": "띄어 쓴다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제46항 연산 기",
+      "korean": "나루 + 배 = 나룻배",
+      "brf_ascii": "c\"m`5`^r`33`c\"m'^r",
+      "braille_unicode": "⠉⠐⠍[?`]⠢[?`][?^]⠗[?`]⠒⠒[?`]⠉⠐⠍⠄[?^]⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제46항 연산 기",
+      "korean": "5개-3개=2개",
+      "brf_ascii": "#e@r`9`#c@r`33`#b@r",
+      "braille_unicode": "⠼⠑⠈⠗[?`]⠔[?`]⠼⠉⠈⠗[?`]⠒⠒[?`]⠼⠃⠈⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제46항 연산 기",
+      "korean": "원의 면적은 반지름×반지름×3.14이다.",
+      "brf_ascii": "``p3w`e*.?z`~3.o\"{5`*`~3.o\"{5```",
+      "braille_unicode": "[?`][?`]⠏⠒⠺[?`]⠑[?*]⠨[??]⠿[?`]⠘⠒⠨⠕⠐⠪⠢[?`][?*][?`]⠘⠒⠨⠕⠐⠪⠢[?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제46항 연산 기",
+      "korean": "BMI(체질량 지수) = 체중(kg) / (신장(m) × 신장(m))",
+      "brf_ascii": "``0,,bmi8';n.o1\">7`.o,m,0`33`;n`",
+      "braille_unicode": "[?`][?`]⠴⠠⠠⠃⠍⠊⠦⠄⠰⠝⠨⠕⠂⠐⠜⠶[?`]⠨⠕⠠⠍⠠⠴[?`]⠒⠒[?`]⠰⠝[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제46항 연산 기",
+      "korean": "지구는 해왕성보다 작고 금성보다 크다(해왕성>지구>금성).",
+      "brf_ascii": "``.o@mcz`jrv7,]~ui`.a@u`@{5,]~ui",
+      "braille_unicode": "[?`][?`]⠨⠕⠈⠍⠉⠿[?`]⠚⠗⠧⠶⠠[?]]⠘⠥⠊[?`]⠨⠁⠈⠥[?`]⠈⠪⠢⠠[?]]⠘⠥⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제47항 분수는 ",
+      "korean": "수와 분수를 붙여 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제47항 분수는 ",
+      "korean": "는 햄버거를 주문했다.",
+      "brf_ascii": "``ja,r7i!`$gin`#e/#cz`do.\"!`.meg",
+      "braille_unicode": "[?`][?`]⠚⠁⠠⠗⠶⠊[?!][?`][?$]⠊⠝[?`]⠼⠑⠌⠗⠼⠉⠿[?`]⠙⠕⠨⠐[?!][?`]⠨⠍⠑",
+      "decode_ok": false
+    },
+    {
+      "item": "제47항 분수는 ",
+      "korean": "[붙임] 분수를 표시하는 빗금(/)은 _/으로 적고, 순서는 묵자를 따른다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제47항 분수는 ",
+      "korean": "지구 표면의 2/3는 바다로 덮여 있다.",
+      "brf_ascii": "``.o@m`d+e*w`#b_/#c`cz`^i\"u`is4:",
+      "braille_unicode": "[?`][?`]⠨⠕⠈⠍[?`]⠙⠬⠑[?*]⠺[?`]⠼⠃[?_]⠌⠗⠼⠉[?`]⠉⠿[?`][?^]⠊⠐⠥[?`]⠊⠎⠲⠱",
+      "decode_ok": false
+    },
+    {
+      "item": "제47항 분수는 ",
+      "korean": "한국은 지난 1/4분기에도 높은 경제 성장률을 기록했다.",
+      "brf_ascii": "``j3@maz`.oc3`#a_/#d^g@oniu`cu4z",
+      "braille_unicode": "[?`][?`]⠚⠒⠈⠍⠁⠿[?`]⠨⠕⠉⠒[?`]⠼⠁[?_]⠌⠗⠼⠙[?^]⠈⠕⠝⠊⠥[?`]⠉⠥⠲⠿",
+      "decode_ok": false
+    },
+    {
+      "item": "제48항 소수점은",
+      "korean": "원주율은 약 3.14이다.",
+      "brf_ascii": "``p3.m%1z`>a`#c4adoi4```````````",
+      "braille_unicode": "[?`][?`]⠏⠒⠨⠍⠩⠂⠿[?`]⠜⠁[?`]⠼⠉⠲⠁⠙⠕⠊⠲[?`][?`][?`][?`][?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제48항 소수점은",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "31",
+      "braille_unicode": "⠒⠂",
+      "decode_ok": true
+    }
+  ]
+}

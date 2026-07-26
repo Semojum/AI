@@ -1,0 +1,1009 @@
+{
+  "section_id": "제6절",
+  "section_name": "약자",
+  "extracted_at": "2026-05-25T01:58:20",
+  "source_lines": "571–893",
+  "pairs": [
+    {
+      "item": "제13항 다음 글",
+      "korean": "하",
+      "brf_ascii": "$",
+      "braille_unicode": "[?$]",
+      "decode_ok": false
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "가지",
+      "brf_ascii": "$.o",
+      "braille_unicode": "[?$]⠨⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "나비",
+      "brf_ascii": "c~o",
+      "braille_unicode": "⠉⠘⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "다리미",
+      "brf_ascii": "i\"oeo",
+      "braille_unicode": "⠊⠐⠕⠑⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "라디오",
+      "brf_ascii": "\"<iou",
+      "braille_unicode": "⠐⠣⠊⠕⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "고구마",
+      "brf_ascii": "@u@me",
+      "braille_unicode": "⠈⠥⠈⠍⠑",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "바느질",
+      "brf_ascii": "~c{.o1",
+      "braille_unicode": "⠘⠉⠪⠨⠕⠂",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "사위",
+      "brf_ascii": "lmr",
+      "braille_unicode": "[?l]⠍⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "아궁이",
+      "brf_ascii": "<@m7o",
+      "braille_unicode": "⠣⠈⠍⠶⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "도자기",
+      "brf_ascii": "iu.@o",
+      "braille_unicode": "⠊⠥⠨⠈⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "기차",
+      "brf_ascii": "@o;<",
+      "braille_unicode": "⠈⠕⠰⠣",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "카메라",
+      "brf_ascii": "fen\"<",
+      "braille_unicode": "⠋⠑⠝⠐⠣",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "실타래",
+      "brf_ascii": ",o1h\"r",
+      "braille_unicode": "⠠⠕⠂⠓⠐⠗",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "파도",
+      "brf_ascii": "diu",
+      "braille_unicode": "⠙⠊⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "하루",
+      "brf_ascii": "j\"m",
+      "braille_unicode": "⠚⠐⠍",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "강산",
+      "brf_ascii": "$7l3",
+      "braille_unicode": "[?$]⠶[?l]⠒",
+      "decode_ok": false
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "낮잠",
+      "brf_ascii": "ck.5",
+      "braille_unicode": "⠉⠅⠨⠢",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "단란",
+      "brf_ascii": "i3\"<3",
+      "braille_unicode": "⠊⠒⠐⠣⠒",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "만찬",
+      "brf_ascii": "e3;<3",
+      "braille_unicode": "⠑⠒⠰⠣⠒",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "안방",
+      "brf_ascii": "<3~7",
+      "braille_unicode": "⠣⠒⠘⠶",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "바캉스",
+      "brf_ascii": "~f7,{",
+      "braille_unicode": "⠘⠋⠶⠠⠪",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "갈비탕",
+      "brf_ascii": "$1~oh7",
+      "braille_unicode": "[?$]⠂⠘⠕⠓⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "판소리",
+      "brf_ascii": "d3,u\"o",
+      "braille_unicode": "⠙⠒⠠⠥⠐⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "합창",
+      "brf_ascii": "jb;<7",
+      "braille_unicode": "⠚⠃⠰⠣⠶",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "까마귀",
+      "brf_ascii": ",$e@mr",
+      "braille_unicode": "⠠[?$]⠑⠈⠍⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "깜깜하다",
+      "brf_ascii": ",$5,$5ji",
+      "braille_unicode": "⠠[?$]⠢⠠[?$]⠢⠚⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "따님",
+      "brf_ascii": ",ico5",
+      "braille_unicode": "⠠⠊⠉⠕⠢",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "딱따구리",
+      "brf_ascii": ",ia,i@m\"o",
+      "braille_unicode": "⠠⠊⠁⠠⠊⠈⠍⠐⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "오빠",
+      "brf_ascii": "u,~",
+      "braille_unicode": "⠥⠠⠘",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "빵집",
+      "brf_ascii": ",~7.ob",
+      "braille_unicode": "⠠⠘⠶⠨⠕⠃",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "싸구려",
+      "brf_ascii": ",l@m\":",
+      "braille_unicode": "⠠[?l]⠈⠍⠐⠱",
+      "decode_ok": false
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "찹쌀",
+      "brf_ascii": ";<b,l1",
+      "braille_unicode": "⠰⠣⠃⠠[?l]⠂",
+      "decode_ok": false
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "짜장",
+      "brf_ascii": ",..7",
+      "braille_unicode": "⠠⠨⠨⠶",
+      "decode_ok": true
+    },
+    {
+      "item": "제13항 다음 글",
+      "korean": "짱구",
+      "brf_ascii": ",.7@m",
+      "braille_unicode": "⠠⠨⠶⠈⠍",
+      "decode_ok": true
+    },
+    {
+      "item": "제14항 ‘나, ",
+      "korean": "용하지 않는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제14항 ‘나, ",
+      "korean": "나이",
+      "brf_ascii": "c<o",
+      "braille_unicode": "⠉⠣⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제14항 ‘나, ",
+      "korean": "다음",
+      "brf_ascii": "i<[5",
+      "braille_unicode": "⠊⠣⠪⠢",
+      "decode_ok": true
+    },
+    {
+      "item": "제14항 ‘나, ",
+      "korean": "마우스",
+      "brf_ascii": "e<m,{",
+      "braille_unicode": "⠑⠣⠍⠠⠪",
+      "decode_ok": true
+    },
+    {
+      "item": "제14항 ‘나, ",
+      "korean": "바위",
+      "brf_ascii": "^<mr",
+      "braille_unicode": "[?^]⠣⠍⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제14항 ‘나, ",
+      "korean": "자아",
+      "brf_ascii": ".<<",
+      "braille_unicode": "⠨⠣⠣",
+      "decode_ok": true
+    },
+    {
+      "item": "제14항 ‘나, ",
+      "korean": "카이로",
+      "brf_ascii": "f<o\"u",
+      "braille_unicode": "⠋⠣⠕⠐⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제14항 ‘나, ",
+      "korean": "넥타이",
+      "brf_ascii": "cnah<o",
+      "braille_unicode": "⠉⠝⠁⠓⠣⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제14항 ‘나, ",
+      "korean": "파이프",
+      "brf_ascii": "d<od{",
+      "braille_unicode": "⠙⠣⠕⠙⠪",
+      "decode_ok": true
+    },
+    {
+      "item": "제14항 ‘나, ",
+      "korean": "하얀",
+      "brf_ascii": "j<>3",
+      "braille_unicode": "⠚⠣⠜⠒",
+      "decode_ok": true
+    },
+    {
+      "item": "제14항 ‘나, ",
+      "korean": "[다만] 그 사이에서 줄이 바뀔 때에는 약자를 사용하여 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제14항 ‘나, ",
+      "korean": "철수는 여름 방학을 맞아 바위섬으로 놀러 갔다.",
+      "brf_ascii": "``;t,mcz`:\"{5`~7ja!`ek<`~```````",
+      "braille_unicode": "[?`][?`]⠰[?t]⠠⠍⠉⠿[?`]⠱⠐⠪⠢[?`]⠘⠶⠚⠁[?!][?`]⠑⠅⠣[?`]⠘[?`][?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제14항 ‘나, ",
+      "korean": "[붙임] ‘팠’을 적을 때에는 ‘ㅏ’를 생략하지 않고 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제14항 ‘나, ",
+      "korean": "땅을 팠다.",
+      "brf_ascii": ",i7!`d</i4",
+      "braille_unicode": "⠠⠊⠶[?!][?`]⠙⠣⠌⠗⠊⠲",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "울",
+      "brf_ascii": "?",
+      "braille_unicode": "[??]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "것",
+      "brf_ascii": "z",
+      "braille_unicode": "⠿",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "억새",
+      "brf_ascii": "?,r",
+      "braille_unicode": "[??]⠠⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "추억",
+      "brf_ascii": ";m?",
+      "braille_unicode": "⠰⠍[??]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "언어",
+      "brf_ascii": ")s",
+      "braille_unicode": "[?)]⠎",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "격언",
+      "brf_ascii": "@:a)",
+      "braille_unicode": "⠈⠱⠁[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "얼룩",
+      "brf_ascii": "t\"ma",
+      "braille_unicode": "[?t]⠐⠍⠁",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "하얼빈",
+      "brf_ascii": "j<t~q",
+      "braille_unicode": "⠚⠣[?t]⠘[?q]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "연필",
+      "brf_ascii": "*do1",
+      "braille_unicode": "[?*]⠙⠕⠂",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "자연",
+      "brf_ascii": ".<*",
+      "braille_unicode": "⠨⠣[?*]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "열매",
+      "brf_ascii": "|er",
+      "braille_unicode": "[?|]⠑⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "가열",
+      "brf_ascii": "$|",
+      "braille_unicode": "[?$][?|]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "영어",
+      "brf_ascii": "}s",
+      "braille_unicode": "[?}]⠎",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "환영",
+      "brf_ascii": "jv3}",
+      "braille_unicode": "⠚⠧⠒[?}]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "옥수수",
+      "brf_ascii": "x,m,m",
+      "braille_unicode": "[?x]⠠⠍⠠⠍",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "가옥",
+      "brf_ascii": "$x",
+      "braille_unicode": "[?$][?x]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "온도",
+      "brf_ascii": "(iu",
+      "braille_unicode": "[?(]⠊⠥",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "오리온",
+      "brf_ascii": "u\"o(",
+      "braille_unicode": "⠥⠐⠕[?(]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "옹고집",
+      "brf_ascii": "=@u.ob",
+      "braille_unicode": "⠿⠈⠥⠨⠕⠃",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "새옹지마",
+      "brf_ascii": ",r=.oe",
+      "braille_unicode": "⠠⠗⠿⠨⠕⠑",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "운동장",
+      "brf_ascii": "gi=.7",
+      "braille_unicode": "⠊⠿⠨⠶",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "행운",
+      "brf_ascii": "jr7g",
+      "braille_unicode": "⠚⠗⠶",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "울타리",
+      "brf_ascii": "&h\"o",
+      "braille_unicode": "[?&]⠓⠐⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "겨울",
+      "brf_ascii": "@:&",
+      "braille_unicode": "⠈⠱[?&]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "은하수",
+      "brf_ascii": "zj,m",
+      "braille_unicode": "⠿⠚⠠⠍",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "양은",
+      "brf_ascii": ">7z",
+      "braille_unicode": "⠜⠶⠿",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "을지로",
+      "brf_ascii": "!.o\"u",
+      "braille_unicode": "[?!]⠨⠕⠐⠥",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "가을",
+      "brf_ascii": "$!",
+      "braille_unicode": "[?$][?!]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "인내",
+      "brf_ascii": "qcr",
+      "braille_unicode": "[?q]⠉⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "거인",
+      "brf_ascii": "@sq",
+      "braille_unicode": "⠈⠎[?q]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "것이다",
+      "brf_ascii": "_soi",
+      "braille_unicode": "[?_]⠎⠕⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "이것",
+      "brf_ascii": "o_s",
+      "braille_unicode": "⠕[?_]⠎",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "11",
+      "braille_unicode": "⠂⠂",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "는 글자에도 약자를 사용하여 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "덕망",
+      "brf_ascii": "i?e7",
+      "braille_unicode": "⠊[??]⠑⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "기적",
+      "brf_ascii": "@o.?",
+      "braille_unicode": "⠈⠕⠨[??]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "꺾다",
+      "brf_ascii": ",@?ai",
+      "braille_unicode": "⠠⠈[??]⠁⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "넋",
+      "brf_ascii": "c?'",
+      "braille_unicode": "⠉[??]⠄",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "건전지",
+      "brf_ascii": "@).).o",
+      "braille_unicode": "⠈[?)]⠨[?)]⠨⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "개천절",
+      "brf_ascii": "@r;).t",
+      "braille_unicode": "⠈⠗⠰[?)]⠨[?t]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "얹다",
+      "brf_ascii": ")ki",
+      "braille_unicode": "[?)]⠅⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "벌레",
+      "brf_ascii": "~t\"n",
+      "braille_unicode": "⠘[?t]⠐⠝",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "옷걸이",
+      "brf_ascii": "u'@to",
+      "braille_unicode": "⠥⠄⠈[?t]⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "얽다",
+      "brf_ascii": "tai",
+      "braille_unicode": "[?t]⠁⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "젊다",
+      "brf_ascii": ".t5i",
+      "braille_unicode": "⠨[?t]⠢⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "넓다",
+      "brf_ascii": "ctbi",
+      "braille_unicode": "⠉[?t]⠃⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "변화",
+      "brf_ascii": "~*jv",
+      "braille_unicode": "⠘[?*]⠚⠧",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "수련",
+      "brf_ascii": ",m\"*",
+      "braille_unicode": "⠠⠍⠐[?*]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "별자리",
+      "brf_ascii": "~|.\"o",
+      "braille_unicode": "⠘[?|]⠨⠐⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "헌혈",
+      "brf_ascii": "j)j|",
+      "braille_unicode": "⠚[?)]⠚[?|]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "엷다",
+      "brf_ascii": "|bi",
+      "braille_unicode": "[?|]⠃⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "평화",
+      "brf_ascii": "d}jv",
+      "braille_unicode": "⠙[?}]⠚⠧",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "안녕",
+      "brf_ascii": "<3c}",
+      "braille_unicode": "⠣⠒⠉[?}]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "복덕방",
+      "brf_ascii": "~xi?~7",
+      "braille_unicode": "⠘[?x]⠊[??]⠘⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "가곡",
+      "brf_ascii": "$@x",
+      "braille_unicode": "[?$]⠈[?x]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "볶다",
+      "brf_ascii": "~xai",
+      "braille_unicode": "⠘[?x]⠁⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "논두렁",
+      "brf_ascii": "c(im\"s7",
+      "braille_unicode": "⠉[?(]⠊⠍⠐⠎⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "용돈",
+      "brf_ascii": "+7i(",
+      "braille_unicode": "⠬⠶⠊[?(]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "동그라미",
+      "brf_ascii": "i=@{\"<eo",
+      "braille_unicode": "⠊⠿⠈⠪⠐⠣⠑⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "탁구공",
+      "brf_ascii": "ha@m@=",
+      "braille_unicode": "⠓⠁⠈⠍⠈⠿",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "순두부",
+      "brf_ascii": ",gim~m",
+      "braille_unicode": "⠠⠊⠍⠘⠍",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "숭례문",
+      "brf_ascii": ",m7\"/eg",
+      "braille_unicode": "⠠⠍⠶⠐⠌⠗⠑",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "불고기",
+      "brf_ascii": "~&@u@o",
+      "braille_unicode": "⠘[?&]⠈⠥⠈⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "일출",
+      "brf_ascii": "o1;&",
+      "braille_unicode": "⠕⠂⠰[?&]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "붉다",
+      "brf_ascii": "^&ai",
+      "braille_unicode": "[?^][?&]⠁⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "굶다",
+      "brf_ascii": "@&5i",
+      "braille_unicode": "⠈[?&]⠢⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "훑다",
+      "brf_ascii": "j&8i",
+      "braille_unicode": "⠚[?&]⠦⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "근로",
+      "brf_ascii": "@z\"u",
+      "braille_unicode": "⠈⠿⠐⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "마흔",
+      "brf_ascii": "ejz",
+      "braille_unicode": "⠑⠚⠿",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "끊다",
+      "brf_ascii": ",@z0i",
+      "braille_unicode": "⠠⠈⠿⠴⠊",
+      "decode_ok": true
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "글씨",
+      "brf_ascii": "@!,,o",
+      "braille_unicode": "⠈[?!]⠠⠠⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "구슬",
+      "brf_ascii": "@m,!",
+      "braille_unicode": "⠈⠍⠠[?!]",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "긁다",
+      "brf_ascii": "@!ai",
+      "braille_unicode": "⠈[?!]⠁⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "읊다",
+      "brf_ascii": "!4i",
+      "braille_unicode": "[?!]⠲⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "끓다",
+      "brf_ascii": ",@!0i",
+      "braille_unicode": "⠠⠈[?!]⠴⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "진실",
+      "brf_ascii": ".q,o1",
+      "braille_unicode": "⠨[?q]⠠⠕⠂",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "어린이",
+      "brf_ascii": "s\"qo",
+      "braille_unicode": "⠎⠐[?q]⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제15항 다음 글",
+      "korean": "하겄다",
+      "brf_ascii": "j@s/i",
+      "braille_unicode": "⠚⠈⠎⠌⠗⠊",
+      "decode_ok": true
+    },
+    {
+      "item": "제16항 ‘까, ",
+      "korean": "나타낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제16항 ‘까, ",
+      "korean": "까치",
+      "brf_ascii": ",$;o",
+      "braille_unicode": "⠠[?$]⠰⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제16항 ‘까, ",
+      "korean": "깡충깡충",
+      "brf_ascii": ",$7;m7,$7;m7",
+      "braille_unicode": "⠠[?$]⠶⠰⠍⠶⠠[?$]⠶⠰⠍⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제16항 ‘까, ",
+      "korean": "싸리나무",
+      "brf_ascii": ",l\"ocem",
+      "braille_unicode": "⠠[?l]⠐⠕⠉⠑⠍",
+      "decode_ok": false
+    },
+    {
+      "item": "제16항 ‘까, ",
+      "korean": "쌍둥이",
+      "brf_ascii": ",l7im7o",
+      "braille_unicode": "⠠[?l]⠶⠊⠍⠶⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제16항 ‘까, ",
+      "korean": "힘껏",
+      "brf_ascii": "jo5,_s",
+      "braille_unicode": "⠚⠕⠢⠠[?_]⠎",
+      "decode_ok": false
+    },
+    {
+      "item": "제16항 ‘까, ",
+      "korean": "마음껏",
+      "brf_ascii": "e<{5,_s",
+      "braille_unicode": "⠑⠣⠪⠢⠠[?_]⠎",
+      "decode_ok": false
+    },
+    {
+      "item": "제16항 ‘까, ",
+      "korean": "[붙임] ‘껐’을 적을 때에는 ‘꺼’와 받침 ‘ㅆ’ 약자를 어울러 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제16항 ‘까, ",
+      "korean": "불을 껐다.",
+      "brf_ascii": "~&!`,@s/i4",
+      "braille_unicode": "⠘[?&][?!][?`]⠠⠈⠎⠌⠗⠊⠲",
+      "decode_ok": false
+    },
+    {
+      "item": "제17항 ‘성, ",
+      "korean": "의 약자 }을 적어 나타낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제17항 ‘성, ",
+      "korean": "성가",
+      "brf_ascii": ",}$",
+      "braille_unicode": "⠠[?}][?$]",
+      "decode_ok": false
+    },
+    {
+      "item": "제17항 ‘성, ",
+      "korean": "말썽",
+      "brf_ascii": "e1,,]",
+      "braille_unicode": "⠑⠂⠠⠠[?]]",
+      "decode_ok": false
+    },
+    {
+      "item": "제17항 ‘성, ",
+      "korean": "정성",
+      "brf_ascii": ".},}",
+      "braille_unicode": "⠨[?}]⠠[?}]",
+      "decode_ok": false
+    },
+    {
+      "item": "제17항 ‘성, ",
+      "korean": "어정쩡",
+      "brf_ascii": "s.},.}",
+      "braille_unicode": "⠎⠨[?}]⠠⠨[?}]",
+      "decode_ok": false
+    },
+    {
+      "item": "제17항 ‘성, ",
+      "korean": "청년",
+      "brf_ascii": ";}c*",
+      "braille_unicode": "⠰[?}]⠉[?*]",
+      "decode_ok": false
+    },
+    {
+      "item": "제17항 ‘성, ",
+      "korean": "얄라셩",
+      "brf_ascii": ">1\"<,:7",
+      "braille_unicode": "⠜⠂⠐⠣⠠⠱⠶",
+      "decode_ok": true
+    }
+  ]
+}

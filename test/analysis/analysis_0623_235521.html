@@ -1,0 +1,145 @@
+<!doctype html><html lang=ko><head><meta charset=utf-8>
+<title>점역 시스템 문제 분석 — 0623_235521</title><style>
+body{font-family:-apple-system,'Segoe UI',Roboto,'Noto Sans KR',sans-serif;margin:0;background:#f4f5f7;color:#1a1a1a;line-height:1.5}
+header{background:#111827;color:#fff;padding:18px 28px}
+header h1{margin:0 0 4px;font-size:21px}
+.meta{font-size:13px;color:#9ca3af}
+.wrap{max-width:1760px;margin:0 auto;padding:22px}
+.intro{background:#fff;border-radius:8px;padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.08);font-size:13.5px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px;margin-bottom:22px}
+.card{background:#fff;border-radius:8px;padding:12px 14px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.cid{font-weight:700;font-size:14px;margin-bottom:4px}
+.ctitle{font-size:12.5px;color:#374151;margin-bottom:6px}
+.ccnt{font-size:12px;color:#6b7280}
+table{border-collapse:collapse;width:100%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.1);table-layout:fixed}
+th,td{border:1px solid #e5e7eb;padding:9px 11px;text-align:left;vertical-align:top;font-size:13px;word-break:break-word;overflow-wrap:anywhere}
+th{background:#1f2937;color:#fff;font-weight:600;position:sticky;top:0;z-index:2}
+th:nth-child(1),td.fname{width:9%}
+th:nth-child(2),td.lay{width:8%}
+th:nth-child(3),td.data{width:25%}
+th:nth-child(4),td.why{width:23%}
+th:nth-child(5),td.fix{width:16%}
+th:nth-child(6),td.codecol{width:19%}
+tr.grouphd td{font-size:14px;padding:11px 12px;border-top:3px solid #111827}
+.sevbadge{display:inline-block;color:#fff;padding:1px 9px;border-radius:11px;font-size:11.5px;font-weight:700;vertical-align:middle}
+.pid{font-weight:800;color:#111827;margin:0 4px}
+.cnt{font-size:12px;color:#6b7280;font-weight:400}
+.dl{margin-bottom:6px}
+.tag{display:inline-block;min-width:66px;font-size:10.5px;color:#fff;background:#6b7280;border-radius:4px;padding:1px 6px;margin-right:6px;text-align:center;vertical-align:top}
+.dl .src{font-size:12px;color:#374151;white-space:pre-wrap}
+.br,.br2{font-family:'Noto Sans Symbols2','Segoe UI Symbol',monospace}
+.br{font-size:14px}
+.br2{font-size:15px;color:#1e3a8a;white-space:pre-wrap;word-break:break-all}
+.rev{font-size:12px;color:#065f46;background:#ecfdf5;white-space:pre-wrap;display:inline-block;padding:1px 4px}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:#6b7280}
+.fname{font-size:11.5px;font-weight:600;color:#1f2937}
+.badge{display:inline-block;background:#e5e7eb;color:#374151;border-radius:9px;padding:0 7px;font-size:10.5px;margin:1px 2px}
+.badge.tier{background:#dbeafe;color:#1e40af}
+.badge.blk{background:#fecaca;color:#991b1b}
+.why{font-size:12.5px;color:#374151}
+.reg{display:block;margin-top:8px;background:#fffbeb;border-left:3px solid #f59e0b;padding:6px 9px;font-size:12px;color:#78350f;border-radius:0 4px 4px 0}
+.fix{font-size:12.5px;color:#064e3b;background:#f0fdf4}
+.codecol{font-size:12px}
+ul.code{margin:0;padding-left:16px}
+ul.code li{margin-bottom:5px;color:#3730a3}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;background:#eef2ff;color:#3730a3;padding:0 3px;border-radius:3px}
+b{color:#111827}
+</style></head><body>
+<header><h1>Semojum V2 — 점역 시스템 규정 대조 문제 분석</h1>
+<div class=meta>분석 대상: test/report/0623_235521 · 점역 요소 457개 / 10 job ·
+근거: 「한국 점자 규정」「점자 도서·자료 제작 지침」「점역사 Q&amp;A」</div></header>
+<div class=wrap>
+<div class=intro>
+정상 한국어 본문 점역(자모·수표·약자·문장부호)은 규정에 맞게 동작한다. 아래는 <b>규정 위반·정보 손실이 확인된 7개 문제군</b>이다.
+각 행은 실제 점역 데이터(원본→점자변환용→BRF→역점역)와, 위반한 <b>근거 규정</b>·<b>교정 방향</b>·<b>관련 코드</b>를 함께 보여준다.
+심각도: <span class=sevbadge style="background:#b91c1c">치명</span>
+<span class=sevbadge style="background:#c2410c">높음</span>
+<span class=sevbadge style="background:#a16207">중간</span>
+<span class=sevbadge style="background:#3f6212">낮음</span>
+</div>
+<div class=cards><div class=card style="border-left:5px solid #b91c1c"><div class=cid>P1 <span class=sevbadge style="background:#b91c1c">치명</span></div><div class=ctitle>인라인 수식 $…$ 이 수식 변환기로 라우팅되지 않아, LaTeX 명령어가 영어 점자로 음역됨</div><div class=ccnt>해당 데이터 약 <b>68</b>건</div></div><div class=card style="border-left:5px solid #c2410c"><div class=cid>P2 <span class=sevbadge style="background:#c2410c">높음</span></div><div class=ctitle>수식 안 \text{한글} 의 한국어가 점자로 변환되지 않고 한글 음절 그대로 출력됨</div><div class=ccnt>해당 데이터 약 <b>5</b>건</div></div><div class=card style="border-left:5px solid #c2410c"><div class=cid>P3 <span class=sevbadge style="background:#c2410c">높음</span></div><div class=ctitle>구조용 LaTeX 매크로(\boxed \tag \bullet \quad \dots \left \right)가 미처리되어 음역·잔재로 남음</div><div class=ccnt>해당 데이터 약 <b>15</b>건</div></div><div class=card style="border-left:5px solid #c2410c"><div class=cid>P4 <span class=sevbadge style="background:#c2410c">높음</span></div><div class=ctitle>〈…〉 꺽쇠(화살괄호) 텍스트가 통째로 삭제되어 빈 점자 출력 — 빈 결과 금지 위반</div><div class=ccnt>해당 데이터 약 <b>4</b>건</div></div><div class=card style="border-left:5px solid #a16207"><div class=cid>P5 <span class=sevbadge style="background:#a16207">중간</span></div><div class=ctitle>데이터 표가 셀 보존 점자표가 아니라 손실 많은 점역자주 산문 요약으로 렌더됨</div><div class=ccnt>해당 데이터 약 <b>2</b>건</div></div><div class=card style="border-left:5px solid #a16207"><div class=cid>P6 <span class=sevbadge style="background:#a16207">중간</span></div><div class=ctitle>‘처리 불가’ 플레이스홀더가 깨져 출력되고 OCR 외국 문자(巂·院长)가 정화되지 않음</div><div class=ccnt>해당 데이터 약 <b>1</b>건</div></div><div class=card style="border-left:5px solid #3f6212"><div class=cid>P7 <span class=sevbadge style="background:#3f6212">낮음</span></div><div class=ctitle>역점역(braille_back) 모듈이 수식·약자를 못 풀어 ⟨코드포인트⟩로 출력하고 일부 한글을 오역함 (검증 보조 한계)</div><div class=ccnt>해당 데이터 약 <b>190</b>건</div></div></div>
+<table>
+<tr><th>데이터 파일 이름</th><th>레이아웃</th><th>데이터 전문</th>
+<th>왜 문제인지 (근거 규정)</th><th>어떻게 바뀌어야 하는지</th><th>관련 코드</th></tr>
+<tr class=grouphd style="background:#fef2f2"><td colspan=6><span class=sevbadge style="background:#b91c1c">치명</span> <span class=pid>P1</span> <b>인라인 수식 $…$ 이 수식 변환기로 라우팅되지 않아, LaTeX 명령어가 영어 점자로 음역됨</b> <span class=cnt>· 해당 데이터 약 68건</span></td></tr><tr><td class=fname>e2e-test_수학도형_02-c<br><span class=mono>p1 · #7</span></td><td class=lay><b>text</b><br><span class=badge>text_only</span> <span class=badge tier>STANDARD</span></td><td class=data><div class=dl><span class=tag>점자변환용</span><span class=src>1. $9^{\frac{1}{4}} \times 3^{-\frac{1}{2}}$ 의 값은? [2점]</span></div><div class=dl><span class=tag>점자(BRF)</span><span class=br2>   ⠼⠁⠲⠴⠈⠎⠼⠊⠈⠑⠦⠂⠸⠡⠋⠗⠁⠉⠦⠂⠼⠁⠐⠴⠦⠂⠼⠙
+⠐⠴⠐⠴⠸⠡⠞⠊⠍⠑⠎⠀⠼⠉⠈⠑⠦⠂⠤⠸⠡⠋⠗⠁⠉⠦⠂⠼⠁⠐⠴
+⠦⠂⠼⠃⠐⠴⠐⠴⠴⠈⠎⠺⠀⠫⠃⠄⠵⠦⠦⠆⠼⠃⠨⠎⠢⠰⠴</span></div><div class=dl><span class=tag>역점역</span><span class=rev>   1∋$9^{\캑낱⟨2802⟩1}{4
+}}\얼두머 3^{-\캑낱⟨2802⟩1}
+{2}}$의 값은≤⟨2806⟩2점]</span></div></td><td class=why rowspan=3>수학식이 포함된 문항이 <b>type=text/list_item</b>으로 분류되어 인라인 <code>$…$</code> 수식이 한글 점자 폴백 경로로 흘러간다. 이 경로는 LaTeX를 모르므로 <code>\frac</code>·<code>\sqrt</code>·<code>\times</code>·<code>\lim</code> 같은 <b>명령어 이름을 영어 단어로 보고 한 글자씩 음역</b>한다 (점자 <span class=br>⠸⠡⠋⠗⠁⠉</span> = 영어 'frac', <span class=br>⠸⠡⠎⠟⠗⠞</span> = 'sqrt').<br><b>결정적 증거</b>: 똑같은 수식을 올바른 경로로 보내면 정상 변환된다 — <code>&lt;!수식&gt;\frac{2}{3}</code> → <span class=br>⠼⠉⠌⠼⠃</span>(정상) 인데, <code>$\frac{2}{3}$</code> → <span class=br>⠴⠈⠎⠸⠡⠋⠗⠁⠉…</span>(깨짐). 변환기는 멀쩡하고 <b>라우팅만 빠졌다</b>.<br><span class=reg>근거 규정 — 「수학 점자」 제47항(분수는 분수표 <span class=br>⠌</span>로 분모·분수표·분자 순), 제22항(근호 <span class=br>⠜</span>), 제18항(위첨자 <span class=br>⠘</span>). 제2장(문자와 식) 전반: 수식은 수학 점자로 적어야 하며 명령어의 알파벳 음역은 규정에 없다.</span></td><td class=fix rowspan=3>추출 단계에서 텍스트 안의 <code>$…$</code>(및 <code>\(..\)</code>)를 감지해 <code>&lt;!수식&gt;…&lt;!/수식&gt;</code>로 감싸 <code>convert_latex()</code>로 라우팅한다. 그러면 본문은 한글 점자, 수식은 수학 점자로 분리 처리되고 「수학 점자」 제11항에 따라 수식 앞뒤 두 칸이 띄어진다.<br>예: <code>② $\sqrt{3}$</code> → <span class=br>⠼⠆⠀⠀⠜⠼⠉⠀⠀</span> (현재: <span class=br>⠼⠆⠴⠈⠎⠸⠡⠎⠟⠗⠞…</span>)</td><td class=codecol rowspan=3><ul class=code><li>app/ai/builder/result_builder.py — MinerU 출력→요소 조립. 인라인 <code>$…$</code> 감지·태깅 부재</li><li>app/core/pipeline.py · _parse_txt_result — content를 그대로 corrected_text로(수식 분리 없음)</li><li>app/ai/braille/translator.py:155 — <code>_FORMULA_RE=&lt;!수식&gt;…</code>만 인식, raw <code>$</code> 미인식</li><li>app/ai/llm/text_opt.py — 텍스트 opt 패스스루(인라인 수식 보존만)</li></ul></td></tr><tr><td class=fname>e2e-test_수학도형_02-c<br><span class=mono>p1 · #9</span></td><td class=lay><b>text</b><br><span class=badge>text_only</span> <span class=badge tier>STANDARD</span></td><td class=data><div class=dl><span class=tag>점자변환용</span><span class=src>② $\sqrt{3}$</span></div><div class=dl><span class=tag>점자(BRF)</span><span class=br2>   ⠼⠆⠴⠈⠎⠸⠡⠎⠟⠗⠞⠦⠂⠼⠉⠐⠴⠴⠈⠎</span></div><div class=dl><span class=tag>역점역</span><span class=rev>   ⟨⠼⟩⟨2806⟩$\어인애엁⟨2802⟩3}$</span></div></td></tr><tr><td class=fname>e2e-test_수학수식_01-c<br><span class=mono>p1 · #17</span></td><td class=lay><b>formula</b><br><span class=badge>formula_block</span> <span class=badge tier>STANDARD</span></td><td class=data><div class=dl><span class=tag>원본추출</span><span class=src>$$
+\sum_ {k = 1} ^ {n} a _ {k} = \frac {2}{3} a _ {n} + \frac {1}{6} n ^ {2} - \frac {1}{6} n + 1 0 (n \geq 2)
+$$</span></div><div class=dl><span class=tag>점자변환용</span><span class=src>$$
+\sum_{k = 1}^{n} a_{k} = \frac{2}{3} a_{n} + \frac{1}{6} n^{2} - \frac{1}{6} n + 10 \quad (n ≥ 2)
+$$</span></div><div class=dl><span class=tag>점자(BRF)</span><span class=br2>⠠⠨⠎⠰⠅⠀⠒⠒⠀⠼⠁⠀⠝⠀⠀⠁⠰⠅⠀⠒⠒⠀⠼⠉⠌⠼⠃⠀⠁⠰⠝
+⠢⠀⠼⠋⠌⠼⠁⠀⠝⠘⠼⠃⠀⠔⠀⠼⠋⠌⠼⠁⠀⠝⠀⠢⠀⠼⠁⠚⠀⠷⠝
+⠲⠲⠀⠼⠃⠾</span></div><div class=dl><span class=tag>역점역</span><span class=rev>쩌⟨2830⟩⟨2805⟩ = 1 에  ⟨2801⟩⟨2830⟩⟨2805⟩ = 3예2 ⟨2801⟩체
+⟨2822⟩ 6예1 에바2 ⟨2814⟩ 6예1 에 ⟨2822⟩ 10 온에
+∋. 2언</span></div></td></tr><tr class=grouphd style="background:#fff7ed"><td colspan=6><span class=sevbadge style="background:#c2410c">높음</span> <span class=pid>P2</span> <b>수식 안 \text{한글} 의 한국어가 점자로 변환되지 않고 한글 음절 그대로 출력됨</b> <span class=cnt>· 해당 데이터 약 5건</span></td></tr><tr><td class=fname>e2e-test_수학수식_01-c<br><span class=mono>p1 · #10</span></td><td class=lay><b>formula</b><br><span class=badge>formula_block</span> <span class=badge tier>STANDARD</span></td><td class=data><div class=dl><span class=tag>원본추출</span><span class=src>$$
+\begin{array}{l} \bullet \quad a _ {1} = 7 \\ \cdot 2 \text {   이상의   자연수   } n \text {   에   대하여   } \\ \sum_ {k = 1} ^ {n} a _ {k} = \frac {2}{3} a _ {n} +</span></div><div class=dl><span class=tag>점자변환용</span><span class=src>```latex
+$$
+\begin{array}{l} \bullet \quad a _ {1} = 7 \\ \cdot 2 \text {   이상의   자연수   } n \text {   에   대하여   } \\ \sum_ {k = 1} ^ {n} a _ {k} = \frac {2}{3} a _ {n} + \frac {1}{6} n ^ {2} - \frac {</span></div><div class=dl><span class=tag>점자(BRF)</span><span class=br2>⠸⠡⠃⠑⠛⠊⠝⠦⠂⠁⠗⠗⠁⠽⠐⠴⠦⠂⠇⠐⠴⠀⠸⠡⠃⠥⠇⠇⠑⠞
+⠁⠰⠼⠁⠀⠒⠒⠀⠼⠛⠀⠸⠡⠸⠡⠀⠐⠆⠀⠼⠃
+⠸⠡⠞⠑⠭⠞⠦⠂이상의⠀자연수⠐⠴⠀⠝⠀⠸⠡⠞⠑⠭⠞⠦⠂에
+대하여⠐⠴⠀⠸⠡⠸⠡⠀⠠⠨⠎⠰⠅⠀⠒⠒⠀⠼⠁⠀⠝⠀⠀⠁⠰⠅⠀⠒⠒
+⠼⠉⠌⠼⠃⠀⠁⠰⠝⠀⠢⠀⠼⠋⠌⠼⠁⠀⠝⠘⠼⠃⠀⠔⠀⠼⠋⠌⠼⠁⠀⠝
+⠢⠀⠼⠁⠚⠀⠸⠡⠸⠡⠀⠸⠡⠞⠑⠭⠞⠦⠂이다.⠐⠴⠀⠸⠡⠸⠡
+⠸⠡⠑⠝⠙⠦⠂⠁⠗⠗⠁⠽⠐⠴</span></div><div class=dl><span class=tag>역점역</span><span class=rev>\⟨2803⟩문뎉⟨2802⟩⟨2801⟩애액외}{사} \⟨2803⟩오사사멀
+⟨2801⟩⟨2830⟩1 = 7 \\ · 2
+\얼목엁⟨2802⟩⟨C774⟩⟨C0C1⟩⟨C758⟩ ⟨C790⟩⟨C5F0⟩⟨C218⟩} 에 \얼목엁⟨2802⟩⟨C5D0⟩
+⟨B300⟩⟨D558⟩⟨C5EC⟩} \\ 쩌⟨2</span></div></td><td class=why rowspan=1>정상적으로 formula로 분류된 요소조차, <code>convert_latex()</code>가 <code>\text{…}</code>의 한글을 점자로 바꾸지 않고 <b>한글 음절(묵자)을 그대로 통과</b>시킨다. 결과 BRF에 <span class=br>⠸⠡⠞⠑⠭⠞⠦⠂</span>(='text' 음역) 뒤에 <b>이상의 자연수</b>가 한글로 박힌다.<br><span class=reg>근거 규정 — 「한글 점자」 제1장~제3장: 한국어는 자모를 점자로 적어야 한다. 수식 속 설명 문구도 「수학 점자」상 한글 점자로 적으며, <code>\text</code>는 묵자(인쇄)에 없는 조판 명령이므로 출력에 남으면 안 된다.</span></td><td class=fix rowspan=1><code>convert_latex()</code>가 <code>\text{…}</code>를 만나면 중괄호 안 내용을 <b>한글 점자 변환기로 재귀 처리</b>해야 한다(명령어 <code>text</code>는 제거). 예: <code>\text{이상의 자연수}</code> → <span class=br>⠕⠇⠶⠺⠀⠨⠣⠡⠠⠍</span> (한글 점자), 현재: <span class=br>⠸⠡⠞⠑⠭⠞⠦⠂이상의 자연수</span></td><td class=codecol rowspan=1><ul class=code><li>app/ai/braille/kor_math_rules.py · convert_latex — <code>\text</code> 핸들러 부재(명령 음역+한글 통과)</li><li>app/ai/braille/translator.py · translate_tagged_text — 수식↔한글 세그먼트 재귀 처리 연결점</li></ul></td></tr><tr class=grouphd style="background:#fff7ed"><td colspan=6><span class=sevbadge style="background:#c2410c">높음</span> <span class=pid>P3</span> <b>구조용 LaTeX 매크로(\boxed \tag \bullet \quad \dots \left \right)가 미처리되어 음역·잔재로 남음</b> <span class=cnt>· 해당 데이터 약 15건</span></td></tr><tr><td class=fname>e2e-test_수학수식_01-c<br><span class=mono>p1 · #13</span></td><td class=lay><b>formula</b><br><span class=badge>formula_block</span> <span class=badge tier>STANDARD</span></td><td class=data><div class=dl><span class=tag>원본추출</span><span class=src>$$
+a _ {n + 1} = \frac {2}{3} \left(a _ {n + 1} - a _ {n}\right) + \boxed {(\text {가})}
+$$</span></div><div class=dl><span class=tag>점자변환용</span><span class=src>```latex
+a _ {n + 1} = \frac {2}{3} \left(a _ {n + 1} - a _ {n}\right) + \boxed {(\text {처리 불가: 가})}
+```</span></div><div class=dl><span class=tag>점자(BRF)</span><span class=br2>⠁⠰⠷⠝⠀⠢⠀⠼⠁⠾⠀⠒⠒⠀⠼⠉⠌⠼⠃⠀⠷⠁⠰⠷⠝⠀⠢⠀⠼⠁⠾
+⠔⠀⠁⠰⠝⠾⠀⠢⠀⠸⠡⠃⠕⠭⠑⠙⠦⠂⠷⠸⠡⠞⠑⠭⠞⠦⠂처리
+불가⠐⠂⠀가⠐⠴⠾⠐⠴</span></div><div class=dl><span class=tag>역점역</span><span class=rev>⟨2801⟩촌에 ⟨2822⟩ 1언 = 3예2 온⟨2801⟩촌에 ⟨2822⟩ 1언
+⟨2814⟩ ⟨2801⟩체언 ⟨2822⟩ \⟨2803⟩이옥마팥⟨2802⟩온\얼목엁⟨2802⟩⟨CC98⟩⟨B9AC⟩
+⟨BD88⟩⟨AC00⟩: ⟨AC00⟩}언}</span></div></td><td class=why rowspan=2><code>convert_latex()</code>가 핵심 연산자(분수·근호·첨자)는 처리하지만 <b>구조 매크로를 모른다</b>. <code>\boxed</code>→<span class=br>⠸⠡⠃⠕⠭⠑⠙</span>('boxed' 음역), <code>\tag</code>→<span class=br>⠸⠡⠞⠁⠛</span>('tag'), <code>\bullet</code>→<span class=br>⠸⠡⠃⠥⠇⠇⠑⠞</span>('bullet'). 식 번호 <code>\tag{7}</code>·글상자 <code>\boxed{}</code>·나열표 <code>\bullet</code>가 모두 의미를 잃는다.<br><span class=reg>근거 규정 — 「수학 점자」 제2장(괄호·묶음), 식 번호·항목 기호 표기. 정의되지 않은 명령은 음역해서는 안 되고, 대응 점자 기호로 바꾸거나(예: <code>\boxed</code>→글상자/괄호) 제거해야 한다.</span></td><td class=fix rowspan=2><code>convert_latex()</code>에 매크로 사전을 추가: <code>\boxed{X}</code>→묶음 괄호 또는 글상자 (「도서 제작 지침」§5 글상자 <span class=br>⠿⠛…/⠿⠶…</span>), <code>\tag{7}</code>→식 번호, <code>\bullet</code>→나열 기호, <code>\quad/\,/\;</code>→공백, <code>\dots</code>→줄임표 <span class=br>⠂⠂⠂</span>, <code>\left/\right</code>→크기 무시(제거).</td><td class=codecol rowspan=2><ul class=code><li>app/ai/braille/kor_math_rules.py · convert_latex — 매크로 사전(_MACROS) 신설 필요</li><li>app/ai/braille/nested_block.py · box_narrative — 글상자(\boxed) 점자 배선과 연계</li></ul></td></tr><tr><td class=fname>e2e-test_수학수식_01-c<br><span class=mono>p1 · #15</span></td><td class=lay><b>formula</b><br><span class=badge>formula_block</span> <span class=badge tier>STANDARD</span></td><td class=data><div class=dl><span class=tag>원본추출</span><span class=src>$$
+2 a _ {n} + a _ {n + 1} = 3 \times \boxed {(\text {가})} \quad \dots \dots \tag {7}
+$$</span></div><div class=dl><span class=tag>점자변환용</span><span class=src>```latex
+$$
+2 a_{n} + a_{n+1} = 3 \times \boxed{(\text{가})} \quad \dots \dots \tag{7}
+$$
+```</span></div><div class=dl><span class=tag>점자(BRF)</span><span class=br2>⠼⠃⠀⠁⠰⠝⠀⠢⠀⠁⠰⠷⠝⠢⠼⠁⠾⠀⠒⠒⠀⠼⠉⠀⠡
+⠸⠡⠃⠕⠭⠑⠙⠦⠂⠷가⠾⠐⠴⠀⠄⠄⠄⠀⠄⠄⠄
+⠸⠡⠞⠁⠛⠦⠂⠼⠛⠐⠴</span></div><div class=dl><span class=tag>역점역</span><span class=rev>2 ⟨2801⟩체 ⟨2822⟩ ⟨2801⟩촌엠1언 = 3 연
+\⟨2803⟩이옥마팥⟨2802⟩온⟨AC00⟩언} ⋯ ⋯
+\얽운{7}</span></div></td></tr><tr class=grouphd style="background:#fff7ed"><td colspan=6><span class=sevbadge style="background:#c2410c">높음</span> <span class=pid>P4</span> <b>〈…〉 꺽쇠(화살괄호) 텍스트가 통째로 삭제되어 빈 점자 출력 — 빈 결과 금지 위반</b> <span class=cnt>· 해당 데이터 약 4건</span></td></tr><tr><td class=fname>e2e-test_국어복합_02-c<br><span class=mono>p1 · #18</span></td><td class=lay><b>text</b><br><span class=badge>text_only</span> <span class=badge tier>STANDARD</span></td><td class=data><div class=dl><span class=tag>점자변환용</span><span class=src>&lt;보 기&gt;</span></div><div class=dl><span class=tag>점자(BRF)</span><span class=br2>(빈칸)</span></div><div class=dl><span class=tag>역점역</span><span class=rev></span></div></td><td class=why rowspan=3><code>&lt;보 기&gt;</code>·<code>&lt;학습 활동&gt;</code>·<code>&lt;정원과 지수가 …&gt;</code>가 <b>빈 점자</b>로 나온다. 원인은 translator의 <code>_TAG_RE=&lt;[^&gt;]+&gt;</code>(<b>임의의 &lt;…&gt;를 마크업으로 간주</b>)가 substitute_tags 끝에서 <code>.sub("")</code>로 통째 제거하기 때문. 이 꺽쇠들은 마크업이 아니라 본문(보기 상자·지문 상황 제목)이다.<br><span class=reg>근거 규정 — 「한글 점자」 제13절 문장 부호: 홑화살괄호 〈 <span class=br>⠐⠶</span> · 〉 <span class=br>⠶⠂</span>. 「점자 도서 제작 지침」 §5: 테두리 글상자(〈보기〉류)는 점자에서도 글상자로. 「점역사 Q&amp;A」 A7: 텍스트가 있는 요소는 생략 불가. ⇒ 빈 결과 금지 불변규칙(①) 위반.</span></td><td class=fix rowspan=3><code>&lt;…&gt;</code>를 마크업으로 삭제하지 말고 <b>홑화살괄호 문장부호 또는 글상자</b>로 처리한다. <code>_TAG_RE</code>는 정식 태그 앵커 <code>&lt;!</code> 형식만 매칭하도록 제한해야 한다 (이미 <code>_TAG_TOKEN_RE=&lt;!/?[^&gt;]+&gt;</code> 존재).<br>예: <code>〈보기〉</code> → <span class=br>⠐⠶⠘⠥⠈⠕⠶⠂</span> (현재: <b>(빈칸)</b>)</td><td class=codecol rowspan=3><ul class=code><li>app/ai/braille/translator.py:156 — <code>_TAG_RE=&lt;[^&gt;]+&gt;</code> 과도 매칭(앵커를 <code>&lt;!</code>로 제한)</li><li>app/ai/braille/translator.py:401 — <code>_TAG_RE.sub("")</code> 무조건 제거가 빈 결과 유발</li><li>app/ai/braille/symbol_table.json — 〈=⠐⠶ · 〉=⠶⠂ 매핑 보유(치환만 도달 못 함)</li></ul></td></tr><tr><td class=fname>e2e-test_국어복합_scan_02-c<br><span class=mono>p1 · #6</span></td><td class=lay><b>text</b><br><span class=badge>text_only</span> <span class=badge tier>STANDARD</span></td><td class=data><div class=dl><span class=tag>점자변환용</span><span class=src>&lt;정원과 지수가 카페에서 만난 상황&gt;</span></div><div class=dl><span class=tag>점자(BRF)</span><span class=br2>(빈칸)</span></div><div class=dl><span class=tag>역점역</span><span class=rev></span></div></td></tr><tr><td class=fname>e2e-test_국어복합_scan_02-c<br><span class=mono>p1 · #17</span></td><td class=lay><b>text</b><br><span class=badge>text_only</span> <span class=badge tier>STANDARD</span></td><td class=data><div class=dl><span class=tag>점자변환용</span><span class=src>&lt;학습 활동&gt;</span></div><div class=dl><span class=tag>점자(BRF)</span><span class=br2>(빈칸)</span></div><div class=dl><span class=tag>역점역</span><span class=rev></span></div></td></tr><tr class=grouphd style="background:#fefce8"><td colspan=6><span class=sevbadge style="background:#a16207">중간</span> <span class=pid>P5</span> <b>데이터 표가 셀 보존 점자표가 아니라 손실 많은 점역자주 산문 요약으로 렌더됨</b> <span class=cnt>· 해당 데이터 약 2건</span></td></tr><tr><td class=fname>e2e-test_국어복합_02-c<br><span class=mono>p1 · #14</span></td><td class=lay><b>table</b><br><span class=badge>narrative</span> <span class=badge tier>STANDARD</span></td><td class=data><div class=dl><span class=tag>점자변환용</span><span class=src>&lt;table&gt;&lt;tr&gt;&lt;td rowspan=&quot;7&quot;&gt;&lt;img src=&quot;images/216324dfe3dd23dcc08cf2c50edba84e58a0a3551ad7272d4a50872f8af6b336.jpg&quot;/&gt;&lt;/td&gt;&lt;td rowspan=&quot;7&quot;&gt;&lt;img src=&quot;images/ff9f5a58b060b73780ab2d831818062ec9e2c927a88d06d</span></div><div class=dl><span class=tag>점자(BRF)</span><span class=br2>⠠⠄⠕⠀⠙⠬⠉⠵⠀⠘⠍⠁⠘⠶⠈⠌⠀⠠⠕⠁⠑⠯⠀⠨⠍⠶⠀⠚⠺⠈⠍⠗
+⠠⠕⠁⠑⠯⠐⠥⠀⠘⠛⠐⠩⠊⠽⠒⠀⠏⠂⠈⠥⠂⠐⠀⠊⠍⠐⠪⠃⠉⠑⠍⠐
+⠚⠺⠒⠟⠫⠑⠭⠮⠀⠙⠥⠚⠢⠚⠒⠀⠑⠭⠐⠭⠮⠀⠘⠥⠱⠨⠍⠃⠉⠕⠊⠲
+⠠⠄</span></div><div class=dl><span class=tag>역점역</span><span class=rev>【점역자주】이 표는 북방계 식물 중 희귀
+식물로 분류된 월골, 두릅나무,
+흰인가목을 포함한 목록을 보여줍니다.
+【점역자주】</span></div></td><td class=why rowspan=2>연번·식물명·희귀 여부(○/×)로 이뤄진 <b>데이터 표</b>가 render_mode=<b>narrative</b>로 선택되어 <span class=br>⠠⠄</span>점역자주<span class=br>⠠⠄</span> 산문("이 표는 … 보여줍니다")으로 치환된다. 행·열·셀 값(연번 1~5, ○/×)이 <b>대부분 소실</b>되고, OCR 한자 누출(院长류나무→'원장류나무')까지 그대로 들어간다.<br><span class=reg>근거 규정 — 「점자 도서 제작 지침」 표 변환: 표는 칸(셀)을 구분해 행·열 구조를 보존해 적는다(선형/그리드). 점역사가 수정할 초안이라도 표의 데이터는 보존돼야 한다. 산문 요약은 시각자료(그림) 캡션 방식이지 데이터 표 표기가 아니다.</span></td><td class=fix rowspan=2>표는 <b>render_mode를 linear/grid</b>로 결정해 셀을 보존(예: 행마다 "연번·식물명·희귀" 셀을 구분 기호로 나열)하고, narrative는 순수 그림·삽화에만 적용한다. OCR 한자 누출은 sanitize 단계에서 정화.</td><td class=codecol rowspan=2><ul class=code><li>app/ai/llm/table_opt.py · _infer_render_mode — 데이터 표를 narrative로 오판(grid/linear로)</li><li>app/ai/braille/table_braille.py · _render_grid/_render_linear — 셀 보존 조판 경로</li><li>app/ai/builder/result_builder.py — 표 OCR 한자 누출 정화(sanitize) 연계</li></ul></td></tr><tr><td class=fname>e2e-test_국어복합_02-c<br><span class=mono>p1 · #15</span></td><td class=lay><b>table</b><br><span class=badge>narrative</span> <span class=badge tier>STANDARD</span></td><td class=data><div class=dl><span class=tag>점자변환용</span><span class=src>&lt;table&gt;&lt;tr&gt;&lt;td&gt;연번&lt;/td&gt;&lt;td&gt;북방계 식물명&lt;/td&gt;&lt;td&gt;희귀 식물&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;1&lt;/td&gt;&lt;td&gt;월귤&lt;/td&gt;&lt;td&gt;○&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;2&lt;/td&gt;&lt;td&gt;주저리고사리&lt;/td&gt;&lt;td&gt;×&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;3&lt;/td&gt;&lt;td&gt;院长류나무&lt;/td&gt;&lt;td&gt;○&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;4&lt;/td&gt;&lt;t</span></div><div class=dl><span class=tag>점자(BRF)</span><span class=br2>⠠⠄⠘⠍⠁⠘⠶⠈⠌⠀⠠⠕⠁⠑⠯⠀⠨⠍⠶⠀⠚⠺⠈⠍⠗⠀⠠⠕⠁⠑⠯
+⠐⠥⠉⠵⠀⠏⠂⠈⠩⠂⠐⠀⠏⠒⠨⠶⠐⠩⠉⠑⠍⠐⠀⠏⠒⠟⠫⠑⠭⠕
+⠕⠌⠠⠪⠃⠉⠕⠊⠲⠠⠄</span></div><div class=dl><span class=tag>역점역</span><span class=rev>【점역자주】북방계 식물 중 희귀 식물
+로는 월귤, 원장류나무, 원인가목이
+있습니다.【점역자주】</span></div></td></tr><tr class=grouphd style="background:#fefce8"><td colspan=6><span class=sevbadge style="background:#a16207">중간</span> <span class=pid>P6</span> <b>‘처리 불가’ 플레이스홀더가 깨져 출력되고 OCR 외국 문자(巂·院长)가 정화되지 않음</b> <span class=cnt>· 해당 데이터 약 1건</span></td></tr><tr><td class=fname>e2e-test_수학수식_01-c<br><span class=mono>p1 · #19</span></td><td class=lay><b>formula</b><br><span class=badge>formula_block</span> <span class=badge tier>STANDARD</span> <span class=badge blk>처리불가</span></td><td class=data><div class=dl><span class=tag>원본추출</span><span class=src>$$
+a _ {2} = \boxed {(\text {卄})} \quad \dots \dots \text {巂}
+$$</span></div><div class=dl><span class=tag>점자변환용</span><span class=src>```latex
+a_{2} = \boxed{(\text{20})} \quad \dots \dots \text{[처리 불가: 巂]}
+```</span></div><div class=dl><span class=tag>점자(BRF)</span><span class=br2>⠁⠰⠼⠃⠀⠒⠒⠀⠸⠡⠃⠕⠭⠑⠙⠦⠂⠷⠼⠃⠚⠾⠐⠴⠀⠄⠄⠄
+⠄⠄⠄⠦⠆처리⠀불가⠐⠂⠀巂⠰⠴</span></div><div class=dl><span class=tag>역점역</span><span class=rev>⟨2801⟩⟨2830⟩2 = \⟨2803⟩이옥마팥⟨2802⟩온20언} ⋯
+⋯[⟨CC98⟩⟨B9AC⟩ ⟨BD88⟩⟨AC00⟩: ⟨5DC2⟩]</span></div></td><td class=why rowspan=1>OCR이 만든 한자 <b>巂</b>가 수식에 섞여 들어와 처리 불가가 떴는데, 그 결과가 <span class=br>…⠦⠆처리 불가⠐⠂ 巂⠰⠴</span> — <b>'처리'·'불가'가 한글 묵자로, 巂가 원문 그대로</b> BRF에 남는다. 플레이스홀더 자체가 점자로 정상 변환되지 않았고, 점역 불가 문자도 정화되지 않았다.<br><span class=reg>근거 규정 — 불변규칙 ①(빈 결과 금지: 실패 시 <code>[처리 불가: 사유]</code>는 온전한 <b>한글 점자</b>로). 「점역사 Q&amp;A」: 점역 불가 영역은 점역자 주로 명시. 깨진 묵자/외국 문자가 BRF에 남는 것은 규정 외 출력.</span></td><td class=fix rowspan=1>플레이스홀더 문자열을 그대로 점자화 경로에 태워 <b>한글 점자</b>로 출력하고(현재 일부 한글이 묵자로 새는 버그 수정), 수식 추출 전 <code>sanitize_for_braille</code>로 PUA·CJK 등 점역 불가 코드를 제거/치환한다 ([[math-pdf-pua-glyphs]] 메모리의 정화 경로 적용).</td><td class=codecol rowspan=1><ul class=code><li>app/core/pipeline.py · _placeholder_extracted — 플레이스홀더 표준화</li><li>app/ai/braille/translator.py — 플레이스홀더 한글이 묵자로 새는 분기 점검</li><li>app/ai/ocr/formula_ocr.py / sanitize_for_braille — CJK·PUA 정화(巂·院长 차단)</li></ul></td></tr><tr class=grouphd style="background:#f7fee7"><td colspan=6><span class=sevbadge style="background:#3f6212">낮음</span> <span class=pid>P7</span> <b>역점역(braille_back) 모듈이 수식·약자를 못 풀어 ⟨코드포인트⟩로 출력하고 일부 한글을 오역함 (검증 보조 한계)</b> <span class=cnt>· 해당 데이터 약 190건</span></td></tr><tr><td class=fname>e2e-test_수학수식_01-c<br><span class=mono>p1 · #13</span></td><td class=lay><b>formula</b><br><span class=badge>formula_block</span> <span class=badge tier>STANDARD</span></td><td class=data><div class=dl><span class=tag>원본추출</span><span class=src>$$
+a _ {n + 1} = \frac {2}{3} \left(a _ {n + 1} - a _ {n}\right) + \boxed {(\text {가})}
+$$</span></div><div class=dl><span class=tag>점자변환용</span><span class=src>```latex
+a _ {n + 1} = \frac {2}{3} \left(a _ {n + 1} - a _ {n}\right) + \boxed {(\text {처리 불가: 가})}
+```</span></div><div class=dl><span class=tag>점자(BRF)</span><span class=br2>⠁⠰⠷⠝⠀⠢⠀⠼⠁⠾⠀⠒⠒⠀⠼⠉⠌⠼⠃⠀⠷⠁⠰⠷⠝⠀⠢⠀⠼⠁⠾
+⠔⠀⠁⠰⠝⠾⠀⠢⠀⠸⠡⠃⠕⠭⠑⠙⠦⠂⠷⠸⠡⠞⠑⠭⠞⠦⠂처리
+불가⠐⠂⠀가⠐⠴⠾⠐⠴</span></div><div class=dl><span class=tag>역점역</span><span class=rev>⟨2801⟩촌에 ⟨2822⟩ 1언 = 3예2 온⟨2801⟩촌에 ⟨2822⟩ 1언
+⟨2814⟩ ⟨2801⟩체언 ⟨2822⟩ \⟨2803⟩이옥마팥⟨2802⟩온\얼목엁⟨2802⟩⟨CC98⟩⟨B9AC⟩
+⟨BD88⟩⟨AC00⟩: ⟨AC00⟩}언}</span></div></td><td class=why rowspan=2>보고서의 ④역점역 열은 BRF를 한국어로 되돌려 검증을 돕는데, 이 디코더가 수학 점자·약자·외국 문자를 <b>해독하지 못하고</b> <span class=mono>⟨2801⟩·⟨C774⟩</span> 같은 코드포인트로 토하거나, 정상 한글 점자도 오역한다(예: '높아지고'→'노.아지고'). 순방향 점자가 맞아도 역점역이 틀리면 <b>검증 신뢰도가 떨어진다</b>.<br><span class=reg>참고 — 역점역은 규정상 산출물은 아니나(검증 도구), 약자·수표·수학 점자 역매핑이 규정 ([[roundtrip-dataset-plan]])과 정합해야 신뢰 가능. 현재는 부분 구현.</span></td><td class=fix rowspan=2><code>braille_back</code>에 수학 점자·약자(제6·7절)·수표·문장부호 역매핑을 보강하고, 디코드 실패 셀은 코드포인트 대신 <code>[?]</code> 등 명시 마커로 통일. (우선순위 낮음 — 검증 보조)</td><td class=codecol rowspan=2><ul class=code><li>app/utils/braille_back.py · decode — 수학·약자·기호 역매핑 미구현분 보강</li><li>app/utils/braille_syllable_map.json — 역매핑 테이블 확장</li></ul></td></tr><tr><td class=fname>e2e-test_국어복합_02-c<br><span class=mono>p1 · #7</span></td><td class=lay><b>text</b><br><span class=badge>text_only</span> <span class=badge tier>STANDARD</span></td><td class=data><div class=dl><span class=tag>점자변환용</span><span class=src>안녕하세요? 지난 수업 시간에는 우리나라의 평균 기온이 점점 높아지고 있는 현상에 대해 조사하는 활동을 함께 했었는데요, 그런데 여름철에도 낮은 기온을 유지해 시원한 곳이 있다고 합니다. 바로 풍혈지라는 곳입니다. 저는 오늘 여러분께 이 풍혈지에 대해 소개하려고 합니다.</span></div><div class=dl><span class=tag>점자(BRF)</span><span class=br2>   ⠣⠒⠉⠻⠚⠠⠝⠬⠦⠀⠨⠕⠉⠒⠀⠠⠍⠎⠃⠀⠠⠕⠫⠒⠝⠉⠵⠀⠍
+⠐⠕⠉⠐⠣⠺⠀⠙⠻⠈⠩⠒⠀⠈⠕⠷⠕⠀⠨⠎⠢⠨⠎⠢⠀⠉⠥⠲⠣⠨⠕
+⠈⠥⠀⠕⠌⠉⠵⠀⠚⠡⠇⠶⠝⠀⠊⠗⠚⠗⠀⠨⠥⠇⠚⠉⠵⠀⠚⠧⠂⠊⠿⠮
+⠚⠢⠠⠈⠝⠀⠚⠗⠌⠎⠌⠉⠵⠊⠝⠬⠐⠀⠁⠝⠀⠱⠐⠪⠢⠰⠞⠝⠊⠥
+⠉⠅⠵⠀⠈⠕⠷⠮⠀⠩⠨⠕⠚⠗⠀⠠⠕⠏⠒⠚⠒⠀⠈⠥⠄⠕⠀⠕⠌⠊⠈⠥
+⠚⠃⠉⠕⠊⠲⠀⠘⠐⠥⠀⠙⠍⠶⠚⠳⠨⠕⠐⠣⠉⠵⠀⠈⠥⠄⠕⠃⠉⠕⠊⠲
+⠨⠎⠉⠵⠀</span></div><div class=dl><span class=tag>역점역</span><span class=rev>   안녕하세요? 지난 수업 시간에는 우
+리나라의 평균 기온이 점점 노.아지
+고 있는 현상에 대해 조사하는 활동을
+함께 했었는데요, 그런데 여름철에도
+낮은 기온을 유지해 시원한 곳이 있다고
+합니다. 바로 풍혈지라는 곳입니다.
+저는 오늘 여러분께 이 풍혈지에 대
+해 소개하려고 합니다.</span></div></td></tr>
+</table>
+</div></body></html>

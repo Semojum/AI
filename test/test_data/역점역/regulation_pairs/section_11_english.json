@@ -1,0 +1,218 @@
+{
+  "section_id": "제11절",
+  "section_name": "국어 문장 안의 숫자",
+  "extracted_at": "2026-05-25T01:58:20",
+  "source_lines": "1910–2025",
+  "pairs": [
+    {
+      "item": "제41항 숫자 사",
+      "korean": "9,375명",
+      "brf_ascii": "#i1cge`e}",
+      "braille_unicode": "⠼⠊⠂⠉⠑[?`]⠑[?}]",
+      "decode_ok": false
+    },
+    {
+      "item": "제41항 숫자 사",
+      "korean": "5,700,000원",
+      "brf_ascii": "#e1gjj1jjjp3",
+      "braille_unicode": "⠼⠑⠂⠚⠚⠂⠚⠚⠚⠏⠒",
+      "decode_ok": true
+    },
+    {
+      "item": "제41항 숫자 사",
+      "korean": "창세기 12,1-9",
+      "brf_ascii": ";<7,n@o`#ab1a-#i",
+      "braille_unicode": "⠰⠣⠶⠠⠝⠈⠕[?`]⠼⠁⠃⠂⠁[?-]⠼⠊",
+      "decode_ok": false
+    },
+    {
+      "item": "제42항 일곱 자",
+      "korean": "세 자리 이상의 숫자가 나와야 한다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제42항 일곱 자",
+      "korean": "택배 송장 번호는 123456789012입니다.",
+      "brf_ascii": "``hra~r`,=.7`~)jucz`#abcdefghi,`",
+      "braille_unicode": "[?`][?`]⠓⠗⠁⠘⠗[?`]⠠⠿⠨⠶[?`]⠘[?)]⠚⠥⠉⠿[?`]⠼⠁⠃⠉⠙⠑⠋⠓⠊⠠[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제42항 일곱 자",
+      "korean": "[붙임] 자릿점이 있는 숫자의 경우, 자릿점 뒤에 연결표를 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제42항 일곱 자",
+      "korean": "당첨금: 10,000,000,000원",
+      "brf_ascii": "``i7;s5@[5\"1`#aj1jjj1jjj1,``````",
+      "braille_unicode": "[?`][?`]⠊⠶⠰⠎⠢⠈⠪⠢⠐⠂[?`]⠼⠁⠚⠂⠚⠚⠚⠂⠚⠚⠚⠂⠠[?`][?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제43항 숫자 사",
+      "korean": "다시 적지 않는다.",
+      "brf_ascii": "0.48",
+      "braille_unicode": "⠴⠨⠲⠦",
+      "decode_ok": true
+    },
+    {
+      "item": "제43항 숫자 사",
+      "korean": "[다만] 그 밖의 다른 기호가 숫자 사이에 붙어 나올 때에는 수표를 다시 적는다.",
+      "brf_ascii": "02)799-1000",
+      "braille_unicode": "⠴⠆[?)]⠶⠔⠔[?-]⠂⠴⠴⠴",
+      "decode_ok": false
+    },
+    {
+      "item": "제43항 숫자 사",
+      "korean": "3·1 운동",
+      "brf_ascii": "#c\"2#a`gi=",
+      "braille_unicode": "⠼⠉⠐⠆⠼⠁[?`]⠊⠿",
+      "decode_ok": false
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "1가",
+      "brf_ascii": "#a$",
+      "braille_unicode": "⠼⠁[?$]",
+      "decode_ok": false
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "2권",
+      "brf_ascii": "#b@p3",
+      "braille_unicode": "⠼⠃⠈⠏⠒",
+      "decode_ok": true
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "3반",
+      "brf_ascii": "#c^3",
+      "braille_unicode": "⠼⠉[?^]⠒",
+      "decode_ok": false
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "4선",
+      "brf_ascii": "#d,)",
+      "braille_unicode": "⠼⠙⠠[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "5월",
+      "brf_ascii": "#ep1",
+      "braille_unicode": "⠼⠑⠏⠂",
+      "decode_ok": true
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "6일",
+      "brf_ascii": "#fo1",
+      "braille_unicode": "⠼⠋⠕⠂",
+      "decode_ok": true
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "7자루",
+      "brf_ascii": "#g.\"m",
+      "braille_unicode": "⠼⠨⠐⠍",
+      "decode_ok": true
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "8꾸러미",
+      "brf_ascii": "#h,@m\"seo",
+      "braille_unicode": "⠼⠓⠠⠈⠍⠐⠎⠑⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "5 개",
+      "brf_ascii": "#e`@r",
+      "braille_unicode": "⠼⠑[?`]⠈⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "8 상자",
+      "brf_ascii": "#h`l7.",
+      "braille_unicode": "⠼⠓[?`][?l]⠶⠨",
+      "decode_ok": false
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "약자는 숫자 뒤에 붙어 나오더라도 숫자와 한글을 띄어 쓴다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "1년",
+      "brf_ascii": "#a`c*",
+      "braille_unicode": "⠼⠁[?`]⠉[?*]",
+      "decode_ok": false
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "2도",
+      "brf_ascii": "#b`iu",
+      "braille_unicode": "⠼⠃[?`]⠊⠥",
+      "decode_ok": false
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "3명",
+      "brf_ascii": "#c`e]",
+      "braille_unicode": "⠼⠉[?`]⠑[?]]",
+      "decode_ok": false
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "4칸",
+      "brf_ascii": "#d`f3",
+      "braille_unicode": "⠼⠙[?`]⠋⠒",
+      "decode_ok": false
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "5톤",
+      "brf_ascii": "#e`h(",
+      "braille_unicode": "⠼⠑[?`]⠓[?(]",
+      "decode_ok": false
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "6평",
+      "brf_ascii": "#f`d]",
+      "braille_unicode": "⠼⠋[?`]⠙[?]]",
+      "decode_ok": false
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "7항",
+      "brf_ascii": "#g`j7",
+      "braille_unicode": "⠼[?`]⠚⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "5운6기",
+      "brf_ascii": "#e`g#f@o",
+      "braille_unicode": "⠼⠑[?`]⠼⠋⠈⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제44항 숫자 뒤",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "29",
+      "braille_unicode": "⠆⠔",
+      "decode_ok": true
+    }
+  ]
+}

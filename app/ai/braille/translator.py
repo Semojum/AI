@@ -494,8 +494,18 @@ _BAR_RESIDUE_RE = re.compile(r"[ \t]*\|[ \t]*")
 _JAMO_MARK_RE = re.compile(r"(?<![가-힣A-Za-z0-9])([ㄱ-ㅎ])\.(?=\s|$)")
 # 문항 번호: 요소 첫머리 숫자 뒤에 본문이 이어질 때만 마침표를 붙인다("3\n다음은…" → "3.").
 # 뒤에 아무것도 없는 숫자(페이지 번호 "16")는 그대로 둔다 — 정답도 마침표를 안 찍는다.
+# 정확도 실측(2026-07-27 독립 검증, 발동 요소 dev 91·val 445를 gold 줄머리와 전수 대조):
+#   gold도 마침표를 찍는 자리 dev 87.9% · val 88.8%, 명백한 오발동 2.2%/2.5%.
+#   ⚠ 과목별로 갈린다 — 언어 98.1%·수학2 95.5%·세계사 92.7%·사회문화 86.8%인데
+#   **외국어 45.5%·생물 20%**. 그래서 주지표 기준으로 언어(dev +14·val +97셀)와
+#   생물(val +69셀)은 오히려 악화했다(전체는 dev −114·val −492로 net-positive).
+#   오발동 계열 4종: 페이지번호+러닝헤더('64\nEBS 수능특강 외국어영역') · 강 헤더('19\n강') ·
+#   보기 라벨 · 축 눈금. 전부 **요소 타입**으로 구분되므로 header_footer·page_number 제외 +
+#   본문이 숫자 나열뿐이면 제외하는 타입 가드로 구조적으로 막을 수 있다(리터럴이 아니라
+#   과적합 아님). 별도 라운드에서 단독 A/B로 검증할 것 — 후속 후보.
 _QNUM_RE = re.compile(r"^(\d{1,2})(?=\s+\S)")
-# 음수·뺄셈표(수학 제45항·제45항 4호): 부호 = 뺄셈표 ⠔. symbol_table의 붙임표 -=⠤가
+# 음수·뺄셈표(「한국 점자 규정」 제45항 연산·비교 기호 — 2026-07-27 원문 대조로 '수학 제45항'
+# 표기를 정정. 수학편 제45항은 함수다): 부호 = 뺄셈표 ⠔. symbol_table의 붙임표 -=⠤가
 # 음수 부호까지 삼켜 ①-4가 ⠤⠼⠙(붙임표)로 나가던 것을 바로잡는다(gold ⠔⠼⠙, 수학2 p119).
 # 앞머리 부호만 잡는다 — 앞이 숫자·문자·한글·소수점·쉼표가 아닌 - + 숫자. 숫자 사이
 # -(2-3·02-123·날짜·계좌)와 물결표 범위(~→―→⠤⠤)는 붙임표/범위 관행이라 건드리지 않는다.
@@ -844,7 +854,7 @@ def _translate_with_braillify(text: str) -> str:
             if i < len(parts) - 1:  # 수식 직전: 뒤 공백 제거
                 clean = clean.rstrip()
             if clean:
-                # 음수 부호(제45항 4호)를 뺄셈표 셀 ⠔로 미리 고정 — symbol_table의 붙임표
+                # 음수 부호(제45항 연산·비교 기호)를 뺄셈표 셀 ⠔로 미리 고정 — symbol_table의 붙임표
                 # -=⠤가 삼키기 전에. ★ book_style의 (N)→붙임표 -N- 감쌈보다 먼저 원문에
                 # 적용해야 감쌈용 붙임표를 음수로 오인하지 않는다(-1- 감쌈 281회 보호).
                 clean = _NEG_NUM_RE.sub("⠔", clean)
@@ -1051,16 +1061,13 @@ _UEB_PUNCT = {",": "⠂", ";": "⠆", ":": "⠒", "'": "⠄"}
 # 제33항 — 로마자와 한글 사이에 오는 이 부호들은 종료표를 적지 않고 한글 점자로 적는다.
 _ART33_PUNCT = ",:;–—―"
 
-# 단계별 토글(축 기여 분해용). 기본은 전부 켬 — 규정이 정본이고 A/B로 확인한 값이다.
-_ENG_SPAN_MERGE = os.getenv("BR_ENG_SPAN_MERGE", "1") != "0"      # 1. 스팬 병합(제32항)
-_ENG_NO_TERM_NUM = os.getenv("BR_ENG_NO_TERM_NUM", "1") != "0"    # 2. 숫자 인접(제35항)
-_ENG_ART33 = os.getenv("BR_ENG_ART33", "1") != "0"                # 3. 문장부호 분기(제33항)
-
-
 def _english_spans(seg: str, runs: list[tuple[int, int]]) -> list[list[tuple[int, int]]]:
-    """라틴 런 목록 → 로마자 구간(제32항) 목록. 구간 = 브리지 가능한 간극으로 이어진 런들."""
-    if not _ENG_SPAN_MERGE:
-        return [[r] for r in runs]
+    """라틴 런 목록 → 로마자 구간(제32항) 목록. 구간 = 브리지 가능한 간극으로 이어진 런들.
+
+    (A/B 단계 분해에 쓰던 env 토글 BR_ENG_SPAN_MERGE·BR_ENG_NO_TERM_NUM·BR_ENG_ART33은
+     병합 시 제거했다 — 프로덕션 점역 출력이 환경변수에 좌우되면 안 된다. 세 단계 모두
+     규정이 정본이고 A/B로 확인된 값이라 상시 적용한다. 단계별 기여는 temp/x1_experiment.md.)
+    """
     spans: list[list[tuple[int, int]]] = [[runs[0]]]
     for r in runs[1:]:
         gap = seg[spans[-1][-1][1]:r[0]]
@@ -1077,8 +1084,6 @@ def _span_gap(gap: str) -> str:
     공백을 건너뛰어 붙지 않은 부호(예: 수 안의 `1,000`)까지 바꾸면 근거를 벗어나므로,
     규정 예시(`a,` `apples,` `1998a,`)와 같은 '런에 붙은' 자리로 한정한다.
     """
-    if not _ENG_ART33:
-        return _braillify_korean(gap)
     i = 0
     out: list[str] = []
     while i < len(gap) and gap[i] in _UEB_PUNCT:
@@ -1094,14 +1099,13 @@ def _eng_terminator(seg: str, end: int) -> str:
     rest = seg[end:]
     if not rest.strip():
         return "⠲"
-    if _ENG_NO_TERM_NUM:
-        # 제35항 — 로마자와 숫자가 이어 나올 때에는 종료표를 적지 않는다.
-        j = 0
-        while j < len(rest) and rest[j] == " ":
-            j += 1
-        if j < len(rest) and rest[j].isdigit():
-            return ""
-    if _ENG_ART33 and rest[0] in _ART33_PUNCT:
+    # 제35항 — 로마자와 숫자가 이어 나올 때에는 종료표를 적지 않는다.
+    j = 0
+    while j < len(rest) and rest[j] == " ":
+        j += 1
+    if j < len(rest) and rest[j].isdigit():
+        return ""
+    if rest[0] in _ART33_PUNCT:
         # 제33항 — 점형이 다른 부호(, : ; ―)가 로마자와 한글 사이면 종료표를 적지 않는다.
         k = 1
         while k < len(rest) and rest[k] == " ":

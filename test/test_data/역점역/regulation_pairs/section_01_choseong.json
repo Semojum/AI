@@ -1,0 +1,281 @@
+{
+  "section_id": "제1절",
+  "section_name": "첫소리로 쓰인 자음자",
+  "extracted_at": "2026-05-25T01:58:14",
+  "source_lines": "131–245",
+  "pairs": [
+    {
+      "item": "제1항 기본 자",
+      "korean": "거리",
+      "brf_ascii": "@s\"o",
+      "braille_unicode": "⠈⠎⠐⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "너비",
+      "brf_ascii": "cs~o",
+      "braille_unicode": "⠉⠎⠘⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "두더지",
+      "brf_ascii": "imis.o",
+      "braille_unicode": "⠊⠍⠊⠎⠨⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "리코더",
+      "brf_ascii": "\"ofuis",
+      "braille_unicode": "⠐⠕⠋⠥⠊⠎",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "미소",
+      "brf_ascii": "eo,u",
+      "braille_unicode": "⠑⠕⠠⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "보리",
+      "brf_ascii": "~u\"o",
+      "braille_unicode": "⠘⠥⠐⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "셔츠",
+      "brf_ascii": ",:;{",
+      "braille_unicode": "⠠⠱⠰⠪",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "저고리",
+      "brf_ascii": ".s@u\"o",
+      "braille_unicode": "⠨⠎⠈⠥⠐⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "추수",
+      "brf_ascii": ";m,m",
+      "braille_unicode": "⠰⠍⠠⠍",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "커피",
+      "brf_ascii": "fsdo",
+      "braille_unicode": "⠋⠎⠙⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "터무니",
+      "brf_ascii": "hsemco",
+      "braille_unicode": "⠓⠎⠑⠍⠉⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "피리",
+      "brf_ascii": "do\"o",
+      "braille_unicode": "⠙⠕⠐⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "호수",
+      "brf_ascii": "ju,m",
+      "braille_unicode": "⠚⠥⠠⠍",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "[다만 1] ‘ㅇ’이 첫소리로 쓰일 때에는 점자로 이를 표기하지 않는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "아버지",
+      "brf_ascii": "<~s.o",
+      "braille_unicode": "⠣⠘⠎⠨⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "야구",
+      "brf_ascii": ">@m",
+      "braille_unicode": "⠜⠈⠍",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "어머니",
+      "brf_ascii": "sesco",
+      "braille_unicode": "⠎⠑⠎⠉⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "여우",
+      "brf_ascii": ":m",
+      "braille_unicode": "⠱⠍",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "오이",
+      "brf_ascii": "uo",
+      "braille_unicode": "⠥⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "요리",
+      "brf_ascii": "+\"o",
+      "braille_unicode": "⠬⠐⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "우유",
+      "brf_ascii": "m%",
+      "braille_unicode": "⠍⠩",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "유리",
+      "brf_ascii": "%\"o",
+      "braille_unicode": "⠩⠐⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "으스스",
+      "brf_ascii": "{,{,{",
+      "braille_unicode": "⠪⠠⠪⠠⠪",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "이모",
+      "brf_ascii": "oeu",
+      "braille_unicode": "⠕⠑⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "피아노",
+      "brf_ascii": "do<cu",
+      "braille_unicode": "⠙⠕⠣⠉⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "도우미",
+      "brf_ascii": "ium eo",
+      "braille_unicode": "⠊⠥⠍⠀⠑⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "러시아",
+      "brf_ascii": "\"s,o<",
+      "braille_unicode": "⠐⠎⠠⠕⠣",
+      "decode_ok": true
+    },
+    {
+      "item": "제1항 기본 자",
+      "korean": "[다만 2] 첫소리로 쓰인 ‘ㅇ’을 나타내야 할 때에는 g으로 표기한다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제2항 된소리 ",
+      "korean": "ㅈ’ 앞에 된소리표 ,을 적어 나타낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제2항 된소리 ",
+      "korean": "꾸러미",
+      "brf_ascii": ",@m\"seo",
+      "braille_unicode": "⠠⠈⠍⠐⠎⠑⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제2항 된소리 ",
+      "korean": "두꺼비",
+      "brf_ascii": "im,@s~o",
+      "braille_unicode": "⠊⠍⠠⠈⠎⠘⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제2항 된소리 ",
+      "korean": "뚜껑",
+      "brf_ascii": ",im,@s7",
+      "braille_unicode": "⠠⠊⠍⠠⠈⠎⠶",
+      "decode_ok": true
+    },
+    {
+      "item": "제2항 된소리 ",
+      "korean": "허리띠",
+      "brf_ascii": "js\"o,io",
+      "braille_unicode": "⠚⠎⠐⠕⠠⠊⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제2항 된소리 ",
+      "korean": "뻐꾸기",
+      "brf_ascii": ",~s,@m@o",
+      "braille_unicode": "⠠⠘⠎⠠⠈⠍⠈⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제2항 된소리 ",
+      "korean": "고삐",
+      "brf_ascii": "@u,~o",
+      "braille_unicode": "⠈⠥⠠⠘⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제2항 된소리 ",
+      "korean": "쓰기",
+      "brf_ascii": ",,{@o",
+      "braille_unicode": "⠠⠠⠪⠈⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제2항 된소리 ",
+      "korean": "아저씨",
+      "brf_ascii": "<.s,,o",
+      "braille_unicode": "⠣⠨⠎⠠⠠⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제2항 된소리 ",
+      "korean": "쭈르르",
+      "brf_ascii": ",.m\"{\"{",
+      "braille_unicode": "⠠⠨⠍⠐⠪⠐⠪",
+      "decode_ok": true
+    },
+    {
+      "item": "제2항 된소리 ",
+      "korean": "버찌",
+      "brf_ascii": "~s,.o",
+      "braille_unicode": "⠘⠎⠠⠨⠕",
+      "decode_ok": true
+    }
+  ]
+}

@@ -1,0 +1,169 @@
+{
+  "section_id": "제9절",
+  "section_name": "옛 모음자와 방점",
+  "extracted_at": "2026-05-25T01:59:20",
+  "source_lines": "1236–1326",
+  "pairs": [
+    {
+      "item": "제25항 옛 모음",
+      "korean": "(가을",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제25항 옛 모음",
+      "korean": "(애매한",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제25항 옛 모음",
+      "korean": "고기",
+      "brf_ascii": ",_+o@u@o",
+      "braille_unicode": "⠠[?_]⠬⠕⠈⠥⠈⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제25항 옛 모음",
+      "korean": "轉輪륜王",
+      "brf_ascii": "i_%:3\"%3\"dv\"4",
+      "braille_unicode": "⠊[?_]⠩⠱⠒⠐⠩⠒⠐⠙⠧⠐⠲",
+      "decode_ok": false
+    },
+    {
+      "item": "제25항 옛 모음",
+      "korean": "(쇠고기",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제25항 옛 모음",
+      "korean": "(전륜왕(轉輪王",
+      "brf_ascii": "))",
+      "braille_unicode": "[?)][?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제25항 옛 모음",
+      "korean": "砌 기슭섬 ",
+      "brf_ascii": "@o,!a,s5`;_%/",
+      "braille_unicode": "⠈⠕⠠[?!]⠁⠠⠎⠢[?`]⠰[?_]⠩⠌⠗",
+      "decode_ok": false
+    },
+    {
+      "item": "제25항 옛 모음",
+      "korean": "(영양(榮養",
+      "brf_ascii": "))",
+      "braille_unicode": "[?)][?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제25항 옛 모음",
+      "korean": "(댓돌 ‘체(砌)’",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제25항 옛 모음",
+      "korean": "집거라",
+      "brf_ascii": ".ob@s_%o\"<",
+      "braille_unicode": "⠨⠕⠃⠈⠎[?_]⠩⠕⠐⠣",
+      "decode_ok": false
+    },
+    {
+      "item": "제25항 옛 모음",
+      "korean": "술 야",
+      "brf_ascii": ",&`;_%oj\"#>",
+      "braille_unicode": "⠠[?&][?`]⠰[?_]⠩⠕⠚⠐⠼⠜",
+      "decode_ok": false
+    },
+    {
+      "item": "제25항 옛 모음",
+      "korean": "(집거위이다",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제25항 옛 모음",
+      "korean": "(술 취하여",
+      "brf_ascii": ")",
+      "braille_unicode": "[?)]",
+      "decode_ok": false
+    },
+    {
+      "item": "제26항 단독으로",
+      "korean": "(봉화가 석 달을 이어지니)",
+      "brf_ascii": "^=JV_o`,?`I\"#\"\"#1`co\".n,oco",
+      "braille_unicode": "[?^]⠿[?J][?V][?_]⠕[?`]⠠[??][?`][?I]⠐⠼⠐⠐⠼⠂[?`]⠉⠕⠐⠨⠝⠠⠕⠉⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제26항 단독으로",
+      "korean": "(맹자가 말씀하시기를)",
+      "brf_ascii": "E\"#R\"4.\"#_o`@\"#\"\"#,>I\"#R",
+      "braille_unicode": "[?E]⠐⠼[?R]⠐⠲⠨⠐⠼[?_]⠕[?`]⠈⠐⠼⠐⠐⠼⠠⠜[?I]⠐⠼[?R]",
+      "decode_ok": false
+    },
+    {
+      "item": "제27항 방점은 ",
+      "korean": "거성(去聲, ·)",
+      "brf_ascii": "_1",
+      "braille_unicode": "[?_]⠂",
+      "decode_ok": false
+    },
+    {
+      "item": "제27항 방점은 ",
+      "korean": "상성(上聲, ：)",
+      "brf_ascii": "_k",
+      "braille_unicode": "[?_]⠅",
+      "decode_ok": false
+    },
+    {
+      "item": "제27항 방점은 ",
+      "korean": "(칼)",
+      "brf_ascii": "_1$1`82f1`iu;0",
+      "braille_unicode": "[?_]⠂[?$]⠂[?`]⠦⠆⠋⠂[?`]⠊⠥⠰⠴",
+      "decode_ok": false
+    },
+    {
+      "item": "제27항 방점은 ",
+      "korean": "(배)",
+      "brf_ascii": "_1^\"#r`82~r`.m;0",
+      "braille_unicode": "[?_]⠂[?^]⠐⠼⠗[?`]⠦⠆⠘⠗[?`]⠨⠍⠰⠴",
+      "decode_ok": false
+    },
+    {
+      "item": "제27항 방점은 ",
+      "korean": "(돌)",
+      "brf_ascii": "_kiu1`82iu1`,?;0",
+      "braille_unicode": "[?_]⠅⠊⠥⠂[?`]⠦⠆⠊⠥⠂[?`]⠠[??]⠰⠴",
+      "decode_ok": false
+    },
+    {
+      "item": "제27항 방점은 ",
+      "korean": "(눈)",
+      "brf_ascii": "_kcg`82cg`,t;0",
+      "braille_unicode": "[?_]⠅⠉[?`]⠦⠆⠉[?`]⠠[?t]⠰⠴",
+      "decode_ok": false
+    },
+    {
+      "item": "제27항 방점은 ",
+      "korean": "(우리나라 말이 중국과 달라 한자와는 서로 통하지 않으므로)",
+      "brf_ascii": "``c_1\"<'`_ke1,,\"#_1eo`i%\"4_1@mra",
+      "braille_unicode": "[?`][?`]⠉[?_]⠂⠐⠣⠄[?`][?_]⠅⠑⠂⠠⠠⠐⠼[?_]⠂⠑⠕[?`]⠊⠩⠐⠲[?_]⠂⠈⠍⠗⠁",
+      "decode_ok": false
+    },
+    {
+      "item": "제27항 방점은 ",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "19",
+      "braille_unicode": "⠂⠔",
+      "decode_ok": true
+    }
+  ]
+}

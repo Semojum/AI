@@ -1,0 +1,617 @@
+{
+  "section_id": "제10절",
+  "section_name": "국어 문장 안의 로마자와 그리스 문자",
+  "extracted_at": "2026-05-25T01:58:20",
+  "source_lines": "1327–1909",
+  "pairs": [
+    {
+      "item": "제28항 로마자는",
+      "korean": "명칭",
+      "brf_ascii": "a",
+      "braille_unicode": "⠁",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "에이",
+      "brf_ascii": "b",
+      "braille_unicode": "⠃",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "비",
+      "brf_ascii": "c",
+      "braille_unicode": "⠉",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "시",
+      "brf_ascii": "d",
+      "braille_unicode": "⠙",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "디",
+      "brf_ascii": "e",
+      "braille_unicode": "⠑",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "이",
+      "brf_ascii": "f",
+      "braille_unicode": "⠋",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "에프",
+      "brf_ascii": "g",
+      "braille_unicode": "",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "지",
+      "brf_ascii": "h",
+      "braille_unicode": "⠓",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "에이치",
+      "brf_ascii": "i",
+      "braille_unicode": "⠊",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "아이",
+      "brf_ascii": "j",
+      "braille_unicode": "⠚",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "제이",
+      "brf_ascii": "k",
+      "braille_unicode": "⠅",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "케이",
+      "brf_ascii": "l",
+      "braille_unicode": "[?l]",
+      "decode_ok": false
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "엘",
+      "brf_ascii": "m",
+      "braille_unicode": "⠍",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "엠",
+      "brf_ascii": "n",
+      "braille_unicode": "⠝",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "엔",
+      "brf_ascii": "o",
+      "braille_unicode": "⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "오",
+      "brf_ascii": "p",
+      "braille_unicode": "⠏",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "피",
+      "brf_ascii": "q",
+      "braille_unicode": "[?q]",
+      "decode_ok": false
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "큐",
+      "brf_ascii": "r",
+      "braille_unicode": "⠗",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "아르, 알",
+      "brf_ascii": "s",
+      "braille_unicode": "⠎",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "에스",
+      "brf_ascii": "t",
+      "braille_unicode": "[?t]",
+      "decode_ok": false
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "티",
+      "brf_ascii": "u",
+      "braille_unicode": "⠥",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "유",
+      "brf_ascii": "v",
+      "braille_unicode": "⠧",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "브이",
+      "brf_ascii": "w",
+      "braille_unicode": "⠺",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "더블유",
+      "brf_ascii": "x",
+      "braille_unicode": "[?x]",
+      "decode_ok": false
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "엑스",
+      "brf_ascii": "y",
+      "braille_unicode": "⠽",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "와이",
+      "brf_ascii": "z",
+      "braille_unicode": "⠿",
+      "decode_ok": true
+    },
+    {
+      "item": "제28항 로마자는",
+      "korean": "앞에 대문자 구절표 ,,,을 적고, 마지막 단어 뒤에 대문자 종료표 ,'을 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제29항 국어 문",
+      "korean": "로마자표를 적고 마지막 로마자 뒤에 로마자 종료표를 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제29항 국어 문",
+      "korean": "그는 Canada로 여행을 떠났다.",
+      "brf_ascii": "``@{cz`0,canada4\"u`:jr7!`,isc/i4",
+      "braille_unicode": "[?`][?`]⠈⠪⠉⠿[?`]⠴⠠⠉⠁⠝⠁⠙⠁⠲⠐⠥[?`]⠱⠚⠗⠶[?!][?`]⠠⠊⠎⠉⠌⠗⠊⠲",
+      "decode_ok": false
+    },
+    {
+      "item": "제29항 국어 문",
+      "korean": "그녀는 Los Angeles의 한인 타운에 살고 있다.",
+      "brf_ascii": "``@{c:cz`0,los`,angeles4w`j3q`h`",
+      "braille_unicode": "[?`][?`]⠈⠪⠉⠱⠉⠿[?`]⠴⠠[?l]⠕⠎[?`]⠠⠁⠝⠑[?l]⠑⠎⠲⠺[?`]⠚⠒[?q][?`]⠓[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제29항 국어 문",
+      "korean": "[다만] 문단 전체가 로마자일 때에는 로마자표와 로마자 종료표를 생략할 수 있다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제30항 그리스 ",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "21",
+      "braille_unicode": "⠆⠂",
+      "decode_ok": true
+    },
+    {
+      "item": "제31항 국어 문",
+      "korean": "뒤에 로마자 종료표 4을 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제31항 국어 문",
+      "korean": "통계에서 σ는 표준 편차를 의미한다.",
+      "brf_ascii": "``h=@/n,s`0.s4cz`d+.g`d*;<\"!`weo",
+      "braille_unicode": "[?`][?`]⠓⠿⠈⠌⠗⠝⠠⠎[?`]⠴⠨⠎⠲⠉⠿[?`]⠙⠬⠨[?`]⠙[?*]⠰⠣⠐[?!][?`]⠺⠑⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제31항 국어 문",
+      "korean": "그녀는 ΦΒΚ의 회원이다.",
+      "brf_ascii": "``@{c:cz`0,,.f.b.k4w`jyp3oi4````",
+      "braille_unicode": "[?`][?`]⠈⠪⠉⠱⠉⠿[?`]⠴⠠⠠⠨⠋⠨⠃⠨⠅⠲⠺[?`]⠚⠽⠏⠒⠕⠊⠲[?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제32항 로마자표",
+      "korean": "다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제32항 로마자표",
+      "korean": "다음 a, b, c의 값으로 옳은 것을 고르시오.",
+      "brf_ascii": "``i<{5`0a1`;b1`;c4w`$b'{\"u`u10z`",
+      "braille_unicode": "[?`][?`]⠊⠣⠪⠢[?`]⠴⠁⠂[?`]⠰⠃⠂[?`]⠰⠉⠲⠺[?`][?$]⠃⠄⠪⠐⠥[?`]⠥⠂⠴⠿[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제32항 로마자표",
+      "korean": "식탁 위에 apples, bananas, grapes 등이 있다.",
+      "brf_ascii": "``,oaha`mrn`0apples1`bananas1```",
+      "braille_unicode": "[?`][?`]⠠⠕⠁⠓⠁[?`]⠍⠗⠝[?`]⠴⠁⠏⠏[?l]⠑⠎⠂[?`]⠃⠁⠝⠁⠝⠁⠎⠂[?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제32항 로마자표",
+      "korean": "모음에는 (a), (e), (i), (o), (u)가 있다.",
+      "brf_ascii": "``eu{5ncz`0\"<a\">1`\"<;e\">1`\"<i\">1",
+      "braille_unicode": "[?`][?`]⠑⠥⠪⠢⠝⠉⠿[?`]⠴⠐⠣⠁⠐⠜⠂[?`]⠐⠣⠰⠑⠐⠜⠂[?`]⠐⠣⠊⠐⠜⠂",
+      "decode_ok": false
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "자」에 따라 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "우리나라 기차에는 KTX, 새마을호, 무궁화호 등이 있다.",
+      "brf_ascii": "``m\"oc\"<`@o;<ncz`0,,ktx\"`,re<!``",
+      "braille_unicode": "[?`][?`]⠍⠐⠕⠉⠐⠣[?`]⠈⠕⠰⠣⠝⠉⠿[?`]⠴⠠⠠⠅[?t][?x]⠐[?`]⠠⠗⠑⠣[?!][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "WHO: 세계 보건 기구",
+      "brf_ascii": "0,,who\"1`,n@/`~u@)`@o@m",
+      "braille_unicode": "⠴⠠⠠⠺⠓⠕⠐⠂[?`]⠠⠝⠈⠌⠗[?`]⠘⠥⠈[?)][?`]⠈⠕⠈⠍",
+      "decode_ok": false
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "오동근, 1998a, 1998b; 이진영, 2001, p. 109",
+      "brf_ascii": "``ui=@z\"`#aiih0a1`#aiih;b;2`o.q`",
+      "braille_unicode": "[?`][?`]⠥⠊⠿⠈⠿⠐[?`]⠼⠁⠊⠊⠓⠴⠁⠂[?`]⠼⠁⠊⠊⠓⠰⠃⠰⠆[?`]⠕⠨[?q][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "Hedy Lamarr―미국의 여배우이자 와이파이 기술을 발명한 발명가",
+      "brf_ascii": "``0,h$y`,lam>r--eo@maw`:~rmo.`vo",
+      "braille_unicode": "[?`][?`]⠴⠠⠓[?$]⠽[?`]⠠[?l]⠁⠍⠜⠗[?-][?-]⠑⠕⠈⠍⠁⠺[?`]⠱⠘⠗⠍⠕⠨[?`]⠧⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "[다만] ｢통일영어점자 규정｣과 ｢한글 점자｣의 점형이 같은 문장 부호 중에서 ‘",
+      "brf_ascii": ". ? !",
+      "braille_unicode": "⠨⠀[??]⠀[?!]",
+      "decode_ok": false
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "마자 종료표를 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "Ms.는 미혼·기혼의 구별이 없는 여성의 존칭이다.",
+      "brf_ascii": "``0,ms4cz`eoj(\"2@oj(w`@m~|o`sb'`",
+      "braille_unicode": "[?`][?`]⠴⠠⠍⠎⠲⠉⠿[?`]⠑⠕⠚[?(]⠐⠆⠈⠕⠚[?(]⠺[?`]⠈⠍⠘[?|]⠕[?`]⠎⠃⠄[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "그 영화에서 가장 유명한 곡은 What Is A Youth?이다.",
+      "brf_ascii": "``@{`}jvn,s`$.7`%e}j3`@xz`0,:at`",
+      "braille_unicode": "[?`][?`]⠈⠪[?`][?}]⠚⠧⠝⠠⠎[?`][?$]⠨⠶[?`]⠩⠑[?}]⠚⠒[?`]⠈[?x]⠿[?`]⠴⠠⠱⠁[?t][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "연주가 끝나자 사람들은 Bravo!를 외쳤다.",
+      "brf_ascii": "``*.m$`,@{8c.`l\"<5i!z`0,bravo6\"!",
+      "braille_unicode": "[?`][?`][?*]⠨⠍[?$][?`]⠠⠈⠪⠦⠉⠨[?`][?l]⠐⠣⠢⠊[?!]⠿[?`]⠴⠠⠃⠗⠁⠧⠕⠖⠐[?!]",
+      "decode_ok": false
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "헷갈리거나 확신이 없을 때에는 Umm ...이라고 말한다.",
+      "brf_ascii": "``jn'$1\"o@sc`jva,qo`sb'!`,irncz`",
+      "braille_unicode": "[?`][?`]⠚⠝⠄[?$]⠂⠐⠕⠈⠎⠉[?`]⠚⠧⠁⠠[?q]⠕[?`]⠎⠃⠄[?!][?`]⠠⠊⠗⠝⠉⠿[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "23",
+      "braille_unicode": "⠆⠒",
+      "decode_ok": true
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "KTX/새마을호/무궁화호",
+      "brf_ascii": "0,,ktx4_/,re<!ju_/em@m7jvju",
+      "braille_unicode": "⠴⠠⠠⠅[?t][?x]⠲[?_]⠌⠗⠠⠗⠑⠣[?!]⠚⠥[?_]⠌⠗⠑⠍⠈⠍⠶⠚⠧⠚⠥",
+      "decode_ok": false
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "U-도서관",
+      "brf_ascii": "0,u4-iu,s@v3",
+      "braille_unicode": "⠴⠠⠥⠲[?-]⠊⠥⠠⠎⠈⠧⠒",
+      "decode_ok": false
+    },
+    {
+      "item": "제33항 ｢통일영",
+      "korean": "Summary~연습 문제",
+      "brf_ascii": "0,summ>y4@9*,{b`eg.n",
+      "braille_unicode": "⠴⠠⠎⠥⠍⠍⠜⠽⠲⠈⠔[?*]⠠⠪⠃[?`]⠑⠨⠝",
+      "decode_ok": false
+    },
+    {
+      "item": "제34항 로마자가",
+      "korean": "문 앞에 “Open”이라고 쓰여 있었다.",
+      "brf_ascii": "``eg`<4n`80,op50o\"<@u`,,{:`o/s/`",
+      "braille_unicode": "[?`][?`]⠑[?`]⠣⠲⠝[?`]⠦⠴⠠⠕⠏⠢⠴⠕⠐⠣⠈⠥[?`]⠠⠠⠪⠱[?`]⠕⠌⠗⠎⠌⠗[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제34항 로마자가",
+      "korean": "‘ㄱ, ㄷ, ㅂ’은 자음 앞이나 어말에서는 ‘k, t, p’로 적는다.",
+      "brf_ascii": "``,8=a\"`=9\"`=b0'z`.<{5`<4oc`se1n",
+      "braille_unicode": "[?`][?`]⠠⠦⠿⠁⠐[?`]⠿⠔⠐[?`]⠿⠃⠴⠄⠿[?`]⠨⠣⠪⠢[?`]⠣⠲⠕⠉[?`]⠎⠑⠂⠝",
+      "decode_ok": false
+    },
+    {
+      "item": "제34항 로마자가",
+      "korean": "링컨(Lincoln)은 미국의 제16대 대통령이다.",
+      "brf_ascii": "``\"o7f)8'0,l9coln,0z`eo@maw`.n``",
+      "braille_unicode": "[?`][?`]⠐⠕⠶⠋[?)]⠦⠄⠴⠠[?l]⠔⠉⠕[?l]⠝⠠⠴⠿[?`]⠑⠕⠈⠍⠁⠺[?`]⠨⠝[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제35항 로마자와",
+      "korean": "MP3 플레이어",
+      "brf_ascii": "0,,mp#c`d!\"nos",
+      "braille_unicode": "⠴⠠⠠⠍⠏⠼⠉[?`]⠙[?!]⠐⠝⠕⠎",
+      "decode_ok": false
+    },
+    {
+      "item": "제35항 로마자와",
+      "korean": "A4용지",
+      "brf_ascii": "0,a#d+7.o",
+      "braille_unicode": "⠴⠠⠁⠼⠙⠬⠶⠨⠕",
+      "decode_ok": true
+    },
+    {
+      "item": "제35항 로마자와",
+      "korean": "LP 1장",
+      "brf_ascii": "0,,lp`#a.7",
+      "braille_unicode": "⠴⠠⠠[?l]⠏[?`]⠼⠁⠨⠶",
+      "decode_ok": false
+    },
+    {
+      "item": "제35항 로마자와",
+      "korean": "요즘에는 KF94 마스크가 필수입니다.",
+      "brf_ascii": "``+.{5ncz`0,,kf#id`e,{f{$`do1,m`",
+      "braille_unicode": "[?`][?`]⠬⠨⠪⠢⠝⠉⠿[?`]⠴⠠⠠⠅⠋⠼⠊⠙[?`]⠑⠠⠪⠋⠪[?$][?`]⠙⠕⠂⠠⠍[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제35항 로마자와",
+      "korean": "새로운 MP4 Player를 출시했다.",
+      "brf_ascii": "``,r\"ug`0,,mp#d`,play}4\"!`;&,o``",
+      "braille_unicode": "[?`][?`]⠠⠗⠐⠥[?`]⠴⠠⠠⠍⠏⠼⠙[?`]⠠⠏[?l]⠁⠽[?}]⠲⠐[?!][?`]⠰[?&]⠠⠕[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제35항 로마자와",
+      "korean": "2023학년도 수능 D-100일 학습 전략",
+      "brf_ascii": "``#bjbc`jac*iu`,mc{7`0,d-#ajjo1`",
+      "braille_unicode": "[?`][?`]⠼⠃⠚⠃⠉[?`]⠚⠁⠉[?*]⠊⠥[?`]⠠⠍⠉⠪⠶[?`]⠴⠠⠙[?-]⠼⠁⠚⠚⠕⠂[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제35항 로마자와",
+      "korean": "KBS 1 TV 좀 켜 주세요.",
+      "brf_ascii": "``0,,kbs`#a`,,tv4`.u5`f:`.m,n+4`",
+      "braille_unicode": "[?`][?`]⠴⠠⠠⠅⠃⠎[?`]⠼⠁[?`]⠠⠠[?t]⠧⠲[?`]⠨⠥⠢[?`]⠋⠱[?`]⠨⠍⠠⠝⠬⠲[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제35항 로마자와",
+      "korean": "CD 1장을 구하려 합니다.",
+      "brf_ascii": "``0;,,cd`#a.7!`@mj\":`jbcoi4`````",
+      "braille_unicode": "[?`][?`]⠴⠰⠠⠠⠉⠙[?`]⠼⠁⠨⠶[?!][?`]⠈⠍⠚⠐⠱[?`]⠚⠃⠉⠕⠊⠲[?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제35항 로마자와",
+      "korean": "평창 동계 올림픽의 SNS 계정은 pyeongchang 2018이다.",
+      "brf_ascii": "``d};<7`i=@/`u1\"o5doaw`0,,sns4``",
+      "braille_unicode": "[?`][?`]⠙[?}]⠰⠣⠶[?`]⠊⠿⠈⠌⠗[?`]⠥⠂⠐⠕⠢⠙⠕⠁⠺[?`]⠴⠠⠠⠎⠝⠎⠲[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제35항 로마자와",
+      "korean": "추가 내용은 Part 3을 참고하세요.",
+      "brf_ascii": "``;m$`cr+7z`0,\"p`#c!`;<5@uj,n+4`",
+      "braille_unicode": "[?`][?`]⠰⠍[?$][?`]⠉⠗⠬⠶⠿[?`]⠴⠠⠐⠏[?`]⠼⠉[?!][?`]⠰⠣⠢⠈⠥⠚⠠⠝⠬⠲[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제35항 로마자와",
+      "korean": "Lesson 1. 인사말",
+      "brf_ascii": "0,lesson`#a4`qle1",
+      "braille_unicode": "⠴⠠[?l]⠑⠎⠎⠕⠝[?`]⠼⠁⠲[?`][?q][?l]⠑⠂",
+      "decode_ok": false
+    },
+    {
+      "item": "제36항 로마 숫",
+      "korean": "가영이는 미적분학 II 과목을 수강하고 있다.",
+      "brf_ascii": "``$]ocz`eo.?^gja`0,,ii4`@vex!`,m",
+      "braille_unicode": "[?`][?`][?$][?]]⠕⠉⠿[?`]⠑⠕⠨[??][?^]⠚⠁[?`]⠴⠠⠠⠊⠊⠲[?`]⠈⠧⠑[?x][?!][?`]⠠⠍",
+      "decode_ok": false
+    },
+    {
+      "item": "제36항 로마 숫",
+      "korean": "1차 세계 대전 당시 영국의 왕은 George V였다.",
+      "brf_ascii": "``#a;<`,n@/`ir.)`i7,o`}@maw`v7z",
+      "braille_unicode": "[?`][?`]⠼⠁⠰⠣[?`]⠠⠝⠈⠌⠗[?`]⠊⠗⠨[?)][?`]⠊⠶⠠⠕[?`][?}]⠈⠍⠁⠺[?`]⠧⠶⠿",
+      "decode_ok": false
+    },
+    {
+      "item": "제36항 로마 숫",
+      "korean": "그 책의 v-x쪽을 읽어 보세요.",
+      "brf_ascii": "``@[`;raw`0v-;x4,.x!`o1as`^u,n+4",
+      "braille_unicode": "[?`][?`]⠈⠪[?`]⠰⠗⠁⠺[?`]⠴⠧[?-]⠰[?x]⠲⠠⠨[?x][?!][?`]⠕⠂⠁⠎[?`][?^]⠥⠠⠝⠬⠲",
+      "decode_ok": false
+    },
+    {
+      "item": "제37항 다음 영",
+      "korean": "과 여러 글자를 나타내는 묶음 약자를 사용하여 풀어 적는다.",
+      "brf_ascii": "but",
+      "braille_unicode": "⠃⠥[?t]",
+      "decode_ok": false
+    },
+    {
+      "item": "제37항 다음 영",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "25",
+      "braille_unicode": "⠆⠢",
+      "decode_ok": true
+    },
+    {
+      "item": "제37항 다음 영",
+      "korean": "그는 Can you help me?라고 도움을 요청했다.",
+      "brf_ascii": "``@{cz`0,can`y`help`me8\"<@u`ium5",
+      "braille_unicode": "[?`][?`]⠈⠪⠉⠿[?`]⠴⠠⠉⠁⠝[?`]⠽[?`]⠓⠑[?l]⠏[?`]⠍⠑⠦⠐⠣⠈⠥[?`]⠊⠥⠍⠢",
+      "decode_ok": false
+    },
+    {
+      "item": "제37항 다음 영",
+      "korean": "be는 am, are, is의 원형 동사이다.",
+      "brf_ascii": "``0be4cz`0am1`>e1`is4w`p3j}`i=lo",
+      "braille_unicode": "[?`][?`]⠴⠃⠑⠲⠉⠿[?`]⠴⠁⠍⠂[?`]⠜⠑⠂[?`]⠊⠎⠲⠺[?`]⠏⠒⠚[?}][?`]⠊⠿[?l]⠕",
+      "decode_ok": false
+    },
+    {
+      "item": "제37항 다음 영",
+      "korean": "쓰지 않고 알파벳과 묶음 약자를 사용하여 풀어 적는다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제37항 다음 영",
+      "korean": "be, his, was, were의 약자를 바르게 쓰시오.",
+      "brf_ascii": "``0be1`his1`was1`w]e4w`>a.\"!`~\"{",
+      "braille_unicode": "[?`][?`]⠴⠃⠑⠂[?`]⠓⠊⠎⠂[?`]⠺⠁⠎⠂[?`]⠺[?]]⠑⠲⠺[?`]⠜⠁⠨⠐[?!][?`]⠘⠐⠪",
+      "decode_ok": false
+    },
+    {
+      "item": "제38항 발음 기",
+      "korean": "음 기호는 다음과 같다.",
+      "brf_ascii": "[ ]",
+      "braille_unicode": "⠪⠀[?]]",
+      "decode_ok": false
+    },
+    {
+      "item": "제38항 발음 기",
+      "korean": "대괄호",
+      "brf_ascii": "/ /",
+      "braille_unicode": "⠌⠗⠀⠌⠗",
+      "decode_ok": true
+    },
+    {
+      "item": "제38항 발음 기",
+      "korean": "모음과 모음 사이의 [ŋ]은 앞 음절의 받침 ‘ㅇ’으로 적는다.",
+      "brf_ascii": "``eu{5@v`eu{5`low`\"^($^)z`<4`{5`",
+      "braille_unicode": "[?`][?`]⠑⠥⠪⠢⠈⠧[?`]⠑⠥⠪⠢[?`][?l]⠕⠺[?`]⠐[?^][?(][?$][?^][?)]⠿[?`]⠣⠲[?`]⠪⠢[?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제38항 발음 기",
+      "korean": "worth [wəːrθ]: ~해볼 만한, ~할 만한 가치가 있는",
+      "brf_ascii": "``0wor?`\"^(w53r.?^)\"1`@9jr~u1`e3",
+      "braille_unicode": "[?`][?`]⠴⠺⠕⠗[??][?`]⠐[?^][?(]⠺⠢⠒⠗⠨[??][?^][?)]⠐⠂[?`]⠈⠔⠚⠗⠘⠥⠂[?`]⠑⠒",
+      "decode_ok": false
+    },
+    {
+      "item": "제38항 발음 기",
+      "korean": "미국에서는 /æ/로 발음되는 단어가 영국에서는 /a/로 발음된다.",
+      "brf_ascii": "``eo@man,scz`\"^/%^/\"u`~1{5iycz``",
+      "braille_unicode": "[?`][?`]⠑⠕⠈⠍⠁⠝⠠⠎⠉⠿[?`]⠐[?^]⠌⠗⠩[?^]⠌⠗⠐⠥[?`]⠘⠂⠪⠢⠊⠽⠉⠿[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제39항 로마자가",
+      "korean": "_) 사이에 한글을 묶어 나타낸다",
+      "brf_ascii": ".",
+      "braille_unicode": "⠨",
+      "decode_ok": true
+    },
+    {
+      "item": "제39항 로마자가",
+      "korean": "What is 김치 in English?",
+      "brf_ascii": "``0,:at`is`_(@o5;o_)`9`,5gli%8``",
+      "braille_unicode": "[?`][?`]⠴⠠⠱⠁[?t][?`]⠊⠎[?`][?_][?(]⠈⠕⠢⠰⠕[?_][?)][?`]⠔[?`]⠠⠢[?l]⠊⠩⠦[?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제39항 로마자가",
+      "korean": "대통령실의 누리집 주소는 www.대통령.kr이다.",
+      "brf_ascii": "``irh=\"},o1w`cm\"o.ob`.m,ucz`````",
+      "braille_unicode": "[?`][?`]⠊⠗⠓⠿⠐[?}]⠠⠕⠂⠺[?`]⠉⠍⠐⠕⠨⠕⠃[?`]⠨⠍⠠⠥⠉⠿[?`][?`][?`][?`][?`]",
+      "decode_ok": false
+    },
+    {
+      "item": "제39항 로마자가",
+      "korean": "Banchan (Korean: 반찬) are small side dishes served along",
+      "brf_ascii": "with cooked rice in Korean cuisine.",
+      "braille_unicode": "⠺⠊[?t]⠓⠀⠉⠕⠕⠅⠑⠙⠀⠗⠊⠉⠑⠀⠊⠝⠀[?K]⠕⠗⠑⠁⠝⠀⠉⠥⠊⠎⠊⠝⠑⠨",
+      "decode_ok": false
+    },
+    {
+      "item": "제39항 로마자가",
+      "korean": "￭한국점자규정￭",
+      "brf_ascii": "27",
+      "braille_unicode": "⠆⠶",
+      "decode_ok": true
+    }
+  ]
+}
