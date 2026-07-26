@@ -92,7 +92,16 @@ _HEADING_DEEP_INDENT = 4  # BBPG 2장2절1 3·4단계 제목 "5칸에서 시작"
 _HEADING_LEVEL2_INDENT = 6  # 2단계 제목 "7칸에서 시작" = 앞 빈칸 6 (BBPG 2장2절1 3)
 
 _DEFAULT_META: tuple[str, int, int] = ("text", 1_000_000, 0)
-_PAGE_LINE_TYPES = {"header_footer", "page_number"}
+# 페이지행으로 빠지는 요소 타입 — **원본 페이지 번호(page_number)뿐이다.**
+# 종전에는 header_footer도 여기 있었고 그 첫 요소가 꼬리말 슬롯에 잘려 들어갔는데,
+# 인쇄 러닝풋은 pipeline._is_running_foot·_is_boilerplate가 이미 상류에서 걷어 내므로
+# 여기까지 오는 header_footer는 러닝풋이 아니라 **강 도입부 본문**이다(a5fa765 실측).
+# 근거는 _partition·_footer_text 주석 참조.
+_PAGE_LINE_TYPES = {"page_number"}
+
+# 꼬리말로 쓰는 제목 단계 — 점자 도서 제작 지침 제1장 3-3) "해당 페이지의 1, 2단계 제목".
+# 1단계를 우선하고, 같은 단계면 읽기순서가 앞선 것을 쓴다(_footer_text 주석).
+_FOOTER_HEADING_LEVELS = (1, 2)
 
 # 원본 페이지 연속 표기용 알파벳 점자(a~z, 로마자표 없는 맨 letter) — BBPG 1장2절2
 _ALPHA_BRAILLE = "⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵"
@@ -359,7 +368,7 @@ def _find_nth_occurrence(
 class LayoutBraille:
     """BrailleOutput 목록 → 32칸 × 25줄 점자 조판 (PART 10).
 
-    reading_order 정렬 → header_footer/page_number 분리 → 제목 단계별 빈 줄 →
+    reading_order 정렬 → page_number(페이지행) 분리 → 제목 단계별 빈 줄 →
     32칸 단어경계 라인 브레이킹 → 25줄 페이지 브레이킹 → 파일 저장.
     조판 태깅(heading_blank·line_wrap)은 점자 좌표 rule_trail로 emit(plan §3-4,
     braille_text_list 귀속). line_overflow_rate(C6용)를 반환한다.
@@ -397,7 +406,7 @@ class LayoutBraille:
             forced_total += forced
 
         self._c6_clip_page_line_items(page_line_items, meta)
-        footer = self._footer_text(page_line_items, meta)
+        footer = self._footer_text(body, meta)
         orig_page = self._orig_page_text(page_line_items, meta)
         pages = self._assemble_pages(formatted, footer, orig_page, page_no)
         self._save(pages, job_id, page_no)
@@ -433,7 +442,8 @@ class LayoutBraille:
         """점역사가 편집한 블록(이미 32칸 줄)을 규정대로 페이지 조립(REST /finalize 전용).
 
         blocks 항목: {type, heading_level, order, lines:[점자 줄...]}.
-        page_number/header_footer type은 페이지행으로 분리. 본문은 order로 정렬.
+        page_number type만 페이지행으로 분리(header_footer는 본문 — _partition 주석).
+        본문은 order로 정렬.
         재-wrap 없음(줄 단위 편집 가정) — 점자 규정 조판은 AI가 소유, BE/FE는 호출만.
         반환: 점자 페이지 목록(각 32칸×25줄).
         """
@@ -451,7 +461,17 @@ class LayoutBraille:
         )
         formatted = [(int(b.get("heading_level") or 0), b.get("type") or "", list(b.get("lines", [])))
                      for b in body]
-        footer = _first_line("header_footer")
+        # 꼬리말 = 페이지의 1·2단계 제목 (지침 제1장 3-3) — _footer_text 주석과 같은 규칙)
+        footer = ""
+        for lvl in _FOOTER_HEADING_LEVELS:
+            cands = [b for b in body if int(b.get("heading_level") or 0) == lvl]
+            for b in cands:
+                line = next((ln.strip() for ln in b.get("lines", []) if ln.strip()), "")
+                if line:
+                    footer = line
+                    break
+            if footer:
+                break
         orig_page = _first_line("page_number")
         return self._assemble_pages(formatted, footer, orig_page, page_no)
 
@@ -724,12 +744,12 @@ class LayoutBraille:
     def _partition(
         self, braille_outputs: list[BrailleOutput], meta: dict
     ) -> tuple[list[BrailleOutput], list[BrailleOutput]]:
-        """본문 요소와 페이지행 요소(header_footer/page_number) 분리.
+        """본문 요소와 페이지행 요소(page_number) 분리.
 
         페이지행은 슬롯이 셋뿐이다 — 원본 페이지 번호(좌)·꼬리말(가운데)·점자 페이지
-        번호(우) (BBPG 1장2절1). 즉 header_footer·page_number 타입에서 **각각 한 요소만**
-        페이지행에 쓰이는데, 종전에는 타입이 같다는 이유로 나머지 요소까지 전부 이 통에
-        담겨 **본문에도 페이지행에도 찍히지 않고 사라졌다.**
+        번호(우) (BBPG 1장2절1). 즉 page_number 타입에서 **한 요소만** 페이지행에 쓰이는데,
+        종전에는 타입이 같다는 이유로 나머지 요소까지 전부 이 통에 담겨 **본문에도
+        페이지행에도 찍히지 않고 사라졌다.**
 
         실측(2026-07-21 dev+val 1,131p): 페이지행 타입이 2개 이상인 페이지가
         val 495/951·dev 97/180. 버려진 요소 val 517·dev 98 중 정답 도서에 실재하는 것이
@@ -738,9 +758,25 @@ class LayoutBraille:
         **강 도입부 본문**인 경우가 많다(세계사 p054: header_footer 10개가 강 번호·강
         제목·대단원·핵심 주제 목록이고, 정답 도서는 이를 ⠔⠔ 접두 목록으로 본문에 싣는다).
 
-        그래서 페이지행에는 타입별 첫 비어있지 않은 요소만 남기고(_first_nonempty가
-        고르던 바로 그 요소 — 꼬리말·원본 페이지 번호는 불변) 나머지는 본문으로 되돌린다.
-        되돌린 요소는 _format_element를 타므로 32칸 조판도 정상 적용된다.
+        그래서 페이지행에는 타입별 첫 비어있지 않은 요소만 남기고 나머지는 본문으로
+        되돌린다. 되돌린 요소는 _format_element를 타므로 32칸 조판도 정상 적용된다.
+
+        ★ 2026-07-26(r21): header_footer를 이 통에서 아예 뺐다 — 위 실측의 귀결이다.
+        여기 오는 header_footer가 러닝풋이 아니라면 **첫 요소도 러닝풋이 아니다.**
+        그런데 종전 코드는 첫 요소만 꼬리말 슬롯(폭 22~24칸)에 밀어 넣어 잘라 찍었고,
+        잘린 나머지는 인쇄물 어디에도 남지 않았다(자기정합 B 실측, 기준선 ce31896:
+        header_footer가 dev 88.7%(133/150)·val 91.3%(702/769)로 텍스트계에서 가장 낮고
+        — page_number dev 98.4%·val 99.5%가 그 다음 — 미인쇄 84건이 이 슬롯에서 잘린
+        요소다. 그중 gold에 그대로 있는 것만 val 8건이며, 이 개편 뒤 B는 dev·val 모두
+        100.0%, 'A통과인데 인쇄 안 됨'은 val 8건→1건이 된다). 정답 도서의 꼬리말은
+        도서 제목이고 (dev+val 페이지행 1,832줄 중 1,762줄 = 96.2%가 '수특 …' 접두 —
+        _footer_text 주석의 재측정치) 우리 header_footer 요소 505종 중 일치하는 건
+        0종이라, 이 슬롯에 header_footer를 밀어 넣어 얻을 것이 없다.
+
+        실물 확인(2026-07-26): 세계사 원본 p054는 이 요소가 6장 전 페이지행에
+        '⠕⠂⠘⠷⠐ ⠟⠊⠥⠐ ⠊⠿⠉⠢ ⠣⠠⠕⠣ ⠠⠝'으로 잘려 반복 인쇄됐고 본문엔 없었다. 지금은
+        본문 첫 줄에 '⠕⠂⠘⠷⠐ ⠟⠊⠥⠐ ⠊⠿⠉⠢ ⠣⠠⠕⠣ ⠠⠝⠈⠌⠺ ⠨⠾⠈⠗'로 온전히 실리며,
+        정답 도서도 같은 내용을 본문 첫 줄에 싣는다(gold 0행).
         """
         body, page_line = [], []
         taken: set[str] = set()
@@ -767,7 +803,11 @@ class LayoutBraille:
     def _c6_clip_page_line_items(
         self, page_line_items: list[BrailleOutput], meta: dict
     ) -> None:
-        """페이지행 요소(원본 페이지 번호·꼬리말)의 점자 줄을 32칸으로 절단(in-place). C6.
+        """페이지행 요소(원본 페이지 번호)의 점자 줄을 32칸으로 절단(in-place). C6.
+
+        (2026-07-26 r21로 header_footer가 페이지행 통에서 빠져 _format_element 32칸 조판을
+        정상적으로 타게 됐다 — 아래 실측의 43줄은 그 경로로 해소된다. page_number 7줄은
+        여전히 이 절단이 유일한 방어라 그대로 둔다.)
 
         **C6 근본 원인**: 페이지행 요소는 _partition에서 본문과 갈라져 나가
         _format_element(=_wrap_line 32칸 조판)를 **타지 않는 유일한 경로**다. 조립되는
@@ -806,9 +846,56 @@ class LayoutBraille:
             for d in bo.drafts:                     # 현재 페이지행 요소엔 초안이 없으나 방어
                 d.braille_lines = clip(d.braille_lines)
 
-    def _footer_text(self, page_line_items: list[BrailleOutput], meta: dict) -> str:
-        """페이지행 꼬리말(가운데). header_footer 요소의 첫 줄."""
-        return self._first_nonempty(page_line_items, meta, "header_footer")
+    def _footer_text(self, body: list[BrailleOutput], meta: dict) -> str:
+        """페이지행 꼬리말(가운데) — **해당 페이지의 1·2단계 제목** (점자 도서 제작 지침
+        제1장 3.꼬리말 3)).
+
+        규정 원문(제1장 3-3)): "본문의 꼬리말은 해당 페이지의 1, 2단계 제목이나 번호 체계
+        표기를 기본으로 하되 도서의 전체 구성과 분량을 고려하여 ... 구분 기준을 변경할 수
+        있다." 즉 **기본값이 페이지 제목**이고, 도서별로 바꿀 수 있다.
+
+        정답 도서(EBS 수능특강 6종)는 그 '변경'을 행사한 판본이다 — 실측(2026-07-26,
+        dev+val 1,832 페이지행): 가운데 슬롯이 '수특 <도서명> <권번호>' 형태인 것이
+        1,762줄(96.2%), 빈 것 56줄(3.1%). 권번호는 인쇄 쪽번호를 따라 단조 증가해
+        (언어: p009→1 · p046→2 · p085→3 · p122→4 · p156→5 · p195→6 · p234→7 · p270→8)
+        **점자책을 몇 권으로 나누느냐는 제작 결정**이다. 도서명도 러닝헤드·러닝풋이 실제로
+        추출된 면(_is_running_foot 기준 511/1,131 = 45.2%)에서만 읽히고 나머지 면은
+        인쇄돼 있지도 않다(입력 PDF 1,131개의 메타 title은 전량 빈 문자열). 즉 정답 도서의
+        꼬리말은 한 장짜리 입력에서 재현할 수 없다 — 재현하려면 BE/점역사가 책 단위로
+        주는 값이 필요하다. (재현 스크립트: temp/r25_gold_footer.py · temp/r29_verify_claims.py)
+
+        그래서 우리가 실제로 가진 정보로 지침의 **기본값**을 지킨다: 그 페이지의 1단계
+        제목(없으면 2단계)의 첫 줄. 길면 _compose_page_line이 슬롯 폭만큼 앞에서부터
+        자르는데, 이는 지침 3-4)의 폴백("분명한 핵심어 선택이 어려운 경우에는 앞에서부터
+        내용의 일부를 적어 준다")과 같다.
+
+        ⚠ 오늘 이 규칙은 **잠들어 있다**. 현 경계 파일(현주 핸드오프)은 heading_level을
+        주지 않는다 — dev+val 요소 28,425개 전수가 heading_level=None이고 type='title'은
+        0건이다. 그래서 코퍼스 전 페이지에서 꼬리말은 공란이고(전 출력 페이지행 4,900줄
+        중 가운데 슬롯이 채워진 줄 0), '지침형'과 '공란 유지'는 오늘 출력이 동일하다.
+        상류가 제목 단계를 싣기 시작하면 별도 배선 없이 켜진다.
+        (재현: temp/r29_census.py · temp/r29_pageline_census.py)
+
+        ★ 대안 '첫 header_footer 요소를 꼬리말로 복사'는 기각했다. 그 판본이 채웠을
+        페이지행을 현 응답으로 재현하면 2,155/4,900줄 = 44.0%인데, 채워질 내용이 제목이
+        아니다 — 상위가 '02'(123줄)·'01'(108줄) 같은 번호 조각, 'Exercises'(81줄)·
+        'Level 2 기본연습'(45줄) 같은 하위 배너, 그리고 OCR 잡음이며 그중 32줄은
+        '[처리 불가: 점역 불가 문자 匙]'이 전 페이지 가구로 찍힌다. 우리 header_footer
+        고유 505종 중 정답 도서 꼬리말과 일치하는 것은 0종이다.
+        (재현: temp/r29_hf_footer_variant.py · temp/r29_verify_claims.py)
+        """
+        best: tuple[int, int, str] | None = None
+        for bo in body:
+            _etype, order, hlevel = meta.get(bo.element_id, _DEFAULT_META)
+            if hlevel not in _FOOTER_HEADING_LEVELS:
+                continue
+            line = next((ln.strip() for ln in bo.braille_lines if ln.strip()), "")
+            if not line:
+                continue
+            key = (hlevel, order, line)
+            if best is None or key[:2] < best[:2]:
+                best = key
+        return best[2] if best else ""
 
     def _orig_page_text(self, page_line_items: list[BrailleOutput], meta: dict) -> str:
         """페이지행 원본 페이지 번호(좌측). page_number 요소의 첫 줄."""

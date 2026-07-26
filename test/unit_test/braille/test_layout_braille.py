@@ -27,7 +27,7 @@ from app.ai.braille.layout_braille import (
     _RULE_LINE_WRAP, _RULE_HEADING_BLANK, _RULE_PARA_INDENT, _RULE_BULLET_INDENT,
     _UNDERLINE_BLANK_MARKER, _BULLET_MARKERS, _PAGE_CHANGE_FILL,
     _OVERFLOW_PAGE_NUMBER, _BOX_BORDER_END, _BOX_TOP_FILL, _BOX_BOTTOM_FILL,
-    _is_border_line,
+    _is_border_line, _page_number_braille,
 )
 from app.schemas.content import BrailleOutput
 from app.schemas.layout import BBoxItem, LayoutResult
@@ -166,12 +166,12 @@ class TestLayoutRulesSpec:
 
     def test_c6_절단해도_조립된_페이지행은_불변(self, lb, tmp_path) -> None:
         """절단 폭 32 ≥ _compose_page_line 슬롯폭이라 인쇄면(BRF)은 바뀌지 않는다."""
-        hf = uuid4()
-        long_hf = "⠇⠚⠽" * 20
-        page_line = lb._compose_page_line(long_hf, "", 1)      # 절단 전 기준선
-        outs = [_out([long_hf], hf)]
+        pn = uuid4()
+        long_pn = "⠼⠚⠙⠋" * 15
+        page_line = lb._compose_page_line("", long_pn[:_COLS], 1)   # 절단 후 기준선
+        outs = [_out([long_pn], pn)]
         lb.layout(outs, page_no=1, job_id="c6c",
-                  layout_result=_layout((hf, "header_footer", 1, 0)))
+                  layout_result=_layout((pn, "page_number", 1, 0)))
         assert _read_lines(tmp_path, "c6c")[-1] == page_line
 
     def test_double_sided_페이지행_홀수만(self, lb, monkeypatch) -> None:
@@ -371,16 +371,60 @@ class TestLayoutBody:
                          page_no=1, job_id="no-ovf", layout_result=lr)
         assert rate == 0.0
 
-    def test_header_footer_in_page_line(self, lb, tmp_path) -> None:
-        """header_footer 요소는 본문 흐름에서 빠지고 페이지행(마지막 줄)에 배치."""
+    def test_header_footer_stays_in_body(self, lb, tmp_path) -> None:
+        """header_footer 요소는 **본문**에 남는다 — 꼬리말 슬롯에 밀어 넣지 않는다.
+
+        여기까지 온 header_footer는 인쇄 러닝풋이 아니라 강 도입부 본문이다
+        (pipeline._is_running_foot가 러닝풋을 상류에서 제거). 종전 구현은 첫 요소를
+        폭 22~24칸 꼬리말 슬롯에 잘라 넣어 본문 내용을 잃었다. 꼬리말에 무엇을 쓰는지는
+        _footer_text가 정한다(지침 1장 3-3) 페이지 제목).
+        """
         e1, e2 = uuid4(), uuid4()
         lr = _layout((e1, "text", 1, 0), (e2, "header_footer", 2, 0))
         lb.layout([_out(["본문"], e1), _out(["꼬리"], e2)],
                   page_no=1, job_id="hf", layout_result=lr)
         lines = _read_lines(tmp_path, "hf")
         assert lines[0].strip() == "본문"
-        assert "꼬리" not in "\n".join(lines[:-1])  # 본문에 없음
-        assert "꼬리" in lines[-1]                    # 페이지행에 배치
+        assert "꼬리" in "\n".join(lines[:-1])       # 본문에 실림
+        assert "꼬리" not in lines[-1]                # 페이지행엔 없음
+
+    def test_footer_uses_page_heading(self, lb, tmp_path) -> None:
+        """꼬리말 = 해당 페이지의 1단계 제목 (점자 도서 제작 지침 1장 3-3)).
+
+        1단계가 있으면 1단계, 없으면 2단계. 본문에서 빼 오지 않고 **복사**하므로
+        제목은 본문에도 그대로 남는다.
+        """
+        e1, e2, e3 = uuid4(), uuid4(), uuid4()
+        lr = _layout((e1, "text", 1, 0), (e2, "text", 2, 2), (e3, "text", 3, 1))
+        lb.layout([_out(["본문"], e1), _out(["둘째제목"], e2), _out(["첫째제목"], e3)],
+                  page_no=1, job_id="fthead", layout_result=lr)
+        lines = _read_lines(tmp_path, "fthead")
+        assert "첫째제목" in lines[_ROWS - 1]          # 페이지행 가운데 = 1단계 제목
+        assert "둘째제목" not in lines[_ROWS - 1]      # 2단계는 1단계가 있으면 안 쓴다
+        assert "첫째제목" in "\n".join(lines[:_ROWS - 1])   # 본문에도 남는다(복사)
+
+    def test_footer_falls_back_to_level2(self, lb, tmp_path) -> None:
+        """1단계 제목이 없으면 2단계 제목을 꼬리말로 쓴다 (지침 1장 3-3))."""
+        e1, e2 = uuid4(), uuid4()
+        lr = _layout((e1, "text", 1, 0), (e2, "text", 2, 2))
+        lb.layout([_out(["본문"], e1), _out(["둘째제목"], e2)],
+                  page_no=1, job_id="ftlv2", layout_result=lr)
+        assert "둘째제목" in _read_lines(tmp_path, "ftlv2")[_ROWS - 1]
+
+    def test_footer_blank_without_heading_levels(self, lb, tmp_path) -> None:
+        """제목 단계 정보가 없으면 꼬리말은 공란 — header_footer를 대신 넣지 않는다.
+
+        현 경계 파일이 이 상태다(dev+val 요소 28,425개 전수 heading_level=None).
+        여기 오는 header_footer는 강 도입부 본문·섹션 배너·OCR 잡음이 섞여 있어
+        가구로 인쇄하면 안 된다(_footer_text 주석의 전수 실측).
+        """
+        e1, e2 = uuid4(), uuid4()
+        lr = _layout((e1, "text", 1, 0), (e2, "header_footer", 2, 0))
+        lb.layout([_out(["본문"], e1), _out(["匙"], e2)],
+                  page_no=1, job_id="ftblank", layout_result=lr)
+        page_line = _read_lines(tmp_path, "ftblank")[_ROWS - 1]
+        assert "匙" not in page_line
+        assert page_line.strip() == _page_number_braille(1)   # 점자 쪽번호만 남는다
 
     def test_no_layout_result_still_works(self, lb, tmp_path) -> None:
         """layout_result 없이도 조판은 동작(메타 기본값=text)."""

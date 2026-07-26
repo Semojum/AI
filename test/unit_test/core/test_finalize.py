@@ -35,7 +35,11 @@ class TestFinalizeAssembly:
         assert len(page_row) == _COLS
         assert page_row.startswith("⠼⠁")        # 좌: 원본 페이지번호
         assert page_row.rstrip().endswith("⠼⠁")  # 우: 점자 페이지번호 ⠼1 (마침표 없음)
-        assert "⠈⠪⠐⠕⠢" in page_row              # 가운데: 꼬리말
+        # 가운데(꼬리말)는 페이지의 1·2단계 제목 슬롯이다(지침 1장 3-3)). 이 블록들엔
+        # heading_level이 없으므로 비고, header_footer 블록은 본문으로 간다
+        # (LayoutBraille._footer_text 주석)
+        assert "⠈⠪⠐⠕⠢" not in page_row
+        assert "⠈⠪⠐⠕⠢" in "\n".join(pages[0][:-1])
 
     def test_본문_보존(self):
         pages = LayoutBraille().finalize(_blocks(), page_no=1)

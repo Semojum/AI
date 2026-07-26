@@ -124,6 +124,60 @@ def _is_running_foot(content: str) -> bool:
     return any(p.search(c) for p in _RUNNING_FOOT_RES)
 
 
+# ── 추출 실패 안내문 억제 (2026-07-26) ────────────────────────────────────
+# 4분류: ① 데이터 오류 — 경계 파일의 요소 content가 '그 영역의 글자'가 아니라 **추출
+# 모델이 스스로 못 읽었다고 쓴 해설문**인 경우. 우리는 이걸 본문 텍스트로 믿고 그대로
+# 점역해 인쇄한다(영문 안내문이 한글 점자로 찍혀 학생에게 나간다).
+#
+# 실측(2026-07-26, dev+val 1,131p·요소 28,425개 전수):
+#   · 해당 요소 2건 — 생물 원본 p043(job page_030)·p175(page_130), 둘 다 type=header_footer,
+#     내용은 페이지 머리의 장식 삽화(책꽂이 선화)를 두고 쓴 해설이다.
+#       "The image contains no discernible text or characters. It is a simple line drawing
+#        of a bookshelf ... Therefore, no OCR output can be generated."   (183자)
+#       "... Therefore, the correct OCR output is an empty string."        (200자)
+#   · 아래 패턴의 오검출 0건 — 검출은 위 2건뿐이고, 영문 위주(ASCII 90%↑)·60자 이상인
+#     요소 957개가 오검출 위험 모수다. 외국어 지문이 'There is no question…',
+#     'It is not uncommon…'처럼 부정문을 흔히 쓰므로, 패턴은 **OCR/판독 작업 자체를
+#     자기언급하는 표현**만 잡도록 좁혔다(단순 부정문·'The image shows…' 류는 제외).
+#     (재현: temp/r29_census.py)
+#
+# 처리는 **인쇄 생략 + 검토 플래그(R11)**다. [처리 불가: …] 플레이스홀더를 쓰지 않는다:
+#   · 규정 근거 — 점자 자료 제작 지침 6.3.4(2)② "추가 설명이 필요 없는 시각 자료: …
+#     '시각 자료 유형 생략'의 형식으로 적는다. 다만 시각적 장식 용도로 제시되어 있거나
+#     본문을 이해하는 데 필요하지 않은 경우에는 생략 여부를 표기하지 않는다." 위 2건은
+#     장식 삽화이므로 '표기하지 않는다'에 해당한다.
+#   · 코드 선례 — app/ai/llm/image_opt.py: "실패 문자열('[처리 불가: …]')을 내면 그 한글이
+#     그대로 점자로 찍혀 학생에게 나간다 — 어떤 경우에도 정당하지 않다. 점역사에겐
+#     flags→R11로 알린다."
+# 요소를 통째로 버리지 않고 content만 비우는 이유: 버리면 그 자리가 있었다는 사실까지
+# 사라져 점역사가 확인할 단서가 없다. 비우면 R11(IMAGE_TEXT_MISSING)이 떠서
+# "이 자리 원본을 직접 보라"는 신호가 남는다(실측: 두 페이지 모두 status=NEEDS_REVIEW,
+# quality_report.review_flags에 R11, bbox flags=['R11'], 인쇄물에 영문 안내문 0줄).
+_EXTRACTION_REFUSAL_RES = (
+    # '읽을 수 있는 글자가 없다' 계열
+    re.compile(r"\bno\s+(?:discernible|legible|readable|recognizable|visible)\s+"
+               r"(?:text|characters|words|content)", re.IGNORECASE),
+    re.compile(r"\bno\s+text\s+(?:is\s+)?(?:present|visible|detected|found)\b", re.IGNORECASE),
+    # 'OCR 결과가 없다/빈 문자열이다' 계열 — 추출 작업 자체를 자기언급
+    re.compile(r"\bno\s+OCR\s+output\b", re.IGNORECASE),
+    re.compile(r"\bOCR\s+output\s+(?:is|would\s+be|should\s+be)\s+(?:an?\s+)?empty",
+               re.IGNORECASE),
+    re.compile(r"\b(?:cannot|can(?:'|no)t|unable\s+to)\s+(?:be\s+)?"
+               r"(?:generate|generated|extract|extracted|perform|performed|produce|produced)\b"
+               r"[^.]{0,40}\bOCR\b", re.IGNORECASE),
+    # 모델 사과·자기소개 계열(문두 한정)
+    re.compile(r"^\s*(?:I'?m\s+sorry|I\s+am\s+sorry|As\s+an\s+AI\b)", re.IGNORECASE),
+)
+
+
+def _is_extraction_refusal(content: str) -> bool:
+    """요소 content가 '추출 모델이 못 읽었다고 쓴 해설문'인가(본문 텍스트가 아님)."""
+    c = re.sub(r"\s+", " ", _HF_TAG_RE.sub("", content or "")).strip()
+    if not c:
+        return False
+    return any(p.search(c) for p in _EXTRACTION_REFUSAL_RES)
+
+
 # ── 응답 빌더 ─────────────────────────────────────────────────────────────
 
 def _build_timeout_response(task: PageTask, elapsed_ms: int) -> dict:
@@ -632,6 +686,11 @@ def _parse_txt_result(
         if etype == "header_footer" and _is_running_foot(content):
             logger.info("러닝풋 억제(header_footer): %.60s", content)
             continue
+        # 추출 모델의 '못 읽었다' 해설문 → 내용 비우고 R11(원본 확인 요망)로 넘긴다.
+        refused = _is_extraction_refusal(content)
+        if refused:
+            logger.info("추출 실패 안내문 억제(%s): %.60s", etype, content)
+            content = ""
         # heading_level: 현주 핸드오프가 주면 그 값, 없으면 title은 1단계 기본(PART 10 조판용)
         hlevel = el.get("heading_level")
         if hlevel in (None, 0) and etype == "title":
@@ -649,6 +708,8 @@ def _parse_txt_result(
         except (ValueError, TypeError):
             caption_ref = None
         flags = [str(f) for f in (el.get("flags") or [])]
+        if refused and "R11" not in flags:
+            flags.append("R11")          # IMAGE_TEXT_MISSING — 원본을 직접 봐야 하는 자리
         # ocr_confidence: 요소별 값이 오면 사용, 없으면 추출방식 기준값(conf).
         raw_conf = el.get("ocr_confidence")
         econf = float(raw_conf) if isinstance(raw_conf, (int, float)) else conf

@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from app.core.pipeline import (
     _is_boilerplate,
+    _is_extraction_refusal,
     _is_running_foot,
     _parse_txt_result,
     _reorder_sidebar,
@@ -160,3 +161,61 @@ class TestSidebarGuard:
         # 사이드바(y=900)는 y가 앞서는 본문 요소들 뒤로 밀린다
         assert sidebar.reading_order > main[0].reading_order
         assert sidebar.reading_order > main[1].reading_order
+
+
+# ── _is_extraction_refusal (추출 모델의 '못 읽었다' 해설문) ────────────────
+
+class TestIsExtractionRefusal:
+    def test_observed_refusals_detected(self):
+        # 코퍼스에서 실제로 관측된 2건(생물 원본 p043·p175)
+        for c in [
+            "The image contains no discernible text or characters. It is a simple line "
+            "drawing of a bookshelf with books, photographs, and a photo frame. "
+            "Therefore, no OCR output can be generated.",
+            "The image contains no discernible text or characters. It is a simple line "
+            "drawing of a bookshelf with books, a photo frame, and two framed photos. "
+            "Therefore, the correct OCR output is an empty string.",
+            "I'm sorry, I cannot read this image.",
+            "No readable text is present in this region.",
+        ]:
+            assert _is_extraction_refusal(c), c
+
+    def test_english_passages_not_flagged(self):
+        # 외국어 지문은 전부 영문이고 부정문을 흔히 쓴다 — 오검출 0건이어야 한다
+        # (전수 실측: dev+val 요소 28,425개 중 검출 2건, 아래 문장들은 실제 코퍼스 문장)
+        for c in [
+            "There is no question that the brain-mind mechanism is one of the most "
+            "glorious achievements of evolution.",
+            "It is not uncommon to get hung up on this.",
+            "There are few molecules that are more stable and difficult to decompose "
+            "than H2O.",
+            "It is not known exactly how many copies of the first edition were printed.",
+            "The image of the pollinator is shown in the figure above.",
+            "혈구를 관찰할 때 메탄올을 떨어뜨리는 이유는 세포를 고정시키기 위한 것이다.",
+        ]:
+            assert not _is_extraction_refusal(c), c
+
+
+class TestParseHandlesRefusal:
+    def test_refusal_content_emptied_and_flagged(self):
+        """실패 해설문은 본문으로 인쇄되지 않고, 대신 R11(원본 확인)로 남는다.
+
+        요소를 통째로 버리지 않는 이유: 버리면 그 자리가 있었다는 사실까지 사라진다.
+        규정상 정답은 '생략' 표기이고 알림은 검토 플래그다(§6.3.4(2)②, image_opt 선례).
+        """
+        extraction = {
+            "meta": {"extraction_method": "OCR"},
+            "elements": [
+                _el("The image contains no discernible text or characters. "
+                    "Therefore, no OCR output can be generated.",
+                    etype="header_footer", order=1),
+                _el("본문 문단입니다.", order=2),
+            ],
+        }
+        layout, ext_map, _ = _parse_txt_result(extraction, "p-test")
+        assert len(layout.elements) == 2                    # 요소는 남는다
+        hf = next(b for b in layout.elements if b.type == "header_footer")
+        assert "R11" in hf.flags
+        assert ext_map[hf.element_id].corrected_text == ""  # 인쇄될 내용은 없다
+        body = next(b for b in layout.elements if b.type == "text")
+        assert ext_map[body.element_id].corrected_text == "본문 문단입니다."
