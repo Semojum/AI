@@ -1000,6 +1000,77 @@ def sanitize_for_braille(text: str) -> str:
 
 _ENG_RUN_RE = re.compile(r"[A-Za-z][A-Za-z'\- ]*[A-Za-z]|[A-Za-z]")
 
+# 제32항 — 로마자표와 종료표 사이는 통일영어점자를 따른다. 즉 라틴 런 사이에 공백·숫자·
+# 영어 문장부호만 끼면 그 전체가 **하나의 로마자 구간**이고 로마자표·종료표는 각각 한 번뿐이다.
+# 규정 실측: `KBS 1 TV 좀…` → ⠴⠠⠠KBS ⠼⠁ ⠠⠠TV⠲ (규정_텍스트.txt:1748).
+_SPAN_BRIDGE_RE = re.compile(r"[0-9,.:;'‐-―\- ]+")
+
+# 제32항 — 구간 내부 문장부호는 통일영어점자 점형. 한글 점자와 점형이 다른 것만 적는다
+# (`.`·`-`는 두 규정이 같은 셀이라 목록에 없어도 결과가 같다).
+_UEB_PUNCT = {",": "⠂", ";": "⠆", ":": "⠒", "'": "⠄"}
+
+# 제33항 — 로마자와 한글 사이에 오는 이 부호들은 종료표를 적지 않고 한글 점자로 적는다.
+_ART33_PUNCT = ",:;–—―"
+
+# 단계별 토글(축 기여 분해용). 기본은 전부 켬 — 규정이 정본이고 A/B로 확인한 값이다.
+_ENG_SPAN_MERGE = os.getenv("BR_ENG_SPAN_MERGE", "1") != "0"      # 1. 스팬 병합(제32항)
+_ENG_NO_TERM_NUM = os.getenv("BR_ENG_NO_TERM_NUM", "1") != "0"    # 2. 숫자 인접(제35항)
+_ENG_ART33 = os.getenv("BR_ENG_ART33", "1") != "0"                # 3. 문장부호 분기(제33항)
+
+
+def _english_spans(seg: str, runs: list[tuple[int, int]]) -> list[list[tuple[int, int]]]:
+    """라틴 런 목록 → 로마자 구간(제32항) 목록. 구간 = 브리지 가능한 간극으로 이어진 런들."""
+    if not _ENG_SPAN_MERGE:
+        return [[r] for r in runs]
+    spans: list[list[tuple[int, int]]] = [[runs[0]]]
+    for r in runs[1:]:
+        gap = seg[spans[-1][-1][1]:r[0]]
+        if _SPAN_BRIDGE_RE.fullmatch(gap):
+            spans[-1].append(r)
+        else:
+            spans.append([r])
+    return spans
+
+
+def _span_gap(gap: str) -> str:
+    """구간 **내부** 간극(라틴 런 사이) 점역. 앞선 런에 바로 붙은 문장부호만 통일영어점자로.
+
+    공백을 건너뛰어 붙지 않은 부호(예: 수 안의 `1,000`)까지 바꾸면 근거를 벗어나므로,
+    규정 예시(`a,` `apples,` `1998a,`)와 같은 '런에 붙은' 자리로 한정한다.
+    """
+    if not _ENG_ART33:
+        return _braillify_korean(gap)
+    i = 0
+    out: list[str] = []
+    while i < len(gap) and gap[i] in _UEB_PUNCT:
+        out.append(_UEB_PUNCT[gap[i]])
+        i += 1
+    if i < len(gap):
+        out.append(_braillify_korean(gap[i:]))
+    return "".join(out)
+
+
+def _eng_terminator(seg: str, end: int) -> str:
+    """구간 뒤에 로마자 종료표를 적을지 판정(제33·35항)."""
+    rest = seg[end:]
+    if not rest.strip():
+        return "⠲"
+    if _ENG_NO_TERM_NUM:
+        # 제35항 — 로마자와 숫자가 이어 나올 때에는 종료표를 적지 않는다.
+        j = 0
+        while j < len(rest) and rest[j] == " ":
+            j += 1
+        if j < len(rest) and rest[j].isdigit():
+            return ""
+    if _ENG_ART33 and rest[0] in _ART33_PUNCT:
+        # 제33항 — 점형이 다른 부호(, : ; ―)가 로마자와 한글 사이면 종료표를 적지 않는다.
+        k = 1
+        while k < len(rest) and rest[k] == " ":
+            k += 1
+        if k < len(rest) and _is_hangul(rest[k]):
+            return ""
+    return "⠲"
+
 
 def _split_english(seg: str) -> str | None:
     r"""세그먼트 안의 영어 구간을 eng_braille(Grade 2)로, 나머지는 braillify로 점역.
@@ -1009,24 +1080,40 @@ def _split_english(seg: str) -> str | None:
     그래서 영어 구간만 이 경로로 분리한다 — 코퍼스 A/B에서 영어 구절 완전일치가
     7/561 → 168/481, 최장일치 40.3% → 75.4%로 올랐다(2026-07-19).
 
-    로마자표는 규정 제2항(⠴ … 종료표 ⠲)·제4항(전체가 외국어면 생략)을 따른다.
-    braillify의 기존 동작과 같은 판정이다 — 세그먼트에 한글이 섞였을 때만 붙인다.
+    로마자표는 규정 제2항(⠴ … 종료표 ⠲)·제4항(전체가 외국어면 생략)을 따른다 —
+    세그먼트에 한글이 섞였을 때만 붙인다(braillify의 기존 판정과 같다).
+
+    ★ 2026-07-27: 단위를 낱말 → **구간(span)** 으로 교체. 종전에는 라틴 런마다 ⠴…⠲를
+    감싸 `MP4 Player`가 ⠴MP⠲⠼⠙ ⠴Player⠲로 나갔는데, 제32항은 로마자표·종료표 사이를
+    통일영어점자로 적으라 하므로 사이에 낀 공백·숫자·영어 문장부호는 구간 **내부**다.
+    제35항(숫자가 이어지면 종료표 없음)·제33항(로마자와 한글 사이 `, : ; ―`는 종료표
+    없이 한글 점자)도 함께 반영한다. 규정 예시 12건 대조 = temp/x1_replay.py.
+
+    ※ 라틴 런 + 공백 + 한글(제29항 자리)의 종료표는 이 변경의 범위가 아니다 — 그대로 둔다.
 
     영어가 없으면 None을 돌려 호출부가 종전 braillify 경로를 그대로 쓰게 한다.
     """
-    if not _ENG_RUN_RE.search(seg):
+    runs = [m.span() for m in _ENG_RUN_RE.finditer(seg)]
+    if not runs:
         return None
     has_hangul = any(_is_hangul(c) for c in seg)
     out: list[str] = []
     last = 0
-    for m in _ENG_RUN_RE.finditer(seg):
-        pre = seg[last:m.start()]
-        if pre:
-            out.append(_braillify_korean(pre))
-        # 낱말 사이 공백은 점자 빈칸으로 — 한글 구간(braillify) 출력과 통일한다.
-        eng = eng_braille.translate(m.group()).replace(" ", "⠀")
-        out.append(f"⠴{eng}⠲" if has_hangul else eng)
-        last = m.end()
+    for span in _english_spans(seg, runs):
+        start, end = span[0][0], span[-1][1]
+        if start > last:
+            out.append(_braillify_korean(seg[last:start]))
+        body: list[str] = []
+        pos = start
+        for s, e in span:
+            if s > pos:
+                body.append(_span_gap(seg[pos:s]))
+            # 낱말 사이 공백은 점자 빈칸으로 — 한글 구간(braillify) 출력과 통일한다.
+            body.append(eng_braille.translate(seg[s:e]).replace(" ", "⠀"))
+            pos = e
+        core = "".join(body)
+        out.append(f"⠴{core}{_eng_terminator(seg, end)}" if has_hangul else core)
+        last = end
     if seg[last:]:
         out.append(_braillify_korean(seg[last:]))
     return "".join(out)
