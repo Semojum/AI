@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from html import unescape as _html_unescape
 from typing import Optional
 
 from app.ai.braille.nested_block import box_narrative
@@ -174,6 +175,23 @@ _GENERIC_CORNER_LABELS = {"구분"}
 _LEADER_DOTS_RE = re.compile(r"^\.{3,}$")
 
 
+def _cell_text(body: str) -> str:
+    """<td> 본문 → 셀 원문. 태그 제거 → **엔티티 해제** → 오독·구획선 정정.
+
+    ★ 엔티티 해제(html.unescape)가 없으면 마크업 이스케이프가 본문 글자로 새어 나간다.
+      MinerU가 셀 안의 부등호를 HTML 규약대로 `&gt;`/`&lt;`로 내는데, 그대로 점역하면
+      `A>C`가 `⠠⠁⠯⠛⠞⠰⠆⠠⠉`(= 문자열 "A&gt;C"를 한 글자씩 점역한 것)가 된다.
+      규정은 이 자리에 부등호 한 기호만 요구한다 —
+        한국 점자 규정 제45항 표: '보다 크다' `>` = 55 = ⠢⠢ / '보다 작다' `<` = 99 = ⠔⠔
+        (수학 점자 제4항 2·4도 같은 점형: `a55b`, `x99#j`)
+      즉 `&gt;` 5글자를 옮기는 것은 규정 이전에 원문에 없는 글자를 찍는 결함이다.
+      unescape는 태그 제거 **뒤에** 해야 한다 — 먼저 하면 `&lt;`가 `<`로 풀려
+      _HTML_TAG_RE에 태그로 잡아먹힌다.
+    """
+    return _strip_diagonal_rule(
+        _fix_decimal_comma(_html_unescape(_HTML_TAG_RE.sub("", body)).strip()))
+
+
 def _html_to_grid(html: str) -> list[list[str]]:
     """MinerU <table> HTML → 행렬(병합 셀 펼침). 내부 태그 제거(이미지 셀=빈칸).
 
@@ -190,8 +208,7 @@ def _html_to_grid(html: str) -> list[list[str]]:
             while (r, c) in pending:            # 위에서 내려온 rowspan 자리 먼저 채움
                 row.append(pending.pop((r, c)))
                 c += 1
-            text = _strip_diagonal_rule(
-                _fix_decimal_comma(_HTML_TAG_RE.sub("", body).strip()))
+            text = _cell_text(body)
             if _LEADER_DOTS_RE.match(text):
                 text = ""                        # 유도점 칸 — 값처럼 옮기지 않는다
             colspan, rowspan = _spans(attrs)
