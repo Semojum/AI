@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 
 _TABLE_PATH = pathlib.Path(__file__).parent / "symbol_table.json"
 
@@ -82,6 +83,30 @@ def _load_rule_ids() -> dict[str, str]:
 SYMBOL_RULE_IDS: dict[str, str] = _load_rule_ids()
 
 
+# 숨김표 래퍼 글리프 `_Xl` (⠸ + 점형 1칸 + ⠇). 제57항이 반복형을 정의하는 대상이다.
+_HIDDEN_WRAP_RE = re.compile(r"^⠸(.)⠇$")
+
+
+def _hidden_run_targets(
+    source_text: str, targets: list[tuple[str, str, str]]
+) -> list[tuple[str, str, str]]:
+    """제57항 반복형(⠸XⁿⓁ) 탐색 타깃 — 낱개 ⠸X⠇ 타깃만으로는 못 찾기 때문.
+
+    숨김표가 여러 개 붙으면 출력은 래퍼 하나로 합쳐진다(translator.merge_hidden_runs).
+    그러면 낱개 글리프 ⠸X⠇는 출력 어디에도 없어서, 이 목록에 반복형을 넣지 않으면
+    반복 숨김표의 rule_trail이 통째로 사라진다(rule_trail 필수 — 불변 규칙 2).
+    원문에 있는 개수까지만 후보를 만든다(source-gated 원칙 유지).
+    """
+    out: list[tuple[str, str, str]] = []
+    for symbol, glyph, rule_id in targets:
+        m = _HIDDEN_WRAP_RE.match(glyph)
+        if not m:
+            continue
+        for n in range(source_text.count(symbol), 1, -1):
+            out.append((symbol * n, "⠸" + m.group(1) * n + "⠇", rule_id))
+    return out
+
+
 def symbol_rule_spans(source_text: str, braille: str) -> list[tuple[int, int, str]]:
     """원본에 등장하는 특수기호의 출력 점자 좌표 → (start, end, rule_id) 목록.
 
@@ -95,6 +120,7 @@ def symbol_rule_spans(source_text: str, braille: str) -> list[tuple[int, int, st
         for symbol, rule_id in SYMBOL_RULE_IDS.items()
         if symbol in source_text and symbol in SYMBOL_TABLE
     ]
+    targets = _hidden_run_targets(source_text, targets) + targets
     targets.sort(key=lambda t: len(t[1]), reverse=True)  # 긴 글리프 우선
 
     consumed = [False] * len(braille)

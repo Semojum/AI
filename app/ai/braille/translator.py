@@ -1261,6 +1261,31 @@ def _restore_circled_black(text: str) -> str:
     return _LEGACY_CIRCLED_RE.sub(_rep, text)
 
 
+# ── 숨김표 반복 (제57항) ─────────────────────────────────────────────────────
+# 제57항: "숨김표가 여러 개 붙어 나올 때에는 _과 l 사이에 해당 숨김표의 점형을 묵자의
+# 개수만큼 적어 나타낸다." 규정 예시(한국점자규정 제5장 제13절, 원문 BRF 그대로):
+#     김○○ 씨    @o5_00l`,,o     → 래퍼 하나 안에 ⠴ 두 개  (⠸⠴⠴⠇)
+#     이 ×××야!   o`_xxxl>6       → ⠸⠭⠭⠭⠇
+#     △△도서관    _++liu,s@v3     → ⠸⠬⠬⠇
+# 우리는 글자마다 래퍼를 새로 씌워 ⠸⠴⠇⠸⠴⠇로 냈다(묵자 n글자에 3n셀 — 규정은 n+2셀).
+#
+# ★ 점자 출력에서 합친다(원문에서가 아니라). 규정이 조건으로 삼는 "붙어 나온다"는
+#   묵자 기준인데, 추출이 그 사이에 잡음을 끼워 넣는 일이 있다(사회문화 p055 원문
+#   `(가) ○`○ 유치원` — MinerU 백틱). 그 잡음은 braillify를 지나며 사라지므로 원문
+#   단계에서 런을 재면 같은 숨김표 쌍을 놓친다. 출력에서 실제로 인접한 것만 합친다.
+# ★ 래퍼가 완전히 같은 것끼리만 합친다 — 서로 다른 숨김표가 섞인 배열(○△)은 제57항이
+#   말하는 "해당 숨김표"가 하나로 정해지지 않으므로 건드리지 않는다.
+# 글자 점형 자체는 바꾸지 않는다(gold가 규정 표와 다른 글리프를 쓰는 사례가 있으나
+# 그건 별건 — 이 함수는 반복 표기 방식만 고친다).
+_HIDDEN_RUN_RE = re.compile(r"(⠸(.)⠇)(?:\1)+")
+
+
+def merge_hidden_runs(braille: str) -> str:
+    """이어진 같은 숨김표 래퍼 ⠸X⠇⠸X⠇… → ⠸XX…⠇ (제57항)."""
+    return _HIDDEN_RUN_RE.sub(
+        lambda m: "⠸" + m.group(2) * (len(m.group(0)) // 3) + "⠇", braille)
+
+
 def translate_tagged_text(text: str) -> str:
     """<!수식> 태그가 포함된 텍스트를 점자 BRF로 변환."""
     # 레거시 심볼 폰트 복원은 **수식 라우팅보다 먼저** 해야 한다. 뒤에 두면 "x¤ +1>0"이
@@ -1279,8 +1304,8 @@ def translate_tagged_text(text: str) -> str:
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     text = sanitize_for_braille(text)        # PUA·제어문자 정화(요소 전체 소실 방지)
     if _BRAILLIFY_AVAILABLE:
-        return _translate_with_braillify(text)
-    return _translate_fallback(text)
+        return merge_hidden_runs(_translate_with_braillify(text))
+    return merge_hidden_runs(_translate_fallback(text))
 
 
 # ── 음절 단위 줄바꿈 지점 산출 (BBPG-1.2.1) ──────────────────────────────────
