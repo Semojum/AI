@@ -12,7 +12,9 @@ status 결정 규칙 (plan V2_기술명세서 §4-1):
 C5(수표 누락)는 배포 전 test_rule_engine.py 전수 통과가 1차 방어선, 여기 런타임
 스캐너가 2차 방어선: opt 텍스트에 아라비아 숫자가 있는데 해당 요소 점자에 수표(⠼)가
 하나도 없으면 C5. 현 엔진은 모든 숫자 경로(수식 지수·분수·소수·연도 포함)에 수표를
-넣으므로 미검출 = 회귀다. 플래그 신뢰성(30초 케이스: COMPLETED를 믿고 스킴)의 전제라
+넣으므로 미검출 = 회귀다. ⚠ **⠼ 유무만 보면 안 된다** — 영어 약자 ble이 같은 점형이라
+`possible`(⠏⠕⠎⠎⠊⠼) 한 낱말이 스캐너를 대신 만족시켜 진짜 누락을 가린다.
+수표인지 약자인지는 number_sign.has_number_sign이 가른다(2026-07-27). 플래그 신뢰성(30초 케이스: COMPLETED를 믿고 스킴)의 전제라
 조용히 COMPLETED로 나가면 안 된다.
 C7(타임아웃)은 pipeline.run()의 asyncio.wait_for가 직접 BLOCKED 응답을 만들므로
 이 검사기는 C1~C6을 판정한다.
@@ -22,6 +24,7 @@ from __future__ import annotations
 import re
 from typing import Iterable, Optional
 
+from app.ai.braille.number_sign import has_number_sign
 from app.schemas.content import BrailleOutput, ExtractedContent, LLMOutput
 from app.schemas.layout import LayoutResult
 from app.schemas.quality import CriticalError, QualityReport, ReviewFlag
@@ -38,7 +41,6 @@ R2_SUBTYPE_CONFIDENCE_THRESHOLD = 0.75
 
 # C5: 수표(⠼) 런타임 스캐너 — 아라비아 숫자와 수표 기호
 _C5_DIGIT_RE = re.compile(r"[0-9]")
-_NUMBER_INDICATOR = "⠼"
 
 # opt/점역 placeholder → Critical 유형 (구체 패턴을 먼저 검사한다 — "[처리 불가"가 가장 광범위)
 # 실패 문자열이 본문에 남으면 그대로 점자로 찍혀 학생에게 나간다 → 반드시 Critical로 잡는다.
@@ -127,7 +129,9 @@ class QualityChecker:
             b = braille_by_id.get(eid)
             if b is None or not any(ln.strip() for ln in b.braille_lines):
                 continue  # 점역 출력 자체가 없으면 상위 실패 신호(C1/C2)의 소관
-            if _NUMBER_INDICATOR not in "".join(b.braille_lines):
+            # ⠼가 있기만 하면 통과시키면 안 된다 — 영어 약자 ble이 같은 점형이라
+            # `possible`의 ⠼가 스캐너를 대신 만족시켜 진짜 수표 누락을 가린다(number_sign.py).
+            if not has_number_sign(o.corrected_text or "", "".join(b.braille_lines)):
                 criticals.append(CriticalError(
                     type="C5", element_id=eid,
                     message="수표(⠼) 누락 — 원문에 아라비아 숫자가 있으나 요소 점자에 수표 없음",
