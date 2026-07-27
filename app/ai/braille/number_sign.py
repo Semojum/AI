@@ -17,8 +17,7 @@ docstring에 명시한다. 반대로 ble의 ⠼ 뒤에는 알파벳 셀·문장�
       마침표로 끝나는 -ble 낱말이 전부 수표로 오인된다(코퍼스에서 가장 흔한 형태다).
   (2) 원문자는 원문에 ①로 들어오지 아라비아 숫자로 들어오지 않아, C5 게이트([0-9])가
       애초에 열리지 않는다. LaTeX `\\textcircled{N}`로 들어오는 자리만 이론상 걸리는데
-      코퍼스 전체에서 dev 2 · val 4요소이고 전부 본문에 다른 숫자를 함께 갖는다
-      (`V2/temp/i2_textcircled.py`로 확인).
+      코퍼스 전체에서 dev 2 · val 4요소다(`V2/temp/i2_exposure.py`로 재현).
 """
 from __future__ import annotations
 
