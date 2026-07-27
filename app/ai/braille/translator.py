@@ -205,6 +205,7 @@ _ALPHA_RUN_RE    = re.compile(r"[A-Za-z]+")
 _BRAILLE_RE      = re.compile(r"[⠀-⣿]+")
 _DIGIT_ALPHA_RE  = re.compile(r"(?<=\d)(?=[A-Za-z])")   # 숫자 뒤 바로 오는 알파벳
 _HANGUL_SYL_RE   = re.compile(r"[가-힣]")        # 완성형 한글 음절
+_LATIN_CHAR_RE   = re.compile(r"[A-Za-z]")       # 로마자 낱글자(줄 문맥 비율 계산용)
 
 
 def _syllable_to_braille(syl: str) -> str:
@@ -265,7 +266,61 @@ def _braillify(text: str) -> str:
     return _braillify_fallback(text)
 
 
-def _emit_mixed(text: str, result: list[str]) -> None:
+# ── 로마자표 ⠴ 줄 문맥 (제29항) ───────────────────────────────────────────────
+# 「한국 점자 규정」제29항(원문 1495행): "국어 문장 안에 로마자가 나올 때에는 그 앞에
+# 로마자표 ⠴을 적고 그 뒤에 로마자 종료표 ⠲을 적는다. **이때 로마자가 둘 이상 연이어
+# 나오면 첫 로마자 앞에 로마자표를 적고 마지막 로마자 뒤에 로마자 종료표를 적는다.**"
+# 제29항 [다만](1506행): "문단 전체가 로마자일 때에는 로마자표와 로마자 종료표를 생략할
+# 수 있다."
+#
+# ★ 왜 세그먼트가 아니라 줄로 판정하나(뿌리 A):
+#   `[A]는 무엇인가`는 substitute_symbols가 여는 대괄호를 먼저 점자 셀로 바꾸므로
+#   _emit_mixed가 거기서 텍스트를 쪼갠다. _split_english는 잘린 조각 "A"만 보고
+#   "한글 없음"으로 판정해 ⠴를 빠뜨린다 — 그런데 제34항(1708행)은 괄호·따옴표에 묶인
+#   로마자에서 **없애는 것은 종료표 ⠲뿐이고 로마자표 ⠴는 여는 부호 안쪽에 적는다**:
+#     링컨(Lincoln)은 = `8'0,l9coln,0z`  ·  "Open"이라고 = `80,op50o`
+#     'k, t, p'로     = `,80k1`;t1`;p0'`                       (원문 1710~1717행)
+#   그래서 판정 문맥을 줄 전체로 넓힌다. 종료표는 붙이지 않는다(제34항).
+#
+# ★ 왜 한글이 정말 없는 요소는 그대로 두나(뿌리 B — 건드리지 말 것):
+#   제29항 [다만]이 근거이고 gold도 그렇게 적는다. 정답 코퍼스 국소 대조에서
+#   한글 없는 줄의 로마자 구간은 dev 767건 중 478건(96%)·val 5,230건 중 3,529건(95%)이
+#   ⠴ 없는 현행 출력과 일치했다(재현: V2/temp/s2_gate.py). 여기에 ⠴를 붙이면 그 5천
+#   자리가 오염된다.
+#
+# ★ 문턱값 0.2의 근거: 줄의 한글 비율별 gold 국소 대조(같은 스크립트).
+#     한글 <20%  : gold가 현행(⠴ 없음) 편 dev 7:4 · val 41:23  → 붙이면 손해
+#     한글 20~50%: gold가 ⠴ 편 dev 3:1 · val 36:11
+#     한글 ≥50%  : gold가 ⠴ 편 dev 42:1 · val 187:26
+#   한글이 거의 없는 줄은 사실상 외국어 지문이라 제29항 [다만]에 가깝다.
+_ROMAN_LINE_HANGUL_MIN = 0.2
+
+
+class _RomanCtx:
+    """로마자표 ⠴ 판정용 줄 문맥. **전역 상태 금지** — 인자로만 흘린다.
+
+    전역으로 두면 _break_offsets가 translate_tagged_text(src[:sp])로 접두를 수천 번
+    재점역하는 동안 문맥이 덮여 같은 줄이 호출 순서에 따라 다르게 나온다.
+    """
+
+    __slots__ = ("has_hangul", "hangul_ratio", "opened")
+
+    def __init__(self, text: str) -> None:
+        han = len(_HANGUL_SYL_RE.findall(text))
+        lat = len(_LATIN_CHAR_RE.findall(text))
+        self.has_hangul = han > 0
+        self.hangul_ratio = han / (han + lat) if (han + lat) else 0.0
+        # 이 줄에서 로마자 구간이 이미 열렸는가(제29항 후단 — 첫 로마자 앞에만 ⠴).
+        self.opened = False
+
+    def wants_roman(self) -> bool:
+        """세그에 한글이 없어도 줄 문맥상 ⠴를 새로 열어야 하는가."""
+        return (self.has_hangul
+                and self.hangul_ratio >= _ROMAN_LINE_HANGUL_MIN
+                and not self.opened)
+
+
+def _emit_mixed(text: str, result: list[str], ctx: "_RomanCtx | None" = None) -> None:
     """substitute_symbols() 출력을 점자 Unicode 구간과 일반 텍스트 구간으로 분리.
 
     이미 변환된 점자 Unicode(U+2800-U+28FF)는 braillify를 거치지 않고 그대로 pass.
@@ -273,15 +328,22 @@ def _emit_mixed(text: str, result: list[str]) -> None:
 
     braillify 2.0.0은 \x00, PUA(U+E000+) 등 제어문자를 거부하므로
     플레이스홀더 방식 대신 이 세그먼트 분리 방식을 사용한다.
+
+    ctx는 로마자표 줄 문맥(_RomanCtx). None이면 세그먼트 국소 판정(종전 동작).
     """
     def _seg(seg: str) -> str:
-        out = _safe_to_unicode(seg)
+        out = _safe_to_unicode(seg, ctx=ctx)
         # 붙임표(⠤) 뒤 순수 로마자 세그: 세그 분리로 한글 문맥이 사라져 braillify가
         # 로마자표를 못 붙인다. 정답 관행은 여는 ⠴만·종료표 생략(-⠴UN- , 사회문화
         # p100·108 실측, 교차 59건). 직전 결과가 ⠤로 끝날 때만 ⠴를 접두한다.
+        # ★ 줄 문맥 경로가 이미 ⠴를 붙였으면 여기서 또 붙이지 않는다 — 이중 ⠴는
+        #   회귀다(억제 없이 재면 val NET −27, 억제하면 +52. 재현 V2/temp/s2_ab3.py).
         if (result and result[-1].endswith("⠤")
-                and seg.strip() and all(c.isalpha() and c.isascii() for c in seg.strip())):
+                and seg.strip() and all(c.isalpha() and c.isascii() for c in seg.strip())
+                and not out.startswith("⠴")):
             out = "⠴" + out
+            if ctx is not None:
+                ctx.opened = True
         return out
 
     last = 0
@@ -871,6 +933,10 @@ def _translate_with_braillify(text: str) -> str:
     chunks: list[tuple[str, str, bool, bool]] = []
     # 국어 문장 안일 때만 인라인 첨자 관행 적용(제12항 2·3호 전제)
     inline_sub = _has_hangul_outside_math(parts)
+    # 로마자표 ⠴ 줄 문맥(제29항) — 수식 밖 본문만, 태그명 <!수식>은 빼고 센다.
+    # 세그먼트가 아니라 이 한 줄이 판정 단위이고, 텍스트 세그 전부가 같은 ctx를 쓴다.
+    roman_ctx = _RomanCtx("".join(_RESIDUAL_BANG_TAG_RE.sub("", parts[i])
+                                 for i in range(0, len(parts), 2)))
 
     for i, part in enumerate(parts):
         if i % 2 == 0:  # 일반 텍스트 세그먼트
@@ -892,7 +958,7 @@ def _translate_with_braillify(text: str) -> str:
                 preprocessed = _preprocess_units(_apply_book_style(clean))
                 substituted = substitute_symbols(preprocessed)
                 text_result: list[str] = []
-                _emit_mixed(substituted, text_result)
+                _emit_mixed(substituted, text_result, roman_ctx)
                 chunks.append(("t", _collapse_spaces("".join(text_result)),
                                lead_ws, trail_ws))
             else:
@@ -1163,7 +1229,7 @@ def _eng_terminator(seg: str, end: int) -> str:
     return "⠲"
 
 
-def _split_english(seg: str) -> str | None:
+def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
     r"""세그먼트 안의 영어 구간을 eng_braille(Grade 2)로, 나머지는 braillify로 점역.
 
     규정 [부록 1] 제1항이 외국어를 해당 국가 규정에 위임하므로 영어 약자는 영어 점자
@@ -1182,18 +1248,32 @@ def _split_english(seg: str) -> str | None:
 
     ※ 라틴 런 + 공백 + 한글(제29항 자리)의 종료표는 이 변경의 범위가 아니다 — 그대로 둔다.
 
+    ★ 2026-07-28: 세그에 한글이 없어도 **줄**에 한글이 있으면 ⠴를 연다(ctx, 뿌리 A).
+    여는 부호가 미리 점자 셀이 되면 세그가 쪼개져 문맥이 사라지기 때문이다 —
+    근거·문턱값·손대지 않는 자리(뿌리 B)는 _RomanCtx 위 주석에 적었다. 이 경로는
+    **종료표 ⠲를 붙이지 않는다**: 제34항(원문 1708행)이 괄호·따옴표에 묶인 로마자에
+    종료표를 적지 말라고 하고, 이 자리가 정확히 그 자리다.
+
     영어가 없으면 None을 돌려 호출부가 종전 braillify 경로를 그대로 쓰게 한다.
     """
     runs = [m.span() for m in _ENG_RUN_RE.finditer(seg)]
     if not runs:
+        # 한글이 끼면 로마자 구간은 닫힌 것으로 본다(제29항 후단 '연이어').
+        if ctx is not None and _HANGUL_SYL_RE.search(seg):
+            ctx.opened = False
         return None
+    if ctx is None:
+        ctx = _RomanCtx(seg)          # 문맥 없이 직접 호출된 경우 = 세그 국소 판정
     has_hangul = any(_is_hangul(c) for c in seg)
     out: list[str] = []
     last = 0
     for span in _english_spans(seg, runs):
         start, end = span[0][0], span[-1][1]
         if start > last:
-            out.append(_braillify_korean(seg[last:start]))
+            pre = seg[last:start]
+            if _HANGUL_SYL_RE.search(pre):
+                ctx.opened = False
+            out.append(_braillify_korean(pre))
         body: list[str] = []
         pos = start
         for s, e in span:
@@ -1203,9 +1283,20 @@ def _split_english(seg: str) -> str | None:
             body.append(eng_braille.translate(seg[s:e]).replace(" ", "⠀"))
             pos = e
         core = "".join(body)
-        out.append(f"⠴{core}{_eng_terminator(seg, end)}" if has_hangul else core)
+        if has_hangul:
+            # 종전 경로 — 세그 안에 한글이 있으니 제29항 그대로 ⠴…⠲.
+            term = _eng_terminator(seg, end)
+            out.append(f"⠴{core}{term}")
+            ctx.opened = term == ""    # 종료표를 안 적었으면 구간은 계속 열려 있다
+        elif ctx.wants_roman():
+            out.append("⠴" + core)     # 제34항 — 종료표는 적지 않는다
+            ctx.opened = True
+        else:
+            out.append(core)
         last = end
     if seg[last:]:
+        if _HANGUL_SYL_RE.search(seg[last:]):
+            ctx.opened = False
         out.append(_braillify_korean(seg[last:]))
     return "".join(out)
 
@@ -1215,7 +1306,8 @@ def _braillify_korean(seg: str) -> str:
     return _safe_to_unicode(seg, _split_eng=False)
 
 
-def _safe_to_unicode(seg: str, _split_eng: bool = True) -> str:
+def _safe_to_unicode(seg: str, _split_eng: bool = True,
+                     ctx: "_RomanCtx | None" = None) -> str:
     """braillify 변환 + 최후 폴백. 정규화 후에도 남은 미지 글자가 줄 전체를 깨지 않도록,
     세그먼트가 실패하면 글자 단위로 변환하고 변환 불가 글자만 공백으로 대체한다.
 
@@ -1224,7 +1316,7 @@ def _safe_to_unicode(seg: str, _split_eng: bool = True) -> str:
       가장자리 공백을 점자 빈칸으로 보존한다.
     """
     if _split_eng and _BRAILLIFY_AVAILABLE:
-        split = _split_english(seg)
+        split = _split_english(seg, ctx)
         if split is not None:
             return split
     core = seg.strip(" ")
