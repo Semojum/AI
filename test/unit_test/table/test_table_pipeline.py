@@ -375,3 +375,76 @@ class TestTableRegulationSwitch:
         wide36 = ("자율 신경 | 침 분비 | 폐의 기관지 | 동공\n"
                   "A | 촉진 | 수축 | 축소\nB | 억제 | 이완 | 확대")
         assert self._unfold(wide36, "book") != self._unfold(wide36, "regulation")
+
+
+class TestUnfoldEntityAxisIsRow:
+    """풀어 적는 표의 개체는 **행**이다 — 자료지침 §3.3.1(2026-07-27 정정).
+
+    조항: §3.3.1(3) "행 제목은 3칸에 적고, 열 항목은 열 제목 순서에 따라 두 칸씩 띄어
+    적는다" · (4) "줄바꿈: 행 제목 단위로 줄을 바꿔 적는다". 예 3-7도 열 제목을 맨 위에
+    한 번만 적고 그 아래를 행(프랑스·미국·독일…)마다 끊는다.
+
+    ★ 이 클래스가 검사하는 것은 **배치 순서**뿐이다(어느 셀이 블록 머리가 되는가).
+      점형 변환의 정확성은 braille/ 쪽 테스트 소관이라 여기서는 _translate 로 바늘만
+      만들어 위치를 찾는다 — 기대 점형을 만들어 비교하는 순환 검증이 아니다.
+
+    회귀 대상: ①(원본 정렬 유지)도 (2)(전치)도 발동하지 않는 표가 전에는 원본 격자
+    그대로 **열마다** 블록을 세웠다. s4 라벨 세트(dev+val 149건) 기준 그 경로 102건의
+    정답 개체축은 행 67 : 열 35였고 축 정확도는 34.3%였다.
+    """
+
+    #  R(4) > C(3) → §3.1.1(2) 전치 미발동. 셀이 길어 §3.1.1(1)① 행 단위도 불가.
+    _TALL = ("구분 | 의미 | 특징\n"
+             "피라미드형 계층 구조 | 하층의 구성 비율이 가장 높고 상위 계층으로 갈수록 낮아진다"
+             " | 봉건적 신분제 사회의 계층 구조\n"
+             "다이아몬드형 계층 구조 | 중층의 구성 비율이 가장 높고 하층과 상층이 낮은 구조"
+             " | 고도 산업 사회 복지 사회의 계층 구조\n"
+             "모래시계형 계층 구조 | 중층의 몰락으로 소수의 상층과 다수의 하층이 존재한다"
+             " | 성장과 경쟁만을 강조하는 사회의 양극화된 계층 구조")
+
+    def _needle(self, s: str) -> str:
+        from app.ai.braille.table_braille import _translate
+        return _translate(s)
+
+    def test_fallback_path_is_not_transposed_and_not_rowwise(self) -> None:
+        """전제 확인 — 이 표는 ①·(2) 둘 다 불발해 전개 폴백으로 간다."""
+        from app.ai.braille.table_braille import _rowwise_ok, _should_transpose
+        rows = [[c.strip() for c in ln.split("|")] for ln in self._TALL.splitlines()]
+        assert not _rowwise_ok(rows), "①이 발동하면 이 테스트의 전제가 깨진다"
+        assert not _should_transpose(rows, len(rows[0])), "(2)가 발동하면 전제가 깨진다"
+
+    def test_block_heads_are_row_headings(self) -> None:
+        """블록 머리(5칸 = 앞 빈칸 4)는 행 제목이어야 한다 — §3.3.1(4)."""
+        from app.ai.braille.table_braille import _render_unfold
+        heads = [ln for ln in _render_unfold(self._TALL)
+                 if ln.startswith("    ") and ln.strip()]
+        assert len(heads) == 3, f"본문 행 3개마다 블록 하나여야 한다 — 실제 {len(heads)}개"
+        for want in ("피라미드형 계층 구조", "다이아몬드형 계층 구조", "모래시계형 계층 구조"):
+            assert any(self._needle(want) in h for h in heads), f"행 제목 {want!r}이 블록 머리에 없다"
+        for never in ("의미", "특징"):
+            assert not any(self._needle(never) in h for h in heads), \
+                f"열 제목 {never!r}이 블록 머리로 올라갔다 — 개체축이 열로 되돌아갔다"
+
+    def test_row_heading_block_order_follows_original_rows(self) -> None:
+        """블록 순서 = 원본 행 순서(§3.3.1(4) '행 제목 단위')."""
+        from app.ai.braille.table_braille import _render_unfold
+        out = "\n".join(_render_unfold(self._TALL))
+        pos = [out.find(self._needle(s)) for s in
+               ("피라미드형 계층 구조", "다이아몬드형 계층 구조", "모래시계형 계층 구조")]
+        assert all(p >= 0 for p in pos) and pos == sorted(pos), f"행 블록 순서가 어긋났다: {pos}"
+
+    def test_fallback_emits_no_transpose_note(self) -> None:
+        """폴백은 §3.1.1(2)의 행↔열 교환이 아니다 → 점역자 주를 붙이지 않는다."""
+        from app.ai.braille.table_braille import _render_unfold
+        assert not any("⠠⠄" in ln for ln in _render_unfold(self._TALL))
+
+    def test_rowwise_and_transpose_paths_unchanged(self) -> None:
+        """①·(2) 경로는 이번 변경 대상이 아니다(s4 기준 정확도 93%·80%)."""
+        from app.ai.braille.table_braille import _render_unfold, _render_rowwise
+        narrow = "A | B | C\n1 | 2 | 3\n4 | 5 | 6"          # ① 원본 정렬 유지
+        rows = [[c.strip() for c in ln.split("|")] for ln in narrow.splitlines()]
+        assert _render_unfold(narrow) == _render_rowwise(rows, [3, 3, 3])
+        wide = ("구분 | 프랑스 | 미국 | 독일 | 일본 | 대한민국\n"   # (2) 전치 + 주
+                "고령사회 | 115 | 71 | 40 | 24 | 18\n"
+                "초고령 | 40 | 16 | 36 | 11 | 8")
+        assert "⠠⠄" in _render_unfold(wide)[0]
