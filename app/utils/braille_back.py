@@ -174,8 +174,14 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
     """로마자 런이면 (텍스트, 다음위치), 아니면 None.
 
     시작: 로마자표 ⠴ , 또는 대문자 단어표 ⠠⠠ 다음에 알파벳(문장 중 영문, 예 TV).
-    대문자: ⠠⠠(단어 전체)·⠠(한 글자). 종료: 공백·수표 ⠼·종료표 ⠲·비로마자 셀.
+    대문자: ⠠⠠(단어 전체)·⠠(한 글자). 종료: 공백·종료표 ⠲·비로마자 셀.
     (단위 ℃=⠴⠙… 는 _COMBINED 긴-셀 매칭이 먼저 잡으므로 여기 도달하지 않는다.)
+
+    ⚠ **⠼는 런 종료가 아니다** — 수표(제40항)이자 영어 약자 ble(EBAE)이라 두 뜻이 겹친다.
+    가르는 기준은 **뒤 셀**이다: 뒤가 숫자 셀이면 수표(제35항 A4=⠴⠠⠁⠼⠙·MP3), 아니면 ble.
+    코퍼스 실측(`V2/temp/i2_romanctx.py`, 2026-07-27): 로마자 런 안 ⠼ 중 뒤가 숫자 셀인
+    것은 val 61/66 · dev 12/12이고 전부 V1·Ca2·A4형 수표, 뒤가 비숫자인 val 5는 전부 ble.
+    '뒤가 숫자 셀인 ble'(-bled·-bler류)은 이 실측에서 로마자 런 안에 0건이라 수표로 둔다.
     """
     n = len(s)
     if s[i] == _ROMAN_START:                       # ⠴ 로마자표
@@ -189,8 +195,14 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
     caps_word = False
     while j < n:
         c = s[j]
-        if c in (_SPACE_CELL, " ", _NUMBER_SIGN):  # 공백·수표 → 런 종료(소비 안 함)
+        if c in (_SPACE_CELL, " "):                # 공백 → 런 종료(소비 안 함)
             break
+        if c == _NUMBER_SIGN:                      # 수표 또는 영어 약자 ble (같은 점형)
+            if j + 1 < n and s[j + 1] in _DIGIT_REV:
+                break                              # 뒤가 숫자 셀 → 수표(소비 안 함)
+            out.append("ble")
+            j += 1
+            continue
         if c == _ROMAN_END:                        # 종료표 ⠲ → 소비하고 종료
             j += 1
             break
