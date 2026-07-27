@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 
 from app.ai.braille.isolation import safe_translate
+from app.ai.braille.number_sign import number_sign_indices
 from app.ai.braille.regulations import make_rule, make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import (
@@ -22,7 +23,6 @@ from app.schemas.content import BoxBorder, BrailleOutput, LLMOutput, RuleApplica
 _TAG_TOKEN_RE = re.compile(r"<!(/?)([^>]+)>")
 # 문장 부호(원본 기준) — 있으면 문장부호 규정(KBR-6.13.49)을 블록 규정으로 표시.
 _PUNCT_RE = re.compile(r"[.?!,;:…·•（）()\[\]{}「」『』“”‘’\"'—~]")
-_NUM_INDICATOR = "⠼"   # 수표(kor_math_rules._NUMBER_INDICATOR와 동일)
 
 
 def content_rules(source: str, lines: list[str]) -> list[RuleApplication]:
@@ -30,7 +30,8 @@ def content_rules(source: str, lines: list[str]) -> list[RuleApplication]:
 
     포괄 규칙(KBR-0.1)·조판 규칙은 정책상 제외하고(태민 2026-06-01), 점역사가 규정으로
     확인할 실제 변환만 기록한다. FE 규정 패널이 평문에서도 비지 않도록 하는 핵심:
-      - 수표(⠼): 원본에 아라비아 숫자가 있으면 출력 점자의 ⠼ 위치를 정밀 span으로(KBR-5.11.40).
+      - 수표(⠼): 원본에 아라비아 숫자가 있으면 출력 점자의 **수표 자리** ⠼를 정밀 span으로
+        (KBR-5.11.40). 영어 약자 ble이 만든 같은 점형은 number_sign이 걸러 낸다.
       - 문장부호: 원본에 문장부호가 있으면 블록 규정(line_no=-1)으로(KBR-6.13.49).
     표 경로(table_braille._base_trail)도 이 함수를 공용으로 쓴다 — text/table 비대칭 금지.
     """
@@ -38,10 +39,10 @@ def content_rules(source: str, lines: list[str]) -> list[RuleApplication]:
     joined = "\n".join(lines)
     rules: list[RuleApplication] = []
     if any(ch.isdigit() for ch in clean):   # 수표는 원본에 숫자가 있을 때만(오탐 방지)
-        i = joined.find(_NUM_INDICATOR)
-        while i != -1:
+        # ⠼는 영어 약자 ble과 같은 점형이라(possible=⠏⠕⠎⠎⠊⠼) 위치를 걸러 낸다 —
+        # 안 그러면 영어 낱말 속 셀이 수표 규정으로 표시된다(number_sign.py).
+        for i in number_sign_indices(joined):
             rules.append(make_rule_at("KBR-5.11.40", lines, i, i + 1, tag="number_sign"))
-            i = joined.find(_NUM_INDICATOR, i + 1)
     if _PUNCT_RE.search(clean):
         rules.append(make_rule("KBR-6.13.49", tag="punctuation"))
     return rules
