@@ -11,6 +11,18 @@ letter-group 약자(th·ed·st·er·ow·en·in·ch·gh·be)만 구현돼 단어 
 수식을 kor_math_rules가 소유하듯 영어는 이 모듈이 소유한다 — translator는 구간을 넘기고
 결과만 받는다.
 
+**셀 충돌 규칙**: 이 파일의 표들은 같은 점형을 여러 항목이 쓰는 일이 정상이다 — 알파벳
+↔ 단독 단어 약자(⠃=b/but), 강약자 ↔ 단독 단어 약자(⠡=ch/child), 아래칸 약자 ↔ 첫머리
+음절 약자(⠆=bb/be)는 **위치·단독 여부로 갈리므로** 영어 점자 표준 그대로다. 반면
+**같은 dict·같은 위치 계층에서 셀이 겹치면 오류다** — ble/gg가 둘 다 ⠶였던 것이 그 예다
+(2026-07-27 정정, 전수 점검 스크립트 `V2/temp/i2_cellaudit.py`).
+
+**ble = 3456점(⠼) 근거**: EBAE(구 영어 점자)에서 ble은 3456점이다 — UEB 해설이
+"the former 'ble' contraction, dots 3456, is defined as a prefix in UEB"라고 명시한다
+(duxburysystems.com/js-adapting_UEB.asp). UEB는 이 약자를 폐지했으나 이 표는 ation·ally와
+같은 이유로 **EBAE 관행을 따른다**(정답 코퍼스가 EBAE형이다). 코퍼스 실측도 같은 방향:
+-ble 낱말의 gold 점형은 ⠼형 133건 : ⠶형 0건(val 116:0 · dev 17:0).
+
 **적용 순서**(영어 점자 표준의 우선순위):
   1. 단독 단어 약자(alone)      — 앞뒤가 공백/문장부호일 때만
   2. 단축형(short form)          — 단어 전체가 일치할 때만
@@ -21,6 +33,7 @@ letter-group 약자(th·ed·st·er·ow·en·in·ch·gh·be)만 구현돼 단어 
 from __future__ import annotations
 
 import re
+from typing import Iterator
 
 _CAPITAL = "⠠"          # 대문자 기호표 (규정 부록1 영어 절)
 
@@ -36,7 +49,9 @@ STRONG_GROUPS: dict[str, str] = {
     "and": "⠯", "for": "⠿", "of": "⠷", "the": "⠮", "with": "⠾",
     "ch": "⠡", "gh": "⠣", "sh": "⠩", "th": "⠹", "wh": "⠱",
     "ed": "⠫", "er": "⠻", "ou": "⠳", "ow": "⠪",
-    "st": "⠌", "ing": "⠬", "ar": "⠜", "ble": "⠶",
+    # ble = 3456점(⠼). 2356점(⠶)은 gg 자리라 같은 dict 안에서 셀이 겹쳤었다(~2026-07-27).
+    # ⠼는 한글 점자에서 수표(제40항)와 같은 점형이다 — 두 뜻을 가르는 판정은 number_sign.py.
+    "st": "⠌", "ing": "⠬", "ar": "⠜", "ble": "⠼",
     "bb": "⠆", "cc": "⠒", "dd": "⠲", "ff": "⠖", "gg": "⠶",
     "in": "⠔", "en": "⠢",
     "ea": "⠂",
@@ -114,6 +129,14 @@ SHORT_FORMS: dict[str, str] = {
 }
 
 _WORD_RE = re.compile(r"[A-Za-z']+")
+
+
+def iter_words(text: str) -> Iterator[str]:
+    """text 안의 영어 낱말 토큰 — 이 모듈이 약자를 적용하는 단위 그대로.
+
+    number_sign.py가 '영어 약자가 만든 ⠼'를 세는 데 쓴다(수표와 같은 점형이라 구분 필요).
+    """
+    return (m.group() for m in _WORD_RE.finditer(text))
 
 
 def _apply_groups(word: str) -> str:
