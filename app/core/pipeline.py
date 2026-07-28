@@ -1094,6 +1094,27 @@ def _join_lines(lines: list[str]) -> list[str]:
     return ["\n".join(lines)] if lines else []
 
 
+def _contents_array(bo) -> list[str]:
+    """BrailleOutput → `contents` 직렬화(**항목 하나 = 초안 하나**).
+
+    BE 협의 원설계(2026-05 proto)이자 태민 확정(2026-07-28):
+      · 시각자료(그림·표·차트·만화·도표) → 4안이 **순서대로** 4항목
+        (그림류 0생략·1짧은제목·2개조식·3줄글 / 표 0풀어쓰기·1격자·2전치·3선형)
+      · 대체텍스트가 없는 블록(본문·수식) → **1항목**
+    본문으로 쓸 것은 `selected_idx`가 가리킨다 — `contents[selected_idx]`가 기본 렌더다.
+    초안 **순서는 정규 순서를 유지**하고 재배열하지 않는다(라벨·근거가 순서에 묶여 있다).
+
+    각 항목 안의 줄 구분은 지금은 `\\n`이다. M1(조판을 FE로 이관)이 적용되면 파이프라인이
+    32칸 줄바꿈을 하지 않으므로 **항목 하나가 줄바꿈 없는 연속 점자**가 된다.
+    """
+    if bo is None:
+        return []
+    if getattr(bo, "drafts", None):
+        return [_join_lines(d.braille_lines)[0] if d.braille_lines else ""
+                for d in bo.drafts]
+    return _join_lines(bo.braille_lines)
+
+
 def _build_response(
     task: PageTask,
     page_id: str,
@@ -1206,9 +1227,8 @@ def _build_response(
                     ))
                 ),
                 "render_mode": o.render_mode,
-                "contents": _join_lines(
-                    braille_by_id[o.element_id].braille_lines
-                    if o.element_id in braille_by_id else []
+                "contents": _contents_array(
+                    braille_by_id.get(o.element_id)
                 ),
                 "rule_trail": [
                     r.model_dump()
@@ -1224,9 +1244,9 @@ def _build_response(
                 ),
                 "drafts": [
                     {
+                        # 점자는 상위 contents[i]에 있다(중복 전송 금지). 여기는 메타뿐.
                         "text": d.text,
                         "label": d.label,
-                        "contents": _join_lines(d.braille_lines),
                     }
                     for d in (
                         braille_by_id[o.element_id].drafts

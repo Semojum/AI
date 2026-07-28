@@ -78,14 +78,13 @@ def _dict_to_text_element(d: dict):
         trail.col_start = rt.get("col_start", 0)
         trail.col_end = rt.get("col_end", 0)
         trail.tag = rt.get("tag", "")
-    # 복수 초안 (단계 4 T4-2) — proto Draft/TextElement.drafts 필요(build.sh 재생성 후 동작)
+    # 초안 메타(라벨·한글 원문). **점자는 contents[i]에 이미 실려 있다**(2026-07-28) —
+    # 그래서 이 필드를 모르는 구 스텁도 4안 점자는 정상 수신한다. drafts는 contents와 1:1.
     elem.selected_idx = d.get("selected_idx", 0)
     for dr in d.get("drafts", []):
         draft = elem.drafts.add()
         draft.text = dr.get("text", "")
         draft.label = dr.get("label", "")
-        for c in dr.get("contents", []):
-            draft.contents.append(c)
     return elem
 
 

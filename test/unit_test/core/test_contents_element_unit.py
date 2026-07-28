@@ -4,14 +4,21 @@
 묵자 문단·시각자료 하나가 요소 하나여야 하는데 그 단위가 깨졌다(BE 보고).
 조판 규칙(32칸)은 규정이라 버릴 수 없으므로 줄 경계는 `\\n`으로 표시한다.
 
+최종 계약(2026-05 협의 원설계로 복귀):
+  · 시각자료 → 4안이 정규 순서대로 **4항목**. 본문 렌더는 `contents[selected_idx]`.
+  · 본문·수식 → **1항목**. 항목 안의 줄 구분은 `\n`.
+  · 점자는 `contents`에만 싣는다 — `Draft`는 라벨·한글 원문 메타 전용(중복 전송 금지).
+    그래서 `Draft`를 모르는 구 스텁도 4안 점자를 정상 수신한다.
+
 이 파일이 지키는 것:
   1. `_join_lines`가 요소당 1항목을 만든다(빈 요소는 빈 배열 유지).
   2. 줄 내용·순서가 보존된다(조판 결과를 잃지 않는다).
-  3. `/finalize`가 **두 형식을 모두** 받는다 — BE가 응답 `contents`를 그대로 되돌려줘도 동작.
+  3. `_contents_array`가 초안 수만큼 항목을 만들고 **정규 순서를 재배열하지 않는다**.
+  4. `/finalize`가 **두 형식을 모두** 받는다 — BE가 응답 `contents`를 그대로 되돌려줘도 동작.
 """
 from __future__ import annotations
 
-from app.core.pipeline import _join_lines
+from app.core.pipeline import _contents_array, _join_lines
 from app.core.routes import FinalizeBlock
 
 _L1 = "⠓⠣⠉⠁"
@@ -68,3 +75,41 @@ def test_왕복_직렬화_후_조판_입력이_동일하다() -> None:
     serialized = _join_lines(original)                      # AI → BE
     restored = FinalizeBlock(lines=serialized).normalized_lines()   # BE → AI
     assert restored == original
+
+
+class _BO:
+    """BrailleOutput 최소 대역(초안 유무만 본다)."""
+    def __init__(self, lines, drafts=None):
+        self.braille_lines = lines
+        self.drafts = drafts or []
+
+
+class _D:
+    def __init__(self, lines):
+        self.braille_lines = lines
+
+
+class TestContentsArrayIsDraftArray:
+    """항목 하나 = 초안 하나 (2026-05 협의 원설계)."""
+
+    def test_초안이_없으면_1항목(self) -> None:
+        assert _contents_array(_BO([_L1, _L2])) == [f"{_L1}\n{_L2}"]
+
+    def test_초안이_넷이면_4항목(self) -> None:
+        bo = _BO([_L1], drafts=[_D([_L1]), _D([_L2]), _D([_L3]), _D([_L1, _L2])])
+        got = _contents_array(bo)
+        assert len(got) == 4
+        assert got == [_L1, _L2, _L3, f"{_L1}\n{_L2}"]
+
+    def test_정규_순서를_재배열하지_않는다(self) -> None:
+        """라벨·근거가 순서에 묶여 있어 선택된 초안을 앞으로 끌어오면 안 된다."""
+        bo = _BO([_L3], drafts=[_D([_L1]), _D([_L2]), _D([_L3])])
+        assert _contents_array(bo)[0] == _L1     # selected가 아니라 0번 초안이 먼저
+
+    def test_빈_초안도_자리를_지킨다(self) -> None:
+        """생략 초안은 점자가 비어 있다 — 항목이 사라지면 selected_idx가 어긋난다."""
+        bo = _BO([_L1], drafts=[_D([]), _D([_L1])])
+        assert _contents_array(bo) == ["", _L1]
+
+    def test_None이면_빈_배열(self) -> None:
+        assert _contents_array(None) == []
