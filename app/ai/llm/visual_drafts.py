@@ -236,14 +236,25 @@ async def build_visual_drafts(
         # 고려해 캡션의 ~1.6배로 잡고 상한을 320으로 올린다(vLLM 46tok/s면 ~7s, QUALITY 상한 내).
         src = caption or title
         mnt = min(320, max(140, int(len(src) * 1.6)))
-        response, used_fb = await generate_with_retry(
-            _PROMPT.format(label=label, caption=src),
-            timeout=timeout, element_id=ext.element_id, kind=kind,
-            prefill=_PREFILL, max_new_tokens=mnt, fallback_max_tokens=mnt,
-        )
-        tier = "FALLBACK" if used_fb else t2
-        sec = _parse_sections(response)
-        llm_title, llm_outline, llm_prose = sec["제목"], sec["개조식"], sec["줄글"]
+        # ★ 4안 보장(D-02)은 **예외까지** 막아야 한다. generate_with_retry는 자체 재시도·폴백을
+        #   갖지만 그게 모두 실패하면 예외를 올린다. 종전에는 그 예외가 여기서 안 잡혀 위로
+        #   전파됐고, isolation이 요소를 통째로 플레이스홀더로 만들어 **drafts가 0개**가 됐다
+        #   (= BE에 "대체 텍스트 1개"로 보이는 실제 경로). 캡션 폴백은 "응답이 이상할 때"만
+        #   막았지 "예외"는 못 막았다. 2026-07-28 회귀 테스트로 재현해 확인.
+        #   여기서 삼키면 llm_* 가 빈 채로 남고 아래 캡션·구조 폴백이 4안을 채운다.
+        try:
+            response, used_fb = await generate_with_retry(
+                _PROMPT.format(label=label, caption=src),
+                timeout=timeout, element_id=ext.element_id, kind=kind,
+                prefill=_PREFILL, max_new_tokens=mnt, fallback_max_tokens=mnt,
+            )
+            tier = "FALLBACK" if used_fb else t2
+            sec = _parse_sections(response)
+            llm_title, llm_outline, llm_prose = sec["제목"], sec["개조식"], sec["줄글"]
+        except Exception as exc:  # noqa: BLE001 — 4안 보장이 개별 추론 실패보다 우선
+            logger.warning("    4안 LLM 실패(폴백으로 계속) %s %s: %s: %s",
+                           kind, str(ext.element_id)[:8], type(exc).__name__, exc)
+            tier = "FALLBACK"
 
     # 짧은 제목: 인쇄 캡션 우선(요건 — "캡션 있으면 그대로"), 단 장문 AI 캡션은 짧게 축약. 없으면 제목/LLM.
     short_title = _shorten(caption) or title or llm_title or ""
