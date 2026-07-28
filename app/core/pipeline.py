@@ -1079,6 +1079,21 @@ async def _run_pipeline(task: PageTask) -> dict:
 
 # ── 응답 조립 ────────────────────────────────────────────────────────────
 
+def _join_lines(lines: list[str]) -> list[str]:
+    """조판된 줄 목록 → `contents` 직렬화 형식(**요소당 1항목**, 줄바꿈으로 구분).
+
+    BE 계약(2026-07-28 합의): `contents`의 한 항목 = **묵자 문단 또는 시각자료 하나**다.
+    32칸 조판은 규정이라 유지해야 하므로 줄 경계는 항목을 쪼개는 대신 `\\n`으로 표시한다.
+    (종전에는 32칸 줄 하나가 항목 하나였다 — BE가 FE로 넘길 때 요소 단위가 깨졌다.)
+
+    ★ 좌표 계약: `RuleTrail.line_no`는 이제 **`contents[0].split("\\n")` 의 줄 인덱스**다.
+      FE 하이라이트는 `contents[0].split("\\n")[line_no][col_start:col_end]`.
+    내부(조판·점역)는 계속 줄 리스트로 다루고 **직렬화 경계에서만** 결합한다.
+    빈 요소는 빈 배열을 유지한다(항목 1개짜리 빈 문자열을 만들지 않는다).
+    """
+    return ["\n".join(lines)] if lines else []
+
+
 def _build_response(
     task: PageTask,
     page_id: str,
@@ -1191,7 +1206,7 @@ def _build_response(
                     ))
                 ),
                 "render_mode": o.render_mode,
-                "contents": (
+                "contents": _join_lines(
                     braille_by_id[o.element_id].braille_lines
                     if o.element_id in braille_by_id else []
                 ),
@@ -1211,7 +1226,7 @@ def _build_response(
                     {
                         "text": d.text,
                         "label": d.label,
-                        "contents": d.braille_lines,
+                        "contents": _join_lines(d.braille_lines),
                     }
                     for d in (
                         braille_by_id[o.element_id].drafts
