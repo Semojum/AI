@@ -4,8 +4,10 @@ merged_layout + 캡셔닝 결과를 읽기 순서대로 병합하여
 debug=True 시 최종 order 기준 layout_viz.jpg를 test/results/page_{no:03d}/에 저장.
 """
 import json
+import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import fitz
@@ -187,6 +189,48 @@ def _link_captions(elements: list[dict]) -> None:
             cap["caption_ref"] = best["id"]
 
 
+def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
+    """시각요소 캡셔닝을 **동시에** 수행한다. 키 = id(el).
+
+    종전에는 `for el in ordered:` 안에서 한 장씩 순서대로 호출해, 시각요소 개수에
+    소요 시간이 정비례했다(실측 8.86초/개 — 그림 11개 페이지에서 캡셔닝만 97.5초).
+    캡셔닝은 외부 API 호출이라 GPU를 쓰지 않으므로 동시에 던져도 서로 막지 않는다.
+
+    동시 요청 수는 `CAPTION_CONCURRENCY`(기본 4)로 제한한다 — 무제한으로 던지면
+    외부 API 요청 한도(429)에 걸려 오히려 느려진다.
+    """
+    vis = [el for el in ordered if el["type"] in _VISUAL_TYPES]
+    if not vis:
+        return {}
+    workers = max(1, int(os.environ.get("CAPTION_CONCURRENCY", "4")))
+    t0 = time.monotonic()
+    out: dict[int, tuple] = {}
+    if len(vis) == 1 or workers == 1:
+        for el in vis:
+            out[id(el)] = _do_caption_logged(el)
+    else:
+        with ThreadPoolExecutor(max_workers=min(workers, len(vis))) as pool:
+            futs = {pool.submit(_do_caption_logged, el): el for el in vis}
+            for fut in as_completed(futs):
+                el = futs[fut]
+                try:
+                    out[id(el)] = fut.result()
+                except Exception as exc:  # noqa: BLE001 — 요소 격리(불변규칙 3)
+                    logger.warning("    캡셔닝 예외 %s: %s", str(el.get("element_id", ""))[:8], exc)
+                    out[id(el)] = ("", el["type"], False, None)
+    logger.info("  캡셔닝 %d개 동시 %d — %.1fs", len(vis), workers, time.monotonic() - t0)
+    return out
+
+
+def _do_caption_logged(el: dict) -> tuple:
+    """`_do_caption` + 요소별 소요시간 로깅."""
+    t = time.monotonic()
+    content, el_type, ok, subconf = _do_caption(el)
+    logger.info("    캡셔닝 %s(%s→%s) %.1fs%s", str(el.get("element_id", ""))[:8],
+                el["type"], el_type, time.monotonic() - t, "" if ok else " [실패]")
+    return content, el_type, ok, subconf
+
+
 def build(
     merged_layout: list[dict],
     job_id: str,
@@ -202,18 +246,16 @@ def build(
     ordered = _reorder(list(merged_layout))
     _move_trailing_qnum(ordered)
 
+    cap_results = _caption_all(ordered)
+
     elements = []
     order = 1
     for el in ordered:
         caption_failed = False
         subconf: float | None = None
         if el["type"] in _VISUAL_TYPES:
-            # 시각요소별 캡셔닝(GPT-4o 분류+설명) 소요시간 로깅 — "이미지당 몇 초" 디버깅용.
-            _t = time.monotonic()
-            content, el_type, ok, subconf = _do_caption(el)
+            content, el_type, ok, subconf = cap_results[id(el)]
             caption_failed = not ok
-            logger.info("    캡셔닝 %s(%s→%s) %.1fs%s", str(el.get("element_id", ""))[:8],
-                        el["type"], el_type, time.monotonic() - _t, "" if ok else " [실패]")
         else:
             content = el.get("content", "")
             el_type = el["type"]

@@ -213,12 +213,17 @@ class BrailleServiceServicer(braille_service_pb2_grpc.BrailleServiceServicer):
 
 
 async def serve() -> None:
+    # maximum_concurrent_rpcs: 동시에 처리할 페이지 수 상한(M2). 초과분은 gRPC가 큐에 세운다.
+    # 상한이 없으면 요청이 몰릴 때 전부 동시에 진행돼 각 페이지가 느려지고, 뒤쪽 요청이
+    # 180초 페이지 예산에 통째로 걸린다(C7).
     server = grpc.aio.server(
+        maximum_concurrent_rpcs=config.max_concurrent_pages,
         options=[
             ("grpc.max_receive_message_length", config.max_grpc_message_bytes),
             ("grpc.max_send_message_length", config.max_grpc_message_bytes),
         ]
     )
+    logger.info("동시 처리 상한: %d페이지", config.max_concurrent_pages)
     braille_service_pb2_grpc.add_BrailleServiceServicer_to_server(
         BrailleServiceServicer(), server
     )

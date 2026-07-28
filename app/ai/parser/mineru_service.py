@@ -20,6 +20,7 @@ import time
 import urllib.request
 from pathlib import Path
 
+from app.core.config import config
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -72,12 +73,19 @@ def ensure_started(wait: float = 240.0) -> str | None:
         logger.info("MinerU 영구 서비스 재사용: %s", url)
         return url
 
-    logger.info("MinerU 영구 서비스 기동 중: %s (VLM 프리로드)…", url)
+    # 동시 요청 허용치. mineru-api 기본은 3이며 이 환경변수로 올린다.
+    # 실측(2026-07-29, 서버 1대): 동시 1→716쪽/h · 2→1,080 · 4→1,632 · 8→1,905.
+    # GPU 추론은 줄을 서지만 프로세스 기동·PDF 렌더가 겹쳐 4쪽에서 처리량 2.28배가 된다.
+    # VRAM은 동시 8쪽에서도 3.5GB로 여유가 있다.
+    env = {**os.environ,
+           "MINERU_API_MAX_CONCURRENT_REQUESTS": str(config.mineru_max_concurrent)}
+    logger.info("MinerU 영구 서비스 기동 중: %s (VLM 프리로드 · 동시 %d)…",
+                url, config.mineru_max_concurrent)
     try:
         _proc = subprocess.Popen(
             [_mineru_api_bin(), "--host", "127.0.0.1", "--port", str(_PORT),
              "--enable-vlm-preload", "true"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("MinerU 서비스 기동 실패(%s) → 요청마다 CLI 폴백", exc)

@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     ocr_confidence_threshold: float = 0.90
     max_grpc_message_mb: int = 20
 
+    # ── 동시 처리 상한 (M2, 2026-07-28 결정) ─────────────────────
+    # 한 서버가 동시에 붙잡는 페이지 수. 초과 요청은 gRPC가 큐에 세운다.
+    # 상한이 없으면 요청이 몰릴 때 전부 동시에 진행되어 각 페이지가 느려지고,
+    # 180초 페이지 예산에 뒤쪽 요청이 통째로 걸린다(C7).
+    # 1차 = 2, 2차 개발부터 5로 확대.
+    max_concurrent_pages: int = 2
+    # MinerU 추출 서버(mineru-api)의 동시 요청 허용치. 기본 3(MinerU 자체 기본값).
+    # 실측(2026-07-29): 동시 4쪽에서 처리량 2.28배 · 8쪽에서 2.66배, VRAM은 8쪽에서도 3.5GB.
+    # ⚠ vCPU보다 크게 잡으면 CPU가 병목이 된다(g4dn.xlarge·g5.xlarge는 vCPU 4).
+    mineru_max_concurrent: int = 4
+
     # ── HCXT(단일 GPU 직렬 추론) 예산 ─────────────────────────────
     # HCXT는 GPU 하나를 잠그고 요소를 하나씩 처리하므로, 요소당 시간이 크면 페이지 예산을
     # 금방 소진한다(요소 N개 × 상한 = 페이지 초과). 요소당 상한은 작게 두고, 초과·저품질은
