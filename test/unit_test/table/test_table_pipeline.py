@@ -233,13 +233,17 @@ class TestTableRenderModes:
         unfold_items = [o for o in opt_outputs if o.render_mode == "unfold"]
         assert len(unfold_items) >= 1, "3열 이상 표의 unfold(풀어쓰기) 렌더 모드 없음"
 
-    def test_grid_alternative_draft_has_border(self, braille_outputs: list[BrailleOutput]) -> None:
-        # 격자형은 기본이 아니라 대안 초안 — ⠿ 테두리가 대안 draft에 존재해야 함
-        has_grid = any(
-            d.render_mode == "table_grid" and any("⠿" in ln for ln in d.braille_lines)
-            for o in braille_outputs for d in o.drafts
-        )
-        assert has_grid, "격자형 대안 초안의 ⠿ 테두리 없음"
+    def test_grid_alternative_draft_exists(self, braille_outputs: list[BrailleOutput]) -> None:
+        """격자형은 기본이 아니라 대안 초안으로 존재한다.
+
+        ★ 테두리는 더 이상 단언하지 않는다 — 도서 관행(기본)은 테두리를 쓰지 않는다.
+          정답 코퍼스 14,382줄에 테두리형 줄 0개(2026-07-29 실측).
+        """
+        grids = [d for o in braille_outputs for d in o.drafts if d.render_mode == "table_grid"]
+        assert grids, "격자형 대안 초안 없음"
+        assert any(d.braille_lines for d in grids), "격자형 초안에 점자 줄이 없음"
+        border = "⠿" + "⠛" * 30 + "⠿"
+        assert all(border not in d.braille_lines for d in grids), "관행 기본에서 테두리가 나왔다"
 
     def test_linear_output_is_indented(self, braille_outputs: list[BrailleOutput]) -> None:
         """2열 표는 3칸에서 시작하는 '키  값' 줄로 나온다(정답 도서 관행)."""

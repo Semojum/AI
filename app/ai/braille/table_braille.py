@@ -193,16 +193,24 @@ def _render_grid(corrected_text: str) -> list[str]:
     rows = [ln for ln in corrected_text.splitlines() if ln.strip()]
     top = "⠿" + "⠛" * (_COLS - 2) + "⠿"
     bot = "⠿" + "⠶" * (_COLS - 2) + "⠿"
+    # ★ 도서 관행: 테두리 줄을 쓰지 않는다 (2026-07-29 실측).
+    #   지침 §3.1.3(2)는 위/아래 테두리(=GGG…= / =777…=)를 규정하지만, 코퍼스 정답
+    #   14,382줄에 테두리형 줄이 **0개**다(우리는 320개·10,240셀 = 출력의 2.5%).
+    #   메모리 [[gold-brl-fullcell-is-ong]]와 일치 — 정답의 ⠿는 약자 '옹'이지 테두리가 아니다.
+    #   테두리 줄은 정답에 대응이 없어 점역사가 전부 지워야 하는 순수 과잉 생산이다.
+    #   D-01(도서 관행 우선)에 따라 기본은 생략하고, BRAILLE_STYLE=regulation에서만 낸다.
+    border = not _BOOK_STYLE
     if not rows:
-        return [top, bot]
-    lines: list[str] = [top]
+        return [top, bot] if border else []
+    lines: list[str] = [top] if border else []
     for row in rows:
         cells = [c.strip() for c in row.split("|")]
         head = _translate(cells[0]) if cells[0] else "⠿⠿"
         vals = [(_translate(c) if c else "⠿⠿") for c in cells[1:]]
         body = head + ("⠐⠂⠀" + "⠀⠀".join(vals) if vals else "")
         lines.append("⠀⠀" + body)
-    lines.append(bot)
+    if border:
+        lines.append(bot)
     return lines
 
 

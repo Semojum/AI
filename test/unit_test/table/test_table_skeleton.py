@@ -58,8 +58,24 @@ class TestOptimize:
         bo = TableBraille().translate(opt)[0]
         labels = [d.label for d in bo.drafts]
         assert labels == ["풀어쓰기(3칸·2칸)", "격자형", "행↔열 전치", "선형(키:값)"]  # 기본=풀어쓰기
-        assert _TBL_TOP in bo.drafts[1].braille_lines              # 지침형 위 테두리
-        assert _TBL_BOT in bo.drafts[1].braille_lines              # 지침형 아래 테두리
+        # ★ 도서 관행(기본)은 테두리를 쓰지 않는다 — 정답 코퍼스 14,382줄에 테두리형 0개
+        #   (2026-07-29 실측). 규정 §3.1.3(2)형 테두리는 BRAILLE_STYLE=regulation에서만.
+        assert _TBL_TOP not in bo.drafts[1].braille_lines
+        assert _TBL_BOT not in bo.drafts[1].braille_lines
+        assert bo.drafts[1].braille_lines, "테두리를 빼도 본문 줄은 남아야 한다"
+
+    def test_격자_규정모드는_테두리_유지(self, monkeypatch):
+        """BRAILLE_STYLE=regulation이면 지침형 테두리를 낸다 — 규정 경로 보존."""
+        import importlib
+        from app.ai.braille import table_braille as tb
+        monkeypatch.setenv("BRAILLE_STYLE", "regulation")
+        importlib.reload(tb)
+        try:
+            lines = tb._render_grid("머리|A|B\n행1|1|2")
+            assert lines[0] == _TBL_TOP and lines[-1] == _TBL_BOT
+        finally:
+            monkeypatch.delenv("BRAILLE_STYLE", raising=False)
+            importlib.reload(tb)
 
 
 class TestTitle:
@@ -95,13 +111,15 @@ class TestTitle:
         # 제목 줄이 위 테두리보다 먼저(§3 5)(2)), 5칸 들여(§3 5)(1))
         assert lines[0].startswith(" " * 5) and not lines[0].startswith(" " * 6)
         assert lines[0].strip() and not _is_border(lines[0])
-        assert lines[1] == _TBL_TOP                            # 제목 다음 줄 = 위 테두리(지침형)
+        # 관행 기본: 테두리가 없으므로 제목 다음 줄이 바로 본문이다.
+        assert lines[1] != _TBL_TOP and not _is_border(lines[1])
 
     def test_제목_없으면_기존동작(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, table_structure=_CELLS)
         opt = asyncio.run(TableOpt().optimize([ext], "ZERO"))
         bo = TableBraille().translate(opt)[0]
-        assert _is_border(bo.drafts[1].braille_lines[0])           # 제목 없으면 격자형 첫 줄=위 테두리
+        # 관행 기본: 제목이 없으면 격자형 첫 줄이 곧 본문 행이다(테두리 없음).
+        assert not _is_border(bo.drafts[1].braille_lines[0])
 
 
 def _is_border(line: str) -> bool:
