@@ -71,7 +71,11 @@ def visual_score(pdf: Path) -> int:
 
 def select(rows: list[dict], split: str | None, subjects: set[str] | None,
            limit: int | None, purposive: bool) -> dict[str, list[str]]:
-    """과목 → [page,...] 선택."""
+    """과목 → [page,...] 선택.
+
+    ⚠ 여기서 고른 순번을 local_no로 쓰면 안 된다 — page_index()를 쓸 것.
+      이유는 그 함수 주석 참조(2026-07-29 실측 사고).
+    """
     by_sub: dict[str, list[str]] = {}
     for r in rows:
         if split and r["split"] != split:
@@ -94,6 +98,32 @@ def select(rows: list[dict], split: str | None, subjects: set[str] | None,
                 idx = sorted({round(i * (len(pages) - 1) / (limit - 1)) for i in range(limit)})
                 by_sub[sub] = [pages[i] for i in idx]
     return by_sub
+
+
+# ── 페이지 번호 안정화 — 2026-07-29 ────────────────────────────────────────
+# local_no(= storage/jobs/.../temp/page_NNN 디렉토리 번호)를 **선택된 부분집합의 순번**으로
+# 쓰면 --limit 값에 따라 같은 번호가 다른 묵자 페이지를 가리킨다.
+# 실제 사고: `--split test --limit 2`(스모크)가 과목당 [첫 페이지, 마지막 페이지]를
+# local_no 1·2로 처리해 두었는데, 이어서 돌린 전량 실행은 두 번째 페이지에 li=2를 부여했다.
+# 결과로 **6개 과목 전부 page_002/가 엉뚱한 페이지 내용을 갖게** 됐고, 그 6쪽이
+# 홀드아웃 전체 편집의 18.8%를 차지해 점수를 76.55%로 끌어내렸다(제외 시 80.0%).
+# → local_no는 **그 과목·split의 전체 페이지 목록에서의 위치**로 고정한다.
+#   부분집합으로 돌리든 전량으로 돌리든 같은 묵자 페이지는 항상 같은 번호를 쓴다.
+def build_page_index(rows: list[dict], split: str | None,
+                     subjects: set[str] | None) -> dict[tuple[str, str], int]:
+    """(과목, 묵자쪽) → local_no. 선택 범위와 무관하게 안정적."""
+    by_sub: dict[str, list[str]] = {}
+    for r in rows:
+        if split and r["split"] != split:
+            continue
+        if subjects and r["subject"] not in subjects:
+            continue
+        by_sub.setdefault(r["subject"], []).append(r["page"])
+    out: dict[tuple[str, str], int] = {}
+    for sub, pages in by_sub.items():
+        for i, pg in enumerate(sorted(pages), start=1):
+            out[(sub, pg)] = i
+    return out
 
 
 # ── 렌더/병합(e2e_runner 양식) ───────────────────────────────────────────
@@ -126,7 +156,8 @@ def bar(cur: int, total: int, *, ok: int, review: int, blocked: int, fail: int, 
 
 # ── job 실행 ─────────────────────────────────────────────────────────────
 async def run_subject(subject: str, pages: list[str], tag: str, *,
-                      reuse: bool, force: bool, prog: dict) -> dict:
+                      reuse: bool, force: bool, prog: dict,
+                      page_index: dict | None = None) -> dict:
     job_id = f"corpus-{tag}-{subject}"
     job_dir = STORAGE / job_id
     input_dir = job_dir / "input"
@@ -142,7 +173,9 @@ async def run_subject(subject: str, pages: list[str], tag: str, *,
             done = {}
 
     page_states: list[dict] = []
-    for li, pg in enumerate(pages, start=1):
+    for pos, pg in enumerate(pages, start=1):
+        # local_no는 선택 범위와 무관하게 고정한다(위 build_page_index 주석의 사고 참조).
+        li = (page_index or {}).get((subject, pg), pos)
         pdf = INPUT / f"input_{subject}_page{pg}.pdf"
         gold = OUTPUT / f"output_{subject}_page{pg}.brl"
         prog["cur"] += 1
@@ -259,6 +292,7 @@ def main():
     rows = load_manifest()
     subjects = set(args.subjects.split(",")) if args.subjects else None
     sel = select(rows, args.split, subjects, args.limit, args.purposive)
+    page_index = build_page_index(rows, args.split, subjects)
     if not sel:
         print("선택된 페이지 없음."); return
     tag = args.tag or args.split or "custom"
@@ -273,7 +307,8 @@ def main():
     summaries = []
     for sub in sorted(sel):
         s = asyncio.run(run_subject(sub, sel[sub], tag, reuse=args.reuse,
-                                    force=args.force, prog=prog))
+                                    force=args.force, prog=prog,
+                                    page_index=page_index))
         summaries.append(s)
     print()  # 상태바 줄바꿈
     print("-" * 60)
