@@ -63,13 +63,20 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | N
     cmd += ["-b", backend]
     if api_url:
         cmd += ["--api-url", api_url]
-    # hybrid 백엔드의 파싱 강도. **기본 medium은 이미지·차트 분석을 끄고 목록 구조도 잃는다.**
-    # 동일 페이지(사회문화 p178) 실측 — medium: text 35·list 0 (8초) / high: text 8·list 7 (40초)
-    #   / vlm-engine: text 8·list 7 (40초). 즉 품질 차이는 백엔드가 아니라 **effort**이고,
-    #   high는 vlm-engine과 같은 결과를 같은 시간에 낸다.
-    # ⚠ 속도 5배 차이는 원가 모형의 '읽어내기' 항목을 직접 바꾼다 — 운영 기본값을 바꿀 때는
-    #   비용 재산정이 따라야 한다. 그래서 env로 내렸다: MINERU_EFFORT=medium 이면 구 동작.
-    effort = os.environ.get("MINERU_EFFORT", "high" if "hybrid" in backend else None)
+    # hybrid 백엔드의 파싱 강도.
+    # 품질 — 동일 페이지(사회문화 p178) 실측: medium은 text 35·list **0**(본문 과분절·목록 소실),
+    #   high는 text 8·list 7로 vlm-engine과 같다. 품질 차이는 백엔드가 아니라 **effort**다.
+    # ★ 그럼에도 기본값을 medium으로 둔다 — **180초 페이지 예산(C7)을 못 지키기 때문이다.**
+    #   2026-07-29 실측(시각요소 최다 10쪽 + 동시성 시험):
+    #     · high 최악 페이지 생물 p113 = **143.9초**(순차 1쪽, 예산의 80%)
+    #     · high 추출 동시 2쪽 배율 = **1.70배**(49.2초 → 83.5초)
+    #     · 최악 페이지에 적용 = 79×1.70 + 65 = **199초 → 예산 초과**
+    #     · medium 환산 = 순차 80초 · 동시 2쪽 85초(여유 53%)
+    #   품질 대가는 같은 dev 28쪽 짝 비교로 −0.85p뿐이라, 예산 위반·원가 +61%
+    #   (쪽당 356→573원, 서버 1→2대)와 바꿀 크기가 아니다.
+    # 목록 구조는 effort로 사지 말고 후처리(글머리 기호로 list_item 승격)로 회복할 것.
+    # high로 올리려면 **동시 처리를 1로 낮추고 원가를 재산정**한 뒤여야 한다.
+    effort = os.environ.get("MINERU_EFFORT", "medium" if "hybrid" in backend else None)
     if effort in ("medium", "high"):
         cmd += ["--effort", effort]
     try:
