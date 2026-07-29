@@ -52,6 +52,10 @@ chromadb>=0.6.0
 sentence-transformers==3.3.1
 
 # ── LLM API Fallback ──────────────────────────────────────────────
+# anthropic: captioner·classifier·base_opt·opus_fallback 네 곳에서 import한다.
+#            lazy import라 없어도 기동은 되지만 캡셔닝·이미지 분류가 조용히
+#            폴백으로 새므로, 빠지면 증상이 늦게 드러난다.
+anthropic>=0.40,<1.0
 openai==1.57.4
 
 # ── 메트릭 / 시각화 ───────────────────────────────────────────────
