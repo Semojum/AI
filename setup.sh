@@ -3,24 +3,24 @@
 # =================================================================
 # Semojum V2 AI — Server Setup Script
 # 환경: Ubuntu 22.04 LTS (jammy) / Python 3.10 / CUDA 12.1
-# 기본 이미지: GCP 민짜 Ubuntu 22.04 LTS (Deep Learning 이미지 아님).
+# 기본 이미지: 민짜 Ubuntu 22.04 LTS (Deep Learning 이미지 아님).
 #             → NVIDIA 드라이버가 미설치이므로 이 스크립트가 직접 설치한다.
 #               (DL 이미지를 쓰면 Py3.12/CUDA12.9가 고정되므로 민짜 이미지 채택)
 # 로컬 개발: WSL2(Ubuntu)는 호스트 Windows의 NVIDIA 드라이버를 공유하므로
 #           드라이버 설치 단계가 자동 skip된다(nvidia-smi 이미 동작).
-# 기본 대상: NVIDIA L4 GPU (24GB VRAM) × 2  [단계 1~4]
-# 단계 5 환경: L4 × 1 + A100 × 1 (80GB) — 모델 업그레이드 필요
 #
-# L4 기준 모델 선정 (단계 1~4):
-#   Stage A (VLM)  : Qwen3-VL-8B INT4 AWQ  (~5-6 GB VRAM)
-#   Stage B (LLM)  : HyperCLOVA X SEED Think 14B INT4 (~8 GB VRAM)
-#   보조 탐지      : DocLayout-YOLO v2 FP32, Docling TableFormer BF16
-#   수식 OCR       : PP-FormulaNet (PaddlePaddle Docker, 별도)
-#   → L4 24GB: Stage A/B 동시 로드 불가 → VRAM Swap 필요 (2~4초)
+# 이 스크립트가 준비하는 것 = AI 서버 프로세스 하나(gRPC 50051 / REST 8080).
+#   추론 모델 : HyperCLOVA X SEED Think 14B — bitsandbytes 4bit 인프로세스 로드
+#               (~8GB VRAM). model_manager가 로드하는 유일한 모델이다.
+#   점자 엔진 : braillify + liblouis (requirements-ai.txt)
+#   수식 OCR  : PP-FormulaNet (별도 컨테이너, gRPC 50052)
 #
-# 단계 5 모델 업그레이드 (A100 80GB, VRAM Swap 불필요):
-#   Stage A : Qwen3-VL-32B INT4 AWQ
-#   Stage B : HyperCLOVA X SEED Think 14B FP16
+# ※ 레이아웃·OCR·표 인식은 이 venv에 없다. MinerU가 별도 conda env에서
+#   subprocess로 처리한다(RUNBOOK §2). 그래서 Qwen3-VL·DocLayout-YOLO·
+#   Docling·AutoAWQ는 여기서 설치하지 않는다.
+#
+# GPU 배치: 단일 GPU면 .env에서 HCXT_GPU_DEVICE=0.
+#          MinerU(vLLM ~3.5GB)와 HCXT(~8GB)가 24GB 한 장에 함께 올라간다.
 # =================================================================
 
 set -e
@@ -183,30 +183,21 @@ echo "🧠 [6/9] Installing AI model dependencies..."
 pip install "numpy==1.26.4"
 
 # Hugging Face 생태계
+# transformers 5.9.0 — HyperCLOVA X 네이티브 클래스에 필요(model_manager가
+#   trust_remote_code=False로 네이티브 경로를 강제한다). requirements-ai.txt와 같은 값.
 pip install \
-    "transformers==4.57.0" \
-    "tokenizers==0.22.0" \
-    "accelerate==1.2.1" \
+    "transformers==5.9.0" \
+    "tokenizers>=0.22.0,<=0.23.0" \
+    "accelerate>=1.2.1" \
     "einops==0.8.0" \
     "timm==1.0.11" \
     "safetensors==0.4.5"
 
-# AutoAWQ — IPEX(Intel) 의존 제거, --no-deps 설치 후 NVIDIA 호환 의존성만 수동 설치
-echo "   - AutoAWQ 0.2.7 설치 (--no-deps, IPEX 제외)..."
-pip install "autoawq==0.2.7" --no-deps
-pip install \
-    "datasets>=2.16.0" \
-    "zstandard>=0.22.0"
-# triton은 PyTorch 2.5.1 설치 시 함께 설치됨 (별도 불필요)
-
-# AutoAWQ Kernels — CUDA 12.1 / Python 3.10 전용 휠 (GitHub Releases)
-echo "   - AutoAWQ Kernels 0.0.9 설치 (CUDA 12.1 전용 휠)..."
-pip install \
-    "https://github.com/casper-hansen/AutoAWQ_kernels/releases/download/v0.0.9/autoawq_kernels-0.0.9+cu121-cp310-cp310-linux_x86_64.whl" \
-    || echo "   [경고] autoawq_kernels CUDA 휠 설치 실패 — GitHub Release URL 확인 필요"
-
-# Qwen3-VL 전용 유틸 (이미지 전처리 헬퍼)
-pip install "qwen-vl-utils>=0.0.8" || echo "   [경고] qwen-vl-utils 설치 실패 — 수동 확인 필요"
+# AutoAWQ·qwen-vl-utils는 설치하지 않는다.
+#   레이아웃·OCR이 MinerU(별도 env, subprocess)로 넘어가면서 model_manager는
+#   HCXT만 로드한다. app/·test/ 어디에서도 awq·qwen_vl_utils를 import하지 않는다.
+#   특히 autoawq_kernels CUDA 휠은 GitHub Release가 404라 매번 경고만 남겼다.
+#   AWQ 양자화를 다시 하게 되면 그때 별도 env에 설치할 것.
 
 # -------------------------------------------------------------------
 # 7. [Stage 1] requirements.txt 설치 (gRPC, FastAPI, 이미지 처리 등)
@@ -242,35 +233,26 @@ touch "$ROOT/protos/generated/__init__.py"
 echo "   - proto 빌드 완료: protos/generated/"
 
 # -------------------------------------------------------------------
-# 9. [Model] L4 모델 다운로드 가이드 (단계 2+ 필요)
-#    단계 1은 더미 파이프라인 — 실제 모델 불필요.
-#    단계 2 시작 전 아래 명령어로 모델을 미리 다운로드해 두어야 한다.
-#    모델 크기: Qwen3-VL-8B AWQ ~5 GB, HyperCLOVA X 14B INT4 ~8 GB
-#    다운로드 위치: .env의 QWEN3_VL_MODEL_PATH / HCXT_MODEL_PATH 와 일치해야 함.
+# 9. [Model] 모델 다운로드 안내
+#    이 서버가 직접 로드하는 모델은 HCXT 하나뿐이다(model_manager).
+#    MinerU 쪽 가중치는 별도 env에서 mineru-models-download 가 받아간다.
+#    다운로드 위치는 .env 의 HCXT_MODEL_PATH 와 일치해야 한다.
 # -------------------------------------------------------------------
-echo "📥 [9/9] L4 모델 다운로드 안내 (단계 2+ 필요)..."
+echo "📥 [9/9] 모델 다운로드 안내..."
 
 # huggingface_hub CLI 설치 (모델 다운로드 도구)
 pip install "huggingface_hub[cli]>=0.26.0" -q
 
 echo ""
-echo "── L4 모델 다운로드 명령어 (단계 2 시작 전 실행) ────────────"
-echo "   # [Stage A] Qwen3-VL-8B INT4 AWQ — VLM (레이아웃·OCR·분류·캡셔닝)"
-echo "   # HuggingFace 모델 ID: 릴리스 확인 후 아래를 업데이트하세요."
-echo "   # 예: huggingface-cli download <org>/Qwen3-VL-7B-Instruct-AWQ \\"
-echo "   #       --local-dir /models/qwen3-vl-8b-awq"
+echo "── HCXT 모델 다운로드 (서버 기동 전 1회) ─────────────────────"
+echo "   huggingface-cli download naver-hyperclovax/HyperCLOVAX-SEED-Think-14B \\"
+echo "       --local-dir \"$ROOT/models/hcxt\""
+echo "   # 약 55GB(fp32 원본). 로드 시 bitsandbytes 4bit로 양자화되어 ~8GB VRAM."
 echo ""
-echo "   # [Stage B] HyperCLOVA X SEED Think 14B INT4 — 한국어 LLM (점역 최적화)"
-echo "   # 예: huggingface-cli download <org>/HyperCLOVA-X-SEED-Think-14B-Instruct \\"
-echo "   #       --local-dir /models/hyperclovax-seed-think-14b"
-echo ""
-echo "   # [보조] DocLayout-YOLO v2 FP32"
-echo "   # 예: huggingface-cli download <org>/doclayout-yolo-v2 \\"
-echo "   #       --local-dir /models/doclayout-yolo-v2"
-echo ""
-echo "   # [보조] Docling TableFormer BF16"
-echo "   # 예: huggingface-cli download ds4sd/docling-models \\"
-echo "   #       --local-dir /models/docling-tableformer"
+echo "── MinerU (별도 conda env — 이 venv 아님) ────────────────────"
+echo "   pip install 'mineru[vlm,vllm]==3.4.0' vllm==0.21.0"
+echo "   pip install 'transformers==4.57.6'      # ← 반드시 마지막. 올리면 비전 경로 파손"
+echo "   mineru-models-download -s huggingface -m vlm"
 echo "──────────────────────────────────────────────────────────────"
 
 # -------------------------------------------------------------------
@@ -295,16 +277,13 @@ python -c "import transformers; print(f'transformers : {transformers.__version__
 python -c "import torch; fa=torch.backends.cuda.flash_sdp_enabled(); print(f'SDPA flash   : {fa}')"
 python -c "import grpc; print(f'grpcio       : {grpc.__version__}')"
 python -c "import pytest; print(f'pytest       : {pytest.__version__}')"
-# ── 선택(없어도 단계 1·텍스트/BE 테스트엔 무관) ──
-# autoawq 의 import 이름은 'awq' (패키지명 autoawq ≠ 모듈명). AWQ 양자화 모델 추론 시에만 필요.
-python -c "import importlib.metadata as m; print('autoawq      :', m.version('autoawq'), '(import awq)')" \
-    || echo "autoawq      : 미설치 (선택 — AWQ 모델 추론 시 필요)"
-python -c "import awq_ext" 2>/dev/null && echo "awq_kernels  : OK" \
-    || echo "awq_kernels  : 미설치 (선택 — GitHub 휠 404. AWQ GPU 커널, 모델 추론 시 수동 설치)"
+# ── requirements-ai.txt 설치 후에 채워지는 항목들 ──
 python -c "import braillify; print('braillify    : OK')" \
     || echo "braillify    : 미설치 (requirements-ai.txt — 점자 엔진, 미설치 시 폴백 모드)"
 python -c "import louis; print('louis        : OK')" \
     || echo "louis        : 미설치 (requirements-ai.txt — liblouis 바인딩)"
+python -c "import anthropic; print('anthropic    : OK')" \
+    || echo "anthropic    : 미설치 (requirements-ai.txt — 캡셔닝·이미지 분류. 없으면 조용히 폴백)"
 set -e
 echo "───────────────────────────────────────────"
 
@@ -312,12 +291,12 @@ echo ""
 echo "========================================="
 echo "Setup Completed!"
 echo "   다음 단계:"
-echo "   1. .env 파일 편집"
-echo "   2. docker compose up -d  (TimescaleDB + ChromaDB)"
-echo "   3. python -m app.core.main          (서버 기동)"
-echo "   4. pytest test/integration/ -v      (단계 1 통합 테스트)"
+echo "   1. pip install -r requirements-ai.txt   (braillify·louis·anthropic 등)"
+echo "   2. .env 편집 — HCXT_MODEL_PATH, GPU 번호, TLS, API 키"
+echo "   3. 위 안내대로 HCXT 모델 다운로드 (~55GB)"
+echo "   4. MinerU를 별도 conda env에 설치 (RUNBOOK §2)"
+echo "   5. python -m app.core.main              (gRPC 50051 + REST 8080)"
 echo ""
-echo "   단계 2 시작 전:"
-echo "   5. pip install -r requirements-ai.txt   (AI 모델 의존 패키지)"
-echo "   6. 위 안내에 따라 L4 모델 다운로드 후 .env 경로 확인"
+echo "   검증:"
+echo "   pytest test/unit_test/braille/test_rule_engine.py -v   # C5 배포 블로커"
 echo "========================================="
