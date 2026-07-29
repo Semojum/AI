@@ -43,12 +43,13 @@ def _load_flat_table() -> dict[str, str]:
         for symbol, braille in entries.items():
             if not symbol.startswith("_") and isinstance(braille, str):
                 flat[symbol] = braille
-    # 그리스 소문자 접두 관행 전환(book 모드 한정) — 대문자(⠠⠨x)는 건드리지 않는다.
-    if _IS_BOOK_STYLE:
-        for ch in _LC_GREEK_CHARS:
-            b = flat.get(ch)
-            if b and b.startswith("⠨") and len(b) == 2:
-                flat[ch] = "⠈" + b[1]
+    # ★ 2026-07-29(대표 결정) — 소문자 그리스 접두를 **규정형 ⠨로 되돌린다.**
+    #   판정 원칙: "규정이 명확한데 관행이 완전히 다르면 규정대로"(docs/analysis/규정-관행_대조원장.md §1).
+    #   규정 제30항·수학 제13항이 ⠨로 명확하므로 관행 ⠈를 따르지 않는다.
+    #   관행형이던 근거(gold 판정가능 265건 중 ⠈ 263)는 그대로 유효하나, 그건
+    #   2012년 EBS 판본 하나의 관행이고 국가 표준이 아니다. 점수 손실은 감수한다.
+    #   ⚠ 같은 계열로 남은 것 — 대문자 그리스(규정 ⠠⠨ vs 도서 ⠨)·≠(규정 ⠨⠒⠒ vs 도서 ⠨⠒).
+    #     이번 결정 범위 밖이라 손대지 않았고 원장에 결정 대상으로 올려 뒀다.
     # 긴 키 우선 → '……'가 '…'보다 먼저 치환되도록
     return dict(sorted(flat.items(), key=lambda x: len(x[0]), reverse=True))
 
