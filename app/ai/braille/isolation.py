@@ -56,6 +56,21 @@ def safe_translate(
 #   '내용 있음'으로 보고 멀쩡한 빈칸 출력을 placeholder로 덮어쓴다.
 _W2C_BLANK_RE = re.compile(r"[\s\x00-\x1f\x7f-\x9f⠀]+")
 
+# ── 의도적 생략 문자 — 2026-07-29 ────────────────────────────────────────────
+# 한자는 점역하지 않는 것이 도서 관행이다(translator: '한자 병기 괄호는 통째 생략',
+# 정답 대조 확인 — 언어 p053 '과목(果木)'→'과목', '다정(多情)도 병(病)인양하'는
+# 정답과 셀 단위로 일치). 그래서 **한자만 있는 요소는 빈 출력이 정답**이다.
+# 그런데 소실 가드가 "원문 있음 + 출력 0셀"만 보고 그걸 소실로 판정해,
+# `[처리 불가: 점역 불가 문자 匙]` 같은 **한글 리터럴이 점자 인쇄물에 그대로 찍혔다**
+# (실측 2026-07-29: dev 160자 · val 779자 · 홀드아웃 65자 — 점자 파일에 읽을 수 없는 줄).
+# 원문에서 한자를 뺐을 때 남는 게 없으면 '소실'이 아니라 '의도적 생략'으로 본다.
+# ⚠ 전각 범위를 통째로 넣으면 전각 숫자·영문까지 '없는 셈' 치게 된다 — 괄호류만 명시한다.
+_CJK_RE = re.compile(
+    "[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]"        # 한자(확장A·기본·호환)
+    "|[\u3000-\u303f]"                              # CJK 문장부호
+    "|[\uff08\uff09\uff3b\uff3d\uff5b\uff5d]"          # 전각 괄호(한자 병기에 붙어 온다)
+)
+
 
 def _w2c_empty(text) -> bool:
     if isinstance(text, str):
@@ -74,6 +89,9 @@ def _w2c_lost_source(opt: LLMOutput, out: BrailleOutput) -> str | None:
     """
     src = (opt.corrected_text or "") or (opt.tn_text or "")
     if _w2c_empty(src):
+        return None
+    # 한자만 남은 요소는 빈 출력이 정답이다(도서 관행). 위 _CJK_RE 주석 참조.
+    if _w2c_empty(_CJK_RE.sub("", src)):
         return None
     if not _w2c_empty(out.braille_lines):
         return None

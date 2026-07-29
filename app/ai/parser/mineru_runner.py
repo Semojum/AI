@@ -52,13 +52,24 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | N
     # 없으면 요청마다 로컬 VLM 로드(vlm-engine 폴백).
     from app.ai.parser import mineru_service
     api_url = mineru_service.get_url()
+    # ★ 2026-07-29 — 백엔드를 **경로와 무관하게 명시**한다.
+    #   종전엔 영구 서비스가 떠 있으면 -b를 안 넘겨 MinerU 기본값 **hybrid-engine**이 쓰이고,
+    #   서비스가 없을 때만 vlm-engine이 쓰였다. 즉 **같은 문서가 서비스 가동 여부에 따라 다른
+    #   백엔드로** 처리됐다. 실측 피해(사회문화 p178, 동일 페이지):
+    #     hybrid+effort medium(구 기본) → text 35 · list **0**   (본문 과분절·목록 소실)
+    #     vlm-engine 또는 hybrid+high   → text  8 · list  7      (07-17 캐시와 일치)
+    #   목록이 사라지면 글머리 3칸 들여쓰기(BBPG 2장3절5)가 통째로 빠진다.
+    backend = os.environ.get("MINERU_BACKEND", "hybrid-engine")
+    cmd += ["-b", backend]
     if api_url:
         cmd += ["--api-url", api_url]
-    else:
-        cmd += ["-b", "vlm-engine"]
-    # hybrid 백엔드의 파싱 강도. 기본 medium이며 high는 GPU 시간을 더 쓰는 대신
-    # 인식 정확도를 올린다(API 비용은 없다). 과목별로 득실이 달라 env로 켠다.
-    effort = os.environ.get("MINERU_EFFORT")
+    # hybrid 백엔드의 파싱 강도. **기본 medium은 이미지·차트 분석을 끄고 목록 구조도 잃는다.**
+    # 동일 페이지(사회문화 p178) 실측 — medium: text 35·list 0 (8초) / high: text 8·list 7 (40초)
+    #   / vlm-engine: text 8·list 7 (40초). 즉 품질 차이는 백엔드가 아니라 **effort**이고,
+    #   high는 vlm-engine과 같은 결과를 같은 시간에 낸다.
+    # ⚠ 속도 5배 차이는 원가 모형의 '읽어내기' 항목을 직접 바꾼다 — 운영 기본값을 바꿀 때는
+    #   비용 재산정이 따라야 한다. 그래서 env로 내렸다: MINERU_EFFORT=medium 이면 구 동작.
+    effort = os.environ.get("MINERU_EFFORT", "high" if "hybrid" in backend else None)
     if effort in ("medium", "high"):
         cmd += ["--effort", effort]
     try:
