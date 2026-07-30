@@ -39,7 +39,10 @@ safetensors==0.4.5
 # ── 점자 변환 엔진 ────────────────────────────────────────────────
 braillify==2.0.1             # 한글 점자 변환. 무고정 시 상류 신버전이 점역 결과를 조용히 바꾼다
                              # (2.1.0은 "숫자 공백 숫자"를 ⠐로 이어 붙여 gold와 불일치 — 2026-07-26 대조)
-louis                        # liblouis Python 바인딩 (PyPI 최신 1.3)
+# louis(liblouis 바인딩) 제거 — 2026-07-30.
+#   app/·test/ 참조 0건이고, braillify는 자체 .so 단독으로 동작해 liblouis를
+#   부르지 않는다. PyPI `louis`는 설치돼도 import가 안 돼 검증만 시끄러웠다.
+#   liblouis 시스템 패키지는 setup.sh에 남겨 둔다(나중에 바인딩을 붙일 여지).
 
 # ── LLM API Fallback ──────────────────────────────────────────────
 # anthropic: captioner·classifier·base_opt·opus_fallback 네 곳에서 import한다.

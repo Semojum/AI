@@ -278,12 +278,13 @@ python -c "import torch; fa=torch.backends.cuda.flash_sdp_enabled(); print(f'SDP
 python -c "import grpc; print(f'grpcio       : {grpc.__version__}')"
 python -c "import pytest; print(f'pytest       : {pytest.__version__}')"
 # ── requirements-ai.txt 설치 후에 채워지는 항목들 ──
-python -c "import braillify; print('braillify    : OK')" \
+#    2>/dev/null: 미설치일 때 ImportError 역추적이 통째로 찍혀 진짜 오류처럼 보였다.
+python -c "import braillify; print('braillify    : OK')" 2>/dev/null \
     || echo "braillify    : 미설치 (requirements-ai.txt — 점자 엔진, 미설치 시 폴백 모드)"
-python -c "import louis; print('louis        : OK')" \
-    || echo "louis        : 미설치 (requirements-ai.txt — liblouis 바인딩)"
-python -c "import anthropic; print('anthropic    : OK')" \
+python -c "import anthropic; print('anthropic    : OK')" 2>/dev/null \
     || echo "anthropic    : 미설치 (requirements-ai.txt — 캡셔닝·이미지 분류. 없으면 조용히 폴백)"
+python -c "import openai; print('openai       : OK')" 2>/dev/null \
+    || echo "openai       : 미설치 (requirements-ai.txt — GPT-4o 폴백)"
 set -e
 echo "───────────────────────────────────────────"
 
@@ -291,7 +292,7 @@ echo ""
 echo "========================================="
 echo "Setup Completed!"
 echo "   다음 단계:"
-echo "   1. pip install -r requirements-ai.txt   (braillify·louis·anthropic 등)"
+echo "   1. pip install -r requirements-ai.txt   (braillify·anthropic·openai 등)"
 echo "   2. .env 편집 — HCXT_MODEL_PATH, GPU 번호, TLS, API 키"
 echo "   3. 위 안내대로 HCXT 모델 다운로드 (~55GB)"
 echo "   4. MinerU를 별도 conda env에 설치 (RUNBOOK §2)"
