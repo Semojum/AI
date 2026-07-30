@@ -77,7 +77,17 @@ def ensure_started(wait: float = 240.0) -> str | None:
     # 실측(2026-07-29, 서버 1대): 동시 1→716쪽/h · 2→1,080 · 4→1,632 · 8→1,905.
     # GPU 추론은 줄을 서지만 프로세스 기동·PDF 렌더가 겹쳐 4쪽에서 처리량 2.28배가 된다.
     # VRAM은 동시 8쪽에서도 3.5GB로 여유가 있다.
+    # flashinfer는 어텐션·샘플링 커널을 JIT 컴파일할 때 PATH에서 `ninja`를 찾는다.
+    # mineru-api를 절대경로로 띄우면 conda env의 bin/이 PATH에 없어 ninja를 못 찾고
+    # FileNotFoundError로 EngineCore가 죽는다(2026-07-30 A10G 실측 — 메모리 문제로
+    # 오인하기 쉽다. 트레이스백이 determine_available_memory 안에서 끝나기 때문).
+    # systemd는 PATH가 더 최소라 반드시 필요하다.
+    _api_dir = Path(_mineru_api_bin()).parent
+    _path = os.environ.get("PATH", "")
+    if _api_dir.name:                     # bare "mineru-api"(PATH 의존)면 손대지 않는다
+        _path = f"{_api_dir}{os.pathsep}{_path}"
     env = {**os.environ,
+           "PATH": _path,
            "MINERU_API_MAX_CONCURRENT_REQUESTS": str(config.mineru_max_concurrent)}
 
     # vLLM이 선점할 VRAM 비율. MinerU 기본 0.5는 HCXT와 GPU 한 장을 나눠 쓰는
