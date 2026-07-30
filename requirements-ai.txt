@@ -1,21 +1,29 @@
 # =================================================================
-# Semojum V2 AI — requirements-ai.txt  (Stage 2+ AI 모델 패키지)
-# 환경: Ubuntu 22.04 / Python 3.10 / CUDA 12.1 / L4 GPU
+# Semojum V2 AI — requirements-ai.txt  (서버 venv 전용 AI 패키지)
+# 환경: Ubuntu 22.04 / Python 3.10 / CUDA 12.1 / A10G·L4 24GB
 #
-# [설치 순서] setup.sh 실행 후 Stage 2 시작 전 1회 실행:
+# [설치 순서] setup.sh 실행 후 1회:
 #   pip install -r requirements-ai.txt
 #
+# [이 venv의 역할] — 레이아웃·OCR·표 인식은 여기 없다.
+#   MinerU가 별도 conda env(mnr_vllm)에서 전담한다. 이 venv가 로드하는
+#   모델은 HCXT 하나뿐이고, 나머지는 규칙 엔진과 외부 API 호출이다.
+#
 # [주의]
-#   - torch, torchvision, autoawq, autoawq_kernels 는
-#     setup.sh 에서 CUDA 전용 휠로 먼저 설치됨. 이 파일에서 제외.
-#   - flash-attn 불필요: PyTorch 2.5.1 내장 SDPA 사용 (INT4 AWQ 추론 기준).
-#   - transformers/tokenizers/accelerate/einops/timm/safetensors 역시
-#     setup.sh step 6 에서 설치됨. 이 파일은 중복 명시용(버전 고정 보장).
-#   - braillify: 점역 출력이 버전마다 바뀌므로 == 로 고정한다(임의 업그레이드 금지).
+#   - torch/torchvision은 setup.sh가 CUDA 전용 휠로 먼저 설치한다. 여기 없음.
+#   - flash-attn 불필요: PyTorch 2.5.1 내장 SDPA 사용.
+#   - braillify: 점역 출력이 버전마다 바뀌므로 ==로 고정한다(임의 업그레이드 금지).
 #                업그레이드는 회귀 대조(2.0.1 대비 출력 diff) 후에만.
-#   - louis: liblouis 시스템 패키지 의존 (setup.sh step 2 에서 설치됨).
-#   - docling-core: docling 의 직접 의존 — 버전 고정 시 충돌 가능.
-#                   docling 이 호환 버전을 관리하도록 고정 제거.
+#   - louis: liblouis 시스템 패키지 의존 (setup.sh step 2에서 설치됨).
+#
+# [2026-07-30 정리] app/·test/ 전수 grep으로 import 0건인 패키지를 걷어냈다.
+#   ultralytics(YOLO)·docling(TableFormer) → MinerU env로 이관돼 여기선 죽은 코드.
+#   chromadb·sentence-transformers → RAG 미구축. 게다가 sentence-transformers
+#     3.3.1은 transformers<5.0.0을 요구해 위의 5.9.0 고정과 정면충돌한다
+#     (설치가 ResolutionImpossible로 막힌다).
+#   pylatexenc·nltk·matplotlib → 참조 없음.
+#   asyncpg → TimescaleDB sink 미배선(metrics_collector는 JSONL로 쓴다).
+#   되살릴 때는 반드시 transformers 5.9.0과의 호환부터 확인할 것.
 # =================================================================
 
 # ── 모델 공통 의존성 (setup.sh step 6 과 버전 고정 일치) ──────────
@@ -33,32 +41,9 @@ braillify==2.0.1             # 한글 점자 변환. 무고정 시 상류 신버
                              # (2.1.0은 "숫자 공백 숫자"를 ⠐로 이어 붙여 gold와 불일치 — 2026-07-26 대조)
 louis                        # liblouis Python 바인딩 (PyPI 최신 1.3)
 
-# ── 레이아웃 / 문서 탐지 ──────────────────────────────────────────
-ultralytics>=8.3.0           # DocLayout-YOLO v2 (YOLO 기반 레이아웃 탐지)
-
-# ── 표 구조 탐지 ──────────────────────────────────────────────────
-# [주의] docling-core 는 고정하지 않음 — docling 이 호환 버전을 관리.
-#        docling 2.15.0 → easyocr<2.0 sub-dep 설치됨.
-#        torch 는 setup.sh 에서 먼저 CUDA 버전으로 고정되어 덮어쓰이지 않음.
-docling==2.15.0
-
-# ── 수식 LaTeX 검증 ───────────────────────────────────────────────
-pylatexenc==2.10
-
-# ── RAG / 임베딩 ──────────────────────────────────────────────────
-# [CONFLICT FIX] chromadb 0.5.x → tokenizers<=0.20.3 요구 충돌
-#                chromadb 0.6.0+ → tokenizers>=0.13.2 (충돌 해소)
-chromadb>=0.6.0
-sentence-transformers==3.3.1
-
 # ── LLM API Fallback ──────────────────────────────────────────────
 # anthropic: captioner·classifier·base_opt·opus_fallback 네 곳에서 import한다.
 #            lazy import라 없어도 기동은 되지만 캡셔닝·이미지 분류가 조용히
 #            폴백으로 새므로, 빠지면 증상이 늦게 드러난다.
 anthropic>=0.40,<1.0
 openai==1.57.4
-
-# ── 메트릭 / 시각화 ───────────────────────────────────────────────
-asyncpg==0.30.0
-nltk==3.9.1
-matplotlib==3.9.3
