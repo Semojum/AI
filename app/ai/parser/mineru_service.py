@@ -79,13 +79,34 @@ def ensure_started(wait: float = 240.0) -> str | None:
     # VRAM은 동시 8쪽에서도 3.5GB로 여유가 있다.
     env = {**os.environ,
            "MINERU_API_MAX_CONCURRENT_REQUESTS": str(config.mineru_max_concurrent)}
-    logger.info("MinerU 영구 서비스 기동 중: %s (VLM 프리로드 · 동시 %d)…",
-                url, config.mineru_max_concurrent)
+
+    # vLLM이 선점할 VRAM 비율. MinerU 기본 0.5는 HCXT와 GPU 한 장을 나눠 쓰는
+    # 우리 배치에서 확보에 실패한다 — A10G 24GB 실측(2026-07-30):
+    #   HCXT 4bit 12.6GB 점유 → 여유 9.49GB < 요구 11.03GB
+    #   → EngineCore 기동 실패 → CLI 폴백으로 조용히 느려짐(39s → 50~70s/쪽).
+    # 0.35(≈7.7GB)면 1.2B 가중치 ~2.5GB + KV 캐시로 충분하고 둘이 공존한다.
+    # GPU를 독점하는 배치면 MINERU_GPU_MEM_UTIL로 올린다.
+    gpu_util = os.environ.get("MINERU_GPU_MEM_UTIL", "0.35")
+
+    # 자식 출력을 버리면 기동 실패 원인이 통째로 사라진다(위 사고를 20분 늦춘 원인).
+    # 파일로 남겨 두고, 못 열면 그때만 DEVNULL로 떨어진다.
+    log_path = Path(os.environ.get(
+        "MINERU_API_LOG", str(Path.cwd() / "storage" / "logs" / "mineru_api.log")))
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        sink = open(log_path, "ab")
+    except Exception:  # noqa: BLE001
+        sink = subprocess.DEVNULL
+        log_path = None
+
+    logger.info("MinerU 영구 서비스 기동 중: %s (VLM 프리로드 · 동시 %d · VRAM %s)…",
+                url, config.mineru_max_concurrent, gpu_util)
     try:
         _proc = subprocess.Popen(
             [_mineru_api_bin(), "--host", "127.0.0.1", "--port", str(_PORT),
-             "--enable-vlm-preload", "true"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
+             "--enable-vlm-preload", "true",
+             "--gpu-memory-utilization", gpu_util],
+            stdout=sink, stderr=subprocess.STDOUT, env=env,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("MinerU 서비스 기동 실패(%s) → 요청마다 CLI 폴백", exc)
@@ -99,10 +120,12 @@ def ensure_started(wait: float = 240.0) -> str | None:
             logger.info("MinerU 영구 서비스 준비 완료 (%.0fs)", time.time() - t0)
             return url
         if _proc.poll() is not None:
-            logger.warning("MinerU 서비스 프로세스 조기 종료 → CLI 폴백")
+            logger.warning("MinerU 서비스 프로세스 조기 종료(exit=%s) → CLI 폴백. 원인: %s",
+                           _proc.returncode, log_path or "(로그 미기록)")
             return None
         time.sleep(2)
-    logger.warning("MinerU 서비스 기동 타임아웃(%.0fs) → CLI 폴백", wait)
+    logger.warning("MinerU 서비스 기동 타임아웃(%.0fs) → CLI 폴백. 원인: %s",
+                   wait, log_path or "(로그 미기록)")
     return None
 
 
