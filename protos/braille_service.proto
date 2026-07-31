@@ -41,8 +41,11 @@ message RuleTrail {
   string excerpt  = 5;
   string priority = 6;   // "primary" | "secondary"
   // ── 요소-로컬 좌표(조판 후) — AI 서버가 완성, FE/BE 계산 없음 ──────────────
-  // 좌표계 = 이 블록의 **조판 줄** 배열. contents는 요소당 1항목이므로 줄은 `\n`으로 나뉜다.
-  // FE 하이라이트 = contents[0].split("\n")[line_no][col_start:col_end]   (2026-07-28 BE 합의)
+  // 좌표계 = **선택 초안의 조판 줄** 배열. 줄은 항목 안에서 `\n`으로 나뉜다.
+  // FE 하이라이트 = contents[selected_idx].split("\n")[line_no][col_start:col_end]
+  //   본문·수식은 항목이 1개(selected_idx=0)라 contents[0]과 같다.
+  //   시각자료는 4항목이므로 반드시 selected_idx를 써야 한다 — 실측 670건 전부 이 기준에서만
+  //   유효했다(2026-07-31 확인). 종전 주석의 contents[0]은 항목이 1개이던 시절의 잔재다.
   int32  line_no   = 7;  // 줄 인덱스(0-based). -1 = 요소 전체(블록 전체 하이라이트)
   int32  col_start = 8;  // 그 줄 안의 시작 칸(0-based)
   int32  col_end   = 9;  // 끝 칸(미포함). 점 태그는 col_start==col_end. line_no==-1이면 무시
