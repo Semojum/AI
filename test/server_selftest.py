@@ -141,10 +141,13 @@ def main() -> None:
 
     rows, all_errs = [], []
     status_c, crit_c, flag_c, type_c = Counter(), Counter(), Counter(), Counter()
+    tier_c = Counter()
+    flag_msgs: dict[str, str] = {}     # 플래그 종류별 대표 메시지 1개
+    confs: list[float] = []
 
-    hdr = f"{'과목':<8}{'쪽':>5}{'상태':<14}{'요소':>5}{'시각':>5}{'초':>7}{'정답대비':>9}"
-    print(hdr)
-    print("-" * 72)
+    print(f"{'과목':<9}{'쪽':>4} {'티어':<9}{'상태':<14}{'요소':>5}{'시각':>5}"
+          f"{'초':>7}{'정답대비':>9}")
+    print("-" * 78)
 
     for subj, pg in pages:
         pdf = INPUT / f"input_{subj}_page{pg}.pdf"
@@ -169,6 +172,7 @@ def main() -> None:
         our_cells = []
         for el in bl:
             type_c[el.type] += 1
+            confs.append(el.ocr_confidence)
             if el.type in VISUAL:
                 n_vis += 1
             check_element(el, errs, f"{subj} p{pg} #{el.order}({el.type})")
@@ -186,22 +190,27 @@ def main() -> None:
             cover = hit / tot
 
         status_c[res.status] += 1
+        tier = res.processing_meta.routing_tier_used or "?"
+        tier_c[tier] += 1
         for c in res.quality_report.critical_errors:
             crit_c[c.type] += 1
+            flag_msgs.setdefault(c.type, c.message)
         for fl in res.quality_report.review_flags:
             flag_c[fl.type] += 1
+            flag_msgs.setdefault(fl.type, fl.message)
         all_errs += errs
 
         cov_s = f"{cover*100:>7.1f}%" if cover is not None else "     — "
         mark = "" if not errs else f"  ★계약 {len(errs)}"
-        print(f"{subj:<8}{pg:>5}{res.status:<14}{len(bl):>5}{n_vis:>5}{el_s:>7.1f}{cov_s}{mark}")
+        print(f"{subj:<9}{pg:>4} {tier:<9}{res.status:<14}{len(bl):>5}{n_vis:>5}"
+              f"{el_s:>7.1f}{cov_s}{mark}")
 
         rows.append({
             "subject": subj, "page": pg, "status": res.status,
             "elements": len(bl), "visual": n_vis,
             "elapsed_s": round(el_s, 2),
             "server_ms": res.processing_meta.processing_time_ms,
-            "routing_tier": res.processing_meta.routing_tier_used,
+            "routing_tier": tier,
             "gold_coverage": round(cover, 4) if cover is not None else None,
             "critical": [c.type for c in res.quality_report.critical_errors],
             "flags": [f.type for f in res.quality_report.review_flags],
@@ -220,11 +229,20 @@ def main() -> None:
     if covs:
         print(f"  정답대비  평균 {sum(covs)/len(covs)*100:.1f}% "
               f"(요소 셀열이 정답 페이지 안에 그대로 있는 비율 — 스모크 근사)")
+    print(f"  라우팅    {dict(tier_c)}"
+          f"   ← ZERO=텍스트레이어 직접추출(MinerU 미사용) / STANDARD·QUALITY=MinerU")
     print(f"  요소유형  {dict(type_c.most_common(8))}")
+    if confs:
+        lo = sum(1 for c in confs if c < 0.85)
+        print(f"  신뢰도    평균 {sum(confs)/len(confs):.2f} · 0.85 미만 {lo}/{len(confs)}개")
     if crit_c:
         print(f"  치명(C)   {dict(crit_c)}")
     if flag_c:
         print(f"  검토(R)   {dict(flag_c)}")
+    if flag_msgs:
+        print("  플래그 사유(종류별 예시)")
+        for k in sorted(flag_msgs):
+            print(f"    · {k}: {flag_msgs[k][:70]}")
 
     print(f"\n【계약 검증】 {'통과 — 위반 0건' if not all_errs else f'★ 위반 {len(all_errs)}건'}")
     for e in all_errs[:12]:
