@@ -78,13 +78,16 @@ def _dict_to_text_element(d: dict):
         trail.col_start = rt.get("col_start", 0)
         trail.col_end = rt.get("col_end", 0)
         trail.tag = rt.get("tag", "")
-    # 초안 메타(라벨·한글 원문). **점자는 contents[i]에 이미 실려 있다**(2026-07-28) —
-    # 그래서 이 필드를 모르는 구 스텁도 4안 점자는 정상 수신한다. drafts는 contents와 1:1.
+    # 시각 요소 복수 초안. BE proto §Draft대로 초안마다 자기 점자 줄(contents)을 싣는다.
+    # 상위 elem.contents == drafts[selected_idx].contents (같은 값 — BE는 타입 구분 없이
+    # 항상 elem.contents로 렌더하고, 피커를 붙이는 FE만 drafts를 추가로 읽는다).
     elem.selected_idx = d.get("selected_idx", 0)
     for dr in d.get("drafts", []):
         draft = elem.drafts.add()
         draft.text = dr.get("text", "")
         draft.label = dr.get("label", "")
+        for c in dr.get("contents", []):
+            draft.contents.append(c)
     return elem
 
 

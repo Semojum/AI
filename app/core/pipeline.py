@@ -1079,40 +1079,24 @@ async def _run_pipeline(task: PageTask) -> dict:
 
 # ── 응답 조립 ────────────────────────────────────────────────────────────
 
-def _join_lines(lines: list[str]) -> list[str]:
-    """조판된 줄 목록 → `contents` 직렬화 형식(**요소당 1항목**, 줄바꿈으로 구분).
+def _selected_lines(bo) -> list[str]:
+    """BrailleOutput → `contents` 직렬화 = **선택 초안의 32칸 조판 줄 배열**.
 
-    BE 계약(2026-07-28 합의): `contents`의 한 항목 = **묵자 문단 또는 시각자료 하나**다.
-    32칸 조판은 규정이라 유지해야 하므로 줄 경계는 항목을 쪼개는 대신 `\\n`으로 표시한다.
-    (종전에는 32칸 줄 하나가 항목 하나였다 — BE가 FE로 넘길 때 요소 단위가 깨졌다.)
+    BE proto(braille_service.proto §TextElement.contents) 계약:
+      · `contents`의 한 항목 = 조판된 32칸 줄 하나
+      · 시각 블록도 이 필드 하나로 렌더한다 — `drafts[selected_idx].contents`와 같은 값
+      · `RuleTrail.line_no`는 이 배열의 인덱스다
 
-    ★ 좌표 계약: `RuleTrail.line_no`는 이제 **`contents[0].split("\\n")` 의 줄 인덱스**다.
-      FE 하이라이트는 `contents[0].split("\\n")[line_no][col_start:col_end]`.
-    내부(조판·점역)는 계속 줄 리스트로 다루고 **직렬화 경계에서만** 결합한다.
-    빈 요소는 빈 배열을 유지한다(항목 1개짜리 빈 문자열을 만들지 않는다).
-    """
-    return ["\n".join(lines)] if lines else []
+    layout이 `bo.braille_lines`를 선택 초안의 조판 결과로 write-back하므로
+    (`layout_braille.py` `_layout_one` 참조) 여기서는 그대로 내보내면 된다.
+    빈 요소는 빈 배열을 유지한다.
 
-
-def _contents_array(bo) -> list[str]:
-    """BrailleOutput → `contents` 직렬화(**항목 하나 = 초안 하나**).
-
-    BE 협의 원설계(2026-05 proto)이자 태민 확정(2026-07-28):
-      · 시각자료(그림·표·차트·만화·도표) → 4안이 **순서대로** 4항목
-        (그림류 0생략·1짧은제목·2개조식·3줄글 / 표 0풀어쓰기·1격자·2전치·3선형)
-      · 대체텍스트가 없는 블록(본문·수식) → **1항목**
-    본문으로 쓸 것은 `selected_idx`가 가리킨다 — `contents[selected_idx]`가 기본 렌더다.
-    초안 **순서는 정규 순서를 유지**하고 재배열하지 않는다(라벨·근거가 순서에 묶여 있다).
-
-    각 항목 안의 줄 구분은 지금은 `\\n`이다. M1(조판을 FE로 이관)이 적용되면 파이프라인이
-    32칸 줄바꿈을 하지 않으므로 **항목 하나가 줄바꿈 없는 연속 점자**가 된다.
+    ※ 2026-07-28에 '항목 = 초안' 형식으로 바꿨다가 2026-07-31 BE proto에 맞춰 되돌렸다.
+      내부 표현(줄 리스트)은 그때도 바뀌지 않았고 직렬화 경계만 오갔다.
     """
     if bo is None:
         return []
-    if getattr(bo, "drafts", None):
-        return [_join_lines(d.braille_lines)[0] if d.braille_lines else ""
-                for d in bo.drafts]
-    return _join_lines(bo.braille_lines)
+    return list(bo.braille_lines)
 
 
 def _build_response(
@@ -1227,7 +1211,7 @@ def _build_response(
                     ))
                 ),
                 "render_mode": o.render_mode,
-                "contents": _contents_array(
+                "contents": _selected_lines(
                     braille_by_id.get(o.element_id)
                 ),
                 "rule_trail": [
@@ -1244,9 +1228,12 @@ def _build_response(
                 ),
                 "drafts": [
                     {
-                        # 점자는 상위 contents[i]에 있다(중복 전송 금지). 여기는 메타뿐.
+                        # BE proto §Draft: 초안마다 자기 점자 줄을 싣는다.
+                        # 선택 초안 것은 상위 contents와 같은 값이 되지만(중복),
+                        # 피커가 초안별 점자를 바로 꺼내 쓸 수 있어야 한다.
                         "text": d.text,
                         "label": d.label,
+                        "contents": list(d.braille_lines),
                     }
                     for d in (
                         braille_by_id[o.element_id].drafts
