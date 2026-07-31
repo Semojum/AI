@@ -6,7 +6,7 @@ server_selftest.py가 "정상 요청의 결과가 쓸 만한가"를 본다면, �
 
   A. 연결·TLS   정상 접속 / authority 불일치 거부 / 평문 거부 / REST https 강제
   B. gRPC       mode a·b·c 필드 채움 · id 정합 · 계약 불변식 · 잘못된 입력 방어
-  C. REST       /health · /models/status · /finalize 왕복 · 없는 경로
+  C. REST       /health · /models/status · /finalize 왕복(32칸·26줄) · 없는 경로
 
 사용 (작업 디렉토리 = code/AI/)
   python test/interface_check.py
@@ -29,11 +29,13 @@ import grpc                                                    # noqa: E402
 import requests                                                # noqa: E402
 from protos.generated import braille_service_pb2 as pb         # noqa: E402
 from protos.generated import braille_service_pb2_grpc as pbg   # noqa: E402
+from app.ai.braille.constants import COLS, ROWS                 # noqa: E402
 
 warnings.filterwarnings("ignore")          # 자체 서명 인증서 경고
 CERT = "/etc/ssl/semojum/server.crt"
 MAX_MSG = 20 * 1024 * 1024
-CELL_W = 32
+CELL_W = COLS      # 32칸 (BBPG 1장1절3)
+PAGE_ROWS = ROWS   # 26줄 — 단면은 본문 25 + 페이지행 1. '25줄'이 아니다
 SAMPLE_TEXT = "다음 그림은 2024년 자료이다. 빈칸 □ 에 알맞은 말을 쓰시오."
 
 RESULTS: list[tuple[str, str, bool, str]] = []   # (구역, 항목, 통과, 메모)
@@ -64,9 +66,12 @@ def reachable(ch, timeout: float = 8.0) -> bool:
 
 
 # ── 계약 불변식(BE proto) ────────────────────────────────────────────────
+# ⚠ 줄 배열·32칸 규칙은 `braille_text_list`에만 적용한다.
+#   `text_list.contents`는 점자가 아니라 **묵자 원문 1항목**이라(pipeline `_build_response`)
+#   문단 개행이 들어 있는 게 정상이다. 여기에 점자 규칙을 대면 오탐이 난다.
 def contract_errors(res) -> list[str]:
     errs: list[str] = []
-    for el in list(res.text_list) + list(res.braille_text_list):
+    for el in list(res.braille_text_list):
         w = f"#{el.order}({el.type})"
         if el.is_blocked:
             continue
@@ -184,8 +189,16 @@ def main() -> None:
         rec("B gRPC", "  bounding_box ↔ text_list id 정합",
             bool(tl_ids) and tl_ids <= bb_ids,
             f"text_list 중 bbox 없는 것 {len(tl_ids - bb_ids)}개")
+        # text_list는 묵자 원문 1항목(점자 아님) — BE가 헷갈리는 자리라 명시 검사한다.
+        rec("B gRPC", "  text_list = 묵자 1항목",
+            all(len(t.contents) == 1 for t in c.text_list),
+            f"항목 수 {sorted({len(t.contents) for t in c.text_list})}")
+        rec("B gRPC", "  text_list에 점자 없음",
+            not any(any(0x2800 <= ord(ch) <= 0x28FF for ch in "".join(t.contents))
+                    for t in c.text_list),
+            "묵자만 담겨야 정상")
         errs = contract_errors(c)
-        rec("B gRPC", "  계약 불변식", not errs,
+        rec("B gRPC", "  계약 불변식(braille만)", not errs,
             "위반 0" if not errs else f"위반 {len(errs)}: {errs[0][:50]}")
         cells = "".join("".join(e.contents) for e in c.braille_text_list)
         rec("B gRPC", "  점자 유니코드 범위",
@@ -269,8 +282,10 @@ def main() -> None:
             widths = [len(l) for p in pages for l in p.get("lines", [])]
             rec("C REST", "  32칸 이내", all(w <= CELL_W for w in widths),
                 f"최대 {max(widths) if widths else 0}칸")
-            rec("C REST", "  25줄 이내", all(len(p.get("lines", [])) <= 25 for p in pages),
-                f"최대 {max(len(p.get('lines', [])) for p in pages)}줄")
+            rec("C REST", f"  {PAGE_ROWS}줄 이내",
+                all(len(p.get("lines", [])) <= PAGE_ROWS for p in pages),
+                f"최대 {max(len(p.get('lines', [])) for p in pages)}줄 "
+                f"(본문 {PAGE_ROWS-1} + 페이지행 1)")
         rec("C REST", "  brf 문자열 반환", bool(fj.get("brf")), f"{len(fj.get('brf',''))}자")
     except Exception as exc:                       # noqa: BLE001
         rec("C REST", "/finalize 왕복(응답 contents 그대로)", False, str(exc)[:60])
