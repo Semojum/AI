@@ -13,6 +13,7 @@ import base64
 import json
 import logging
 import os
+from app.core.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ image(content는 빈 문자열)
 
 def enabled() -> bool:
     return (os.environ.get("OPUS_EXTRACT_FALLBACK", "0") == "1"
-            and bool(os.environ.get("ANTHROPIC_API_KEY")))
+            and bool(config.anthropic_api_key))
 
 
 def is_meager(elements: list[dict]) -> bool:

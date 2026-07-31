@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from app.core.config import config
 
 load_dotenv()
 
@@ -25,7 +26,7 @@ SYSTEM_PROMPT = (
 def _get_client() -> OpenAI:
     global _client
     if _client is None:
-        _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        _client = OpenAI(api_key=config.openai_api_key or None)
     return _client
 
 
@@ -94,7 +95,7 @@ def _classify_anthropic(b64: str, mime: str):
     import anthropic
     from app.utils.req_log import inc_gpt4o
     inc_gpt4o()
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    client = anthropic.Anthropic(api_key=config.anthropic_api_key or None)
     resp = client.messages.create(
         model=os.getenv("CAPTION_MODEL", "claude-sonnet-5"),
         max_tokens=10,
