@@ -109,7 +109,13 @@ def main() -> None:
     ap.add_argument("--out", default="storage/selftest.json")
     ap.add_argument("--insecure", action="store_true",
                     help="TLS 없이 붙는다(로컬 .env가 TLS_ENABLED=false일 때)")
+    ap.add_argument("--reuse", action="store_true",
+                    help="같은 job_id를 다시 써서 추출 캐시를 재사용(계약만 빠르게 볼 때)")
     a = ap.parse_args()
+
+    # job_id를 실행마다 다르게 준다. 같은 id면 pipeline이 경계 파일을 재사용해
+    # 추출을 통째로 건너뛰고(0.2초) '빠르다'는 착시를 만든다 — 실제 경로가 안 재진다.
+    run_tag = "reuse" if a.reuse else f"r{int(time.time())}"
 
     pages = pick_pages(a.pages)
     print(f"=== AI 서버 자체 점검 ===")
@@ -154,8 +160,9 @@ def main() -> None:
         if not pdf.exists():
             print(f"{subj:<8}{pg:>5}  PDF 없음 — 건너뜀")
             continue
-        req = pb.BrailleRequest(job_id=f"selftest-{subj}-{pg}", page_no=1, total_pages=1,
-                                pdf_data=pdf.read_bytes(), mode="c", source_text="")
+        req = pb.BrailleRequest(job_id=f"selftest-{run_tag}-{subj}-{pg}", page_no=1,
+                                total_pages=1, pdf_data=pdf.read_bytes(),
+                                mode="c", source_text="")
         t0 = time.time()
         try:
             res = stub.ProcessPage(req, timeout=a.timeout)
