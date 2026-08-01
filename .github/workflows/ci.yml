@@ -141,6 +141,12 @@ jobs:
           # 점역 엔진은 requirements-ai.txt에 있지만 단위 테스트에 필수다.
           # 없으면 폴백 모드(약자·약어 미지원)로 돌아 다른 코드 경로를 검사하게 된다.
           pip install braillify==2.0.1
+          # app/ 최상위에서 import하는 것들 — 없으면 테스트 수집 단계에서 24건이 깨진다.
+          #   torch   : core/model_manager.py · core/health_check.py
+          #   openai  : ai/captioning/captioner.py · classifier.py
+          # CI에는 GPU가 없으므로 CPU 전용 휠을 쓴다(CUDA 휠은 2GB대라 매 PR마다 낭비).
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install openai==1.57.4 'anthropic>=0.40,<1.0'
           pip install ruff
 
       - name: proto 생성
