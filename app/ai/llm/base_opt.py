@@ -35,6 +35,14 @@ class HcxtBudgetExceeded(Exception):
     """페이지 누적 HCXT 예산 소진 — 이 요소는 HCXT를 건너뛰고 GPT-4o로 폴백."""
 
 
+class HcxtDisabled(Exception):
+    """HCXT 비활성(config.hcxt_backend="off") — 추론을 시도하지 않고 곧바로 폴백.
+
+    ★ 전이 예외(OOM 등)와 섞이면 안 된다. 섞이면 generate_with_retry가 요소마다
+    _TRANSIENT_RETRIES회 헛돌고 나서야 폴백한다(비활성인데 재시도할 대상이 없다).
+    """
+
+
 def hcxt_generate_sync(prompt: str, max_new_tokens: int = 512, prefill: str = "") -> str:
     """HyperCLOVA X 동기 추론. prefill이 있으면 답변 시작을 강제해 포맷을 고정한다.
 
@@ -77,12 +85,17 @@ async def hcxt_optimize(
 ) -> str:
     """HCXT 추론 + 타임아웃. 백엔드에 따라 경로가 갈린다(config.hcxt_backend).
 
+    - off(기본, 2026-08-02): 아무것도 하지 않고 HcxtDisabled를 올린다 → 호출부가 즉시 폴백.
+      모델을 로드하지도, 서버에 붙지도 않으므로 연결 실패 지연·에러로그가 없다.
     - vllm: 별도 vLLM 서버로 오프로드. 서버가 배칭/동시성을 처리하므로 GPU 락·페이지 예산
       없이 요소들이 병렬로 돈다. 타임아웃만 건다.
-    - transformers(기본): 인프로세스 단일 GPU 직렬(inference_lock 공유). 락 안에서만 실제 추론
+    - transformers: 인프로세스 단일 GPU 직렬(inference_lock 공유). 락 안에서만 실제 추론
       시간을 재 파트별 사용량(req_log)에 기록한다(대기 시간 제외). 페이지 누적 예산도 여기서만.
     """
     from app.utils.req_log import record_hcxt
+
+    if not config.hcxt_enabled:
+        raise HcxtDisabled(kind)
 
     if config.hcxt_backend == "vllm":
         from app.ai.llm.hcxt_client import vllm_generate
@@ -240,10 +253,14 @@ async def generate_with_retry(
                 prompt, timeout, prefill=prefill, max_new_tokens=max_new_tokens, kind=kind
             )
             return (transform(resp) if transform else resp), False
-        except (asyncio.TimeoutError, HcxtBudgetExceeded) as exc:
-            # 느린 추론/예산 소진 재시도 금지 → 곧바로 폴백(락 점유 시간 최소화).
-            reason = "예산 소진" if isinstance(exc, HcxtBudgetExceeded) else "타임아웃"
-            logger.warning("HyperCLOVA X %s %s → 즉시 FALLBACK id=%s", kind, reason, element_id)
+        except (asyncio.TimeoutError, HcxtBudgetExceeded, HcxtDisabled) as exc:
+            # 느린 추론/예산 소진/비활성은 재시도 금지 → 곧바로 폴백(락 점유 시간 최소화).
+            if isinstance(exc, HcxtDisabled):
+                # 비활성은 설정대로 도는 정상 경로다 — 요소마다 warning을 찍으면 로그가 묻힌다.
+                logger.debug("HCXT 비활성 → FALLBACK id=%s (%s)", element_id, kind)
+            else:
+                reason = "예산 소진" if isinstance(exc, HcxtBudgetExceeded) else "타임아웃"
+                logger.warning("HyperCLOVA X %s %s → 즉시 FALLBACK id=%s", kind, reason, element_id)
             resp = await fallback_optimize(prompt, max_tokens=fallback_max_tokens, kind=kind)
             return resp, True
         except Exception as exc:

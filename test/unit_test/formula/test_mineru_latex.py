@@ -62,3 +62,44 @@ class TestConvertMinerULatex:
         # \frac이 ⠸⠡⠋⠗⠁⠉(f-r-a-c)처럼 알파벳으로 새지 않아야 함
         out = convert_latex(r"\frac{1}{2}")
         assert "⠋⠗⠁⠉" not in out
+
+
+class TestSpacedDigits:
+    r"""MinerU가 자리마다 띄어 낸 다자리 수 복원 (2026-08-02).
+
+    기대값은 규정에서 직접 세운다 — 수표(⠼)는 **수 하나에 한 번**이고 자릿수는
+    ⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚(1~9,0). 그러므로 12 = ⠼⠁⠃이지 ⠼⠁ ⠼⠃가 아니다.
+    코퍼스 실측: formula 429개 중 43개(10.0%)에 이 분리가 있었다.
+    """
+
+    def test_다자리수_한_수로_붙는다(self):
+        assert convert_latex("1 2") == "⠼⠁⠃"
+        assert convert_latex("6 0") == "⠼⠋⠚"
+        assert convert_latex("1 0") == "⠼⠁⠚"
+
+    def test_수표는_수마다_한_번(self):
+        # 분리돼 있으면 자리마다 수표가 찍힌다 — 그게 고치려는 증상이다.
+        assert convert_latex("1 2").count("⠼") == 1
+
+    def test_분수_분모_다자리(self):
+        # 5/12 — 한국 점자는 분모를 먼저 쓴다(십이분의 오): 12 ⠌ 5
+        assert convert_latex(r"\frac {5}{1 2}") == "⠼⠁⠃⠌⠼⠑"
+
+    def test_공백버전과_붙임버전_동일(self):
+        for spaced, tight in ((r"6 0 p", "60p"), (r"\ln 1 0", r"\ln 10"),
+                              (r"x ^ {1 0}", "x^{10}")):
+            assert convert_latex(spaced) == convert_latex(tight)
+
+    def test_쉼표는_넘지_않는다(self):
+        # 집합 원소 {1, 2, 4, 5} — 붙이면 값 자체가 바뀐다(1245).
+        out = convert_latex(r"\{1, 2, 4, 5 \}")
+        assert out.count("⠼") == 4
+
+    def test_행렬_칸은_붙지_않는다(self):
+        # & 로 나뉜 칸은 서로 다른 수다. 평탄화가 &를 공백으로 바꾸므로,
+        # 숫자 붙이기가 그보다 뒤에 오면 여기서 깨진다(순서 회귀 감시).
+        out = convert_latex(r"\begin{pmatrix} 1 & 2 \\ 3 & 4 \end{pmatrix}")
+        assert out.count("⠼") == 4
+
+    def test_두_칸_이상_벌어지면_안_붙인다(self):
+        assert convert_latex("1  2").count("⠼") == 2

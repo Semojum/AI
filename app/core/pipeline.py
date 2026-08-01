@@ -315,10 +315,17 @@ async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> tuple[l
             f.write(task.pdf_data)
             tmp_path = f.name
         try:
-            merged = await asyncio.to_thread(
-                mineru_run, tmp_path, task.page_no, task.job_id, "OCR",
-                timeout=config.mineru_timeout_resolved,
-            )
+            # ★ 추출 상한(60초)은 **슬롯을 잡은 뒤부터** 재야 한다.
+            #   mineru-api가 자체 동시 상한으로 요청을 큐에 세우는데, 종전에는 그 대기
+            #   중에도 subprocess 타임아웃이 이미 돌고 있었다 — 줄이 길면 정상 페이지가
+            #   '느린 페이지'로 오인돼 끊긴다. 상한은 비정상 탐지기이므로 그러면
+            #   탐지기가 망가진다. 대기는 페이지 예산(180초) 쪽에서만 계산한다.
+            from app.core.limits import mineru_slot
+            async with mineru_slot():
+                merged = await asyncio.to_thread(
+                    mineru_run, tmp_path, task.page_no, task.job_id, "OCR",
+                    timeout=config.mineru_timeout_resolved,
+                )
             result = await asyncio.to_thread(
                 build_result, merged, task.job_id, task.page_no, "OCR",
             )
