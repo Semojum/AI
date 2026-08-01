@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import uuid
+from difflib import SequenceMatcher
 from pathlib import Path
 
 import fitz
@@ -266,6 +267,123 @@ def _restore_table_bullets(fitz_page: fitz.Page, bbox: list[float], html: str) -
     out = html
     for pos in sorted(ops, reverse=True):
         out = out[:pos] + "•" + out[pos + ops[pos]:]
+    return out
+
+
+# ── 표 셀 글자 교정 ──────────────────────────────────────────────────────────
+# 표는 _NATIVE_TEXT_TYPES에서 빠져 있어(HTML 구조를 평문으로 덮으면 표가 깨진다)
+# MinerU OCR 글자가 그대로 남는다. 실측(코퍼스 1131p·표 384개)에서 남은 오독의
+# 사실상 전부가 여기 있었다: 흔성반(혼성반)·건년방(건넌방)·상총(상충)·디담돌(디딤돌)·
+# 쇠큐(쇄국)·카유웨이(캉유웨이)·설탐(설탕)·이미노산(아미노산) 등.
+#
+# 셀을 레이어 값으로 **통째 교체하지 않는다.** 레이어는 시각적 줄 단위라 셀 경계에서
+# 잘리고(`빛(400~700nm의 가시광선)` → `빛(400~700nm의 가시`), 밑줄 마커·PUA 잔재가
+# 섞여 들어온다. 통째 교체하면 글자를 고치는 대신 문장을 잘라먹는다.
+# 그래서 **한글 음절 ↔ 한글 음절, 같은 길이** 치환만 적용한다:
+#   - 길이가 바뀌는 편집(삽입·삭제)은 전부 버린다 → 잘림·중복이 반영될 수 없다.
+#   - 기호·숫자·로마자는 건드리지 않는다. 물결표(~ vs ∼)·붙임표(– vs -)는 레이어 쪽이
+#     원문 글리프지만, 그건 특수기호 축이 따로 규정으로 다루는 영역이라 여기서 손대면
+#     담당이 섞인다.
+_CELL_RE = re.compile(r"(<t[dh][^>]*>)(.*?)(</t[dh]>)", re.IGNORECASE | re.DOTALL)
+_HANGUL_RUN_RE = re.compile(r"^[가-힣]+$")
+_CELL_SIM_MIN = 0.80      # 셀이 레이어에서 이만큼도 안 닮은 자리밖에 없으면 대조 실패
+_CELL_SUB_MAX = 4         # 한 번에 이보다 길게 바꾸지 않는다(문장 교체 방지)
+
+
+def _best_layer_window(cell: str, layer_ns: str) -> tuple[float, int]:
+    """레이어(공백 제거)에서 cell과 가장 닮은 **같은 길이** 구간의 (유사도, 시작위치)."""
+    n = len(cell)
+    if n == 0 or n > len(layer_ns):
+        return 0.0, -1
+    probe = cell[:4]
+    starts: list[int] = []
+    if len(probe) >= 3:
+        starts = [m.start() for m in re.finditer(re.escape(probe), layer_ns)]
+    if not starts:
+        starts = list(range(0, len(layer_ns) - n + 1, max(1, n // 4)))
+    best, best_pos = 0.0, -1
+    for s in starts:
+        seg = layer_ns[s:s + n]
+        if not seg:
+            continue
+        r = SequenceMatcher(None, cell, seg, autojunk=False).ratio()
+        if r > best:
+            best, best_pos = r, s
+    return best, best_pos
+
+
+def _hangul_substitutions(cell: str, window: str) -> list[tuple[int, int, str]]:
+    """(셀 내 오프셋, 길이, 대체문자열). 한글↔한글 동일 길이 치환만."""
+    out: list[tuple[int, int, str]] = []
+    for tag, i1, i2, j1, j2 in SequenceMatcher(None, cell, window,
+                                               autojunk=False).get_opcodes():
+        if tag != "replace":
+            continue
+        a, b = cell[i1:i2], window[j1:j2]
+        if len(a) != len(b) or len(a) > _CELL_SUB_MAX:
+            continue
+        if not (_HANGUL_RUN_RE.match(a) and _HANGUL_RUN_RE.match(b)):
+            continue
+        out.append((i1, i2 - i1, b))
+    return out
+
+
+def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> str:
+    """표 셀의 한글 오독을 텍스트 레이어를 근거로 고친다. 구조(HTML)는 건드리지 않는다.
+
+    ★ 부분 교정 금지(_restore_table_bullets와 같은 원칙): 내용 있는 셀 하나라도 레이어에서
+    못 찾으면 그 표는 통째로 손대지 않는다. 못 찾는다는 건 레이어와 표가 다른 것을
+    가리킨다는 뜻이라, 찾은 셀의 교정도 근거가 없다.
+    """
+    if not html or not bbox:
+        return html
+    layer = _native_text_spaced(fitz_page, bbox)
+    if not layer or _pua_ratio(layer) > _PUA_RATIO_MAX:
+        return html
+    # 레이어에는 우리가 붙이는 인라인 태그(<!드러냄> 등)가 들어 있다 — 대조 전에 걷어낸다.
+    layer_ns = re.sub(r"\s+", "", re.sub(r"<!/?[^>]*>", "", layer))
+    if not layer_ns:
+        return html
+
+    edits: list[tuple[int, int, str]] = []
+    for m in _CELL_RE.finditer(html):
+        inner = m.group(2)
+        # 대조본(태그·공백·수식 구분자 $ 제거) ↔ 원문 인덱스 대응
+        ns_chars: list[str] = []
+        ns_idx: list[int] = []
+        i = 0
+        while i < len(inner):
+            ch = inner[i]
+            if ch == "<":                       # 셀 안 중첩 태그는 건너뛴다
+                j = inner.find(">", i)
+                if j < 0:
+                    break
+                i = j + 1
+                continue
+            if ch not in _BULLET_SKIP_CHARS:
+                ns_chars.append(ch)
+                ns_idx.append(i)
+            i += 1
+        cell = "".join(ns_chars)
+        if not cell:
+            continue                            # 빈 셀은 대조 대상이 아니다
+        sim, pos = _best_layer_window(cell, layer_ns)
+        if sim < _CELL_SIM_MIN:
+            return html                         # 한 셀이라도 실패 → 이 표는 포기
+        if sim >= 1.0:
+            continue
+        for off, ln, repl in _hangul_substitutions(cell, layer_ns[pos:pos + len(cell)]):
+            src = ns_idx[off:off + ln]
+            # 원문에서도 연속이어야 한다 — 중간에 태그·공백이 끼어 있으면 건드리지 않는다.
+            if src != list(range(src[0], src[0] + ln)):
+                continue
+            edits.append((m.start(2) + src[0], ln, repl))
+
+    if not edits:
+        return html
+    out = html
+    for pos, ln, repl in sorted(edits, reverse=True):
+        out = out[:pos] + repl + out[pos + ln:]
     return out
 
 
@@ -533,8 +651,10 @@ def run(
             else:
                 content = _native_override(fitz_page, bb, content) or content
         elif mapped_type == "table":
-            # 표는 구조 때문에 전면 대체를 못 하므로 글머리 기호(제72항)만 되돌린다.
+            # 표는 구조 때문에 전면 대체를 못 하므로 글머리 기호(제72항)만 되돌리고,
+            # 셀 안 글자는 레이어를 근거로 한글 오독만 고친다(둘 다 전부-아니면-전무).
             content = _restore_table_bullets(fitz_page, bb, content)
+            content = _correct_table_cells(fitz_page, bb, content)
 
         # 인쇄 캡션 강제 적용(위 forced_caption) — 생성 placeholder/빈 content를 덮어쓴다.
         if forced_caption and mapped_type == "caption":
