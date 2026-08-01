@@ -1,0 +1,16 @@
+# 경로별 필수 리뷰어 — docs/github/repo-rules.md
+# ⚠ @ 계정은 실제 GitHub 핸들로 교체 필요
+
+# BE↔AI 계약 — 한쪽이 단독으로 바꾸면 가장 비싼 사고가 난다
+/protos/                @Arminus42
+
+# 정답 코퍼스 — 훅이 못 막는 경로를 여기서 막는다
+/test/test_data/        @Arminus42
+
+# 점자 규정 엔진
+/app/ai/braille/        @Arminus42
+
+# CI·배포
+/.github/               @Arminus42
+/setup.sh               @Arminus42
+/requirements*.txt      @Arminus42
