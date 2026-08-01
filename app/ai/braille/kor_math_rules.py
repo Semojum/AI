@@ -257,6 +257,10 @@ def _digit_no_indicator(ch: str) -> str:
 _OPERATORNAME_RE = re.compile(r"\\operatorname\s*\*?\s*\{([^{}]*)\}")
 _SPACED_LETTERS_RE = re.compile(r"\{\s*([a-zA-Z](?:\s+[a-zA-Z])+)\s*\}")
 _BRACED_OP_RE = re.compile(r"\{\s*([-+=<>*/])\s*\}")
+# 다자리 수도 자리마다 띄어 낸다 — `\frac {5}{1 2}`(=5/12) · `6 0 p`(=60p) · `1 0 ^ {\circ}`(=10°).
+# 정확히 한 칸만 붙인다: 코퍼스 실측(1131p)에서 두 칸 이상으로 벌어진 숫자런은 0개이고,
+# 폭을 넓히면 의미 있는 간격까지 삼킨다. 쉼표는 절대 넘지 않는다(아래 사용처 주석 참조).
+_SPACED_DIGITS_RE = re.compile(r"\d(?: \d)+")
 
 _CODE_FENCE_RE = re.compile(r"```[a-zA-Z]*\n?|```")        # ```latex … ``` 펜스
 _MATH_DELIM_RE = re.compile(r"\${1,2}")                    # $$ … $$ / $ … $
@@ -533,6 +537,15 @@ def _normalize_latex_input(latex: str) -> str:
     s = _OPERATORNAME_RE.sub(lambda m: "\\" + re.sub(r"\s+", "", m.group(1)), s)
     s = _SPACED_LETTERS_RE.sub(lambda m: "{" + re.sub(r"\s+", "", m.group(1)) + "}", s)
     s = _BRACED_OP_RE.sub(lambda m: m.group(1), s)
+    # 다자리 수 복원(2026-08-02). 낱자리로 두면 11단계가 자리마다 수표를 찍어
+    # 12가 ⠼⠁⠀⠼⠃가 된다. val+dev 실측: formula 429개 중 43개(10.0%)·숫자런 87개가 해당.
+    # 같은 수식 안에 `\sin 10^{\circ}`와 `1 0 ^ {\circ}`가 함께 나오는 실례(수학2)가
+    # 분리가 MinerU 산물임을 직접 보여 준다.
+    # ⚠ 쉼표를 넘지 않는다 — `\{1, 2, 4, 5\}`는 집합 원소라 붙이면 값 자체가 바뀐다.
+    # ⚠ 소수점도 넘지 않는다 — `1. x = 2` 같은 문항 번호를 소수로 만든다(해당 실측 1건뿐).
+    # ⚠ 아래 행렬(_mat_repl)·연립식(_sys_repl) 평탄화보다 **먼저** 와야 한다. 그 뒤에는
+    #   셀 구분자 &가 공백으로 바뀌어, 서로 다른 칸의 숫자가 한 수로 붙어 버린다.
+    s = _SPACED_DIGITS_RE.sub(lambda m: m.group(0).replace(" ", ""), s)
     # 괄호 안쪽과 쉼표 앞의 공백도 MinerU가 넣은 것이다: `( x )` → `(x)`, `α , β` → `α, β`.
     # 이 단계는 원문 LaTeX의 군더더기 공백만 지운다 — 제51·57항의 구조 칸은 뒤 단계에서
     # 따로 넣으므로 영향받지 않는다.
