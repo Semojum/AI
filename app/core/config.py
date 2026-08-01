@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # ── 타임아웃 / 임계값 ─────────────────────────────────────────
     page_timeout_seconds: float = 180.0   # 페이지 하드 타임아웃(C7). 운영 정본 = 180초.
-    # MinerU 추출 서브 타임아웃(초). 0 = 자동(페이지 예산 - 60초 여유, 최소 60초).
+    # MinerU 추출 서브 타임아웃(초). 0 = 자동(아래 mineru_timeout_resolved).
     # 병리적으로 무거운 페이지(C9)에서 MinerU가 페이지 예산을 다 태우고 C7 BLOCKED로
     # 죽는 대신, 추출을 먼저 끊고 텍스트레이어 폴백으로 부분 초안을 살리기 위한 예산.
     mineru_timeout_seconds: float = 0.0
@@ -33,10 +33,16 @@ class Settings(BaseSettings):
     # 180초 페이지 예산에 뒤쪽 요청이 통째로 걸린다(C7).
     # 1차 = 2, 2차 개발부터 5로 확대.
     max_concurrent_pages: int = 2
-    # MinerU 추출 서버(mineru-api)의 동시 요청 허용치. 기본 3(MinerU 자체 기본값).
-    # 실측(2026-07-29): 동시 4쪽에서 처리량 2.28배 · 8쪽에서 2.66배, VRAM은 8쪽에서도 3.5GB.
+    # MinerU 추출 서버(mineru-api)의 동시 요청 허용치.
+    # 2026-08-02 4→2. 처리량 무릎이 2다 — 실측(effort=medium, RTX 4090 Laptop):
+    #   동시 1: 쪽당 7.75s · 0.129쪽/s
+    #   동시 2: 쪽당 8.97s · 0.218쪽/s   ← 무릎
+    #   동시 4: 쪽당 13.86s · 0.217쪽/s  ← 처리량 이득 0인데 최대 지연 21.4→36.9초
+    # 2→4는 처리량을 못 올리면서 꼬리만 늘린다. 꼬리가 늘면 추출 상한(비정상 탐지기)에
+    # 걸리는 정상 페이지가 생기므로 무릎을 넘길 이유가 없다.
     # ⚠ vCPU보다 크게 잡으면 CPU가 병목이 된다(g4dn.xlarge·g5.xlarge는 vCPU 4).
-    mineru_max_concurrent: int = 4
+    # ⚠ 위 수치는 전부 개발 랩탑 값이다. 운영(A10G 24GB)에서 무릎을 다시 재라.
+    mineru_max_concurrent: int = 2
 
     # ── HCXT(단일 GPU 직렬 추론) 예산 ─────────────────────────────
     # HCXT는 GPU 하나를 잠그고 요소를 하나씩 처리하므로, 요소당 시간이 크면 페이지 예산을
@@ -94,10 +100,34 @@ class Settings(BaseSettings):
 
     @property
     def mineru_timeout_resolved(self) -> float:
-        """MinerU 추출 서브 타임아웃 실효값. 0(자동)이면 페이지 예산 - 60초(최소 60초)."""
+        """MinerU 추출 서브 타임아웃 실효값. 0(자동)이면 60초.
+
+        2026-08-02 120초 → 60초. 이 상한은 성능 조절기가 아니라 **비정상 탐지기 + 사용자
+        인내 한계**다. 그 목적에 맞는지 실측으로 확인했다.
+
+        ① 비정상 탐지 — 정상 페이지의 꼬리가 어디서 끊기나
+           코퍼스 60쪽 무작위 표본(effort=medium, 동시 2, RTX 4090 Laptop):
+             p50 6.8s · p90 14.5s · p95 33.3s · p99·최대 36.6s
+           60초는 정상 최대의 1.6배이고 표본 0/60이 걸린다 → 넘으면 비정상으로 볼 만하다.
+           40초는 1.1배라 여유가 없어 무거운 정상 페이지를 끊을 위험이 실재한다.
+           종전 120초는 3.3배 — 병리 페이지가 페이지 예산을 다 태울 여유를 준다.
+
+        ② 사용자 대기 한계 — 남는 120초로 뒷단이 되나
+           캡셔닝(외부 API, 동시 4): 요소당 8.9초 실측 · 시각요소 p99 7개 → 2웨이브 ≈ 18초
+           규칙기반(opt+점역+조판): 코퍼스 1131쪽 메트릭 p99 0.9초 · 최대 1.6초
+           합쳐 최악 ~30초. 120초는 충분하다(재시도 2회를 다 써도 남는다).
+
+        ③ 상한에 걸리면 무엇이 살아남나
+           `pipeline._fallback_text_layer` — 텍스트레이어가 있으면 본문을 살려
+           NEEDS_REVIEW로 응답한다(표·그림 구조는 잃는다). 페이지 통째 BLOCKED가 아니다.
+           스캔 전용(레이어 없음)만 빈 결과로 격리된다.
+
+        ⚠ 위 수치는 전부 개발 랩탑 값이다. 운영(A10G 24GB)에서 꼬리를 다시 재고 정할 것.
+        ⚠ 페이지 예산이 줄면 뒷단 몫(60초)을 먼저 지킨다 — 그래서 min을 건다.
+        """
         if self.mineru_timeout_seconds > 0:
             return self.mineru_timeout_seconds
-        return max(60.0, self.page_timeout_seconds - 60.0)
+        return max(10.0, min(60.0, self.page_timeout_seconds - 60.0))
 
     @property
     def max_grpc_message_bytes(self) -> int:
