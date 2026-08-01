@@ -45,6 +45,19 @@ class ModelManager:
     # ── 내부 로더 ─────────────────────────────────────────────────
 
     def _load_hcxt(self) -> None:
+        # ── 되살리는 법 (2026-08-02 비활성) ──────────────────────────
+        # 기본값이 hcxt_backend="off"라 여기서 즉시 빠진다. 모델 파일도 이 배선도 삭제하지
+        # 않았으므로 되살리려면 .env에 HCXT_BACKEND=vllm 을 넣고 vLLM 서버를 띄우면 된다.
+        #   vllm serve <models/hcxt-gptq> --served-model-name hcxt --port 8100 \
+        #     --trust-remote-code --gpu-memory-utilization 0.86 --max-model-len 4096
+        #   (원본 benchmarks/vllm/serve_hcxt_gptq.sh는 위 3개 인자가 빠져 그대로는 안 뜬다.
+        #    반영본 = temp/eval_serve_hcxt.sh, 2026-08-02 실동작 확인)
+        # 되살릴 때는 dev·val CER 재기준선을 먼저 뜨고 eval 세션과 조율할 것.
+        if not config.hcxt_enabled:
+            self._gpu1_models["hcxt"] = None
+            self._gpu1_models["hcxt_tokenizer"] = None
+            logger.info("HCXT 백엔드=off: 로드 생략 — 최적화는 외부 API 폴백이 담당한다.")
+            return
         if config.hcxt_backend == "vllm":
             # 14B는 별도 vLLM 서버가 보유(AWQ self-host 권장). 파이프라인은 추론을 HTTP로 요청만
             # 하므로 인프로세스 로드가 없다(VRAM은 서버가 사용). 추론 경로 = hcxt_client.vllm_generate.
@@ -120,9 +133,10 @@ class ModelManager:
 
     def get_status(self) -> dict:
         # vllm 백엔드는 별도 서버가 HCXT를 보유 → 사용 가능으로 본다(서버 다운 시 호출부가 폴백).
+        # off는 그 판단 이전에 잘라낸다 — 로드도 서버도 없으니 항상 False.
         vllm = config.hcxt_backend == "vllm"
         return {
-            "hcxt_loaded": vllm or (self._gpu1_models.get("hcxt") is not None),
+            "hcxt_loaded": config.hcxt_enabled and (vllm or self._gpu1_models.get("hcxt") is not None),
             "hcxt_backend": config.hcxt_backend,
             "extraction": "MinerU2.5-Pro (subprocess)",  # 레이아웃·OCR·표·수식
             "gpu_available": torch.cuda.is_available(),
