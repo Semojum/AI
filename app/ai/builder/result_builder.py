@@ -223,11 +223,19 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
 
 
 def _do_caption_logged(el: dict) -> tuple:
-    """`_do_caption` + 요소별 소요시간 로깅."""
-    t = time.monotonic()
-    content, el_type, ok, subconf = _do_caption(el)
-    logger.info("    캡셔닝 %s(%s→%s) %.1fs%s", str(el.get("element_id", ""))[:8],
-                el["type"], el_type, time.monotonic() - t, "" if ok else " [실패]")
+    """`_do_caption` + 요소별 소요시간 로깅.
+
+    프로세스 전역 슬롯을 잡고 호출한다 — 페이지 안 스레드풀(기본 4)만으로는 페이지가
+    여러 개 동시에 돌 때 곱해져서 외부 API 한도(429)에 걸린다. 소요시간은 슬롯을 잡은
+    뒤부터 잰다(대기를 캡셔닝 시간으로 계상하면 로그가 원인을 가린다).
+    """
+    from app.core.limits import caption_slot
+
+    with caption_slot():
+        t = time.monotonic()
+        content, el_type, ok, subconf = _do_caption(el)
+        logger.info("    캡셔닝 %s(%s→%s) %.1fs%s", str(el.get("element_id", ""))[:8],
+                    el["type"], el_type, time.monotonic() - t, "" if ok else " [실패]")
     return content, el_type, ok, subconf
 
 
