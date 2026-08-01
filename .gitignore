@@ -23,3 +23,9 @@ protos/generated/*_pb2*.py
 test_report.html
 test/report/
 test/data/
+
+# 런타임 잡 산출물 (페이지별 중간·최종 결과 — git 제외)
+output/
+
+# 코드에서 참조하지 않는 잔재 샘플 (실제 경로는 test/samples/test.pdf)
+images/test.pdf
