@@ -3,6 +3,11 @@ name: CI
 on:
   pull_request:
     branches: [develop, main, 'release/**']
+    # ★ types를 쓰면 기본값이 덮이므로 기본 3종을 반드시 함께 적는다.
+    #   labeled/unlabeled — 라벨을 붙이거나 떼면 규약 검사를 다시 돌린다. 이게 없으면
+    #     PR을 연 뒤에 라벨을 붙여도 워크플로가 안 돌아 실패가 그대로 남는다.
+    #   edited — 제목을 고쳤을 때 제목 형식 검사를 다시 돌린다(같은 이유).
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
   push:
     branches: [develop, main, 'release/**']
 
@@ -15,6 +20,9 @@ jobs:
   convention:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read      # 라벨을 API로 현재 값에서 읽는다(아래 주석 참조)
     steps:
       - name: PR 제목 형식
         env:
@@ -50,11 +58,21 @@ jobs:
 
       - name: type 라벨 1개
         env:
-          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          n=$(echo "$LABELS" | tr ',' '\n' | grep -c '^type: ' || true)
+          # ⚠ 이벤트 페이로드(github.event.pull_request.labels)를 쓰면 안 된다.
+          #   페이로드는 이벤트 발생 시점에 얼어붙는다. PR을 연 뒤에 라벨을 붙이고
+          #   job을 재실행하면 **같은(라벨 없는) 페이로드를 다시 재생**할 뿐이라
+          #   실패가 영원히 안 풀린다. 실제로 PR #18·#24·#25가 여기 걸렸고,
+          #   PR을 닫았다 다시 여는 것 말고는 우회 수단이 없었다(#27).
+          #   API로 현재 라벨을 읽으면 job 재실행만으로 풀린다.
+          LABELS=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels" --jq '.[].name')
+          n=$(printf '%s\n' "$LABELS" | grep -c '^type: ' || true)
           if [ "$n" -ne 1 ]; then
             echo "::error::'type: *' 라벨을 정확히 하나 붙여주세요 (현재 ${n}개)"
+            echo "가능한 값: type: feature / type: fix / type: perf / type: refactor / type: chore / type: docs"
+            echo "붙인 뒤 다시 돌아갑니다 — 재실행이 필요하면 Actions에서 이 job만 rerun 하면 됩니다."
             exit 1
           fi
 
