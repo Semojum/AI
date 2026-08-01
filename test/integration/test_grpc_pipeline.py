@@ -81,8 +81,9 @@ class TestModeA:
         assert response.job_id.startswith(("job_be_", "job_local_"))  # AI가 출처별 job_id 생성
         assert response.page_number == 1
         assert response.status in ("COMPLETED", "NEEDS_REVIEW", "BLOCKED")
-        # mode a는 image_width/image_height(이미지 치수), bounding_box_list, text_list 포함
-        assert response.image_width >= 0 and response.image_height >= 0
+        # mode a는 image_resolution("WIDTHxHEIGHT" 문자열), bounding_box_list, text_list 포함
+        w, h = response.image_resolution.split("x")
+        assert int(w) >= 0 and int(h) >= 0
 
     def test_quality_report_present(self, grpc_stub):
         """mode a: quality_report 필드가 항상 포함되어야 한다."""

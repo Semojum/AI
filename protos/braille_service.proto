@@ -55,7 +55,7 @@ message TactileGraphic {
 }
 
 message CriticalError {
-  string type       = 1;   // C1~C7
+  string type       = 1;   // C1~C9 (QUALITY.md §3 정본)
   string element_id = 2;
   string message    = 3;
 }
@@ -121,16 +121,17 @@ message BrailleResponse {
 
   ProcessingMeta processing_meta = 4;
 
-  // mode a, c
-  int32  image_width              = 5;
-  int32  image_height             = 6;
-  repeated BoundingBox bounding_box_list = 7;
+  // mode a, c — BE 협의본(2026-08-01 BE 확인: 실제 컴파일 기준) 필드 번호에 정합.
+  // "WIDTHxHEIGHT" 형식 문자열(예: "2480x3505"). width/height 두 필드였던 이전 버전은
+  // BE가 실제로 컴파일한 스펙과 어긋나 있었음 — 응답 파싱이 깨지는 상태였다.
+  string image_resolution         = 5;
+  repeated BoundingBox bounding_box_list = 6;
 
   // mode a, b, c
-  repeated TextElement text_list  = 8;
+  repeated TextElement text_list  = 7;
 
   // mode b, c
-  repeated TextElement braille_text_list = 9;
+  repeated TextElement braille_text_list = 8;
 
-  QualityReport quality_report = 10;
+  QualityReport quality_report = 9;
 }

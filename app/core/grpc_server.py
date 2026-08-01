@@ -154,9 +154,8 @@ def _build_proto_response(result: dict):
     if "quality_report" in result:
         resp.quality_report.CopyFrom(_dict_to_quality_report(result["quality_report"]))
 
-    # mode a, c: image dimensions + bounding boxes
-    resp.image_width = result.get("image_width", 0)
-    resp.image_height = result.get("image_height", 0)
+    # mode a, c: image dimensions(BE 협의본은 "WIDTHxHEIGHT" 문자열 단일 필드) + bounding boxes
+    resp.image_resolution = f"{result.get('image_width', 0)}x{result.get('image_height', 0)}"
     for bb in result.get("bounding_box_list", []):
         resp.bounding_box_list.append(_dict_to_bounding_box(bb))
 
