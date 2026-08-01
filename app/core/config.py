@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# HCXT 추론 백엔드 허용값 — 아래 hcxt_backend 주석 참조.
+_HCXT_BACKENDS = {"off", "transformers", "vllm"}
 
 
 class Settings(BaseSettings):
@@ -66,11 +70,18 @@ class Settings(BaseSettings):
     hcxt_page_budget_ratio: float = 0.55
 
     # ── HCXT 추론 백엔드 ─────────────────────────────────────────
-    # "transformers"(기본): 인프로세스 bitsandbytes 4bit(단일 GPU 직렬, 락 필요).
+    # "off"(기본, 2026-08-02): HCXT를 아예 쓰지 않는다. 모델 로드도 추론 시도도 하지 않고
+    #   곧바로 외부 API 폴백(base_opt.fallback_optimize)으로 간다.
+    #   근거 = 1차 PoC 품질 비교에서 HCXT가 탈락(태깅 실문장 48/100 vs claude-sonnet-5 91/100,
+    #   실패 47건 중 46건이 본문 훼손. 8초 상한 초과는 0/100이라 "느려서"가 아니라 "틀려서" 탈락).
+    #   ★ 폐기가 아니라 비활성이다 — 모델 파일(models/hcxt·hcxt-gptq)과 아래 배선·서빙
+    #   스크립트는 보존한다. 되살리려면 이 값을 "vllm"으로 바꾸고 vLLM 서버를 띄우면 된다
+    #   (기동 인자는 model_manager._load_hcxt 주석 참조).
+    # "transformers": 인프로세스 bitsandbytes 4bit(단일 GPU 직렬, 락 필요).
     # "vllm": 별도 vLLM OpenAI 호환 서버로 오프로드 — AWQ 양자화 모델 self-host 권장
     #   (bnb는 엔진 바꿔도 이득 없음, 실측 확인). 서버가 배칭/동시성 처리 → 인프로세스 GPU 락·
     #   페이지 누적 예산 불필요, 요소들이 병렬 추론된다. 파이프라인은 토크나이저만 로드(14B는 서버).
-    hcxt_backend: str = "transformers"
+    hcxt_backend: str = "off"
     hcxt_vllm_url: str = "http://127.0.0.1:8100/v1"   # vLLM OpenAI 호환 엔드포인트
     hcxt_vllm_model: str = "hcxt"                       # --served-model-name 값
     hcxt_vllm_serve_cmd: str = ""                       # 비면 외부 서버 사용, 있으면 이 명령으로 자동 기동
@@ -104,6 +115,25 @@ class Settings(BaseSettings):
     # ── API (GPT-4o 캡셔닝/분류, GPT-5.x FALLBACK) ───────────────
     openai_api_key: str = ""
     anthropic_api_key: str = ""   # 폴백·캡셔닝 기본(태민 2026-07-17: openai 대신 anthropic)
+
+    @field_validator("hcxt_backend")
+    @classmethod
+    def _check_hcxt_backend(cls, v: str) -> str:
+        """오타가 조용히 transformers 경로로 새는 것을 막는다(기본이 off인 이상 치명적).
+
+        예: HCXT_BACKEND=of / vLLM / "" → 분기가 전부 else로 떨어져 14B를 GPU에 올려버린다.
+        """
+        v = (v or "").strip().lower()
+        if v not in _HCXT_BACKENDS:
+            raise ValueError(
+                f"hcxt_backend={v!r} 은(는) 허용되지 않는다. 가능한 값: {sorted(_HCXT_BACKENDS)}"
+            )
+        return v
+
+    @property
+    def hcxt_enabled(self) -> bool:
+        """HCXT 추론을 시도할지 여부. off면 로드도 추론도 하지 않고 곧바로 외부 API 폴백."""
+        return self.hcxt_backend != "off"
 
     @property
     def is_debug(self) -> bool:
