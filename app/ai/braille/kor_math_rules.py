@@ -283,6 +283,56 @@ _W2C_NULL_DELIM_RE = re.compile(r"\\(?:left|right)\s*\.")
 # ⚠ 행 구분자 `\\ `의 둘째 백슬래시를 먹지 않도록 lookbehind — 이 정규식은
 #   `\\\\`→행전환 치환(아래)보다 먼저 돌기 때문이다.
 _SPACING_CMD_RE = re.compile(r"\\(?:quad|qquad|[,;:!])|(?<!\\)\\ ")
+# ── 「과학 점자」 편 (규정 과학 제1·4항) — 원장 M-01 ────────────────────────────
+# 규정에 과학 점자 편이 따로 있는데 우리는 화학식을 일반 수식으로 처리하고 있었다.
+# 규정 원문(`braille-source/text/규정_텍스트.txt` 4322행~)과 그 BRF 예문:
+#   제1항 원소 기호 = 「한글 점자」 제29항 로마자 표기법 + 1급 점자(약자 금지)
+#         H          `0,h4`                    → ⠴⠠⠓⠲     (로마자표 ⠴ … 종료표 ⠲)
+#         Li, Na, K  `0,li1`,na1`,k4`          → ⠴⠠⠇⠊⠂ ⠠⠝⠁⠂ ⠠⠅⠲  (표·종료표는 바깥 1회)
+#   제4항 로마자 하나짜리 원소 기호가 **3개 이상 이어** 나오면 대문자 구절표로 묶는다.
+#         CH3COOH    `0,,,ch;#c"cooh,'4`       → ⠴⠠⠠⠠⠉⠓⠰⠼⠉⠐⠉⠕⠕⠓⠠⠄⠲
+#         2호: 분자식·구조식·전자 점식·**화학 반응식** 등 원소 기호가 든 모든 식에 적용.
+#   제2항 이온 위첨자·부호(⠘ · +=⠢ · −=⠔)는 **이미 우리 출력과 같다** — 손대지 않는다.
+#
+# gold도 로마자표를 붙인다(생물 p089: `⠴⠠⠓…`). 즉 규정↔관행 대립이 아니라 우리 결손이었다.
+# 규모는 작다(화학 표지 보유 수식 dev 6/95 · val 7/334) — 지표가 아니라 규정 준수 목적이다.
+_ELEMENTS = (
+    "He Li Be Ne Na Mg Al Si Cl Ar Ca Sc Ti Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr "
+    "Rb Sr Zr Nb Mo Ag Cd In Sn Sb Te Xe Cs Ba La Ce Pt Au Hg Tl Pb Bi Po At Rn "
+    "H B C N O F P S K V Y I U W"
+).split()
+# Hb(헤모글로빈)처럼 교과서가 원소 기호처럼 쓰는 약칭도 받는다 — 규정은 '원소 기호'라
+# 적었지만 제4항 2호가 '원소 기호가 포함된 모든 식'으로 넓히고 있고, gold도 Hb를 같은
+# 방식으로 적는다(생물 p089 `⠴⠠⠓⠃…`).
+_CHEM_TOKENS = _ELEMENTS + ["Hb"]
+_ROMAN_OPEN = "⠴"    # 로마자표 (제29항)
+_ROMAN_CLOSE = "⠲"   # 로마자 종료표
+_CAPS_OPEN = "⠠⠠⠠"  # 대문자 구절표 (제4항)
+_CAPS_CLOSE = "⠠⠄"
+_CAP = "⠠"          # 대문자표
+_CHEM_MARK_RE = re.compile(r"\\mathrm\s*\{|\\xrightarrow|\\longrightarrow|\\rightleftharpoons")
+
+
+def _looks_chemical(latex: str) -> bool:
+    """화학식 경로로 보낼지.
+
+    \\mathrm·반응 화살표가 있고, 그 위에 아래 둘 중 하나면 화학식으로 본다.
+      · 원소 기호 2개 이상 (분자식·반응식)
+      · 원소 기호 1개 + 이온 표시(위첨자 +/−) 또는 아래첨자 숫자 (제2·3항)
+    ⚠ 하나만으로 판정하면 안 된다 — `\\mathrm{C} = 2\\pi r`처럼 상수를 로만체로 적은
+    **수학식**이 화학식으로 끌려간다. 반대로 원소 2개를 요구하기만 하면 규정 제2항의
+    `H+`(이온) 예시가 빠진다.
+    """
+    if not _CHEM_MARK_RE.search(latex or ""):
+        return False
+    body = re.sub(r"\\[a-zA-Z]+", " ", latex)
+    n = sum(1 for t in re.findall(r"[A-Z][a-z]?", body) if t in _CHEM_TOKENS)
+    if n >= 2:
+        return True
+    ionic = re.search(r"\^\s*\{?\s*[+-]", latex) or re.search(r"_\s*\{?\s*\d", latex)
+    return n >= 1 and bool(ionic)
+
+
 # 서식 래퍼: \boxed{…}·\mathrm{…} 등 → 내용만 남김(수식 식별자 보존). \text는 별도(P2 한글 점역).
 _TEXT_WRAP_RE = re.compile(
     r"\\(?:boxed|fbox|mbox|mathrm|mathbf|mathit|mathbb|mathcal|mathsf|operatorname)\s*\{([^{}]*)\}"
@@ -1407,6 +1457,7 @@ def convert_latex(latex: str) -> str:
     # gold 실측: p073·p083 '\text{L.}'↔⠿⠒·'\text{七.}'↔⠿⠔·p047 동일(2026-07-22).
     latex = re.sub(r"^\s*(?:\$\$|\$)?\s*\\text\s*\{\s*(7|T|L|E|B|七)\s*\.\s*\}",
                    lambda m: _TC_JAMO_CELLS_DOT[m.group(1)] + " ", latex)
+    _is_chem = _looks_chemical(latex)           # 0-전: 화학식 판정(원문 상태에서만 가능)
     latex, _text_store = _protect_text(latex)   # 0.  P2: \text{한글} → 한글 점자 sentinel
     result = _normalize_latex_input(latex)      # 0a. MinerU/마크다운 입력 정규화
 
@@ -1439,7 +1490,16 @@ def convert_latex(latex: str) -> str:
     result = _stage15_spaces(result)                # 15. 공백 → ⠀
 
     result = _restore_text(result, _text_store)     # 16. P2 한글 복원
-    return _w2c_sweep_residue(result)               # 17. 비점자 잔류 정화(마지막 그물)
+    result = _w2c_sweep_residue(result)             # 17. 비점자 잔류 정화(마지막 그물)
+    # 18. 「과학 점자」 제1항 — 화학식은 로마자표로 열고 종료표로 닫는다(원장 M-01).
+    #     규정 예문 `0,li1`,na1`,k4`(Li, Na, K)처럼 **식 전체를 한 번** 감싼다.
+    #     맨 끝에 두는 이유: 앞 단계들이 로마자·첨자·화살표를 다 만든 뒤라야 감쌀 범위가 확정된다.
+    if _is_chem and result:
+        if not result.startswith(_ROMAN_OPEN):
+            result = _ROMAN_OPEN + result
+        if not result.endswith(_ROMAN_CLOSE):
+            result = result + _ROMAN_CLOSE
+    return result
 
 # ── 수식 구조 → rule_id (rule_trail emit용, Phase B) ────────────────────────
 # 항→장→KBR-수학-{장}.{항}. 규정 원문 + 장 경계로 검증(환각 0). 모두 regulations.json 실재.
