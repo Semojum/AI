@@ -124,7 +124,22 @@ class TestScienceBraille:
 
     def test_이온_위첨자와_부호는_규정형(self):
         # 규정 제2항 `0,h^5` = ⠴⠠⠓⠘⠢ — 위첨자 ⠘, + 는 ⠢.
-        assert convert_latex(r"\mathrm{H} ^ {+}") == "⠴⠠⠓⠘⠢⠲"
+        # 단, 반응식 **안에서만** 화학으로 판정한다(아래 test_기하_표기는_화학이_아니다 참조).
+        out = convert_latex(r"\mathrm{H} ^ {+} + \mathrm{Hb} \xrightarrow {x} \mathrm{HbO}")
+        assert "⠠⠓⠘⠢" in out and out.startswith("⠴")
+
+    def test_기하_표기는_화학이_아니다(self):
+        """점·선분·도형 이름도 \mathrm으로 적고 글자가 원소 기호와 겹친다(P·O·Q·C·N…).
+
+        `\overline{\mathrm{PQ}}^2`(선분 PQ의 제곱)에 로마자표가 붙는 사고가 실제로 났다.
+        """
+        from app.ai.braille.kor_math_rules import _looks_chemical
+        for s in (r"\overline {{\mathrm{PQ}}} ^ {2} = \overline {{\mathrm{OP}}} ^ {2}",
+                  r"\triangle \mathrm{ABC}",
+                  r"\mathrm{AB} \perp \mathrm{CD}",
+                  r"\mathrm{C} = 2 \pi r"):
+            assert not _looks_chemical(s), s
+            assert not convert_latex(s).startswith("⠴"), s
 
     def test_수학식은_건드리지_않는다(self):
         for s in (r"x ^ {2} + 3 x - 1 = 0", r"\frac {5}{12}", r"\lim _ {x \to 0} x"):

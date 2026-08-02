@@ -311,6 +311,10 @@ _CAPS_OPEN = "⠠⠠⠠"  # 대문자 구절표 (제4항)
 _CAPS_CLOSE = "⠠⠄"
 _CAP = "⠠"          # 대문자표
 _CHEM_MARK_RE = re.compile(r"\\mathrm\s*\{|\\xrightarrow|\\longrightarrow|\\rightleftharpoons")
+# 기하 표기 신호 — 점·선분·각·도형 이름도 \mathrm으로 적고 글자가 원소 기호와 겹친다.
+_GEOMETRY_MARK_RE = re.compile(
+    r"\\overline|\\overrightarrow|\\vec|\\triangle|\\angle|\\perp|\\parallel|"
+    r"\\cong|\\sim\b|\\square|\\odot")
 
 
 def _looks_chemical(latex: str) -> bool:
@@ -325,12 +329,21 @@ def _looks_chemical(latex: str) -> bool:
     """
     if not _CHEM_MARK_RE.search(latex or ""):
         return False
+    # ★ 기하 표기 배제 — 점·선분·도형 이름도 로만체(\mathrm)로 적고 그 글자가 원소 기호와
+    #   겹친다(P·O·Q·C·N…). `\overline{\mathrm{PQ}}^2 = …`(선분 PQ의 제곱)이나
+    #   `\triangle \mathrm{ABC}`가 화학식으로 끌려가 로마자표가 붙는 사고가 실제로 났다.
+    #   기하 신호가 하나라도 있으면 화학이 아니다.
+    if _GEOMETRY_MARK_RE.search(latex):
+        return False
     body = re.sub(r"\\[a-zA-Z]+", " ", latex)
     n = sum(1 for t in re.findall(r"[A-Z][a-z]?", body) if t in _CHEM_TOKENS)
-    if n >= 2:
-        return True
     ionic = re.search(r"\^\s*\{?\s*[+-]", latex) or re.search(r"_\s*\{?\s*\d", latex)
-    return n >= 1 and bool(ionic)
+    # 원소 2개 이상이라도 **화학다운 신호**를 하나는 요구한다 — 반응 화살표, 이온·아래첨자.
+    # `\mathrm{AB} \perp \mathrm{CD}` 류가 남는 것을 막는다.
+    reactive = re.search(r"\\xrightarrow|\\longrightarrow|\\rightleftharpoons", latex)
+    if n >= 2 and (reactive or ionic):
+        return True
+    return n >= 1 and bool(ionic) and bool(reactive or n >= 2)
 
 
 # 서식 래퍼: \boxed{…}·\mathrm{…} 등 → 내용만 남김(수식 식별자 보존). \text는 별도(P2 한글 점역).
