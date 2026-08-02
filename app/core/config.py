@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     #   대기 ≤ 60초 + 추출 60초 + 뒷단 ~19초 ≈ 140초 < 180초.
     #   6으로 올리면 대기가 120초가 되어 예산을 넘긴다. 산술은 limits.py 참조.
     max_concurrent_pages: int = 4
+    # gRPC 서버 자체의 동시 RPC 상한(maximum_concurrent_rpcs, 배압 M2 2026-08-02) —
+    # max_concurrent_pages보다 넉넉하게 잡아, 초과 요청이 gRPC 레이어에서 "조용히"
+    # 큐잉되지 않고 grpc_server의 admission 체크(RESOURCE_EXHAUSTED)까지 도달하게 한다.
+    max_queued_rpcs: int = 16
     # 캡셔닝(외부 API) 프로세스 전역 동시 요청 상한.
     # 페이지 안에서 이미 스레드풀 4개로 병렬인데(CAPTION_CONCURRENCY), 페이지 상한을
     # 올리면 곱해진다(4페이지 × 4 = 16 동시 요청 → 429). 페이지를 가로질러 한 번 더 조인다.

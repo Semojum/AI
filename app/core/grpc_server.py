@@ -169,8 +169,38 @@ def _build_proto_response(result: dict):
     return resp
 
 
+# 배압(M2, 2026-08-02) — admission 카운터. asyncio 단일 스레드 협조 스케줄링이라
+# 증감 사이 await가 없는 한 락 불필요. maximum_concurrent_rpcs(config.max_queued_rpcs)는
+# 넉넉하게 열어 두고, 실제 처리 상한은 여기서 강제해 초과분을 큐잉 대신 즉시 거절한다.
+_in_flight = 0
+
+
 class BrailleServiceServicer(braille_service_pb2_grpc.BrailleServiceServicer):
     async def ProcessPage(
+        self,
+        request: braille_service_pb2.BrailleRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> braille_service_pb2.BrailleResponse:
+        global _in_flight
+        if _in_flight >= config.max_concurrent_pages:
+            logger.warning(
+                "동시 처리 상한(%d) 초과 — RESOURCE_EXHAUSTED 즉시 거절 job=%s page=%d",
+                config.max_concurrent_pages,
+                getattr(request, "job_id", "?"), getattr(request, "page_no", 0),
+            )
+            await context.abort(
+                grpc.StatusCode.RESOURCE_EXHAUSTED,
+                f"AI 서버 동시 처리 상한({config.max_concurrent_pages}페이지) 초과 — 잠시 후 재시도",
+            )
+            return  # context.abort()가 예외를 던져 실제로는 도달하지 않음
+
+        _in_flight += 1
+        try:
+            return await self._process_page(request, context)
+        finally:
+            _in_flight -= 1
+
+    async def _process_page(
         self,
         request: braille_service_pb2.BrailleRequest,
         context: grpc.aio.ServicerContext,
@@ -216,17 +246,21 @@ class BrailleServiceServicer(braille_service_pb2_grpc.BrailleServiceServicer):
 
 
 async def serve() -> None:
-    # maximum_concurrent_rpcs: 동시에 처리할 페이지 수 상한(M2). 초과분은 gRPC가 큐에 세운다.
-    # 상한이 없으면 요청이 몰릴 때 전부 동시에 진행돼 각 페이지가 느려지고, 뒤쪽 요청이
-    # 180초 페이지 예산에 통째로 걸린다(C7).
+    # maximum_concurrent_rpcs는 실제 처리 상한(max_concurrent_pages)보다 넉넉히 잡는다.
+    # 여기를 처리 상한과 같이 두면 초과 요청이 gRPC 레이어에서 "조용히" 큐잉되어
+    # BrailleServiceServicer의 RESOURCE_EXHAUSTED 거절 코드에 아예 도달하지 못한다.
+    # 실제 admission 제어는 ProcessPage의 _in_flight 카운터가 한다(배압, 2026-08-02).
     server = grpc.aio.server(
-        maximum_concurrent_rpcs=config.max_concurrent_pages,
+        maximum_concurrent_rpcs=config.max_queued_rpcs,
         options=[
             ("grpc.max_receive_message_length", config.max_grpc_message_bytes),
             ("grpc.max_send_message_length", config.max_grpc_message_bytes),
         ]
     )
-    logger.info("동시 처리 상한: %d페이지", config.max_concurrent_pages)
+    logger.info(
+        "동시 처리 상한: %d페이지 (gRPC 큐 상한 %d)",
+        config.max_concurrent_pages, config.max_queued_rpcs,
+    )
     braille_service_pb2_grpc.add_BrailleServiceServicer_to_server(
         BrailleServiceServicer(), server
     )
