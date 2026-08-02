@@ -103,3 +103,36 @@ class TestSpacedDigits:
 
     def test_두_칸_이상_벌어지면_안_붙인다(self):
         assert convert_latex("1  2").count("⠼") == 2
+
+
+class TestScienceBraille:
+    r"""「과학 점자」 제1항 — 화학식은 로마자표로 열고 종료표로 닫는다 (원장 M-01).
+
+    규정 원문(규정_텍스트.txt 4322행~)의 BRF 예문을 유니코드로 옮긴 값이 기대값이다.
+      H          `0,h4`                → ⠴⠠⠓⠲
+      Li, Na, K  `0,li1`,na1`,k4`      → 로마자표·종료표는 **식 전체에 한 번**
+    제2항 이온 위첨자(⠘)·부호(+=⠢, −=⠔)는 이미 우리 출력과 같아 손대지 않았다.
+    """
+
+    def test_화학식은_로마자표로_감싼다(self):
+        out = convert_latex(r"\mathrm{H} ^ {+} \mathrm{Hb} + \mathrm{O} _ {2}")
+        assert out.startswith("⠴") and out.endswith("⠲")
+
+    def test_로마자표는_한_번만(self):
+        out = convert_latex(r"\mathrm{Hb} + 4 \mathrm{O} _ {2} \xrightarrow {결합} \mathrm{Hb}")
+        assert out.count("⠴") == 1 and out.count("⠲") == 1
+
+    def test_이온_위첨자와_부호는_규정형(self):
+        # 규정 제2항 `0,h^5` = ⠴⠠⠓⠘⠢ — 위첨자 ⠘, + 는 ⠢.
+        assert convert_latex(r"\mathrm{H} ^ {+}") == "⠴⠠⠓⠘⠢⠲"
+
+    def test_수학식은_건드리지_않는다(self):
+        for s in (r"x ^ {2} + 3 x - 1 = 0", r"\frac {5}{12}", r"\lim _ {x \to 0} x"):
+            out = convert_latex(s)
+            assert not out.startswith("⠴"), s
+
+    def test_원소기호_하나만으로는_화학식이_아니다(self):
+        # 판정은 \mathrm·반응 화살표 + 원소 기호 2개 이상. 변수 x·함수 f를 삼키면 안 된다.
+        from app.ai.braille.kor_math_rules import _looks_chemical
+        assert not _looks_chemical(r"\mathrm{C} = 2 \pi r")
+        assert _looks_chemical(r"\mathrm{H} _ {2} \mathrm{O}")
