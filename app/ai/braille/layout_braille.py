@@ -714,6 +714,42 @@ class LayoutBraille:
             return
         bo.line_indents = [first_indent if i in set(heads) else 0 for i in range(len(src))]
 
+    def _indent_lines(
+        self, bo: BrailleOutput, etype: str, hlevel: int,
+        lines: Optional[list[str]] = None,
+    ) -> tuple[list[str], list[int]]:
+        """이 요소의 논리 줄 + 줄별 들여쓰기 칸 수. 통 문자열·조판이 함께 쓴다.
+
+        `_format_element`의 들여쓰기 판정과 **같은 순서**로 돈다(글머리 정정 → 첫 줄
+        들여쓰기 → 항목 줄 재배분 → 테두리 예외 → line_indents). 조판 쪽은 32칸으로 접은
+        뒤에 들여쓰기를 붙이므로 코드를 합치지 못했다 — 한쪽만 고치면 화면과 다운로드가
+        갈라진다. 회귀 `test_flat_string.py::test_flat_indent_matches_layout`이 둘을 묶는다.
+
+        1단계 제목은 들여쓰기가 아니라 가운데 정렬(BBPG 2장2절1)이라 pad를 좌우 여백으로
+        계산한다 — 32칸을 넘으면 정렬하지 않는다(`_center`와 같은 판정).
+        """
+        draft = lines is not None             # 초안은 본문 줄을 건드리지 않는다
+        if not draft and etype in ("list_item", "text"):
+            self._apply_bullet_marker(bo)     # 멱등 — layout이 다시 불러도 안전하다
+        is_heading = hlevel >= 1
+        first_indent = self._first_indent(bo, etype, is_heading, hlevel)
+        if not draft:
+            self._mark_item_lines(bo, etype, first_indent)
+        lines = list(lines if draft else bo.braille_lines)
+        if first_indent and any(_is_border_line(ln) for ln in lines):
+            first_indent = 0                  # 32칸 테두리 줄은 들이면 폭을 넘어 깨진다
+        if is_heading and hlevel == 1:
+            lines = [ln.strip() for ln in lines]
+            return lines, [max(0, (_COLS - _cell_count(ln)) // 2) if _cell_count(ln) < _COLS
+                           else 0 for ln in lines]
+        per_line = (None if draft else bo.line_indents
+                    if bo.line_indents is not None and len(bo.line_indents) == len(lines)
+                    else None)
+        if per_line is not None:
+            return lines, list(per_line)
+        # 표는 들여쓰기를 줄 문자열에 이미 박아 낸다(§3.1.1(1)②) — 여기서 또 넣으면 두 번 들어간다.
+        return lines, [first_indent if i == 0 else 0 for i in range(len(lines))]
+
     def _first_indent(
         self, bo: BrailleOutput, etype: str, is_heading: bool, hlevel: int
     ) -> int:
@@ -977,9 +1013,11 @@ class LayoutBraille:
 
 # ── 통 문자열 직렬화 (2026-08-05, 조판 가이드 §3) ────────────────────────────
 # AI finalize 폐기에 따라 ProcessPage 응답의 contents는 **조판하지 않은 통 문자열**이다.
-# 32칸 자름·면 나눔·들여쓰기·가운데 정렬은 FE(화면)·BE(다운로드, braille-assist)가 한다.
-# 다만 **구조적 빈 줄은 우리 몫**이다 — 제목 앞뒤 빈 줄은 지침(BBPG 2장2절1) 규칙이지
-# 화면 사정이 아니고, FE가 heading_level만 보고 재현하려면 규정을 다시 구현해야 한다.
+# 32칸 자름·면 나눔·페이지행·페이지 변경선만 FE(화면)·BE(다운로드, braille-assist)가 한다.
+# **조판 규칙(구조적 빈 줄·들여쓰기·가운데 정렬)은 전부 우리 몫이다** — 제목 앞뒤 빈 줄과
+# 3/5/7칸 들여쓰기, 1단계 제목 가운데 정렬은 지침(BBPG 2장2절1·2절2·3절5) 규칙이지 화면
+# 사정이 아니다. FE·BE가 type·heading_level을 보고 재현하려면 규정을 다시 구현해야 하고,
+# 그러면 규칙이 세 벌로 갈라진다. 여기서 점자 공백 셀로 문자열에 직접 박아 내보낸다.
 
 class FlatElement(NamedTuple):
     """요소 하나의 통 문자열 + 그 좌표계로 옮긴 rule_trail.
@@ -988,16 +1026,25 @@ class FlatElement(NamedTuple):
       뒤의 +1은 본문 마지막 줄을 끝내는 개행이다. 그래서 요소들을 **그냥 이어 붙이면**
       각자 자기 줄에서 시작하고, 빈 줄 수가 지침대로 나온다.
     prefix/suffix — 초안(drafts)도 같은 구조적 빈 줄을 달아야 해서 따로 들고 있는다.
+    draft_texts — 초안별 통 문자열. 들여쓰기·가운데 정렬까지 본문과 같은 규칙으로 넣는다
+      (proto 불변식 `contents == drafts[selected_idx].contents`).
     """
 
     text: str
     trail: list[RuleApplication]
     prefix: str
     suffix: str
+    draft_texts: tuple[str, ...] = ()
+
+
+def _pad_join(lines: list[str], pads: list[int]) -> str:
+    """줄별 들여쓰기를 점자 공백 셀로 박아 한 문자열로 잇는다."""
+    return "\n".join(" " * p + ln for ln, p in zip(lines, pads))
 
 
 def _flat_trail(
-    trail: list[RuleApplication], lines: list[str], prefix_len: int, body_len: int
+    trail: list[RuleApplication], lines: list[str], prefix_len: int, body_len: int,
+    pads: Optional[list[int]] = None,
 ) -> list[RuleApplication]:
     """요소-로컬 (line_no, col) → 통 문자열 문자 오프셋. line_no는 0으로 고정한다.
 
@@ -1006,9 +1053,10 @@ def _flat_trail(
     """
     starts: list[int] = []
     acc = prefix_len
-    for ln in lines:
-        starts.append(acc)
-        acc += len(ln) + 1          # +1 = 줄 끝 개행
+    for i, ln in enumerate(lines):
+        pad = pads[i] if pads and i < len(pads) else 0
+        starts.append(acc + pad)    # 들여쓴 칸 수만큼 본문 시작이 뒤로 밀린다
+        acc += pad + len(ln) + 1    # +1 = 줄 끝 개행
     out: list[RuleApplication] = []
     for r in trail:
         c = r.model_copy()
@@ -1059,10 +1107,10 @@ def flatten_elements(
 
     trailing = 0            # 직전 요소가 남긴 빈 줄 수 — 중복 삽입 방지
     for bo in body:
-        lines = list(bo.braille_lines)
-        if not any(ln.strip() for ln in lines):
+        if not any(ln.strip() for ln in bo.braille_lines):
             continue        # 빈 요소는 빈 줄도 만들지 않는다
         etype, _order, hlevel = meta.get(bo.element_id, _DEFAULT_META)
+        lines, pads = lb._indent_lines(bo, etype, hlevel)
         before, after = _HEADING_BLANK.get(hlevel, (0, 0))
         if etype in _BLANK_AROUND_TYPES:      # 표·시각자료 위아래(BBPG 2장2절2 2)①④)
             before, after = max(before, 1), max(after, 1)
@@ -1071,11 +1119,16 @@ def flatten_elements(
 
         prefix = "\n" * before
         suffix = "\n" * (after + 1)           # +1 = 본문 마지막 줄 끝내기
-        text_body = "\n".join(lines)
+        text_body = _pad_join(lines, pads)
+        drafts = []
+        for d in getattr(bo, "drafts", []) or []:
+            d_lines, d_pads = lb._indent_lines(bo, etype, hlevel, list(d.braille_lines))
+            drafts.append(prefix + _pad_join(d_lines, d_pads) + suffix)
         out[bo.element_id] = FlatElement(
             text=prefix + text_body + suffix,
-            trail=_flat_trail(bo.rule_trail, lines, len(prefix), len(text_body)),
+            trail=_flat_trail(bo.rule_trail, lines, len(prefix), len(text_body), pads),
             prefix=prefix,
             suffix=suffix,
+            draft_texts=tuple(drafts),
         )
     return out

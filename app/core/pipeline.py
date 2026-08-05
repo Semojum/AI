@@ -1111,15 +1111,18 @@ def _selected_lines(bo, flat: dict) -> list[str]:
     return [fe.text] if fe else []
 
 
-def _draft_contents(bo, d, flat: dict) -> list[str]:
-    """초안 하나의 `contents`. 선택 초안과 **같은 구조적 빈 줄**을 달아 형식을 맞춘다.
+def _draft_contents(bo, d, di: int, flat: dict) -> list[str]:
+    """초안 하나의 `contents`. 선택 초안과 **같은 구조적 빈 줄·들여쓰기**를 단다.
 
-    피커가 초안을 바꿔도 앞뒤 빈 줄이 달라지면 안 된다 — 빈 줄은 초안 내용이 아니라
-    요소의 위치(제목인가 표인가)가 정하는 값이기 때문이다.
+    피커가 초안을 바꿔도 앞뒤 빈 줄과 들여쓰기가 달라지면 안 된다 — 둘 다 초안 내용이
+    아니라 요소의 위치(제목인가 표인가)가 정하는 값이기 때문이다.
+    `flatten_elements`가 초안까지 같은 규칙으로 미리 만들어 둔다.
     """
     fe = flat.get(bo.element_id) if bo else None
     if fe is None:
         return ["\n".join(d.braille_lines)] if d.braille_lines else []
+    if di < len(fe.draft_texts):
+        return [fe.draft_texts[di]]
     return [fe.prefix + "\n".join(d.braille_lines) + fe.suffix]
 
 
@@ -1264,10 +1267,10 @@ def _build_response(
                         "text": d.text,
                         "label": d.label,
                         "contents": _draft_contents(
-                            braille_by_id.get(o.element_id), d, flat
+                            braille_by_id.get(o.element_id), d, di, flat
                         ),
                     }
-                    for d in (
+                    for di, d in enumerate(
                         braille_by_id[o.element_id].drafts
                         if o.element_id in braille_by_id else []
                     )
