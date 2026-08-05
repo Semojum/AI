@@ -21,12 +21,12 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, NamedTuple, Optional
 
 from app.ai.braille.kor_math_rules import _NUMBER_INDICATOR, _DIGIT_MAP
 from app.ai.braille.regulations import make_rule
 from app.ai.braille.translator import _BOOK_STYLE  # 도서 관행 스위치(BRAILLE_STYLE)
-from app.schemas.content import BrailleOutput
+from app.schemas.content import BrailleOutput, RuleApplication
 
 if TYPE_CHECKING:  # 런타임 import 회피 (annotations 지연 평가)
     from app.schemas.layout import LayoutResult
@@ -973,3 +973,109 @@ class LayoutBraille:
         body = "\n".join(line for page in pages for line in page)
         (result_dir / f"{prefix}_result.txt").write_text(body, encoding="utf-8")
         (result_dir / f"{prefix}_result.brf").write_text(body, encoding="utf-8")
+
+
+# ── 통 문자열 직렬화 (2026-08-05, 조판 가이드 §3) ────────────────────────────
+# AI finalize 폐기에 따라 ProcessPage 응답의 contents는 **조판하지 않은 통 문자열**이다.
+# 32칸 자름·면 나눔·들여쓰기·가운데 정렬은 FE(화면)·BE(다운로드, braille-assist)가 한다.
+# 다만 **구조적 빈 줄은 우리 몫**이다 — 제목 앞뒤 빈 줄은 지침(BBPG 2장2절1) 규칙이지
+# 화면 사정이 아니고, FE가 heading_level만 보고 재현하려면 규정을 다시 구현해야 한다.
+
+class FlatElement(NamedTuple):
+    """요소 하나의 통 문자열 + 그 좌표계로 옮긴 rule_trail.
+
+    text — `"\\n" * before + 본문 + "\\n" * (after + 1)`.
+      뒤의 +1은 본문 마지막 줄을 끝내는 개행이다. 그래서 요소들을 **그냥 이어 붙이면**
+      각자 자기 줄에서 시작하고, 빈 줄 수가 지침대로 나온다.
+    prefix/suffix — 초안(drafts)도 같은 구조적 빈 줄을 달아야 해서 따로 들고 있는다.
+    """
+
+    text: str
+    trail: list[RuleApplication]
+    prefix: str
+    suffix: str
+
+
+def _flat_trail(
+    trail: list[RuleApplication], lines: list[str], prefix_len: int, body_len: int
+) -> list[RuleApplication]:
+    """요소-로컬 (line_no, col) → 통 문자열 문자 오프셋. line_no는 0으로 고정한다.
+
+    좌표계가 줄 배열에서 문자열 하나로 바뀌었으므로 `\\n`도 1문자로 센다.
+    `line_no=-1`(요소 전체)은 본문 전 구간을 가리키게 옮긴다 — 빈 줄은 뺀다.
+    """
+    starts: list[int] = []
+    acc = prefix_len
+    for ln in lines:
+        starts.append(acc)
+        acc += len(ln) + 1          # +1 = 줄 끝 개행
+    out: list[RuleApplication] = []
+    for r in trail:
+        c = r.model_copy()
+        if r.line_no < 0 or r.line_no >= len(starts):
+            c.line_no, c.col_start, c.col_end = 0, prefix_len, prefix_len + body_len
+        else:
+            base = starts[r.line_no]
+            c.line_no = 0
+            c.col_start = base + r.col_start
+            c.col_end = base + r.col_end
+        out.append(c)
+    return out
+
+
+def flatten_elements(
+    braille_outputs: list[BrailleOutput],
+    layout_result: Optional["LayoutResult"] = None,
+) -> dict:
+    """요소별 통 문자열을 만든다. **조판(layout) 전에** 불러야 한다.
+
+    `layout()`이 `braille_lines`를 32칸 조판본으로 write-back하고 rule_trail도 그 프레임으로
+    재매핑하기 때문이다. 통 문자열은 조판 전 논리 줄이 기준이다.
+
+    빈 줄 계산은 `_assemble_pages`와 **같은 규칙**을 쓴다 — `_HEADING_BLANK`·
+    `_BLANK_AROUND_TYPES` + 인접 블록 빈 줄 병합(`trailing`). 규칙을 두 벌로 두면
+    화면(FE)과 다운로드(BE)가 갈라지므로 여기서 한 번만 정의한다.
+
+    반환: element_id → FlatElement. 내용이 없는 요소는 담지 않는다(`_format_element`와 같은 판정).
+    """
+    lb = LayoutBraille()
+    meta = lb._build_meta(layout_result)
+    body, page_line = lb._partition(braille_outputs, meta)
+    body.sort(key=lambda b: meta.get(b.element_id, _DEFAULT_META)[1])
+
+    out: dict = {}
+    # 페이지행 요소(page_number)는 본문 흐름에 안 들어간다 — 페이지행 조립은 FE·BE가
+    # braille-assist `page_row`로 한다. 그래도 응답에는 실려야 하므로 구조적 빈 줄 없이 담는다.
+    for bo in page_line:
+        lines = list(bo.braille_lines)
+        if not any(ln.strip() for ln in lines):
+            continue
+        text_body = "\n".join(lines)
+        out[bo.element_id] = FlatElement(
+            text=text_body + "\n",
+            trail=_flat_trail(bo.rule_trail, lines, 0, len(text_body)),
+            prefix="", suffix="\n",
+        )
+
+    trailing = 0            # 직전 요소가 남긴 빈 줄 수 — 중복 삽입 방지
+    for bo in body:
+        lines = list(bo.braille_lines)
+        if not any(ln.strip() for ln in lines):
+            continue        # 빈 요소는 빈 줄도 만들지 않는다
+        etype, _order, hlevel = meta.get(bo.element_id, _DEFAULT_META)
+        before, after = _HEADING_BLANK.get(hlevel, (0, 0))
+        if etype in _BLANK_AROUND_TYPES:      # 표·시각자료 위아래(BBPG 2장2절2 2)①④)
+            before, after = max(before, 1), max(after, 1)
+        before = max(0, before - trailing)
+        trailing = after
+
+        prefix = "\n" * before
+        suffix = "\n" * (after + 1)           # +1 = 본문 마지막 줄 끝내기
+        text_body = "\n".join(lines)
+        out[bo.element_id] = FlatElement(
+            text=prefix + text_body + suffix,
+            trail=_flat_trail(bo.rule_trail, lines, len(prefix), len(text_body)),
+            prefix=prefix,
+            suffix=suffix,
+        )
+    return out
