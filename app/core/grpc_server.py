@@ -156,7 +156,9 @@ def _build_proto_response(result: dict):
         resp.quality_report.CopyFrom(_dict_to_quality_report(result["quality_report"]))
 
     # mode a, c: image dimensions(BE 협의본은 "WIDTHxHEIGHT" 문자열 단일 필드) + bounding boxes
-    resp.image_resolution = f"{result.get('image_width', 0)}x{result.get('image_height', 0)}"
+    # 2026-08-05: image_resolution(문자열 합침)에서 int 두 필드로 복원 — proto 주석 참조.
+    resp.image_width = int(result.get("image_width", 0))
+    resp.image_height = int(result.get("image_height", 0))
     for bb in result.get("bounding_box_list", []):
         resp.bounding_box_list.append(_dict_to_bounding_box(bb))
 

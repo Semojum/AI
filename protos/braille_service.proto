@@ -38,7 +38,7 @@ message BoundingBox {
   int32  y             = 3;
   int32  x2            = 4;
   int32  y2            = 5;
-  string type          = 6;   // 11종: text|title|caption|table|image|formula|list_item|header_footer|page_number|footnote|sidebar
+  string type          = 6;   // 분류 후 13종(cartoon·chart_graph 추가): text|title|caption|table|image|formula|list_item|header_footer|page_number|footnote|sidebar
   int32  heading_level = 7;   // 0 = null
   string caption_ref   = 8;   // "" = null (참조하는 element_id)
   repeated string flags = 9;
@@ -137,17 +137,22 @@ message BrailleResponse {
 
   ProcessingMeta processing_meta = 4;
 
-  // mode a, c — BE 협의본(2026-08-01 BE 확인: 실제 컴파일 기준) 필드 번호에 정합.
-  // "WIDTHxHEIGHT" 형식 문자열(예: "2480x3505"). width/height 두 필드였던 이전 버전은
-  // BE가 실제로 컴파일한 스펙과 어긋나 있었음 — 응답 파싱이 깨지는 상태였다.
-  string image_resolution         = 5;
-  repeated BoundingBox bounding_box_list = 6;
+  // mode a, c
+  // [복원 08-05] image_resolution(string, 5) 단일 필드를 원래의 int32 두 필드로 되돌린다.
+  //   08-01에 BE 기술명세서 §10의 gRPC 정의(image_resolution)에 맞춰 합쳤으나(#17/#18),
+  //   같은 문서의 DB 스키마는 image_width INT · image_height INT로 나뉘어 있어 문서가
+  //   자체 모순이었다. 원설계이자 DB 스키마와 같은 int 두 필드로 확정한다(대표 결정 08-05).
+  //   ⚠ 와이어 계약 변경 — BE는 스텁을 **다시 컴파일**해야 한다. 5번 이후 번호가 하나씩 밀린다.
+  //   AI 내부는 원래부터 int 두 값으로 들고 있었다(합치는 일은 응답 조립에서만 했다).
+  int32  image_width              = 5;
+  int32  image_height             = 6;
+  repeated BoundingBox bounding_box_list = 7;
 
-  // mode a, b, c
-  repeated TextElement text_list  = 7;
+  // mode a, c  (코드 게이트가 mode in ("a","c") — 구 주석 "mode a, b"는 오기)
+  repeated TextElement text_list  = 8;
 
   // mode b, c
-  repeated TextElement braille_text_list = 8;
+  repeated TextElement braille_text_list = 9;
 
-  QualityReport quality_report = 9;
+  QualityReport quality_report = 10;
 }
