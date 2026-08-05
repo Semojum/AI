@@ -93,7 +93,9 @@ def _classify_anthropic(b64: str, mime: str):
     """Anthropic 백엔드 분류. logprobs API가 없어 confidence=None을 준다.
     quality_checker는 confidence None이면 R2를 띄우지 않는다(설계된 경로)."""
     import anthropic
+    from app.core.limits import estimate_tokens, llm_limiter
     from app.utils.req_log import inc_gpt4o
+    llm_limiter().acquire_sync(estimate_tokens(SYSTEM_PROMPT, len(b64) * 3 // 4), 10)
     inc_gpt4o()
     client = anthropic.Anthropic(api_key=config.anthropic_api_key or None)
     resp = client.messages.create(

@@ -152,12 +152,25 @@ async def fallback_optimize(prompt: str, *, max_tokens: int = 300, kind: str = "
       ≈$9.5 발생, 원장과 청구액이 $12 어긋남). 도구마다 키를 비우는 규약은 하나만
       빠뜨려도 뚫리므로, 호출 길목에서 한 번에 막는다.
     """
+    from app.core.limits import estimate_tokens, llm_limiter, llm_slot
     from app.utils.req_log import record_gpt4o
 
     if os.environ.get("DISABLE_LLM_FALLBACK") == "1":
         logger.warning("LLM 폴백 차단됨(DISABLE_LLM_FALLBACK=1) — %s", kind)
         return ""
 
+    # 동시 연결 슬롯 → 분당 상한 순서로 잡는다. 순서를 바꾸면 상한을 기다리는 코루틴이
+    # 슬롯을 붙잡은 채 놀아 동시성이 헛돈다.
+    # ★ 타임아웃(FALLBACK_TIMEOUT)은 **둘 다 잡은 뒤에** 시작한다 — 대기를 상한에 넣으면
+    #   줄이 길 때 정상 호출이 '느린 호출'로 오인돼 끊긴다(limits.py 규약).
+    async with llm_slot():
+        await llm_limiter().acquire(estimate_tokens(prompt), max_tokens)
+        return await _fallback_call(prompt, max_tokens=max_tokens, kind=kind,
+                                    record_gpt4o=record_gpt4o)
+
+
+async def _fallback_call(prompt: str, *, max_tokens: int, kind: str, record_gpt4o) -> str:
+    """`fallback_optimize`의 실제 호출부. 슬롯·상한을 잡은 뒤 불린다."""
     if config.anthropic_api_key:
         import anthropic
         client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)

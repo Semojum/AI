@@ -78,7 +78,11 @@ def _get_client() -> OpenAI:
 #   CAPTION_BACKEND=anthropic CAPTION_MODEL=claude-sonnet-5
 def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
     import anthropic
+    from app.core.limits import estimate_tokens, llm_limiter
     from app.utils.req_log import inc_gpt4o
+    # 계정 분당 상한(요청·토큰). 동시 연결은 이미 caption_slot이 조인다.
+    # b64는 원본의 4/3배라 실제 바이트로 환산해 넘긴다.
+    llm_limiter().acquire_sync(estimate_tokens(prompt, len(b64) * 3 // 4), 500)
     inc_gpt4o()                       # 호출 수 집계는 공용
     client = anthropic.Anthropic(api_key=config.anthropic_api_key or None, timeout=60.0, max_retries=1)  # 행 방지(2026-07-19 스톨 실측)
     resp = client.messages.create(
