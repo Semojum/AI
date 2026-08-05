@@ -985,17 +985,20 @@ async def _run_pipeline(task: PageTask) -> dict:
         ext, llm_outputs, braille_outputs = await _run_text_chain(
             extracted_texts, layout_result, "ZERO", task, include_braille=True,
         )
-        overflow_rate = 0.0
+        flat: dict = {}
         if braille_outputs:
-            from app.ai.braille.layout_braille import LayoutBraille
-            overflow_rate = LayoutBraille().layout(
+            from app.ai.braille.layout_braille import LayoutBraille, flatten_elements
+            # ★ 순서 주의: flatten이 먼저다. layout()이 braille_lines를 32칸 조판본으로
+            #   write-back하고 rule_trail도 그 프레임으로 재매핑하므로, 통 문자열은
+            #   조판 전 논리 줄에서 떠야 한다(조판 가이드 §3).
+            flat = flatten_elements(braille_outputs, layout_result)
+            LayoutBraille().layout(
                 braille_outputs, task.page_no, task.job_id,
                 layout_result=layout_result,
             )
         return _build_response(
             task, page_id, doc_meta, "ZERO", image_width, image_height,
-            layout_result, ext, llm_outputs, braille_outputs,
-            line_overflow_rate=overflow_rate,
+            layout_result, ext, llm_outputs, braille_outputs, flat=flat,
         )
 
     # ── mode a, c ──────────────────────────────────────────────────────
@@ -1067,43 +1070,57 @@ async def _run_pipeline(task: PageTask) -> dict:
     _debug_dump(task, "04_all_ocr", [e.model_dump() for e in all_extracted])
     _debug_dump(task, "05_all_opt", [o.model_dump() for o in all_llm])
 
-    # PART 10: 레이아웃 조판
-    overflow_rate = 0.0
+    # PART 10: 레이아웃 조판 — 다운로드용 result.brf/txt 저장은 그대로 둔다.
+    # 응답 contents는 조판본이 아니라 통 문자열이다(조판 가이드 §3, AI finalize 폐기).
+    flat: dict = {}
     if include_braille and all_braille:
         with stage("조판"):
-            from app.ai.braille.layout_braille import LayoutBraille
-            overflow_rate = LayoutBraille().layout(
+            from app.ai.braille.layout_braille import LayoutBraille, flatten_elements
+            # ★ 순서 주의: flatten이 먼저다(위 mode b 주석 참조).
+            flat = flatten_elements(all_braille, layout_result)
+            LayoutBraille().layout(
                 all_braille, task.page_no, task.job_id,
                 layout_result=layout_result,
             )
 
     return _build_response(
         task, page_id, doc_meta, routing_tier, image_width, image_height,
-        layout_result, all_extracted, all_llm, all_braille,
-        line_overflow_rate=overflow_rate,
+        layout_result, all_extracted, all_llm, all_braille, flat=flat,
     )
 
 
 # ── 응답 조립 ────────────────────────────────────────────────────────────
 
-def _selected_lines(bo) -> list[str]:
-    """BrailleOutput → `contents` 직렬화 = **선택 초안의 32칸 조판 줄 배열**.
+def _selected_lines(bo, flat: dict) -> list[str]:
+    """BrailleOutput → `contents` 직렬화 = **항목 1개짜리 통 문자열**.
 
-    BE proto(braille_service.proto §TextElement.contents) 계약:
-      · `contents`의 한 항목 = 조판된 32칸 줄 하나
-      · 시각 블록도 이 필드 하나로 렌더한다 — `drafts[selected_idx].contents`와 같은 값
-      · `RuleTrail.line_no`는 이 배열의 인덱스다
+    BE proto(braille_service.proto §TextElement.contents) 계약(2026-08-05 개정):
+      · `contents`는 항목이 하나다 — 조판하지 않은 통 문자열
+      · 32칸 자름·면 나눔·들여쓰기·가운데 정렬은 FE(화면)·BE(다운로드)가 한다
+      · **구조적 빈 줄(제목 앞뒤 등)은 `\n`으로 여기 들어 있다** — 지침 규칙이라 우리 몫
+      · `RuleTrail.line_no`는 0 고정, `col_*`가 이 문자열의 문자 오프셋이다
 
-    layout이 `bo.braille_lines`를 선택 초안의 조판 결과로 write-back하므로
-    (`layout_braille.py` `_layout_one` 참조) 여기서는 그대로 내보내면 된다.
     빈 요소는 빈 배열을 유지한다.
 
-    ※ 2026-07-28에 '항목 = 초안' 형식으로 바꿨다가 2026-07-31 BE proto에 맞춰 되돌렸다.
-      내부 표현(줄 리스트)은 그때도 바뀌지 않았고 직렬화 경계만 오갔다.
+    ※ 이력: 2026-07-28 '항목 = 초안' → 07-31 '항목 = 32칸 조판 줄'(BE proto) →
+      08-05 '항목 = 통 문자열'(조판 가이드, AI finalize 폐기). 세 번 다 직렬화 경계만 바뀌었다.
     """
     if bo is None:
         return []
-    return list(bo.braille_lines)
+    fe = flat.get(bo.element_id)
+    return [fe.text] if fe else []
+
+
+def _draft_contents(bo, d, flat: dict) -> list[str]:
+    """초안 하나의 `contents`. 선택 초안과 **같은 구조적 빈 줄**을 달아 형식을 맞춘다.
+
+    피커가 초안을 바꿔도 앞뒤 빈 줄이 달라지면 안 된다 — 빈 줄은 초안 내용이 아니라
+    요소의 위치(제목인가 표인가)가 정하는 값이기 때문이다.
+    """
+    fe = flat.get(bo.element_id) if bo else None
+    if fe is None:
+        return ["\n".join(d.braille_lines)] if d.braille_lines else []
+    return [fe.prefix + "\n".join(d.braille_lines) + fe.suffix]
 
 
 def _build_response(
@@ -1117,11 +1134,15 @@ def _build_response(
     extracted: list[ExtractedContent],
     llm_outputs: list[LLMOutput],
     braille_outputs: list[BrailleOutput],
-    line_overflow_rate: float = 0.0,
+    flat: Optional[dict] = None,
 ) -> dict:
     elem_by_id = {e.element_id: e for e in layout_result.elements}
     braille_by_id = {b.element_id: b for b in braille_outputs}
     ext_by_id = {e.element_id: e for e in extracted}
+    flat = flat or {}
+    # 32칸 초과는 더 이상 우리가 재는 값이 아니다 — 조판을 FE·BE가 하므로 초과 여부도
+    # 거기서 정해진다. finalize 폐기로 C6 판정의 이동처가 사라져 0으로 고정한다.
+    line_overflow_rate = 0.0
 
     def _meta_fields(eid) -> dict:
         """proto TextElement 부가 필드 — 수식 latex·시각자료 subtype(추출에서 가져옴)."""
@@ -1219,14 +1240,16 @@ def _build_response(
                 ),
                 "render_mode": o.render_mode,
                 "contents": _selected_lines(
-                    braille_by_id.get(o.element_id)
+                    braille_by_id.get(o.element_id), flat
                 ),
+                # 좌표계가 통 문자열이라 flat의 것을 쓴다(layout이 재매핑한 조판 좌표 아님).
                 "rule_trail": [
                     r.model_dump()
                     for r in (
-                        braille_by_id[o.element_id].rule_trail
-                        if o.element_id in braille_by_id
-                        else o.rule_trail
+                        flat[o.element_id].trail
+                        if o.element_id in flat
+                        else (braille_by_id[o.element_id].rule_trail
+                              if o.element_id in braille_by_id else o.rule_trail)
                     )
                 ],
                 "selected_idx": (
@@ -1240,7 +1263,9 @@ def _build_response(
                         # 피커가 초안별 점자를 바로 꺼내 쓸 수 있어야 한다.
                         "text": d.text,
                         "label": d.label,
-                        "contents": list(d.braille_lines),
+                        "contents": _draft_contents(
+                            braille_by_id.get(o.element_id), d, flat
+                        ),
                     }
                     for d in (
                         braille_by_id[o.element_id].drafts
