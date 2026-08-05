@@ -10,15 +10,6 @@ service BrailleService {
   rpc TranslateText (TranslateTextRequest) returns (TranslateTextReply);  // [추가 08-05] 꼬리말용 짧은 묵자 → 점자. rule-based 직행, 200자 초과는 거절
 }
 
-// [추가 08-05] 꼬리말 점역
-message TranslateTextRequest {
-  string text = 1;      // 묵자 (예: "수특 사회문화 2")
-}
-
-// [추가 08-05] 꼬리말 점역
-message TranslateTextReply {
-  string braille = 1;   // 유니코드 점자 (예: "⠠⠍⠓⠪⠁⠀⠇⠚⠽⠑⠛⠚⠧⠀⠼⠃")
-}
 
 // ── 요청 (BE → AI) ──────────────────────────────────────────────
 message BrailleRequest {
@@ -28,6 +19,10 @@ message BrailleRequest {
   bytes  pdf_data    = 4;   // 단일 페이지 PDF (~100–500 KB)
   string mode        = 5;   // "a" | "b" | "c"
   string source_text = 6;   // mode b 전용
+}
+
+message TranslateTextRequest { // [추가 08-05] 꼬리말 점역
+  string text = 1;      // 묵자 (예: "수특 사회문화 2")
 }
 
 // ── 서브메시지 ───────────────────────────────────────────────────
@@ -75,12 +70,10 @@ message ReviewFlag {
 }
 
 message QualityReport {
-  // [폐기 08-05] line_overflow_rate(float, 2) 삭제 — 조판이 응답에서 빠져 32칸 초과 판정은 FE·BE 몫.
-  //   BE는 page_results.line_overflow_rate 컬럼도 함께 정리할 것.
-
   float                   ocr_confidence_avg = 1;
-  repeated CriticalError  critical_errors    = 2;   // [변경 08-05] 3 → 2
-  repeated ReviewFlag     review_flags       = 3;   // [변경 08-05] 4 → 3
+  // [폐기 08-05] line_overflow_rate(float, 2) 삭제
+  repeated CriticalError  critical_errors    = 2; // [변경 08-05] 3 → 2
+  repeated ReviewFlag     review_flags       = 3; // [변경 08-05] 4 → 3
 }
 
 message ProcessingMeta {
@@ -110,20 +103,6 @@ message TextElement {
   string          latex_string       = 11;  // formula 전용
   TactileGraphic  tactile            = 12;  // 미사용 — 2차 PoC 이후
 
-  // ══ [변경 08-05] contents 형식이 바뀌었다. BE가 가장 크게 영향받는 곳이다 ══
-  //   전:  32칸으로 조판된 줄 배열      ["⠠⠕⠂…(32칸)", "⠕⠀⠰⠗…(32칸)", …]
-  //   후:  조판하지 않은 통 문자열 1개   ["\n\n⠠⠕⠂⠠⠪⠃⠀⠚⠧⠒⠈⠻⠀⠈⠍⠰⠍⠁⠚⠈⠕\n\n"]
-  //
-  //   · 항목은 **언제나 1개**다. 2개 이상이면 형식이 틀린 것이다.
-  //   · 들어 있는 것 — 점자 셀 + 지침이 정한 **구조적 빈 줄**이 `\n`으로.
-  //     위 예의 앞 `\n\n`은 1단계 제목 앞의 빈 줄 두 개다(BBPG 2장2절1).
-  //   · 안 들어 있는 것 — 32칸 줄바꿈 · 면 나눔 · 들여쓰기 · 가운데 정렬.
-  //     화면은 FE가, 다운로드는 BE가 braille-assist로 만든다.
-  //   · BE 사용법 — 원본 쪽 단위로 모아 build_pages(sources, footer, …)에 넘기면
-  //     변경선·면 나눔·페이지행까지 들어간 면 배열이 나온다. 그 뒤 to_brf_ascii로 .brf.
-  //     https://github.com/Semojum/braille-assist  (python·ts·java 동일 구현)
-  //   · 시각 블록은 이 값이 drafts[selected_idx].contents와 같다 —
-  //     BE는 타입을 가리지 말고 항상 이 필드로 렌더하면 된다.
   repeated string    contents   = 13;
 
   repeated RuleTrail rule_trail = 14;  // 적용된 규정 목록. 근거 표시는 2차 PoC부터 FE가 쓴다
@@ -145,4 +124,8 @@ message BrailleResponse {
   repeated TextElement    text_list           = 8;   // [변경 08-05] 7 → 8. mode a, c (구 주석 "mode a, b"는 오기)
   repeated TextElement    braille_text_list   = 9;   // [변경 08-05] 8 → 9. mode b, c
   QualityReport           quality_report      = 10;  // [변경 08-05] 9 → 10
+}
+
+message TranslateTextReply { // [추가 08-05] 꼬리말 점역
+  string braille = 1;   // 유니코드 점자 (예: "⠠⠍⠓⠪⠁⠀⠇⠚⠽⠑⠛⠚⠧⠀⠼⠃")
 }

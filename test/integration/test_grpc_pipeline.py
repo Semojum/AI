@@ -78,7 +78,10 @@ class TestModeA:
         """mode a: 응답 필드 구조 검증."""
         response = grpc_stub.ProcessPage(_make_request("a"), timeout=30)
 
-        assert response.job_id.startswith(("job_be_", "job_local_"))  # AI가 출처별 job_id 생성
+        # job_id는 BE가 보낸 값을 그대로 돌려준다. BE가 이 값으로 요청·응답을 짝짓고
+        # 멱등을 판단하므로 바꾸면 안 된다(바꿨더니 BE가 완료를 인지 못해 같은 페이지를
+        # 무한 재전송한 적이 있다). 비워 보낼 때만 AI가 출처를 붙여 새로 만든다.
+        assert response.job_id == "test-job-001"
         assert response.page_number == 1
         assert response.status in ("COMPLETED", "NEEDS_REVIEW", "BLOCKED")
         # mode a는 image_width·image_height(int), bounding_box_list, text_list 포함.
@@ -103,7 +106,10 @@ class TestModeB:
         """mode b: braille_text_list 포함 여부 검증."""
         response = grpc_stub.ProcessPage(_make_request("b"), timeout=30)
 
-        assert response.job_id.startswith(("job_be_", "job_local_"))  # AI가 출처별 job_id 생성
+        # job_id는 BE가 보낸 값을 그대로 돌려준다. BE가 이 값으로 요청·응답을 짝짓고
+        # 멱등을 판단하므로 바꾸면 안 된다(바꿨더니 BE가 완료를 인지 못해 같은 페이지를
+        # 무한 재전송한 적이 있다). 비워 보낼 때만 AI가 출처를 붙여 새로 만든다.
+        assert response.job_id == "test-job-001"
         assert response.status in ("COMPLETED", "NEEDS_REVIEW", "BLOCKED")
         # braille_text_list 포함 여부 실제 검증
         if response.status != "BLOCKED":
@@ -121,7 +127,10 @@ class TestModeC:
         """mode c: bounding_box_list + braille_text_list 모두 포함."""
         response = grpc_stub.ProcessPage(_make_request("c"), timeout=30)
 
-        assert response.job_id.startswith(("job_be_", "job_local_"))  # AI가 출처별 job_id 생성
+        # job_id는 BE가 보낸 값을 그대로 돌려준다. BE가 이 값으로 요청·응답을 짝짓고
+        # 멱등을 판단하므로 바꾸면 안 된다(바꿨더니 BE가 완료를 인지 못해 같은 페이지를
+        # 무한 재전송한 적이 있다). 비워 보낼 때만 AI가 출처를 붙여 새로 만든다.
+        assert response.job_id == "test-job-001"
         assert response.status in ("COMPLETED", "NEEDS_REVIEW", "BLOCKED")
 
     def test_quality_report_structure(self, grpc_stub):
