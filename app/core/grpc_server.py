@@ -38,7 +38,6 @@ def _dict_to_processing_meta(d: dict):
 def _dict_to_quality_report(d: dict):
     qr = braille_service_pb2.QualityReport()
     qr.ocr_confidence_avg = d.get("ocr_confidence_avg", 0.0)
-    qr.line_overflow_rate = d.get("line_overflow_rate", 0.0)
     for ce in d.get("critical_errors", []):
         err = qr.critical_errors.add()
         err.type = ce.get("type", "")
@@ -135,7 +134,6 @@ def _build_error_response(job_id: str, page_no: int, message: str):
     resp.status = "BLOCKED"
     resp.page_number = page_no
     resp.quality_report.ocr_confidence_avg = 0.0
-    resp.quality_report.line_overflow_rate = 0.0
     err = resp.quality_report.critical_errors.add()
     err.type = "C1"
     err.element_id = "page"

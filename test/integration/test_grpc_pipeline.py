@@ -129,7 +129,7 @@ class TestModeC:
         response = grpc_stub.ProcessPage(_make_request("c"), timeout=30)
         qr = response.quality_report
         assert isinstance(qr.ocr_confidence_avg, float)
-        assert isinstance(qr.line_overflow_rate, float)
+        # line_overflow_rate는 2026-08-05 폐기(reserved 2) — 조판이 응답에서 빠졌다.
 
 
 class TestTimeout:

@@ -7,8 +7,7 @@ option java_multiple_files = true;
 
 service BrailleService {
   rpc ProcessPage (BrailleRequest) returns (BrailleResponse);
-  // 짧은 묵자 → 점자 (rule-based 직행, LLM 미경유). 작업 설정에서 꼬리말을
-  // 입력·수정할 때 BE가 1회 호출한다 — 조판·편집 경로에서는 호출하지 않는다.
+  // [추가 08-05] 꼬리말용 짧은 묵자 → 점자. rule-based 직행, 200자 초과는 거절.
   rpc TranslateText (TranslateTextRequest) returns (TranslateTextReply);
 }
 
@@ -44,6 +43,7 @@ message BoundingBox {
   repeated string flags = 9;
 }
 
+// 적용된 점자 규정. 근거 표시는 2차 PoC(8/24)부터 FE가 쓴다 — 지금은 채워만 둔다.
 message RuleTrail {
   string rule_id  = 1;
   string source   = 2;
@@ -51,14 +51,13 @@ message RuleTrail {
   string title    = 4;
   string excerpt  = 5;
   string priority = 6;   // "primary" | "secondary"
-  // ── 요소-로컬 좌표 — AI 서버가 완성, FE/BE 계산 없음 ──────────────
-  // 좌표계 = contents[0]의 통 문자열 문자 오프셋(\n도 1문자로 센다) — 2026-08-05 조판 가이드.
-  int32  line_no   = 7;  // 통 문자열 계약에서는 0 고정. -1 = 요소 전체(블록 전체 하이라이트)
-  int32  col_start = 8;  // 시작 문자 오프셋(0-based)
-  int32  col_end   = 9;  // 끝 오프셋(미포함). 점 태그는 col_start==col_end. line_no==-1이면 무시
-  string tag       = 10; // 변환 지점 태그 (number_sign / contraction / symbol ...)
+  int32  line_no   = 7;  // [변경 08-05] 통 문자열이라 0 고정. -1 = 요소 전체
+  int32  col_start = 8;  // [변경 08-05] contents[0] 안의 시작 문자 오프셋(\n도 1문자)
+  int32  col_end   = 9;  // [변경 08-05] 끝 오프셋(미포함)
+  string tag       = 10; // 변환 종류 (number_sign / contraction / symbol ...)
 }
 
+// 촉각 그래픽 — 아직 안 만든다. 2차 PoC 이후 쓸 자리라 필드만 잡아 둔다.
 message TactileGraphic {
   string ascii_braille = 1;
   string svg_path      = 2;
@@ -78,9 +77,8 @@ message ReviewFlag {
 }
 
 message QualityReport {
+  reserved 2;  // [폐기 08-05] line_overflow_rate — 조판이 응답에서 빠져 32칸 초과 판정은 FE·BE 몫
   float  ocr_confidence_avg  = 1;
-  float  line_overflow_rate  = 2;   // 조판이 응답에서 빠진 뒤로는 항상 0 — 폐기 예정
-
   repeated CriticalError critical_errors = 3;
   repeated ReviewFlag    review_flags    = 4;
 }
@@ -92,15 +90,11 @@ message ProcessingMeta {
   bool   scan_only            = 4;
 }
 
-// 시각 요소(표·차트·이미지·만화) 점역사주 복수 초안 1개 — 단계4 T4-2.
-// 같은 자료를 다른 방식으로 점역한 대안. 점역사가 에디터에서 골라 쓴다.
-// (표·차트 = 레이아웃/표현 차이, 이미지·만화 = 설명 초점 차이. 셀 값·내부 텍스트·수치는 모든 초안 동일.)
+// 시각 요소(표·차트·이미지·만화)의 대체 점역 초안 1개. 점역사가 에디터에서 골라 쓴다.
 message Draft {
-  string text     = 1;            // 점역사주 원문(한글). 점역사가 읽고 비교하는 텍스트.
-  // 이 초안의 점자 — 조판·줄바꿈 없는 통 문자열 1항목(2026-08-05 조판 가이드).
-  // 선택 시 이 값이 본문 점자가 됨.
-  repeated string contents = 2;
-  string label    = 3;            // 피커에 표시할 방식명. 예: "격자형"/"행↔열 전치"/"위치 중심"/"요약"
+  string text     = 1;            // 초안 원문(한글) — 점역사가 읽고 비교하는 텍스트
+  repeated string contents = 2;   // [변경 08-05] 아래 TextElement.contents와 같은 형식(통 문자열 1항목)
+  string label    = 3;            // 피커 표시명 ("격자형" / "행↔열 전치" / "요약" ...)
 }
 
 message TextElement {
@@ -115,18 +109,26 @@ message TextElement {
   string visual_subtype     = 9;
   float  subtype_confidence = 10;
   string latex_string       = 11;  // formula 전용
-  TactileGraphic tactile    = 12;  // image/table 전용 (단계 3+)
-  // 기본(선택) 점자 — 조판·줄바꿈 없는 통 문자열 1항목(2026-08-05 조판 가이드).
-  // 제목 앞뒤 빈 줄 등 조판성 줄바꿈은 \n으로 포함. 32칸 줄바꿈·면 나눔은 FE(화면)/BE(다운로드) 몫.
-  // 모든 블록 공통(텍스트·수식은 이 필드만 사용). 시각 블록은 drafts[selected_idx].contents와
-  // 같은 값(중복) → BE는 타입 구분 없이 항상 이걸로 렌더.
+  TactileGraphic tactile    = 12;  // 미사용 — 2차 PoC 이후
+  // ══ [변경 08-05] contents 형식이 바뀌었다. BE가 가장 크게 영향받는 곳이다. ══
+  //
+  //   전:  32칸으로 조판된 줄 배열      ["⠠⠕⠂…(32칸)", "⠕⠀⠰⠗…(32칸)", …]
+  //   후:  조판하지 않은 통 문자열 1개   ["\n\n⠠⠕⠂⠠⠪⠃⠀⠚⠧⠒⠈⠻⠀⠈⠍⠰⠍⠁⠚⠈⠕\n\n"]
+  //
+  //   ▸ 항목은 **언제나 1개**다. 여러 개면 형식이 틀린 것이다.
+  //   ▸ 들어 있는 것 — 점자 셀, 그리고 지침이 정한 **구조적 빈 줄**(제목 앞뒤 등)이 `\n`.
+  //     위 예의 앞 `\n\n`은 1단계 제목 앞의 빈 줄 두 개다(BBPG 2장2절1).
+  //   ▸ 안 들어 있는 것 — 32칸 줄바꿈 · 면 나눔 · 들여쓰기 · 가운데 정렬.
+  //     화면은 FE가, 다운로드는 BE가 braille-assist로 만든다.
+  //   ▸ BE 사용법 — 원본 쪽 단위로 모아 `build_pages(sources, footer, …)`에 넘기면
+  //     변경선·면 나눔·페이지행까지 들어간 면 배열이 나온다. 그 뒤 `to_brf_ascii`로 .brf.
+  //     https://github.com/Semojum/braille-assist  (python·ts·java 동일 구현)
+  //   ▸ 시각 블록은 이 값이 drafts[selected_idx].contents와 같다 —
+  //     BE는 타입을 가리지 말고 항상 이 필드로 렌더하면 된다.
   repeated string contents      = 13;
-  repeated RuleTrail rule_trail = 14;  // 이 블록에 적용된 점자 규정 목록 (선택 초안 기준)
-  // ── 시각 요소(표·차트·이미지·만화) 복수 초안 — 단계4 T4-2 ──
-  // 점역사가 에디터에서 고를 수 있는 대체 초안들. 텍스트·수식 블록은 비어 있음([]).
-  // 피커를 지원하는 FE만 추가로 읽으면 됨(기본 렌더는 위 contents로 충분).
-  repeated Draft drafts     = 15;
-  int32  selected_idx       = 16;  // 기본 초안 번호(0-based). contents == drafts[selected_idx].contents
+  repeated RuleTrail rule_trail = 14;  // 적용된 규정 목록 (선택 초안 기준)
+  repeated Draft drafts     = 15;  // 시각 요소 대체 초안. 텍스트·수식은 빈 배열
+  int32  selected_idx       = 16;  // 기본 초안 번호(0-based)
 }
 
 // ── 응답 (AI → BE) ──────────────────────────────────────
@@ -137,22 +139,11 @@ message BrailleResponse {
 
   ProcessingMeta processing_meta = 4;
 
-  // mode a, c
-  // [복원 08-05] image_resolution(string, 5) 단일 필드를 원래의 int32 두 필드로 되돌린다.
-  //   08-01에 BE 기술명세서 §10의 gRPC 정의(image_resolution)에 맞춰 합쳤으나(#17/#18),
-  //   같은 문서의 DB 스키마는 image_width INT · image_height INT로 나뉘어 있어 문서가
-  //   자체 모순이었다. 원설계이자 DB 스키마와 같은 int 두 필드로 확정한다(대표 결정 08-05).
-  //   ⚠ 와이어 계약 변경 — BE는 스텁을 **다시 컴파일**해야 한다. 5번 이후 번호가 하나씩 밀린다.
-  //   AI 내부는 원래부터 int 두 값으로 들고 있었다(합치는 일은 응답 조립에서만 했다).
-  int32  image_width              = 5;
-  int32  image_height             = 6;
-  repeated BoundingBox bounding_box_list = 7;
-
-  // mode a, c  (코드 게이트가 mode in ("a","c") — 구 주석 "mode a, b"는 오기)
-  repeated TextElement text_list  = 8;
-
-  // mode b, c
-  repeated TextElement braille_text_list = 9;
-
+  // [복원 08-05] image_resolution(string,5) → 원래의 int 두 필드. 이후 번호가 하나씩 밀렸다.
+  int32  image_width              = 5;   // mode a, c
+  int32  image_height             = 6;   // mode a, c
+  repeated BoundingBox bounding_box_list = 7;   // mode a, c
+  repeated TextElement text_list  = 8;   // mode a, c  (구 주석 "mode a, b"는 오기)
+  repeated TextElement braille_text_list = 9;   // mode b, c
   QualityReport quality_report = 10;
 }
