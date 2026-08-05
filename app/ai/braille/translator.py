@@ -1680,6 +1680,23 @@ def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
     return (lines or [""], breaks or [[]])
 
 
+def translate_plain(text: str) -> str:
+    """짧은 묵자 → 유니코드 점자 1줄짜리 문자열. `TranslateText` RPC 전용.
+
+    본문 점역과 **같은 rule-based 경로**를 탄다(LLM·MinerU 미경유). 다른 점은 둘뿐이다 —
+    반환이 문자열이고, 32칸 조판을 하지 않는다(꼬리말 배치는 braille-assist `page_row`가 한다).
+
+    여러 줄이 들어오면 `\n`으로 이어 준다. 꼬리말은 한 줄이 정상이지만, 호출자가 무엇을
+    보낼지 우리가 정하지 않으므로 조용히 버리지 않고 보존한다.
+
+    교차 검증: "머리말" → ⠑⠎⠐⠕⠑⠂ 는 「점자 도서 제작 지침」 [예 1-8]의 꼬리말 실물과 같다.
+    """
+    if not text or not text.strip():
+        return ""
+    lines, _ = translate_with_breaks(text)
+    return "\n".join(lines)
+
+
 # 수식 속 \text{한글}을 한글 점자로 변환하는 훅 등록(P2). kor_math_rules는 translator를
 # import하지 않고(순환 회피) 런타임 주입만 받는다. 평문(한글)은 <!수식>·$ 가 없어
 # translate_tagged_text가 convert_latex로 재진입하지 않으므로 무한 재귀가 없다.
