@@ -7,6 +7,17 @@ option java_multiple_files = true;
 
 service BrailleService {
   rpc ProcessPage (BrailleRequest) returns (BrailleResponse);
+  // 짧은 묵자 → 점자 (rule-based 직행, LLM 미경유). 작업 설정에서 꼬리말을
+  // 입력·수정할 때 BE가 1회 호출한다 — 조판·편집 경로에서는 호출하지 않는다.
+  rpc TranslateText (TranslateTextRequest) returns (TranslateTextReply);
+}
+
+message TranslateTextRequest {
+  string text = 1;      // 묵자 (예: "수특 사회문화 2")
+}
+
+message TranslateTextReply {
+  string braille = 1;   // 유니코드 점자 (예: "⠍⠱⠁⠀⠇⠣⠫⠉⠍⠚⠧⠀⠼⠃")
 }
 
 // ── 요청 (BE → AI) ──────────────────────────────────────
@@ -40,12 +51,12 @@ message RuleTrail {
   string title    = 4;
   string excerpt  = 5;
   string priority = 6;   // "primary" | "secondary"
-  // ── 요소-로컬 좌표(조판 후) — AI 서버가 완성, FE/BE 계산 없음 ──────────────
-  // 좌표계 = 이 블록의 contents 배열. FE는 contents[line_no][col_start:col_end]만 하이라이트.
-  int32  line_no   = 7;  // contents 줄 인덱스(0-based). -1 = 요소 전체(블록 전체 하이라이트)
-  int32  col_start = 8;  // 그 줄 안의 시작 칸(0-based)
-  int32  col_end   = 9;  // 끝 칸(미포함). 점 태그는 col_start==col_end. line_no==-1이면 무시
-  string tag       = 10; // 변환 지점 태그 (number_sign / contraction / symbol / line_wrap ...)
+  // ── 요소-로컬 좌표 — AI 서버가 완성, FE/BE 계산 없음 ──────────────
+  // 좌표계 = contents[0]의 통 문자열 문자 오프셋(\n도 1문자로 센다) — 2026-08-05 조판 가이드.
+  int32  line_no   = 7;  // 통 문자열 계약에서는 0 고정. -1 = 요소 전체(블록 전체 하이라이트)
+  int32  col_start = 8;  // 시작 문자 오프셋(0-based)
+  int32  col_end   = 9;  // 끝 오프셋(미포함). 점 태그는 col_start==col_end. line_no==-1이면 무시
+  string tag       = 10; // 변환 지점 태그 (number_sign / contraction / symbol ...)
 }
 
 message TactileGraphic {
@@ -68,7 +79,8 @@ message ReviewFlag {
 
 message QualityReport {
   float  ocr_confidence_avg  = 1;
-  float  line_overflow_rate  = 2;
+  float  line_overflow_rate  = 2;   // 조판이 응답에서 빠진 뒤로는 항상 0 — 폐기 예정
+
   repeated CriticalError critical_errors = 3;
   repeated ReviewFlag    review_flags    = 4;
 }
@@ -85,7 +97,9 @@ message ProcessingMeta {
 // (표·차트 = 레이아웃/표현 차이, 이미지·만화 = 설명 초점 차이. 셀 값·내부 텍스트·수치는 모든 초안 동일.)
 message Draft {
   string text     = 1;            // 점역사주 원문(한글). 점역사가 읽고 비교하는 텍스트.
-  repeated string contents = 2;   // 이 초안의 점자 줄 목록(32칸 단위). 선택 시 이 값이 본문 점자가 됨.
+  // 이 초안의 점자 — 조판·줄바꿈 없는 통 문자열 1항목(2026-08-05 조판 가이드).
+  // 선택 시 이 값이 본문 점자가 됨.
+  repeated string contents = 2;
   string label    = 3;            // 피커에 표시할 방식명. 예: "격자형"/"행↔열 전치"/"위치 중심"/"요약"
 }
 
@@ -102,8 +116,10 @@ message TextElement {
   float  subtype_confidence = 10;
   string latex_string       = 11;  // formula 전용
   TactileGraphic tactile    = 12;  // image/table 전용 (단계 3+)
-  // 기본(선택) 점자 줄 목록. 모든 블록 공통(텍스트·수식은 이 필드만 사용).
-  // 시각 블록은 drafts[selected_idx].contents 와 같은 값(중복) → BE는 타입 구분 없이 항상 이걸로 렌더.
+  // 기본(선택) 점자 — 조판·줄바꿈 없는 통 문자열 1항목(2026-08-05 조판 가이드).
+  // 제목 앞뒤 빈 줄 등 조판성 줄바꿈은 \n으로 포함. 32칸 줄바꿈·면 나눔은 FE(화면)/BE(다운로드) 몫.
+  // 모든 블록 공통(텍스트·수식은 이 필드만 사용). 시각 블록은 drafts[selected_idx].contents와
+  // 같은 값(중복) → BE는 타입 구분 없이 항상 이걸로 렌더.
   repeated string contents      = 13;
   repeated RuleTrail rule_trail = 14;  // 이 블록에 적용된 점자 규정 목록 (선택 초안 기준)
   // ── 시각 요소(표·차트·이미지·만화) 복수 초안 — 단계4 T4-2 ──
