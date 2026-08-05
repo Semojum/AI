@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import grpc
 
+from app.ai.braille.translator import translate_plain
 from app.core.config import config
 from app.core import pipeline
 from app.schemas.task import PageTask
@@ -173,6 +174,10 @@ def _build_proto_response(result: dict):
 # 넉넉하게 열어 두고, 실제 처리 상한은 여기서 강제해 초과분을 큐잉 대신 즉시 거절한다.
 _in_flight = 0
 
+# 꼬리말은 32칸 안에 들어가는 짧은 문자열이다. 본문을 이 RPC로 보내는 오용을 막되,
+# 잘라내지 않고 거절한다 — 조용히 자르면 BE가 잘린 줄 모른다.
+_TRANSLATE_TEXT_MAX = 200
+
 
 class BrailleServiceServicer(braille_service_pb2_grpc.BrailleServiceServicer):
     async def ProcessPage(
@@ -198,6 +203,39 @@ class BrailleServiceServicer(braille_service_pb2_grpc.BrailleServiceServicer):
             return await self._process_page(request, context)
         finally:
             _in_flight -= 1
+
+    async def TranslateText(
+        self,
+        request: braille_service_pb2.TranslateTextRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> braille_service_pb2.TranslateTextReply:
+        """짧은 묵자 → 점자. 꼬리말 입력·수정 때 BE가 1회 호출한다(조판 가이드 §6).
+
+        본문과 **같은 rule-based 경로**를 타고 LLM·MinerU를 거치지 않으므로 즉시 끝난다.
+        그래서 `_in_flight` 배압에 넣지 않는다 — GPU도 안 쓰는 호출을 페이지 상한에 태우면
+        점역 처리량만 깎인다.
+
+        32칸 조판은 하지 않는다. 페이지행 배치는 BE·FE가 braille-assist `page_row`로 한다.
+        """
+        text = (request.text or "").strip()
+        if not text:
+            return braille_service_pb2.TranslateTextReply(braille="")
+        if len(text) > _TRANSLATE_TEXT_MAX:
+            await context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT,
+                f"TranslateText는 짧은 묵자 전용이다 — {_TRANSLATE_TEXT_MAX}자 이하 "
+                f"(받은 길이 {len(text)}). 본문 점역은 ProcessPage를 쓸 것",
+            )
+        try:
+            braille = translate_plain(text)
+        except Exception as exc:
+            logger.exception("TranslateText 실패 text=%r: %s", text[:40], exc)
+            await context.abort(
+                grpc.StatusCode.INTERNAL, f"점역 실패: {type(exc).__name__}: {exc}"
+            )
+            return
+        logger.info("TranslateText peer=%s %d자 → %d셀", context.peer(), len(text), len(braille))
+        return braille_service_pb2.TranslateTextReply(braille=braille)
 
     async def _process_page(
         self,
