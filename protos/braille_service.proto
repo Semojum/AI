@@ -76,12 +76,11 @@ message ReviewFlag {
 
 message QualityReport {
   // [폐기 08-05] line_overflow_rate(float, 2) 삭제 — 조판이 응답에서 빠져 32칸 초과 판정은 FE·BE 몫.
-  //   번호 재사용 금지(옛 클라이언트가 잘못 읽는다).
-  reserved 2;
+  //   BE는 page_results.line_overflow_rate 컬럼도 함께 정리할 것.
 
   float                   ocr_confidence_avg = 1;
-  repeated CriticalError  critical_errors    = 3;
-  repeated ReviewFlag     review_flags       = 4;
+  repeated CriticalError  critical_errors    = 2;   // [변경 08-05] 3 → 2
+  repeated ReviewFlag     review_flags       = 3;   // [변경 08-05] 4 → 3
 }
 
 message ProcessingMeta {
