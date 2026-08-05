@@ -987,16 +987,30 @@ async def _run_pipeline(task: PageTask) -> dict:
 
     # ── mode b: source_text 단일 텍스트 체인 ───────────────────────────
     if task.mode == "b":
-        source_elem_id = uuid4()
+        # ★ 줄 하나 = 요소 하나 (2026-08-06). 종전에는 source_text 전체를 요소 **하나**로
+        #   묶어 내보내서, BE가 원문과 점역을 줄 단위로 짝지을 수 없었다("한 뭉텅이로 온다").
+        #   BE는 txt·hwp를 줄마다 `\n`으로 이어 붙인 한 문자열로 보내므로, 그 `\n`이
+        #   그대로 요소 경계다.
+        #   · 빈 줄은 요소를 만들지 않는다 — 지침상 문단 구분은 빈 줄이 아니라 들여쓰기다
+        #     (BBPG 2장2절2 "3칸에서 시작"). 대신 `order`에 **원본 줄 번호**를 그대로 실어
+        #     BE가 빈 줄이 어디였는지 알 수 있게 한다(번호가 건너뛴다).
+        #   · id는 `text_list`와 `braille_text_list`가 같다 — 그게 짝짓기의 열쇠다.
+        src_lines = [(i, ln) for i, ln in enumerate((task.source_text or "").split("\n"), 1)
+                     if ln.strip()]
+        if not src_lines:                       # 내용이 없으면 빈 응답(빈 결과 금지 규칙은
+            src_lines = [(1, task.source_text or "")]   # 플레이스홀더가 담당)
+        line_ids = [uuid4() for _ in src_lines]
         layout_result = LayoutResult(
             page_id=page_id,
-            elements=[BBoxItem(element_id=source_elem_id, type="text", bbox=(0, 0, 0, 0), reading_order=1)],
+            elements=[BBoxItem(element_id=eid, type="text", bbox=(0, 0, 0, 0),
+                               reading_order=no)
+                      for eid, (no, _) in zip(line_ids, src_lines)],
         )
         extracted_texts = [ExtractedContent(
-            element_id=source_elem_id,
-            corrected_text=task.source_text or "",
+            element_id=eid,
+            corrected_text=ln,
             ocr_confidence=1.0,
-        )]
+        ) for eid, (_, ln) in zip(line_ids, src_lines)]
         ext, llm_outputs, braille_outputs = await _run_text_chain(
             extracted_texts, layout_result, "ZERO", task, include_braille=True,
         )
@@ -1142,6 +1156,20 @@ def _draft_contents(bo, d, di: int, flat: dict) -> list[str]:
     return [fe.prefix + "\n".join(d.braille_lines) + fe.suffix]
 
 
+def _line_order(mode: str, order_map: dict, element_id, idx: int) -> int:
+    """응답 `order`.
+
+    mode a·c — 나열 순서(1..N). 종전과 같다. **바꾸지 않는다** — BE가 이 값이 빈틈없이
+      이어진다고 보고 쓸 수 있어, 여기서 의미를 바꾸면 조용한 계약 변경이 된다.
+    mode b — **원본 줄 번호**(2026-08-06). 빈 줄에서 번호가 건너뛰므로 BE가 원문에서
+      빈 줄이 어디였는지 알 수 있다. `text_list`와 `braille_text_list`가 같은 값을 써야
+      같은 `id`끼리 짝이 맞는다.
+    """
+    if mode == "b":
+        return int(order_map.get(element_id) or idx + 1)
+    return idx + 1
+
+
 def _build_response(
     task: PageTask,
     page_id: str,
@@ -1219,11 +1247,14 @@ def _build_response(
             }
             for e in layout_result.elements
         ]
+    # 원문 목록은 mode b에도 싣는다 (2026-08-06). BE가 원문↔점역을 같은 `id`로 짝지어
+    # FE에 줄 단위로 흘려보낸다 — 종전에는 mode b에서 이게 비어 있어 짝짓기가 불가능했다.
+    if task.mode in ("a", "b", "c"):
         response["text_list"] = [
             {
                 "id": str(o.element_id),
                 "type": elem_by_id.get(o.element_id, _DUMMY_ELEM).type,
-                "order": i + 1,
+                "order": _line_order(task.mode, _order_of, o.element_id, i),
                 "heading_level": getattr(
                     elem_by_id.get(o.element_id), "heading_level", None
                 ) or 0,
@@ -1243,7 +1274,7 @@ def _build_response(
             {
                 "id": str(o.element_id),
                 "type": elem_by_id.get(o.element_id, _DUMMY_ELEM).type,
-                "order": i + 1,
+                "order": _line_order(task.mode, _order_of, o.element_id, i),
                 "heading_level": getattr(
                     elem_by_id.get(o.element_id), "heading_level", None
                 ) or 0,
