@@ -186,6 +186,28 @@ _PERM_RE = re.compile(
 # ── 왼쪽 첨자(제18·19항 2호): {}^{t}A → ^(t)A — 첨자는 항상 묶음 괄호 ──
 _LEFT_SUP_RE = re.compile(r"\{\}\^(\{[^{}]*\}|[A-Za-z0-9])\s*([A-Za-z])")
 _LEFT_SUB_RE = re.compile(r"\{\}_(\{[^{}]*\}|[A-Za-z0-9])\s*([A-Za-z])")
+# ★ 마커 `{}` 없이 첨자가 먼저 오는 꼴(`_{8}\\mathrm{O}` = 원자번호 8인 산소, 「과학 점자」 제3항).
+#   base를 요구하는 _SUB_RE/_SUP_RE가 못 잡아 남은 `_`가 symbol_table의 **밑줄 기호(⠸⠤)**로,
+#   `^`는 **캐럿**으로 새 나갔다. 왼쪽 첨자도 제18·19항 2호가 규정하는 표기이므로 같이 처리한다.
+#   ⚠ 룩비하인드로 base 유무를 보면 안 된다 — 추출물이 `\\int _{a}`처럼 **공백을 끼워** 내므로
+#     바로 앞 문자가 공백이 되어 정적분·일반 첨자까지 선행 첨자로 끌려간다(실측으로 확인).
+#     그래서 앞쪽 **비공백** 문자를 직접 보고 판정한다(_is_prefix_script).
+_PRE_SUP_RE = re.compile(r"\^(\{[^{}]*\}|[A-Za-z0-9])\s*(?=[A-Za-z\\^_])")
+_PRE_SUB_RE = re.compile(r"_(\{[^{}]*\}|[A-Za-z0-9])\s*(?=[A-Za-z\\^_])")
+# ⚠ "base가 아닌 것"을 빼는 방식(부정 목록)은 못 쓴다 — 1d 시점엔 `\\int`가 이미 `∫`로
+#   바뀌어 있어 부정 목록에 안 걸리고, 정적분의 아래끝이 선행 첨자로 끌려간다(실측).
+#   그래서 **선행 첨자로 볼 수 있는 앞 문자만** 허용 목록으로 둔다.
+# 원장 M-02 — 아래첨자 표기(⠰+수표 vs 하급 숫자)가 미정이라 과학 제3항(원자번호·질량수
+# 순서)은 여기서 구현하지 않는다. 여기서는 선행 첨자가 밑줄·캐럿 기호로 새는 것만 막는다.
+_PREFIX_OK = re.compile(r"[(\[{,;+\-=<>±×÷·]")
+
+
+def _is_prefix_script(text: str, at: int) -> bool:
+    """`text[at]`의 첨자 기호가 왼쪽 첨자인가 — 식 머리이거나 여는 묶음·연산자 뒤인가."""
+    i = at - 1
+    while i >= 0 and text[i].isspace():
+        i -= 1
+    return i < 0 or bool(_PREFIX_OK.match(text[i]))
 # ── 정적분(제57항): ∫;아래끝`위끝`본식 — 위끝은 위첨자 ⠘가 아니라 칸 구분 ──
 # 한계는 \frac{π}{2} 같은 1중첩 중괄호 허용
 _BRACE1 = r"\{(?:[^{}]|\{[^{}]*\})*\}"
@@ -892,9 +914,25 @@ def _stage1d_left_scripts(result: str) -> str:
     result = _LEFT_SUP_RE.sub(
         lambda m: f"⠘{_WRAP_S}{convert_latex(_unbrace(m.group(1)))}{_WRAP_E}{m.group(2)}",
         result)
-    return _LEFT_SUB_RE.sub(
+    result = _LEFT_SUB_RE.sub(
         lambda m: f"⠰{_WRAP_S}{convert_latex(_unbrace(m.group(1)))}{_WRAP_E}{m.group(2)}",
         result)
+    # `{}` 마커 없는 선행 첨자. 위·아래가 연달아 오는 꼴(`^{235}_{92}U` = 질량수+원자번호)이
+    # 있어 바뀔 때까지 돌린다 — 한 번만 돌리면 앞 첨자가 남긴 묶음 닫기가 뒤 첨자를 막는다.
+    def _pre(mark: str):
+        def _sub(m: re.Match) -> str:
+            if not _is_prefix_script(m.string, m.start()):
+                return m.group(0)          # base가 있으면 일반 첨자 — 8·9단계 몫
+            return f"{mark}{_WRAP_S}{convert_latex(_unbrace(m.group(1)))}{_WRAP_E}"
+        return _sub
+
+    for _ in range(4):                     # 첨자가 4중 이상 겹치는 식은 없다
+        before = result
+        result = _PRE_SUP_RE.sub(_pre("⠘"), result)
+        result = _PRE_SUB_RE.sub(_pre("⠰"), result)
+        if result == before:
+            break
+    return result
 
 
 def _stage1e_integral_range(result: str) -> str:
