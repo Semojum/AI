@@ -44,7 +44,9 @@ class _PartApi:
 @dataclass
 class _ReqStats:
     parts: dict[str, _PartApi] = field(default_factory=dict)
-    stages: list[tuple[str, float, str]] = field(default_factory=list)
+    # (라벨, 소요초, 비고, 요청 시작 기준 시작 오프셋초).
+    # 오프셋이 있어야 "어느 파트가 언제 점유했는가"를 그릴 수 있다(E2E 병렬 측정, S4).
+    stages: list[tuple[str, float, str, float]] = field(default_factory=list)
     t0: float = 0.0                      # 요청 시작 monotonic
     hcxt_budget_s: float | None = None   # 페이지 누적 HCXT 상한(초). None=무제한
 
@@ -165,6 +167,20 @@ def api_summary() -> str:
     return s
 
 
+def stage_timeline() -> list[dict]:
+    """이 요청의 단계별 점유 구간. E2E 병렬 측정(S4)이 메트릭에 싣는다.
+
+    반환 `[{"label", "start_ms", "ms", "note"}]` — start_ms는 요청 시작 기준이다.
+    여러 페이지의 구간을 겹쳐 그리면 어느 자원이 언제 붐비는지 바로 보인다.
+    """
+    st = _cur()
+    if st is None:
+        return []
+    return [{"label": lbl, "start_ms": round(off * 1000), "ms": round(dt * 1000),
+             "note": note}
+            for lbl, dt, note, off in st.stages]
+
+
 def breakdown_lines() -> list[str]:
     """파트별 LLM 사용 내역(요청 종료 로그용). 사용 없으면 빈 리스트."""
     st = _cur()
@@ -256,7 +272,8 @@ class _Stage:
         logger.info("%s✓ %s  %.1fs%s", self.prefix, self.label, dt, tail)
         st = _cur()
         if st is not None:
-            st.stages.append((self.label, dt, self.note))
+            st.stages.append((self.label, dt, self.note,
+                              max(0.0, self._t0 - st.t0) if st.t0 else 0.0))
 
 
 def stage(label: str, prefix: str = "  ", *, gpu: bool = False) -> _Stage:
