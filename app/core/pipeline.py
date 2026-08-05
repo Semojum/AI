@@ -29,6 +29,7 @@ from app.core.config import config
 from app.schemas.content import BrailleOutput, ExtractedContent, LLMOutput
 from app.schemas.layout import BBoxItem, DocumentMeta, LayoutResult
 from app.schemas.quality import CriticalError, QualityReport
+from app.core.limits import run_braille
 from app.schemas.task import PageTask
 from app.utils.logger import get_logger
 from app.utils.req_log import (
@@ -769,7 +770,9 @@ async def _run_text_chain(
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.text_braille import TextBraille
-        braille_outputs = TextBraille().translate(llm_outputs)
+        # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
+        # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
+        braille_outputs = await run_braille(TextBraille().translate, llm_outputs)
         _write_stage(task, "text", "text_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
@@ -792,7 +795,9 @@ async def _run_formula_chain(
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.formula_braille import FormulaBraille
-        braille_outputs = FormulaBraille().translate(llm_outputs)
+        # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
+        # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
+        braille_outputs = await run_braille(FormulaBraille().translate, llm_outputs)
         _write_stage(task, "formula", "formula_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
@@ -816,7 +821,9 @@ async def _run_table_chain(
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.table_braille import TableBraille
-        braille_outputs = TableBraille().translate(llm_outputs)
+        # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
+        # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
+        braille_outputs = await run_braille(TableBraille().translate, llm_outputs)
         _write_stage(task, "table", "table_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
@@ -840,7 +847,9 @@ async def _run_image_chain(
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.image_braille import ImageBraille
-        braille_outputs = ImageBraille().translate(llm_outputs)
+        # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
+        # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
+        braille_outputs = await run_braille(ImageBraille().translate, llm_outputs)
         _write_stage(task, "image", "image_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
@@ -864,7 +873,9 @@ async def _run_cartoon_chain(
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.cartoon_braille import CartoonBraille
-        braille_outputs = CartoonBraille().translate(llm_outputs)
+        # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
+        # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
+        braille_outputs = await run_braille(CartoonBraille().translate, llm_outputs)
         _write_stage(task, "cartoon", "cartoon_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
@@ -888,7 +899,9 @@ async def _run_chart_graph_chain(
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.chart_graph_braille import ChartGraphBraille
-        braille_outputs = ChartGraphBraille().translate(llm_outputs)
+        # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
+        # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
+        braille_outputs = await run_braille(ChartGraphBraille().translate, llm_outputs)
         _write_stage(task, "chart_graph", "cg_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
@@ -913,7 +926,9 @@ async def _run_diagram_chain(
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.diagram_braille import DiagramBraille
-        braille_outputs = DiagramBraille().translate(llm_outputs)
+        # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
+        # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
+        braille_outputs = await run_braille(DiagramBraille().translate, llm_outputs)
         _write_stage(task, "diagram", "diagram_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
@@ -991,9 +1006,10 @@ async def _run_pipeline(task: PageTask) -> dict:
             # ★ 순서 주의: flatten이 먼저다. layout()이 braille_lines를 32칸 조판본으로
             #   write-back하고 rule_trail도 그 프레임으로 재매핑하므로, 통 문자열은
             #   조판 전 논리 줄에서 떠야 한다(조판 가이드 §3).
-            flat = flatten_elements(braille_outputs, layout_result)
-            LayoutBraille().layout(
-                braille_outputs, task.page_no, task.job_id,
+            # 조판도 CPU 동기 작업 + 파일 쓰기라 전용 풀로 내린다(점역과 같은 이유).
+            flat = await run_braille(flatten_elements, braille_outputs, layout_result)
+            await run_braille(
+                LayoutBraille().layout, braille_outputs, task.page_no, task.job_id,
                 layout_result=layout_result,
             )
         return _build_response(
@@ -1077,9 +1093,9 @@ async def _run_pipeline(task: PageTask) -> dict:
         with stage("조판"):
             from app.ai.braille.layout_braille import LayoutBraille, flatten_elements
             # ★ 순서 주의: flatten이 먼저다(위 mode b 주석 참조).
-            flat = flatten_elements(all_braille, layout_result)
-            LayoutBraille().layout(
-                all_braille, task.page_no, task.job_id,
+            flat = await run_braille(flatten_elements, all_braille, layout_result)
+            await run_braille(
+                LayoutBraille().layout, all_braille, task.page_no, task.job_id,
                 layout_result=layout_result,
             )
 

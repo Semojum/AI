@@ -63,6 +63,12 @@ class Settings(BaseSettings):
     # ⚠ 위 수치는 전부 개발 랩탑 값이다. 운영(A10G 24GB)에서 무릎을 다시 재라.
     mineru_max_concurrent: int = 2
 
+    # 점역·조판(순수 CPU 동기 작업) 전용 스레드풀 크기. 기본 실행기와 갈라 두어
+    # 점역이 밀려도 MinerU·PDF 추출의 I/O 대기를 막지 않게 한다.
+    # GIL 때문에 늘려도 처리량은 안 는다 — 한 페이지의 긴 점역(실측 p95 2.1초)이 다른
+    # 페이지를 붙잡지 않게 하는 값이다. 운영 g5.xlarge vCPU 4에 맞춘다.
+    braille_max_concurrent: int = 4
+
     # ── 외부 LLM 동시 실행·분당 상한 (2026-08-06) ────────────────────
     # opt 단계 외부 LLM(Anthropic) 동시 호출 상한. 캡셔닝 슬롯(위)의 async 짝이다.
     # opt는 요소별 gather라 페이지 하나가 이미 요소 수만큼 동시에 던지고, 페이지가
