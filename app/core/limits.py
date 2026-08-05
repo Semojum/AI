@@ -73,6 +73,45 @@ def caption_slot() -> threading.Semaphore:
     return _caption_sem
 
 
+_braille_pool: "object | None" = None
+_braille_pool_lock = threading.Lock()
+
+
+def braille_pool():
+    """점역·조판(CPU 동기 작업) 전용 스레드풀. 크기 = config.braille_max_concurrent.
+
+    왜 **전용** 풀인가 — `asyncio.to_thread`는 기본 실행기를 쓰는데, 파이프라인의 다른
+    대기(MinerU subprocess·PDF 추출)도 그 풀을 쓴다. 점역이 7체인 × 페이지 수만큼
+    몰리면 기본 풀(4 vCPU면 8칸)이 차서 **MinerU 대기가 CPU 작업 뒤에 줄을 선다**.
+    풀을 갈라 두면 점역이 아무리 밀려도 I/O 대기는 막지 않는다.
+
+    ★ 왜 이 작업이 이벤트 루프 밖으로 나가야 하나 — 점역은 순수 CPU 동기 작업인데
+      코루틴 안에서 그대로 불렸다. 실측(dev 60쪽): 쪽당 중앙 121ms · p95 2,122ms
+      (표 요소 하나가 2초를 먹는다). 동시 4쪽이면 루프가 최대 8.6초 멈춰서 그동안
+      LLM 응답도, MinerU 완료도, gRPC 응답도 처리되지 않는다.
+
+    ★ GIL 때문에 스레드를 늘려도 CPU 처리량은 안 는다. 크기 4는 처리량이 아니라
+      **한 페이지의 긴 점역이 다른 페이지를 붙잡지 않게** 하는 값이다.
+    """
+    global _braille_pool
+    if _braille_pool is None:
+        with _braille_pool_lock:
+            if _braille_pool is None:
+                from concurrent.futures import ThreadPoolExecutor
+                _braille_pool = ThreadPoolExecutor(
+                    max_workers=max(1, config.braille_max_concurrent),
+                    thread_name_prefix="braille")
+    return _braille_pool
+
+
+async def run_braille(fn, *args, **kwargs):
+    """점역·조판 동기 함수를 전용 풀에서 돌린다(이벤트 루프 비점유)."""
+    import functools
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(braille_pool(), functools.partial(fn, *args, **kwargs))
+
+
 def llm_slot() -> asyncio.Semaphore:
     """opt 단계 외부 LLM 호출 동시 실행 슬롯. 크기 = config.llm_max_concurrent.
 
@@ -243,8 +282,11 @@ def estimate_tokens(text: str, image_bytes: int = 0) -> int:
 
 def _reset_for_tests() -> None:
     """테스트에서 config를 바꾼 뒤 슬롯 크기를 다시 잡기 위한 훅."""
-    global _caption_sem, _limiter
+    global _caption_sem, _limiter, _braille_pool
     _mineru_slots.clear()
     _llm_slots.clear()
     _caption_sem = None
     _limiter = None
+    if _braille_pool is not None:
+        _braille_pool.shutdown(wait=False)   # 스레드를 남기면 테스트마다 쌓인다
+        _braille_pool = None
