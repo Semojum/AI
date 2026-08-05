@@ -182,8 +182,9 @@ def main() -> None:
         rec("B gRPC", "  text_list 존재", len(c.text_list) > 0, f"{len(c.text_list)}개")
         rec("B gRPC", "  braille_text_list 존재", len(c.braille_text_list) > 0,
             f"{len(c.braille_text_list)}개")
-        rec("B gRPC", "  image_width/height 채움",
-            c.image_width > 0 and c.image_height > 0, f"{c.image_width}x{c.image_height}")
+        _res_w, _res_h = (c.image_resolution.split("x") + ["0", "0"])[:2]
+        rec("B gRPC", "  image_resolution 채움",
+            int(_res_w) > 0 and int(_res_h) > 0, c.image_resolution)
         bb_ids = {b.id for b in c.bounding_box_list}
         tl_ids = {t.id for t in c.text_list}
         rec("B gRPC", "  bounding_box ↔ text_list id 정합",
