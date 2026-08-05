@@ -52,9 +52,12 @@ def extract(image_path: str) -> list[dict] | None:
     """페이지 이미지 → 경계 파일 형식 elements. 실패 시 None(호출부가 원 추출 유지)."""
     try:
         import anthropic
+        from app.core.limits import estimate_tokens, llm_limiter
         from app.utils.req_log import record_gpt4o
         client = anthropic.Anthropic()
         b64 = base64.b64encode(open(image_path, "rb").read()).decode()
+        # 계정 분당 상한. 쪽 전체 이미지라 입력이 크고 출력도 8,000토큰까지 잡는다.
+        llm_limiter().acquire_sync(estimate_tokens(_PROMPT, len(b64) * 3 // 4), 8000)
         resp = client.messages.create(
             model=MODEL, max_tokens=8000,
             messages=[{"role": "user", "content": [
