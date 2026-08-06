@@ -63,15 +63,34 @@ _SECTION_RE = re.compile(r"\[(제목|개조식|줄글)\]\s*(.*)")
 _TYPE_DUP_RE = None  # 지연 컴파일
 
 
+# 캡션이 자기 유형을 이미 말하는 경우 그 말을 라벨로 쓴다.
+# 분류기가 chart_graph로 넘기면 라벨이 무조건 "그래프"가 되는데(chart_graph_opt._label),
+# 실제로는 모식도·구조도가 많다. 판정 실측(2026-08-07 Opus 판정 8건): **유형라벨 2.0/5**로
+# 최약축이었고 "모식도인데 그래프라 부르고 자기모순"이라는 지적이 반복됐다.
+_TYPE_WORDS = ("모식도", "구조도", "개념도", "흐름도", "계통도", "분포도", "지도",
+               "도식", "삽화", "사진", "그래프", "그림")
+_TYPE_HEAD_RE = re.compile(r"^\s*(" + "|".join(_TYPE_WORDS) + r")\s*[:：,]?\s*")
+
+
+def resolve_label(label: str, *texts: str) -> str:
+    """캡션·제목이 유형을 말하면 그 말을 쓴다. 없으면 넘어온 라벨 그대로."""
+    for t in texts:
+        m = _TYPE_HEAD_RE.match(t or "")
+        if m:
+            return m.group(1)
+    return label
+
+
 def _strip_dup_type(text: str, label: str) -> str:
     """캡션이 이미 유형 제시어로 시작하면 떼서 라벨 이중화를 막는다.
 
     captioner._ensure_type_word(§6.3.4 rule-based)가 붙인 '그래프: …'에 여기서 또
     라벨을 붙이면 '그래프: 그래프: …'가 된다(2026-07-17 dev 캡셔닝 첫 실행 실측).
     """
-    import re
     t = (text or "").strip()
-    return re.sub(rf"^{re.escape(label)}\s*[:：]\s*", "", t)
+    t = re.sub(rf"^{re.escape(label)}\s*[:：]\s*", "", t)
+    # 라벨과 **다른** 유형어가 앞에 남아 있으면 그것도 뗀다("그래프: 모식도, …" 꼴).
+    return _TYPE_HEAD_RE.sub("", t, count=1) if _TYPE_HEAD_RE.match(t) else t
 
 
 def _tn(text: str) -> str:
@@ -132,6 +151,7 @@ def omission_draft(label: str) -> Draft:
 
 def title_draft(label: str, title: str) -> Draft:
     """1안: 짧은 제목(캡션 그대로 또는 생성)."""
+    title = _strip_dup_type(title, label)      # "그래프: 그래프: …" 중복 방지
     body = f"{label}: {title}".strip().rstrip(":") if title else f"{label} 생략"
     return Draft(option=2, text=_tn(body), render_mode="narrative", label=LABELS[TITLE_IDX])
 
