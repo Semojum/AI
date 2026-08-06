@@ -231,8 +231,15 @@ def box_rects(page) -> list:
     return merged
 
 
-def box_rects_scaled(pdf_data: bytes, page_no: int) -> list[list[float]]:
-    """글상자 후보를 **요소 bbox와 같은 좌표계**(2x 렌더 픽셀)로 돌려준다."""
+def box_rects_norm(pdf_data: bytes, page_no: int) -> list[list[float]]:
+    """글상자 후보를 **0~1000 정규화** 좌표로 돌려준다.
+
+    ⚠ 경계 파일의 `bbox`는 경로마다 좌표계가 다르다(`result_builder` 2026-07-19 주석):
+      · MinerU 경로 = **0~1000 정규화**
+      · ZERO 경로   = **2x 렌더 픽셀**
+    그래서 여기서는 한쪽으로 통일해 내보내고, 픽셀 경로는 부르는 쪽이 되돌린다.
+    (섞으면 사각형이 엉뚱한 요소를 감싼다 — 실측 사회문화 p80에서 지문 상자가 선택지를 감쌌다.)
+    """
     tmp_path = None
     try:
         # ★ _coerce_pdf_bytes도 try 안이다 — 빈 bytes면 InvalidPDFError를 던지는데,
@@ -243,7 +250,9 @@ def box_rects_scaled(pdf_data: bytes, page_no: int) -> list[list[float]]:
         doc = fitz.open(tmp_path)
         try:
             page = doc[max(0, min(page_no - 1, doc.page_count - 1))]
-            return [[r.x0 * 2, r.y0 * 2, r.x1 * 2, r.y1 * 2] for r in box_rects(page)]
+            w, h = page.rect.width or 1, page.rect.height or 1
+            return [[r.x0 / w * 1000, r.y0 / h * 1000, r.x1 / w * 1000, r.y1 / h * 1000]
+                    for r in box_rects(page)]
         finally:
             doc.close()
     except Exception as exc:  # noqa: BLE001 — 테두리는 있으면 좋은 것, 없어도 본문은 나가야 한다
@@ -259,6 +268,11 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
 
     표·그림을 품은 사각형은 건드리지 않는다 — 그쪽 체인이 제 테두리를 그린다(원장 C-01a).
     한 요소는 한 상자에만 속한다(중첩 상자는 큰 쪽이 이긴다 — 감싸는 게 먼저다).
+
+    ★ `rects`와 `elements`의 bbox는 **같은 좌표계**여야 한다(부르는 쪽 책임).
+    ★ 감싼 요소가 **읽기순서에서 연속**이어야 태그를 단다. 태그는 첫 요소 앞과 마지막 요소
+      뒤에 붙으므로, 중간에 상자 밖 요소가 끼면 그것까지 테두리 안으로 들어간다.
+      MinerU는 읽기순서를 다시 매기므로(단 클러스터링·문항번호 이동) 실제로 끊긴다.
     """
     if not rects or not elements:
         return 0
@@ -284,7 +298,10 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
             inside.append(i)
         if skip or not inside:
             continue
-        first, last = min(inside), max(inside)
+        if inside != list(range(inside[0], inside[-1] + 1)):
+            logger.debug("글상자 건너뜀 — 읽기순서가 끊겼다(%s)", inside)
+            continue
+        first, last = inside[0], inside[-1]
         elements[first]["content"] = f"{_BOX_OPEN}\n{elements[first]['content']}"
         elements[last]["content"] = f"{elements[last]['content']}\n{_BOX_CLOSE}"
         boxed.update(inside)

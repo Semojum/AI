@@ -43,6 +43,15 @@ class TestTagging:
         assert tag_boxed_elements(els, [BOX]) == 0
         assert all("테두리" not in e["content"] for e in els)
 
+    def test_읽기순서가_끊기면_건너뛴다(self):
+        """태그는 첫 요소 앞·마지막 요소 뒤에 붙는다. 중간에 상자 밖 요소가 끼면
+        그것까지 테두리 안으로 들어간다(실측 사회문화 p80: 지문 상자가 선택지를 감쌌다)."""
+        els = [_el(1, bbox=(10, 10, 90, 20)),          # 상자 안
+               _el(2, bbox=(10, 200, 90, 210)),        # 상자 밖 ← 사이에 낀다
+               _el(3, bbox=(10, 30, 90, 40))]          # 상자 안
+        assert tag_boxed_elements(els, [BOX]) == 0
+        assert all("테두리" not in e["content"] for e in els)
+
     def test_한_요소는_한_상자에만(self):
         """중첩 상자는 큰 쪽이 이긴다 — 안쪽 상자가 같은 요소를 또 감싸면 안 된다."""
         els = [_el(1, bbox=(10, 10, 90, 20))]
