@@ -1,6 +1,7 @@
 import base64
 import binascii
 import os
+import re
 import tempfile
 from typing import Optional
 
@@ -235,6 +236,106 @@ def box_rects(page) -> list:
             continue                                     # 어중간하게 겹친다 = 같은 상자
         merged.append(r)
     return merged
+
+
+# ── 정오 표시 ○·× (원장 M-04·C-14) ─────────────────────────────────────────
+# 해설은 선지마다 맞음/틀림을 ○·×로 찍는데, **텍스트레이어에도 MinerU 추출에도 안 나온다** —
+# 글리프가 **채움 경로**로 그려져 있어서다(밑줄·글상자와 같은 사정).
+# 정답 도서는 이걸 로마자 소괄호로 적는다: (O)=⠦⠄⠴⠠⠕⠠⠴ · (X)=⠦⠄⠴⠠⠭⠠⠴.
+# dev-2027 900쪽에 1,058회(≈6,300셀)인데 우리는 0회였다.
+#
+# 가르는 신호(실측 5쪽에서 O 54/54 · X 34/34 완전일치):
+#   · 채움 전용(type 'f')·선색 없음 — 획으로 그린 도형은 표·테두리다
+#   · 곡선만(c) 20~60항목 = ○ · 곡선+선(cl) 40~120항목 = ×
+#   · 페이지 **안**에 있어야 한다 — 판면 밖 장식이 같은 모양으로 잡힌다
+#   · ○이 하나도 없는 쪽의 ×는 **곱셈 기호**다(정오 표기는 쌍으로 온다)
+# 표시가 붙는 자리 — 선지 번호로 시작하는 요소만(⌧는 번호 위에 겹쳐 찍힌다)
+_CHOICE_HEAD_RE = re.compile(r"^\s*(?:[①-⑳]|[㉠-㉻]|[ㄱ-ㅎ]\s*[.)]|\d{1,2}\s*[.)])")
+_MARK_MIN, _MARK_MAX = 4.0, 14.0      # 글리프 한 자 크기(pt)
+_MARK_SQUARE = 3.0                    # 가로세로 차이 상한 — 정사각이어야 글자다
+
+
+def mark_glyphs(page) -> list[tuple[str, "fitz.Rect"]]:
+    """페이지의 정오 표시 글리프 [(O|X, 사각형)]. 없으면 빈 목록.
+
+    ★ ○이 하나도 없는 쪽의 ×는 **곱셈 기호**다 — 정오 표기는 쌍으로 온다.
+      이 가드가 없으면 수학1에서 곱셈 ×를 정오 표시로 오검출한다(실측 2쪽).
+    """
+    pr = page.rect
+    out: list[tuple[str, fitz.Rect]] = []
+    try:
+        drawings = page.get_drawings()
+    except Exception:  # noqa: BLE001
+        return []
+    for g in drawings:
+        r = fitz.Rect(g["rect"])
+        if r not in pr or g["type"] != "f" or g.get("color"):
+            continue
+        if not (_MARK_MIN <= r.width <= _MARK_MAX and _MARK_MIN <= r.height <= _MARK_MAX
+                and abs(r.width - r.height) <= _MARK_SQUARE):
+            continue
+        kinds = {it[0] for it in g.get("items", [])}
+        n = len(g.get("items", []))
+        if kinds == {"c"} and 20 <= n <= 60:
+            out.append(("O", r))
+        elif kinds == {"c", "l"} and 40 <= n <= 120:
+            out.append(("X", r))
+    if not any(m == "O" for m, _ in out):
+        return []                      # ○ 없는 쪽의 ×는 곱셈이다
+    return out
+
+
+def mark_glyphs_norm(pdf_data: bytes, page_no: int) -> list[tuple[str, list[float]]]:
+    """정오 표시를 0~1000 정규화 좌표로. 실패하면 빈 목록(본문은 나가야 한다)."""
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(_coerce_pdf_bytes(pdf_data))
+            tmp_path = f.name
+        doc = fitz.open(tmp_path)
+        try:
+            page = doc[max(0, min(page_no - 1, doc.page_count - 1))]
+            w, h = page.rect.width or 1, page.rect.height or 1
+            return [(k, [r.x0 / w * 1000, r.y0 / h * 1000, r.x1 / w * 1000, r.y1 / h * 1000])
+                    for k, r in mark_glyphs(page)]
+        finally:
+            doc.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("정오 표시 검출 실패(없이 진행): %s", exc)
+        return []
+    finally:
+        if tmp_path:
+            os.unlink(tmp_path)
+
+
+def tag_answer_marks(elements: list[dict], marks: list) -> int:
+    """정오 표시를 **바로 뒤 요소** 앞에 글자로 붙인다(in-place). 붙인 개수 반환.
+
+    ★ 표시는 **선지 번호 위에 겹쳐** 찍힌다(⌧ = ① 위의 ×). 그래서 표시를 품은 요소를 찾아
+    그 **앞**에 붙인다 — gold 배치가 `…해당한다.(X)①아메바가…`라 번호보다 앞이다.
+    선지로 시작하는 요소에만 붙인다(엉뚱한 본문에 붙지 않게).
+    """
+    if not marks or not elements:
+        return 0
+    n = 0
+    for kind, (mx0, my0, mx1, my1) in marks:
+        cx, cy = (mx0 + mx1) / 2, (my0 + my1) / 2
+        best, best_d = None, None
+        for el in elements:
+            bb = el.get("bbox")
+            if not bb or len(bb) != 4 or el.get("type") not in ("text", "list_item"):
+                continue
+            if not (bb[0] - 6 <= cx <= bb[2] and bb[1] - 6 <= cy <= bb[3] + 6):
+                continue                                  # 표시를 품은(또는 줄머리에 붙은) 요소
+            if not _CHOICE_HEAD_RE.match(el.get("content") or ""):
+                continue                                  # 선지로 시작하는 것만
+            d = abs(bb[1] - my0)
+            if best is None or d < best_d:
+                best, best_d = el, d
+        if best is not None:
+            best["content"] = f"({kind}){best['content']}"
+            n += 1
+    return n
 
 
 def box_rects_norm(pdf_data: bytes, page_no: int) -> list[list[float]]:

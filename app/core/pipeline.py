@@ -393,6 +393,8 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         analyze_pdf,
         box_rects_norm,
         extract_text_blocks,
+        mark_glyphs_norm,
+        tag_answer_marks,
         tag_boxed_elements,
     )
 
@@ -423,6 +425,15 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                       r[2] / 1000 * image_width, r[3] / 1000 * image_height] for r in rects]
         if n := tag_boxed_elements(elements, rects):
             logger.info("글상자 %d개 태깅 (page=%d)", n, task.page_no)
+
+        # 정오 표시 ○·×(원장 M-04) — 채움 경로라 텍스트레이어에도 MinerU에도 안 잡힌다.
+        marks = await asyncio.to_thread(mark_glyphs_norm, task.pdf_data, task.page_no)
+        if method == "TEXT_NATIVE" and image_width and image_height:
+            marks = [(k, [r[0] / 1000 * image_width, r[1] / 1000 * image_height,
+                          r[2] / 1000 * image_width, r[3] / 1000 * image_height])
+                     for k, r in marks]
+        if n := tag_answer_marks(elements, marks):
+            logger.info("정오 표시 %d개 태깅 (page=%d)", n, task.page_no)
 
     # Opus 비전 폴백(D-05, 기본 off — OPUS_EXTRACT_FALLBACK=1 opt-in): 추출이 빈약한
     # 페이지만 claude-opus-4-8이 직접 읽는다. 실측상 저품질 페이지에서만 유효(3~4배),
