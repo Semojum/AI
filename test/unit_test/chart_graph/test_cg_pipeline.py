@@ -115,3 +115,26 @@ class TestChartGraphTNContent:
             restored = BrailleOutput.model_validate_json(o.model_dump_json())
             assert restored.element_id == o.element_id
             assert restored.braille_lines == o.braille_lines
+
+
+class TestTypeLabelFromCaption:
+    """자료 유형 이름 — 캡션이 유형을 말하면 그 말을 쓴다 (2026-08-07).
+
+    `chart_subtype`이 없으면 라벨이 무조건 "그래프"로 떨어져 **모식도·구조도까지
+    "그래프"라 부른다.** Opus 판정 8건에서 유형라벨이 2.0/5로 최약축이었고
+    "모식도인데 그래프라 부르고 자기모순"이라는 지적이 반복됐다.
+    """
+
+    def test_캡션이_유형을_말하면_그걸_쓴다(self) -> None:
+        from app.ai.llm.visual_drafts import resolve_label
+        assert resolve_label("그래프", "모식도: 신경-근육 시냅스", "") == "모식도"
+        assert resolve_label("그래프", "구조도, 세포 분열 단계", "") == "구조도"
+
+    def test_유형어가_없으면_넘어온_라벨_유지(self) -> None:
+        from app.ai.llm.visual_drafts import resolve_label
+        assert resolve_label("그래프", "2010년 이후 완만히 증가한다", "") == "그래프"
+
+    def test_짧은_제목에_유형어가_두_번_안_들어간다(self) -> None:
+        from app.ai.llm.visual_drafts import title_draft
+        t = title_draft("모식도", "모식도: 신경-근육 시냅스").text
+        assert t.count("모식도") == 1, t
