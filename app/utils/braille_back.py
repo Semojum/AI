@@ -170,6 +170,89 @@ _MAX_CELLS = max((len(k) for k in _COMBINED), default=1)
 
 _SUBSCRIPT = "⠰"   # 첨자·약물 표 등 — 로마자 런 안에서는 근사로 건너뜀
 
+# ── 영어 Grade 2 약자 역매핑 (2026-08-06) ──────────────────────────────────
+# 정방향 `eng_braille`는 낱말을 약자로 줄인다(Player → ⠠⠏⠇⠁⠽⠻, er=⠻).
+# 역점역이 그걸 모르면 약자 셀에서 런이 끊겨 뒤가 통째로 한글로 오독됐다
+#   실측: 'Player' → '숴삭외영∋' · 'Windows' → 'W⟨2814⟩프어'
+# 표는 **정방향 모듈에서 뒤집어 만든다** — 손으로 적으면 정방향과 어긋난다.
+# 위치 제약(첫머리 전용·끝 전용)도 정방향 규칙 그대로 따른다.
+def _build_eng_reverse() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """(어디서나, 낱말 첫머리 전용, 낱말 끝 쪽 전용) 세 벌의 셀→글자 표."""
+    from app.ai.braille import eng_braille as _E
+
+    anywhere: dict[str, str] = {}
+    initial: dict[str, str] = {}
+    final: dict[str, str] = {}
+    for word, cell in _E.STRONG_GROUPS.items():
+        anywhere.setdefault(cell, word)
+    for word, cell in _E.WORD_INITIAL_SYLLABLE.items():
+        initial.setdefault(cell, word)
+    for word, cell in _E.INITIAL_5.items():
+        initial.setdefault("⠐" + cell, word)
+    for word, cell in _E.INITIAL_45.items():
+        initial.setdefault("⠘" + cell, word)
+    for word, cell in _E.INITIAL_456.items():
+        initial.setdefault("⠸" + cell, word)
+    for word, cell in _E.FINAL_46.items():
+        final.setdefault("⠨" + cell, word)
+    for word, cell in _E.FINAL_56.items():
+        final.setdefault("⠰" + cell, word)
+    for word, cell in _E.FINAL_EBAE_ONLY.items():
+        final.setdefault(cell, word)
+    # 낱자와 겹치는 것은 낱자를 이긴다고 보지 않는다 — 낱자는 마지막 폴백이다.
+    return anywhere, initial, final
+
+
+_ENG_ANY, _ENG_INIT, _ENG_FINAL = _build_eng_reverse()
+_ENG_MAX = max((len(k) for k in list(_ENG_ANY) + list(_ENG_INIT) + list(_ENG_FINAL)),
+               default=1)
+
+
+def _eng_group_at(s: str, j: int, at_word_start: bool) -> tuple[str, int] | None:
+    """s[j]에서 시작하는 영어 약자 → (글자, 소비한 셀 수). 없으면 None."""
+    for ln in range(min(_ENG_MAX, len(s) - j), 0, -1):
+        seg = s[j:j + ln]
+        if at_word_start and seg in _ENG_INIT:
+            return _ENG_INIT[seg], ln
+        if not at_word_start and seg in _ENG_FINAL:
+            return _ENG_FINAL[seg], ln
+        if seg in _ENG_ANY:
+            return _ENG_ANY[seg], ln
+    return None
+
+
+def _roman_span_ahead(s: str, at: int) -> bool:
+    """`at`부터 로마자 구간이 이어지는가 — **종료표 ⠲가 앞에 실제로 있는지**로 본다.
+
+    제35항: 로마자 구간 안 숫자는 구간을 끊지 않는다(`A4`·`MP3`·`V1`). 숫자에서 끊으면
+    뒤가 로마자 문맥을 잃는다. 다만 숫자 뒤가 한글인 표기도 있어(`A4용지`) 무조건 이으면
+    한글을 삼킨다 — 그래서 종료표를 증거로 요구한다.
+
+    ★ 종료표를 **증거로 요구한다**. 한글 음절 셀과 알파벳 셀이 대부분 겹치므로,
+      "로마자로 읽히니까 이어 간다"로 판정하면 한글을 통째로 삼킨다.
+      실측: `A4용지`(⠴⠠⠁⠼⠙⠬⠶⠨⠕ — 종료표 없음)가 `A4inggg지`로 깨졌다.
+      제4항으로 종료표를 생략한 표기는 여기서 이어 가지 않는다 — 안전한 쪽으로 판단한다.
+    """
+    n = len(s)
+    j = at
+    seen = False
+    while j < n:
+        c = s[j]
+        if c == _ROMAN_END:
+            return seen                      # 종료표를 만났다 = 구간 안이었다
+        if c in (_SPACE_CELL, " "):
+            j += 1
+            continue
+        if (c in _ALPHA_REV or c in (_CAPITAL, _NUMBER_SIGN) or c in _DIGIT_REV
+                or _eng_group_at(s, j, False) is not None
+                or _eng_group_at(s, j, True) is not None):
+            seen = True
+            j += 1
+            continue
+        return False                          # 로마자로 안 읽히는 셀 → 구간 밖
+    return False                              # 종료표 없이 끝 → 끊는다
+
+
 def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
     """로마자 런이면 (텍스트, 다음위치), 아니면 None.
 
@@ -196,9 +279,25 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
     while j < n:
         c = s[j]
         if c in (_SPACE_CELL, " "):                # 공백 → 런 종료(소비 안 함)
+            # ⚠ 제32항은 로마자표~종료표 **사이**를 한 구간으로 보므로 원칙적으로는
+            #   공백을 넘어 이어져야 한다(`MP4 Player`). 하지만 그렇게 못 한다:
+            #   ① `decode`가 줄을 **공백 단위로 쪼개** 토큰마다 따로 디코드한다.
+            #   ② 구간 경계를 못 믿는다 — ⠴는 닫는 따옴표, ⠲는 마침표와 같은 셀이라
+            #      정답 도서에서 `⠴…⠲`를 찾으면 15,996건 중 절반이 **한글 오탐**이다
+            #      (예 `⠴⠊⠉⠵⠀⠸⠎⠕⠢⠲` = 한글). 이걸 구간으로 보면 한글을 통째로 삼킨다.
+            #   그래서 낱말 안에서만 정확히 하고 공백은 끊는다. 여는 부분은 제대로 나오고
+            #   (`MP4`), 뒤 낱말은 한글로 오독되지만 그건 지금도 같다.
             break
         if c == _NUMBER_SIGN:                      # 수표 또는 영어 약자 ble (같은 점형)
             if j + 1 < n and s[j + 1] in _DIGIT_REV:
+                # 제35항: 로마자 구간 안 숫자는 구간을 끊지 않는다(MP4 · A4 · Windows 10).
+                # 여기서 끊으면 숫자 뒤 낱말이 로마자 문맥을 잃고 한글로 오독된다.
+                # 명시적 로마자표 ⠴로 시작한 런에서만 이어 간다 — 종료표가 어디서 끝나는지
+                # 알 수 있기 때문이다.
+                if s[i] == _ROMAN_START and _roman_span_ahead(s, j + 2):
+                    num, j = _decode_number(s, j)
+                    out.append(num)
+                    continue
                 break                              # 뒤가 숫자 셀 → 수표(소비 안 함)
             out.append("ble")
             j += 1
@@ -215,6 +314,15 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
             if j < n and s[j] in _ALPHA_REV:
                 out.append(_ALPHA_REV[s[j]].upper())
                 j += 1
+            continue
+        # 영어 약자(er=⠻ · in=⠔ · the=⠮ …)를 낱자보다 먼저 본다. 낱자로 읽으면
+        # 여기서 런이 깨져 뒤 낱말이 통째로 한글로 오독된다.
+        _word_start = j == i + 1 or s[j - 1] in (_SPACE_CELL, " ", _CAPITAL)
+        _g = _eng_group_at(s, j, _word_start)
+        if _g is not None:
+            txt, ln = _g
+            out.append(txt.upper() if caps_word else txt)
+            j += ln
             continue
         if c in _ALPHA_REV:
             ch = _ALPHA_REV[c]
@@ -354,6 +462,22 @@ def decode(braille: str, *, math: bool = False) -> str:
     return "\n".join(out_lines)
 
 
+# ── 감쌈 붙임표 → 괄호 복원 (2026-08-06) ──────────────────────────────────
+# 정방향은 도서 관행에 따라 괄호를 붙임표로 감싼다 — `(가)` → ⠤가⠤ (translator._paren_repl).
+# 역점역이 그걸 모르면 `-가-`로 되돌려 원문과 어긋난다. 실측 400요소에서 이 한 가지가
+# 틀린 자리 545건 중 170건(31%)으로 최다였다.
+#
+# ★ **토큰 전체가 `-X-`일 때만** 되돌린다. 줄 안 어디서나 `-X-`를 바꾸면 진짜 붙임표가
+#   깨진다 — 실측: `고복지-저부담` → `고복지(저부담`. 승패 대조에서
+#   토큰 규칙 = 개선 29 · 악화 **0**, 줄 규칙 = 개선 45 · 악화 4였다. 악화 0만 채택한다.
+_WRAP_PAREN_RE = re.compile(r"(?<![^\s])-([^\s-]{1,20})-(?![^\s])")
+
+
+def _restore_wrap_parens(text: str) -> str:
+    """토큰 전체를 이루는 감쌈 붙임표를 괄호로 되돌린다."""
+    return _WRAP_PAREN_RE.sub(r"(\1)", text)
+
+
 def _decode_line_router(line: str, math: bool) -> str:
     """줄을 공백 단위로 나눠 수식 토큰은 수학 디코더로, 나머지는 한글 디코더로 라우팅."""
     if not line:
@@ -371,7 +495,7 @@ def _decode_line_router(line: str, math: bool) -> str:
             pieces.append(_decode_math_token(tok) if is_math[idx] else _decode_line(tok))
         if idx < len(seps):
             pieces.append(" " * len(seps[idx]))
-    return "".join(pieces)
+    return _restore_wrap_parens("".join(pieces))
 
 
 def _decode_line(s: str) -> str:
@@ -419,6 +543,18 @@ def _decode_line(s: str) -> str:
         def _final(after: int) -> bool:
             """위치 after가 줄 끝이거나 공백이면 어말(문장부호 분리 판단)."""
             return after >= n or s[after] in (_SPACE_CELL, " ")
+
+        # ★ 로마자표 ⠴로 시작하는 기호는 로마자 런과 셀이 겹친다 (2026-08-06).
+        #   `%`=⠴⠏ 인데 로마자표+p 도 ⠴⠏라, `pH`(⠴⠏⠠⠓⠲)가 `%`+미지셀로 깨졌다.
+        #   **긴 쪽이 이긴다** — 로마자로 읽어서 더 많은 셀을 소비하면 그쪽이 맞다.
+        #   길이가 같으면 기호가 이긴다: ℃(⠴⠙⠠⠉)·㎏(⠴⠅⠛⠲)은 로마자로 읽어도 같은
+        #   4셀이므로 등록된 단위 기호로 남는다.
+        if ch == _ROMAN_START and best_ln >= 2:
+            _r = _decode_roman_run(s, i)
+            if _r is not None and _r[1] - i > best_ln:
+                out.append(_r[0])
+                i = _r[1]
+                continue
 
         if best_ln >= 2:
             seg = s[i:i + best_ln]
