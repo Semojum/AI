@@ -84,13 +84,20 @@ def _grits(extracted: ExtractedContent, output: BrailleOutput, render_mode: str)
         checks.append(n_lines in (max_row, (max_col - 1) * max_row))
         checks.append(all(ln.startswith("  ") for ln in nonblank))
     else:
-        # table_grid: border(⠿×32) 2줄 + separator(⠒×32) (row-1)줄 + data row줄
-        border_lines = [ln for ln in output.braille_lines if set(ln) == {"⠿"}]
-        sep_lines    = [ln for ln in output.braille_lines if set(ln) == {"⠒"}]
-        expected_lines = 2 + max_row + (max_row - 1)  # borders + data + separators
-        checks.append(len(border_lines) == 2)
-        checks.append(len(sep_lines) == max_row - 1)
-        checks.append(len(output.braille_lines) == expected_lines)
+        # table_grid — 지침 §3.1.3(2) 형식 (2026-08-06 갱신).
+        # 구판 단언(전체 ⠿ 채움 테두리 + ⠒ 구분선)은 **한 달 전 폐기된 형식**이었다.
+        # 2026-07-19에 렌더러를 지침 예시 형식으로 고쳤는데, 그때 격자형이 비선택 초안이라
+        # 이 분기가 안 돌아 낡은 채로 남았다. gold 실측(dev-2027 445개 표)에 맞춘다:
+        #   위 테두리 ⠿⠛…⠿ (1,096줄) · 아래 테두리 ⠿⠶…⠿ (1,783줄)
+        #   행 구분선 ⠐⠐…⠐ (287/445 = 64%) — ⠒가 아니다
+        top = [ln for ln in output.braille_lines
+               if len(ln) >= 8 and ln[0] == "⠿" and ln[-1] == "⠿" and set(ln[1:-1]) == {"⠛"}]
+        bot = [ln for ln in output.braille_lines
+               if len(ln) >= 8 and ln[0] == "⠿" and ln[-1] == "⠿" and set(ln[1:-1]) == {"⠶"}]
+        data = [ln for ln in output.braille_lines if ln.startswith("⠀⠀") or ln.startswith("  ")]
+        checks.append(len(top) == 1)
+        checks.append(len(bot) == 1)
+        checks.append(len(data) == max_row)          # 원본 행이 전부 실렸는가
 
     # 숫자 셀: 규정 제41항 변환값이 출력에 포함되어야 함 (translator 독립 검증)
     numeric_cells = [
@@ -228,22 +235,32 @@ class TestTableRenderModes:
         two_col_items = [o for o in opt_outputs if o.render_mode == "linear"]
         assert len(two_col_items) >= 1, "2열 표의 linear 렌더 모드 없음"
 
-    def test_3col_table_uses_unfold_mode(self, opt_outputs: list[Any]) -> None:
-        # 3열 이상 = 풀어쓰기(BBPG-3.1.2)가 기본, 격자는 대안
-        unfold_items = [o for o in opt_outputs if o.render_mode == "unfold"]
-        assert len(unfold_items) >= 1, "3열 이상 표의 unfold(풀어쓰기) 렌더 모드 없음"
+    def test_3col_table_uses_grid_mode(self, opt_outputs: list[Any]) -> None:
+        """3열 이상 = **격자형**이 기본 (2026-08-06 판정 번복 — 원장 C-01a).
 
-    def test_grid_alternative_draft_exists(self, braille_outputs: list[BrailleOutput]) -> None:
-        """격자형은 기본이 아니라 대안 초안으로 존재한다.
+        종전 기본은 풀어쓰기였다. gold 실측이 뒤집었다 — dev-2027 테두리 표 445개 중
+        383개(86%)가 격자형 '행제목: 값  값' 형식이다. 풀어쓰기는 행을 쪼개 배치가 다르다.
+        """
+        grid_items = [o for o in opt_outputs if o.render_mode == "table_grid"]
+        assert len(grid_items) >= 1, "3열 이상 표의 기본 렌더 모드가 격자형이 아니다"
 
-        ★ 테두리는 더 이상 단언하지 않는다 — 도서 관행(기본)은 테두리를 쓰지 않는다.
-          정답 코퍼스 14,382줄에 테두리형 줄 0개(2026-07-29 실측).
+    def test_grid_draft_has_border(self, braille_outputs: list[BrailleOutput]) -> None:
+        """격자형에 테두리가 있다 (2026-08-06 판정 번복 — 원장 C-01a).
+
+        2026-07-29에는 "정답 코퍼스 14,382줄에 테두리형 줄 0개"를 근거로 뺐다. 그 표본이
+        **구판 수능특강 한 종류**였던 게 문제다. 82권으로 재니 정반대다 —
+        신판 2027 EBS 2.62% · 초등참고서 4.78% · 중등교과서 3.37% · 고등교과서 2.97%.
         """
         grids = [d for o in braille_outputs for d in o.drafts if d.render_mode == "table_grid"]
-        assert grids, "격자형 대안 초안 없음"
+        assert grids, "격자형 초안 없음"
         assert any(d.braille_lines for d in grids), "격자형 초안에 점자 줄이 없음"
         border = "⠿" + "⠛" * 30 + "⠿"
-        assert all(border not in d.braille_lines for d in grids), "관행 기본에서 테두리가 나왔다"
+        assert all(border in d.braille_lines for d in grids), "격자형에 테두리가 없다"
+
+    def test_unfold_alternative_draft_exists(self, braille_outputs: list[BrailleOutput]) -> None:
+        """풀어쓰기는 이제 대안 초안이다 — 사라지면 안 된다(피커가 4안을 보여준다)."""
+        unfolds = [d for o in braille_outputs for d in o.drafts if d.render_mode == "unfold"]
+        assert unfolds, "풀어쓰기 대안 초안 없음"
 
     def test_linear_output_is_indented(self, braille_outputs: list[BrailleOutput]) -> None:
         """2열 표는 3칸에서 시작하는 '키  값' 줄로 나온다(정답 도서 관행)."""
