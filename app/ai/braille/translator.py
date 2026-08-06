@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from functools import lru_cache
 
 from app.ai.braille.kor_math_rules import convert_latex, digits_to_braille
 from app.ai.braille import eng_braille, inline_math
@@ -410,23 +411,40 @@ def _preprocess_units(text: str) -> str:
 #   2) 화살괄호: 〈보기〉·《…》 → 작은따옴표 ‘보기’ (정답 코퍼스에 화살괄호 0회, 작은따옴표 3618회)
 #   3) 물결표: ~·∼ → 줄표 ― (정답에 물결표 0회 / 줄표 2004회. 범위 표기 "㉠~㉤"도 줄표)
 #   4) 표시 문자 자모 뒤 마침표 생략: "ㄱ. 내용" → "ㄱ 내용" (정답은 온표+자모만 적고 마침표 없음)
-#   5) 동그라미 자모·음절: 규정 제64항은 ⠶…⠶로 묶으라 하지만 도서는 맨 글자로 적는다
-#      (㉠=⠿⠁ 온표+자모(제8항), gold =a 실측 일치) → 자모·음절은 맨 글자 유지.
+#   5) 동그라미 자모·음절: **규정 제64항대로 ⠶…⠶로 묶는다** (2026-08-06 판정 번복).
+#      종전에는 "도서는 맨 글자로 적는다"고 봤는데, 그 실측이 **구판 수능특강 한 종류**였다.
+#      신규 2027 코퍼스로 재니 정반대다 — 48쪽에서 묵자 ㉠ 개수와 gold `⠶⠿⠁⠶` 개수가
+#      쪽마다 1:1로 맞는다(4개 책 전부). 우리는 감쌈형을 0회 냈다. 음절도 같다(㉮ = ⠶⠫⠶).
+#      규정도 관행도 감쌈형이므로 스위치 없이 규정형으로 낸다.
 #      ★동그라미 로마자 ⓐ~ⓩ는 정정(2026-07-19): 구현이 맨글자 'a'였는데 이는 규정(70a7=
 #      ⠶⠴⠁⠶, 제64항 예시)도 코퍼스 관행(-0a-=⠤⠴⠁⠤, 생물 4p 일관 실측)도 아닌 제3형.
 #      규정 우선 원칙(태민)에 따라 제64항형을 직접 점자로 낸다. 측정은 kpi canon이
 #      관행형(⠤⠴x⠤)을 등가 인정. symbol_table.json은 규정 정본이라 손대지 않는다.
 _BOOK_STYLE = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
 
-# 동그라미 자모·음절 → 맨 글자 (숫자 ①은 규정=도서 일치(수표+숫자)라 건드리지 않는다)
-_CIRCLED = {chr(0x3260 + i): ch for i, ch in enumerate("ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ")}
-_CIRCLED.update({chr(0x326E + i): ch for i, ch in enumerate("가나다라마바사아자차카타파하")})
+# 동그라미 자모·음절 (숫자 ①은 규정=도서 일치(수표+숫자)라 건드리지 않는다).
+# 값은 **맨 글자**로 두고 점역할 때 ⠶…⠶로 감싼다 — 자모 점형을 여기서 다시 적으면
+# 정본이 둘로 갈린다(`_safe_to_unicode`가 온표 ⠿까지 붙여 준다: ㄱ→⠿⠁, 가→⠫).
+_CIRCLED_PLAIN = {chr(0x3260 + i): ch for i, ch in enumerate("ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ")}
+_CIRCLED_PLAIN.update({chr(0x326E + i): ch
+                       for i, ch in enumerate("가나다라마바사아자차카타파하")})
+_CIRCLED = dict(_CIRCLED_PLAIN)
 # 동그라미 로마자 → 규정 제64항형 점자(⠶ + 로마자표 ⠴ + 글자 + ⠶; 대문자는 ⠠ 추가)
 _CIRCLED.update({chr(0x24D0 + i): "⠶⠴" + _ALPHA_MAP[chr(ord("a") + i)] + "⠶"
                  for i in range(26)})   # ⓐ~ⓩ
 _CIRCLED.update({chr(0x24B6 + i): "⠶⠴⠠" + _ALPHA_MAP[chr(ord("a") + i)] + "⠶"
                  for i in range(26)})   # Ⓐ~Ⓩ
 _CIRCLED_RE = re.compile("[" + "".join(_CIRCLED) + "]")
+
+
+@lru_cache(maxsize=64)
+def _circled_braille(ch: str) -> str:
+    """동그라미 자모·음절 → 규정 제64항 감쌈형 ⠶…⠶ (㉠ → ⠶⠿⠁⠶, ㉮ → ⠶⠫⠶).
+
+    점형은 `_safe_to_unicode`에서 가져온다(정본 하나). 로마자 ⓐ~ⓩ는 `_CIRCLED`에
+    이미 완성형이 들어 있어 이 경로를 타지 않는다.
+    """
+    return "⠶" + _safe_to_unicode(_CIRCLED_PLAIN[ch]) + "⠶"
 
 # 괄호 안이 한글·숫자면 붙임표로 감싼다. 영문이 섞이면 규정 소괄호를 유지한다.
 # 정답: -가- 1217 · -나- 663 · -1- 281 · "소계-해당 인구-  100.0-2,575-"(표) …
@@ -706,7 +724,9 @@ def _apply_book_style(text: str) -> str:
     if _BRACKET_BOOK_STYLE:              # 기본 꺼짐 — 대괄호는 규정 제49항 셀 그대로 나간다
         text = _SRC_BRACKET_RE.sub(_src_bracket_repl, text)
     text = _QNUM_RE.sub(r"\1.", text)
-    text = _CIRCLED_RE.sub(lambda m: _CIRCLED[m.group()], text)
+    text = _CIRCLED_RE.sub(
+        lambda m: (_circled_braille(m.group()) if m.group() in _CIRCLED_PLAIN
+                   else _CIRCLED[m.group()]), text)
     text = _MARK_PAREN_RE.sub(_paren_repl, text)
     # 이 단계는 이미 음수 판정(_NEG_NUM_RE) 뒤라 자리표시자를 유지할 이유가 없다 —
     # 여기서 만들어진 감쌈만 되돌린다(밖에서 온 것은 앞서 복원돼 no-op).
