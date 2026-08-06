@@ -690,8 +690,13 @@ def _split_list_marker_items(elements: list[dict]) -> list[dict]:
 def _parse_txt_result(
     extraction: dict, page_id: str
 ) -> tuple[LayoutResult, dict[UUID, ExtractedContent], str]:
-    method = extraction.get("meta", {}).get("extraction_method", "OCR")
+    meta = extraction.get("meta", {})
+    method = meta.get("extraction_method", "OCR")
     conf = 1.0 if method == "TEXT_NATIVE" else 0.95
+    # MinerU 경로만 0~1000 정규화라 픽셀로 되돌린다. 페이지 크기를 모르면 손대지 않는다.
+    iw, ih = meta.get("image_width") or 0, meta.get("image_height") or 0
+    scale_bbox = ((iw / 1000, ih / 1000, iw / 1000, ih / 1000)
+                  if method != "TEXT_NATIVE" and iw and ih else None)
 
     bbox_items: list[BBoxItem] = []
     ext_map: dict[UUID, ExtractedContent] = {}
@@ -722,9 +727,15 @@ def _parse_txt_result(
         if hlevel in (None, 0) and etype == "title":
             hlevel = 1
         # bbox: 현주 레이아웃 좌표 → BoundingBox(x,y,x2,y2)로 BE 전달. 없거나 깨지면 (0,0,0,0).
+        # ★ 경계 파일의 좌표계는 경로마다 다르다(`result_builder` 2026-07-19):
+        #   MinerU = 0~1000 정규화 / ZERO = 2x 렌더 픽셀. BE·FE는 `image_width/height`에
+        #   대한 비율로 매핑하므로 **여기서 픽셀로 통일**한다. 안 하면 MinerU 쪽에서
+        #   하이라이트가 실제 위치의 77%·65% 자리에 찍힌다(실측).
         raw_bbox = el.get("bbox")
         try:
             bbox = (int(raw_bbox[0]), int(raw_bbox[1]), int(raw_bbox[2]), int(raw_bbox[3]))
+            if scale_bbox:
+                bbox = tuple(int(round(v * s)) for v, s in zip(bbox, scale_bbox))
         except (TypeError, IndexError, ValueError):
             bbox = (0, 0, 0, 0)
         # caption_ref: 캡션→대상(그림/표) 연결. UUID 문자열만 수용, 그 외 None.
