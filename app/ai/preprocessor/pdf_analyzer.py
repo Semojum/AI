@@ -233,11 +233,12 @@ def box_rects(page) -> list:
 
 def box_rects_scaled(pdf_data: bytes, page_no: int) -> list[list[float]]:
     """글상자 후보를 **요소 bbox와 같은 좌표계**(2x 렌더 픽셀)로 돌려준다."""
-    data = _coerce_pdf_bytes(pdf_data)
     tmp_path = None
     try:
+        # ★ _coerce_pdf_bytes도 try 안이다 — 빈 bytes면 InvalidPDFError를 던지는데,
+        #   테두리는 있으면 좋은 것이라 그 예외로 페이지를 죽이면 안 된다.
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-            f.write(data)
+            f.write(_coerce_pdf_bytes(pdf_data))
             tmp_path = f.name
         doc = fitz.open(tmp_path)
         try:
