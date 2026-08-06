@@ -435,6 +435,20 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         if n := tag_answer_marks(elements, marks):
             logger.info("정오 표시 %d개 태깅 (page=%d)", n, task.page_no)
 
+        # 놓친 그림 회수 — 앞단이 시각 요소를 **0개** 낸 쪽만 비전 모델로 다시 본다.
+        # 평가 실측: 시각 요소가 0인 26쪽에서 우리가 gold의 1%만 쓴다(프롬프트로는 안 움직인다).
+        from app.ai.parser import figure_detect
+        _VIS = ("image", "chart_graph", "cartoon", "diagram", "figure")
+        if figure_detect.enabled() and not any(e.get("type") in _VIS for e in elements):
+            figs = await asyncio.to_thread(figure_detect.detect, task.pdf_data, task.page_no)
+            if figs:
+                # bbox 좌표계는 경계 파일 규약을 따른다(MinerU=0~1000 정규화 / ZERO=2x 픽셀).
+                w, h = ((image_width, image_height) if method == "TEXT_NATIVE"
+                        else (1000.0, 1000.0))
+                add = figure_detect.to_elements(figs, w, h, len(elements) + 1)
+                elements.extend(add)
+                logger.info("그림 회수 %d개 (page=%d)", len(add), task.page_no)
+
     # Opus 비전 폴백(D-05, 기본 off — OPUS_EXTRACT_FALLBACK=1 opt-in): 추출이 빈약한
     # 페이지만 claude-opus-4-8이 직접 읽는다. 실측상 저품질 페이지에서만 유효(3~4배),
     # 중간 품질은 득실 반반이라 빈약 신호(요소 수·글자수)일 때만 트리거.
