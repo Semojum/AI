@@ -1141,6 +1141,18 @@ def _selected_lines(bo, flat: dict) -> list[str]:
     return [fe.text] if fe else []
 
 
+# 초안 묵자에서 내부 태그를 벗긴다 (2026-08-06).
+# `<!점역자주>…<!/점역자주>` 는 점역기가 마커 점형으로 바꾸는 **기계 표식**이지 사람이
+# 읽을 글자가 아니다. FE는 이 값을 점자와 나란히 보여 주므로(와이어프레임) 태그가 그대로
+# 노출되면 안 된다. 점자(`contents`)는 손대지 않는다 — 거기선 태그가 이미 마커로 바뀌었다.
+_DRAFT_TAG_RE = re.compile(r"<!/?[^>]*>")
+
+
+def _draft_print_text(text: str) -> str:
+    """초안 묵자 — 내부 태그 제거. 줄바꿈·공백은 배치이므로 보존한다."""
+    return _DRAFT_TAG_RE.sub("", text or "").strip()
+
+
 def _draft_contents(bo, d, di: int, flat: dict) -> list[str]:
     """초안 하나의 `contents`. 선택 초안과 **같은 구조적 빈 줄·들여쓰기**를 단다.
 
@@ -1264,6 +1276,14 @@ def _build_response(
                 "render_mode": o.render_mode,
                 "contents": [o.corrected_text],
                 "rule_trail": [r.model_dump() for r in o.rule_trail],
+                # 시각 요소 대체 초안 — **묵자만** 싣는다 (2026-08-06).
+                # mode a는 점역을 하지 않으므로(include_braille=False) 점자가 없다.
+                # mode c는 여기 묵자와 `braille_text_list`의 묵자+점자를 함께 받는다.
+                "drafts": [
+                    {"text": _draft_print_text(d.text), "label": d.label, "contents": []}
+                    for d in (o.drafts or [])
+                ],
+                "selected_idx": o.selected_idx,
                 **_meta_fields(o.element_id),
             }
             for i, o in enumerate(llm_outputs)
@@ -1311,7 +1331,7 @@ def _build_response(
                         # BE proto §Draft: 초안마다 자기 점자 줄을 싣는다.
                         # 선택 초안 것은 상위 contents와 같은 값이 되지만(중복),
                         # 피커가 초안별 점자를 바로 꺼내 쓸 수 있어야 한다.
-                        "text": d.text,
+                        "text": _draft_print_text(d.text),
                         "label": d.label,
                         "contents": _draft_contents(
                             braille_by_id.get(o.element_id), d, di, flat
