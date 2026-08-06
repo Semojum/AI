@@ -742,7 +742,12 @@ class LayoutBraille:
             lines = [ln.strip() for ln in lines]
             return lines, [max(0, (_COLS - _cell_count(ln)) // 2) if _cell_count(ln) < _COLS
                            else 0 for ln in lines]
-        per_line = (None if draft else bo.line_indents
+        # 줄별 들여쓰기(규정 골격 — 만화 5칸 장면·시각자료 제목 5칸)는 **줄 수가 맞을 때만**
+        # 쓴다. 초안도 마찬가지다 — `bo.line_indents`는 **선택 초안**의 줄 수에 맞춰져 있어
+        # (`image_braille._match_indents`) 선택 초안에서는 맞고 나머지에서는 안 맞아 걸러진다.
+        # ⚠ 초안이라고 무조건 건너뛰면 선택 초안만 들여쓰기가 빠져 proto 불변식
+        #   `contents == drafts[selected_idx].contents`가 깨진다(실측 5건).
+        per_line = (bo.line_indents
                     if bo.line_indents is not None and len(bo.line_indents) == len(lines)
                     else None)
         if per_line is not None:
