@@ -26,12 +26,16 @@ message TranslateTextRequest { // [추가 08-05] 꼬리말 점역
 }
 
 // ── 서브메시지 ───────────────────────────────────────────────────
+// 요소 위치. **좌표계 = BrailleResponse.image_resolution과 같은 픽셀 공간**(2026-08-06 명시).
+// FE는 x/image_width · y/image_height로 그대로 비율 매핑한다 — 별도 보정이 필요 없다.
+// (좌표계가 적혀 있지 않던 동안 MinerU 경로가 0~1000 정규화 값을 그대로 내보내
+//  하이라이트가 실제 위치의 77%·65% 자리에 찍히는 사고가 있었다 — issue #75)
 message BoundingBox {
   string          id            = 1;
-  int32           x             = 2;
-  int32           y             = 3;
-  int32           x2            = 4;
-  int32           y2            = 5;
+  int32           x             = 2;   // 좌상단 x (픽셀)
+  int32           y             = 3;   // 좌상단 y (픽셀)
+  int32           x2            = 4;   // 우하단 x (픽셀)
+  int32           y2            = 5;   // 우하단 y (픽셀)
   string          type          = 6;   // [변경 08-05] 주석만: 11종 → 분류 후 13종(cartoon·chart_graph 추가)
   int32           heading_level = 7;   // 0 = null
   string          caption_ref   = 8;   // "" = null (참조하는 element_id)

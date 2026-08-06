@@ -283,3 +283,33 @@ class TestRegulationSwitch:
     def test_화살괄호는_규정_기호(self):
         # 제63항 〈…〉 — 관행(작은따옴표 ,8~u@o0')로 새지 않아야 한다
         assert self._brf("〈보기〉") != ",8~u@o0'"
+
+
+class TestCircledJamoReg64:
+    """동그라미 자모·음절 = 규정 제64항 감쌈형 ⠶…⠶ (2026-08-06 판정 번복).
+
+    종전에는 "도서는 맨 글자로 적는다"고 봤는데, 그 실측이 **구판 수능특강 한 종류**였다.
+    신규 2027 코퍼스 48쪽에서 묵자 ㉠ 개수와 gold `⠶⠿⠁⠶` 개수가 쪽마다 1:1로 맞는다
+    (4개 책 전부). 규정도 관행도 감쌈형이다.
+    """
+
+    @staticmethod
+    def _t(text: str) -> str:
+        from app.ai.braille.translator import translate_tagged_text
+        return translate_tagged_text(text)
+
+    def test_자모는_온표까지_감싼다(self) -> None:
+        assert self._t("㉠") == "⠶⠿⠁⠶"          # ⠶ + 온표⠿ + ㄱ⠁ + ⠶
+        assert self._t("㉡") == "⠶⠿⠒⠶"
+
+    def test_음절은_온표가_없다(self) -> None:
+        assert self._t("㉮") == "⠶⠫⠶"           # ⠶ + 가⠫ + ⠶
+
+    def test_뒤에_조사가_붙어도_감쌈이_남는다(self) -> None:
+        assert self._t("㉠은").startswith("⠶⠿⠁⠶")
+
+    def test_맨_자모는_감싸지_않는다(self) -> None:
+        assert self._t("ㄱ") == "⠿⠁"            # 글머리 ㄱ은 온표+자모 그대로
+
+    def test_동그라미_숫자는_수표_그대로(self) -> None:
+        assert self._t("①").startswith("⠼")     # 규정=도서 일치라 건드리지 않는다
