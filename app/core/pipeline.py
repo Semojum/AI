@@ -389,7 +389,12 @@ def _page_image_path(task: PageTask):
 
 async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     """현주 추출 단계: analyze_pdf + (ZERO 텍스트 | non-ZERO 모델) → 경계 dict(크기·bbox 포함)."""
-    from app.ai.preprocessor.pdf_analyzer import analyze_pdf, extract_text_blocks
+    from app.ai.preprocessor.pdf_analyzer import (
+        analyze_pdf,
+        box_rects_scaled,
+        extract_text_blocks,
+        tag_boxed_elements,
+    )
 
     # analyze_pdf의 page_no는 1-indexed(0 이하만 내부 보정). 빼기 1을 넘기면
     # 2페이지부터 한 장씩 밀리므로 task.page_no를 그대로 전달한다(현주 계약).
@@ -406,6 +411,13 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     else:
         method = "OCR"
         elements, image_width, image_height = await _extract_via_models(task, doc_meta)
+
+    # 글상자 테두리(BBPG-1.2.5 · 원장 C-01b) — 묵자의 벡터 사각형이 감싼 텍스트 요소에
+    # 테두리 태그를 붙인다. 두 경로(ZERO·MinerU) 모두 여기를 지나므로 한 자리면 된다.
+    if not doc_meta.scan_only:
+        rects = await asyncio.to_thread(box_rects_scaled, task.pdf_data, task.page_no)
+        if n := tag_boxed_elements(elements, rects):
+            logger.info("글상자 %d개 태깅 (page=%d)", n, task.page_no)
 
     # Opus 비전 폴백(D-05, 기본 off — OPUS_EXTRACT_FALLBACK=1 opt-in): 추출이 빈약한
     # 페이지만 claude-opus-4-8이 직접 읽는다. 실측상 저품질 페이지에서만 유효(3~4배),
