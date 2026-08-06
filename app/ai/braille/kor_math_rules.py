@@ -1172,11 +1172,13 @@ def _stage9_subscript(result: str) -> str:
     def _sub_replace(m: re.Match) -> str:
         base = m.group(1) or m.group(3) or ""
         sub_raw = (m.group(2) or m.group(4) or "").strip()
-        # 관행(book): 숫자 아래첨자는 첨자표·수표 없이 **내린 숫자**만 적는다 —
-        # m₁=⠍⠂·m₂=⠍⠆(수학2 p119 4·5·40행 실측). 규정형 ⠰⠼N은 gold 전권 0회
-        # (2026-07-22 전수 검색). 문자 첨자(g_k=⠛⠰⠅)는 규정대로 ⠰ 유지(p077 실측).
-        if _IS_BOOK_STYLE and sub_raw.isdigit():
-            return base + "".join(_DROPPED_DIGIT[c] for c in sub_raw)
+        # ★ 2026-08-06 판정 번복(원장 M-02). 종전에는 "숫자 아래첨자는 내린 숫자만 적는다"
+        #   (m₁=⠍⠂, 수학2 p119)로 봤고 "규정형 ⠰⠼N은 gold 전권 0회"가 근거였다. 그
+        #   전수 검색이 **구판 수능특강 한 종류**였다. 신규 2027 코퍼스 dev 900쪽에는
+        #   ⠰⠼가 **1,873회** 있다(수학1 1,241 · 생물 628):
+        #     x⠰⠼⠁ = x₁ · a⠰⠼⠃ = a₂ (수학1 p28)   ⠉⠕⠰⠼⠃ = CO₂ · ⠠⠓⠰⠼⠃ = H₂ (생물 p19)
+        #   규정 제19항 1호와 같은 형식이고 수학·화학 양쪽에서 일관된다 → 규정형으로 낸다.
+        #   (내린 숫자 `_DROPPED_DIGIT`는 로그 밑 제46항 전용으로 남는다.)
         sub  = convert_latex(sub_raw)
         sub_w = _wrap_ins(sub) if _needs_wrap(sub_raw) else sub
         return f"{base}{_SUBSCRIPT_IND}{sub_w}"
