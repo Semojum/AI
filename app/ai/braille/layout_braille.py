@@ -499,14 +499,13 @@ class LayoutBraille:
         is_heading = hlevel >= 1
         first_indent = self._first_indent(bo, etype, is_heading, hlevel)
         self._mark_item_lines(bo, etype, first_indent)
-        if first_indent and any(_is_border_line(ln) for ln in bo.braille_lines):
-            # 정식 규칙(테두리 아키텍처 B안 확정 2026-06-02): 32칸 테두리 줄(글상자 BBPG-1.2.5·
-            # 표 격자)은 layout이 폭을 소유하므로 들여쓰기를 적용하지 않는다. 들이면 35칸이 되어
-            # _break_line이 테두리를 분리해 깨진다. (글상자 테두리는 _expand_box_borders가 재렌더.)
-            logger.debug(
-                "layout: %s 요소(%s) 32칸 테두리 — 들여쓰기 미적용(정식)", etype, bo.element_id,
-            )
-            first_indent = 0
+        # 32칸 테두리 줄(글상자 BBPG-1.2.5·표 격자)은 layout이 폭을 소유하므로 들이지 않는다
+        # — 들이면 35칸이 되어 _break_line이 테두리를 쪼갠다. 그렇다고 요소 전체의 들여쓰기를
+        # 버리면 글상자 안 문단이 0칸에서 시작해 gold와 어긋난다(원장 C-01b) — 첫 들여쓰기를
+        # **테두리 안 첫 줄**로 옮긴다. ★ `_indent_lines`(통 문자열)와 같은 판정이어야 한다.
+        # -1 = 테두리뿐인 요소(시각자료 껍데기) — 아무 줄도 들이지 않는다.
+        first_at = next((i for i, ln in enumerate(bo.braille_lines)
+                         if ln.strip() and not _is_border_line(ln)), -1)
 
         orig_lines = list(bo.braille_lines)   # 조판 전 스냅샷(좌표 재매핑 기준)
         # 규정 골격 요소(만화 5칸 장면/3칸 대사·시각자료 제목 5칸)는 줄마다 들여쓰기가 다르다.
@@ -523,7 +522,8 @@ class LayoutBraille:
         # 정답 도서 실측(생물 p122): 접힌 표 줄은 첫 줄 2칸·이어지는 줄 0칸이다.
         keep_indent = etype == "table"
         for li, orig in enumerate(orig_lines):
-            indent = per_line[li] if per_line is not None else (first_indent if li == 0 else 0)
+            indent = (per_line[li] if per_line is not None
+                      else (first_indent if li == first_at else 0))
             fw = (_COLS - indent) if indent else None
             br = bo.break_points[li] if li < len(bo.break_points) else []
             broken, forced = _wrap_line(orig, br, _COLS, first_width=fw,
@@ -736,8 +736,11 @@ class LayoutBraille:
         if not draft:
             self._mark_item_lines(bo, etype, first_indent)
         lines = list(lines if draft else bo.braille_lines)
-        if first_indent and any(_is_border_line(ln) for ln in lines):
-            first_indent = 0                  # 32칸 테두리 줄은 들이면 폭을 넘어 깨진다
+        # 32칸 테두리 줄은 들이면 폭을 넘어 깨진다. 그렇다고 요소 전체의 들여쓰기를 버리면
+        # 글상자 안 문단이 0칸에서 시작해 gold와 어긋난다(원장 C-01b) — 첫 들여쓰기를
+        # **테두리 안 첫 줄**로 옮긴다.
+        first_at = next((i for i, ln in enumerate(lines)
+                         if ln.strip() and not _is_border_line(ln)), -1)
         if is_heading and hlevel == 1:
             lines = [ln.strip() for ln in lines]
             return lines, [max(0, (_COLS - _cell_count(ln)) // 2) if _cell_count(ln) < _COLS
@@ -753,7 +756,7 @@ class LayoutBraille:
         if per_line is not None:
             return lines, list(per_line)
         # 표는 들여쓰기를 줄 문자열에 이미 박아 낸다(§3.1.1(1)②) — 여기서 또 넣으면 두 번 들어간다.
-        return lines, [first_indent if i == 0 else 0 for i in range(len(lines))]
+        return lines, [first_indent if i == first_at else 0 for i in range(len(lines))]
 
     def _first_indent(
         self, bo: BrailleOutput, etype: str, is_heading: bool, hlevel: int

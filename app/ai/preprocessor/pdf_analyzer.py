@@ -184,6 +184,113 @@ def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int,
     return blocks, int(round(w * 2)), int(round(h * 2))
 
 
+# ── 글상자 테두리(BBPG-1.2.5 · 원장 C-01b) ─────────────────────────────────
+# 지문·보기·설명 박스는 묵자에서 **벡터 사각형**으로 그려져 있어 텍스트 추출만으로는
+# 안 보인다(밑줄과 같은 사정). 정답 도서는 이걸 dev-2027 900쪽에서 1,783번 쓰는데
+# 우리는 0번이었다 — gold 셀의 5.2%가 테두리 줄이다.
+#
+# 가르는 조건 두 개(실측 사회문화 p8·p23):
+#   · **글자를 감싸야** 한다 — 제목 배너·머리말 띠는 안에 글이 없다(감싸는 게 아니라 덮는다).
+#   · 선(stroke)이 있어야 한다 — 채움만 있는 도형은 강조 음영이지 테두리가 아니다.
+_BOX_MIN_W = 0.20        # 페이지 폭 대비 최소 너비 — 이보다 좁으면 아이콘·라벨
+_BOX_MIN_H = 18.0        # 최소 높이(pt) — 밑줄·구분선 제외
+_BOX_MAX_AREA = 0.85     # 페이지 면적의 이 비율을 넘으면 페이지 테두리·배경
+_BOX_OPEN, _BOX_CLOSE = "<!테두리_위><!/테두리_위>", "<!테두리_아래><!/테두리_아래>"
+
+
+def box_rects(page) -> list:
+    """페이지의 글상자 후보 사각형(표시 좌표 Rect). 겹치는 후보는 큰 것 하나로 묶는다."""
+    pr = page.rect
+    W = pr.width
+    try:
+        tblocks = [fitz.Rect(b["bbox"]) for b in page.get_text("rawdict")["blocks"]
+                   if b.get("type") == 0]
+        drawings = page.get_drawings()
+    except Exception:  # noqa: BLE001 — 손상 페이지는 테두리 없이 진행
+        return []
+    out: list = []
+    for g in drawings:
+        r = fitz.Rect(g["rect"])
+        if not r.intersects(pr):
+            continue
+        r = r & pr
+        if r.width < W * _BOX_MIN_W or r.height < _BOX_MIN_H:
+            continue
+        if r.get_area() > pr.get_area() * _BOX_MAX_AREA:
+            continue
+        if "s" not in g["type"]:              # 채움 전용 = 음영·배너
+            continue
+        if not any(t in r for t in tblocks):  # 감싼 글이 없다
+            continue
+        out.append(r)
+    merged: list = []
+    for r in sorted(out, key=lambda r: -r.get_area()):
+        if any((r & m).get_area() > r.get_area() * 0.7 for m in merged):
+            continue
+        merged.append(r)
+    return merged
+
+
+def box_rects_scaled(pdf_data: bytes, page_no: int) -> list[list[float]]:
+    """글상자 후보를 **요소 bbox와 같은 좌표계**(2x 렌더 픽셀)로 돌려준다."""
+    data = _coerce_pdf_bytes(pdf_data)
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(data)
+            tmp_path = f.name
+        doc = fitz.open(tmp_path)
+        try:
+            page = doc[max(0, min(page_no - 1, doc.page_count - 1))]
+            return [[r.x0 * 2, r.y0 * 2, r.x1 * 2, r.y1 * 2] for r in box_rects(page)]
+        finally:
+            doc.close()
+    except Exception as exc:  # noqa: BLE001 — 테두리는 있으면 좋은 것, 없어도 본문은 나가야 한다
+        logger.warning("글상자 사각형 검출 실패(테두리 없이 진행): %s", exc)
+        return []
+    finally:
+        if tmp_path:
+            os.unlink(tmp_path)
+
+
+def tag_boxed_elements(elements: list[dict], rects: list) -> int:
+    """사각형이 통째로 감싼 텍스트 요소 앞뒤에 테두리 태그를 넣는다(in-place). 감싼 상자 수 반환.
+
+    표·그림을 품은 사각형은 건드리지 않는다 — 그쪽 체인이 제 테두리를 그린다(원장 C-01a).
+    한 요소는 한 상자에만 속한다(중첩 상자는 큰 쪽이 이긴다 — 감싸는 게 먼저다).
+    """
+    if not rects or not elements:
+        return 0
+    boxed: set[int] = set()
+    n = 0
+    for rx0, ry0, rx1, ry1 in sorted(rects, key=lambda r: -((r[2] - r[0]) * (r[3] - r[1]))):
+        inside: list[int] = []
+        skip = False
+        for i, el in enumerate(elements):
+            bb = el.get("bbox")
+            if not bb or len(bb) != 4:
+                continue
+            # 중심점으로 본다 — MinerU bbox는 테두리에 닿은 글에서 몇 px 삐져나와
+            # 완전포함으로 재면 실측 9요소가 든 상자에서 0개가 잡힌다(생물 p118·사문 p107).
+            cx, cy = (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2
+            if not (rx0 <= cx <= rx1 and ry0 <= cy <= ry1):
+                continue
+            if el.get("type") not in ("text", "list_item", "title", "caption"):
+                skip = True          # 표·수식·그림이 든 상자는 그 체인 소관
+                break
+            if i in boxed:
+                continue
+            inside.append(i)
+        if skip or not inside:
+            continue
+        first, last = min(inside), max(inside)
+        elements[first]["content"] = f"{_BOX_OPEN}\n{elements[first]['content']}"
+        elements[last]["content"] = f"{elements[last]['content']}\n{_BOX_CLOSE}"
+        boxed.update(inside)
+        n += 1
+    return n
+
+
 # 벡터 그림 판정(교과서 지도·도표·그래프는 임베디드 이미지가 아니라 벡터로 그려진다).
 # 드로잉 프리미티브를 격자로 뭉친 덩어리가 아래 둘을 모두 넘으면 그림으로 본다.
 # 실측 근거(세계사 p022 지도 2개 / 사회문화 p035·외국어 p012 그림 없음, 렌더 확인):
