@@ -128,8 +128,12 @@ class TestConvertLatex:
         assert "⠜" in convert_latex("\\sqrt{x}")
 
     def test_superscript_indicator(self) -> None:
-        """수학 제18항: 위첨자 ⠘."""
-        assert "⠣" in convert_latex("x^2")  # ^2 관행 약기(정답 규정형 0회)
+        """수학 제18항: 위첨자 ⠘ + 수표 (2026-08-06 재정정, 원장 C-03).
+
+        종전 '관행 약기 ⠣'의 근거가 구판 한 종류였다. 신규 2027 수학1에서
+        x⠘⠼2 = 1,511회 · x⠣ = 0회. ⠣는 수가 앞에 붙은 단위 제곱에만 남는다.
+        """
+        assert convert_latex("x^2") == "⠭⠘⠼⠃"
 
     def test_no_double_wrap_on_parenthesized(self) -> None:
         """제53항: 이미 괄호로 묶인 식에 점역자 삽입 묶음을 겹치지 않는다.
