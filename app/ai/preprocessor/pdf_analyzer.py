@@ -229,7 +229,9 @@ def box_rects(page) -> list:
     # 종전 규칙은 안쪽 사각형을 겹침으로 보고 통째로 버렸다.
     merged: list = []
     for r in sorted(out, key=lambda r: -r.get_area()):
-        if any(r in m for m in merged):                 # 완전히 안에 들었다 = 중첩, 남긴다
+        # 완전히 안에 들었다 = 중첩, 남긴다. 단 **거의 같은 크기**는 중첩이 아니라
+        # 같은 테두리를 채움·선 두 경로로 그린 것이다 — 남기면 같은 상자를 두 번 감싼다.
+        if any(r in m and r.get_area() < m.get_area() * 0.98 for m in merged):
             merged.append(r)
             continue
         if any((r & m).get_area() > r.get_area() * 0.7 for m in merged):
