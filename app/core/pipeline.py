@@ -391,7 +391,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     """현주 추출 단계: analyze_pdf + (ZERO 텍스트 | non-ZERO 모델) → 경계 dict(크기·bbox 포함)."""
     from app.ai.preprocessor.pdf_analyzer import (
         analyze_pdf,
-        box_rects_scaled,
+        box_rects_norm,
         extract_text_blocks,
         tag_boxed_elements,
     )
@@ -415,7 +415,12 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     # 글상자 테두리(BBPG-1.2.5 · 원장 C-01b) — 묵자의 벡터 사각형이 감싼 텍스트 요소에
     # 테두리 태그를 붙인다. 두 경로(ZERO·MinerU) 모두 여기를 지나므로 한 자리면 된다.
     if not doc_meta.scan_only:
-        rects = await asyncio.to_thread(box_rects_scaled, task.pdf_data, task.page_no)
+        rects = await asyncio.to_thread(box_rects_norm, task.pdf_data, task.page_no)
+        # 사각형은 0~1000 정규화로 온다. 경계 bbox의 좌표계가 경로마다 다르므로 맞춰 준다
+        # (`result_builder` 2026-07-19: MinerU=정규화 / ZERO=2x 픽셀).
+        if method == "TEXT_NATIVE" and image_width and image_height:
+            rects = [[r[0] / 1000 * image_width, r[1] / 1000 * image_height,
+                      r[2] / 1000 * image_width, r[3] / 1000 * image_height] for r in rects]
         if n := tag_boxed_elements(elements, rects):
             logger.info("글상자 %d개 태깅 (page=%d)", n, task.page_no)
 
