@@ -555,6 +555,14 @@ def _box_blank_repl(m: re.Match) -> str:
     if at_line_start and len(run) == 1 and (after == "" or after in " \t\n"):
         return run                      # 줄머리 단독 □ + 공백/줄끝 = 글머리 불릿
     return "⠸" + "⠭" * len(run) + "⠇"
+# 반복 곱셈표 ×× 는 곱셈이 아니라 숨김표다 (제57항, 2026-08-06).
+# `×`는 표에 두 뜻이 있다 — 곱셈 ⠡(수학연산)와 숨김표 ⠸⠭⠇(문장부호). 평탄화 표에서
+# 수학연산이 이겨 `이 ×××야!`가 ⠡⠡⠡(곱셈 셋)로 나갔다. 규정 예시는 ⠸⠭⠭⠭⠇다.
+#   이 ×××야!   o`_xxxl>6   (제57항)
+# **2개 이상 연속일 때만** 숨김표로 본다 — 곱셈은 연달아 쓰지 않으므로(`2××3`은 없다)
+# 이 조건은 `2×3`·`반지름×반지름` 같은 진짜 곱셈을 건드리지 않는다.
+# 단독 ×는 그대로 둔다. 문맥 없이는 곱셈인지 숨김표인지 못 가른다(원장 §8 중의성).
+_HIDDEN_X_RUN_RE = re.compile(r"×{2,}")
 _TILDE_RE = re.compile(r"[~∼〜]")
 # MinerU는 〈보기〉 상자를 괄호 없이 '보기\x00'로 낸다. 정답 관행은 위치별로 다르다
 # (생물 p011 원본 27-28행 실측): **문중 참조 = ‘보기’(따옴표), 박스 제목 줄 = 맨 '보기'**.
@@ -1487,6 +1495,10 @@ def translate_tagged_text(text: str) -> str:
     text = _CHOICE_HEAD_RE.sub(r"\1 ", text)
     # 단위 앞 좁은 공백 백틱 제거는 수식 라우팅보다 **먼저** — 뒤에 두면 이미 수식으로
     # 먹힌 뒤라 제69항 로마자표 경로가 실행되지 않는다.
+    # 반복 ×는 곱셈이 아니라 숨김표다(제57항) — **수식 라우팅보다 먼저** 바꾼다.
+    # inline_math가 ×를 수식 원자로 보고 `×××`를 통째로 수식 구간에 삼키면
+    # convert_latex이 곱셈 ⠡ 셋으로 낸다(규정 예시는 ⠸⠭⠭⠭⠇).
+    text = _HIDDEN_X_RUN_RE.sub(lambda m: "⠸" + "⠭" * len(m.group()) + "⠇", text)
     text = _UNIT_BACKTICK_RE.sub("", text)
     text = _BACKTICK_MATH_RE.sub(lambda m: f"<!수식>{m.group(1).rstrip()}<!/수식> ", text)
     text = _normalize_inline_math(text)     # $…$/\(…\) → <!수식> (P1: 수식 라우팅)
