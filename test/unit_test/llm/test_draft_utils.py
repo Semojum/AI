@@ -72,3 +72,44 @@ class TestWrapStyleSwitch:
     def test_전환해도_내용은_보존된다(self, monkeypatch) -> None:
         d, _ = self._reload(monkeypatch, "box")
         assert "카드 1: 기능론" in d.ensure_tn_prefix("카드 1: 기능론")
+
+
+class TestAutoWrapRule:
+    """auto 포장 — 전사(글상자)와 서술(주표)을 초안 모양으로 가른다. 원장 C-02.
+
+    gold는 **둘 다 쓴다**(평가 실측 12쪽: gold 주표 888셀 · 테두리 33줄). 전면 전환은
+    한쪽 오차를 다른 쪽 오차로 바꿀 뿐이다 — box 전면 전환 시 CER 62.8% → 62.2%.
+      · 원문에 글로 있는 것(카드·보기 나열) → 글상자 본문 (사회문화 p147)
+      · 그림을 말로 푼 것(그래프 추세·장치 묘사) → 주표
+    """
+
+    @pytest.fixture(autouse=True)
+    def _auto(self, monkeypatch):
+        import importlib
+        from app.ai.llm import draft_utils
+        monkeypatch.setenv("VISUAL_WRAP_STYLE", "auto")
+        self.d = importlib.reload(draft_utils)
+        yield
+        import os
+        os.environ.pop("VISUAL_WRAP_STYLE", None)
+        importlib.reload(draft_utils)
+
+    @pytest.mark.parametrize("text", [
+        "그래프: 관점 비교 / 카드 1: 기능론 / 카드 2: 갈등론",
+        "표: 항목 / ① 자유 / ② 평등 / ③ 박애",
+        "그림: 단계\n1. 준비\n2. 실행\n3. 정리",
+    ])
+    def test_나열은_글상자(self, text: str) -> None:
+        assert self.d.ensure_tn_prefix(text).startswith("<!테두리_위>")
+
+    @pytest.mark.parametrize("text", [
+        "그래프: 가로축은 연도, 세로축은 인구수이며 2010년 이후 완만히 증가한다.",
+        "사진: 광화문 앞 시위 장면",
+        "그림: 실험 장치가 왼쪽에 놓여 있고 오른쪽으로 관이 이어진다.",
+    ])
+    def test_서술은_주표(self, text: str) -> None:
+        assert self.d.ensure_tn_prefix(text).startswith("<!점역자주>")
+
+    def test_항목이_하나뿐이면_서술로_본다(self) -> None:
+        """한 항목은 나열이 아니다 — 오검출을 막는 하한."""
+        assert self.d.ensure_tn_prefix("그림: ① 자유만 표시됨").startswith("<!점역자주>")
