@@ -63,14 +63,28 @@ def _purge_jobs(root: Path) -> int:
     return n
 
 
+def _channel(addr: str, cert: str, sni: str):
+    """측정 대상 채널. 운영 서버는 TLS라 인증서를 줘야 붙는다.
+
+    ★ 인증서 CN·SAN이 도메인(`semo-jum.com`)이라 IP로 붙으면 TLS가 거절한다
+      ("Peer name … is not in peer certificate"). `sni`로 이름을 맞춰 준다.
+    """
+    opts = [("grpc.max_send_message_length", 32 * 1024 * 1024),
+            ("grpc.max_receive_message_length", 32 * 1024 * 1024)]
+    if not cert:
+        return grpc.insecure_channel(addr, options=opts)
+    with open(cert, "rb") as f:
+        creds = grpc.ssl_channel_credentials(root_certificates=f.read())
+    if sni:
+        opts.append(("grpc.ssl_target_name_override", sni))
+    return grpc.secure_channel(addr, creds, options=opts)
+
+
 def _run_user(addr: str, uid: int, pdfs: list[tuple[str, bytes]],
-              mode: str, t_origin: float) -> list[dict]:
+              mode: str, t_origin: float, cert: str = "", sni: str = "") -> list[dict]:
     """사용자 한 명 — 쪽을 **순차**로 올린다. 사용자끼리는 동시."""
     rows = []
-    ch = grpc.insecure_channel(addr, options=[
-        ("grpc.max_send_message_length", 32 * 1024 * 1024),
-        ("grpc.max_receive_message_length", 32 * 1024 * 1024),
-    ])
+    ch = _channel(addr, cert, sni)
     stub = pb_grpc.BrailleServiceStub(ch)
     job = f"bench-u{uid}"
     for i, (name, data) in enumerate(pdfs, 1):
@@ -158,6 +172,10 @@ def main() -> int:
     ap.add_argument("--pdf-dir", default=str(AI / "test/test_data/input"))
     ap.add_argument("--metrics", default=str(AI / "storage/metrics/ai_metrics.jsonl"))
     ap.add_argument("--out", default=str(AI / "storage/metrics/e2e_bench.json"))
+    ap.add_argument("--tls-cert", default="",
+                    help="서버 인증서. 주면 TLS로 붙는다(운영 서버는 필수)")
+    ap.add_argument("--tls-name", default="",
+                    help="인증서 CN·SAN. IP로 붙을 때 이름을 맞춘다 (예: semo-jum.com)")
     ap.add_argument("--jobs-dir", default=str(AI / "storage/jobs"),
                     help="측정 전 지울 bench 잡 위치. 원격 서버 측정 시엔 서버에서 지울 것")
     a = ap.parse_args()
@@ -175,7 +193,8 @@ def main() -> int:
 
     t_origin = time.monotonic()
     with ThreadPoolExecutor(max_workers=a.users) as pool:
-        futs = [pool.submit(_run_user, a.addr, u + 1, pdfs, a.mode, t_origin)
+        futs = [pool.submit(_run_user, a.addr, u + 1, pdfs, a.mode, t_origin,
+                            a.tls_cert, a.tls_name)
                 for u in range(a.users)]
         rows = [r for f in futs for r in f.result()]
 
