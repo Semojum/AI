@@ -43,6 +43,11 @@ _SPACE_CELL = "⠀"            # 점자 공백(U+2800)
 # 어말 문장부호 — 받침 셀과 같은 점형이라(같=⠫⠦) 뒤가 공백/끝일 때만 부호로 본다.
 _SENT_END = {"⠦": "?", "⠖": "!"}
 
+# 받침 ㅍ 음절 — ⠲가 마침표인지 받침 ㅍ인지 가른다(높=⠉⠥⠲ vs 노+마침표).
+# 한국어에서 받침 ㅍ이 실제로 쓰이는 음절은 닫힌 집합이라 목록으로 가르는 게 가장 정확하다.
+# (위치로 가르면 닫는 따옴표 앞에서 틀린다 — `나타난다.’` → `나타난닾’`.)
+_PIEUP_FINAL = frozenset("갚겊깊높늪덮릎섶숲싶앞엎옆잎짚")
+
 # 알파벳 점형 → 글자 (translator._ALPHA_MAP의 역)
 _ALPHA_REV = {
     "⠁": "a", "⠃": "b", "⠉": "c", "⠙": "d", "⠑": "e", "⠋": "f", "⠛": "g",
@@ -472,10 +477,19 @@ def decode(braille: str, *, math: bool = False) -> str:
 #   토큰 규칙 = 개선 29 · 악화 **0**, 줄 규칙 = 개선 45 · 악화 4였다. 악화 0만 채택한다.
 _WRAP_PAREN_RE = re.compile(r"(?<![^\s])-([^\s-]{1,20})-(?![^\s])")
 
+# 토큰 안쪽(말 중간)에 박힌 감쌈 붙임표 — `생쥐-따-의`, `로 -가-가`. 토큰 규칙이 못 잡는다.
+# 감싼 것이 **한 글자(또는 두 자리 수)일 때만** 본다 — `고복지-저부담`은 양쪽이 여러 글자라
+# 안 걸린다. 여기서 걸러 낸 악화 2건(실측 900요소):
+#   · `‘-더-’` 국어 어미 표기 → 앞이 따옴표면 안 건다
+#   · `x-5-2` 수식 → 앞이 영숫자거나 뒤가 숫자면 안 건다
+# 승패: 개선 33 · 악화 **0**.
+_WRAP_PAREN_INNER_RE = re.compile(
+    r"(?<![A-Za-z0-9‘’'\"“”])-([가-힣A-Za-z]|\d{1,2})-(?![0-9])")
+
 
 def _restore_wrap_parens(text: str) -> str:
-    """토큰 전체를 이루는 감쌈 붙임표를 괄호로 되돌린다."""
-    return _WRAP_PAREN_RE.sub(r"(\1)", text)
+    """감쌈 붙임표를 괄호로 되돌린다 — 도서 관행 `(가)` → ⠤가⠤ (translator._paren_repl)."""
+    return _WRAP_PAREN_INNER_RE.sub(r"(\1)", _WRAP_PAREN_RE.sub(r"(\1)", text))
 
 
 def _decode_line_router(line: str, math: bool) -> str:
@@ -563,7 +577,12 @@ def _decode_line(s: str) -> str:
             # ★기호로 등록된 시퀀스(≥=⠲⠲, ⊃=⠐⠲, ㎏=…⠲ 등)는 분리하지 않는다(2026-07-19).
             if seg[-1] == "⠲" and seg in _SYMBOL_REV:
                 out.append(_SYMBOL_REV[seg])
-            elif seg[-1] == "⠲" and seg[:-1] in _COMBINED:
+            elif (seg[-1] == "⠲" and seg[:-1] in _COMBINED
+                  and _COMBINED.get(seg) not in _PIEUP_FINAL):
+                # ⠲는 마침표이자 **받침 ㅍ**이라(높=⠉⠥⠲) 무조건 분리하면 받침 ㅍ이 든 말이
+                # 전부 깨진다(높다→'노.다' · 앞으로→'아.으로'). 위치로 가르면 닫는 따옴표
+                # 앞에서 또 틀리므로(`나타난다.’`→`나타난닾’`) **실제로 쓰이는 받침 ㅍ 음절**
+                # 목록으로 가른다 — 닫힌 집합이라 안전하다. 승패: 개선 58 · 악화 0.
                 out.append(_COMBINED[seg[:-1]])
                 out.append(".")
             elif (seg in _SYLLABLE_REV and seg[-1] in _SENT_END
