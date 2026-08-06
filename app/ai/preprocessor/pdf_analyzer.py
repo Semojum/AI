@@ -223,10 +223,16 @@ def box_rects(page) -> list:
         if not any(t in r for t in tblocks):  # 감싼 글이 없다
             continue
         out.append(r)
+    # 겹치는 후보는 하나로 — 다만 **안에 든 것은 남긴다**. gold는 상자를 중첩하고
+    # (자료 박스 안 표), 그 안쪽에 2단계 테두리를 쓴다(dev-2027 343개 중 81%가 1단계 안).
+    # 종전 규칙은 안쪽 사각형을 겹침으로 보고 통째로 버렸다.
     merged: list = []
     for r in sorted(out, key=lambda r: -r.get_area()):
-        if any((r & m).get_area() > r.get_area() * 0.7 for m in merged):
+        if any(r in m for m in merged):                 # 완전히 안에 들었다 = 중첩, 남긴다
+            merged.append(r)
             continue
+        if any((r & m).get_area() > r.get_area() * 0.7 for m in merged):
+            continue                                     # 어중간하게 겹친다 = 같은 상자
         merged.append(r)
     return merged
 
@@ -267,7 +273,10 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
     """사각형이 통째로 감싼 텍스트 요소 앞뒤에 테두리 태그를 넣는다(in-place). 감싼 상자 수 반환.
 
     표·그림을 품은 사각형은 건드리지 않는다 — 그쪽 체인이 제 테두리를 그린다(원장 C-01a).
-    한 요소는 한 상자에만 속한다(중첩 상자는 큰 쪽이 이긴다 — 감싸는 게 먼저다).
+
+    ★ **중첩을 살린다**(BBPG-1.2.5 위계). gold는 자료 박스 안에 표를 넣고 안쪽에 2단계
+      테두리(⠖⠒…⠲)를 쓴다 — dev-2027 900쪽에 343개, 그중 81%가 1단계 안이다. 우리는
+      0개였다. 사각형이 다른 사각형 안에 들면 그 깊이만큼 위계를 올려 태그한다.
 
     ★ `rects`와 `elements`의 bbox는 **같은 좌표계**여야 한다(부르는 쪽 책임).
     ★ 감싼 요소가 **읽기순서에서 연속**이어야 태그를 단다. 태그는 첫 요소 앞과 마지막 요소
@@ -276,9 +285,20 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
     """
     if not rects or not elements:
         return 0
-    boxed: set[int] = set()
+    def _inside(a, b) -> bool:
+        """a가 b 안에 완전히 드는가(같은 사각형은 아니다)."""
+        return (b[0] <= a[0] and b[1] <= a[1] and a[2] <= b[2] and a[3] <= b[3]
+                and (a[2] - a[0]) * (a[3] - a[1]) < (b[2] - b[0]) * (b[3] - b[1]) * 0.98)
+
+    ordered = sorted(rects, key=lambda r: -((r[2] - r[0]) * (r[3] - r[1])))
+    depth = {id(r): sum(1 for q in ordered if _inside(r, q)) for r in ordered}
+    claimed: dict[int, int] = {}          # 요소 → 그 요소를 이미 감싼 가장 안쪽 위계
+    opens: dict[int, list] = {}           # 요소 → [(위계, 여는 태그)]
+    closes: dict[int, list] = {}          # 요소 → [(위계, 닫는 태그)]
     n = 0
-    for rx0, ry0, rx1, ry1 in sorted(rects, key=lambda r: -((r[2] - r[0]) * (r[3] - r[1]))):
+    for rect in ordered:
+        rx0, ry0, rx1, ry1 = rect
+        level = min(3, depth[id(rect)] + 1)          # 1단계부터, 3단계까지
         inside: list[int] = []
         skip = False
         for i, el in enumerate(elements):
@@ -293,7 +313,7 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
             if el.get("type") not in ("text", "list_item", "title", "caption"):
                 skip = True          # 표·수식·그림이 든 상자는 그 체인 소관
                 break
-            if i in boxed:
+            if claimed.get(i, 0) >= level:      # 같은 위계에서 이미 감쌌다
                 continue
             inside.append(i)
         if skip or not inside:
@@ -302,10 +322,20 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
             logger.debug("글상자 건너뜀 — 읽기순서가 끊겼다(%s)", inside)
             continue
         first, last = inside[0], inside[-1]
-        elements[first]["content"] = f"{_BOX_OPEN}\n{elements[first]['content']}"
-        elements[last]["content"] = f"{elements[last]['content']}\n{_BOX_CLOSE}"
-        boxed.update(inside)
+        sfx = "" if level == 1 else str(level)        # <!테두리_위2> = 2단계(translator 규약)
+        opens.setdefault(first, []).append((level, f"<!테두리_위{sfx}><!/테두리_위{sfx}>"))
+        closes.setdefault(last, []).append((level, f"<!테두리_아래{sfx}><!/테두리_아래{sfx}>"))
+        for i in inside:                        # 안쪽 상자가 다시 감쌀 수 있게 위계를 기록
+            claimed[i] = max(claimed.get(i, 0), level)
         n += 1
+
+    # 여는 것은 **바깥부터**, 닫는 것은 **안쪽부터** — 중첩이 뒤집히면 위계가 어긋난다.
+    for i, tags in opens.items():
+        head = "\n".join(t for _lv, t in sorted(tags))
+        elements[i]["content"] = f"{head}\n{elements[i]['content']}"
+    for i, tags in closes.items():
+        tail = "\n".join(t for _lv, t in sorted(tags, reverse=True))
+        elements[i]["content"] = f"{elements[i]['content']}\n{tail}"
     return n
 
 
