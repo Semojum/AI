@@ -170,6 +170,9 @@ for _c, _t in (("⠲", "."), ("⠐", ","), ("⠖", "!")):
 # 변이체 정본화 — 같은 점형이 여러 유니코드(붙임표/하이픈/대시)로 매핑될 때 ASCII 정본 우선.
 for _c, _t in (("⠤", "-"),):
     _COMBINED[_c] = _t
+# 소괄호 자리표시자(_mark_paren_pairs가 붙인다) → 실제 괄호
+_COMBINED["\ufdd2"] = "("
+_COMBINED["\ufdd3"] = ")"
 _MAX_CELLS = max((len(k) for k in _COMBINED), default=1)
 
 
@@ -492,10 +495,26 @@ def _restore_wrap_parens(text: str) -> str:
     return _WRAP_PAREN_INNER_RE.sub(r"(\1)", _WRAP_PAREN_RE.sub(r"(\1)", text))
 
 
+# ── 소괄호 짝짓기 (2026-08-06) ────────────────────────────────────────────────
+# 여는 ⠦⠄는 여는 큰따옴표와, 닫는 ⠠⠴는 **닫는 큰따옴표와 같은 셀**이다. 셀만 보면
+# 못 가른다 — `(SNS)` 가 `(SNS”`로, `생쥐(가)` 가 `생쥩'가)`로 나왔다.
+# 짝이 맞을 때만 괄호로 본다: 여는 셀과 닫는 셀 사이에 다른 괄호 셀이 없고 길이가 짧을 때.
+# 자리표시자는 유니코드 비문자(실문서에 나올 수 없다) — 음절 해독을 통과시키려고 쓴다.
+_PAREN_OPEN_MARK, _PAREN_CLOSE_MARK = "\ufdd2", "\ufdd3"
+_PAREN_PAIR_RE = re.compile(r"⠦⠄((?:(?!⠦⠄|⠠⠴)[\u2800-\u28ff]){1,40})⠠⠴")
+
+
+def _mark_paren_pairs(line: str) -> str:
+    """짝이 맞는 소괄호 셀만 자리표시자로 바꾼다(따옴표와의 충돌 회피)."""
+    return _PAREN_PAIR_RE.sub(
+        lambda m: _PAREN_OPEN_MARK + m.group(1) + _PAREN_CLOSE_MARK, line)
+
+
 def _decode_line_router(line: str, math: bool) -> str:
     """줄을 공백 단위로 나눠 수식 토큰은 수학 디코더로, 나머지는 한글 디코더로 라우팅."""
     if not line:
         return ""
+    line = _mark_paren_pairs(line)
     parts = re.split(r"([⠀ ]+)", line)              # 공백 런을 분리자로 보존
     tokens = parts[0::2]
     seps = parts[1::2]

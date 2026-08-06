@@ -15,6 +15,8 @@ from app.ai.braille.translator import _QNUM_RE, translate_with_breaks
 
 _PERIOD = "⠲"
 _HYPHEN = "⠤"
+_OPEN_PAREN = "⠦⠄"      # 규정 제49항 여는 소괄호
+_CLOSE_PAREN = "⠠⠴"     # 닫는 소괄호
 _MINUS = "⠔"
 
 
@@ -52,18 +54,22 @@ class TestQuestionNumberPeriod:
 
 
 class TestWrapHyphenPlaceholder:
-    """(N) 감쌈 붙임표는 음수 부호로 재해석되면 안 된다 — 자리표시자로 보호한다."""
+    """괄호가 음수 부호로 재해석되면 안 된다.
 
-    def test_공백_낀_괄호도_붙임표(self):
+    2026-08-06 괄호 판정 번복(원장 R-06) 이후 괄호는 **소괄호 셀**(⠦⠄ … ⠠⠴)로 나간다.
+    감쌈 붙임표 경로는 배열형 답지만 쓰지만, 음수 오독 가드는 그대로 지켜야 한다.
+    """
+
+    def test_공백_낀_괄호는_소괄호(self):
         # 구버그: '(2010 수능)' → '-2010 수능-' → 여는 하이픈이 음수로 읽혀 ⠔
         lines, _ = translate_with_breaks("(2010 수능)")
-        assert lines[0].startswith(_HYPHEN), f"감쌈 붙임표 아님: {lines[0]}"
+        assert lines[0].startswith(_OPEN_PAREN), f"소괄호 아님: {lines[0]}"
         assert not lines[0].startswith(_MINUS)
-        assert lines[0].endswith(_HYPHEN)
+        assert lines[0].endswith(_CLOSE_PAREN)
 
-    def test_공백_없는_괄호는_종전대로(self):
+    def test_공백_없는_괄호도_소괄호(self):
         lines, _ = translate_with_breaks("(2010)")
-        assert lines[0].startswith(_HYPHEN) and lines[0].endswith(_HYPHEN)
+        assert lines[0].startswith(_OPEN_PAREN) and lines[0].endswith(_CLOSE_PAREN)
 
     def test_진짜_음수는_뺄셈표_유지(self):
         lines, _ = translate_with_breaks("-3보다 크다")

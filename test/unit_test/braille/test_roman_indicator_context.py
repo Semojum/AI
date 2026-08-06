@@ -23,6 +23,8 @@
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from app.ai.braille import translator
@@ -99,7 +101,9 @@ class Test제29항_후단_중복개시_억제:
         # (mg/kg·일) — '/'가 점자 셀이라 세그가 쪼개지지만 로마자런은 이어진다.
         # 제69항 예문 2704행 `160㎎/㎗를` = #afj0mg_/dl4 도 ⠴를 한 번만 적는다.
         out = _ours("다음 중 (mg/kg·일) 단위를 쓰는 것은?")
-        assert out.count(_ROMAN) == 1
+        # ⚠ 닫는 소괄호 ⠠⠴ 안에도 ⠴가 들어 있다(2026-08-06 괄호 판정 번복 이후).
+        #   앞에 ⠠가 붙지 않은 ⠴만 로마자표다.
+        assert len(re.findall(r"(?<!⠠)" + _ROMAN, out)) == 1
 
     def test_한글이_끼면_구간이_다시_열린다(self):
         # 제29항 후단의 '연이어'가 끊기는 자리 — 각각 새 구간이다.
@@ -126,7 +130,9 @@ class Test제29항_다만_뿌리B_가드:
 
     def test_다만_한글_거의_없는_영어_지문(self):
         # 조사 몇 개만 붙은 영어 인용은 사실상 '문단 전체가 로마자'다.
-        assert _ROMAN not in _ours("(Grammatical and Ungrammatical Strings)에")
+        # ⚠ 닫는 소괄호 ⠠⠴에도 ⠴가 들어 있으므로 앞에 ⠠가 없는 것만 본다.
+        out = _ours("(Grammatical and Ungrammatical Strings)에")
+        assert not re.search(r"(?<!⠠)" + _ROMAN, out)
 
 
 class Test줄_문맥은_전역이_아니다:
