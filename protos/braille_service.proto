@@ -84,8 +84,8 @@ message ProcessingMeta {
 }
 
 message Draft {                     // 시각 요소의 대체 점역 초안 1개 — 점역사가 에디터에서 고른다
-  string          text     = 1;     // 초안 원문(한글)
-  repeated string contents = 2;     // [변경 08-05] TextElement.contents와 같은 형식(통 문자열 1항목)
+  string          text     = 1;     // 초안 묵자(한글). 내부 태그는 제거해 보낸다 — 사람이 읽는 값이다
+  repeated string contents = 2;     // 점자 통 문자열 1항목. **mode a는 빈 배열**(점역 안 함)
   string          label    = 3;     // 피커 표시명 ("격자형" / "행↔열 전치" / "요약" ...)
 }
 
@@ -132,8 +132,8 @@ message BrailleResponse {
   int32                   image_width         = 5;   // [복원 08-05] image_resolution(string,5) → int 두 필드. mode a, c
   int32                   image_height        = 6;   // [복원 08-05] 이 필드가 늘어 아래 번호가 하나씩 밀렸다. mode a, c
   repeated BoundingBox    bounding_box_list   = 7;   // [변경 08-05] 6 → 7. mode a, c
-  repeated TextElement    text_list           = 8;   // [변경 08-05] 7 → 8. mode a, c (구 주석 "mode a, b"는 오기)
-  repeated TextElement    braille_text_list   = 9;   // [변경 08-05] 8 → 9. mode b, c
+  repeated TextElement    text_list           = 8;   // [변경 08-06] mode a, b, c 전부. 원문(묵자). 시각 요소는 drafts에 묵자 초안(contents 빈 배열)
+  repeated TextElement    braille_text_list   = 9;   // [변경 08-05] 8 → 9. mode b, c. 시각 요소 drafts는 묵자+점자 둘 다
   QualityReport           quality_report      = 10;  // [변경 08-05] 9 → 10
 }
 
