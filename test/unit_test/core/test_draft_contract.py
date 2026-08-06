@@ -150,3 +150,37 @@ class TestTextElementsHaveNoDrafts:
         r = _run("c", content="인공지능 기술은 우리 삶을 바꾼다.", etype="text")
         for el in r["braille_text_list"]:
             assert (el.get("drafts") or []) == []
+
+
+class TestBBoxCoordSpace:
+    """경계 bbox 좌표계 통일 — BE·FE 하이라이트가 맞는 자리에 찍히나.
+
+    경계 파일의 좌표계는 경로마다 다르다(`result_builder` 2026-07-19):
+      MinerU = 0~1000 정규화 / ZERO = 2x 렌더 픽셀
+    BE·FE는 `image_width/height`에 대한 비율로 매핑하므로 응답은 픽셀로 통일해야 한다.
+    안 하면 MinerU 쪽 하이라이트가 실제 위치의 77%·65% 자리에 찍힌다(사회문화 p80 실측).
+    """
+
+    @staticmethod
+    def _parse(method: str, bbox: list[int]):
+        from app.core.pipeline import _parse_txt_result
+        lr, _, _ = _parse_txt_result({
+            "meta": {"extraction_method": method, "image_width": 1000, "image_height": 2000},
+            "elements": [{"id": "e1", "order": 1, "type": "text", "content": "가", "bbox": bbox}],
+        }, "p1")
+        return lr.elements[0].bbox
+
+    def test_MinerU는_정규화를_픽셀로_되돌린다(self) -> None:
+        assert self._parse("OCR", [100, 100, 500, 500]) == (100, 200, 500, 1000)
+
+    def test_ZERO는_이미_픽셀이라_그대로(self) -> None:
+        assert self._parse("TEXT_NATIVE", [100, 100, 500, 500]) == (100, 100, 500, 500)
+
+    def test_페이지_크기를_모르면_손대지_않는다(self) -> None:
+        from app.core.pipeline import _parse_txt_result
+        lr, _, _ = _parse_txt_result({
+            "meta": {"extraction_method": "OCR"},
+            "elements": [{"id": "e1", "order": 1, "type": "text", "content": "가",
+                          "bbox": [10, 20, 30, 40]}],
+        }, "p1")
+        assert lr.elements[0].bbox == (10, 20, 30, 40)

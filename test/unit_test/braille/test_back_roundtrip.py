@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest
 
 from app.ai.braille.translator import translate_tagged_text
 from app.utils.braille_back import decode
@@ -127,3 +128,34 @@ class TestKnownLimits:
         got = _rt("MP4 Player를 샀다")
         assert got.startswith("MP4 ")
         assert "Player" not in got
+
+
+class TestPieupFinalAndWrapParens:
+    """받침 ㅍ / 감쌈 붙임표 — 같은 셀이 두 뜻을 갖는 자리 (2026-08-06).
+
+    · ⠲ = 마침표이자 받침 ㅍ. 위치로 가르면 닫는 따옴표 앞에서 틀린다
+      (`나타난다.’` → `나타난닾’`). 실제로 쓰이는 받침 ㅍ 음절 목록으로 가른다.
+    · ⠤…⠤ = 도서 관행의 괄호 감쌈((가) → ⠤가⠤). 말 중간에 박힌 것도 되돌린다.
+    실측 600요소: 완전일치 42.2% → 47.3%, 글자 어긋남 16.8% → 15.6%.
+    """
+
+    @staticmethod
+    def _round(text: str) -> str:
+        from app.ai.braille.translator import translate_tagged_text
+        from app.utils.braille_back import decode
+        return decode(translate_tagged_text(text))
+
+    @pytest.mark.parametrize("word", ["높다", "앞으로", "깊이", "덮개", "옆으로", "숲이", "싶다"])
+    def test_받침_ㅍ이_마침표로_깨지지_않는다(self, word: str) -> None:
+        assert self._round(word) == word
+
+    @pytest.mark.parametrize("text", ["문장이다.", "나타난다.’", "끝났다. 그리고"])
+    def test_진짜_마침표는_그대로(self, text: str) -> None:
+        assert self._round(text) == text
+
+    def test_말_중간_감쌈_붙임표를_괄호로(self) -> None:
+        assert self._round("생쥐(가)에서") == "생쥐(가)에서"
+
+    @pytest.mark.parametrize("text", ["‘-더-’", "x-5-2"])
+    def test_진짜_붙임표는_괄호로_바꾸지_않는다(self, text: str) -> None:
+        assert "(" not in self._round(text)
