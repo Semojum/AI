@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 
 from app.schemas.content import Draft
@@ -21,6 +22,9 @@ _TN_LEGACY_RE = re.compile(r"^\s*\[?\s*점역[사자]주\s*\]?\s*[:：.]?\s*")
 # 모델이 방식 이름을 본문 앞에 붙이는 경우 제거(예: "상황 중심: …", "대사 중심: …").
 # 점자에 메타 라벨이 찍히지 않게 함. 콜론으로 끝나는 짧은 방식-라벨만 매칭.
 _PERSPECTIVE_LABEL_RE = re.compile(r"^(상황|위치|요약|장면|대사|개조|구성)[^:：\n]{0,10}[:：]\s*")
+
+# 시각 초안 포장 방식 — visual_drafts와 **같은 스위치**를 읽는다(tn 기본 / box A/B).
+_WRAP_STYLE = os.environ.get("VISUAL_WRAP_STYLE", "tn")
 
 
 def ensure_tn_prefix(text: str) -> str:
@@ -37,6 +41,13 @@ def ensure_tn_prefix(text: str) -> str:
     t = _PERSPECTIVE_LABEL_RE.sub("", t).strip()       # 상황/위치/요약 등 방식 라벨 제거
     if not t:
         return ""
+    if _WRAP_STYLE == "box":
+        # A/B(원장 C-02 축): 시각 초안을 주표가 아니라 **글상자 본문**으로 낸다.
+        # 평가 실측(LLM-켬 12쪽): 우리 주표 9개 중 3개(33%)를 gold는 같은 내용의
+        # **본문**으로 낸다 — 내용은 필요한데 포장만 다르다. 사회문화 p147은 카드 전사를
+        # 우리가 주표로 감쌌고(300셀) gold는 글상자에 넣었다.
+        # 규칙 경로(`visual_drafts._tn`)는 이미 같은 스위치를 쓴다 — 한 스위치로 두 경로를 함께 본다.
+        return f"<!테두리_위><!/테두리_위>\n{t}\n<!테두리_아래><!/테두리_아래>"
     return f"<!점역자주>{t}<!/점역자주>"
 
 
