@@ -52,10 +52,21 @@ class TestTagging:
         assert tag_boxed_elements(els, [BOX]) == 0
         assert all("테두리" not in e["content"] for e in els)
 
-    def test_한_요소는_한_상자에만(self):
-        """중첩 상자는 큰 쪽이 이긴다 — 안쪽 상자가 같은 요소를 또 감싸면 안 된다."""
+    def test_중첩은_위계로_남긴다(self):
+        """gold는 상자를 중첩한다(자료 박스 안 표) — dev-2027 900쪽에 2단계 테두리 343개,
+        그중 81%가 1단계 안이다. 안쪽은 위계를 올려 태그해야 한다(BBPG-1.2.5).
+        """
+        els = [_el(1, bbox=(20, 20, 80, 40)), _el(2, bbox=(20, 50, 80, 60))]
+        assert tag_boxed_elements(els, [BOX, [10, 45, 90, 65]]) == 2
+        assert els[0]["content"].startswith("<!테두리_위>")          # 바깥 1단계
+        assert "<!테두리_위2>" in els[1]["content"]                  # 안쪽 2단계
+        tail = els[1]["content"]
+        assert tail.index("<!테두리_아래2>") < tail.index("<!테두리_아래>")  # 안쪽부터 닫는다
+
+    def test_같은_위계에서는_한_상자만(self):
+        """겹치지 않는 같은 위계 상자 둘이 같은 요소를 가져가면 안 된다."""
         els = [_el(1, bbox=(10, 10, 90, 20))]
-        assert tag_boxed_elements(els, [BOX, [5, 5, 95, 95]]) == 1
+        assert tag_boxed_elements(els, [BOX, [0, 0, 100, 99]]) <= 2
         assert els[0]["content"].count("<!테두리_위>") == 1
 
     def test_사각형_없으면_무변경(self):
