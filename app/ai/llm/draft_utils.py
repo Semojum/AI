@@ -24,7 +24,25 @@ _TN_LEGACY_RE = re.compile(r"^\s*\[?\s*점역[사자]주\s*\]?\s*[:：.]?\s*")
 _PERSPECTIVE_LABEL_RE = re.compile(r"^(상황|위치|요약|장면|대사|개조|구성)[^:：\n]{0,10}[:：]\s*")
 
 # 시각 초안 포장 방식 — visual_drafts와 **같은 스위치**를 읽는다(tn 기본 / box A/B).
+# tn(기본·종전) · box(전면 전환, A/B용) · auto(조건 분기 — 아래 _is_transcription)
 _WRAP_STYLE = os.environ.get("VISUAL_WRAP_STYLE", "tn")
+
+# 전사(원문 글 나열)로 보는 신호 — 줄머리에 항목 표지가 붙은 줄이 둘 이상.
+# 카드 1: · ① · 1. · - · • 처럼 **평행하게 늘어선 항목**은 그림을 푼 서술이 아니라
+# 원문에 이미 글로 있는 것이다. 서술은 이런 표지 없이 줄글로 이어진다.
+_ITEM_HEAD_RE = re.compile(
+    r"^\s*(?:[①-⑳㉠-㉻]|[0-9]{1,2}\s*[.):]|[가-힣]\s*[.)]|[-•·]\s|카드\s*\d|"
+    r"[^\s:：]{1,12}\s*\d+\s*[:：])")
+_MIN_ITEMS = 2
+
+
+def _is_transcription(text: str) -> bool:
+    """초안이 **원문 글 나열**인가(= 글상자 본문) 아니면 **그림 서술**인가(= 주표).
+
+    줄 단위로 못 가르는 경우가 있어(LLM이 한 줄에 ' / '로 이어 붙인다) 그 구분자도 본다.
+    """
+    parts = [x for x in re.split(r"\n|\s/\s", text) if x.strip()]
+    return sum(1 for x in parts if _ITEM_HEAD_RE.match(x)) >= _MIN_ITEMS
 
 
 def ensure_tn_prefix(text: str) -> str:
@@ -41,12 +59,14 @@ def ensure_tn_prefix(text: str) -> str:
     t = _PERSPECTIVE_LABEL_RE.sub("", t).strip()       # 상황/위치/요약 등 방식 라벨 제거
     if not t:
         return ""
-    if _WRAP_STYLE == "box":
-        # A/B(원장 C-02 축): 시각 초안을 주표가 아니라 **글상자 본문**으로 낸다.
-        # 평가 실측(LLM-켬 12쪽): 우리 주표 9개 중 3개(33%)를 gold는 같은 내용의
-        # **본문**으로 낸다 — 내용은 필요한데 포장만 다르다. 사회문화 p147은 카드 전사를
-        # 우리가 주표로 감쌌고(300셀) gold는 글상자에 넣었다.
-        # 규칙 경로(`visual_drafts._tn`)는 이미 같은 스위치를 쓴다 — 한 스위치로 두 경로를 함께 본다.
+    if _WRAP_STYLE == "box" or (_WRAP_STYLE == "auto" and _is_transcription(t)):
+        # 원장 C-02 축. gold는 **둘 다 쓴다** — 전면 전환은 답이 아니다(평가 실측 12쪽:
+        # box 전면 전환 시 CER 62.8% → 62.2%, 우리 주표 0셀인데 gold 주표는 888셀 실재).
+        # 갈리는 자리는 이렇다:
+        #   · 원문에 **글로 이미 있는 것**(카드·보기·자료 나열) → gold는 글상자 본문
+        #     (사회문화 p147: 우리가 주표로 감싼 300셀을 gold는 글상자에 넣었다)
+        #   · **그림을 말로 푼 것**(그래프 추세·장치 묘사) → gold는 주표 (gold 888셀이 이쪽)
+        # auto는 그 둘을 초안 **모양**으로 가른다 — 나열이면 전사, 줄글이면 서술.
         return f"<!테두리_위><!/테두리_위>\n{t}\n<!테두리_아래><!/테두리_아래>"
     return f"<!점역자주>{t}<!/점역자주>"
 
