@@ -933,6 +933,12 @@ def substitute_tags(text: str) -> str:
             return _TAG_INLINE_MARKER[name]
         if name in _TAG_PAIR_MARKER:
             return _TAG_PAIR_MARKER[name][1 if tok.startswith("<!/") else 0]
+        # 테두리 태그는 위에서 **쌍으로** 처리한다. 여기까지 온 건 짝이 잘린 조각이라는 뜻인데,
+        # `_break_offsets`가 줄바꿈 자리를 찾느라 접두(`src[:sp]`)를 수천 번 재점역하면서
+        # 늘 생긴다 — 전체 문자열 변환은 경고 0에 테두리도 정상이다(실측). 운영 로그를
+        # 이 잡음으로 채우면 진짜 미지 태그가 묻힌다.
+        if name.rstrip("23") in _BORDER_FILL:
+            return ""
         logger.warning("translator: 미지 태그 제거 %s", tok)
         return ""
 
