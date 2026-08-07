@@ -204,6 +204,12 @@ _INLINE_MATH_RE = re.compile(
 _NUMBER_RE       = re.compile(r"-?\d+(?:[.,]\d+)*")
 _ALPHA_RUN_RE    = re.compile(r"[A-Za-z]+")
 _BRAILLE_RE      = re.compile(r"[⠀-⣿]+")
+# 두 칸 이상 빈칸 = 항목 구분 부호(지침 3장 3절 4)(3)① 선택지 사이 · 6)(1) 표의 셀 사이).
+# braillify가 한 칸으로 뭉개고(_safe_to_unicode) _collapse_spaces가 또 한 번 뭉갠다.
+# _safe_to_unicode는 이 자리를 _GAP_MARK로 찍어 두고, _collapse_spaces가 모드전환
+# 부산물(⠀⠀)만 정리한 **뒤에** 빈칸으로 되돌린다 — 의도한 두 칸과 부산물을 가른다.
+_MULTI_SPACE_RE  = re.compile(r"(  +)")
+_GAP_MARK        = "\x01"
 _DIGIT_ALPHA_RE  = re.compile(r"(?<=\d)(?=[A-Za-z])")   # 숫자 뒤 바로 오는 알파벳
 _HANGUL_SYL_RE   = re.compile(r"[가-힣]")        # 완성형 한글 음절
 _LATIN_CHAR_RE   = re.compile(r"[A-Za-z]")       # 로마자 낱글자(줄 문맥 비율 계산용)
@@ -263,7 +269,7 @@ def _braillify_fallback(text: str) -> str:
 def _braillify(text: str) -> str:
     """태그 없는 순수 텍스트 → 점자 변환 (외부 직접 호출용 래퍼)."""
     if _BRAILLIFY_AVAILABLE:
-        return _safe_to_unicode(text)
+        return _safe_to_unicode(text).replace(_GAP_MARK, "⠀")
     return _braillify_fallback(text)
 
 
@@ -752,10 +758,14 @@ def _apply_book_style(text: str) -> str:
 
 
 def _collapse_spaces(braille: str) -> str:
-    """이중 점자 공백(⠀⠀) → 단일 공백(⠀) — 숫자/영어 모드 전환 시 발생."""
+    """이중 점자 공백(⠀⠀) → 단일 공백(⠀) — 숫자/영어 모드 전환 시 발생.
+
+    ★ 원문이 두 칸 이상 띄운 자리(_GAP_MARK)는 항목 구분 부호라 살린다 —
+      부산물을 정리한 뒤에 빈칸으로 되돌린다(지침 3장 3절 4)(3)①·6)(1)).
+    """
     while "⠀⠀" in braille:
         braille = braille.replace("⠀⠀", "⠀")
-    return braille
+    return braille.replace(_GAP_MARK, "⠀")
 
 
 def _fix_leading_roman(text_orig: str, braille: str) -> str:
@@ -1400,7 +1410,15 @@ def _safe_to_unicode(seg: str, _split_eng: bool = True,
     ★ braillify는 세그먼트 가장자리 공백을 삼킨다(' 질문은'=='질문은' 실측 2026-07-17).
       점자런과 텍스트런 경계의 공백(예: 선지 번호 ⠼⠁ 뒤 한 칸)이 사라져 정답과 어긋나므로
       가장자리 공백을 점자 빈칸으로 보존한다.
+
+    ★ 안쪽 연속 공백도 삼킨다('01 ⑤  02 ②' → 한 칸, 실측 2026-08-07 QA S4).
+      두 칸은 항목 구분 부호다 — 「점자 도서 제작 지침」 3장 3절 4)(3)①(선택지 사이)·
+      6)(1)(표의 셀 사이). 두 칸 이상 구간에서 잘라 따로 변환하고 빈칸 수를 복원한다.
     """
+    parts = _MULTI_SPACE_RE.split(seg)
+    if len(parts) > 1:
+        return "".join(_GAP_MARK * len(p) if i % 2 else _safe_to_unicode(p, _split_eng, ctx)
+                       for i, p in enumerate(parts))
     if _split_eng and _BRAILLIFY_AVAILABLE:
         split = _split_english(seg, ctx)
         if split is not None:

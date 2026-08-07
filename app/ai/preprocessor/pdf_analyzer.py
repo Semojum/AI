@@ -38,6 +38,66 @@ _MIN_GAP_SAMPLES = 4     # 줄에 간격 표본이 이보다 적으면 판단 �
 _NO_SPACE_AFTER = "‘“'\"([{〈《「『【<"
 _NO_SPACE_BEFORE = "’”'\")]}〉》」』】>.,!?;:"
 
+# ── 한 인쇄 줄이 여러 line으로 쪼개지는 문제 (QA S4, 2026-08-07) ─────────────
+# PyMuPDF(MuPDF stext)는 가로 간격이 크면 **같은 줄이라도 line 객체를 나눈다**.
+# 정답표 "01 ⑤  02 ②  03 ①  04 ⑤"는 4개 line으로 나오고, 이걸 "\n"으로 이으면
+# 항목마다 줄바꿈된 점자가 나간다(대표 QA 4번). 정답 점자책은 **한 줄에 이어 적고
+# 항목 사이를 두 칸 띈다** — 「점자 도서 제작 지침」 3장 3절 4)(3)①("선택지와
+# 선택지 사이에는 두 칸의 빈칸을 두어 구별한다") · 같은 장 6)(1)("표의 셀과 셀
+# 사이는 두 칸을 띄어 구분한다").
+# 실측(dev-2027+val-2027 인쇄면 1,746쪽, 쪼개진 행 7,670개 중 정답 점자책에서
+# 같은 조각열을 찾은 1,426개): 두 칸 이어 적기 1,033(72.4%) · 한 칸 241(16.9%) ·
+# 줄바꿈 152(10.7%). 한 칸 쪽은 "01"+제목 같은 번호머리(114)와 빈칸 채우기
+# "( "+" )"가 대부분이라 아래 두 예외로 가른다 — 시뮬레이션 정확도 1,239/1,274.
+_ROW_OVERLAP = 0.5        # 같은 인쇄 줄로 볼 세로 겹침 비율
+_ITEM_GAP = "  "          # 항목 사이 두 칸 (지침 3장 3절 4)(3)①)
+_NUM_HEAD_RE = re.compile(r"\d{1,3}\.?")
+
+
+def _row_sep(prev: str, nxt: str, num_head: bool) -> str:
+    """같은 줄 조각 사이에 넣을 간격 — 기본 두 칸, 아래 두 경우만 한 칸."""
+    if num_head:                                    # "01" + 제목 = 강 머리 번호
+        return " "
+    if prev[-1] in _NO_SPACE_AFTER or nxt[0] in _NO_SPACE_BEFORE:
+        return " "                                  # 빈칸 채우기 "( " + " )이다"
+    return _ITEM_GAP
+
+
+def rows_to_text(items) -> str:
+    """[(rect, text)] → 텍스트. 세로로 겹치는 조각은 한 줄로 잇는다(x 순서).
+
+    rect는 `.x0/.y0/.y1`만 쓰므로 fitz.Rect든 튜플 래퍼든 상관없다.
+    """
+    rows: list[list] = []
+    for r, t in items:
+        for row in rows:
+            rr = row[0][0]
+            ov = min(rr.y1, r.y1) - max(rr.y0, r.y0)
+            if ov > _ROW_OVERLAP * min(rr.y1 - rr.y0, r.y1 - r.y0):
+                row.append((r, t))
+                break
+        else:
+            rows.append([(r, t)])
+    out: list[str] = []
+    for row in rows:
+        if len(row) == 1:
+            out.append(row[0][1])
+            continue
+        row.sort(key=lambda it: it[0].x0)
+        # 조각 안쪽 탭은 그대로 둔다(점역기가 한 칸으로 옮긴다) — 실측 1,551개 이은 행 중
+        # 탭이 낀 것은 17개뿐이고 대부분 글머리 뒤("ㄴ.\t내용")인데, 지침 3장 3절 4)(2)는
+        # 그 자리를 **한 칸**으로 규정한다. 여기서 두 칸으로 늘리면 그쪽이 틀린다.
+        frags = [t.strip() for _, t in row]
+        frags = [f for f in frags if f]
+        if not frags:
+            continue
+        num_head = len(frags) == 2 and bool(_NUM_HEAD_RE.fullmatch(frags[0]))
+        line = frags[0]
+        for nxt in frags[1:]:
+            line += _row_sep(line, nxt, num_head) + nxt
+        out.append(line)
+    return "\n".join(out).strip()
+
 
 def _is_hangul(ch: str) -> bool:
     return "가" <= ch <= "힣" or "ㄱ" <= ch <= "ㅣ"
@@ -152,8 +212,9 @@ def _page_text_blocks_spaced(page) -> list[dict]:
     for b in raw.get("blocks", []):
         if b.get("type") != 0:      # 0 = 텍스트 블록
             continue
-        lines = [_line_text_with_word_gaps(ln, rot, uls) for ln in b.get("lines", [])]
-        text = "\n".join(ln for ln in lines if ln).strip()
+        items = [(fitz.Rect(ln.get("bbox") or (0, 0, 0, 0)) * rot,
+                  _line_text_with_word_gaps(ln, rot, uls)) for ln in b.get("lines", [])]
+        text = rows_to_text([(r, t) for r, t in items if t])
         if not text:
             continue
         blocks.append({"content": text, "bbox": list(b.get("bbox") or (0, 0, 0, 0))})
