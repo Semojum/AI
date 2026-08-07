@@ -97,7 +97,17 @@ def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
         try:
             image_type, subconf = classify_with_confidence(img_path)
             mapped_type = _CLASSIFY_TYPE_MAP.get(image_type, "image")
-            return caption(img_path, image_type), mapped_type, True, subconf
+            text = caption(img_path, image_type)
+            # ★ 예외 없이 **빈 캡션**이 오는 길이 있다(모델이 거부하거나 빈 응답을 줌).
+            #   그걸 성공으로 넘기면 build()의 `not content.strip()` 가지에서 요소가
+            #   통째로 사라진다 — 실측: job_260807160446 p1의 만화가 이렇게 없어졌고
+            #   (로그 "캡셔닝 56780743(image→cartoon) 12.5s", 실패 표시 없음),
+            #   그 뒤 그림 회수가 같은 그림을 다시 찾아 LLM을 한 번 더 썼다.
+            #   빈 응답은 성공이 아니다. 실패로 돌려 요소를 살린다(불변규칙 1).
+            if not text.strip():
+                logger.error("캡셔닝 빈 응답 id=%s type=%s — 요소는 살린다", eid, image_type)
+                return "", mapped_type, False, subconf
+            return text, mapped_type, True, subconf
         except Exception as exc:  # noqa: BLE001 — 요소 격리(불변규칙 3)
             last = exc
             if type(exc).__name__ not in _TRANSIENT_EXC or attempt == _CAPTION_RETRIES:
