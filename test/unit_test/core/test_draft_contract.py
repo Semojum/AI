@@ -162,10 +162,11 @@ class TestBBoxCoordSpace:
     """
 
     @staticmethod
-    def _parse(method: str, bbox: list[int]):
+    def _parse(method: str, bbox: list[int], **meta):
         from app.core.pipeline import _parse_txt_result
         lr, _, _ = _parse_txt_result({
-            "meta": {"extraction_method": method, "image_width": 1000, "image_height": 2000},
+            "meta": {"extraction_method": method, "image_width": 1000, "image_height": 2000,
+                     **meta},
             "elements": [{"id": "e1", "order": 1, "type": "text", "content": "가", "bbox": bbox}],
         }, "p1")
         return lr.elements[0].bbox
@@ -175,6 +176,19 @@ class TestBBoxCoordSpace:
 
     def test_ZERO는_이미_픽셀이라_그대로(self) -> None:
         assert self._parse("TEXT_NATIVE", [100, 100, 500, 500]) == (100, 100, 500, 500)
+
+    def test_폴백_픽셀은_method가_OCR이어도_안_늘린다(self) -> None:
+        """MinerU 실패 → 텍스트레이어 폴백은 픽셀 bbox인데 method는 "OCR"로 남는다.
+
+        method로 좌표계를 유추하던 종전 코드는 여기서 픽셀을 한 번 더 확대해
+        요소가 아래로 밀렸다(job_260807140040 p1 실측: y2 1422px → 2096px, 쪽 밖).
+        생산자가 적어 주는 `bbox_space`를 읽으면 그대로 둔다.
+        """
+        assert self._parse("OCR", [100, 100, 500, 500], bbox_space="pixel") == (100, 100, 500, 500)
+
+    def test_bbox_space가_명시되면_그걸_따른다(self) -> None:
+        assert self._parse("TEXT_NATIVE", [100, 100, 500, 500],
+                           bbox_space="norm1000") == (100, 200, 500, 1000)
 
     def test_페이지_크기를_모르면_손대지_않는다(self) -> None:
         from app.core.pipeline import _parse_txt_result
