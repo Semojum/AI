@@ -160,6 +160,130 @@ def _page_text_blocks_spaced(page) -> list[dict]:
     return blocks
 
 
+# ── 줄 단위 블록 → 문단 (QA S2, 2026-08-07) ──────────────────────────────────
+# PyMuPDF의 블록 분할이 이 교재 PDF들에서는 **한 줄 = 한 블록**으로 나온다
+# (실측 job_260807103532 한 쪽 43~46요소, 전부 한 줄). 그러면 문장이 중간에서 끊긴
+# 조각이 요소가 되고, 조판은 그 조각마다 문단 3칸 들여쓰기를 넣는다.
+#
+# 이어 붙이는 신호는 **오른쪽 끝**이다. 본문 줄은 단 오른쪽까지 차고, 문단의 마지막
+# 줄만 짧게 끝난다. 새 문단의 첫 줄은 들여쓰기로 시작한다.
+_PAR_COL_OVERLAP = 0.6     # 같은 단으로 볼 x 겹침 비율
+_PAR_FULL_RIGHT = 0.04     # 단 오른쪽에서 이 비율 안쪽까지 오면 '끝까지 찬 줄'
+_PAR_GAP_MAX = 1.0         # 줄 간격이 줄높이의 이 배 이하일 때만 이음
+_PAR_INDENT_MIN = 0.6      # 단 왼쪽에서 줄높이의 이 배 넘게 들어가면 새 문단 첫 줄
+
+# 이을 때 공백을 넣을지 — 한국어 줄바꿈은 어절 경계에서도, 어절 가운데서도 일어난다.
+# 실측(job_260807103532 p1): '있을까'+'하고'는 띄어야 하고('있을까 하고'),
+# '거의 눈'+'물을'은 붙여야 한다('눈물을'). 눈으로도 규칙으로도 못 가른다 —
+# 상위 모델이 문맥을 보고 매긴 18쌍으로 채점했을 때
+#     항상 공백 9/18 · 항상 붙임 9/18 · 문장부호 규칙 9/18 · 낱말 사전 2/6
+# 전부 동전 던지기였다. **형태소 분석(kiwipiepy)은 18/18**이었다(아래 _join_words).
+# 부호가 확실히 가르는 자리는 분석 없이 _join_sep로 처리한다.
+_PAR_OPEN = "([{‘“〈《「『【<"
+_PAR_CLOSE_END = ".,!?;:”’)]}〉》」』】>"
+
+
+def _join_sep(a: str, b: str) -> str:
+    """앞 줄 끝 `a`와 뒤 줄 앞 `b` 사이에 넣을 것 — 공백 또는 빈 문자열(부호 규칙만)."""
+    if not a or not b:
+        return " "
+    if a[-1] in _PAR_CLOSE_END or a[-1].isdigit():
+        return " "
+    if b[0] in _PAR_OPEN or b[0].isdigit() or not ("가" <= b[0] <= "힣"):
+        return " "
+    return "" if "가" <= a[-1] <= "힣" else " "
+
+
+_kiwi = None
+_kiwi_tried = False
+
+
+def _get_kiwi():
+    """형태소 분석기(kiwipiepy) 지연 로드. 없으면 None — 부호 규칙으로 내려간다."""
+    global _kiwi, _kiwi_tried
+    if not _kiwi_tried:
+        _kiwi_tried = True
+        try:
+            from kiwipiepy import Kiwi
+            _kiwi = Kiwi()
+        except Exception as exc:  # noqa: BLE001 — 없으면 규칙으로 동작한다
+            logger.info("kiwipiepy 없음 — 줄 잇기는 문장부호 규칙으로 (%s)", exc)
+    return _kiwi
+
+
+def _join_words(prev_line: str, next_line: str) -> str:
+    """줄 끝 어절 + 줄 첫 어절을 붙일지 띄울지 — **형태소 분석으로** 가른다.
+
+    한국어 줄바꿈은 어절 경계에서도, 어절 가운데서도 일어난다. 실측 표본 18쌍
+    (상위 모델이 문맥을 보고 매긴 정답)에서
+        항상 공백 9/18 · 항상 붙임 9/18 · 문장부호 규칙 9/18 · **형태소 18/18**
+    이었다. 붙인 것과 띄운 것을 각각 분석해 **로그확률이 높은 쪽**을 고른다.
+        '있을까'+'하고' → 띄움('있을까 하고')   '눈'+'물을' → 붙임('눈물을')
+    """
+    wa = prev_line.rstrip().split()[-1] if prev_line.strip() else ""
+    wb = next_line.lstrip().split()[0] if next_line.strip() else ""
+    if not wa or not wb:
+        return " "
+    sep = _join_sep(wa[-1:], wb[:1])
+    if sep == " " or not ("가" <= wa[-1] <= "힣" and "가" <= wb[0] <= "힣"):
+        return sep                      # 부호가 확실히 가르는 자리는 분석 불필요
+    kiwi = _get_kiwi()
+    if kiwi is None:
+        return sep
+    try:
+        joined = kiwi.analyze(wa + wb, top_n=1)
+        apart = kiwi.analyze(f"{wa} {wb}", top_n=1)
+        if joined and apart:
+            return "" if joined[0][1] > apart[0][1] else " "
+    except Exception as exc:  # noqa: BLE001 — 분석 실패는 규칙으로 격리
+        logger.debug("줄 잇기 형태소 분석 실패(규칙으로): %s", exc)
+    return sep
+
+
+def _merge_paragraph_blocks(blocks: list[dict]) -> list[dict]:
+    """줄 단위로 쪼개진 블록을 문단으로 잇는다. 원 순서를 지킨다."""
+    items = [b for b in blocks if (b.get("content") or "").strip()]
+    if len(items) < 2:
+        return list(blocks)
+    heights = sorted(b["bbox"][3] - b["bbox"][1] for b in items)
+    lh = heights[len(heights) // 2] or 1.0
+
+    def ovl(p, q) -> float:
+        lo, hi = max(p[0], q[0]), min(p[2], q[2])
+        return 0.0 if hi <= lo else (hi - lo) / max(1e-6, min(p[2] - p[0], q[2] - q[0]))
+
+    out: list[dict] = []
+    # ★ 이어 붙인 문단의 bbox는 합집합이라 오른쪽 끝이 가장 넓은 줄 값이 된다. 그러면
+    #   '마지막 줄이 짧게 끝났다'는 신호가 지워진다. **직전 줄의** 오른쪽 끝을 따로 든다.
+    last_x1: list[float] = []
+    for b in items:
+        bx0, by0, bx1, by1 = b["bbox"]
+        if not out:
+            out.append({"content": b["content"], "bbox": list(b["bbox"])})
+            last_x1.append(bx1)
+            continue
+        a = out[-1]
+        ax0, ay0, ax1, ay1 = a["bbox"]
+        col = [x["bbox"] for x in items if ovl(x["bbox"], b["bbox"]) >= _PAR_COL_OVERLAP] or [b["bbox"]]
+        col_left, col_right = min(c[0] for c in col), max(c[2] for c in col)
+        width = max(1.0, col_right - col_left)
+        joinable = (
+            ovl(a["bbox"], b["bbox"]) >= _PAR_COL_OVERLAP
+            and -0.3 * lh <= by0 - ay1 <= _PAR_GAP_MAX * lh
+            and last_x1[-1] >= col_right - _PAR_FULL_RIGHT * width  # 직전 줄이 단 끝까지 참
+            and bx0 - col_left <= _PAR_INDENT_MIN * lh              # 뒤 줄이 들여쓰기로 시작 안 함
+        )
+        if joinable:
+            av, bv = a["content"].rstrip(), b["content"].lstrip()
+            a["content"] = f"{av}{_join_words(av, bv)}{bv}"
+            a["bbox"] = [min(ax0, bx0), min(ay0, by0), max(ax1, bx1), max(ay1, by1)]
+            last_x1[-1] = bx1
+        else:
+            out.append({"content": b["content"], "bbox": list(b["bbox"])})
+            last_x1.append(bx1)
+    return out
+
+
 def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int, int]:
     """텍스트레이어(ZERO) 추출 — PyMuPDF 블록 단위로 (content, bbox)를 뽑는다.
 
@@ -178,7 +302,7 @@ def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int,
             page = doc[page_idx]
             w, h = page.rect.width, page.rect.height
             blocks: list[dict] = []
-            for b in _page_text_blocks_spaced(page):
+            for b in _merge_paragraph_blocks(_page_text_blocks_spaced(page)):
                 x0, y0, x1, y1 = b["bbox"]
                 blocks.append({
                     "content": b["content"],
