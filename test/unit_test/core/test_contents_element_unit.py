@@ -99,9 +99,10 @@ class TestSelectedLines:
 class TestStructuralBlanks:
     """구조적 빈 줄 — 지침 규칙(BBPG 2장2절1·2장2절2)이 통 문자열 안에 실려야 한다."""
 
-    def test_1단계_제목은_앞_두_줄_뒤_한_줄(self) -> None:
+    def test_1단계_제목은_위를_안_띄고_아래만_한_줄(self) -> None:
+        """BBPG 2장2절2 2)(2)① 열거에 '1단계 제목의 위'가 없다 — 위는 장바꿈이지 빈 줄이 아니다."""
         bo, flat = _flat_of([_L1], etype="title", hlevel=1)
-        assert _selected_lines(bo, flat)[0] == f"\n\n{_C1}{_L1}\n\n"
+        assert _selected_lines(bo, flat)[0] == f"{_C1}{_L1}\n\n"
 
     def test_2단계_제목은_앞뒤_한_줄(self) -> None:
         bo, flat = _flat_of([_L1], etype="title", hlevel=2)
@@ -149,6 +150,23 @@ class TestStructuralBlanks:
         stream = "".join(flat[i].text for i in ids)
         assert stream.split("\n") == ["", " " * 6 + _L1, "", _L2, "", ""]
 
+    def test_시각_자료가_연이어_나오면_사이를_안_띈다(self) -> None:
+        """BBPG 3장2절1 2) 다만 — 시각 자료끼리는 붙는다. 표는 3장1절4)(3)으로 정반대다."""
+        ids = [uuid4(), uuid4(), uuid4()]
+        lr = LayoutResult(page_id="p1", elements=[
+            BBoxItem(element_id=ids[0], type="image", bbox=(0, 0, 1, 1), reading_order=1),
+            BBoxItem(element_id=ids[1], type="chart_graph", bbox=(0, 0, 1, 1), reading_order=2),
+            BBoxItem(element_id=ids[2], type="table", bbox=(0, 0, 1, 1), reading_order=3),
+        ])
+        bos = [BrailleOutput(element_id=i, braille_lines=[_L1]) for i in ids]
+        stream = "".join(flatten_elements(bos, lr)[i].text for i in ids)
+        assert stream.split("\n") == [
+            "", _L1,        # 첫 시각 자료 — 위 한 줄
+            _L1,            # 이어지는 시각 자료 — 사이는 안 띈다
+            "", _L1,        # 표 — 위 한 줄은 그대로
+            "", "",
+        ]
+
     def test_빈_요소는_빈_줄도_만들지_않는다(self) -> None:
         bo, flat = _flat_of([], etype="title", hlevel=1)
         assert bo.element_id not in flat
@@ -176,9 +194,9 @@ class TestRuleTrailCoords:
         assert fe.text[fe.trail[0].col_start:fe.trail[0].col_end] == _L2[:2]
 
     def test_구조적_빈_줄만큼_밀린다(self) -> None:
-        bo, flat = _flat_of([_L1], etype="title", hlevel=1, trail=[self._rule(0, 0, 2)])
+        bo, flat = _flat_of([_L1], etype="title", hlevel=2, trail=[self._rule(0, 0, 2)])
         fe = flat[bo.element_id]
-        assert fe.trail[0].col_start == 2 + len(_C1)   # 앞 빈 줄 둘 + 가운데 정렬 여백
+        assert fe.trail[0].col_start == 1 + 6          # 앞 빈 줄 하나 + 2단계 7칸 들여
         assert fe.text[fe.trail[0].col_start:fe.trail[0].col_end] == _L1[:2]
 
     def test_요소_전체_태그는_본문_전_구간(self) -> None:
