@@ -436,7 +436,8 @@ def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
     규칙이라 그대로 점역하면 정답과 크게 어긋난다(세계사 p086 실측: cell_ns 0.87→0.39).
     pdf_analyzer의 글자 간격 기반 복원(_page_text_blocks_spaced)을 재사용한다.
     """
-    from app.ai.preprocessor.pdf_analyzer import _line_text_with_word_gaps, underline_rects
+    from app.ai.preprocessor.pdf_analyzer import (
+        _line_text_with_word_gaps, rows_to_text, underline_rects)
 
     w, h = fitz_page.rect.width, fitz_page.rect.height
     uls = underline_rects(fitz_page)   # 밑줄(드러냄표, 규정 제56항) — 벡터 선으로만 존재
@@ -446,7 +447,7 @@ def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
     # 좌표계라 MinerU가 쓰는 렌더(표시) 좌표와 어긋난다. rotation_matrix로 표시 좌표로 옮긴다.
     # (이걸 빠뜨리면 회전 페이지에서 매칭이 전부 실패해 OCR 오탈자가 그대로 남는다.)
     rot = fitz_page.rotation_matrix
-    lines: list[str] = []
+    lines: list[tuple] = []
     for blk in fitz_page.get_text("rawdict").get("blocks", []):
         if blk.get("type") != 0:      # 0 = 텍스트 블록
             continue
@@ -458,8 +459,10 @@ def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
                 continue
             t = _line_text_with_word_gaps(ln, rot, uls)
             if t:
-                lines.append(t)
-    return "\n".join(lines).strip()
+                # ★ 같은 인쇄 줄이 여러 line으로 쪼개진 것(정답표·선택지)은 rows_to_text가
+                #   한 줄로 이어 두 칸을 띈다 — 지침 3장 3절 4)(3)① (QA S4)
+                lines.append((lb, t))
+    return rows_to_text(lines)
 
 
 def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) -> str | None:
