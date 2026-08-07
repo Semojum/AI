@@ -71,3 +71,25 @@ class TestWordGapRestore:
 
     def test_empty_line(self):
         assert _line_text_with_word_gaps({"spans": []}) == ""
+
+
+# ── 따옴표 안쪽 공백 (QA S5, 2026-08-07) ─────────────────────────────────
+from app.ai.preprocessor.pdf_analyzer import (          # noqa: E402
+    _NO_SPACE_AFTER, _NO_SPACE_BEFORE,
+)
+
+
+class TestQuoteSpacing:
+    """여는 따옴표 뒤·닫는 따옴표 앞에 공백을 넣지 않는다 (QA S5).
+
+    실측: QA 11곳 중 5곳이 `‘ 이 민족 ’`처럼 안쪽에 공백이 끼어 나왔다.
+    따옴표 글리프는 글자 폭보다 자리가 넓어 간격 임계를 늘 넘는다.
+    """
+
+    def test_여는_부호_목록(self):
+        for ch in "‘“([{〈《「『【":
+            assert ch in _NO_SPACE_AFTER
+
+    def test_닫는_부호_목록(self):
+        for ch in "’”)]}〉》」』】":
+            assert ch in _NO_SPACE_BEFORE

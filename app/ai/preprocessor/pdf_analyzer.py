@@ -31,6 +31,12 @@ _PDF_MAGIC = b"%PDF-"
 _WORD_GAP_RATIO = 0.12   # 어절 경계 판정: 기준 간격 + max(이 비율×폰트크기, 1.0pt)
 _WORD_GAP_MIN_PT = 1.0
 _MIN_GAP_SAMPLES = 4     # 줄에 간격 표본이 이보다 적으면 판단 보류(원문 유지)
+# 여는 따옴표·괄호 **뒤**, 닫는 따옴표·괄호 **앞**에는 공백을 넣지 않는다(QA S5).
+# 이 글리프들은 글자 폭보다 자리(advance)가 넓어 간격이 늘 임계를 넘는다 —
+# 실측 QA 11곳 중 5곳이 `‘ 이 민족 ’`·`‘ 전쟁 ’`처럼 안쪽에 공백이 끼어 나왔다.
+# 맞춤법상으로도 여는 부호 뒤·닫는 부호 앞은 붙여 쓴다.
+_NO_SPACE_AFTER = "‘“'\"([{〈《「『【<"
+_NO_SPACE_BEFORE = "’”'\")]}〉》」』】>.,!?;:"
 
 
 def _is_hangul(ch: str) -> bool:
@@ -123,7 +129,8 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None) -> str:
             in_ul = False
         if i and have_base:
             prev_ch, _px0, px1, _psize, _pul = chars[i - 1]
-            if not ch.isspace() and not prev_ch.isspace() and (_is_hangul(ch) or _is_hangul(prev_ch)):
+            if not ch.isspace() and not prev_ch.isspace() and (_is_hangul(ch) or _is_hangul(prev_ch)) \
+                    and prev_ch not in _NO_SPACE_AFTER and ch not in _NO_SPACE_BEFORE:
                 threshold = base + max(_WORD_GAP_RATIO * (size or 10.0), _WORD_GAP_MIN_PT)
                 if (x0 - px1) > threshold:
                     out.insert(len(out) - 1 if (ul and not _pul) else len(out), " ")
