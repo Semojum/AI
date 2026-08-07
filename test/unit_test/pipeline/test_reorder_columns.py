@@ -78,6 +78,42 @@ class TestScrambledColumnYsorted:
         assert _orders([b, d, f, c, e, a]) == [1, 2, 3, 4, 5, 6]
 
 
+class TestYsortStaysInsideColumn:
+    def test_two_column_scrambled_not_interleaved(self):
+        # 언어와 매체 p044 축소판: 머리말·꼬리말 조각이 앞뒤로 튀어 y-위반 2회를 만들면
+        # y-정렬이 발동한다. 이때 열을 무시하고 정렬하면 좌/우 단이 한 줄씩 번갈아 나온다
+        # (실측 τ 1.00 → 0.37). 열 안에서만 정렬해야 좌열 전체 → 우열 전체가 유지된다.
+        foot = _box(1, 100, 1390, 350, 1420)       # 꼬리말이 맨 앞에 방출됨
+        left = [_box(i + 1, 100, 100 + i * 120, 550, 200 + i * 120) for i in range(5)]
+        head = _box(7, 110, 40, 540, 90)           # 머리말이 본문 뒤에 방출됨
+        right = [_box(i + 8, 610, 100 + i * 120, 1060, 200 + i * 120) for i in range(5)]
+        items = [foot] + left + [head] + right
+        _reorder_columns(items)
+        got = [b.reading_order for b in sorted(items, key=lambda b: b.reading_order)]
+        assert got == list(range(1, len(items) + 1))
+        # 좌열 5개가 모두 우열 5개보다 앞에 온다
+        assert max(b.reading_order for b in left) < min(b.reading_order for b in right)
+
+    def test_left_column_comes_before_right(self):
+        # 열 번호는 x0 오름차순. 오른쪽 단이 먼저 방출돼도 좌 → 우로 잡아야 한다.
+        right = [_box(i + 1, 610, 100 + i * 120, 1060, 200 + i * 120) for i in range(4)]
+        left = [_box(i + 5, 100, 100 + i * 120, 550, 200 + i * 120) for i in range(4)]
+        stray = _box(9, 100, 1390, 550, 1420)      # y-위반 유발용 꼬리 조각
+        stray2 = _box(10, 110, 40, 540, 70)
+        _reorder_columns(right + left + [stray, stray2])
+        assert max(b.reading_order for b in left) < min(b.reading_order for b in right)
+
+
+class TestTooManyColumnsUntouched:
+    def test_rotated_page_left_alone(self):
+        # 270° 회전 페이지(외국어 영역): 줄마다 x가 달라 x-겹침 열이 열 개 넘게 잡힌다.
+        # 열 모형이 안 맞는 쪽이라 기하 정렬을 걸면 순서가 통째로 뒤집힌다 → 무변경.
+        items = [_box(i + 1, 1300 - i * 40, 187, 1326 - i * 40, 600) for i in range(12)]
+        before = _orders(items)
+        _reorder_columns(items)
+        assert _orders(items) == before
+
+
 class TestPageLineSlotsPreserved:
     def test_page_number_keeps_original_slot(self):
         # 페이지행 요소는 재배열 여파를 받지 않고 원래 순번 슬롯을 지킨다.
