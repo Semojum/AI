@@ -365,6 +365,112 @@ def _hangul_substitutions(cell: str, window: str) -> list[tuple[int, int, str]]:
     return out
 
 
+# ── 괘선 없는 '표'는 표가 아니다 (QA 9번, 2026-08-08) ────────────────────────
+# MinerU의 표 모델은 **글이 격자처럼 늘어선 쪽**을 통째로 표로 싼다. 대표 QA 실측:
+# 2026학년도 수능 수학 문제지 2쪽이 각각 쪽 본문 전체(폭 80%·높이 75%)가 <table> 한
+# 덩이였고, 문항 하나가 <td> 하나였다. 그러면 32칸 표 테두리와 두 칸 셀 구분이 붙어
+# 초안이 통째로 망가진다.
+#
+# 가르는 신호는 대표님 말 그대로 **가로 괘선**이다(실측):
+#   dev-2027 200쪽의 표 104개 — 가로 괘선 최소 2 · 중앙값 5 (하나도 예외 없음)
+#   대표 QA가 올린 원본(2026학년도 수능 수학 문제지)의 그 bbox — 가로 괘선 1
+# ⚠ 판단할 근거가 없는 두 경우는 **손대지 않는다**(표로 둔다):
+#     · 쪽에 벡터 선이 아예 없다(스캔본)
+#     · 그 자리가 래스터 이미지로 덮여 있다 — 표를 그림으로 붙인 쪽(언어 p223 실측).
+#       괘선이 화소 안에 있어 벡터로는 0으로 세어져, 진짜 표를 내릴 뻔했다.
+# ⚠ MinerU가 차트에서 뽑아 준 데이터 표(_chart_data_table)는 원래 괘선이 없으므로 제외 —
+#   이 판정은 MinerU가 직접 "table"이라고 한 요소에만 건다.
+_RULE_FLAT = 1.5      # 이보다 얇으면 '선'
+_RULE_PAD = 4.0       # bbox 여유(pt) — 테두리는 bbox에 딱 붙거나 살짝 밖이다
+_RULE_SPAN = 0.4      # 표 폭의 이 비율 이상 뻗어야 괘선(밑줄 토막·화살표 제외)
+_RULE_MIN_H = 2       # 가로 괘선이 이보다 적으면 표가 아니다
+_RULE_IMG_COVER = 0.6  # 래스터 이미지가 이 비율 이상 덮으면 벡터로 판단 불가
+
+
+def _h_rules(fitz_page: fitz.Page, bbox: list[float]) -> int | None:
+    """bbox 안 가로 괘선 수. 벡터로 판단할 수 없으면 None."""
+    w, h = fitz_page.rect.width, fitz_page.rect.height
+    r = fitz.Rect(bbox[0] / 1000 * w, bbox[1] / 1000 * h,
+                  bbox[2] / 1000 * w, bbox[3] / 1000 * h)
+    rot = fitz_page.rotation_matrix
+    if r.get_area() > 0:
+        for blk in fitz_page.get_text("rawdict").get("blocks", []):
+            if blk.get("type") != 1:        # 1 = 이미지 블록
+                continue
+            ib = fitz.Rect(blk.get("bbox") or (0, 0, 0, 0)) * rot
+            ib.normalize()
+            if (ib & r).get_area() >= r.get_area() * _RULE_IMG_COVER:
+                return None
+    segs: list[tuple[float, float, float, float]] = []
+    for g in fitz_page.get_drawings():
+        for it in g["items"]:
+            if it[0] == "l":
+                p1, p2 = it[1] * rot, it[2] * rot
+                segs.append((min(p1.x, p2.x), min(p1.y, p2.y),
+                             max(p1.x, p2.x), max(p1.y, p2.y)))
+            elif it[0] == "re":
+                q = fitz.Rect(it[1]) * rot
+                q.normalize()
+                # 얇은 사각형은 그 자체가 선, 두꺼우면 위·아래 변이 행 구분선(음영 머리행)
+                segs += ([(q.x0, q.y0, q.x1, q.y1)] if min(q.width, q.height) <= _RULE_FLAT
+                         else [(q.x0, q.y0, q.x1, q.y0), (q.x0, q.y1, q.x1, q.y1)])
+    if not segs:
+        return None
+    bx0, by0 = r.x0 - _RULE_PAD, r.y0 - _RULE_PAD
+    bx1, by1 = r.x1 + _RULE_PAD, r.y1 + _RULE_PAD
+    # ⚠ PyMuPDF의 Rect.intersects()는 높이 0인 사각형(=가로선)을 '빈' 것으로 보고 False를
+    #   낸다. 그래서 겹침은 사각형이 아니라 좌표로 직접 따진다.
+    spans: dict[int, float] = {}
+    for x0, y0, x1, y1 in segs:
+        if y1 - y0 > _RULE_FLAT or x1 < bx0 or x0 > bx1 or y1 < by0 or y0 > by1:
+            continue
+        cut = min(x1, bx1) - max(x0, bx0)
+        if cut > 1:                       # 조각난 괘선은 y가 같으면 하나로 합산한다
+            k = round((y0 + y1) / 2)
+            spans[k] = spans.get(k, 0.0) + cut
+    need = max(r.width, 1.0) * _RULE_SPAN
+    return sum(1 for length in spans.values() if length >= need)
+
+
+_TR_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S | re.I)
+_TD_RE = re.compile(r"<t[dh]([^>]*)>(.*?)</t[dh]>", re.S | re.I)
+_COLSPAN_RE = re.compile(r"colspan\s*=\s*[\"']?(\d+)", re.I)
+
+
+# 셀 글자 중앙값이 이보다 길면 '표의 셀'이 아니라 **단에 흐르는 글**로 본다
+_COL_CELL_LEN = 40
+
+
+def _table_to_text(html: str) -> str:
+    """괘선 없는 '표' HTML → 평문. 격자 모양에 따라 읽는 방향이 다르다.
+
+    · 셀이 긴 글이면 **다단 조판**이다 → 단 순서(세로)로 읽는다. 수능 문제지는 한 <tr>이
+      [1번 문항, 3번 문항]이라 행으로 읽으면 1·3·2·4가 된다(단으로 읽어야 1·2·3·4).
+      다단 쪽을 단 순서로 읽는 판단은 pipeline._reorder_columns에도 이미 있다.
+    · 셀이 짧으면 **선택지 표**다(① 뜯기 / 치기) → 행이 곧 인쇄 줄이므로 행 순서로 읽고
+      한 행은 한 줄로 두 칸씩 띄어 잇는다(「점자 도서 제작 지침」 3장 3절 4)(3)①).
+    """
+    grid: list[list[tuple[int, str]]] = []
+    for tr in _TR_RE.findall(html):
+        row: list[tuple[int, str]] = []
+        col = 0
+        for attr, cell in _TD_RE.findall(tr):
+            row.append((col, re.sub(r"<[^>]+>", "", cell).strip()))
+            m = _COLSPAN_RE.search(attr)
+            col += int(m.group(1)) if m else 1
+        if row:
+            grid.append(row)
+    if not grid:
+        return re.sub(r"<[^>]+>", " ", html).strip()
+    lens = sorted(len(t) for row in grid for _, t in row if t)
+    ncol = max(row[-1][0] + 1 for row in grid)
+    if ncol > 1 and lens and lens[len(lens) // 2] >= _COL_CELL_LEN:
+        return "\n".join(txt for c in range(ncol) for row in grid
+                         for col, txt in row if col == c and txt)
+    return "\n".join("  ".join(t for _, t in row if t) for row in grid
+                     if any(t for _, t in row))
+
+
 def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> str:
     """표 셀의 한글 오독을 텍스트 레이어를 근거로 고친다. 구조(HTML)는 건드리지 않는다.
 
@@ -691,10 +797,15 @@ def run(
             else:
                 content = _native_override(fitz_page, bb, content) or content
         elif mapped_type == "table":
-            # 표는 구조 때문에 전면 대체를 못 하므로 글머리 기호(제72항)만 되돌리고,
-            # 셀 안 글자는 레이어를 근거로 한글 오독만 고친다(둘 다 전부-아니면-전무).
-            content = _restore_table_bullets(fitz_page, bb, content)
-            content = _correct_table_cells(fitz_page, bb, content)
+            # 괘선 없는 '표'는 표가 아니다 — 위 _h_rules 주석 참조(QA 9번)
+            n_rules = _h_rules(fitz_page, bb) if item_type == "table" else None
+            if n_rules is not None and n_rules < _RULE_MIN_H:
+                mapped_type, content = "text", _table_to_text(content)
+            else:
+                # 표는 구조 때문에 전면 대체를 못 하므로 글머리 기호(제72항)만 되돌리고,
+                # 셀 안 글자는 레이어를 근거로 한글 오독만 고친다(둘 다 전부-아니면-전무).
+                content = _restore_table_bullets(fitz_page, bb, content)
+                content = _correct_table_cells(fitz_page, bb, content)
 
         # 인쇄 캡션 강제 적용(위 forced_caption) — 생성 placeholder/빈 content를 덮어쓴다.
         if forced_caption and mapped_type == "caption":
