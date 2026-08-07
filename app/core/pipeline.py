@@ -449,6 +449,12 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                 elements.extend(add)
                 logger.info("그림 회수 %d개 (page=%d)", len(add), task.page_no)
 
+    # QA용 쪽 이미지 보관(기본 off — KEEP_PAGE_IMAGE=1로만 켠다, 대표 결정 2026-08-07).
+    # 평소에는 처리 후 원본을 안 남긴다(저작권·디스크). QA 기간에만 켜면 bbox·읽기순서·
+    # 표 오분류를 **쪽 위에 겹쳐 눈으로** 볼 수 있다. 렌더는 Opus 폴백과 같은 자리를 쓴다.
+    if os.environ.get("KEEP_PAGE_IMAGE") == "1":
+        _page_image_path(task)
+
     # Opus 비전 폴백(D-05, 기본 off — OPUS_EXTRACT_FALLBACK=1 opt-in): 추출이 빈약한
     # 페이지만 claude-opus-4-8이 직접 읽는다. 실측상 저품질 페이지에서만 유효(3~4배),
     # 중간 품질은 득실 반반이라 빈약 신호(요소 수·글자수)일 때만 트리거.
@@ -483,6 +489,11 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
 # sidebar(H2)는 x0 최대간격 분할이라 분할선이 본문/사이드바를 관통하는 페이지에서 오발동·미발동
 # (세계사 p086 관통, p106 임계 3px 미달)이 잦아 col로 대체.
 _REORDER_MODE = os.environ.get("READING_ORDER_MODE", "col")
+# 기하 정렬을 걸 수 있는 최대 열 수. 교재 쪽은 많아야 3단이다. 이보다 많이 잡히면
+# 열 모형이 안 맞는 쪽(회전 페이지·비정형 글상자)이라 원순서를 그대로 둔다.
+# 실측(2026-08-07, dev2027 189 · devall 172 · valall 868쪽, 요소단위 τ. 열 우선 정렬 적용 후):
+#   상한 없음 0.909/0.805/0.826 → ≤3열 0.909/0.908/0.888. 4~8열로 올려도 값이 같다(평탄).
+_MAX_COLS = 3
 
 
 def _valid_bbox(b: BBoxItem) -> bool:
@@ -559,7 +570,15 @@ def _reorder_sidebar(items: list[BBoxItem], valid: list[BBoxItem]) -> None:
 
 
 def _reorder_columns(items: list[BBoxItem]) -> None:
-    """H3: 열 클러스터링 읽기순서. 정답 BRL 관찰(2026-07-13)에 근거한 세 규칙:
+    """H3: 열 클러스터링 읽기순서.
+
+    규정 근거 —「점자 도서 제작 지침」2장 5. 다단 점역:
+      · 동등한 관계의 다단 → "일반적으로 왼쪽 단을 적은 후 오른쪽 단으로, 상단을 적은
+        후 하단을 적는다"  → (5) 열 우선 정렬.
+      · 주종 관계의 다단 → "본문에 해당하는 단을 우선 적고, 참고 자료는 본문 아래"
+        → (1) 좁은 참고열 후치.
+
+    정답 BRL 관찰(2026-07-13)에 근거한 세 규칙:
 
     (1) 점역사는 좁은 용어설명 열을 본문 뒤에 둔다 — MinerU가 이 열을 본문 앞에
         통째로(연속 순번) 방출하는 것이 주 실패 양상(세계사 p086·p106).
@@ -569,6 +588,8 @@ def _reorder_columns(items: list[BBoxItem]) -> None:
         파괴되므로, MinerU 순서가 y-흐름을 심하게 거스를 때만 열 내부를 y-정렬
         (사회문화 p035: MinerU 순서 자체가 뒤죽박죽인 페이지).
     (3) 페이지행 요소(header_footer/page_number)·빈 bbox는 원래 순번 슬롯 유지.
+    (4) 열이 _MAX_COLS개를 넘으면 '열'이라는 모형이 이 쪽에 안 맞는다 → 원순서 유지.
+    (5) y-정렬은 열 안에서만 한다 — 열을 가로질러 정렬하면 2단 본문이 한 줄씩 섞인다.
     """
     body = [b for b in items if _valid_bbox(b) and b.type not in ("header_footer", "page_number")]
     if len(body) < 3:
@@ -593,6 +614,18 @@ def _reorder_columns(items: list[BBoxItem]) -> None:
     clusters: dict[int, list[BBoxItem]] = {}
     for i, b in enumerate(body):
         clusters.setdefault(_find(i), []).append(b)
+
+    # 1-b) ★ 열이 너무 많으면 손대지 않는다. 교재 쪽은 많아야 3단인데 x-겹침 열이 10~30개로
+    #   나오는 쪽이 실제로 있다 — 270° 회전 페이지(외국어 영역)와 비정형 글상자 배치다.
+    #   그런 쪽에서 기하 정렬을 걸면 읽기순서가 통째로 뒤집힌다(실측 τ 1.00 → −1.00,
+    #   valall 47쪽 평균 0.677 → −0.442). 모형이 안 맞는 쪽은 추출기 순서를 믿는다.
+    if len(clusters) > _MAX_COLS:
+        return
+    # 열 번호(왼쪽부터 0,1,2). ★ 여기서 확정해 둔다 — 아래에서 main 리스트를 extend하면
+    #   클러스터 리스트가 같은 객체라 그대로 오염된다(열 번호가 뒤바뀐다).
+    col_of = {id(b): ci for ci, cl in
+              enumerate(sorted(clusters.values(), key=lambda c: min(b.bbox[0] for b in c)))
+              for b in cl}
 
     # 2) main = 최대 클러스터(동수면 총면적). main 헐과 자기 폭 50% 이상 겹치는
     #    클러스터(선지 ①②③ 조각 등)는 흡수.
@@ -626,11 +659,14 @@ def _reorder_columns(items: list[BBoxItem]) -> None:
 
     # 4) main: MinerU 순서가 y-흐름을 2회 넘게 거스를 때만 y-밴드 정렬.
     #    위반 = y가 2밴드 이상 되돌아가는데 오른쪽 열 점프(2단 전환)도 아닌 연속 쌍.
+    #    ★ 정렬 키의 첫 자리는 열이다(왼쪽 열 전부 → 오른쪽 열 전부). 열을 무시하고
+    #      y부터 정렬하면 2단 본문이 왼쪽 한 줄·오른쪽 한 줄로 번갈아 섞여 나온다
+    #      (dev-2027 TEXT_NATIVE 82쪽 τ 0.830 → 0.817, 열 우선으로 고치면 0.963).
     heights = sorted(b.bbox[3] - b.bbox[1] for b in main)
     band = max(1.0, heights[len(heights) // 2] * 0.5)
 
     def _ykey(b: BBoxItem) -> tuple:
-        return (round(b.bbox[1] / band), b.bbox[0])
+        return (col_of[id(b)], round(b.bbox[1] / band), b.bbox[0])
 
     by_mineru = sorted(main, key=lambda b: b.reading_order)
     viol = sum(
