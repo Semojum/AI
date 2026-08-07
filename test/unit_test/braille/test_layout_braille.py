@@ -332,16 +332,24 @@ class TestLayoutBody:
             assert _cell_count(line) <= _COLS
 
     def test_heading_blank_lines(self, lb, tmp_path) -> None:
-        """heading level 1 → 앞 2줄·뒤 1줄 빈 줄 (페이지 첫 줄 빈 줄은 별도)."""
+        """1단계 제목 → 위 0줄·아래 1줄 (BBPG 2장2절2 2)(2)① 열거에 '1단계 위'가 없다)."""
         e1, e2 = uuid4(), uuid4()
         lr = _layout((e1, "text", 1, 0), (e2, "title", 2, 1))
         lb.layout([_out(["본문"], e1), _out(["제목"], e2)],
                   page_no=1, job_id="hd", layout_result=lr)
         lines = _read_lines(tmp_path, "hd")
         assert lines[0].strip() == "본문"           # text 첫줄 3칸 들여
-        assert lines[1] == "" and lines[2] == ""    # 제목 앞 2줄
-        assert lines[3].strip() == "제목"           # 1단계 제목(가운데 정렬)
-        assert lines[4] == ""                        # 뒤 1줄
+        assert lines[1].strip() == "제목"           # 1단계 제목(가운데 정렬) — 위는 안 띈다
+        assert lines[2] == ""                        # 아래 1줄
+
+    def test_3단계_제목만_위아래_빈_줄(self, lb, tmp_path) -> None:
+        """BBPG 2장2절2 2)(2)① — 3단계는 위아래, 4단계는 위에만."""
+        e1, e2, e3 = uuid4(), uuid4(), uuid4()
+        lr = _layout((e1, "text", 1, 0), (e2, "title", 2, 3), (e3, "text", 3, 0))
+        lb.layout([_out(["본문"], e1), _out(["소제목"], e2), _out(["뒷글"], e3)],
+                  page_no=1, job_id="hd3", layout_result=lr)
+        lines = _read_lines(tmp_path, "hd3")
+        assert [ln.strip() for ln in lines[:5]] == ["본문", "", "소제목", "", "뒷글"]
 
     def test_heading_blank_not_in_rule_trail(self, lb) -> None:
         # 조판 정책(태민 2026-06-01): heading 빈 줄은 적용하되 rule_trail에 기록하지 않는다.
@@ -507,6 +515,25 @@ class TestLayoutBody:
         ti = body.index("⠞⠞")
         assert body[ti - 1] == ""    # 표 위 빈 줄
         assert body[ti + 1] == ""    # 표 아래 빈 줄
+
+    def test_글상자_빈_줄_위에_요소_빈_줄이_또_얹히지_않는다(self, lb) -> None:
+        """`_expand_box_borders`가 el_lines 안에 박은 빈 줄도 병합 대상이다.
+
+        빈 줄 두 줄 연속은 어느 조항에도 없다 — 글상자 연속조차 1장2절5(6)이 한 줄이다.
+        (dev-2027 200쪽에서 이 겹침이 72곳 나왔다.)
+        """
+        box = ["", "⠿" + "⠛" * 30 + "⠿", "⠈⠈", "⠿" + "⠶" * 30 + "⠿", ""]
+        formatted = [(0, "text", ["⠁⠁"]), (0, "image", box), (0, "text", ["⠃⠃"])]
+        body = [l for page in lb._assemble_pages(formatted, "", "", 1) for l in page]
+        body = body[: body.index("⠃⠃") + 1]
+        assert not any(body[i] == "" == body[i + 1] for i in range(len(body) - 1))
+
+    def test_시각_자료가_연이어_나오면_사이를_안_띈다(self, lb) -> None:
+        """BBPG 3장2절1 2) 다만. 표는 3장1절4)(3)으로 반대라 사이를 띈다."""
+        formatted = [(0, "image", ["⠛⠛"]), (0, "chart_graph", ["⠉⠉"]), (0, "table", ["⠞⠞"])]
+        body = [l for page in lb._assemble_pages(formatted, "", "", 1) for l in page]
+        assert body[body.index("⠛⠛") + 1] == "⠉⠉"      # 시각 자료끼리 — 안 띈다
+        assert body[body.index("⠉⠉") + 1] == ""         # 표 앞 — 띈다
 
     def test_heading_level3_indent5(self, lb, tmp_path) -> None:
         """3단계 제목 5칸 들여 (BBPG 2장2절1)."""

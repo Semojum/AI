@@ -36,12 +36,24 @@ logger = logging.getLogger(__name__)
 from app.ai.braille.constants import COLS as _COLS, ROWS as _ROWS, DOUBLE_SIDED  # noqa: E402 (공용 상수)
 
 # ── BBPG 2장2절1 제목 단계별 빈 줄 (level → (앞, 뒤)) ───────────────────────
-# BBPG 2장2절1·2장2절2 2)①: 1단계 아래·2단계 아래·3단계 위아래·4단계 위 빈 줄.
-# (1·2단계 before는 장/쪽바꿈 근사 — 양면 조판은 DOUBLE_SIDED 참조.)
-_HEADING_BLANK: dict[int, tuple[int, int]] = {1: (2, 1), 2: (1, 1), 3: (1, 1), 4: (1, 0)}
+# 근거 조항은 BBPG 2장2절2 2)(2)① 하나다 — 빈 줄을 넣어도 되는 자리를 **열거**한다:
+#   "1단계 제목의 아래, 2단계 제목의 아래, 3단계 제목의 위아래, 4단계 제목의 위"
+# 같은 조 (1)이 "시각적 효과·공간적 배치를 위해 삽입된 빈 줄은 점자에서는 삭제한다"라
+# 못 박으므로, 열거에 없는 자리에 빈 줄을 넣으면 규정 위반이다.
+#  · 1단계 before=0 — 열거에 '1단계 제목의 위'가 없다. 2장2절1 1)의 **장바꿈**은 빈 줄이
+#    아니라 새 장이고, 통 문자열에는 장/쪽바꿈을 실을 자리가 없다(면 나눔은 FE·BE 소관).
+#    2026-08-07까지 여기 2가 박혀 있었는데 어느 조항에도 없는 값이었다.
+#  · 2단계 before=1 — 2장2절1 3) 다만 "본문 내용이 적어 쪽바꿈이 빈번할 경우에는 제목
+#    위아래에 빈 줄을 두고 이어 적을 수 있다". 교과서가 이 경우라 예외를 채택한다.
+_HEADING_BLANK: dict[int, tuple[int, int]] = {1: (0, 1), 2: (1, 1), 3: (1, 1), 4: (1, 0)}
 
-# BBPG 2장2절2 2)①④: 표·시각 자료는 위아래에 빈 줄을 삽입한다.
-_BLANK_AROUND_TYPES = frozenset({"table", "image", "cartoon", "chart_graph", "diagram"})
+# BBPG 3장2절1 2) "모든 시각 자료의 위아래는 한 줄을 띈다. 다만, 시각 자료가 연이어 나올
+# 때 그 사이는 줄을 띄지 않는다." — 표는 여기서 뺀다. 3장1절4)(3)이 "표가 연이어 나올 때
+# 그 사이에는 빈 줄을 둔다"로 정반대라, 둘을 같이 다루면 한쪽이 반드시 틀린다.
+_VISUAL_TYPES = frozenset({"image", "cartoon", "chart_graph", "diagram"})
+
+# BBPG 2장2절2 2)(2)④·3장1절4)(1)·3장2절1 2): 표·시각 자료는 위아래에 빈 줄을 삽입한다.
+_BLANK_AROUND_TYPES = _VISUAL_TYPES | {"table"}
 
 # 단어 구분 = ASCII 공백 또는 점자 빈칸(U+2800)
 _WORD_RE = re.compile(r"[^ ⠀]+")
@@ -161,6 +173,26 @@ def _is_border_line(line: str) -> bool:
         and line[:1] in _BORDER_START_CAPS
         and line[-1:] in _BORDER_END_CAPS
     )
+
+
+def _tail_blanks(lines: list[str]) -> int:
+    """줄 목록 끝에 실제로 쌓여 있는 빈 줄 수."""
+    n = 0
+    for ln in reversed(lines):
+        if ln.strip():
+            break
+        n += 1
+    return n
+
+
+def _lead_blanks(lines: list[str]) -> int:
+    """줄 목록 앞에 실제로 붙어 있는 빈 줄 수(글상자 위 띔 등 요소가 이미 달고 온 것)."""
+    n = 0
+    for ln in lines:
+        if ln.strip():
+            break
+        n += 1
+    return n
 
 
 def format_underline_blank(text: str) -> str:
@@ -422,20 +454,42 @@ class LayoutBraille:
         """이미 조판된 블록 줄들을 페이지로 조립(BBPG): 제목·표·시각자료 빈 줄 + 페이지 + 페이지행.
 
         재-wrap·들여쓰기는 하지 않는다(블록 줄은 이미 32칸 조판본). layout()(초안)과
-        finalize()(편집본)가 공유하는 순수 조립부. 인접 블록의 빈 줄은 하나로 합친다.
+        finalize()(편집본)가 공유하는 순수 조립부.
+
+        ★ 인접 빈 줄 병합은 **실제로 쌓인 빈 줄**을 세서 한다(선언값 before/after가 아니라).
+        `_expand_box_borders`가 글상자 위아래 빈 줄을 el_lines **안에** 박아 넣기 때문이다 —
+        선언값만 보면 그게 안 보여서 요소 경계 빈 줄이 그 위에 또 얹혔다. dev-2027 200쪽
+        실측: 빈 줄 두 줄 연속 72곳·세 줄 4곳. 정답 도서는 3,811곳 중 2곳(0.05%)뿐이다.
+        규정도 겹치기를 허용하지 않는다 — 글상자 연속은 1장2절5(6)이 "빈 줄"(한 줄)이다.
         """
         lines: list[str] = []
-        trailing = 0   # 현재 lines 끝의 빈 줄 수(인접 블록 빈 줄 중복 방지)
+        prev_type = ""
+        pending = 0    # 직전 요소가 요구한 '아래 빈 줄' — 다음 요소의 '위'와 합쳐 한 줄로 낸다
         for hlevel, etype, el_lines in formatted_blocks:
             if not el_lines:
                 continue
             before, after = _HEADING_BLANK.get(hlevel, (0, 0))
-            if etype in _BLANK_AROUND_TYPES:        # 표·시각자료 위아래(BBPG 2장2절2 2)①④)
+            if etype in _BLANK_AROUND_TYPES:        # 표·시각자료 위아래(BBPG 2장2절2 2)(2)④)
                 before, after = max(before, 1), max(after, 1)
-            lines.extend([""] * max(0, before - trailing))
-            lines.extend(el_lines)
-            lines.extend([""] * after)
-            trailing = after
+            # 요소가 스스로 달고 온 앞뒤 빈 줄(글상자 위아래 띔 §1.2.5(6))도 같은 '한 줄'
+            # 요구다. 떼어 내 before/after에 합치면 경계 빈 줄과 겹칠 일이 없다.
+            lead, tail = _lead_blanks(el_lines), _tail_blanks(el_lines)
+            body = el_lines[lead:len(el_lines) - tail] or el_lines
+            before, after = max(before, min(lead, 1)), max(after, min(tail, 1))
+            if (etype in _VISUAL_TYPES and prev_type in _VISUAL_TYPES
+                    and not _is_border_line(body[0])
+                    and not _is_border_line(
+                        next((ln for ln in reversed(lines) if ln.strip()), ""))):
+                # BBPG 3장2절1 2) 다만 — 시각 자료가 연이어 나올 때 그 사이는 안 띈다.
+                # 글상자로 묶인 것끼리는 예외다 — 1장2절5(6)이 "사이에 빈 줄"이라 반대다.
+                before = pending = 0
+            if (pending or before) and lines:       # 두 줄 이상 띄는 자리는 규정에 없다
+                lines.append("")
+            lines.extend(body)
+            pending = after
+            prev_type = etype
+        if pending:
+            lines.append("")
         return self._paginate(lines, page_no, footer, orig_page)
 
     def finalize(self, blocks: list[dict], page_no: int = 1) -> list[list[str]]:
@@ -979,8 +1033,12 @@ class LayoutBraille:
 
         page_idx = 0
         while i < n or not pages:
-            while i < n and lines[i] == "":  # 페이지 첫 줄 빈 줄 버림 (plan 주의사항)
-                i += 1
+            # ★ 면 첫 줄의 빈 줄은 **버리지 않는다** — 「점자 도서 제작 지침」 2장2절2 2)(3)
+            #   "면의 첫 줄에 오는 빈 줄은 삭제하지 않는다". 정답 도서도 면 첫 줄이 빈 줄인
+            #   경우가 3.2%다(2026-08-08 대표 결정으로 규정대로 살린다).
+            #   남은 것이 전부 빈 줄이면 거기서 끝낸다 — 빈 면을 만들지 않기 위해서다.
+            if pages and all(x == "" for x in lines[i:]):
+                break
             # 양면 제본이면 홀수 점자페이지만 페이지행, 짝수는 26줄 본문(BBPG 1장2절2). 단면은 매 페이지.
             has_page_line = (not DOUBLE_SIDED) or (pno % 2 == 1)
             cap = (_ROWS - 1) if has_page_line else _ROWS
@@ -1114,16 +1172,34 @@ def flatten_elements(
         )
 
     trailing = 0            # 직전 요소가 남긴 빈 줄 수 — 중복 삽입 방지
+    prev_key = None         # 직전 요소 키·타입 — 연속 시각 자료 판정용
+    prev_type = ""
     for bo in body:
         if not any(ln.strip() for ln in bo.braille_lines):
             continue        # 빈 요소는 빈 줄도 만들지 않는다
         etype, _order, hlevel = meta.get(bo.element_id, _DEFAULT_META)
         lines, pads = lb._indent_lines(bo, etype, hlevel)
         before, after = _HEADING_BLANK.get(hlevel, (0, 0))
-        if etype in _BLANK_AROUND_TYPES:      # 표·시각자료 위아래(BBPG 2장2절2 2)①④)
+        if etype in _BLANK_AROUND_TYPES:      # 표·시각자료 위아래(BBPG 2장2절2 2)(2)④)
             before, after = max(before, 1), max(after, 1)
-        before = max(0, before - trailing)
+        if etype in _VISUAL_TYPES and prev_type in _VISUAL_TYPES:
+            # BBPG 3장2절1 2) 다만 — 시각 자료가 연이어 나올 때 그 사이는 안 띈다.
+            # 여기선 빈 줄이 **앞 요소의 suffix에 이미 박혀** 있으므로 그만큼 되돈다
+            # (줄 배열을 들고 가는 `_assemble_pages`와 달리 되감을 lines가 없다).
+            if trailing:
+                pf = out[prev_key]
+                out[prev_key] = pf._replace(
+                    text=pf.text[:-trailing],
+                    suffix=pf.suffix[:-trailing],
+                    draft_texts=tuple(t[:-trailing] for t in pf.draft_texts),
+                )
+                trailing = 0
+            before = 0
+        # 요소가 이미 달고 온 앞뒤 빈 줄까지 세서 겹치지 않게 한다(`_assemble_pages`와 같은 규칙).
+        before = max(0, before - trailing - _lead_blanks(lines))
+        after = max(0, after - _tail_blanks(lines))
         trailing = after
+        prev_key, prev_type = bo.element_id, etype
 
         prefix = "\n" * before
         suffix = "\n" * (after + 1)           # +1 = 본문 마지막 줄 끝내기

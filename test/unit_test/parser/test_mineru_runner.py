@@ -92,10 +92,12 @@ class TestHeadingLevel:
     def test_번호_붙은_제목도_제목(self):
         assert _heading_level({"text_level": 1}, "text", "1. 제국주의와 제1차 세계 대전") == 1
 
-    def test_lv2이상은_3단계(self):
+    def test_lv2이상은_4단계(self):
         # 정답 도서 실측(refonly 94권): 2단계 7칸은 0.18%로 거의 안 쓰고 3·4단계 5칸이 1.45%.
-        assert _heading_level({"text_level": 2}, "text", "송대의 전시(殿試)") == 3
-        assert _heading_level({"text_level": 3}, "text", "보기") == 3
+        # 그 5칸 시작 줄 1,651줄은 위에 빈 줄 26.7% · 아래 2.7%라 4단계(1,0) 모양이다
+        # (2026-08-08 대표 결정). 3단계(1,1)로 두면 아래 빈 줄이 계속 들어간다.
+        assert _heading_level({"text_level": 2}, "text", "송대의 전시(殿試)") == 4
+        assert _heading_level({"text_level": 3}, "text", "보기") == 4
 
     def test_선택지는_제목_아님(self):
         assert _heading_level({"text_level": 2}, "text", "① 삼국 동맹의 성립") is None
