@@ -40,6 +40,40 @@ TYPE_MAP = {
     "figure":              "image",
 }
 
+# ── 제목 단계(BBPG 2장2절1) ──────────────────────────────────────────────────
+# MinerU는 제목 블록을 이미 찾아 놓는다. 다만 `content_list`에서는 type이 "text"로
+# 눕고 단계만 `text_level`에 남는다(vlm_middle_json_mkcontent.py: BlockType.TITLE →
+# ContentType.TEXT + text_level). 종전에는 그 값을 통째로 버리고 heading_level=None을
+# 박아, 조판이 1단계 가운데 정렬·2단계 7칸·3·4단계 5칸을 **한 번도 못 썼다**
+# (QA 실측 2026-08-07: 37쪽 558요소에 title 0개·heading_level 0개).
+#
+# ⚠ MinerU의 표시를 그대로 믿으면 안 된다. 전 코퍼스 7,273곳을 열어 보니 65%만
+#   진짜 제목이고 나머지는 **문항 발문·선택지**다(굵은 큰 글씨라 같이 잡힌다).
+#   발문이 제목이 되면 가운데 정렬로 나가고 앞뒤 빈 줄까지 붙어 더 나빠진다.
+#   그래서 아래 셋을 걸러 낸다.
+#
+# 단계 대응은 **정답 도서 실측**으로 정했다(refonly 94권 137만 줄):
+#     1단계 가운데   0.93%   ← MinerU lv1
+#     3·4단계 5칸    1.45%   ← MinerU lv2 이상
+#     2단계 7칸      0.18%   ← 거의 안 쓴다. 쓰지 않는다
+_HEAD_CHOICE_RE = re.compile(r"^\s*[①-⑳]")             # 선택지는 제목이 아니다
+_HEAD_END_RE = re.compile(r"[.?!]\s*$|것은\s*\??$|않은\s*것\s*은?\s*\??$|하시오\.?$")
+_HEAD_MAX_LEN = 28                                      # 이보다 길면 제목이 아니라 문장
+_HEAD_LEVEL_MAP = {1: 1}                                # lv1 → 1단계, 그 외 → 3단계
+
+
+def _heading_level(item: dict, mapped_type: str, content: str) -> int | None:
+    """MinerU `text_level` → BBPG 제목 단계. 제목이 아니면 None."""
+    lvl = item.get("text_level")
+    if not lvl or mapped_type != "text":
+        return None
+    t = (content or "").strip()
+    if not t or len(t) > _HEAD_MAX_LEN:
+        return None
+    if _HEAD_CHOICE_RE.match(t) or _HEAD_END_RE.search(t):
+        return None
+    return _HEAD_LEVEL_MAP.get(int(lvl), 3)
+
 
 def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | None = None) -> None:
     # MinerU는 별도 env에 설치(transformers 버전 충돌 회피). bare 'mineru'가 PATH에
@@ -664,6 +698,11 @@ def run(
         if mapped_type == "page_number" and not content.strip().lstrip('-').isnumeric():
             mapped_type = "text"
 
+        # 제목 단계(BBPG 2장2절1) — MinerU가 이미 찾아 둔 것을 살린다. 위 _heading_level 주석 참조.
+        hlevel = _heading_level(item, mapped_type, content)
+        if hlevel:
+            mapped_type = "title"
+
         # MinerU bbox는 0~1000 정규화 좌표 → 실제 픽셀로 변환
         bb_px = [bb[0] / 1000 * img_w, bb[1] / 1000 * img_h,
                  bb[2] / 1000 * img_w, bb[3] / 1000 * img_h]
@@ -680,7 +719,7 @@ def run(
             "page_height": img_h,
             "content": content,
             "image_path": image_path,
-            "heading_level": None,
+            "heading_level": hlevel,
             "caption_ref": None,
             "flags": [],
         })

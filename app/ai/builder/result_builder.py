@@ -302,6 +302,10 @@ def build(
             "caption_ref": "",   # 아래 _link_captions가 채움
             "flags": ["CAPTION_FAILED"] if caption_failed else [],
         }
+        # 제목 단계(BBPG 2장2절1) — 여기서 안 실으면 조판이 가운데 정렬·들여쓰기를 못 쓴다.
+        # mineru_runner가 MinerU의 text_level을 걸러 넣어 준다.
+        if el.get("heading_level"):
+            entry["heading_level"] = el["heading_level"]
         if subconf is not None:
             entry["subtype_confidence"] = subconf
         elements.append(entry)
