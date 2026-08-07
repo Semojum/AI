@@ -56,10 +56,13 @@ TYPE_MAP = {
 #     1단계 가운데   0.93%   ← MinerU lv1
 #     3·4단계 5칸    1.45%   ← MinerU lv2 이상
 #     2단계 7칸      0.18%   ← 거의 안 쓴다. 쓰지 않는다
+# ★ 3단계가 아니라 **4단계**다(2026-08-08 대표 결정). 정답 도서의 5칸 시작 줄 1,651줄을
+#   보면 위에 빈 줄 26.7% · 아래에 빈 줄 2.7%로, 아래를 거의 안 띄운다. 4단계가 (1,0)이라
+#   그 모양에 맞는다. 3단계로 두면 아래 빈 줄이 계속 들어가 정답보다 빈 줄이 많아진다.
 _HEAD_CHOICE_RE = re.compile(r"^\s*[①-⑳]")             # 선택지는 제목이 아니다
 _HEAD_END_RE = re.compile(r"[.?!]\s*$|것은\s*\??$|않은\s*것\s*은?\s*\??$|하시오\.?$")
 _HEAD_MAX_LEN = 28                                      # 이보다 길면 제목이 아니라 문장
-_HEAD_LEVEL_MAP = {1: 1}                                # lv1 → 1단계, 그 외 → 3단계
+_HEAD_LEVEL_MAP = {1: 1}                                # lv1 → 1단계, 그 외 → 4단계
 
 
 def _heading_level(item: dict, mapped_type: str, content: str) -> int | None:
@@ -72,7 +75,7 @@ def _heading_level(item: dict, mapped_type: str, content: str) -> int | None:
         return None
     if _HEAD_CHOICE_RE.match(t) or _HEAD_END_RE.search(t):
         return None
-    return _HEAD_LEVEL_MAP.get(int(lvl), 3)
+    return _HEAD_LEVEL_MAP.get(int(lvl), 4)
 
 
 def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | None = None) -> None:
