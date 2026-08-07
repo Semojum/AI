@@ -126,3 +126,46 @@ class TestPageLineSlotsPreserved:
         assert pn.reading_order == 1
         assert _orders(main) == [2, 3, 4]
         assert _orders(side) == [5, 6]
+
+
+# ── 회전 지면(QA Step3 후속, 2026-08-07) ─────────────────────────────────────
+# 4열 이상으로 잡히는 쪽 58개 중 57개가 rotation 270°였다(외국어 56·수학2 1).
+# 보기엔 평범한 1단 쪽인데 PDF 내부 좌표가 누워 있어 x0가 흩어져 열이 10~30개로 잡힌다.
+# 실측(valall 4열+ 47쪽): 원순서 τ 0.677 → 이 규칙 0.996 (LLM opus-5는 0.989·유료).
+from app.core.pipeline import _reorder_columns as _rc          # noqa: E402
+
+
+def _b(order, x0, y0, x1=None, y1=None):
+    from app.schemas.layout import BBoxItem
+    return BBoxItem(type="text", bbox=(x0, y0, x1 if x1 is not None else x0 + 12,
+                                       y1 if y1 is not None else y0 + 40),
+                    reading_order=order)
+
+
+class TestRotatedPage:
+    def _many_columns(self):
+        """세로로 누운 줄 6개 — x가 오른쪽에서 왼쪽으로 진행하는 것이 표시상 위→아래."""
+        return [_b(1, 500, 60), _b(2, 440, 60), _b(3, 380, 60),
+                _b(4, 320, 60), _b(5, 260, 60), _b(6, 200, 60)]
+
+    def test_270도면_x_내림차순으로_읽는다(self):
+        items = self._many_columns()
+        _rc(items, rotation=270)
+        assert [b.reading_order for b in items] == [1, 2, 3, 4, 5, 6]
+
+    def test_270도_뒤집힌_입력도_바로잡는다(self):
+        items = self._many_columns()
+        for i, b in enumerate(reversed(items), start=1):   # 순서를 거꾸로 넣어도
+            b.reading_order = i
+        _rc(items, rotation=270)
+        assert [b.reading_order for b in items] == [1, 2, 3, 4, 5, 6]
+
+    def test_90도면_x_오름차순(self):
+        items = self._many_columns()
+        _rc(items, rotation=90)
+        assert [b.reading_order for b in items] == [6, 5, 4, 3, 2, 1]
+
+    def test_회전_아니면_원순서_유지(self):
+        items = self._many_columns()
+        _rc(items, rotation=0)
+        assert [b.reading_order for b in items] == [1, 2, 3, 4, 5, 6]

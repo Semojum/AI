@@ -387,6 +387,18 @@ def _page_image_path(task: PageTask):
         return None
 
 
+def _page_rotation(pdf_data: bytes, page_no: int) -> int:
+    """쪽 회전각(도). 못 읽으면 0 — 읽기순서 보정을 안 걸 뿐 본문은 그대로 나간다."""
+    try:
+        import fitz
+        from app.ai.preprocessor.pdf_analyzer import _coerce_pdf_bytes
+        with fitz.open(stream=_coerce_pdf_bytes(pdf_data), filetype="pdf") as d:
+            return int(d[max(0, min(page_no - 1, d.page_count - 1))].rotation) % 360
+    except Exception as exc:  # noqa: BLE001 — 회전각은 있으면 좋은 것이다
+        logger.debug("쪽 회전각 확인 실패(0으로 진행): %s", exc)
+        return 0
+
+
 async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     """현주 추출 단계: analyze_pdf + (ZERO 텍스트 | non-ZERO 모델) → 경계 dict(크기·bbox 포함)."""
     from app.ai.preprocessor.pdf_analyzer import (
@@ -475,6 +487,9 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             "extraction_method": method,
             "image_width": image_width,
             "image_height": image_height,
+            # 쪽 회전각(0·90·180·270). 보기엔 평범한 1단 쪽인데 PDF 내부 좌표가 누워 있는
+            # 지면이 있다(외국어 영역 실측 57쪽). 읽기순서를 바로 세우려면 이 값이 필요하다.
+            "page_rotation": _page_rotation(task.pdf_data, task.page_no),
         },
         "elements": elements,
     }
@@ -500,7 +515,7 @@ def _valid_bbox(b: BBoxItem) -> bool:
     return b.bbox[2] > b.bbox[0] and b.bbox[3] > b.bbox[1]
 
 
-def _reorder_by_geometry(items: list[BBoxItem]) -> None:
+def _reorder_by_geometry(items: list[BBoxItem], rotation: int = 0) -> None:
     """다단/사이드바 페이지의 읽기순서를 보정. 모드는 _REORDER_MODE.
 
     배경: MinerU content_list 순서는 좁은 좌측 사이드바(보충설명)를 본문보다 먼저 방출해
@@ -529,7 +544,7 @@ def _reorder_by_geometry(items: list[BBoxItem]) -> None:
         return
 
     if _REORDER_MODE == "col":
-        _reorder_columns(items)
+        _reorder_columns(items, rotation)
 
 
 def _reorder_sidebar(items: list[BBoxItem], valid: list[BBoxItem]) -> None:
@@ -569,7 +584,7 @@ def _reorder_sidebar(items: list[BBoxItem], valid: list[BBoxItem]) -> None:
         b.reading_order = k
 
 
-def _reorder_columns(items: list[BBoxItem]) -> None:
+def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
     """H3: 열 클러스터링 읽기순서.
 
     규정 근거 —「점자 도서 제작 지침」2장 5. 다단 점역:
@@ -620,6 +635,17 @@ def _reorder_columns(items: list[BBoxItem]) -> None:
     #   그런 쪽에서 기하 정렬을 걸면 읽기순서가 통째로 뒤집힌다(실측 τ 1.00 → −1.00,
     #   valall 47쪽 평균 0.677 → −0.442). 모형이 안 맞는 쪽은 추출기 순서를 믿는다.
     if len(clusters) > _MAX_COLS:
+        # ★ 그런데 그런 쪽의 대부분은 **회전된 지면**이다(실측 58쪽 중 57쪽이 rotation 270°).
+        #   보기엔 평범한 1단 쪽인데 PDF 내부 좌표가 누워 있어 x0가 흩어져 열이 10~30개로
+        #   잡힌다. 회전각을 알면 규칙으로 바로 세울 수 있다 — 270°에서 표시상의 '위에서
+        #   아래'는 내부 좌표의 **x 내림차순**이다.
+        #   실측(valall 4열+ 47쪽): 원순서 τ 0.677 → 이 규칙 0.996. 같은 쪽에 LLM을 물어본
+        #   값이 0.989였다(쪽당 $0.0166) — 규칙이 더 정확하고 공짜다.
+        if rotation in (90, 270):
+            desc = rotation == 270
+            for i, b in enumerate(sorted(body, key=lambda b: (-b.bbox[0] if desc else b.bbox[0],
+                                                              b.bbox[1])), start=1):
+                b.reading_order = i
         return
     # 열 번호(왼쪽부터 0,1,2). ★ 여기서 확정해 둔다 — 아래에서 main 리스트를 extend하면
     #   클러스터 리스트가 같은 객체라 그대로 오염된다(열 번호가 뒤바뀐다).
@@ -834,7 +860,7 @@ def _parse_txt_result(
                 flags=flags,
             )
 
-    _reorder_by_geometry(bbox_items)
+    _reorder_by_geometry(bbox_items, int(meta.get("page_rotation") or 0))
     layout = LayoutResult(page_id=page_id, elements=bbox_items)
     return layout, ext_map, method
 
