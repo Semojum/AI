@@ -81,13 +81,17 @@ class TestTextLayerFallback:
                         pdf_data=_text_pdf_bytes())
         with patch("app.ai.parser.mineru_runner.run",
                    side_effect=RuntimeError("MinerU 추출 타임아웃 (>240s)")):
-            elements, w, h = asyncio.run(
+            elements, w, h, space = asyncio.run(
                 pipeline._extract_via_models(task, self._meta(scan_only=False))
             )
         assert elements, "텍스트레이어 폴백이 요소를 살려야 한다"
         assert all(el["flags"] == ["C2_FALLBACK"] for el in elements)
         assert "Hello" in elements[0]["content"]
         assert w > 0 and h > 0
+        # ★ 폴백은 **픽셀** bbox다. method는 "OCR"로 남으므로 소비자가 method로 유추하면
+        #   정규화로 오인해 한 번 더 확대한다(Step8 실측: 아래쪽 요소가 쪽 밖으로 나감).
+        assert space == "pixel"
+        assert max(el["bbox"][3] for el in elements) <= h * 1.05
 
     def test_scan_only_returns_empty(self):
         from app.core import pipeline
@@ -96,7 +100,7 @@ class TestTextLayerFallback:
                         pdf_data=_text_pdf_bytes())
         with patch("app.ai.parser.mineru_runner.run",
                    side_effect=RuntimeError("MinerU 실행 실패")):
-            elements, w, h = asyncio.run(
+            elements, w, h, _space = asyncio.run(
                 pipeline._extract_via_models(task, self._meta(scan_only=True))
             )
         assert elements == []

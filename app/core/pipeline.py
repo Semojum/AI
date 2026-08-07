@@ -3,7 +3,9 @@
 단계 3·4 구조: 현주 추출 → data/NNN_txt_result.json → 태민 분해/점역 → 단계별 json → 최종 결과
 
   공통 경계 파일: storage/jobs/{job}/temp/page_{no:03d}/data/{no:03d}_txt_result.json
-    형식 {meta:{job_id,page_no,extraction_method}, elements:[{id,order,type,content}]}
+    형식 {meta:{job_id,page_no,extraction_method,image_width,image_height,bbox_space},
+          elements:[{id,order,type,content,bbox}]}
+      · bbox_space: "pixel"(2x 렌더 픽셀) | "norm1000"(0~1000). 생산자가 적고 소비자가 읽는다.
     - 현주 파트(PART 2/3/4-1/5-1 등)가 생성. 이미 존재하면 그대로 사용(핸드오프).
     - 태민 파트가 읽어서 6-체인(현재 text/formula 동작)으로 분해→opt→braille.
 
@@ -301,11 +303,17 @@ def _blocks_with_bbox(blocks: list[dict]) -> list[dict]:
     return elements
 
 
-async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> tuple[list[dict], int, int]:
-    """non-ZERO Tier(스캔 PDF): MinerU2.5-Pro 통합 추출 → (elements, page_w, page_h).
+async def _extract_via_models(
+    task: PageTask, doc_meta: DocumentMeta
+) -> tuple[list[dict], int, int, str]:
+    """non-ZERO Tier(스캔 PDF): MinerU2.5-Pro 통합 추출 → (elements, page_w, page_h, bbox_space).
     result_builder가 이미지 분류·캡셔닝까지 거쳐 경계 elements(bbox 포함)를 만든다.
     MinerU 미설치/실패/타임아웃 시: 텍스트레이어가 있으면 PyMuPDF 폴백으로 본문을
-    살리고(표·그림 구조 손실 → 요소 R1 플래그), 스캔 전용이면 빈 결과로 격리."""
+    살리고(표·그림 구조 손실 → 요소 R1 플래그), 스캔 전용이면 빈 결과로 격리.
+
+    ★ bbox_space를 **같이 돌려준다**. MinerU는 0~1000 정규화지만 폴백은 픽셀이라
+      좌표계가 갈리는데, 종전에는 소비자가 `extraction_method`(둘 다 "OCR")로
+      좌표계를 유추해 폴백 쪽 bbox가 한 번 더 확대됐다(Step8)."""
     import os
     import tempfile
     try:
@@ -336,10 +344,12 @@ async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> tuple[l
             except OSError:
                 pass
         m = result.get("meta", {})
-        return result.get("elements", []), int(m.get("image_width") or 0), int(m.get("image_height") or 0)
+        return (result.get("elements", []), int(m.get("image_width") or 0),
+                int(m.get("image_height") or 0), "norm1000")
     except Exception as exc:
         logger.warning("MinerU 추출 실패: %s", exc)
-        return await _fallback_text_layer(task, doc_meta)
+        elements, w, h = await _fallback_text_layer(task, doc_meta)
+        return elements, w, h, "pixel"
 
 
 async def _fallback_text_layer(task: PageTask, doc_meta: DocumentMeta) -> tuple[list[dict], int, int]:
@@ -416,23 +426,25 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         analyze_pdf, task.pdf_data, task.page_no, task.job_id
     )
     image_width = image_height = 0
+    # bbox 좌표계는 경로마다 다르다("pixel" = 2x 렌더 픽셀 / "norm1000" = 0~1000 정규화).
+    # 추출한 자리에서 한 번 정하고 meta에 적어 둔다 — 소비자가 다른 필드로 유추하면 안 된다.
     if doc_meta.routing_tier == "ZERO":
-        method = "TEXT_NATIVE"
+        method, bbox_space = "TEXT_NATIVE", "pixel"
         blocks, image_width, image_height = await asyncio.to_thread(
             extract_text_blocks, task.pdf_data, task.page_no
         )
         elements = _blocks_with_bbox(blocks) or _blocks_from_text(pdf_text)
     else:
         method = "OCR"
-        elements, image_width, image_height = await _extract_via_models(task, doc_meta)
+        elements, image_width, image_height, bbox_space = await _extract_via_models(task, doc_meta)
 
     # 글상자 테두리(BBPG-1.2.5 · 원장 C-01b) — 묵자의 벡터 사각형이 감싼 텍스트 요소에
     # 테두리 태그를 붙인다. 두 경로(ZERO·MinerU) 모두 여기를 지나므로 한 자리면 된다.
     if not doc_meta.scan_only:
         rects = await asyncio.to_thread(box_rects_norm, task.pdf_data, task.page_no)
         # 사각형은 0~1000 정규화로 온다. 경계 bbox의 좌표계가 경로마다 다르므로 맞춰 준다
-        # (`result_builder` 2026-07-19: MinerU=정규화 / ZERO=2x 픽셀).
-        if method == "TEXT_NATIVE" and image_width and image_height:
+        # (`result_builder` 2026-07-19: MinerU=정규화 / ZERO·폴백=2x 픽셀).
+        if bbox_space == "pixel" and image_width and image_height:
             rects = [[r[0] / 1000 * image_width, r[1] / 1000 * image_height,
                       r[2] / 1000 * image_width, r[3] / 1000 * image_height] for r in rects]
         if n := tag_boxed_elements(elements, rects):
@@ -440,7 +452,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
 
         # 정오 표시 ○·×(원장 M-04) — 채움 경로라 텍스트레이어에도 MinerU에도 안 잡힌다.
         marks = await asyncio.to_thread(mark_glyphs_norm, task.pdf_data, task.page_no)
-        if method == "TEXT_NATIVE" and image_width and image_height:
+        if bbox_space == "pixel" and image_width and image_height:
             marks = [(k, [r[0] / 1000 * image_width, r[1] / 1000 * image_height,
                           r[2] / 1000 * image_width, r[3] / 1000 * image_height])
                      for k, r in marks]
@@ -454,8 +466,8 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         if figure_detect.enabled() and not any(e.get("type") in _VIS for e in elements):
             figs = await asyncio.to_thread(figure_detect.detect, task.pdf_data, task.page_no)
             if figs:
-                # bbox 좌표계는 경계 파일 규약을 따른다(MinerU=0~1000 정규화 / ZERO=2x 픽셀).
-                w, h = ((image_width, image_height) if method == "TEXT_NATIVE"
+                # bbox 좌표계는 경계 파일 규약을 따른다(MinerU=0~1000 정규화 / ZERO·폴백=2x 픽셀).
+                w, h = ((image_width, image_height) if bbox_space == "pixel"
                         else (1000.0, 1000.0))
                 add = figure_detect.to_elements(figs, w, h, len(elements) + 1)
                 elements.extend(add)
@@ -487,6 +499,9 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             "extraction_method": method,
             "image_width": image_width,
             "image_height": image_height,
+            # bbox 좌표계(2026-08-08 Step8). "pixel" = 2x 렌더 픽셀 / "norm1000" = 0~1000.
+            # 없는 옛 파일은 소비자가 extraction_method로 유추한다(하위호환).
+            "bbox_space": bbox_space,
             # 쪽 회전각(0·90·180·270). 보기엔 평범한 1단 쪽인데 PDF 내부 좌표가 누워 있는
             # 지면이 있다(외국어 영역 실측 57쪽). 읽기순서를 바로 세우려면 이 값이 필요하다.
             "page_rotation": _page_rotation(task.pdf_data, task.page_no),
@@ -780,10 +795,13 @@ def _parse_txt_result(
     meta = extraction.get("meta", {})
     method = meta.get("extraction_method", "OCR")
     conf = 1.0 if method == "TEXT_NATIVE" else 0.95
-    # MinerU 경로만 0~1000 정규화라 픽셀로 되돌린다. 페이지 크기를 모르면 손대지 않는다.
+    # 0~1000 정규화(MinerU)만 픽셀로 되돌린다. 페이지 크기를 모르면 손대지 않는다.
+    # ★ 좌표계는 meta.bbox_space를 **읽는다**(생산자가 적어 준다). 옛 파일·주입 핸드오프엔
+    #   그 키가 없어 종전 유추(TEXT_NATIVE=픽셀)로 폴백한다.
     iw, ih = meta.get("image_width") or 0, meta.get("image_height") or 0
+    space = meta.get("bbox_space") or ("pixel" if method == "TEXT_NATIVE" else "norm1000")
     scale_bbox = ((iw / 1000, ih / 1000, iw / 1000, ih / 1000)
-                  if method != "TEXT_NATIVE" and iw and ih else None)
+                  if space == "norm1000" and iw and ih else None)
 
     bbox_items: list[BBoxItem] = []
     ext_map: dict[UUID, ExtractedContent] = {}
@@ -815,7 +833,7 @@ def _parse_txt_result(
             hlevel = 1
         # bbox: 현주 레이아웃 좌표 → BoundingBox(x,y,x2,y2)로 BE 전달. 없거나 깨지면 (0,0,0,0).
         # ★ 경계 파일의 좌표계는 경로마다 다르다(`result_builder` 2026-07-19):
-        #   MinerU = 0~1000 정규화 / ZERO = 2x 렌더 픽셀. BE·FE는 `image_width/height`에
+        #   MinerU = 0~1000 정규화 / ZERO·텍스트레이어 폴백 = 2x 렌더 픽셀. BE·FE는 `image_width/height`에
         #   대한 비율로 매핑하므로 **여기서 픽셀로 통일**한다. 안 하면 MinerU 쪽에서
         #   하이라이트가 실제 위치의 77%·65% 자리에 찍힌다(실측).
         raw_bbox = el.get("bbox")
