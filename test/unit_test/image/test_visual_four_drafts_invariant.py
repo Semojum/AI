@@ -34,7 +34,7 @@ def _build(**kw) -> list:
     """build_visual_drafts를 동기로 돌려 drafts만 반환."""
     base = dict(routing_tier="ZERO", label="그림", caption="", kind="image")
     base.update(kw)
-    drafts, _sel, _ind, _tier = asyncio.run(vd.build_visual_drafts(_ext(), **base))
+    drafts, _sel, _ind, _tier, _src = asyncio.run(vd.build_visual_drafts(_ext(), **base))
     return drafts
 
 
@@ -55,7 +55,7 @@ class TestAlwaysFourWithoutLLM:
 
     def test_장식용_요소(self) -> None:
         """장식용은 기본 선택이 '생략'으로 바뀔 뿐, 개수는 그대로 4다."""
-        drafts, sel, _ind, _t = asyncio.run(vd.build_visual_drafts(
+        drafts, sel, _ind, _t, _src = asyncio.run(vd.build_visual_drafts(
             _ext(), routing_tier="ZERO", label="그림", caption="장식", kind="image",
             decorative=True))
         assert len(drafts) == _EXPECTED

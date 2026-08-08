@@ -155,11 +155,13 @@ class TestMathStructEmit:
                         render_mode="formula_block", routing_tier="ZERO")
         trail = FormulaBraille().translate([opt])[0].rule_trail
         rids = {r.rule_id for r in trail}
-        assert "KBR-수학-1.1" in rids    # 일반 수식 마커 유지
+        # Step17(2026-08-08): 포괄 마커 KBR-수학-1.1(수표)은 뺐다 — 구조 규칙만 남는다.
+        assert "KBR-수학-1.1" not in rids
         assert "KBR-수학-1.7" in rids    # 분수
         assert "KBR-수학-2.22" in rids   # 근호
 
-    def test_구조없는_수식은_일반마커만(self) -> None:
+    def test_구조없는_수식은_근거없음(self) -> None:
+        """Step17 — 구조가 없으면 보여 줄 판단도 없다. 근거는 비운다(종전: 일반 마커 1건)."""
         import uuid
 
         from app.ai.braille.formula_braille import FormulaBraille
@@ -168,7 +170,7 @@ class TestMathStructEmit:
         opt = LLMOutput(element_id=str(uuid.uuid4()), corrected_text="x + y = z",
                         render_mode="formula_block", routing_tier="ZERO")
         trail = FormulaBraille().translate([opt])[0].rule_trail
-        assert [r.rule_id for r in trail] == ["KBR-수학-1.1"]
+        assert [r.rule_id for r in trail] == []
 
 
 class TestSymbolOverloadContext:

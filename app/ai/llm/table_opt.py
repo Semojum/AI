@@ -38,9 +38,20 @@ def _nested_image_text(ext: ExtractedContent) -> Optional[str]:
     return None
 
 
-def _min_trail(text: str) -> list[RuleApplication]:
-    """표 점역 일반 사항(BBPG-3.1.1) — 요소 전체(line_no=-1)."""
-    return [make_rule("BBPG-3.1.1")]
+_RENDER_LABEL = {"table_grid": "격자형", "transposed": "행열 바꿈",
+                 "linear": "선형(풀어쓰기)", "text_only": "풀어쓰기"}
+
+
+def _min_trail(render_mode: str = "") -> list[RuleApplication]:
+    """표 점역 일반 사항(BBPG-3.1.1) — 요소 전체(line_no=-1).
+
+    이 조항은 그 자체가 (B)다: "표는 …풀어주는 것을 원칙으로 하며 **점역자에 따라서
+    표기 형식이 다를 수 있다**". 그래서 남기되, Step17에서 **우리가 고른 형식**을 tag에
+    담는다 — 격자/행열바꿈/선형 중 어느 것으로 냈는지가 점역사가 제일 먼저 바꿀 자리다
+    (원장 C-01a 표 격자 테두리도 같은 갈림길이다).
+    """
+    label = _RENDER_LABEL.get(render_mode, "")
+    return [make_rule("BBPG-3.1.1", tag=label)]
 
 _PROMPT_TABLE_GRID = """당신은 한국어 점역 전문가입니다.
 다음 표 내용을 점역사주([점역사주])로 표현하는 2가지 방식을 제안하세요.
@@ -386,7 +397,7 @@ class TableOpt(BaseOpt):
                 render_mode="narrative",
                 routing_tier="FALLBACK",
                 processing_time_ms=0,
-                rule_trail=_min_trail("[표 수동 입력 필요]"),
+                rule_trail=_min_trail(),
             )
 
         # 텍스트 준비
@@ -407,7 +418,7 @@ class TableOpt(BaseOpt):
                 render_mode="narrative",
                 routing_tier="FALLBACK",
                 processing_time_ms=0,
-                rule_trail=_min_trail("[처리 불가: 표 내용 없음]"),
+                rule_trail=_min_trail(),
             )
 
         # 점역 직전 텍스트(stage②) = 표 구조 태그. table_braille가 파싱해 4안 렌더에 위임.
@@ -423,7 +434,7 @@ class TableOpt(BaseOpt):
                 tn_text=tn,
                 routing_tier="ZERO",
                 processing_time_ms=0,
-                rule_trail=_min_trail(table_tags),
+                rule_trail=_min_trail(render_mode),
                 table_title=title,
                 nested_text=nested_text,
                 **dict(zip(("drafts", "selected_idx"), _print_drafts(table_text, render_mode))),
@@ -456,7 +467,7 @@ class TableOpt(BaseOpt):
             tn_text=tn_text,
             routing_tier=tier,
             processing_time_ms=elapsed_ms,
-            rule_trail=_min_trail(table_tags),
+            rule_trail=_min_trail(render_mode),
             table_title=title,
             nested_text=nested_text,
             **dict(zip(("drafts", "selected_idx"), _print_drafts(table_text, render_mode))),

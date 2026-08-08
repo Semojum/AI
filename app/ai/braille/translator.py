@@ -876,6 +876,45 @@ def source_has_tn(text: str) -> bool:
     )
 
 
+# ── 빈칸 태그 → 근거 (Step17, 2026-08-08) ────────────────────────────────────
+# 규정 제73항(채워 넣어야 할 빈칸)이 밑줄 빈칸 `_-`·네모 빈칸 `_8 0l`·표의 빈칸 `==`을
+# 한 조항에서 정한다. 이 자리가 rule_trail에 필요한 이유는 두 겹이다:
+#   (A) 묵자의 □·____·빈 셀을 "채워 넣을 빈칸"으로 본 것은 **LLM 태깅의 판단**이다
+#       (text_opt._TAG_PROMPT). 점역사는 그 판단이 맞는지만 보면 된다.
+#   (B) 원장 C-04(표 기입칸 ⠿⠿)·C-05(밑줄 빈칸 ⠸⠤)·C-06(체크박스 ⠸⠦)이 전부
+#       "규정 모호 → 관행 채택 · ❓ 자문" 상태다.
+# dev 400쪽 실측: ⠸⠦ 131개·⠿⠿ 26개가 근거 0건으로 나갔다.
+_BLANK_TAG_RULE = "KBR-6.14.73"
+_BLANK_TAG_NAMES = {"빈칸_표": "blank_table", "빈칸_네모": "blank_box"}
+
+
+def blank_marker_spans(
+    braille: str, source_text: str
+) -> list[tuple[int, int, str]]:
+    """빈칸 태그가 만든 점자 마커 위치 → (start, end, tag) 목록.
+
+    source-gated — 원본(점역 전)에 `<!빈칸_*>` 태그가 있을 때, 그 개수만큼만 출력에서 찾는다.
+    ⠿⠿·⠸⠦는 다른 경로(표 격자·묵자 기호)로도 나올 수 있어 출력 스캔만으로는 못 가른다.
+    """
+    want: dict[str, int] = {}
+    for m in _TAG_TOKEN_RE.finditer(source_text or ""):
+        name = _tag_name(m.group(0))
+        if name in _BLANK_TAG_NAMES:
+            want[name] = want.get(name, 0) + 1
+    spans: list[tuple[int, int, str]] = []
+    for name, count in want.items():
+        glyph = _TAG_INLINE_MARKER[name]
+        start = 0
+        for _ in range(count):
+            i = braille.find(glyph, start)
+            if i == -1:
+                break
+            spans.append((i, i + len(glyph), _BLANK_TAG_NAMES[name]))
+            start = i + len(glyph)
+    spans.sort()
+    return spans
+
+
 def tn_marker_spans(braille: str, source_text: str | None = None) -> list[tuple[int, int, str]]:
     """점역 결과 점자에서 점역자 주 마커(⠠⠄) 위치 → (start, end, tag) 목록.
 

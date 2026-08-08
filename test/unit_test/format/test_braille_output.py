@@ -115,9 +115,10 @@ class TestFormulaBrailleOutput:
         assert all(len(line) <= 32 for line in results[0].braille_lines)
 
     def test_rule_trail_math_no_line_wrap(self):
-        # 수식 규칙(KBR-수학)은 유지, 조판 규칙(BBPG-1.2.1)은 제거(태민 정책)
+        # 구조 규칙(제곱=제18항)은 유지, 조판 규칙(BBPG-1.2.1)·포괄 수표(수학 제1항, Step17)는 제외
         rids = [r.rule_id for r in FormulaBraille().translate([_formula_out("x^2")])[0].rule_trail]
-        assert "KBR-수학-1.1" in rids
+        assert "KBR-수학-2.18" in rids
+        assert "KBR-수학-1.1" not in rids
         assert "BBPG-1.2.1" not in rids
 
     def test_placeholder_preserved_as_is(self):

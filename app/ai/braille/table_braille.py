@@ -30,11 +30,12 @@ from app.schemas.content import BrailleOutput, Draft, LLMOutput, RuleApplication
 def _base_trail(
     lines: list[str], source: str = "", *, content: bool = True
 ) -> list[RuleApplication]:
-    """점역자 주 마커(BBPG-1.2.6)·특수기호·수표·문장부호를 점자 좌표로 emit.
+    """점역자 주 마커(BBPG-1.2.6)·판단이 갈리는 특수기호를 점자 좌표로 emit.
 
-    rule_trail은 '내용 변환'만 기록한다(태민 정책 2026-06-01). 포괄·조판 규칙 제외.
-    수표(KBR-5.11.40)·문장부호(KBR-6.13.49)는 text 경로와 같은 content_rules 공용 —
-    표 셀 숫자·문장부호만 근거가 빠지던 비대칭 해소(r12).
+    rule_trail은 **점역사가 판단해야 할 자리**만 기록한다(Step17 2026-08-08 대표 지시 —
+    종전 "내용 변환만"에서 좁혔다). 수표·문장부호 같은 자명한 규정은 `content_rules`가
+    더 이상 내지 않고, 기호는 `symbol_rules._DISCRETIONARY`가 거른다.
+    text 경로와 같은 함수를 쓰는 것은 그대로다 — text/table 비대칭 금지(r12).
 
     source = 점역 전 원본 텍스트. 원본에 점역자 주 태그가 있을 때만 emit하여
     ∽·ː 등 동일 점형(⠠⠄)을 오인하지 않는다(B1 오탐 방지).

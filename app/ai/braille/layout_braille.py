@@ -63,6 +63,7 @@ _RULE_LINE_WRAP = "BBPG-1.2.1"      # 줄바꿈(32칸), tag=line_wrap
 _RULE_HEADING_BLANK = "BBPG-2.2.1"  # 단계별 제목 표기, tag=heading_blank
 _RULE_PARA_INDENT = "BBPG-2.2.2"    # 문단 형식(새 문단 3칸), tag=indent
 _RULE_BULLET_INDENT = "BBPG-2.3.5"  # 글머리 3칸, tag=indent
+_RULE_BOX_BORDER = "BBPG-1.2.5"     # 글상자 테두리(Step17 emit), tag=box_top/box_bottom·N단계
 
 # ── KBR 제72항 글머리 기호: 숨김표 글리프(_..l, 꼬리 ⠇) → 글머리형(_.., 꼬리 없음) ──
 # ○□△가 list_item 글머리로 쓰이면 숨김표(제49항)가 아니라 글머리형(제72항)이어야 한다.
@@ -662,6 +663,14 @@ class LayoutBraille:
 
         translator가 남긴 32칸 테두리 줄을 위계·제목 배치로 다시 그리고(BBPG-1.2.5),
         글상자 위아래에 빈 줄을 넣는다(1.2.5(5)). box_borders 없으면 변경 없음.
+
+        ★ Step17(2026-08-08) — 그린 테두리마다 근거를 남긴다(BBPG-1.2.5, tag=box_top/box_bottom).
+          여기가 대표가 지목한 "레이아웃 관련 점자 기호를 왜 그걸 골랐는지"의 핵심이다.
+          이 테두리는 묵자에 점자 기호로 적혀 있던 것이 아니라 **우리가 판단해서 넣은 것**이다
+          — LLM 태깅(`text_opt._TAG_PROMPT`)이나 `pdf_analyzer`의 벡터 사각형 검출이 "이건
+          글상자다"라고 결정한 결과다. 게다가 원장 C-01a·C-01b는 이 항목을 "규정 모호 →
+          관행 채택"으로 분류해 점역사 자문 대상으로 올려 뒀다((A)이자 (B)).
+          실측(dev 400쪽): 위 테두리 520개·아래 522개가 rule_trail **0건**으로 나갔다.
         """
         if not bo.box_borders:
             return
@@ -671,6 +680,7 @@ class LayoutBraille:
         new_lines: list[str] = []
         new_breaks: list[list[int]] = []   # new_lines와 1:1 (삽입 줄은 [])
         index_map: dict[int, int] = {}  # 옛 줄 인덱스 → 새 줄 인덱스(내용 줄만)
+        border_trail: list[RuleApplication] = []
         for old_idx, ln in enumerate(bo.braille_lines):
             if si < len(specs) and _is_border_line(ln):
                 spec = specs[si]
@@ -678,10 +688,13 @@ class LayoutBraille:
                 if spec.kind == "top":
                     new_lines.append("")  # 위 한 줄 띔
                     top = self._render_box_top(spec.level, spec.title)
+                    border_trail.append(self._border_rule(spec, len(new_lines), top[0]))
                     new_lines.extend(top)
                     new_breaks.extend([[]] * (1 + len(top)))
                 else:
-                    new_lines.append(self._render_box_bottom(spec.level))
+                    bottom = self._render_box_bottom(spec.level)
+                    border_trail.append(self._border_rule(spec, len(new_lines), bottom))
+                    new_lines.append(bottom)
                     new_lines.append("")  # 아래 한 줄 띔
                     new_breaks.extend([[], []])
             else:
@@ -701,6 +714,21 @@ class LayoutBraille:
         for r in bo.rule_trail:
             if r.line_no >= 0 and r.line_no in index_map:
                 r.line_no = index_map[r.line_no]
+        bo.rule_trail += border_trail   # 테두리 좌표는 이미 새 프레임 기준이라 재매핑 뒤에 붙인다
+
+    @staticmethod
+    def _border_rule(spec: "BoxBorder", line_no: int, line: str) -> RuleApplication:
+        """그린 글상자 테두리 한 줄 → BBPG-1.2.5 근거(요소-로컬 좌표).
+
+        tag에 위치(위/아래)·위계·제목 유무를 담는다 — 점역사가 "왜 여기에 상자를 쳤고
+        왜 이 단계 캡을 썼는지"를 판단하는 데 필요한 정보이자, 원장 C-01a/C-01b 자문 항목이다.
+        """
+        kind = "box_top" if spec.kind == "top" else "box_bottom"
+        titled = "·제목있음" if (spec.kind == "top" and spec.title) else ""
+        return make_rule(
+            _RULE_BOX_BORDER, line_no=line_no, col_start=0, col_end=len(line),
+            tag=f"{kind}·{spec.level}단계{titled}",
+        )
 
     def _apply_bullet_marker(self, bo: BrailleOutput) -> None:
         """list_item 첫머리 숨김표 글리프(○□△)를 KBR 제72항 글머리형으로 정정(in-place).
