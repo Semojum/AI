@@ -47,6 +47,7 @@ from typing import Optional
 
 from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import BaseOpt
+from app.ai.llm.diagram_structure import structure_from_caption, subtype_from_caption
 from app.ai.llm.visual_drafts import (
     OUTLINE_IDX,
     LABELS,
@@ -81,9 +82,22 @@ def _min_trail(text: str) -> list[RuleApplication]:
 
 
 def _subtype(ext: ExtractedContent) -> str:
-    """concept_map / flowchart 판별 — structure.subtype 우선, 없으면 visual_subtype."""
+    """세분류 판별 — structure.subtype > visual_subtype > 캡션 첫 줄의 유형어."""
     st = ext.structure or {}
-    return (st.get("subtype") or ext.visual_subtype or "").strip()
+    sub = (st.get("subtype") or ext.visual_subtype or "").strip()
+    return sub or subtype_from_caption(ext.corrected_text or "")
+
+
+def _structure(ext: ExtractedContent, subtype: str) -> dict:
+    """골격 입력 — 앞단이 준 structure 우선, 없으면 캡션을 파싱해 만든다.
+
+    앞단(MinerU·분류기)은 도표 내부 구조를 내지 않아 `_ASSEMBLERS`가 한 번도 돈 적이 없었다
+    (경계 JSON 실측 2026-08-08: structure 0건). 캡션은 이미 위계 줄을 갖고 있으므로
+    거기서 만든다 — `diagram_structure` 참조. 못 만들면 {} → 캡션 4안 폴백(종전 동작).
+    """
+    if ext.structure:
+        return ext.structure
+    return structure_from_caption(ext.corrected_text or "", subtype) or {}
 
 
 # ── 개념도 (§6.6.1) ──────────────────────────────────────────────────────────
@@ -363,8 +377,8 @@ class DiagramOpt(BaseOpt):
     """
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
-        structure = ext.structure or {}
         subtype = _subtype(ext)
+        structure = _structure(ext, subtype)
         label = _TYPE_LABEL.get(subtype, "도표")
         title = (structure.get("title") or "").strip()
 
