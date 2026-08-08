@@ -229,11 +229,25 @@ def _cell_text(body: str) -> str:
     return _fix_decimal_comma(_html_unescape(_HTML_TAG_RE.sub("", body)).strip())
 
 
-def _html_to_grid(html: str) -> list[list[str]]:
-    """MinerU <table> HTML → 행렬(병합 셀 펼침). 내부 태그 제거(이미지 셀=빈칸).
+def _html_to_grid(html: str, *, expand: bool = True) -> list[list[str]]:
+    """MinerU <table> HTML → 행렬. 내부 태그 제거(이미지 셀=빈칸).
 
-    colspan/rowspan은 같은 값을 복제해 채운다 — 점역은 격자를 전제하므로 병합을 그대로
-    두면 열 정렬이 무너진다. 풀어쓰기(_render_unfold)도 열 머리를 복제된 값에서 읽는다.
+    expand=True  colspan/rowspan을 같은 값으로 복제해 **직사각 격자**를 만든다.
+                 열 수를 세거나(`_infer_render_mode`) 열 정렬이 필요한 곳 전용.
+    expand=False 병합 셀을 **원본대로 한 번만** 낸다(행 길이가 들쭉날쭉해진다).
+                 점역 출력에 쓰는 표기다.
+
+    ★ 병합 복제를 그대로 찍던 것이 표 축 과잉생산의 최대 원인이었다(2026-08-08).
+      실측: dev-2027 표 4,311개에서 비어 있지 않은 칸 78,525개 중 **11,145개(14.2%)가
+      병합 복제**다. gold는 병합 셀을 한 번만 적는다 — 지침 §3.1.3에 복제를 적으라는
+      조항이 없고 §3.1.4(3)은 되레 "반복된 열 제목은 생략한다"이며, 실물
+      (EBS-E26-009 p0091·EBS-E26-004 p0002)에서도 한 번씩만 나온다.
+      우리는 colspan="8" 셀을 여덟 번 찍어, 한 표가 gold 1,648셀 자리에 6,304셀을 냈다.
+      ⚠ 값이 같은 인접 칸을 지우는 '값 기준' 축약으로 대체하지 말 것 — 같은 실측에서
+        후보의 31.4%(3,618칸)가 병합이 아닌 **진짜 반복 값**('+', '-', '없다')이라
+        내용을 지운다. 병합 여부는 파싱 시점에만 알 수 있다.
+      ※ 규정·관행이 같은 방향이라 원장(규정-관행_대조원장.md) 등재 대상이 아니다 —
+        충돌이 아니라 우리 결손이다.
     단, 값 없는 범용 코너 라벨(_GENERIC_CORNER_LABELS)은 앵커 칸에만 남긴다.
     """
     grid: list[list[str]] = []
@@ -243,7 +257,9 @@ def _html_to_grid(html: str) -> list[list[str]]:
         c = 0
         for _tag, attrs, body in _TD_RE.findall(tr):
             while (r, c) in pending:            # 위에서 내려온 rowspan 자리 먼저 채움
-                row.append(pending.pop((r, c)))
+                v = pending.pop((r, c))
+                if expand:
+                    row.append(v)
                 c += 1
             text = _cell_text(body)
             if _LEADER_DOTS_RE.match(text):
@@ -253,16 +269,19 @@ def _html_to_grid(html: str) -> list[list[str]]:
                 text in _GENERIC_CORNER_LABELS and (colspan > 1 or rowspan > 1))
             for dc in range(colspan):
                 keep = (not is_generic_merge) or (dc == 0)
-                row.append(text if keep else "")
+                if expand or dc == 0:
+                    row.append(text if keep else "")
                 for dr in range(1, rowspan):
                     pending[(r + dr, c + dc)] = "" if is_generic_merge else text
             c += colspan
         while (r, c) in pending:                 # 행 끝에 남은 rowspan 자리
-            row.append(pending.pop((r, c)))
+            v = pending.pop((r, c))
+            if expand:
+                row.append(v)
             c += 1
         if row:
             grid.append(row)
-    if grid:                                     # 행 길이 정규화
+    if grid and expand:                          # 행 길이 정규화(직사각일 때만)
         w = max(len(r) for r in grid)
         grid = [r + [""] * (w - len(r)) for r in grid]
     return grid
@@ -296,7 +315,7 @@ def _table_tags(table_structure, table_text: str) -> str:
     """표 구조 → <!표> 태그(stage② 표시·table_braille 입력). 비정형은 원문 유지."""
     grid = _table_to_grid(table_structure) if table_structure else []
     if not grid and _is_html_table(table_text):
-        grid = _html_to_grid(table_text)
+        grid = _html_to_grid(table_text, expand=False)   # 병합은 원본대로 한 번만
     if not grid and "|" in table_text:
         grid = _pipe_to_grid(table_text)
     return build_table_tags(_normalize_grid(grid)) if grid else table_text
@@ -322,7 +341,7 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
             return "table_grid"
     # table_structure 없음/빈 셀: HTML 표(MinerU) 또는 '|' 격자로 추론(narrative 오분류 방지).
     if _is_html_table(text):
-        grid = _html_to_grid(text)
+        grid = _html_to_grid(text)      # 여기만 expand=True — 진짜 열 수를 세야 한다
         if grid:
             max_col = max(len(r) for r in grid)
             return "linear" if max_col == 2 else "table_grid"
@@ -406,8 +425,9 @@ class TableOpt(BaseOpt):
         else:
             table_text = ext.corrected_text or ""
         # MinerU HTML 표 → '|' 격자 텍스트로 정규화(셀 보존·tn 요약·rule_trail용, P5)
+        # 병합 복제는 펴지 않는다 — 이 텍스트가 묵자 4안(print_layout)에도 그대로 간다.
         if _is_html_table(table_text):
-            grid = _html_to_grid(table_text)
+            grid = _html_to_grid(table_text, expand=False)
             if grid:
                 table_text = "\n".join(" | ".join(row) for row in grid)
 
