@@ -51,8 +51,15 @@ class TestTextOptZeroTier:
         for src, out in zip(_load_text(), outputs):
             assert out.corrected_text == src.corrected_text
 
-    def test_rule_trail_not_empty(self, outputs):
-        assert all(len(o.rule_trail) >= 1 for o in outputs)
+    def test_rule_trail_empty_for_plain_elements(self, outputs):
+        """★ Step17(2026-08-08 대표 지시) — 불변 규칙 2 "rule_trail 필수"의 범위 축소.
+
+        평문 텍스트·수식에 붙던 포괄 규정(KBR-0.1 "점형은 6점"·수학 제1항 "수표")을 뺐다.
+        점역사가 이미 아는 것을 매 요소에 달면 정작 봐야 할 판단이 묻힌다는 판정.
+        LLM 단계는 이제 근거를 만들지 않는다 — 근거는 점역 단계가 실제 변환 지점에서 낸다.
+        (필드는 그대로 있고 빈 목록일 뿐이라 proto·FE 계약은 안 깨진다.)
+        """
+        assert all(o.rule_trail == [] for o in outputs)
 
     def test_render_mode_valid(self, outputs):
         assert all(o.render_mode in _ALLOWED_RENDER_MODES for o in outputs)
@@ -86,8 +93,15 @@ class TestFormulaOptZeroTier:
         # _normalize() 적용 후 값이므로 원문과 다를 수 있으나 비어있으면 안 됨
         assert all(o.corrected_text for o in outputs)
 
-    def test_rule_trail_not_empty(self, outputs):
-        assert all(len(o.rule_trail) >= 1 for o in outputs)
+    def test_rule_trail_empty_for_plain_elements(self, outputs):
+        """★ Step17(2026-08-08 대표 지시) — 불변 규칙 2 "rule_trail 필수"의 범위 축소.
+
+        평문 텍스트·수식에 붙던 포괄 규정(KBR-0.1 "점형은 6점"·수학 제1항 "수표")을 뺐다.
+        점역사가 이미 아는 것을 매 요소에 달면 정작 봐야 할 판단이 묻힌다는 판정.
+        LLM 단계는 이제 근거를 만들지 않는다 — 근거는 점역 단계가 실제 변환 지점에서 낸다.
+        (필드는 그대로 있고 빈 목록일 뿐이라 proto·FE 계약은 안 깨진다.)
+        """
+        assert all(o.rule_trail == [] for o in outputs)
 
     def test_render_mode_valid(self, outputs):
         assert all(o.render_mode in _ALLOWED_RENDER_MODES for o in outputs)

@@ -77,8 +77,27 @@ _TYPE_LABEL = {
 }
 
 
-def _min_trail(text: str) -> list[RuleApplication]:
-    return [make_rule(_RULE_ID)]
+# subtype → 그 골격을 정한 조항. ★ Step17(2026-08-08) 이전에는 **전부** _RULE_ID(개념도
+# §6.6.1)로 나갔다 — dev 400쪽 실측 JAJAK-6.6.1 42건 / 6.6.2(흐름도) 0건. 흐름도를 보면서
+# "개념도 조항"이 근거로 붙는 셈이라 점역사에게는 틀린 근거였다. 8종을 각자 조항으로 가른다.
+_SUBTYPE_RULE = {
+    "concept_map": "JAJAK-6.6.1", "flowchart": "JAJAK-6.6.2", "form": "JAJAK-6.6.3",
+    "family_tree": "JAJAK-6.6.4", "org_chart": "JAJAK-6.6.5", "timeline": "JAJAK-6.6.6",
+    "screen_image": "JAJAK-6.6.7", "slide": "JAJAK-6.6.8",
+}
+
+
+def _min_trail(subtype: str, how: str) -> list[RuleApplication]:
+    """도표 근거 — 어느 subtype으로 보고 어떻게 만들었는지(Step17).
+
+    subtype 판정은 앞단 신호가 없을 때 캡션 첫 줄에서 우리가 **추측한 것**이고
+    (`diagram_structure.subtype_from_caption`), 들여쓰기(개념도 5/3·조직도 1칸+2칸/단계)는
+    그 판정에 딸려 결정된다. 판정이 틀리면 골격 전체가 틀리므로 점역사가 제일 먼저 볼 자리다.
+    how = "골격 조립"(structure에서 결정적 전사) | "캡션 4안"(구조 없어 캡션으로 폴백).
+    """
+    rule_id = _SUBTYPE_RULE.get(subtype, _RULE_ID)
+    label = _TYPE_LABEL.get(subtype, "도표")
+    return [make_rule(rule_id, tag=f"{label}·{how}")]
 
 
 def _subtype(ext: ExtractedContent) -> str:
@@ -403,7 +422,7 @@ class DiagramOpt(BaseOpt):
                 tn_text=skeleton_text,
                 routing_tier=routing_tier,
                 processing_time_ms=0,
-                rule_trail=_min_trail(skeleton_text),
+                rule_trail=_min_trail(subtype, "골격 조립"),
                 drafts=drafts,
                 selected_idx=OUTLINE_IDX,
                 line_indents=skeleton_indents,
@@ -418,9 +437,9 @@ class DiagramOpt(BaseOpt):
                 render_mode="narrative",
                 routing_tier="FALLBACK",
                 processing_time_ms=0,
-                rule_trail=_min_trail(""),
+                rule_trail=_min_trail(subtype, "캡션 없음 — 처리 불가"),
             )
-        drafts, selected_idx, line_indents, tier = await build_visual_drafts(
+        drafts, selected_idx, line_indents, tier, cap_src = await build_visual_drafts(
             ext, routing_tier, label=label, caption=cap, kind="도표",
         )
         return LLMOutput(
@@ -430,7 +449,7 @@ class DiagramOpt(BaseOpt):
             tn_text=drafts[selected_idx].text,
             routing_tier=tier,
             processing_time_ms=0,
-            rule_trail=_min_trail(drafts[selected_idx].text),
+            rule_trail=_min_trail(subtype, f"캡션 4안 · {cap_src}"),
             drafts=drafts,
             selected_idx=selected_idx,
             line_indents=line_indents,

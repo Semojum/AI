@@ -16,7 +16,6 @@ import logging
 import re
 import time
 
-from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import (
     BaseOpt,
     fallback_optimize,
@@ -114,8 +113,15 @@ async def _tag_layout(text: str) -> str:
 
 
 def _min_trail(text: str) -> list[RuleApplication]:
-    """텍스트 점역 기본 원칙(KBR-0.1) — 요소 전체(line_no=-1, 포괄 규칙)."""
-    return [make_rule("KBR-0.1")]
+    """평문 텍스트에는 근거를 달지 않는다 (Step17, 2026-08-08 대표 지시).
+
+    종전에는 KBR-0.1("한국 점자는 한 칸을 구성하는 점 여섯 개…")을 모든 텍스트 요소에
+    달았다 — dev 400쪽 실측 **19,381/19,650 요소(98.6%)**. 대표가 직접 지목한 바로 그
+    항목이다("점형은 6점자로 적는다. 이런 건 점역사에게 전혀 필요없는 규정"). 점역사가
+    이미 아는 것을 매 요소에 붙이면 정작 봐야 할 판단(캡션 문구·글상자·관행 갈림)이 묻힌다.
+    태깅(<!점역자주>·<!테두리_위>)이 실제로 붙은 자리는 text_braille가 좌표와 함께 emit한다.
+    """
+    return []
 
 # QUALITY 티어(저신뢰 스캔)에서만 호출 — OCR 오류 교정. 프롬프트 잔재('신뢰도/입력/출력'
 # 라벨)가 출력에 새지 않도록 라벨을 넣지 않고 결과만 받도록 지시한다(누출 버그 방지).

@@ -335,4 +335,38 @@ async def build_visual_drafts(
     line_indents = indents if selected_idx == OUTLINE_IDX else None
     logger.info("    4안 %s %s: %.1fs (tier=%s%s)", kind, str(ext.element_id)[:8],
                 time.monotonic() - _t0, tier, ", LLM" if use_llm else "")
-    return drafts, selected_idx, line_indents, tier
+    return drafts, selected_idx, line_indents, tier, caption_source(
+        selected_idx, used_llm=bool(llm_title or llm_outline or llm_prose),
+        has_print_caption=bool(caption), has_struct=struct_outline is not None,
+    )
+
+
+def visual_trail(rule_id: str, drafts: list[Draft], selected_idx: int, source: str):
+    """시각자료 근거 한 줄 — 규정 조항 + **어느 안을 왜 골랐는지**(Step17).
+
+    대체텍스트는 100% 우리 재량이다(대표 지시 (A) 전형). 종전에는 조항 하나만 달려서
+    점역사가 "이 문구가 어떻게 나온 건지" 알 방법이 rule_trail에 없었다.
+    tag = "개조식 설명·AI 생성" 처럼 [선택된 안]·[출처]로 적는다.
+    """
+    from app.ai.braille.regulations import make_rule
+
+    label = drafts[selected_idx].label if 0 <= selected_idx < len(drafts) else ""
+    return [make_rule(rule_id, tag=f"{label}·{source}".strip("·"))]
+
+
+def caption_source(
+    selected_idx: int, *, used_llm: bool, has_print_caption: bool, has_struct: bool
+) -> str:
+    """선택된 대체텍스트가 **어디서 왔는지** 한 마디로 (Step17, 2026-08-08 대표 지시).
+
+    점역사가 시각자료 초안을 볼 때 제일 먼저 판단해야 하는 것은 "이 문장을 믿어도 되는가"다.
+    인쇄 캡션을 옮긴 것이면 원본 대조로 끝나지만, AI가 만든 문구면 그림과 하나하나 맞춰
+    봐야 한다 — 확인 비용이 다르다. 지금까지 이 구분이 rule_trail 어디에도 없었다.
+    """
+    if selected_idx == OMIT_IDX:
+        return "생략(장식용 판정)"
+    if has_struct:
+        return "구조 전사(무-LLM)"
+    if used_llm:
+        return "AI 생성"
+    return "인쇄 캡션 전사" if has_print_caption else "제목 전사"

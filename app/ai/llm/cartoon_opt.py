@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import re
 
-from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import BaseOpt
-from app.ai.llm.visual_drafts import build_visual_drafts
+from app.ai.llm.visual_drafts import build_visual_drafts, visual_trail
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
@@ -24,8 +23,9 @@ _RULE_ID = "JAJAK-5.3"   # 만화 골격 (점자 자료 제작 지침 §5.3)
 _LV_LINE, _LV_SCENE = 0, 1
 
 
-def _trail() -> list[RuleApplication]:
-    return [make_rule(_RULE_ID)]
+def _trail(drafts, selected_idx: int, source: str) -> list[RuleApplication]:
+    """§5.3 만화 형식 + 어느 안을 왜 골랐는지(Step17)."""
+    return visual_trail(_RULE_ID, drafts, selected_idx, source)
 
 
 def _say(speaker: str, text: str) -> str:
@@ -134,7 +134,7 @@ class CartoonOpt(BaseOpt):
         # 실패 문자열을 내면 그 한글이 점자로 찍혀 학생에게 나간다. 알림은 flags→R11로.
         no_seed = not (items or caption or title)
 
-        drafts, selected_idx, line_indents, tier = await build_visual_drafts(
+        drafts, selected_idx, line_indents, tier, cap_src = await build_visual_drafts(
             ext, routing_tier, label="만화", title=title, caption=caption, kind="만화",
             struct_outline=items or None,
             decorative=no_seed,
@@ -146,7 +146,7 @@ class CartoonOpt(BaseOpt):
             tn_text=drafts[selected_idx].text,
             routing_tier=tier,
             processing_time_ms=0,
-            rule_trail=_trail(),
+            rule_trail=_trail(drafts, selected_idx, cap_src),
             drafts=drafts,
             selected_idx=selected_idx,
             line_indents=line_indents,

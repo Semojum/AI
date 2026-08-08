@@ -108,18 +108,44 @@ def _hidden_run_targets(
     return out
 
 
-def symbol_rule_spans(source_text: str, braille: str) -> list[tuple[int, int, str]]:
-    """원본에 등장하는 특수기호의 출력 점자 좌표 → (start, end, rule_id) 목록.
+# ── rule_trail을 달 '판단이 갈리는' 기호 (Step17, 2026-08-08) ──────────────────
+# 근거는 전부 docs/analysis/규정-관행_대조원장.md 항목 번호. 없는 것은 넣지 않는다.
+_DISCRETIONARY: frozenset[str] = frozenset(
+    "…"          # B-01 말줄임표 — 규정 ⠐⠐⠐ vs 도서 ⠠⠠⠠. gold 33:201로 갈린다
+    "○□△◇☆◆◎▣"   # C-07·B-03 숨김표↔글머리 — 같은 묵자가 문맥에 따라 제49·57·72항으로 갈린다
+    "㉠㉡㉢㉣㉤㉥㉦㉧㉨㉩"   # R-03 원문자 — 제8·64항 감쌈형 ⠶…⠶(2026-08-06 재판정)
+    # ⚠ ①②③…은 일부러 뺐다. 제64항이 "동그라미 숫자는 수표 뒤에 숫자의 점형을 한 단 내려
+    #   적는다"로 답을 하나로 못박아 고를 여지가 없고, 선지 번호라 쪽마다 열 개씩 나온다.
+    #   R-03의 재판정 대상은 '그 밖의 동그라미 문자'(㉠류 감쌈)였지 숫자가 아니다.
+    #   넣었을 때 실측: dev 400쪽에서 이 한 항목이 남은 근거의 59%(4,228건)를 먹었다.
+    "≠×±"        # §4 미결(≠ 규정 ⠨⠒⠒ vs 도서 ⠨⠒) · C-12 한글 사이 띄어쓰기 · B-04 ×××
+    "∽ː"         # 점역자 주 마커 ⠠⠄와 **같은 점형**이라 점역사가 실제로 헷갈리는 자리(B1)
+    "→←↔↑↓⇒⇐⇔"   # 제70항 — 앞뒤 한 칸 띔이 C-12(제46항)와 갈리는 자리
+    "%‰°℃℉′″"     # 제69항 로마자 단위 — 로마자표·종료표 삽입이 코퍼스에서 비일관
+    "αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ"  # R-02 지시자 ⠨(규정) vs ⠈(도서)
+)
 
-    rule_trail '내용 변환' emit용(Phase B). source-gated — 원본(점역 전)에 실제로 있는
-    기호만 대상으로 하여 출력 스캔 오탐(B1식)을 방지한다. 출력 점자에서 해당 글리프
-    위치를 찾아 span을 부여하되, 긴 글리프 우선 + 점유 마스킹으로 부분일치(예: ⠤ ⊂ ⠤⠤)
-    와 중복 계수를 막는다. (점자 좌표는 best-effort — 줄분리/공백정리 통과 후 정밀 보정은 추후.)
+
+def symbol_rule_spans(source_text: str, braille: str) -> list[tuple[int, int, str]]:
+    """원본에 등장하는 **판단이 갈리는** 특수기호의 출력 점자 좌표 → (start, end, rule_id).
+
+    rule_trail emit용. source-gated — 원본(점역 전)에 실제로 있는 기호만 대상으로 하여
+    출력 스캔 오탐(B1식)을 방지한다. 출력 점자에서 해당 글리프 위치를 찾아 span을 부여하되,
+    긴 글리프 우선 + 점유 마스킹으로 부분일치(예: ⠤ ⊂ ⠤⠤)와 중복 계수를 막는다.
+    (점자 좌표는 best-effort — 줄분리/공백정리 통과 후 정밀 보정은 추후.)
+
+    ★ Step17(2026-08-08 대표 지시) — `_DISCRETIONARY`에 있는 기호만 emit한다.
+      종전에는 매핑이 있는 260여 기호 전부를 달았고 dev 400쪽에서 24,000건 넘게 나왔다.
+      그 대부분이 ( ) / - ‘ ’ : ; = < > $ * 같은 **고를 여지가 없는 1:1 표 조회**여서,
+      "점역사도 헷갈리거나 주관이 갈리는 것"만 남긴다는 새 기준에 어긋난다.
+      남긴 것은 전부 `docs/analysis/규정-관행_대조원장.md`에 오른 자리이거나(R-02·R-03·
+      B-01·B-04·C-07·C-12) 규정끼리 갈리는 자리(글머리↔숨김표, 제46항↔제70항)다.
+      기호를 더하거나 뺄 때는 반드시 원장 항목 번호를 근거로 적을 것.
     """
     targets = [
         (symbol, SYMBOL_TABLE[symbol], rule_id)
         for symbol, rule_id in SYMBOL_RULE_IDS.items()
-        if symbol in source_text and symbol in SYMBOL_TABLE
+        if symbol in _DISCRETIONARY and symbol in source_text and symbol in SYMBOL_TABLE
     ]
     targets = _hidden_run_targets(source_text, targets) + targets
     targets.sort(key=lambda t: len(t[1]), reverse=True)  # 긴 글리프 우선

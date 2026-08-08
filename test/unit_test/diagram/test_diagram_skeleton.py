@@ -129,3 +129,49 @@ class TestE2E:
         assert top.startswith(" " * 7) and not top.startswith(" " * 8)
         leaf = next(l for l in content if "포유류" in decode(l))
         assert leaf.startswith(" " * 3) and not leaf.startswith(" " * 4)
+
+
+class TestStep17DiagramTrail:
+    """Step17 — 도표 근거는 subtype마다 제 조항으로, tag에 판정·조립 방식을 담는다."""
+
+    def test_subtype마다_제_조항(self):
+        from app.ai.llm.diagram_opt import _min_trail
+
+        assert _min_trail("flowchart", "골격 조립")[0].rule_id == "JAJAK-6.6.2"
+        assert _min_trail("org_chart", "골격 조립")[0].rule_id == "JAJAK-6.6.5"
+        assert _min_trail("timeline", "골격 조립")[0].rule_id == "JAJAK-6.6.6"
+        # 종전에는 셋 다 개념도(§6.6.1)로 나갔다 — 흐름도에 개념도 조항이 근거로 붙었다.
+        assert _min_trail("concept_map", "골격 조립")[0].rule_id == "JAJAK-6.6.1"
+
+    def test_tag에_유형과_조립방식(self):
+        from app.ai.llm.diagram_opt import _min_trail
+
+        assert _min_trail("flowchart", "골격 조립")[0].tag == "흐름도·골격 조립"
+
+    def test_모든_조항이_레지스트리에_있다(self):
+        from app.ai.braille.regulations import all_rule_ids
+        from app.ai.llm.diagram_opt import _SUBTYPE_RULE
+
+        assert set(_SUBTYPE_RULE.values()) <= all_rule_ids()
+
+
+class TestStep17CaptionSource:
+    """Step17 — 대체텍스트의 출처(인쇄 캡션 전사 / AI 생성 / 구조 전사)를 근거에 남긴다."""
+
+    def test_출처_구분(self):
+        from app.ai.llm.visual_drafts import OMIT_IDX, OUTLINE_IDX, caption_source
+
+        f = caption_source
+        assert f(OUTLINE_IDX, used_llm=True, has_print_caption=True, has_struct=False) == "AI 생성"
+        assert f(OUTLINE_IDX, used_llm=False, has_print_caption=True, has_struct=False) == "인쇄 캡션 전사"
+        assert f(OUTLINE_IDX, used_llm=True, has_print_caption=True, has_struct=True) == "구조 전사(무-LLM)"
+        assert f(OMIT_IDX, used_llm=False, has_print_caption=False, has_struct=False).startswith("생략")
+
+    def test_근거_tag는_선택안과_출처(self):
+        from app.ai.llm.visual_drafts import OUTLINE_IDX, LABELS, visual_trail
+        from app.schemas.content import Draft
+
+        drafts = [Draft(option=i + 1, text="x", render_mode="narrative", label=lb)
+                  for i, lb in enumerate(LABELS)]
+        r = visual_trail("JAJAK-6.3.4", drafts, OUTLINE_IDX, "AI 생성")[0]
+        assert r.tag == "개조식 설명·AI 생성"

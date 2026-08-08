@@ -9,9 +9,8 @@
 from __future__ import annotations
 
 from app.ai.braille.nested_block import box_narrative
-from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import BaseOpt
-from app.ai.llm.visual_drafts import build_visual_drafts
+from app.ai.llm.visual_drafts import build_visual_drafts, visual_trail
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
@@ -27,8 +26,9 @@ def _nested_graph_text(structure: dict) -> str | None:
 _RULE_ID = "JAJAK-6.3.4"   # 시각 자료 점역자 주 (점자 자료 제작 지침 §6.3.4)
 
 
-def _trail() -> list[RuleApplication]:
-    return [make_rule(_RULE_ID)]
+def _trail(drafts, selected_idx: int, source: str) -> list[RuleApplication]:
+    """§6.3.4 시각 자료 점역자 주 + 어느 안을 왜 골랐는지(Step17)."""
+    return visual_trail(_RULE_ID, drafts, selected_idx, source)
 
 
 class ImageOpt(BaseOpt):
@@ -48,7 +48,7 @@ class ImageOpt(BaseOpt):
 
         # 원본 글자(ocr_texts)가 있으면 개조식 항목으로 rule-based 전사(§6.3.4(2)①).
         struct_outline = [(0, t) for t in ocr] if ocr else None
-        drafts, selected_idx, line_indents, tier = await build_visual_drafts(
+        drafts, selected_idx, line_indents, tier, cap_src = await build_visual_drafts(
             ext, routing_tier, label=label, title=title, caption=caption, kind="이미지",
             struct_outline=struct_outline,
             decorative=bool(st.get("decorative")) or no_seed,   # 시드 없음 → 기본 선택 '생략'
@@ -60,7 +60,7 @@ class ImageOpt(BaseOpt):
             tn_text=drafts[selected_idx].text,
             routing_tier=tier,
             processing_time_ms=0,
-            rule_trail=_trail(),
+            rule_trail=_trail(drafts, selected_idx, cap_src),
             drafts=drafts,
             selected_idx=selected_idx,
             line_indents=line_indents,
