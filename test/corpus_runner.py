@@ -372,6 +372,20 @@ def main():
     print("-" * 60)
     print(f"완료: COMPLETED{prog['ok']} NEEDS_REVIEW{prog['review']} BLOCKED{prog['blocked']} fail{prog['fail']} "
           f"timeout{prog['to']} / {total}  ({int(time.time()-prog['t0'])}s)")
+    # ★ MinerU 조용한 폴백 집계(2026-08-08). 추출이 실패·타임아웃하면 파이프라인이
+    #   텍스트레이어 폴백으로 내려가는데, 그 경고는 WARNING이라 러너 로그에 안 찍히고
+    #   페이지 status는 COMPLETED/NEEDS_REVIEW로 남는다 — 런이 조용히 다른 물건이 된다.
+    #   실제 사고: 한 GPU에 라운드 3개를 동시에 물렸더니 무거운 쪽이 60초 상한을 넘겨
+    #   B면 33쪽·C면 42쪽이 폴백으로 떨어졌고, 그 차이가 A/B 판정에 ±1p로 섞여 들어갔다.
+    #   폴백이 1쪽이라도 있으면 그 런은 다른 런과 비교하면 안 된다.
+    fb = [(s["job_id"], p["page"]) for s in summaries for p in s["pages"]
+          if p.get("tier") not in (None, "ZERO")
+          and not list((STORAGE / s["job_id"] / "temp" /
+                        f"page_{p['local_no']:03d}" / "mineru_raw").glob("*_content_list.json"))]
+    if fb:
+        print(f"⚠ MinerU 추출 폴백 {len(fb)}쪽 — 이 런은 A/B 비교에 쓰지 말 것"
+              f" (동시 실행·GPU 경합 확인): {[f'{j.split(chr(45))[-1]} p{p}' for j, p in fb[:10]]}")
+
     # 실패/타임아웃 페이지 목록
     bad = [(s["job_id"], p["page"], p["status"], p.get("error"))
            for s in summaries for p in s["pages"]

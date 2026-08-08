@@ -4,6 +4,7 @@ image/cartoon/chart 각각 다른 프롬프트 사용.
 """
 import re
 import base64
+import hashlib
 import os
 from pathlib import Path
 
@@ -262,6 +263,30 @@ def _ensure_type_word(text: str, image_type: str) -> str:
     return f"{tw}: {t}"
 
 
+def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
+    """★ A/B 판정용 캡션 캐시(2026-08-08). `CAPTION_CACHE_DIR`를 줄 때만 동작한다.
+
+    캡셔닝 LLM은 같은 그림에 매번 다른 캡션을 준다(실측 12/12 상이). 그런데
+    `claude-sonnet-5`는 `temperature`를 거부하므로(400) 파라미터로 결정성을 살 수 없다.
+    한편 MinerU가 잘라내는 크롭 이미지는 실행 간 **바이트 동일**하다(실측 285장/94쪽
+    전량 일치). 그래서 이미지 내용 해시로 캡션을 재사용하면 반복 실행이 결정적이 된다.
+    같은 라운드를 두 번 돌려 비교할 때 캡션을 고정하고 점역 변경만 보게 하는 장치다.
+    운영 기본값은 꺼짐(환경변수 없음) — 운영 동작은 바뀌지 않는다.
+    """
+    d = os.getenv("CAPTION_CACHE_DIR")
+    if not d:
+        return None
+    key = hashlib.sha256(
+        b"|".join([raw, image_type.encode(),
+                   os.getenv("CAPTION_BACKEND", "anthropic").encode(),
+                   os.getenv("CAPTION_MODEL", "claude-sonnet-5").encode(),
+                   prompt.encode()])
+    ).hexdigest()
+    p = Path(d)
+    p.mkdir(parents=True, exist_ok=True)
+    return p / f"{key}.txt"
+
+
 def caption(image_path: str, image_type: str = "image") -> str:
     """
     image_type: 'image' | 'cartoon' | 'chart'
@@ -270,13 +295,21 @@ def caption(image_path: str, image_type: str = "image") -> str:
     prompt = _PROMPTS.get(image_type, _PROMPTS["image"])
 
     with open(image_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
+        raw = f.read()
+    b64 = base64.b64encode(raw).decode()
+
+    cache = _cache_file(raw, image_type, prompt)
+    if cache is not None and cache.exists():
+        return cache.read_text(encoding="utf-8")
 
     ext = Path(image_path).suffix.lstrip(".").lower()
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
-        return _ensure_type_word(_caption_anthropic(b64, mime, prompt), image_type)
+        text = _ensure_type_word(_caption_anthropic(b64, mime, prompt), image_type)
+        if cache is not None:
+            cache.write_text(text, encoding="utf-8")
+        return text
 
     from app.utils.req_log import inc_gpt4o
     inc_gpt4o()
@@ -294,4 +327,7 @@ def caption(image_path: str, image_type: str = "image") -> str:
         max_tokens=500,
         temperature=0.3,
     )
-    return _ensure_type_word(resp.choices[0].message.content.strip(), image_type)
+    text = _ensure_type_word(resp.choices[0].message.content.strip(), image_type)
+    if cache is not None:
+        cache.write_text(text, encoding="utf-8")
+    return text
