@@ -75,3 +75,45 @@ def test_no_review_needed_flag():
     for el in data:
         assert "REVIEW_NEEDED" not in el["flags"], \
             f"REVIEW_NEEDED 플래그 발견: element_id={el['element_id']}"
+
+
+# ── 제목 단계(BBPG 2장2절1) — QA S1, 2026-08-07 ──────────────────────────────
+# MinerU는 제목 블록을 이미 찾아 두는데 content_list에서 type이 "text"로 눕고 단계만
+# text_level에 남는다. 종전에는 그 값을 버려 조판이 제목 규칙을 한 번도 못 썼다
+# (QA 실측: 37쪽 558요소에 title 0개). 다만 그 표시의 35%는 문항 발문·선택지라
+# 그대로 믿으면 발문이 가운데 정렬로 나간다.
+from app.ai.parser.mineru_runner import _heading_level
+
+
+class TestHeadingLevel:
+    def test_lv1은_1단계(self):
+        assert _heading_level({"text_level": 1}, "text", "서유럽 봉건 사회의 전개와 문화") == 1
+
+    def test_번호_붙은_제목도_제목(self):
+        assert _heading_level({"text_level": 1}, "text", "1. 제국주의와 제1차 세계 대전") == 1
+
+    def test_lv2이상은_4단계(self):
+        # 정답 도서 실측(refonly 94권): 2단계 7칸은 0.18%로 거의 안 쓰고 3·4단계 5칸이 1.45%.
+        # 그 5칸 시작 줄 1,651줄은 위에 빈 줄 26.7% · 아래 2.7%라 4단계(1,0) 모양이다
+        # (2026-08-08 대표 결정). 3단계(1,1)로 두면 아래 빈 줄이 계속 들어간다.
+        assert _heading_level({"text_level": 2}, "text", "송대의 전시(殿試)") == 4
+        assert _heading_level({"text_level": 3}, "text", "보기") == 4
+
+    def test_선택지는_제목_아님(self):
+        assert _heading_level({"text_level": 2}, "text", "① 삼국 동맹의 성립") is None
+
+    def test_발문은_제목_아님(self):
+        assert _heading_level({"text_level": 1}, "text", "01 (가) 나라에 대한 설명으로 옳은 것은?") is None
+        assert _heading_level({"text_level": 2}, "text",
+                              "위 글을 참고하여 <보기>를 이해한 반응으로 적절하지 않은 것은?") is None
+
+    def test_긴_문장은_제목_아님(self):
+        assert _heading_level({"text_level": 1}, "text", "가" * 29) is None
+        assert _heading_level({"text_level": 1}, "text", "가" * 28) == 1
+
+    def test_표시_없으면_None(self):
+        assert _heading_level({}, "text", "제목처럼 보여도") is None
+
+    def test_글이_아닌_유형은_제외(self):
+        assert _heading_level({"text_level": 1}, "image", "그림") is None
+        assert _heading_level({"text_level": 1}, "table", "표") is None

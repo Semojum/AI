@@ -11,7 +11,7 @@ from __future__ import annotations
 from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import BaseOpt
 from app.ai.llm.base_opt import numbers_grounded as _verify_numbers  # noqa: F401 (테스트가 import)
-from app.ai.llm.visual_drafts import PROSE_IDX, build_visual_drafts
+from app.ai.llm.visual_drafts import resolve_label, PROSE_IDX, build_visual_drafts
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
@@ -62,9 +62,11 @@ class ChartGraphOpt(BaseOpt):
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
         st = ext.structure or {}
-        label = _label(st)
         title = (st.get("title") or "").strip()
         caption = (st.get("caption_src") or ext.corrected_text or "").strip()
+        # 캡션·제목이 유형을 말하면 그 말을 쓴다 — chart_subtype이 없으면 _label이
+        # 무조건 "그래프"로 떨어져 모식도·구조도까지 "그래프"라 부른다(판정 최약축).
+        label = resolve_label(_label(st), caption, title)
 
         data_items = _data_items(st)               # rule-based(데이터 전사)
         axes = _axes_phrase(st)

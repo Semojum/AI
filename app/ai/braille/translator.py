@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from functools import lru_cache
 
 from app.ai.braille.kor_math_rules import convert_latex, digits_to_braille
 from app.ai.braille import eng_braille, inline_math
@@ -203,6 +204,12 @@ _INLINE_MATH_RE = re.compile(
 _NUMBER_RE       = re.compile(r"-?\d+(?:[.,]\d+)*")
 _ALPHA_RUN_RE    = re.compile(r"[A-Za-z]+")
 _BRAILLE_RE      = re.compile(r"[⠀-⣿]+")
+# 두 칸 이상 빈칸 = 항목 구분 부호(지침 3장 3절 4)(3)① 선택지 사이 · 6)(1) 표의 셀 사이).
+# braillify가 한 칸으로 뭉개고(_safe_to_unicode) _collapse_spaces가 또 한 번 뭉갠다.
+# _safe_to_unicode는 이 자리를 _GAP_MARK로 찍어 두고, _collapse_spaces가 모드전환
+# 부산물(⠀⠀)만 정리한 **뒤에** 빈칸으로 되돌린다 — 의도한 두 칸과 부산물을 가른다.
+_MULTI_SPACE_RE  = re.compile(r"(  +)")
+_GAP_MARK        = "\x01"
 _DIGIT_ALPHA_RE  = re.compile(r"(?<=\d)(?=[A-Za-z])")   # 숫자 뒤 바로 오는 알파벳
 _HANGUL_SYL_RE   = re.compile(r"[가-힣]")        # 완성형 한글 음절
 _LATIN_CHAR_RE   = re.compile(r"[A-Za-z]")       # 로마자 낱글자(줄 문맥 비율 계산용)
@@ -262,7 +269,7 @@ def _braillify_fallback(text: str) -> str:
 def _braillify(text: str) -> str:
     """태그 없는 순수 텍스트 → 점자 변환 (외부 직접 호출용 래퍼)."""
     if _BRAILLIFY_AVAILABLE:
-        return _safe_to_unicode(text)
+        return _safe_to_unicode(text).replace(_GAP_MARK, "⠀")
     return _braillify_fallback(text)
 
 
@@ -410,23 +417,40 @@ def _preprocess_units(text: str) -> str:
 #   2) 화살괄호: 〈보기〉·《…》 → 작은따옴표 ‘보기’ (정답 코퍼스에 화살괄호 0회, 작은따옴표 3618회)
 #   3) 물결표: ~·∼ → 줄표 ― (정답에 물결표 0회 / 줄표 2004회. 범위 표기 "㉠~㉤"도 줄표)
 #   4) 표시 문자 자모 뒤 마침표 생략: "ㄱ. 내용" → "ㄱ 내용" (정답은 온표+자모만 적고 마침표 없음)
-#   5) 동그라미 자모·음절: 규정 제64항은 ⠶…⠶로 묶으라 하지만 도서는 맨 글자로 적는다
-#      (㉠=⠿⠁ 온표+자모(제8항), gold =a 실측 일치) → 자모·음절은 맨 글자 유지.
+#   5) 동그라미 자모·음절: **규정 제64항대로 ⠶…⠶로 묶는다** (2026-08-06 판정 번복).
+#      종전에는 "도서는 맨 글자로 적는다"고 봤는데, 그 실측이 **구판 수능특강 한 종류**였다.
+#      신규 2027 코퍼스로 재니 정반대다 — 48쪽에서 묵자 ㉠ 개수와 gold `⠶⠿⠁⠶` 개수가
+#      쪽마다 1:1로 맞는다(4개 책 전부). 우리는 감쌈형을 0회 냈다. 음절도 같다(㉮ = ⠶⠫⠶).
+#      규정도 관행도 감쌈형이므로 스위치 없이 규정형으로 낸다.
 #      ★동그라미 로마자 ⓐ~ⓩ는 정정(2026-07-19): 구현이 맨글자 'a'였는데 이는 규정(70a7=
 #      ⠶⠴⠁⠶, 제64항 예시)도 코퍼스 관행(-0a-=⠤⠴⠁⠤, 생물 4p 일관 실측)도 아닌 제3형.
 #      규정 우선 원칙(태민)에 따라 제64항형을 직접 점자로 낸다. 측정은 kpi canon이
 #      관행형(⠤⠴x⠤)을 등가 인정. symbol_table.json은 규정 정본이라 손대지 않는다.
 _BOOK_STYLE = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
 
-# 동그라미 자모·음절 → 맨 글자 (숫자 ①은 규정=도서 일치(수표+숫자)라 건드리지 않는다)
-_CIRCLED = {chr(0x3260 + i): ch for i, ch in enumerate("ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ")}
-_CIRCLED.update({chr(0x326E + i): ch for i, ch in enumerate("가나다라마바사아자차카타파하")})
+# 동그라미 자모·음절 (숫자 ①은 규정=도서 일치(수표+숫자)라 건드리지 않는다).
+# 값은 **맨 글자**로 두고 점역할 때 ⠶…⠶로 감싼다 — 자모 점형을 여기서 다시 적으면
+# 정본이 둘로 갈린다(`_safe_to_unicode`가 온표 ⠿까지 붙여 준다: ㄱ→⠿⠁, 가→⠫).
+_CIRCLED_PLAIN = {chr(0x3260 + i): ch for i, ch in enumerate("ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ")}
+_CIRCLED_PLAIN.update({chr(0x326E + i): ch
+                       for i, ch in enumerate("가나다라마바사아자차카타파하")})
+_CIRCLED = dict(_CIRCLED_PLAIN)
 # 동그라미 로마자 → 규정 제64항형 점자(⠶ + 로마자표 ⠴ + 글자 + ⠶; 대문자는 ⠠ 추가)
 _CIRCLED.update({chr(0x24D0 + i): "⠶⠴" + _ALPHA_MAP[chr(ord("a") + i)] + "⠶"
                  for i in range(26)})   # ⓐ~ⓩ
 _CIRCLED.update({chr(0x24B6 + i): "⠶⠴⠠" + _ALPHA_MAP[chr(ord("a") + i)] + "⠶"
                  for i in range(26)})   # Ⓐ~Ⓩ
 _CIRCLED_RE = re.compile("[" + "".join(_CIRCLED) + "]")
+
+
+@lru_cache(maxsize=64)
+def _circled_braille(ch: str) -> str:
+    """동그라미 자모·음절 → 규정 제64항 감쌈형 ⠶…⠶ (㉠ → ⠶⠿⠁⠶, ㉮ → ⠶⠫⠶).
+
+    점형은 `_safe_to_unicode`에서 가져온다(정본 하나). 로마자 ⓐ~ⓩ는 `_CIRCLED`에
+    이미 완성형이 들어 있어 이 경로를 타지 않는다.
+    """
+    return "⠶" + _safe_to_unicode(_CIRCLED_PLAIN[ch]) + "⠶"
 
 # 괄호 안이 한글·숫자면 붙임표로 감싼다. 영문이 섞이면 규정 소괄호를 유지한다.
 # 정답: -가- 1217 · -나- 663 · -1- 281 · "소계-해당 인구-  100.0-2,575-"(표) …
@@ -510,33 +534,35 @@ _HANJA_ONLY_RE = re.compile(r"^[\u4e00-\u9fff\s·]+$")
 
 
 def _paren_repl(m: re.Match) -> str:
+    """표시 문자 괄호 → **규정 제49항 소괄호 그대로**(⠦⠄ … ⠠⠴). 2026-08-06 판정 번복.
+
+    종전에는 도서 관행이라며 붙임표로 감쌌다((가) → ⠤가⠤, 근거 "gold 1,217회").
+    그 실측이 **구판 수능특강 한 종류**였다. 신규 2027 코퍼스 48쪽으로 재니 네 범주가
+    **전부** 뒤집힌다 — gold / 우리(종전):
+
+      한글 1~2자   소괄호 331 / 10   · 붙임표  13 / 569
+      숫자         소괄호  16 /  0   · 붙임표   0 /  74
+      대문자 1자    소괄호 100 /  0   · 붙임표   0 /  22   (안에 로마자표 ⠴+대문자표 ⠠)
+      약어         소괄호   7 /  0   · 붙임표   0 /  14
+
+    규정 제49항도 소괄호이므로 규정·관행이 같은 쪽을 가리킨다. 괄호를 손대지 않으면
+    symbol_table의 `(`=⠦⠄ · `)`=⠠⠴가 그대로 나간다.
+
+    남기는 두 가지:
+      · 한자 병기 괄호는 통째 생략(정답 언어 p053 '과목(果木)' → '과목').
+      · 배열형 (A)-(B)-(C)는 gold가 동그라미형 묶음 ⠶⠠x⠶으로 적는다(제64항 계열,
+        구판 외국어 516건). 신규 코퍼스에 외국어 권이 없어 재확인 못 했으므로 유지한다.
+    """
     inner = m.group(1)
     if _HANJA_ONLY_RE.match(inner):
-        return ""                  # 한자 병기 괄호는 통째 생략 (정답 언어 p053 '과목(果木)'→'과목')
-    if len(inner) == 1 and inner.isalpha() and inner.isascii():
-        # 단일 대문자 라벨 (A)(B)(C) → 붙임표 관행(정답 도서 실측: gold ⠤⠴⠠x⠤ =
-        # 붙임표+로마자표+대문자표+글자. 전 과목 500/522, 소괄호 0건. 외국어 444·생물 54·
-        # 언어 8·사회문화 6·세계사 4·수학2 2). 구 코드는 소괄호(⠦⠄…⠠⠴)로 내 gold와
-        # 어긋나고 로마자표도 빠졌다("124/74회 소괄호"는 오측이었다). 소괄호 셀을 문자로
-        # 넣으면 자신을 재귀 감싸므로 정확형 셀을 직접 주입한다.
-        # ⚠ 소문자 (x)(t)는 수학2에서 수식 변수 f(x)(수식괄호 1609건)라 건드리지 않고
-        #   종전 형을 유지한다 — 대문자 라벨만 바꾼다.
-        if inner.isupper():
-            # ⚠ 배열형 답지 (A)-(B)-(C)(문단 순서 문제, 외국어 문단배열)는 gold가 붙임표도
-            #   소괄호도 아닌 동그라미형 묶음 ⠶⠠x⠶(제64항 계열, gold 516건 전부 외국어)으로
-            #   적는다. 붙임표를 씌우면 연결 붙임표(-)와 셀이 겹쳐 오히려 어긋난다(실측:
-            #   p123 단독 +235셀). 괄호+연결부호로 이어진 배열형이면 gold 정확형을 낸다.
-            after = m.string[m.end():]
-            before = m.string[:m.start()]
-            if re.match(r"\s*[-–—~∼〜]\s*\(", after) or re.search(r"\)\s*[-–—~∼〜]\s*$", before):
-                return "⠶⠠" + _ALPHA_MAP[inner.lower()] + "⠶"
-            return "⠤⠴⠠" + _ALPHA_MAP[inner.lower()] + "⠤"
-        return m.group(0)          # 소문자 (x)는 종전 유지(수식 변수 회귀 방지)
-    # 대문자 약어 (SNS)도 붙임표 — "약어는 소괄호" 가정은 dev·val 교차 스캔에서 어긋
-    # 최다(21건)로 판명, 정답 실측 '-⠴SNS-' (사회문화 p062, 2026-07-18 정정).
-    # 감쌈 붙임표는 자리표시자로 낸다(위 _WRAP_OPEN 주석) — 하류의 음수 판정이
-    # 이 하이픈을 뺄셈표로 재해석하지 못하게 하고, 판정 뒤 원래 -로 되돌린다.
-    return f"{_WRAP_OPEN}{inner}{_WRAP_CLOSE}"
+        return ""                  # 한자 병기 괄호는 통째 생략
+    if len(inner) == 1 and inner.isascii() and inner.isalpha() and inner.isupper():
+        after, before = m.string[m.end():], m.string[:m.start()]
+        if re.match(r"\s*[-–—~∼〜]\s*\(", after) or re.search(r"\)\s*[-–—~∼〜]\s*$", before):
+            return "⠶⠠" + _ALPHA_MAP[inner.lower()] + "⠶"      # 배열형 답지
+    return m.group(0)              # 그 밖에는 원문 괄호 그대로 — 규정 셀이 나간다
+
+
 _ANGLE_RE = re.compile(r"[〈《<「『]([^〈《<>》〉「」『』\n]{1,20})[〉》>」』]")
 # 문중 빈칸 네모 □ — 숨김표(제49항 표: ×=_xl=⠸⠭⠇)로 적되 ⠭를 글자 수만큼 반복한다
 # (정답 생물 p046 실측: _xl·_xxl·_xxxl — □ 1·2·3글자).
@@ -555,6 +581,14 @@ def _box_blank_repl(m: re.Match) -> str:
     if at_line_start and len(run) == 1 and (after == "" or after in " \t\n"):
         return run                      # 줄머리 단독 □ + 공백/줄끝 = 글머리 불릿
     return "⠸" + "⠭" * len(run) + "⠇"
+# 반복 곱셈표 ×× 는 곱셈이 아니라 숨김표다 (제57항, 2026-08-06).
+# `×`는 표에 두 뜻이 있다 — 곱셈 ⠡(수학연산)와 숨김표 ⠸⠭⠇(문장부호). 평탄화 표에서
+# 수학연산이 이겨 `이 ×××야!`가 ⠡⠡⠡(곱셈 셋)로 나갔다. 규정 예시는 ⠸⠭⠭⠭⠇다.
+#   이 ×××야!   o`_xxxl>6   (제57항)
+# **2개 이상 연속일 때만** 숨김표로 본다 — 곱셈은 연달아 쓰지 않으므로(`2××3`은 없다)
+# 이 조건은 `2×3`·`반지름×반지름` 같은 진짜 곱셈을 건드리지 않는다.
+# 단독 ×는 그대로 둔다. 문맥 없이는 곱셈인지 숨김표인지 못 가른다(원장 §8 중의성).
+_HIDDEN_X_RUN_RE = re.compile(r"×{2,}")
 _TILDE_RE = re.compile(r"[~∼〜]")
 # MinerU는 〈보기〉 상자를 괄호 없이 '보기\x00'로 낸다. 정답 관행은 위치별로 다르다
 # (생물 p011 원본 27-28행 실측): **문중 참조 = ‘보기’(따옴표), 박스 제목 줄 = 맨 '보기'**.
@@ -698,7 +732,9 @@ def _apply_book_style(text: str) -> str:
     if _BRACKET_BOOK_STYLE:              # 기본 꺼짐 — 대괄호는 규정 제49항 셀 그대로 나간다
         text = _SRC_BRACKET_RE.sub(_src_bracket_repl, text)
     text = _QNUM_RE.sub(r"\1.", text)
-    text = _CIRCLED_RE.sub(lambda m: _CIRCLED[m.group()], text)
+    text = _CIRCLED_RE.sub(
+        lambda m: (_circled_braille(m.group()) if m.group() in _CIRCLED_PLAIN
+                   else _CIRCLED[m.group()]), text)
     text = _MARK_PAREN_RE.sub(_paren_repl, text)
     # 이 단계는 이미 음수 판정(_NEG_NUM_RE) 뒤라 자리표시자를 유지할 이유가 없다 —
     # 여기서 만들어진 감쌈만 되돌린다(밖에서 온 것은 앞서 복원돼 no-op).
@@ -722,10 +758,14 @@ def _apply_book_style(text: str) -> str:
 
 
 def _collapse_spaces(braille: str) -> str:
-    """이중 점자 공백(⠀⠀) → 단일 공백(⠀) — 숫자/영어 모드 전환 시 발생."""
+    """이중 점자 공백(⠀⠀) → 단일 공백(⠀) — 숫자/영어 모드 전환 시 발생.
+
+    ★ 원문이 두 칸 이상 띄운 자리(_GAP_MARK)는 항목 구분 부호라 살린다 —
+      부산물을 정리한 뒤에 빈칸으로 되돌린다(지침 3장 3절 4)(3)①·6)(1)).
+    """
     while "⠀⠀" in braille:
         braille = braille.replace("⠀⠀", "⠀")
-    return braille
+    return braille.replace(_GAP_MARK, "⠀")
 
 
 def _fix_leading_roman(text_orig: str, braille: str) -> str:
@@ -903,6 +943,12 @@ def substitute_tags(text: str) -> str:
             return _TAG_INLINE_MARKER[name]
         if name in _TAG_PAIR_MARKER:
             return _TAG_PAIR_MARKER[name][1 if tok.startswith("<!/") else 0]
+        # 테두리 태그는 위에서 **쌍으로** 처리한다. 여기까지 온 건 짝이 잘린 조각이라는 뜻인데,
+        # `_break_offsets`가 줄바꿈 자리를 찾느라 접두(`src[:sp]`)를 수천 번 재점역하면서
+        # 늘 생긴다 — 전체 문자열 변환은 경고 0에 테두리도 정상이다(실측). 운영 로그를
+        # 이 잡음으로 채우면 진짜 미지 태그가 묻힌다.
+        if name.rstrip("23") in _BORDER_FILL:
+            return ""
         logger.warning("translator: 미지 태그 제거 %s", tok)
         return ""
 
@@ -1364,7 +1410,15 @@ def _safe_to_unicode(seg: str, _split_eng: bool = True,
     ★ braillify는 세그먼트 가장자리 공백을 삼킨다(' 질문은'=='질문은' 실측 2026-07-17).
       점자런과 텍스트런 경계의 공백(예: 선지 번호 ⠼⠁ 뒤 한 칸)이 사라져 정답과 어긋나므로
       가장자리 공백을 점자 빈칸으로 보존한다.
+
+    ★ 안쪽 연속 공백도 삼킨다('01 ⑤  02 ②' → 한 칸, 실측 2026-08-07 QA S4).
+      두 칸은 항목 구분 부호다 — 「점자 도서 제작 지침」 3장 3절 4)(3)①(선택지 사이)·
+      6)(1)(표의 셀 사이). 두 칸 이상 구간에서 잘라 따로 변환하고 빈칸 수를 복원한다.
     """
+    parts = _MULTI_SPACE_RE.split(seg)
+    if len(parts) > 1:
+        return "".join(_GAP_MARK * len(p) if i % 2 else _safe_to_unicode(p, _split_eng, ctx)
+                       for i, p in enumerate(parts))
     if _split_eng and _BRAILLIFY_AVAILABLE:
         split = _split_english(seg, ctx)
         if split is not None:
@@ -1487,6 +1541,10 @@ def translate_tagged_text(text: str) -> str:
     text = _CHOICE_HEAD_RE.sub(r"\1 ", text)
     # 단위 앞 좁은 공백 백틱 제거는 수식 라우팅보다 **먼저** — 뒤에 두면 이미 수식으로
     # 먹힌 뒤라 제69항 로마자표 경로가 실행되지 않는다.
+    # 반복 ×는 곱셈이 아니라 숨김표다(제57항) — **수식 라우팅보다 먼저** 바꾼다.
+    # inline_math가 ×를 수식 원자로 보고 `×××`를 통째로 수식 구간에 삼키면
+    # convert_latex이 곱셈 ⠡ 셋으로 낸다(규정 예시는 ⠸⠭⠭⠭⠇).
+    text = _HIDDEN_X_RUN_RE.sub(lambda m: "⠸" + "⠭" * len(m.group()) + "⠇", text)
     text = _UNIT_BACKTICK_RE.sub("", text)
     text = _BACKTICK_MATH_RE.sub(lambda m: f"<!수식>{m.group(1).rstrip()}<!/수식> ", text)
     text = _normalize_inline_math(text)     # $…$/\(…\) → <!수식> (P1: 수식 라우팅)
@@ -1678,6 +1736,23 @@ def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
         lines.append(braille)
         breaks.append(_break_offsets(src_line, braille))
     return (lines or [""], breaks or [[]])
+
+
+def translate_plain(text: str) -> str:
+    """짧은 묵자 → 유니코드 점자 1줄짜리 문자열. `TranslateText` RPC 전용.
+
+    본문 점역과 **같은 rule-based 경로**를 탄다(LLM·MinerU 미경유). 다른 점은 둘뿐이다 —
+    반환이 문자열이고, 32칸 조판을 하지 않는다(꼬리말 배치는 braille-assist `page_row`가 한다).
+
+    여러 줄이 들어오면 `\n`으로 이어 준다. 꼬리말은 한 줄이 정상이지만, 호출자가 무엇을
+    보낼지 우리가 정하지 않으므로 조용히 버리지 않고 보존한다.
+
+    교차 검증: "머리말" → ⠑⠎⠐⠕⠑⠂ 는 「점자 도서 제작 지침」 [예 1-8]의 꼬리말 실물과 같다.
+    """
+    if not text or not text.strip():
+        return ""
+    lines, _ = translate_with_breaks(text)
+    return "\n".join(lines)
 
 
 # 수식 속 \text{한글}을 한글 점자로 변환하는 훅 등록(P2). kor_math_rules는 translator를

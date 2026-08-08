@@ -51,10 +51,64 @@ RENDER_DPI = 150
 PAGE_TIMEOUT = float(os.environ.get("CORPUS_PAGE_TIMEOUT", "650"))  # 초(파이프라인 내부보다 크게)
 
 
+# 신규 코퍼스(2026-08-05 구축, 묵자↔점자 2,940쌍 / 12권).
+# `code/AI/` **바깥**에 둔다 — 저작권 검토 전까지 GitHub에 올라가면 안 된다(corpus/README).
+CORPUS_2027 = Path(os.environ.get(
+    "SEMOJUM_CORPUS_ROOT", str(Path(__file__).resolve().parents[3] / "corpus")))
+
+
 # ── manifest / 선택 ──────────────────────────────────────────────────────
-def load_manifest() -> list[dict]:
-    with MANIFEST.open(encoding="utf-8") as f:
-        return list(csv.DictReader(f))
+def load_manifest(corpus: str = "frozen") -> list[dict]:
+    """`{subject, page, split, _pdf, _gold}` 목록.
+
+    두 코퍼스를 같은 모양으로 만든다.
+      frozen — 기존 동결 코퍼스(구판 수능특강 6과목 1,251쌍). 경로는 이름 규약으로 만든다.
+      2027   — 신규 코퍼스(12권 2,940쌍). manifest가 경로를 직접 들고 있다.
+
+    ★ 신규 쪽은 `subject`에 **책**을 쓴다. 분할 단위가 쪽이 아니라 책이기 때문이다
+      (같은 책은 머리말·표 양식·점역자주 문구가 같아 쪽으로 나누면 새어 나간다).
+    """
+    if corpus == "frozen":
+        with MANIFEST.open(encoding="utf-8") as f:
+            return [{**r, "_pdf": INPUT / f"input_{r['subject']}_page{r['page']}.pdf",
+                     "_gold": OUTPUT / f"output_{r['subject']}_page{r['page']}.brl"}
+                    for r in csv.DictReader(f)]
+
+    mf = CORPUS_2027 / "split_manifest.csv"
+    if not mf.exists():
+        raise SystemExit(f"신규 코퍼스 manifest 없음: {mf}\n"
+                         f"  SEMOJUM_CORPUS_ROOT 로 위치를 지정하거나 corpus/를 준비할 것")
+    rows = []
+    with mf.open(encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            rows.append({
+                "subject": r["book_id"],          # 분할 단위 = 책
+                "page": f"{int(r['page']):04d}",  # 정렬용 고정폭
+                "split": r["split"],
+                "domain": r["domain"],
+                "vol": r["vol"],
+                "_pdf": CORPUS_2027 / r["print"],
+                "_gold": CORPUS_2027 / r["braille"],
+            })
+    return rows
+
+
+# (subject, page) → manifest 행. 경로가 코퍼스마다 달라 이름 규약으로 만들 수 없다.
+_ROW_BY_KEY: dict[tuple[str, str], dict] = {}
+
+
+def index_rows(rows: list[dict]) -> None:
+    _ROW_BY_KEY.clear()
+    for r in rows:
+        _ROW_BY_KEY[(r["subject"], r["page"])] = r
+
+
+def _path_of(subject: str, page: str) -> Path:
+    return _ROW_BY_KEY[(subject, page)]["_pdf"]
+
+
+def _gold_of(subject: str, page: str) -> Path:
+    return _ROW_BY_KEY[(subject, page)]["_gold"]
 
 
 def visual_score(pdf: Path) -> int:
@@ -89,7 +143,7 @@ def select(rows: list[dict], split: str | None, subjects: set[str] | None,
             if purposive:
                 ranked = sorted(
                     pages,
-                    key=lambda pg: visual_score(INPUT / f"input_{sub}_page{pg}.pdf"),
+                    key=lambda pg: visual_score(_path_of(sub, pg)),
                     reverse=True,
                 )
                 by_sub[sub] = sorted(ranked[:limit])
@@ -176,8 +230,8 @@ async def run_subject(subject: str, pages: list[str], tag: str, *,
     for pos, pg in enumerate(pages, start=1):
         # local_no는 선택 범위와 무관하게 고정한다(위 build_page_index 주석의 사고 참조).
         li = (page_index or {}).get((subject, pg), pos)
-        pdf = INPUT / f"input_{subject}_page{pg}.pdf"
-        gold = OUTPUT / f"output_{subject}_page{pg}.brl"
+        pdf = _path_of(subject, pg)
+        gold = _gold_of(subject, pg)
         prog["cur"] += 1
         elapsed = time.time() - prog["t0"]
         eta = (elapsed / prog["cur"]) * (prog["total"] - prog["cur"]) if prog["cur"] else 0
@@ -269,7 +323,10 @@ def _write_e2e_state(job_dir: Path, job_id: str, subject: str, pages: list[dict]
 # ── main ─────────────────────────────────────────────────────────────────
 def main():
     ap = argparse.ArgumentParser(description="Semojum V2 코퍼스 러너(mode c)")
-    ap.add_argument("--split", choices=["dev", "val", "test"], default=None)
+    ap.add_argument("--corpus", choices=["frozen", "2027"], default="frozen",
+                    help="frozen=기존 동결 코퍼스 · 2027=신규 12권")
+    ap.add_argument("--split", default=None,
+                    help="frozen: dev|val|test · 2027: dev-2027|val-2027|holdout-2027")
     ap.add_argument("--subjects", default=None, help="과목 한정(쉼표구분)")
     ap.add_argument("--limit", type=int, default=None, help="과목당 페이지 상한")
     ap.add_argument("--purposive", action="store_true", help="시각요소 풍부 페이지 우선 선택")
@@ -289,7 +346,8 @@ def main():
     url = mineru_service.ensure_started()
     print(f"MinerU 서비스: {url or 'CLI 폴백(페이지마다 엔진 기동 — 느림)'}")
 
-    rows = load_manifest()
+    rows = load_manifest(args.corpus)
+    index_rows(rows)
     subjects = set(args.subjects.split(",")) if args.subjects else None
     sel = select(rows, args.split, subjects, args.limit, args.purposive)
     page_index = build_page_index(rows, args.split, subjects)

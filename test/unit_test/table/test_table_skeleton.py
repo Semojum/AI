@@ -34,7 +34,9 @@ class TestStructuredInput:
     def test_render_mode_추론(self):
         assert _infer_render_mode(_CELLS) == "linear"            # 2열 → 선형
         grid = {"cells": _CELLS["cells"] + [{"row": 0, "col": 2, "text": "비고"}]}
-        assert _infer_render_mode(grid) == "unfold"              # 3열 → 풀어쓰기(BBPG-3.1.2)
+        # 3열 이상 = 격자형 (2026-08-06 판정 번복 — 원장 C-01a).
+        # gold dev-2027 테두리 표 445개 중 383개(86%)가 격자 '행제목: 값' 형식이다.
+        assert _infer_render_mode(grid) == "table_grid"
 
     def test_빈셀_채움(self):
         from app.ai.braille.table_braille import _render_unfold, _render_grid
@@ -57,12 +59,13 @@ class TestOptimize:
         opt = asyncio.run(TableOpt().optimize([ext], "ZERO"))
         bo = TableBraille().translate(opt)[0]
         labels = [d.label for d in bo.drafts]
-        assert labels == ["풀어쓰기(3칸·2칸)", "격자형", "행↔열 전치", "선형(키:값)"]  # 기본=풀어쓰기
-        # ★ 도서 관행(기본)은 테두리를 쓰지 않는다 — 정답 코퍼스 14,382줄에 테두리형 0개
-        #   (2026-07-29 실측). 규정 §3.1.3(2)형 테두리는 BRAILLE_STYLE=regulation에서만.
-        assert _TBL_TOP not in bo.drafts[1].braille_lines
-        assert _TBL_BOT not in bo.drafts[1].braille_lines
-        assert bo.drafts[1].braille_lines, "테두리를 빼도 본문 줄은 남아야 한다"
+        assert labels == ["풀어쓰기(3칸·2칸)", "격자형", "행↔열 전치", "선형(키:값)"]
+        assert bo.selected_idx == 1, "3열 이상 표의 기본은 격자형(labels[1])"
+        # ★ 2026-08-06 판정 번복(원장 C-01a). 2026-07-29에는 "코퍼스 14,382줄에 테두리형 0개"를
+        #   근거로 뺐는데, 그 표본이 **구판 수능특강 한 종류**였다. 82권으로 재니 정반대다 —
+        #   신판 2027 EBS 2.62% · 초등참고서 4.78% · 중등교과서 3.37% · 고등교과서 2.97%.
+        assert _TBL_TOP in bo.drafts[1].braille_lines
+        assert _TBL_BOT in bo.drafts[1].braille_lines
 
     def test_격자_규정모드는_테두리_유지(self, monkeypatch):
         """BRAILLE_STYLE=regulation이면 지침형 테두리를 낸다 — 규정 경로 보존."""
@@ -111,15 +114,15 @@ class TestTitle:
         # 제목 줄이 위 테두리보다 먼저(§3 5)(2)), 5칸 들여(§3 5)(1))
         assert lines[0].startswith(" " * 5) and not lines[0].startswith(" " * 6)
         assert lines[0].strip() and not _is_border(lines[0])
-        # 관행 기본: 테두리가 없으므로 제목 다음 줄이 바로 본문이다.
-        assert lines[1] != _TBL_TOP and not _is_border(lines[1])
+        # 제목 다음 줄이 위 테두리다(§3 5)(2) — 제목이 테두리 **앞**).
+        assert lines[1] == _TBL_TOP
 
     def test_제목_없으면_기존동작(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, table_structure=_CELLS)
         opt = asyncio.run(TableOpt().optimize([ext], "ZERO"))
         bo = TableBraille().translate(opt)[0]
-        # 관행 기본: 제목이 없으면 격자형 첫 줄이 곧 본문 행이다(테두리 없음).
-        assert not _is_border(bo.drafts[1].braille_lines[0])
+        # 제목이 없으면 격자형 첫 줄이 곧 위 테두리다.
+        assert bo.drafts[1].braille_lines[0] == _TBL_TOP
 
 
 def _is_border(line: str) -> bool:

@@ -66,6 +66,9 @@ _CLASSIFY_TYPE_MAP = {
     "cartoon": "cartoon",
     "chart": "chart_graph",
     "image": "image",
+    # 'diagram'은 pipeline._TYPE_ALIAS에 이미 있고 _run_diagram_chain이 받는다(§6.6 도표 골격).
+    # 하위유형(개념도/흐름도/…)을 모르면 diagram_opt가 공통 4안으로 안전 폴백한다.
+    "diagram": "diagram",
 }
 
 
@@ -97,7 +100,17 @@ def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
         try:
             image_type, subconf = classify_with_confidence(img_path)
             mapped_type = _CLASSIFY_TYPE_MAP.get(image_type, "image")
-            return caption(img_path, image_type), mapped_type, True, subconf
+            text = caption(img_path, image_type)
+            # ★ 예외 없이 **빈 캡션**이 오는 길이 있다(모델이 거부하거나 빈 응답을 줌).
+            #   그걸 성공으로 넘기면 build()의 `not content.strip()` 가지에서 요소가
+            #   통째로 사라진다 — 실측: job_260807160446 p1의 만화가 이렇게 없어졌고
+            #   (로그 "캡셔닝 56780743(image→cartoon) 12.5s", 실패 표시 없음),
+            #   그 뒤 그림 회수가 같은 그림을 다시 찾아 LLM을 한 번 더 썼다.
+            #   빈 응답은 성공이 아니다. 실패로 돌려 요소를 살린다(불변규칙 1).
+            if not text.strip():
+                logger.error("캡셔닝 빈 응답 id=%s type=%s — 요소는 살린다", eid, image_type)
+                return "", mapped_type, False, subconf
+            return text, mapped_type, True, subconf
         except Exception as exc:  # noqa: BLE001 — 요소 격리(불변규칙 3)
             last = exc
             if type(exc).__name__ not in _TRANSIENT_EXC or attempt == _CAPTION_RETRIES:
@@ -223,11 +236,19 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
 
 
 def _do_caption_logged(el: dict) -> tuple:
-    """`_do_caption` + 요소별 소요시간 로깅."""
-    t = time.monotonic()
-    content, el_type, ok, subconf = _do_caption(el)
-    logger.info("    캡셔닝 %s(%s→%s) %.1fs%s", str(el.get("element_id", ""))[:8],
-                el["type"], el_type, time.monotonic() - t, "" if ok else " [실패]")
+    """`_do_caption` + 요소별 소요시간 로깅.
+
+    프로세스 전역 슬롯을 잡고 호출한다 — 페이지 안 스레드풀(기본 4)만으로는 페이지가
+    여러 개 동시에 돌 때 곱해져서 외부 API 한도(429)에 걸린다. 소요시간은 슬롯을 잡은
+    뒤부터 잰다(대기를 캡셔닝 시간으로 계상하면 로그가 원인을 가린다).
+    """
+    from app.core.limits import caption_slot
+
+    with caption_slot():
+        t = time.monotonic()
+        content, el_type, ok, subconf = _do_caption(el)
+        logger.info("    캡셔닝 %s(%s→%s) %.1fs%s", str(el.get("element_id", ""))[:8],
+                    el["type"], el_type, time.monotonic() - t, "" if ok else " [실패]")
     return content, el_type, ok, subconf
 
 
@@ -284,6 +305,10 @@ def build(
             "caption_ref": "",   # 아래 _link_captions가 채움
             "flags": ["CAPTION_FAILED"] if caption_failed else [],
         }
+        # 제목 단계(BBPG 2장2절1) — 여기서 안 실으면 조판이 가운데 정렬·들여쓰기를 못 쓴다.
+        # mineru_runner가 MinerU의 text_level을 걸러 넣어 준다.
+        if el.get("heading_level"):
+            entry["heading_level"] = el["heading_level"]
         if subconf is not None:
             entry["subtype_confidence"] = subconf
         elements.append(entry)

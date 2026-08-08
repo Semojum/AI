@@ -3,7 +3,9 @@
 단계 3·4 구조: 현주 추출 → data/NNN_txt_result.json → 태민 분해/점역 → 단계별 json → 최종 결과
 
   공통 경계 파일: storage/jobs/{job}/temp/page_{no:03d}/data/{no:03d}_txt_result.json
-    형식 {meta:{job_id,page_no,extraction_method}, elements:[{id,order,type,content}]}
+    형식 {meta:{job_id,page_no,extraction_method,image_width,image_height,bbox_space},
+          elements:[{id,order,type,content,bbox}]}
+      · bbox_space: "pixel"(2x 렌더 픽셀) | "norm1000"(0~1000). 생산자가 적고 소비자가 읽는다.
     - 현주 파트(PART 2/3/4-1/5-1 등)가 생성. 이미 존재하면 그대로 사용(핸드오프).
     - 태민 파트가 읽어서 6-체인(현재 text/formula 동작)으로 분해→opt→braille.
 
@@ -29,6 +31,7 @@ from app.core.config import config
 from app.schemas.content import BrailleOutput, ExtractedContent, LLMOutput
 from app.schemas.layout import BBoxItem, DocumentMeta, LayoutResult
 from app.schemas.quality import CriticalError, QualityReport
+from app.core.limits import run_braille
 from app.schemas.task import PageTask
 from app.utils.logger import get_logger
 from app.utils.req_log import (
@@ -300,11 +303,17 @@ def _blocks_with_bbox(blocks: list[dict]) -> list[dict]:
     return elements
 
 
-async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> tuple[list[dict], int, int]:
-    """non-ZERO Tier(스캔 PDF): MinerU2.5-Pro 통합 추출 → (elements, page_w, page_h).
+async def _extract_via_models(
+    task: PageTask, doc_meta: DocumentMeta
+) -> tuple[list[dict], int, int, str]:
+    """non-ZERO Tier(스캔 PDF): MinerU2.5-Pro 통합 추출 → (elements, page_w, page_h, bbox_space).
     result_builder가 이미지 분류·캡셔닝까지 거쳐 경계 elements(bbox 포함)를 만든다.
     MinerU 미설치/실패/타임아웃 시: 텍스트레이어가 있으면 PyMuPDF 폴백으로 본문을
-    살리고(표·그림 구조 손실 → 요소 R1 플래그), 스캔 전용이면 빈 결과로 격리."""
+    살리고(표·그림 구조 손실 → 요소 R1 플래그), 스캔 전용이면 빈 결과로 격리.
+
+    ★ bbox_space를 **같이 돌려준다**. MinerU는 0~1000 정규화지만 폴백은 픽셀이라
+      좌표계가 갈리는데, 종전에는 소비자가 `extraction_method`(둘 다 "OCR")로
+      좌표계를 유추해 폴백 쪽 bbox가 한 번 더 확대됐다(Step8)."""
     import os
     import tempfile
     try:
@@ -315,10 +324,17 @@ async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> tuple[l
             f.write(task.pdf_data)
             tmp_path = f.name
         try:
-            merged = await asyncio.to_thread(
-                mineru_run, tmp_path, task.page_no, task.job_id, "OCR",
-                timeout=config.mineru_timeout_resolved,
-            )
+            # ★ 추출 상한(60초)은 **슬롯을 잡은 뒤부터** 재야 한다.
+            #   mineru-api가 자체 동시 상한으로 요청을 큐에 세우는데, 종전에는 그 대기
+            #   중에도 subprocess 타임아웃이 이미 돌고 있었다 — 줄이 길면 정상 페이지가
+            #   '느린 페이지'로 오인돼 끊긴다. 상한은 비정상 탐지기이므로 그러면
+            #   탐지기가 망가진다. 대기는 페이지 예산(180초) 쪽에서만 계산한다.
+            from app.core.limits import mineru_slot
+            async with mineru_slot():
+                merged = await asyncio.to_thread(
+                    mineru_run, tmp_path, task.page_no, task.job_id, "OCR",
+                    timeout=config.mineru_timeout_resolved,
+                )
             result = await asyncio.to_thread(
                 build_result, merged, task.job_id, task.page_no, "OCR",
             )
@@ -328,10 +344,12 @@ async def _extract_via_models(task: PageTask, doc_meta: DocumentMeta) -> tuple[l
             except OSError:
                 pass
         m = result.get("meta", {})
-        return result.get("elements", []), int(m.get("image_width") or 0), int(m.get("image_height") or 0)
+        return (result.get("elements", []), int(m.get("image_width") or 0),
+                int(m.get("image_height") or 0), "norm1000")
     except Exception as exc:
         logger.warning("MinerU 추출 실패: %s", exc)
-        return await _fallback_text_layer(task, doc_meta)
+        elements, w, h = await _fallback_text_layer(task, doc_meta)
+        return elements, w, h, "pixel"
 
 
 async def _fallback_text_layer(task: PageTask, doc_meta: DocumentMeta) -> tuple[list[dict], int, int]:
@@ -379,9 +397,28 @@ def _page_image_path(task: PageTask):
         return None
 
 
+def _page_rotation(pdf_data: bytes, page_no: int) -> int:
+    """쪽 회전각(도). 못 읽으면 0 — 읽기순서 보정을 안 걸 뿐 본문은 그대로 나간다."""
+    try:
+        import fitz
+        from app.ai.preprocessor.pdf_analyzer import _coerce_pdf_bytes
+        with fitz.open(stream=_coerce_pdf_bytes(pdf_data), filetype="pdf") as d:
+            return int(d[max(0, min(page_no - 1, d.page_count - 1))].rotation) % 360
+    except Exception as exc:  # noqa: BLE001 — 회전각은 있으면 좋은 것이다
+        logger.debug("쪽 회전각 확인 실패(0으로 진행): %s", exc)
+        return 0
+
+
 async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     """현주 추출 단계: analyze_pdf + (ZERO 텍스트 | non-ZERO 모델) → 경계 dict(크기·bbox 포함)."""
-    from app.ai.preprocessor.pdf_analyzer import analyze_pdf, extract_text_blocks
+    from app.ai.preprocessor.pdf_analyzer import (
+        analyze_pdf,
+        box_rects_norm,
+        extract_text_blocks,
+        mark_glyphs_norm,
+        tag_answer_marks,
+        tag_boxed_elements,
+    )
 
     # analyze_pdf의 page_no는 1-indexed(0 이하만 내부 보정). 빼기 1을 넘기면
     # 2페이지부터 한 장씩 밀리므로 task.page_no를 그대로 전달한다(현주 계약).
@@ -389,15 +426,58 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         analyze_pdf, task.pdf_data, task.page_no, task.job_id
     )
     image_width = image_height = 0
+    # bbox 좌표계는 경로마다 다르다("pixel" = 2x 렌더 픽셀 / "norm1000" = 0~1000 정규화).
+    # 추출한 자리에서 한 번 정하고 meta에 적어 둔다 — 소비자가 다른 필드로 유추하면 안 된다.
     if doc_meta.routing_tier == "ZERO":
-        method = "TEXT_NATIVE"
+        method, bbox_space = "TEXT_NATIVE", "pixel"
         blocks, image_width, image_height = await asyncio.to_thread(
             extract_text_blocks, task.pdf_data, task.page_no
         )
         elements = _blocks_with_bbox(blocks) or _blocks_from_text(pdf_text)
     else:
         method = "OCR"
-        elements, image_width, image_height = await _extract_via_models(task, doc_meta)
+        elements, image_width, image_height, bbox_space = await _extract_via_models(task, doc_meta)
+
+    # 글상자 테두리(BBPG-1.2.5 · 원장 C-01b) — 묵자의 벡터 사각형이 감싼 텍스트 요소에
+    # 테두리 태그를 붙인다. 두 경로(ZERO·MinerU) 모두 여기를 지나므로 한 자리면 된다.
+    if not doc_meta.scan_only:
+        rects = await asyncio.to_thread(box_rects_norm, task.pdf_data, task.page_no)
+        # 사각형은 0~1000 정규화로 온다. 경계 bbox의 좌표계가 경로마다 다르므로 맞춰 준다
+        # (`result_builder` 2026-07-19: MinerU=정규화 / ZERO·폴백=2x 픽셀).
+        if bbox_space == "pixel" and image_width and image_height:
+            rects = [[r[0] / 1000 * image_width, r[1] / 1000 * image_height,
+                      r[2] / 1000 * image_width, r[3] / 1000 * image_height] for r in rects]
+        if n := tag_boxed_elements(elements, rects):
+            logger.info("글상자 %d개 태깅 (page=%d)", n, task.page_no)
+
+        # 정오 표시 ○·×(원장 M-04) — 채움 경로라 텍스트레이어에도 MinerU에도 안 잡힌다.
+        marks = await asyncio.to_thread(mark_glyphs_norm, task.pdf_data, task.page_no)
+        if bbox_space == "pixel" and image_width and image_height:
+            marks = [(k, [r[0] / 1000 * image_width, r[1] / 1000 * image_height,
+                          r[2] / 1000 * image_width, r[3] / 1000 * image_height])
+                     for k, r in marks]
+        if n := tag_answer_marks(elements, marks):
+            logger.info("정오 표시 %d개 태깅 (page=%d)", n, task.page_no)
+
+        # 놓친 그림 회수 — 앞단이 시각 요소를 **0개** 낸 쪽만 비전 모델로 다시 본다.
+        # 평가 실측: 시각 요소가 0인 26쪽에서 우리가 gold의 1%만 쓴다(프롬프트로는 안 움직인다).
+        from app.ai.parser import figure_detect
+        _VIS = ("image", "chart_graph", "cartoon", "diagram", "figure")
+        if figure_detect.enabled() and not any(e.get("type") in _VIS for e in elements):
+            figs = await asyncio.to_thread(figure_detect.detect, task.pdf_data, task.page_no)
+            if figs:
+                # bbox 좌표계는 경계 파일 규약을 따른다(MinerU=0~1000 정규화 / ZERO·폴백=2x 픽셀).
+                w, h = ((image_width, image_height) if bbox_space == "pixel"
+                        else (1000.0, 1000.0))
+                add = figure_detect.to_elements(figs, w, h, len(elements) + 1)
+                elements.extend(add)
+                logger.info("그림 회수 %d개 (page=%d)", len(add), task.page_no)
+
+    # QA용 쪽 이미지 보관(기본 off — KEEP_PAGE_IMAGE=1로만 켠다, 대표 결정 2026-08-07).
+    # 평소에는 처리 후 원본을 안 남긴다(저작권·디스크). QA 기간에만 켜면 bbox·읽기순서·
+    # 표 오분류를 **쪽 위에 겹쳐 눈으로** 볼 수 있다. 렌더는 Opus 폴백과 같은 자리를 쓴다.
+    if os.environ.get("KEEP_PAGE_IMAGE") == "1":
+        _page_image_path(task)
 
     # Opus 비전 폴백(D-05, 기본 off — OPUS_EXTRACT_FALLBACK=1 opt-in): 추출이 빈약한
     # 페이지만 claude-opus-4-8이 직접 읽는다. 실측상 저품질 페이지에서만 유효(3~4배),
@@ -419,6 +499,12 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             "extraction_method": method,
             "image_width": image_width,
             "image_height": image_height,
+            # bbox 좌표계(2026-08-08 Step8). "pixel" = 2x 렌더 픽셀 / "norm1000" = 0~1000.
+            # 없는 옛 파일은 소비자가 extraction_method로 유추한다(하위호환).
+            "bbox_space": bbox_space,
+            # 쪽 회전각(0·90·180·270). 보기엔 평범한 1단 쪽인데 PDF 내부 좌표가 누워 있는
+            # 지면이 있다(외국어 영역 실측 57쪽). 읽기순서를 바로 세우려면 이 값이 필요하다.
+            "page_rotation": _page_rotation(task.pdf_data, task.page_no),
         },
         "elements": elements,
     }
@@ -433,13 +519,18 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
 # sidebar(H2)는 x0 최대간격 분할이라 분할선이 본문/사이드바를 관통하는 페이지에서 오발동·미발동
 # (세계사 p086 관통, p106 임계 3px 미달)이 잦아 col로 대체.
 _REORDER_MODE = os.environ.get("READING_ORDER_MODE", "col")
+# 기하 정렬을 걸 수 있는 최대 열 수. 교재 쪽은 많아야 3단이다. 이보다 많이 잡히면
+# 열 모형이 안 맞는 쪽(회전 페이지·비정형 글상자)이라 원순서를 그대로 둔다.
+# 실측(2026-08-07, dev2027 189 · devall 172 · valall 868쪽, 요소단위 τ. 열 우선 정렬 적용 후):
+#   상한 없음 0.909/0.805/0.826 → ≤3열 0.909/0.908/0.888. 4~8열로 올려도 값이 같다(평탄).
+_MAX_COLS = 3
 
 
 def _valid_bbox(b: BBoxItem) -> bool:
     return b.bbox[2] > b.bbox[0] and b.bbox[3] > b.bbox[1]
 
 
-def _reorder_by_geometry(items: list[BBoxItem]) -> None:
+def _reorder_by_geometry(items: list[BBoxItem], rotation: int = 0) -> None:
     """다단/사이드바 페이지의 읽기순서를 보정. 모드는 _REORDER_MODE.
 
     배경: MinerU content_list 순서는 좁은 좌측 사이드바(보충설명)를 본문보다 먼저 방출해
@@ -468,7 +559,7 @@ def _reorder_by_geometry(items: list[BBoxItem]) -> None:
         return
 
     if _REORDER_MODE == "col":
-        _reorder_columns(items)
+        _reorder_columns(items, rotation)
 
 
 def _reorder_sidebar(items: list[BBoxItem], valid: list[BBoxItem]) -> None:
@@ -508,8 +599,16 @@ def _reorder_sidebar(items: list[BBoxItem], valid: list[BBoxItem]) -> None:
         b.reading_order = k
 
 
-def _reorder_columns(items: list[BBoxItem]) -> None:
-    """H3: 열 클러스터링 읽기순서. 정답 BRL 관찰(2026-07-13)에 근거한 세 규칙:
+def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
+    """H3: 열 클러스터링 읽기순서.
+
+    규정 근거 —「점자 도서 제작 지침」2장 5. 다단 점역:
+      · 동등한 관계의 다단 → "일반적으로 왼쪽 단을 적은 후 오른쪽 단으로, 상단을 적은
+        후 하단을 적는다"  → (5) 열 우선 정렬.
+      · 주종 관계의 다단 → "본문에 해당하는 단을 우선 적고, 참고 자료는 본문 아래"
+        → (1) 좁은 참고열 후치.
+
+    정답 BRL 관찰(2026-07-13)에 근거한 세 규칙:
 
     (1) 점역사는 좁은 용어설명 열을 본문 뒤에 둔다 — MinerU가 이 열을 본문 앞에
         통째로(연속 순번) 방출하는 것이 주 실패 양상(세계사 p086·p106).
@@ -519,6 +618,8 @@ def _reorder_columns(items: list[BBoxItem]) -> None:
         파괴되므로, MinerU 순서가 y-흐름을 심하게 거스를 때만 열 내부를 y-정렬
         (사회문화 p035: MinerU 순서 자체가 뒤죽박죽인 페이지).
     (3) 페이지행 요소(header_footer/page_number)·빈 bbox는 원래 순번 슬롯 유지.
+    (4) 열이 _MAX_COLS개를 넘으면 '열'이라는 모형이 이 쪽에 안 맞는다 → 원순서 유지.
+    (5) y-정렬은 열 안에서만 한다 — 열을 가로질러 정렬하면 2단 본문이 한 줄씩 섞인다.
     """
     body = [b for b in items if _valid_bbox(b) and b.type not in ("header_footer", "page_number")]
     if len(body) < 3:
@@ -543,6 +644,29 @@ def _reorder_columns(items: list[BBoxItem]) -> None:
     clusters: dict[int, list[BBoxItem]] = {}
     for i, b in enumerate(body):
         clusters.setdefault(_find(i), []).append(b)
+
+    # 1-b) ★ 열이 너무 많으면 손대지 않는다. 교재 쪽은 많아야 3단인데 x-겹침 열이 10~30개로
+    #   나오는 쪽이 실제로 있다 — 270° 회전 페이지(외국어 영역)와 비정형 글상자 배치다.
+    #   그런 쪽에서 기하 정렬을 걸면 읽기순서가 통째로 뒤집힌다(실측 τ 1.00 → −1.00,
+    #   valall 47쪽 평균 0.677 → −0.442). 모형이 안 맞는 쪽은 추출기 순서를 믿는다.
+    if len(clusters) > _MAX_COLS:
+        # ★ 그런데 그런 쪽의 대부분은 **회전된 지면**이다(실측 58쪽 중 57쪽이 rotation 270°).
+        #   보기엔 평범한 1단 쪽인데 PDF 내부 좌표가 누워 있어 x0가 흩어져 열이 10~30개로
+        #   잡힌다. 회전각을 알면 규칙으로 바로 세울 수 있다 — 270°에서 표시상의 '위에서
+        #   아래'는 내부 좌표의 **x 내림차순**이다.
+        #   실측(valall 4열+ 47쪽): 원순서 τ 0.677 → 이 규칙 0.996. 같은 쪽에 LLM을 물어본
+        #   값이 0.989였다(쪽당 $0.0166) — 규칙이 더 정확하고 공짜다.
+        if rotation in (90, 270):
+            desc = rotation == 270
+            for i, b in enumerate(sorted(body, key=lambda b: (-b.bbox[0] if desc else b.bbox[0],
+                                                              b.bbox[1])), start=1):
+                b.reading_order = i
+        return
+    # 열 번호(왼쪽부터 0,1,2). ★ 여기서 확정해 둔다 — 아래에서 main 리스트를 extend하면
+    #   클러스터 리스트가 같은 객체라 그대로 오염된다(열 번호가 뒤바뀐다).
+    col_of = {id(b): ci for ci, cl in
+              enumerate(sorted(clusters.values(), key=lambda c: min(b.bbox[0] for b in c)))
+              for b in cl}
 
     # 2) main = 최대 클러스터(동수면 총면적). main 헐과 자기 폭 50% 이상 겹치는
     #    클러스터(선지 ①②③ 조각 등)는 흡수.
@@ -576,11 +700,14 @@ def _reorder_columns(items: list[BBoxItem]) -> None:
 
     # 4) main: MinerU 순서가 y-흐름을 2회 넘게 거스를 때만 y-밴드 정렬.
     #    위반 = y가 2밴드 이상 되돌아가는데 오른쪽 열 점프(2단 전환)도 아닌 연속 쌍.
+    #    ★ 정렬 키의 첫 자리는 열이다(왼쪽 열 전부 → 오른쪽 열 전부). 열을 무시하고
+    #      y부터 정렬하면 2단 본문이 왼쪽 한 줄·오른쪽 한 줄로 번갈아 섞여 나온다
+    #      (dev-2027 TEXT_NATIVE 82쪽 τ 0.830 → 0.817, 열 우선으로 고치면 0.963).
     heights = sorted(b.bbox[3] - b.bbox[1] for b in main)
     band = max(1.0, heights[len(heights) // 2] * 0.5)
 
     def _ykey(b: BBoxItem) -> tuple:
-        return (round(b.bbox[1] / band), b.bbox[0])
+        return (col_of[id(b)], round(b.bbox[1] / band), b.bbox[0])
 
     by_mineru = sorted(main, key=lambda b: b.reading_order)
     viol = sum(
@@ -665,8 +792,16 @@ def _split_list_marker_items(elements: list[dict]) -> list[dict]:
 def _parse_txt_result(
     extraction: dict, page_id: str
 ) -> tuple[LayoutResult, dict[UUID, ExtractedContent], str]:
-    method = extraction.get("meta", {}).get("extraction_method", "OCR")
+    meta = extraction.get("meta", {})
+    method = meta.get("extraction_method", "OCR")
     conf = 1.0 if method == "TEXT_NATIVE" else 0.95
+    # 0~1000 정규화(MinerU)만 픽셀로 되돌린다. 페이지 크기를 모르면 손대지 않는다.
+    # ★ 좌표계는 meta.bbox_space를 **읽는다**(생산자가 적어 준다). 옛 파일·주입 핸드오프엔
+    #   그 키가 없어 종전 유추(TEXT_NATIVE=픽셀)로 폴백한다.
+    iw, ih = meta.get("image_width") or 0, meta.get("image_height") or 0
+    space = meta.get("bbox_space") or ("pixel" if method == "TEXT_NATIVE" else "norm1000")
+    scale_bbox = ((iw / 1000, ih / 1000, iw / 1000, ih / 1000)
+                  if space == "norm1000" and iw and ih else None)
 
     bbox_items: list[BBoxItem] = []
     ext_map: dict[UUID, ExtractedContent] = {}
@@ -697,9 +832,15 @@ def _parse_txt_result(
         if hlevel in (None, 0) and etype == "title":
             hlevel = 1
         # bbox: 현주 레이아웃 좌표 → BoundingBox(x,y,x2,y2)로 BE 전달. 없거나 깨지면 (0,0,0,0).
+        # ★ 경계 파일의 좌표계는 경로마다 다르다(`result_builder` 2026-07-19):
+        #   MinerU = 0~1000 정규화 / ZERO·텍스트레이어 폴백 = 2x 렌더 픽셀. BE·FE는 `image_width/height`에
+        #   대한 비율로 매핑하므로 **여기서 픽셀로 통일**한다. 안 하면 MinerU 쪽에서
+        #   하이라이트가 실제 위치의 77%·65% 자리에 찍힌다(실측).
         raw_bbox = el.get("bbox")
         try:
             bbox = (int(raw_bbox[0]), int(raw_bbox[1]), int(raw_bbox[2]), int(raw_bbox[3]))
+            if scale_bbox:
+                bbox = tuple(int(round(v * s)) for v, s in zip(bbox, scale_bbox))
         except (TypeError, IndexError, ValueError):
             bbox = (0, 0, 0, 0)
         # caption_ref: 캡션→대상(그림/표) 연결. UUID 문자열만 수용, 그 외 None.
@@ -737,7 +878,7 @@ def _parse_txt_result(
                 flags=flags,
             )
 
-    _reorder_by_geometry(bbox_items)
+    _reorder_by_geometry(bbox_items, int(meta.get("page_rotation") or 0))
     layout = LayoutResult(page_id=page_id, elements=bbox_items)
     return layout, ext_map, method
 
@@ -762,7 +903,9 @@ async def _run_text_chain(
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.text_braille import TextBraille
-        braille_outputs = TextBraille().translate(llm_outputs)
+        # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
+        # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
+        braille_outputs = await run_braille(TextBraille().translate, llm_outputs)
         _write_stage(task, "text", "text_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
@@ -785,7 +928,9 @@ async def _run_formula_chain(
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.formula_braille import FormulaBraille
-        braille_outputs = FormulaBraille().translate(llm_outputs)
+        # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
+        # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
+        braille_outputs = await run_braille(FormulaBraille().translate, llm_outputs)
         _write_stage(task, "formula", "formula_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
@@ -809,7 +954,9 @@ async def _run_table_chain(
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.table_braille import TableBraille
-        braille_outputs = TableBraille().translate(llm_outputs)
+        # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
+        # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
+        braille_outputs = await run_braille(TableBraille().translate, llm_outputs)
         _write_stage(task, "table", "table_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
@@ -833,7 +980,9 @@ async def _run_image_chain(
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.image_braille import ImageBraille
-        braille_outputs = ImageBraille().translate(llm_outputs)
+        # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
+        # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
+        braille_outputs = await run_braille(ImageBraille().translate, llm_outputs)
         _write_stage(task, "image", "image_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
@@ -857,7 +1006,9 @@ async def _run_cartoon_chain(
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.cartoon_braille import CartoonBraille
-        braille_outputs = CartoonBraille().translate(llm_outputs)
+        # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
+        # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
+        braille_outputs = await run_braille(CartoonBraille().translate, llm_outputs)
         _write_stage(task, "cartoon", "cartoon_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
@@ -881,7 +1032,9 @@ async def _run_chart_graph_chain(
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.chart_graph_braille import ChartGraphBraille
-        braille_outputs = ChartGraphBraille().translate(llm_outputs)
+        # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
+        # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
+        braille_outputs = await run_braille(ChartGraphBraille().translate, llm_outputs)
         _write_stage(task, "chart_graph", "cg_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
@@ -906,7 +1059,9 @@ async def _run_diagram_chain(
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
         from app.ai.braille.diagram_braille import DiagramBraille
-        braille_outputs = DiagramBraille().translate(llm_outputs)
+        # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
+        # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
+        braille_outputs = await run_braille(DiagramBraille().translate, llm_outputs)
         _write_stage(task, "diagram", "diagram_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
@@ -965,30 +1120,48 @@ async def _run_pipeline(task: PageTask) -> dict:
 
     # ── mode b: source_text 단일 텍스트 체인 ───────────────────────────
     if task.mode == "b":
-        source_elem_id = uuid4()
+        # ★ 줄 하나 = 요소 하나 (2026-08-06). 종전에는 source_text 전체를 요소 **하나**로
+        #   묶어 내보내서, BE가 원문과 점역을 줄 단위로 짝지을 수 없었다("한 뭉텅이로 온다").
+        #   BE는 txt·hwp를 줄마다 `\n`으로 이어 붙인 한 문자열로 보내므로, 그 `\n`이
+        #   그대로 요소 경계다.
+        #   · 빈 줄은 요소를 만들지 않는다 — 지침상 문단 구분은 빈 줄이 아니라 들여쓰기다
+        #     (BBPG 2장2절2 "3칸에서 시작"). 대신 `order`에 **원본 줄 번호**를 그대로 실어
+        #     BE가 빈 줄이 어디였는지 알 수 있게 한다(번호가 건너뛴다).
+        #   · id는 `text_list`와 `braille_text_list`가 같다 — 그게 짝짓기의 열쇠다.
+        src_lines = [(i, ln) for i, ln in enumerate((task.source_text or "").split("\n"), 1)
+                     if ln.strip()]
+        if not src_lines:                       # 내용이 없으면 빈 응답(빈 결과 금지 규칙은
+            src_lines = [(1, task.source_text or "")]   # 플레이스홀더가 담당)
+        line_ids = [uuid4() for _ in src_lines]
         layout_result = LayoutResult(
             page_id=page_id,
-            elements=[BBoxItem(element_id=source_elem_id, type="text", bbox=(0, 0, 0, 0), reading_order=1)],
+            elements=[BBoxItem(element_id=eid, type="text", bbox=(0, 0, 0, 0),
+                               reading_order=no)
+                      for eid, (no, _) in zip(line_ids, src_lines)],
         )
         extracted_texts = [ExtractedContent(
-            element_id=source_elem_id,
-            corrected_text=task.source_text or "",
+            element_id=eid,
+            corrected_text=ln,
             ocr_confidence=1.0,
-        )]
+        ) for eid, (_, ln) in zip(line_ids, src_lines)]
         ext, llm_outputs, braille_outputs = await _run_text_chain(
             extracted_texts, layout_result, "ZERO", task, include_braille=True,
         )
-        overflow_rate = 0.0
+        flat: dict = {}
         if braille_outputs:
-            from app.ai.braille.layout_braille import LayoutBraille
-            overflow_rate = LayoutBraille().layout(
-                braille_outputs, task.page_no, task.job_id,
+            from app.ai.braille.layout_braille import LayoutBraille, flatten_elements
+            # ★ 순서 주의: flatten이 먼저다. layout()이 braille_lines를 32칸 조판본으로
+            #   write-back하고 rule_trail도 그 프레임으로 재매핑하므로, 통 문자열은
+            #   조판 전 논리 줄에서 떠야 한다(조판 가이드 §3).
+            # 조판도 CPU 동기 작업 + 파일 쓰기라 전용 풀로 내린다(점역과 같은 이유).
+            flat = await run_braille(flatten_elements, braille_outputs, layout_result)
+            await run_braille(
+                LayoutBraille().layout, braille_outputs, task.page_no, task.job_id,
                 layout_result=layout_result,
             )
         return _build_response(
             task, page_id, doc_meta, "ZERO", image_width, image_height,
-            layout_result, ext, llm_outputs, braille_outputs,
-            line_overflow_rate=overflow_rate,
+            layout_result, ext, llm_outputs, braille_outputs, flat=flat,
         )
 
     # ── mode a, c ──────────────────────────────────────────────────────
@@ -1060,43 +1233,86 @@ async def _run_pipeline(task: PageTask) -> dict:
     _debug_dump(task, "04_all_ocr", [e.model_dump() for e in all_extracted])
     _debug_dump(task, "05_all_opt", [o.model_dump() for o in all_llm])
 
-    # PART 10: 레이아웃 조판
-    overflow_rate = 0.0
+    # PART 10: 레이아웃 조판 — 다운로드용 result.brf/txt 저장은 그대로 둔다.
+    # 응답 contents는 조판본이 아니라 통 문자열이다(조판 가이드 §3, AI finalize 폐기).
+    flat: dict = {}
     if include_braille and all_braille:
         with stage("조판"):
-            from app.ai.braille.layout_braille import LayoutBraille
-            overflow_rate = LayoutBraille().layout(
-                all_braille, task.page_no, task.job_id,
+            from app.ai.braille.layout_braille import LayoutBraille, flatten_elements
+            # ★ 순서 주의: flatten이 먼저다(위 mode b 주석 참조).
+            flat = await run_braille(flatten_elements, all_braille, layout_result)
+            await run_braille(
+                LayoutBraille().layout, all_braille, task.page_no, task.job_id,
                 layout_result=layout_result,
             )
 
     return _build_response(
         task, page_id, doc_meta, routing_tier, image_width, image_height,
-        layout_result, all_extracted, all_llm, all_braille,
-        line_overflow_rate=overflow_rate,
+        layout_result, all_extracted, all_llm, all_braille, flat=flat,
     )
 
 
 # ── 응답 조립 ────────────────────────────────────────────────────────────
 
-def _selected_lines(bo) -> list[str]:
-    """BrailleOutput → `contents` 직렬화 = **선택 초안의 32칸 조판 줄 배열**.
+def _selected_lines(bo, flat: dict) -> list[str]:
+    """BrailleOutput → `contents` 직렬화 = **항목 1개짜리 통 문자열**.
 
-    BE proto(braille_service.proto §TextElement.contents) 계약:
-      · `contents`의 한 항목 = 조판된 32칸 줄 하나
-      · 시각 블록도 이 필드 하나로 렌더한다 — `drafts[selected_idx].contents`와 같은 값
-      · `RuleTrail.line_no`는 이 배열의 인덱스다
+    BE proto(braille_service.proto §TextElement.contents) 계약(2026-08-05 개정):
+      · `contents`는 항목이 하나다 — 조판하지 않은 통 문자열
+      · 32칸 자름·면 나눔·들여쓰기·가운데 정렬은 FE(화면)·BE(다운로드)가 한다
+      · **구조적 빈 줄(제목 앞뒤 등)은 `\n`으로 여기 들어 있다** — 지침 규칙이라 우리 몫
+      · `RuleTrail.line_no`는 0 고정, `col_*`가 이 문자열의 문자 오프셋이다
 
-    layout이 `bo.braille_lines`를 선택 초안의 조판 결과로 write-back하므로
-    (`layout_braille.py` `_layout_one` 참조) 여기서는 그대로 내보내면 된다.
     빈 요소는 빈 배열을 유지한다.
 
-    ※ 2026-07-28에 '항목 = 초안' 형식으로 바꿨다가 2026-07-31 BE proto에 맞춰 되돌렸다.
-      내부 표현(줄 리스트)은 그때도 바뀌지 않았고 직렬화 경계만 오갔다.
+    ※ 이력: 2026-07-28 '항목 = 초안' → 07-31 '항목 = 32칸 조판 줄'(BE proto) →
+      08-05 '항목 = 통 문자열'(조판 가이드, AI finalize 폐기). 세 번 다 직렬화 경계만 바뀌었다.
     """
     if bo is None:
         return []
-    return list(bo.braille_lines)
+    fe = flat.get(bo.element_id)
+    return [fe.text] if fe else []
+
+
+# 초안 묵자에서 내부 태그를 벗긴다 (2026-08-06).
+# `<!점역자주>…<!/점역자주>` 는 점역기가 마커 점형으로 바꾸는 **기계 표식**이지 사람이
+# 읽을 글자가 아니다. FE는 이 값을 점자와 나란히 보여 주므로(와이어프레임) 태그가 그대로
+# 노출되면 안 된다. 점자(`contents`)는 손대지 않는다 — 거기선 태그가 이미 마커로 바뀌었다.
+_DRAFT_TAG_RE = re.compile(r"<!/?[^>]*>")
+
+
+def _draft_print_text(text: str) -> str:
+    """초안 묵자 — 내부 태그 제거. 줄바꿈·공백은 배치이므로 보존한다."""
+    return _DRAFT_TAG_RE.sub("", text or "").strip()
+
+
+def _draft_contents(bo, d, di: int, flat: dict) -> list[str]:
+    """초안 하나의 `contents`. 선택 초안과 **같은 구조적 빈 줄·들여쓰기**를 단다.
+
+    피커가 초안을 바꿔도 앞뒤 빈 줄과 들여쓰기가 달라지면 안 된다 — 둘 다 초안 내용이
+    아니라 요소의 위치(제목인가 표인가)가 정하는 값이기 때문이다.
+    `flatten_elements`가 초안까지 같은 규칙으로 미리 만들어 둔다.
+    """
+    fe = flat.get(bo.element_id) if bo else None
+    if fe is None:
+        return ["\n".join(d.braille_lines)] if d.braille_lines else []
+    if di < len(fe.draft_texts):
+        return [fe.draft_texts[di]]
+    return [fe.prefix + "\n".join(d.braille_lines) + fe.suffix]
+
+
+def _line_order(mode: str, order_map: dict, element_id, idx: int) -> int:
+    """응답 `order`.
+
+    mode a·c — 나열 순서(1..N). 종전과 같다. **바꾸지 않는다** — BE가 이 값이 빈틈없이
+      이어진다고 보고 쓸 수 있어, 여기서 의미를 바꾸면 조용한 계약 변경이 된다.
+    mode b — **원본 줄 번호**(2026-08-06). 빈 줄에서 번호가 건너뛰므로 BE가 원문에서
+      빈 줄이 어디였는지 알 수 있다. `text_list`와 `braille_text_list`가 같은 값을 써야
+      같은 `id`끼리 짝이 맞는다.
+    """
+    if mode == "b":
+        return int(order_map.get(element_id) or idx + 1)
+    return idx + 1
 
 
 def _build_response(
@@ -1110,11 +1326,15 @@ def _build_response(
     extracted: list[ExtractedContent],
     llm_outputs: list[LLMOutput],
     braille_outputs: list[BrailleOutput],
-    line_overflow_rate: float = 0.0,
+    flat: Optional[dict] = None,
 ) -> dict:
     elem_by_id = {e.element_id: e for e in layout_result.elements}
     braille_by_id = {b.element_id: b for b in braille_outputs}
     ext_by_id = {e.element_id: e for e in extracted}
+    flat = flat or {}
+    # 32칸 초과는 더 이상 우리가 재는 값이 아니다 — 조판을 FE·BE가 하므로 초과 여부도
+    # 거기서 정해진다. finalize 폐기로 C6 판정의 이동처가 사라져 0으로 고정한다.
+    line_overflow_rate = 0.0
 
     def _meta_fields(eid) -> dict:
         """proto TextElement 부가 필드 — 수식 latex·시각자료 subtype(추출에서 가져옴)."""
@@ -1172,11 +1392,14 @@ def _build_response(
             }
             for e in layout_result.elements
         ]
+    # 원문 목록은 mode b에도 싣는다 (2026-08-06). BE가 원문↔점역을 같은 `id`로 짝지어
+    # FE에 줄 단위로 흘려보낸다 — 종전에는 mode b에서 이게 비어 있어 짝짓기가 불가능했다.
+    if task.mode in ("a", "b", "c"):
         response["text_list"] = [
             {
                 "id": str(o.element_id),
                 "type": elem_by_id.get(o.element_id, _DUMMY_ELEM).type,
-                "order": i + 1,
+                "order": _line_order(task.mode, _order_of, o.element_id, i),
                 "heading_level": getattr(
                     elem_by_id.get(o.element_id), "heading_level", None
                 ) or 0,
@@ -1186,6 +1409,14 @@ def _build_response(
                 "render_mode": o.render_mode,
                 "contents": [o.corrected_text],
                 "rule_trail": [r.model_dump() for r in o.rule_trail],
+                # 시각 요소 대체 초안 — **묵자만** 싣는다 (2026-08-06).
+                # mode a는 점역을 하지 않으므로(include_braille=False) 점자가 없다.
+                # mode c는 여기 묵자와 `braille_text_list`의 묵자+점자를 함께 받는다.
+                "drafts": [
+                    {"text": _draft_print_text(d.text), "label": d.label, "contents": []}
+                    for d in (o.drafts or [])
+                ],
+                "selected_idx": o.selected_idx,
                 **_meta_fields(o.element_id),
             }
             for i, o in enumerate(llm_outputs)
@@ -1196,7 +1427,7 @@ def _build_response(
             {
                 "id": str(o.element_id),
                 "type": elem_by_id.get(o.element_id, _DUMMY_ELEM).type,
-                "order": i + 1,
+                "order": _line_order(task.mode, _order_of, o.element_id, i),
                 "heading_level": getattr(
                     elem_by_id.get(o.element_id), "heading_level", None
                 ) or 0,
@@ -1212,14 +1443,16 @@ def _build_response(
                 ),
                 "render_mode": o.render_mode,
                 "contents": _selected_lines(
-                    braille_by_id.get(o.element_id)
+                    braille_by_id.get(o.element_id), flat
                 ),
+                # 좌표계가 통 문자열이라 flat의 것을 쓴다(layout이 재매핑한 조판 좌표 아님).
                 "rule_trail": [
                     r.model_dump()
                     for r in (
-                        braille_by_id[o.element_id].rule_trail
-                        if o.element_id in braille_by_id
-                        else o.rule_trail
+                        flat[o.element_id].trail
+                        if o.element_id in flat
+                        else (braille_by_id[o.element_id].rule_trail
+                              if o.element_id in braille_by_id else o.rule_trail)
                     )
                 ],
                 "selected_idx": (
@@ -1231,11 +1464,13 @@ def _build_response(
                         # BE proto §Draft: 초안마다 자기 점자 줄을 싣는다.
                         # 선택 초안 것은 상위 contents와 같은 값이 되지만(중복),
                         # 피커가 초안별 점자를 바로 꺼내 쓸 수 있어야 한다.
-                        "text": d.text,
+                        "text": _draft_print_text(d.text),
                         "label": d.label,
-                        "contents": list(d.braille_lines),
+                        "contents": _draft_contents(
+                            braille_by_id.get(o.element_id), d, di, flat
+                        ),
                     }
-                    for d in (
+                    for di, d in enumerate(
                         braille_by_id[o.element_id].drafts
                         if o.element_id in braille_by_id else []
                     )

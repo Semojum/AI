@@ -53,6 +53,15 @@ _PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가�
 [개조식] 핵심을 위계 있는 개조식으로. 큰 항목은 줄 맨 앞, 하위 항목은 앞에 "- ". 3~5줄.
 [줄글] 1~3문장으로 간결히.
 
+점자 독자를 위한 규칙 — 어기면 그만큼 점역사가 지웁니다.
+1. **결론을 맨 앞에** 한 문장으로 쓰세요. 점자는 훑어보기가 어려워 되돌아가지 못합니다.
+2. **같은 내용을 두 번 쓰지 마세요.** 좌우·A/B가 같은 구조면 "같은 장치 둘"처럼 한 번만 쓰고
+   다른 점만 적습니다. 끝에 '공통 구성'을 또 붙이지 마세요.
+3. **색·음영·장식은 쓰지 마세요.** 진한 음영/중간 음영, 별표·아이콘·버튼(최소화·닫기),
+   테두리 모양은 문제 풀이에 안 쓰입니다. 그 자체가 정보일 때만 예외입니다.
+4. **그림에 없는 설명을 덧붙이지 마세요.** 기관의 기능, 배경 지식, 일반론은 본문 몫입니다.
+5. **한 면이 32칸 25줄입니다.** 설명이 길수록 학생이 읽을 본문이 줄어듭니다. 짧게 쓰세요.
+
 설명: {caption}"""
 
 _PREFILL = "[개조식]\n"
@@ -63,19 +72,55 @@ _SECTION_RE = re.compile(r"\[(제목|개조식|줄글)\]\s*(.*)")
 _TYPE_DUP_RE = None  # 지연 컴파일
 
 
+# 캡션이 자기 유형을 이미 말하는 경우 그 말을 라벨로 쓴다.
+# 분류기가 chart_graph로 넘기면 라벨이 무조건 "그래프"가 되는데(chart_graph_opt._label),
+# 실제로는 모식도·구조도가 많다. 판정 실측(2026-08-07 Opus 판정 8건): **유형라벨 2.0/5**로
+# 최약축이었고 "모식도인데 그래프라 부르고 자기모순"이라는 지적이 반복됐다.
+_TYPE_WORDS = ("모식도", "구조도", "개념도", "흐름도", "계통도", "분포도", "지도",
+               "도식", "삽화", "사진", "그래프", "그림")
+_TYPE_HEAD_RE = re.compile(r"^\s*(" + "|".join(_TYPE_WORDS) + r")\s*[:：,]?\s*")
+
+
+def resolve_label(label: str, *texts: str) -> str:
+    """캡션·제목이 유형을 말하면 그 말을 쓴다. 없으면 넘어온 라벨 그대로."""
+    for t in texts:
+        m = _TYPE_HEAD_RE.match(t or "")
+        if m:
+            return m.group(1)
+    return label
+
+
 def _strip_dup_type(text: str, label: str) -> str:
     """캡션이 이미 유형 제시어로 시작하면 떼서 라벨 이중화를 막는다.
 
     captioner._ensure_type_word(§6.3.4 rule-based)가 붙인 '그래프: …'에 여기서 또
     라벨을 붙이면 '그래프: 그래프: …'가 된다(2026-07-17 dev 캡셔닝 첫 실행 실측).
     """
-    import re
     t = (text or "").strip()
-    return re.sub(rf"^{re.escape(label)}\s*[:：]\s*", "", t)
+    t = re.sub(rf"^{re.escape(label)}\s*[:：]\s*", "", t)
+    # 라벨과 **다른** 유형어가 앞에 남아 있으면 그것도 뗀다("그래프: 모식도, …" 꼴).
+    return _TYPE_HEAD_RE.sub("", t, count=1) if _TYPE_HEAD_RE.match(t) else t
+
+
+def _oneline(text: str) -> str:
+    """점역자주 한 덩이는 **논리 줄 하나**다 — 줄바꿈·빈 줄을 공백으로 접는다.
+
+    QA 2026-08-07 14번("캡셔닝 안에 불필요한 빈 줄"). 근거 두 겹:
+      · BBPG 제3장 9)(1)② — 만화의 컷과 컷 사이에는 빈 줄을 두지 않는다.
+      · 「제작 지침」 §6.3.4(1) — 시각 자료 설명은 점역자 주표 **안**에 넣는 한 덩이다.
+    실측(대표님 QA 실행분): 캡션 34건 중 **27건(79%)** 이 캡션 안에 빈 줄을 갖고 있었고,
+    그게 그대로 점역자주 안으로 들어가 조판까지 흘렀다.
+    그리고 구조적 버그가 하나 더 붙어 있었다 — `_outline_text_indents`는 head를 `lines` 한
+    항목으로 세어 `indents`를 만드는데 head 안에 줄바꿈이 있으면 실제 줄 수가 늘어나
+    **line_indents가 본문과 어긋난다**(job_260807160446 p2: 줄 17개 vs 들여쓰기 5개).
+    여기서 접으면 둘 다 한 번에 사라진다.
+    """
+    return " ".join((text or "").split())
 
 
 def _tn(text: str) -> str:
     """시각자료 감싸기 — tn(현행): 점역자주 / box(A/B): 글상자 테두리."""
+    text = _oneline(text)
     if _WRAP_STYLE == "box":
         return (f"<!테두리_위><!/테두리_위>\n{text}\n<!테두리_아래><!/테두리_아래>")
     return f"<!점역자주>{text}<!/점역자주>"
@@ -132,6 +177,7 @@ def omission_draft(label: str) -> Draft:
 
 def title_draft(label: str, title: str) -> Draft:
     """1안: 짧은 제목(캡션 그대로 또는 생성)."""
+    title = _strip_dup_type(title, label)      # "그래프: 그래프: …" 중복 방지
     body = f"{label}: {title}".strip().rstrip(":") if title else f"{label} 생략"
     return Draft(option=2, text=_tn(body), render_mode="narrative", label=LABELS[TITLE_IDX])
 
@@ -259,8 +305,16 @@ async def build_visual_drafts(
     # 짧은 제목: 인쇄 캡션 우선(요건 — "캡션 있으면 그대로"), 단 장문 AI 캡션은 짧게 축약. 없으면 제목/LLM.
     short_title = _shorten(caption) or title or llm_title or ""
     # 개조식: 5칸 제목줄 = 구조적 표제(title), 점역자주 설명 = 캡션/생성 설명.
-    outline_desc = caption or llm_title or ""
     outline_items = struct_outline if struct_outline is not None else llm_outline
+    # ★ 머리줄은 §6.3.4(1) '유형 + **짧은** 설명'이다(이 함수 docstring도 그렇게 적혀 있었다).
+    #   그런데 캡션 **전문**을 넣고 그 아래 같은 내용을 개조식으로 또 깔았다 → 대표님 QA 13번
+    #   "그 이후에 그림을 전체적으로 또 설명하고 있어서 내용이 중복됨"의 실제 코드 위치다
+    #   (실측 job_260807160446 p2: 점역자주 안 13줄 + 밖 4줄이 같은 내용).
+    #   항목이 있으면 머리줄은 줄이고 세부는 항목이 진다. 항목이 없으면 머리줄이 유일한
+    #   내용이므로 그대로 둔다(축약이 곧 정보 손실).
+    outline_desc = caption or llm_title or ""
+    if outline_items:
+        outline_desc = _shorten(outline_desc)
     prose = struct_prose if struct_prose is not None else (llm_prose or caption or title)
 
     d_omit = omission_draft(label)

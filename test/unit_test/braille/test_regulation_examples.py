@@ -202,9 +202,17 @@ class TestBookStyleConventions:
       BRAILLE_STYLE=regulation 스위치로 유지 — TestRegulationSwitch가 검증한다.
 
     근거: 정답 코퍼스(수능특강 점역본 1131p) 전수 관찰.
-      · 표시 문자 (가)/(1) → 붙임표로 감쌈: -가- 1217회 / -1- 281회
-      · 일반 소괄호는 규정대로: 730회. 영문 (A)(B)도 소괄호 유지: 124/74회
       · 화살괄호 〈〉《》: 코퍼스에 0회 → 작은따옴표(3618회)로 적음
+        (신규 2027 코퍼스로도 재확인: 화살괄호 70 vs 작은따옴표 4,902 — 유지)
+
+    ★ **표시 문자 괄호는 2026-08-06 판정 번복**(원장 R-06). "붙임표로 감쌈(-가- 1217회)"의
+      근거가 **구판 수능특강 한 종류**였다. 신규 2027 코퍼스 48쪽 gold / 우리(종전):
+        한글 1~2자  소괄호 331 / 10  · 붙임표  13 / 569
+        숫자        소괄호  16 /  0  · 붙임표   0 /  74
+        대문자 1자   소괄호 100 /  0  · 붙임표   0 /  22
+        약어        소괄호   7 /  0  · 붙임표   0 /  14
+      네 범주가 전부 뒤집힌다. 규정 제49항도 소괄호라 규정·관행이 같은 쪽을 가리킨다.
+      효과: dev-2027 48쪽 CER 65.8% → 67.2%(편집 -1,375셀).
     """
 
     @pytest.fixture(autouse=True)
@@ -223,32 +231,36 @@ class TestBookStyleConventions:
         from app.utils.braille_ascii import unicode_to_ascii
         return unicode_to_ascii(translate_tagged_text(text))
 
-    def test_한글_표시문자는_붙임표(self):
-        assert self._brf("(가)") == "-$-"          # 가 = $ (약자)
-        assert self._brf("(나)") == "-c-"
+    def test_한글_표시문자는_소괄호(self):
+        assert self._brf("(가)") == "8'$,0"        # 소괄호 8'(⠦⠄) + 가$ + ,0(⠠⠴)
+        assert self._brf("(나)") == "8'c,0"
 
-    def test_숫자_표시문자는_붙임표(self):
-        assert self._brf("(1)") == "-#a-"
+    def test_숫자_표시문자는_소괄호(self):
+        assert self._brf("(1)") == "8'#a,0"
 
-    def test_단일_대문자_괄호는_붙임표(self):
-        # 정답 도서 실측: (A)(B)(C) 라벨은 붙임표+로마자표+대문자표(gold ⠤⠴⠠x⠤ =
-        # -0,x-). 전 과목 500/522·소괄호 0건(외국어 444·생물 54·언어 8·사회문화 6…).
-        # 소괄호(8' ,0)는 규정 제49항·화학 반응식 글자체 괄호 한정이라 일반 라벨엔 안 쓴다.
-        assert self._brf("(A)") == "-0,a-"          # 붙임표 -0,a- (로마자표0+대문자표,+a)
-        assert self._brf("(B)") == "-0,b-"
+    def test_단일_대문자_괄호는_소괄호(self):
+        # gold 100회 형: 소괄호 안에 로마자표 0(⠴)+대문자표 ,(⠠). 한글 문맥에서 나온다.
+        assert self._brf("(A)와 (B)").startswith("8'0,a,0")
+        # ⚠ 단독 "(A)"만 넣으면 로마자표가 안 붙는다(문맥이 없어 로마자 런이 안 열린다).
+        #   실사용은 항상 한글 문맥이라 위 형이 기준이다.
+        assert self._brf("(A)") == "8',a,0"
+
+    def test_약어_괄호도_소괄호(self):
+        assert self._brf("(SNS)를").startswith("8'0,,sns,0")   # 대문자 단어표 ,, 포함
+        # (단독은 로마자표 0 없이 — (A)와 같은 사정)
+        assert self._brf("(B)") == "8',b,0"
         # 소문자 (x)는 수학 변수(수학2 수식괄호 1609건)라 소괄호 유지 — 회귀 방지
         assert self._brf("(x)") == "8'x,0"
 
-    def test_한글_괄호는_붙임표(self):
-        # 정답 도서는 표시 문자뿐 아니라 한글 괄호도 붙임표로 감싼다
-        # (예: "소계(해당 인구)" → "소계-해당 인구-", "(2,575)" → "-2,575-")
-        assert self._brf("(조사)").startswith("-")
-        assert self._brf("(2,575)").startswith("-")
+    def test_일반_한글_괄호도_소괄호(self):
+        # 2026-08-06 번복: 표시 문자뿐 아니라 일반 괄호도 붙임표가 아니라 소괄호다.
+        for t in ("(조사)", "(2,575)"):
+            assert self._brf(t).startswith("8'") and self._brf(t).endswith(",0")
 
-    def test_영문_약어_괄호도_붙임표(self):
-        # 2026-07-18 정정: 대문자 약어도 정답은 붙임표(-⠴SNS-, 사회문화 p062 실측).
-        # 소괄호 유지는 단일 알파벳 (A)·(x)만.
-        assert self._brf("(SNS)").startswith("-")
+    def test_배열형_답지는_동그라미형_유지(self):
+        # (A)-(B)-(C) 배열형만 gold가 동그라미형 묶음으로 적는다(구판 외국어 516건).
+        # 신규 코퍼스에 외국어 권이 없어 재확인 못 했으므로 종전 형을 유지한다.
+        assert self._brf("(A)-(B)").startswith("7,a7")
 
     def test_화살괄호는_작은따옴표(self):
         assert self._brf("〈보기〉") == ",8~u@o0'"   # ‘보기’
@@ -283,3 +295,33 @@ class TestRegulationSwitch:
     def test_화살괄호는_규정_기호(self):
         # 제63항 〈…〉 — 관행(작은따옴표 ,8~u@o0')로 새지 않아야 한다
         assert self._brf("〈보기〉") != ",8~u@o0'"
+
+
+class TestCircledJamoReg64:
+    """동그라미 자모·음절 = 규정 제64항 감쌈형 ⠶…⠶ (2026-08-06 판정 번복).
+
+    종전에는 "도서는 맨 글자로 적는다"고 봤는데, 그 실측이 **구판 수능특강 한 종류**였다.
+    신규 2027 코퍼스 48쪽에서 묵자 ㉠ 개수와 gold `⠶⠿⠁⠶` 개수가 쪽마다 1:1로 맞는다
+    (4개 책 전부). 규정도 관행도 감쌈형이다.
+    """
+
+    @staticmethod
+    def _t(text: str) -> str:
+        from app.ai.braille.translator import translate_tagged_text
+        return translate_tagged_text(text)
+
+    def test_자모는_온표까지_감싼다(self) -> None:
+        assert self._t("㉠") == "⠶⠿⠁⠶"          # ⠶ + 온표⠿ + ㄱ⠁ + ⠶
+        assert self._t("㉡") == "⠶⠿⠒⠶"
+
+    def test_음절은_온표가_없다(self) -> None:
+        assert self._t("㉮") == "⠶⠫⠶"           # ⠶ + 가⠫ + ⠶
+
+    def test_뒤에_조사가_붙어도_감쌈이_남는다(self) -> None:
+        assert self._t("㉠은").startswith("⠶⠿⠁⠶")
+
+    def test_맨_자모는_감싸지_않는다(self) -> None:
+        assert self._t("ㄱ") == "⠿⠁"            # 글머리 ㄱ은 온표+자모 그대로
+
+    def test_동그라미_숫자는_수표_그대로(self) -> None:
+        assert self._t("①").startswith("⠼")     # 규정=도서 일치라 건드리지 않는다

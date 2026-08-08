@@ -1,20 +1,31 @@
-type: [#이슈] Title
-
-ex) chore: [#1] PR Template 생성
-* 위의 내용은 참고하고 지우기! 
+<!-- 제목: type: [#이슈] Title      예) chore: [#1] PR Template 생성
+     · Squash 머지라 이 제목이 그대로 develop 커밋이 됩니다
+     · GitHub이 채운 제목("Chore/8 align templates")을 그대로 두지 마세요
+     · 타입은 소문자로 (feat fix refactor perf test docs style chore exp)
+     · 위 안내는 지우고 올려주세요 -->
 
 ## PR 타입(하나 이상의 PR 타입을 선택해주세요)
 - [ ] 기능 추가
 - [ ] 기능 삭제
 - [ ] 버그 수정
 - [ ] 의존성, 환경 변수, 빌드 관련 코드 업데이트
- 
+
 ## 작업 내용
-- [ ] 이번 PR에서 
+- [ ] 이번 PR에서
 - [ ] 작업한 내용을 작성해주세요
 
 ## 반영 브랜치
-ex) feat/login -> dev
- 
+ex) feat/1-login -> develop
+
+## 검증
+<!-- 실행한 명령과 출력을 그대로 붙여주세요. "될 것 같다"는 검증이 아닙니다 -->
+```
+
+```
+
+## 되돌리기
+- [ ] 되돌릴 수 있습니다
+- [ ] DB 마이그레이션 / 설정·시크릿 / 계약(proto·REST) 변경 있음 → 절차:
+
 ## 리뷰 요구사항 or 추가 코멘트(선택)
 > 리뷰어가 특별히 살펴봤으면 하는 부분이나 추가 코멘트가 있다면 작성해주세요

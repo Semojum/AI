@@ -78,6 +78,42 @@ class TestScrambledColumnYsorted:
         assert _orders([b, d, f, c, e, a]) == [1, 2, 3, 4, 5, 6]
 
 
+class TestYsortStaysInsideColumn:
+    def test_two_column_scrambled_not_interleaved(self):
+        # 언어와 매체 p044 축소판: 머리말·꼬리말 조각이 앞뒤로 튀어 y-위반 2회를 만들면
+        # y-정렬이 발동한다. 이때 열을 무시하고 정렬하면 좌/우 단이 한 줄씩 번갈아 나온다
+        # (실측 τ 1.00 → 0.37). 열 안에서만 정렬해야 좌열 전체 → 우열 전체가 유지된다.
+        foot = _box(1, 100, 1390, 350, 1420)       # 꼬리말이 맨 앞에 방출됨
+        left = [_box(i + 1, 100, 100 + i * 120, 550, 200 + i * 120) for i in range(5)]
+        head = _box(7, 110, 40, 540, 90)           # 머리말이 본문 뒤에 방출됨
+        right = [_box(i + 8, 610, 100 + i * 120, 1060, 200 + i * 120) for i in range(5)]
+        items = [foot] + left + [head] + right
+        _reorder_columns(items)
+        got = [b.reading_order for b in sorted(items, key=lambda b: b.reading_order)]
+        assert got == list(range(1, len(items) + 1))
+        # 좌열 5개가 모두 우열 5개보다 앞에 온다
+        assert max(b.reading_order for b in left) < min(b.reading_order for b in right)
+
+    def test_left_column_comes_before_right(self):
+        # 열 번호는 x0 오름차순. 오른쪽 단이 먼저 방출돼도 좌 → 우로 잡아야 한다.
+        right = [_box(i + 1, 610, 100 + i * 120, 1060, 200 + i * 120) for i in range(4)]
+        left = [_box(i + 5, 100, 100 + i * 120, 550, 200 + i * 120) for i in range(4)]
+        stray = _box(9, 100, 1390, 550, 1420)      # y-위반 유발용 꼬리 조각
+        stray2 = _box(10, 110, 40, 540, 70)
+        _reorder_columns(right + left + [stray, stray2])
+        assert max(b.reading_order for b in left) < min(b.reading_order for b in right)
+
+
+class TestTooManyColumnsUntouched:
+    def test_rotated_page_left_alone(self):
+        # 270° 회전 페이지(외국어 영역): 줄마다 x가 달라 x-겹침 열이 열 개 넘게 잡힌다.
+        # 열 모형이 안 맞는 쪽이라 기하 정렬을 걸면 순서가 통째로 뒤집힌다 → 무변경.
+        items = [_box(i + 1, 1300 - i * 40, 187, 1326 - i * 40, 600) for i in range(12)]
+        before = _orders(items)
+        _reorder_columns(items)
+        assert _orders(items) == before
+
+
 class TestPageLineSlotsPreserved:
     def test_page_number_keeps_original_slot(self):
         # 페이지행 요소는 재배열 여파를 받지 않고 원래 순번 슬롯을 지킨다.
@@ -90,3 +126,46 @@ class TestPageLineSlotsPreserved:
         assert pn.reading_order == 1
         assert _orders(main) == [2, 3, 4]
         assert _orders(side) == [5, 6]
+
+
+# ── 회전 지면(QA Step3 후속, 2026-08-07) ─────────────────────────────────────
+# 4열 이상으로 잡히는 쪽 58개 중 57개가 rotation 270°였다(외국어 56·수학2 1).
+# 보기엔 평범한 1단 쪽인데 PDF 내부 좌표가 누워 있어 x0가 흩어져 열이 10~30개로 잡힌다.
+# 실측(valall 4열+ 47쪽): 원순서 τ 0.677 → 이 규칙 0.996 (LLM opus-5는 0.989·유료).
+from app.core.pipeline import _reorder_columns as _rc          # noqa: E402
+
+
+def _b(order, x0, y0, x1=None, y1=None):
+    from app.schemas.layout import BBoxItem
+    return BBoxItem(type="text", bbox=(x0, y0, x1 if x1 is not None else x0 + 12,
+                                       y1 if y1 is not None else y0 + 40),
+                    reading_order=order)
+
+
+class TestRotatedPage:
+    def _many_columns(self):
+        """세로로 누운 줄 6개 — x가 오른쪽에서 왼쪽으로 진행하는 것이 표시상 위→아래."""
+        return [_b(1, 500, 60), _b(2, 440, 60), _b(3, 380, 60),
+                _b(4, 320, 60), _b(5, 260, 60), _b(6, 200, 60)]
+
+    def test_270도면_x_내림차순으로_읽는다(self):
+        items = self._many_columns()
+        _rc(items, rotation=270)
+        assert [b.reading_order for b in items] == [1, 2, 3, 4, 5, 6]
+
+    def test_270도_뒤집힌_입력도_바로잡는다(self):
+        items = self._many_columns()
+        for i, b in enumerate(reversed(items), start=1):   # 순서를 거꾸로 넣어도
+            b.reading_order = i
+        _rc(items, rotation=270)
+        assert [b.reading_order for b in items] == [1, 2, 3, 4, 5, 6]
+
+    def test_90도면_x_오름차순(self):
+        items = self._many_columns()
+        _rc(items, rotation=90)
+        assert [b.reading_order for b in items] == [6, 5, 4, 3, 2, 1]
+
+    def test_회전_아니면_원순서_유지(self):
+        items = self._many_columns()
+        _rc(items, rotation=0)
+        assert [b.reading_order for b in items] == [1, 2, 3, 4, 5, 6]

@@ -352,3 +352,40 @@ class TestReportFields:
         )
         assert abs(report.ocr_confidence_avg - 0.95) < 1e-9
         assert report.page_id == "p_001"
+
+
+class TestLostGlyphFlag:
+    """글자 소실(폰트 cmap 파손) → R1 (2026-08-02).
+
+    일부 교과서 PDF는 텍스트 레이어에 제어문자가 글자 자리를 대신 차지한다
+    (실측 코퍼스 1,131쪽에서 277요소·352자·126쪽). sanitize_for_braille가 점역 전에
+    지우므로 쓰레기가 나가진 않지만 **글자가 조용히 사라진다** — 점역사에게 알려야 한다.
+    """
+
+    def _ext(self, text):
+        import uuid
+        from app.schemas.content import ExtractedContent
+        return ExtractedContent(element_id=str(uuid.uuid4()), corrected_text=text,
+                                ocr_confidence=0.99)
+
+    def _flags(self, text):
+        from app.ai.quality.quality_checker import QualityChecker
+        rep = QualityChecker().check("p1", layout_result=None, extracted=[self._ext(text)],
+                                     llm_outputs=[], braille_outputs=[], line_overflow_rate=0.0)
+        return [f for f in rep.review_flags if "글자 소실" in f.message]
+
+    def test_제어문자가_있으면_R1(self):
+        f = self._flags("**\x08국 인구는 \x03\x06\x04\x06년까지 증가")
+        assert len(f) == 1 and f[0].type == "R1"
+        assert "5자" in f[0].message          # \x08 + \x03\x06\x04\x06 = 5자
+
+    def test_정상_텍스트는_발화하지_않는다(self):
+        assert self._flags("한국 인구는 2020년까지 증가하였다.") == []
+
+    def test_줄바꿈_탭은_글자_소실이_아니다(self):
+        # \n·\t·\r은 정상 서식 문자다 — 여기 걸리면 거의 모든 요소가 오탐이 된다.
+        assert self._flags("첫 줄\n둘째 줄\t셋째\r넷째") == []
+
+    def test_신뢰도가_높아도_발화한다(self):
+        # 이 요소들은 ocr_confidence가 높게 잡혀 R1 임계(0.85)에 안 걸린다.
+        assert len(self._flags("가\x00나")) == 1

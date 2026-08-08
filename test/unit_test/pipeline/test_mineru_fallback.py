@@ -54,8 +54,20 @@ class TestMineruTimeout:
         assert seen["timeout"] == 123.0
 
     def test_config_auto_budget(self):
-        # 0(자동) → 페이지 예산 - 60초, 최소 60초
-        assert config.mineru_timeout_resolved == max(60.0, config.page_timeout_seconds - 60.0)
+        """0(자동) → 60초 고정. 단 뒷단 몫 60초를 먼저 지킨다.
+
+        2026-08-02 개정: 종전 공식은 `페이지예산 - 60`이라 180초 예산에서 120초가 나왔다.
+        정상 페이지 꼬리 실측(60쪽·동시 2·medium)이 p99·최대 36.6초라 120초는 정상 최대의
+        3.3배 — 비정상 탐지기로 너무 느슨했다. 60초면 1.6배이고 표본 0/60이 걸린다.
+        """
+        from app.core.config import Settings
+
+        assert Settings().mineru_timeout_resolved == 60.0
+        # 페이지 예산이 줄면 뒷단 몫(60초)을 먼저 지킨다 — 추출이 양보한다.
+        assert Settings(page_timeout_seconds=100).mineru_timeout_resolved == 40.0
+        # 명시값이 있으면 그대로 쓴다.
+        assert Settings(mineru_timeout_seconds=45).mineru_timeout_resolved == 45.0
+        assert config.mineru_timeout_resolved == 60.0
 
 
 class TestTextLayerFallback:
@@ -69,13 +81,17 @@ class TestTextLayerFallback:
                         pdf_data=_text_pdf_bytes())
         with patch("app.ai.parser.mineru_runner.run",
                    side_effect=RuntimeError("MinerU 추출 타임아웃 (>240s)")):
-            elements, w, h = asyncio.run(
+            elements, w, h, space = asyncio.run(
                 pipeline._extract_via_models(task, self._meta(scan_only=False))
             )
         assert elements, "텍스트레이어 폴백이 요소를 살려야 한다"
         assert all(el["flags"] == ["C2_FALLBACK"] for el in elements)
         assert "Hello" in elements[0]["content"]
         assert w > 0 and h > 0
+        # ★ 폴백은 **픽셀** bbox다. method는 "OCR"로 남으므로 소비자가 method로 유추하면
+        #   정규화로 오인해 한 번 더 확대한다(Step8 실측: 아래쪽 요소가 쪽 밖으로 나감).
+        assert space == "pixel"
+        assert max(el["bbox"][3] for el in elements) <= h * 1.05
 
     def test_scan_only_returns_empty(self):
         from app.core import pipeline
@@ -84,7 +100,7 @@ class TestTextLayerFallback:
                         pdf_data=_text_pdf_bytes())
         with patch("app.ai.parser.mineru_runner.run",
                    side_effect=RuntimeError("MinerU 실행 실패")):
-            elements, w, h = asyncio.run(
+            elements, w, h, _space = asyncio.run(
                 pipeline._extract_via_models(task, self._meta(scan_only=True))
             )
         assert elements == []

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import grpc
 
+from app.ai.braille.translator import translate_plain
 from app.core.config import config
 from app.core import pipeline
 from app.schemas.task import PageTask
@@ -37,7 +38,6 @@ def _dict_to_processing_meta(d: dict):
 def _dict_to_quality_report(d: dict):
     qr = braille_service_pb2.QualityReport()
     qr.ocr_confidence_avg = d.get("ocr_confidence_avg", 0.0)
-    qr.line_overflow_rate = d.get("line_overflow_rate", 0.0)
     for ce in d.get("critical_errors", []):
         err = qr.critical_errors.add()
         err.type = ce.get("type", "")
@@ -134,7 +134,6 @@ def _build_error_response(job_id: str, page_no: int, message: str):
     resp.status = "BLOCKED"
     resp.page_number = page_no
     resp.quality_report.ocr_confidence_avg = 0.0
-    resp.quality_report.line_overflow_rate = 0.0
     err = resp.quality_report.critical_errors.add()
     err.type = "C1"
     err.element_id = "page"
@@ -154,9 +153,10 @@ def _build_proto_response(result: dict):
     if "quality_report" in result:
         resp.quality_report.CopyFrom(_dict_to_quality_report(result["quality_report"]))
 
-    # mode a, c: image dimensions + bounding boxes
-    resp.image_width = result.get("image_width", 0)
-    resp.image_height = result.get("image_height", 0)
+    # mode a, c: image dimensions(BE 협의본은 "WIDTHxHEIGHT" 문자열 단일 필드) + bounding boxes
+    # 2026-08-05: image_resolution(문자열 합침)에서 int 두 필드로 복원 — proto 주석 참조.
+    resp.image_width = int(result.get("image_width", 0))
+    resp.image_height = int(result.get("image_height", 0))
     for bb in result.get("bounding_box_list", []):
         resp.bounding_box_list.append(_dict_to_bounding_box(bb))
 
@@ -169,8 +169,75 @@ def _build_proto_response(result: dict):
     return resp
 
 
+# 배압(M2, 2026-08-02) — admission 카운터. asyncio 단일 스레드 협조 스케줄링이라
+# 증감 사이 await가 없는 한 락 불필요. maximum_concurrent_rpcs(config.max_queued_rpcs)는
+# 넉넉하게 열어 두고, 실제 처리 상한은 여기서 강제해 초과분을 큐잉 대신 즉시 거절한다.
+_in_flight = 0
+
+# 꼬리말은 32칸 안에 들어가는 짧은 문자열이다. 본문을 이 RPC로 보내는 오용을 막되,
+# 잘라내지 않고 거절한다 — 조용히 자르면 BE가 잘린 줄 모른다.
+_TRANSLATE_TEXT_MAX = 200
+
+
 class BrailleServiceServicer(braille_service_pb2_grpc.BrailleServiceServicer):
     async def ProcessPage(
+        self,
+        request: braille_service_pb2.BrailleRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> braille_service_pb2.BrailleResponse:
+        global _in_flight
+        if _in_flight >= config.max_concurrent_pages:
+            logger.warning(
+                "동시 처리 상한(%d) 초과 — RESOURCE_EXHAUSTED 즉시 거절 job=%s page=%d",
+                config.max_concurrent_pages,
+                getattr(request, "job_id", "?"), getattr(request, "page_no", 0),
+            )
+            await context.abort(
+                grpc.StatusCode.RESOURCE_EXHAUSTED,
+                f"AI 서버 동시 처리 상한({config.max_concurrent_pages}페이지) 초과 — 잠시 후 재시도",
+            )
+            return  # context.abort()가 예외를 던져 실제로는 도달하지 않음
+
+        _in_flight += 1
+        try:
+            return await self._process_page(request, context)
+        finally:
+            _in_flight -= 1
+
+    async def TranslateText(
+        self,
+        request: braille_service_pb2.TranslateTextRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> braille_service_pb2.TranslateTextReply:
+        """짧은 묵자 → 점자. 꼬리말 입력·수정 때 BE가 1회 호출한다(조판 가이드 §6).
+
+        본문과 **같은 rule-based 경로**를 타고 LLM·MinerU를 거치지 않으므로 즉시 끝난다.
+        그래서 `_in_flight` 배압에 넣지 않는다 — GPU도 안 쓰는 호출을 페이지 상한에 태우면
+        점역 처리량만 깎인다.
+
+        32칸 조판은 하지 않는다. 페이지행 배치는 BE·FE가 braille-assist `page_row`로 한다.
+        """
+        text = (request.text or "").strip()
+        if not text:
+            return braille_service_pb2.TranslateTextReply(braille="")
+        if len(text) > _TRANSLATE_TEXT_MAX:
+            await context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT,
+                f"TranslateText는 짧은 묵자 전용이다 — {_TRANSLATE_TEXT_MAX}자 이하 "
+                f"(받은 길이 {len(text)}). 본문 점역은 ProcessPage를 쓸 것",
+            )
+        try:
+            braille = translate_plain(text)
+        except Exception as exc:
+            logger.exception("TranslateText 실패 text=%r: %s", text[:40], exc)
+            await context.abort(
+                grpc.StatusCode.INTERNAL, f"점역 실패: {type(exc).__name__}: {exc}"
+            )
+            return
+        logger.info("TranslateText peer=%s %d자 → %d셀", context.peer(), len(text), len(braille))
+        return braille_service_pb2.TranslateTextReply(braille=braille)
+
+    async def _process_page(
         self,
         request: braille_service_pb2.BrailleRequest,
         context: grpc.aio.ServicerContext,
@@ -216,17 +283,21 @@ class BrailleServiceServicer(braille_service_pb2_grpc.BrailleServiceServicer):
 
 
 async def serve() -> None:
-    # maximum_concurrent_rpcs: 동시에 처리할 페이지 수 상한(M2). 초과분은 gRPC가 큐에 세운다.
-    # 상한이 없으면 요청이 몰릴 때 전부 동시에 진행돼 각 페이지가 느려지고, 뒤쪽 요청이
-    # 180초 페이지 예산에 통째로 걸린다(C7).
+    # maximum_concurrent_rpcs는 실제 처리 상한(max_concurrent_pages)보다 넉넉히 잡는다.
+    # 여기를 처리 상한과 같이 두면 초과 요청이 gRPC 레이어에서 "조용히" 큐잉되어
+    # BrailleServiceServicer의 RESOURCE_EXHAUSTED 거절 코드에 아예 도달하지 못한다.
+    # 실제 admission 제어는 ProcessPage의 _in_flight 카운터가 한다(배압, 2026-08-02).
     server = grpc.aio.server(
-        maximum_concurrent_rpcs=config.max_concurrent_pages,
+        maximum_concurrent_rpcs=config.max_queued_rpcs,
         options=[
             ("grpc.max_receive_message_length", config.max_grpc_message_bytes),
             ("grpc.max_send_message_length", config.max_grpc_message_bytes),
         ]
     )
-    logger.info("동시 처리 상한: %d페이지", config.max_concurrent_pages)
+    logger.info(
+        "동시 처리 상한: %d페이지 (gRPC 큐 상한 %d)",
+        config.max_concurrent_pages, config.max_queued_rpcs,
+    )
     braille_service_pb2_grpc.add_BrailleServiceServicer_to_server(
         BrailleServiceServicer(), server
     )

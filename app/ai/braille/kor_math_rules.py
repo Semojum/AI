@@ -36,6 +36,28 @@ _SUPERSCRIPT_IND = "⠘"
 _SUBSCRIPT_IND   = "⠰"
 # 수학 점자 제22항: 근호 > = ⠜ (dots 3,4,5)
 _SQRT_IND        = "⠜"
+
+# ── 유니코드 첨자 → LaTeX (QA 10번, 2026-08-08) ─────────────────────────────
+# 캡셔닝 LLM은 수식을 `x²`처럼 유니코드로 쓴다(대표님 QA 실측: `곡선: y = x² + 3`).
+# 이 표기가 convert_latex에 그대로 들어오면 첨자 문자가 **아무 규칙에도 안 걸려**
+# 원문자 그대로 점자 파일에 실린다 — `x²` → `⠭²`. 숫자 2가 통째로 사라지므로
+# 수표(⠼)도 같이 사라진다 = **C5**(배포 블로커). 제18·19항 형태로 되돌린다.
+# inline_math도 같은 표를 쓴다(정의는 여기 하나) — 거기선 '수식 구간 판정'에도 쓴다.
+UNI_SUP = {"⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4", "⁵": "5", "⁶": "6",
+           "⁷": "7", "⁸": "8", "⁹": "9", "⁺": "+", "⁻": "-", "⁼": "=",
+           "⁽": "(", "⁾": ")", "ⁿ": "n", "ⁱ": "i", "ˣ": "x"}
+UNI_SUB = {"₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4", "₅": "5", "₆": "6",
+           "₇": "7", "₈": "8", "₉": "9", "₊": "+", "₋": "-", "₌": "=",
+           "₍": "(", "₎": ")", "ₙ": "n", "ₖ": "k", "ₘ": "m", "ₚ": "p",
+           "ₜ": "t", "ᵢ": "i", "ⱼ": "j"}
+_UNI_SUP_RE = re.compile(f"[{''.join(UNI_SUP)}]+")
+_UNI_SUB_RE = re.compile(f"[{''.join(UNI_SUB)}]+")
+
+
+def unicode_scripts_to_latex(s: str) -> str:
+    """유니코드 위·아래첨자를 LaTeX `^{}`·`_{}`로. (x² → x^{2}, aₙ₊₁ → a_{n+1})"""
+    s = _UNI_SUP_RE.sub(lambda m: "^{" + "".join(UNI_SUP[c] for c in m.group()) + "}", s)
+    return _UNI_SUB_RE.sub(lambda m: "_{" + "".join(UNI_SUB[c] for c in m.group()) + "}", s)
 # 수학 점자 제22항 붙임1: 세제곱근 이상 근수 기호 ] = ⠻ (dots 1,2,4,5,6)
 _SQRT_N_IND      = "⠻"
 
@@ -186,6 +208,28 @@ _PERM_RE = re.compile(
 # ── 왼쪽 첨자(제18·19항 2호): {}^{t}A → ^(t)A — 첨자는 항상 묶음 괄호 ──
 _LEFT_SUP_RE = re.compile(r"\{\}\^(\{[^{}]*\}|[A-Za-z0-9])\s*([A-Za-z])")
 _LEFT_SUB_RE = re.compile(r"\{\}_(\{[^{}]*\}|[A-Za-z0-9])\s*([A-Za-z])")
+# ★ 마커 `{}` 없이 첨자가 먼저 오는 꼴(`_{8}\\mathrm{O}` = 원자번호 8인 산소, 「과학 점자」 제3항).
+#   base를 요구하는 _SUB_RE/_SUP_RE가 못 잡아 남은 `_`가 symbol_table의 **밑줄 기호(⠸⠤)**로,
+#   `^`는 **캐럿**으로 새 나갔다. 왼쪽 첨자도 제18·19항 2호가 규정하는 표기이므로 같이 처리한다.
+#   ⚠ 룩비하인드로 base 유무를 보면 안 된다 — 추출물이 `\\int _{a}`처럼 **공백을 끼워** 내므로
+#     바로 앞 문자가 공백이 되어 정적분·일반 첨자까지 선행 첨자로 끌려간다(실측으로 확인).
+#     그래서 앞쪽 **비공백** 문자를 직접 보고 판정한다(_is_prefix_script).
+_PRE_SUP_RE = re.compile(r"\^(\{[^{}]*\}|[A-Za-z0-9])\s*(?=[A-Za-z\\^_])")
+_PRE_SUB_RE = re.compile(r"_(\{[^{}]*\}|[A-Za-z0-9])\s*(?=[A-Za-z\\^_])")
+# ⚠ "base가 아닌 것"을 빼는 방식(부정 목록)은 못 쓴다 — 1d 시점엔 `\\int`가 이미 `∫`로
+#   바뀌어 있어 부정 목록에 안 걸리고, 정적분의 아래끝이 선행 첨자로 끌려간다(실측).
+#   그래서 **선행 첨자로 볼 수 있는 앞 문자만** 허용 목록으로 둔다.
+# 원장 M-02 — 아래첨자 표기(⠰+수표 vs 하급 숫자)가 미정이라 과학 제3항(원자번호·질량수
+# 순서)은 여기서 구현하지 않는다. 여기서는 선행 첨자가 밑줄·캐럿 기호로 새는 것만 막는다.
+_PREFIX_OK = re.compile(r"[(\[{,;+\-=<>±×÷·]")
+
+
+def _is_prefix_script(text: str, at: int) -> bool:
+    """`text[at]`의 첨자 기호가 왼쪽 첨자인가 — 식 머리이거나 여는 묶음·연산자 뒤인가."""
+    i = at - 1
+    while i >= 0 and text[i].isspace():
+        i -= 1
+    return i < 0 or bool(_PREFIX_OK.match(text[i]))
 # ── 정적분(제57항): ∫;아래끝`위끝`본식 — 위끝은 위첨자 ⠘가 아니라 칸 구분 ──
 # 한계는 \frac{π}{2} 같은 1중첩 중괄호 허용
 _BRACE1 = r"\{(?:[^{}]|\{[^{}]*\})*\}"
@@ -257,6 +301,10 @@ def _digit_no_indicator(ch: str) -> str:
 _OPERATORNAME_RE = re.compile(r"\\operatorname\s*\*?\s*\{([^{}]*)\}")
 _SPACED_LETTERS_RE = re.compile(r"\{\s*([a-zA-Z](?:\s+[a-zA-Z])+)\s*\}")
 _BRACED_OP_RE = re.compile(r"\{\s*([-+=<>*/])\s*\}")
+# 다자리 수도 자리마다 띄어 낸다 — `\frac {5}{1 2}`(=5/12) · `6 0 p`(=60p) · `1 0 ^ {\circ}`(=10°).
+# 정확히 한 칸만 붙인다: 코퍼스 실측(1131p)에서 두 칸 이상으로 벌어진 숫자런은 0개이고,
+# 폭을 넓히면 의미 있는 간격까지 삼킨다. 쉼표는 절대 넘지 않는다(아래 사용처 주석 참조).
+_SPACED_DIGITS_RE = re.compile(r"\d(?: \d)+")
 
 _CODE_FENCE_RE = re.compile(r"```[a-zA-Z]*\n?|```")        # ```latex … ``` 펜스
 _MATH_DELIM_RE = re.compile(r"\${1,2}")                    # $$ … $$ / $ … $
@@ -279,6 +327,69 @@ _W2C_NULL_DELIM_RE = re.compile(r"\\(?:left|right)\s*\.")
 # ⚠ 행 구분자 `\\ `의 둘째 백슬래시를 먹지 않도록 lookbehind — 이 정규식은
 #   `\\\\`→행전환 치환(아래)보다 먼저 돌기 때문이다.
 _SPACING_CMD_RE = re.compile(r"\\(?:quad|qquad|[,;:!])|(?<!\\)\\ ")
+# ── 「과학 점자」 편 (규정 과학 제1·4항) — 원장 M-01 ────────────────────────────
+# 규정에 과학 점자 편이 따로 있는데 우리는 화학식을 일반 수식으로 처리하고 있었다.
+# 규정 원문(`braille-source/text/규정_텍스트.txt` 4322행~)과 그 BRF 예문:
+#   제1항 원소 기호 = 「한글 점자」 제29항 로마자 표기법 + 1급 점자(약자 금지)
+#         H          `0,h4`                    → ⠴⠠⠓⠲     (로마자표 ⠴ … 종료표 ⠲)
+#         Li, Na, K  `0,li1`,na1`,k4`          → ⠴⠠⠇⠊⠂ ⠠⠝⠁⠂ ⠠⠅⠲  (표·종료표는 바깥 1회)
+#   제4항 로마자 하나짜리 원소 기호가 **3개 이상 이어** 나오면 대문자 구절표로 묶는다.
+#         CH3COOH    `0,,,ch;#c"cooh,'4`       → ⠴⠠⠠⠠⠉⠓⠰⠼⠉⠐⠉⠕⠕⠓⠠⠄⠲
+#         2호: 분자식·구조식·전자 점식·**화학 반응식** 등 원소 기호가 든 모든 식에 적용.
+#   제2항 이온 위첨자·부호(⠘ · +=⠢ · −=⠔)는 **이미 우리 출력과 같다** — 손대지 않는다.
+#
+# gold도 로마자표를 붙인다(생물 p089: `⠴⠠⠓…`). 즉 규정↔관행 대립이 아니라 우리 결손이었다.
+# 규모는 작다(화학 표지 보유 수식 dev 6/95 · val 7/334) — 지표가 아니라 규정 준수 목적이다.
+_ELEMENTS = (
+    "He Li Be Ne Na Mg Al Si Cl Ar Ca Sc Ti Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr "
+    "Rb Sr Zr Nb Mo Ag Cd In Sn Sb Te Xe Cs Ba La Ce Pt Au Hg Tl Pb Bi Po At Rn "
+    "H B C N O F P S K V Y I U W"
+).split()
+# Hb(헤모글로빈)처럼 교과서가 원소 기호처럼 쓰는 약칭도 받는다 — 규정은 '원소 기호'라
+# 적었지만 제4항 2호가 '원소 기호가 포함된 모든 식'으로 넓히고 있고, gold도 Hb를 같은
+# 방식으로 적는다(생물 p089 `⠴⠠⠓⠃…`).
+_CHEM_TOKENS = _ELEMENTS + ["Hb"]
+_ROMAN_OPEN = "⠴"    # 로마자표 (제29항)
+_ROMAN_CLOSE = "⠲"   # 로마자 종료표
+_CAPS_OPEN = "⠠⠠⠠"  # 대문자 구절표 (제4항)
+_CAPS_CLOSE = "⠠⠄"
+_CAP = "⠠"          # 대문자표
+_CHEM_MARK_RE = re.compile(r"\\mathrm\s*\{|\\xrightarrow|\\longrightarrow|\\rightleftharpoons")
+# 기하 표기 신호 — 점·선분·각·도형 이름도 \mathrm으로 적고 글자가 원소 기호와 겹친다.
+_GEOMETRY_MARK_RE = re.compile(
+    r"\\overline|\\overrightarrow|\\vec|\\triangle|\\angle|\\perp|\\parallel|"
+    r"\\cong|\\sim\b|\\square|\\odot")
+
+
+def _looks_chemical(latex: str) -> bool:
+    """화학식 경로로 보낼지.
+
+    \\mathrm·반응 화살표가 있고, 그 위에 아래 둘 중 하나면 화학식으로 본다.
+      · 원소 기호 2개 이상 (분자식·반응식)
+      · 원소 기호 1개 + 이온 표시(위첨자 +/−) 또는 아래첨자 숫자 (제2·3항)
+    ⚠ 하나만으로 판정하면 안 된다 — `\\mathrm{C} = 2\\pi r`처럼 상수를 로만체로 적은
+    **수학식**이 화학식으로 끌려간다. 반대로 원소 2개를 요구하기만 하면 규정 제2항의
+    `H+`(이온) 예시가 빠진다.
+    """
+    if not _CHEM_MARK_RE.search(latex or ""):
+        return False
+    # ★ 기하 표기 배제 — 점·선분·도형 이름도 로만체(\mathrm)로 적고 그 글자가 원소 기호와
+    #   겹친다(P·O·Q·C·N…). `\overline{\mathrm{PQ}}^2 = …`(선분 PQ의 제곱)이나
+    #   `\triangle \mathrm{ABC}`가 화학식으로 끌려가 로마자표가 붙는 사고가 실제로 났다.
+    #   기하 신호가 하나라도 있으면 화학이 아니다.
+    if _GEOMETRY_MARK_RE.search(latex):
+        return False
+    body = re.sub(r"\\[a-zA-Z]+", " ", latex)
+    n = sum(1 for t in re.findall(r"[A-Z][a-z]?", body) if t in _CHEM_TOKENS)
+    ionic = re.search(r"\^\s*\{?\s*[+-]", latex) or re.search(r"_\s*\{?\s*\d", latex)
+    # 원소 2개 이상이라도 **화학다운 신호**를 하나는 요구한다 — 반응 화살표, 이온·아래첨자.
+    # `\mathrm{AB} \perp \mathrm{CD}` 류가 남는 것을 막는다.
+    reactive = re.search(r"\\xrightarrow|\\longrightarrow|\\rightleftharpoons", latex)
+    if n >= 2 and (reactive or ionic):
+        return True
+    return n >= 1 and bool(ionic) and bool(reactive or n >= 2)
+
+
 # 서식 래퍼: \boxed{…}·\mathrm{…} 등 → 내용만 남김(수식 식별자 보존). \text는 별도(P2 한글 점역).
 _TEXT_WRAP_RE = re.compile(
     r"\\(?:boxed|fbox|mbox|mathrm|mathbf|mathit|mathbb|mathcal|mathsf|operatorname)\s*\{([^{}]*)\}"
@@ -524,6 +635,9 @@ def _normalize_latex_input(latex: str) -> str:
     s = _MATH_DELIM_RE.sub(" ", s)
     # ★ 다른 어떤 규칙보다 먼저 — 백슬래시가 없으면 아래 정규식이 하나도 안 걸린다.
     s = _restore_lost_backslash(s)
+    # 유니코드 첨자 → ^{}·_{} (QA 10번). 첨자 공백 정리(_SUBSUP_SP_RE)보다 먼저 와야
+    # `Ca²⁺`가 한 첨자 덩이 `Ca^{2+}`로 묶인다. 프라임 ′는 제17항 ' 로 통일.
+    s = unicode_scripts_to_latex(s).replace("′", "'").replace("″", "''")
     # 원문자(제64항). \text{…} 래퍼보다 먼저 잡아야 \textcircled가 \text로 오인되지 않는다.
     s = _TEXTCIRCLED_RE.sub(_textcircled_repl, s)
     # MinerU 수식 OCR은 토큰을 글자 단위로 띄어 낸다 — `\operatorname* { l i m }`,
@@ -533,6 +647,15 @@ def _normalize_latex_input(latex: str) -> str:
     s = _OPERATORNAME_RE.sub(lambda m: "\\" + re.sub(r"\s+", "", m.group(1)), s)
     s = _SPACED_LETTERS_RE.sub(lambda m: "{" + re.sub(r"\s+", "", m.group(1)) + "}", s)
     s = _BRACED_OP_RE.sub(lambda m: m.group(1), s)
+    # 다자리 수 복원(2026-08-02). 낱자리로 두면 11단계가 자리마다 수표를 찍어
+    # 12가 ⠼⠁⠀⠼⠃가 된다. val+dev 실측: formula 429개 중 43개(10.0%)·숫자런 87개가 해당.
+    # 같은 수식 안에 `\sin 10^{\circ}`와 `1 0 ^ {\circ}`가 함께 나오는 실례(수학2)가
+    # 분리가 MinerU 산물임을 직접 보여 준다.
+    # ⚠ 쉼표를 넘지 않는다 — `\{1, 2, 4, 5\}`는 집합 원소라 붙이면 값 자체가 바뀐다.
+    # ⚠ 소수점도 넘지 않는다 — `1. x = 2` 같은 문항 번호를 소수로 만든다(해당 실측 1건뿐).
+    # ⚠ 아래 행렬(_mat_repl)·연립식(_sys_repl) 평탄화보다 **먼저** 와야 한다. 그 뒤에는
+    #   셀 구분자 &가 공백으로 바뀌어, 서로 다른 칸의 숫자가 한 수로 붙어 버린다.
+    s = _SPACED_DIGITS_RE.sub(lambda m: m.group(0).replace(" ", ""), s)
     # 괄호 안쪽과 쉼표 앞의 공백도 MinerU가 넣은 것이다: `( x )` → `(x)`, `α , β` → `α, β`.
     # 이 단계는 원문 LaTeX의 군더더기 공백만 지운다 — 제51·57항의 구조 칸은 뒤 단계에서
     # 따로 넣으므로 영향받지 않는다.
@@ -816,9 +939,25 @@ def _stage1d_left_scripts(result: str) -> str:
     result = _LEFT_SUP_RE.sub(
         lambda m: f"⠘{_WRAP_S}{convert_latex(_unbrace(m.group(1)))}{_WRAP_E}{m.group(2)}",
         result)
-    return _LEFT_SUB_RE.sub(
+    result = _LEFT_SUB_RE.sub(
         lambda m: f"⠰{_WRAP_S}{convert_latex(_unbrace(m.group(1)))}{_WRAP_E}{m.group(2)}",
         result)
+    # `{}` 마커 없는 선행 첨자. 위·아래가 연달아 오는 꼴(`^{235}_{92}U` = 질량수+원자번호)이
+    # 있어 바뀔 때까지 돌린다 — 한 번만 돌리면 앞 첨자가 남긴 묶음 닫기가 뒤 첨자를 막는다.
+    def _pre(mark: str):
+        def _sub(m: re.Match) -> str:
+            if not _is_prefix_script(m.string, m.start()):
+                return m.group(0)          # base가 있으면 일반 첨자 — 8·9단계 몫
+            return f"{mark}{_WRAP_S}{convert_latex(_unbrace(m.group(1)))}{_WRAP_E}"
+        return _sub
+
+    for _ in range(4):                     # 첨자가 4중 이상 겹치는 식은 없다
+        before = result
+        result = _PRE_SUP_RE.sub(_pre("⠘"), result)
+        result = _PRE_SUB_RE.sub(_pre("⠰"), result)
+        if result == before:
+            break
+    return result
 
 
 def _stage1e_integral_range(result: str) -> str:
@@ -1025,8 +1164,6 @@ def _stage8_superscript(result: str) -> str:
     def _sup_replace(m: re.Match) -> str:
         base = m.group(1) or m.group(3) or ""
         raw_exp = (m.group(2) or m.group(4) or "").strip()
-        # 관행(book): 제곱(^2)은 ⠣ 한 셀 약기 — 정답 코퍼스에서 규정형 ⠘⠼⠃은 0회,
-        # ⠣형만 관측(수학2 p009 'x<9#b'·p039 'x<5y<' 실측). 규정 모드는 제18항 그대로.
         # 프라임(제17항): f^{\prime}(x)는 위첨자표 없이 본문자 뒤에 바로 ⠤를 적는다
         # (규정 예시 `f-8x0`). 구현이 ⠘⠤로 내보내 39건이 어긋났다(2026-07-19).
         # MinerU는 토큰을 띄어 낸다("\prime \prime") — 공백을 걷고 판정(2026-07-22,
@@ -1038,15 +1175,37 @@ def _stage8_superscript(result: str) -> str:
             return f"{base}⠤⠤"
         if exp_key in ("\\prime\\prime\\prime", "'''", "‴"):
             return f"{base}⠤⠤⠤"
-        # 관행 지수 약기: ²=⠣(gold 107회)·³=⠩(9건 중 7건, 2026-07-19 실측).
-        # ⁴ 이상은 gold도 규정형 ⠘⠼N을 쓰므로 약기하지 않는다.
-        if _IS_BOOK_STYLE and raw_exp in ("2", "3"):
+        # ★ 2026-08-06 판정 번복(원장 C-03). 종전에는 제곱을 ⠣ 한 셀로 약기했다
+        #   ("gold 107회 ⠣ · 규정형 ⠘⠼⠃ 0회", 수학2 p009 실측). 그 실측이 **구판 한 종류**였다.
+        #   신규 2027 코퍼스 수학1에서 `x⠘⠼⠃`(=x²)는 1,511회, `x⠣`는 **0회**다.
+        #
+        #   다만 **단위 제곱**은 여전히 ⠣ 쪽이 많다(m² ⠣ 96 : ⠘⠼⠃ 31 · L² ⠣ 11).
+        #   가르는 신호는 **앞에 수가 붙는가**다 — `25m²`는 단위, `m²`만 있으면 변수다.
+        if raw_exp in ("2", "3") and _is_unit_square(base, m.string[:m.start()]):
             return base + ("⠣" if raw_exp == "2" else "⠩")
         exp  = convert_latex(raw_exp)
         exp_w = _wrap_ins(exp) if _needs_wrap(raw_exp) else exp
         return f"{base}{_SUPERSCRIPT_IND}{exp_w}"
 
     return _SUP_RE.sub(_sup_replace, result)
+
+
+# ⚠ 이 판정은 **원문 문자열** 위에서 돈다(_sup_replace가 raw_exp를 원문으로 보는 것과 같다).
+#   base가 아직 ASCII다 — 점형으로 바뀐 뒤에는 단위와 변수를 못 가른다.
+_UNIT_BASE_RE = re.compile(r"(?:^|[^A-Za-z])(mm|cm|km|m|kg|g|mg|L|mL|s|h)$")
+_NUM_BEFORE_RE = re.compile(r"\d\s*$")
+
+
+def _is_unit_square(base: str, before: str) -> bool:
+    """`base^2`가 **단위 제곱**인가 — 단위 글자로 끝나고 바로 앞에 수가 붙는가.
+
+    `25m²`(단위)와 `m²`(변수)를 가른다. gold는 단위 제곱만 ⠣로 약기한다(원장 C-03:
+    m² ⠣ 96 : ⠘⠼⠃ 31 · L² ⠣ 11 · 반면 수학1 변수 x² 은 ⠘⠼⠃ 1,511 : ⠣ 0).
+    """
+    if not base or not _UNIT_BASE_RE.search(base):
+        return False
+    head = base[:_UNIT_BASE_RE.search(base).start(1)]
+    return bool(_NUM_BEFORE_RE.search(head) or _NUM_BEFORE_RE.search(before))
 
 
 def _stage9_subscript(result: str) -> str:
@@ -1058,11 +1217,13 @@ def _stage9_subscript(result: str) -> str:
     def _sub_replace(m: re.Match) -> str:
         base = m.group(1) or m.group(3) or ""
         sub_raw = (m.group(2) or m.group(4) or "").strip()
-        # 관행(book): 숫자 아래첨자는 첨자표·수표 없이 **내린 숫자**만 적는다 —
-        # m₁=⠍⠂·m₂=⠍⠆(수학2 p119 4·5·40행 실측). 규정형 ⠰⠼N은 gold 전권 0회
-        # (2026-07-22 전수 검색). 문자 첨자(g_k=⠛⠰⠅)는 규정대로 ⠰ 유지(p077 실측).
-        if _IS_BOOK_STYLE and sub_raw.isdigit():
-            return base + "".join(_DROPPED_DIGIT[c] for c in sub_raw)
+        # ★ 2026-08-06 판정 번복(원장 M-02). 종전에는 "숫자 아래첨자는 내린 숫자만 적는다"
+        #   (m₁=⠍⠂, 수학2 p119)로 봤고 "규정형 ⠰⠼N은 gold 전권 0회"가 근거였다. 그
+        #   전수 검색이 **구판 수능특강 한 종류**였다. 신규 2027 코퍼스 dev 900쪽에는
+        #   ⠰⠼가 **1,873회** 있다(수학1 1,241 · 생물 628):
+        #     x⠰⠼⠁ = x₁ · a⠰⠼⠃ = a₂ (수학1 p28)   ⠉⠕⠰⠼⠃ = CO₂ · ⠠⠓⠰⠼⠃ = H₂ (생물 p19)
+        #   규정 제19항 1호와 같은 형식이고 수학·화학 양쪽에서 일관된다 → 규정형으로 낸다.
+        #   (내린 숫자 `_DROPPED_DIGIT`는 로그 밑 제46항 전용으로 남는다.)
         sub  = convert_latex(sub_raw)
         sub_w = _wrap_ins(sub) if _needs_wrap(sub_raw) else sub
         return f"{base}{_SUBSCRIPT_IND}{sub_w}"
@@ -1394,6 +1555,7 @@ def convert_latex(latex: str) -> str:
     # gold 실측: p073·p083 '\text{L.}'↔⠿⠒·'\text{七.}'↔⠿⠔·p047 동일(2026-07-22).
     latex = re.sub(r"^\s*(?:\$\$|\$)?\s*\\text\s*\{\s*(7|T|L|E|B|七)\s*\.\s*\}",
                    lambda m: _TC_JAMO_CELLS_DOT[m.group(1)] + " ", latex)
+    _is_chem = _looks_chemical(latex)           # 0-전: 화학식 판정(원문 상태에서만 가능)
     latex, _text_store = _protect_text(latex)   # 0.  P2: \text{한글} → 한글 점자 sentinel
     result = _normalize_latex_input(latex)      # 0a. MinerU/마크다운 입력 정규화
 
@@ -1426,7 +1588,16 @@ def convert_latex(latex: str) -> str:
     result = _stage15_spaces(result)                # 15. 공백 → ⠀
 
     result = _restore_text(result, _text_store)     # 16. P2 한글 복원
-    return _w2c_sweep_residue(result)               # 17. 비점자 잔류 정화(마지막 그물)
+    result = _w2c_sweep_residue(result)             # 17. 비점자 잔류 정화(마지막 그물)
+    # 18. 「과학 점자」 제1항 — 화학식은 로마자표로 열고 종료표로 닫는다(원장 M-01).
+    #     규정 예문 `0,li1`,na1`,k4`(Li, Na, K)처럼 **식 전체를 한 번** 감싼다.
+    #     맨 끝에 두는 이유: 앞 단계들이 로마자·첨자·화살표를 다 만든 뒤라야 감쌀 범위가 확정된다.
+    if _is_chem and result:
+        if not result.startswith(_ROMAN_OPEN):
+            result = _ROMAN_OPEN + result
+        if not result.endswith(_ROMAN_CLOSE):
+            result = result + _ROMAN_CLOSE
+    return result
 
 # ── 수식 구조 → rule_id (rule_trail emit용, Phase B) ────────────────────────
 # 항→장→KBR-수학-{장}.{항}. 규정 원문 + 장 경계로 검증(환각 0). 모두 regulations.json 실재.

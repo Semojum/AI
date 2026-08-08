@@ -36,6 +36,18 @@ logger = get_logger(__name__)
 C6_OVERFLOW_THRESHOLD = 0.30
 # R1: OCR 신뢰도 미달 임계
 R1_CONFIDENCE_THRESHOLD = 0.85
+
+# ── 글자 소실 감지 (2026-08-02) ──────────────────────────────────────────────
+# 일부 교과서 PDF는 폰트 cmap이 깨져 있어 텍스트 레이어에 **제어문자가 글자 자리를
+# 대신 차지**한다(PUA 사례와 같은 부류). 실측(코퍼스 1,131쪽): 277요소·352자·126쪽(11%),
+# 생물이 234건으로 압도적.
+#   예) `**\x08국 인구는 \x03\x06\x04\x06년까지 …`  ← "한국 인구는 2020년까지"
+# MinerU 오추출이 아니라 **PDF 자체가 그렇다** — 같은 자리의 텍스트 레이어도 동일하다.
+# `translator.sanitize_for_braille`가 점역 전에 이 글자들을 지우므로 점자에 쓰레기가
+# 나가지는 않는다. 대신 **글자가 조용히 사라진다** — 점역사는 원본을 봐야 하는데
+# 아무 표시가 없었다. 그래서 R1(추출 신뢰도 미달)로 올려 알린다.
+# 셀 수 영향은 무시할 수준이지만(352자) 그건 이 플래그의 목적이 아니다.
+_LOST_GLYPH_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 # R2: 시각자료 세분류 신뢰도 미달 임계 (classifier logprob 기반, test_classifier 경계 기준)
 R2_SUBTYPE_CONFIDENCE_THRESHOLD = 0.75
 
@@ -151,6 +163,15 @@ class QualityChecker:
                 reviews.append(ReviewFlag(
                     type="R1", element_id=eid,
                     message=f"OCR 신뢰도 미달 ({e.ocr_confidence:.2f} < {R1_CONFIDENCE_THRESHOLD})",
+                ))
+            # 글자 소실(폰트 cmap 파손) — 위 상수 주석 참조. 신뢰도와 무관하게 발화한다:
+            # 이 요소들은 ocr_confidence가 높게 잡혀 R1 임계에 안 걸린다.
+            lost = _LOST_GLYPH_RE.findall(e.corrected_text or "")
+            if eid not in blocked_ids and lost:
+                reviews.append(ReviewFlag(
+                    type="R1", element_id=eid,
+                    message=(f"글자 소실 의심 {len(lost)}자 — 원본 PDF의 폰트 매핑이 깨져 "
+                             f"해당 자리가 비어 나갑니다. 원본과 대조가 필요합니다."),
                 ))
             # R2: 세분류 신뢰도 미달 (경계 파일에 SUBTYPE_UNCERTAIN 플래그가 이미 있으면
             # 위 플래그 매핑이 R2를 냈으므로 중복 발화하지 않는다)

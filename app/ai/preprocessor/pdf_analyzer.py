@@ -1,6 +1,7 @@
 import base64
 import binascii
 import os
+import re
 import tempfile
 from typing import Optional
 
@@ -30,6 +31,72 @@ _PDF_MAGIC = b"%PDF-"
 _WORD_GAP_RATIO = 0.12   # 어절 경계 판정: 기준 간격 + max(이 비율×폰트크기, 1.0pt)
 _WORD_GAP_MIN_PT = 1.0
 _MIN_GAP_SAMPLES = 4     # 줄에 간격 표본이 이보다 적으면 판단 보류(원문 유지)
+# 여는 따옴표·괄호 **뒤**, 닫는 따옴표·괄호 **앞**에는 공백을 넣지 않는다(QA S5).
+# 이 글리프들은 글자 폭보다 자리(advance)가 넓어 간격이 늘 임계를 넘는다 —
+# 실측 QA 11곳 중 5곳이 `‘ 이 민족 ’`·`‘ 전쟁 ’`처럼 안쪽에 공백이 끼어 나왔다.
+# 맞춤법상으로도 여는 부호 뒤·닫는 부호 앞은 붙여 쓴다.
+_NO_SPACE_AFTER = "‘“'\"([{〈《「『【<"
+_NO_SPACE_BEFORE = "’”'\")]}〉》」』】>.,!?;:"
+
+# ── 한 인쇄 줄이 여러 line으로 쪼개지는 문제 (QA S4, 2026-08-07) ─────────────
+# PyMuPDF(MuPDF stext)는 가로 간격이 크면 **같은 줄이라도 line 객체를 나눈다**.
+# 정답표 "01 ⑤  02 ②  03 ①  04 ⑤"는 4개 line으로 나오고, 이걸 "\n"으로 이으면
+# 항목마다 줄바꿈된 점자가 나간다(대표 QA 4번). 정답 점자책은 **한 줄에 이어 적고
+# 항목 사이를 두 칸 띈다** — 「점자 도서 제작 지침」 3장 3절 4)(3)①("선택지와
+# 선택지 사이에는 두 칸의 빈칸을 두어 구별한다") · 같은 장 6)(1)("표의 셀과 셀
+# 사이는 두 칸을 띄어 구분한다").
+# 실측(dev-2027+val-2027 인쇄면 1,746쪽, 쪼개진 행 7,670개 중 정답 점자책에서
+# 같은 조각열을 찾은 1,426개): 두 칸 이어 적기 1,033(72.4%) · 한 칸 241(16.9%) ·
+# 줄바꿈 152(10.7%). 한 칸 쪽은 "01"+제목 같은 번호머리(114)와 빈칸 채우기
+# "( "+" )"가 대부분이라 아래 두 예외로 가른다 — 시뮬레이션 정확도 1,239/1,274.
+_ROW_OVERLAP = 0.5        # 같은 인쇄 줄로 볼 세로 겹침 비율
+_ITEM_GAP = "  "          # 항목 사이 두 칸 (지침 3장 3절 4)(3)①)
+_NUM_HEAD_RE = re.compile(r"\d{1,3}\.?")
+
+
+def _row_sep(prev: str, nxt: str, num_head: bool) -> str:
+    """같은 줄 조각 사이에 넣을 간격 — 기본 두 칸, 아래 두 경우만 한 칸."""
+    if num_head:                                    # "01" + 제목 = 강 머리 번호
+        return " "
+    if prev[-1] in _NO_SPACE_AFTER or nxt[0] in _NO_SPACE_BEFORE:
+        return " "                                  # 빈칸 채우기 "( " + " )이다"
+    return _ITEM_GAP
+
+
+def rows_to_text(items) -> str:
+    """[(rect, text)] → 텍스트. 세로로 겹치는 조각은 한 줄로 잇는다(x 순서).
+
+    rect는 `.x0/.y0/.y1`만 쓰므로 fitz.Rect든 튜플 래퍼든 상관없다.
+    """
+    rows: list[list] = []
+    for r, t in items:
+        for row in rows:
+            rr = row[0][0]
+            ov = min(rr.y1, r.y1) - max(rr.y0, r.y0)
+            if ov > _ROW_OVERLAP * min(rr.y1 - rr.y0, r.y1 - r.y0):
+                row.append((r, t))
+                break
+        else:
+            rows.append([(r, t)])
+    out: list[str] = []
+    for row in rows:
+        if len(row) == 1:
+            out.append(row[0][1])
+            continue
+        row.sort(key=lambda it: it[0].x0)
+        # 조각 안쪽 탭은 그대로 둔다(점역기가 한 칸으로 옮긴다) — 실측 1,551개 이은 행 중
+        # 탭이 낀 것은 17개뿐이고 대부분 글머리 뒤("ㄴ.\t내용")인데, 지침 3장 3절 4)(2)는
+        # 그 자리를 **한 칸**으로 규정한다. 여기서 두 칸으로 늘리면 그쪽이 틀린다.
+        frags = [t.strip() for _, t in row]
+        frags = [f for f in frags if f]
+        if not frags:
+            continue
+        num_head = len(frags) == 2 and bool(_NUM_HEAD_RE.fullmatch(frags[0]))
+        line = frags[0]
+        for nxt in frags[1:]:
+            line += _row_sep(line, nxt, num_head) + nxt
+        out.append(line)
+    return "\n".join(out).strip()
 
 
 def _is_hangul(ch: str) -> bool:
@@ -122,7 +189,8 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None) -> str:
             in_ul = False
         if i and have_base:
             prev_ch, _px0, px1, _psize, _pul = chars[i - 1]
-            if not ch.isspace() and not prev_ch.isspace() and (_is_hangul(ch) or _is_hangul(prev_ch)):
+            if not ch.isspace() and not prev_ch.isspace() and (_is_hangul(ch) or _is_hangul(prev_ch)) \
+                    and prev_ch not in _NO_SPACE_AFTER and ch not in _NO_SPACE_BEFORE:
                 threshold = base + max(_WORD_GAP_RATIO * (size or 10.0), _WORD_GAP_MIN_PT)
                 if (x0 - px1) > threshold:
                     out.insert(len(out) - 1 if (ul and not _pul) else len(out), " ")
@@ -144,12 +212,137 @@ def _page_text_blocks_spaced(page) -> list[dict]:
     for b in raw.get("blocks", []):
         if b.get("type") != 0:      # 0 = 텍스트 블록
             continue
-        lines = [_line_text_with_word_gaps(ln, rot, uls) for ln in b.get("lines", [])]
-        text = "\n".join(ln for ln in lines if ln).strip()
+        items = [(fitz.Rect(ln.get("bbox") or (0, 0, 0, 0)) * rot,
+                  _line_text_with_word_gaps(ln, rot, uls)) for ln in b.get("lines", [])]
+        text = rows_to_text([(r, t) for r, t in items if t])
         if not text:
             continue
         blocks.append({"content": text, "bbox": list(b.get("bbox") or (0, 0, 0, 0))})
     return blocks
+
+
+# ── 줄 단위 블록 → 문단 (QA S2, 2026-08-07) ──────────────────────────────────
+# PyMuPDF의 블록 분할이 이 교재 PDF들에서는 **한 줄 = 한 블록**으로 나온다
+# (실측 job_260807103532 한 쪽 43~46요소, 전부 한 줄). 그러면 문장이 중간에서 끊긴
+# 조각이 요소가 되고, 조판은 그 조각마다 문단 3칸 들여쓰기를 넣는다.
+#
+# 이어 붙이는 신호는 **오른쪽 끝**이다. 본문 줄은 단 오른쪽까지 차고, 문단의 마지막
+# 줄만 짧게 끝난다. 새 문단의 첫 줄은 들여쓰기로 시작한다.
+_PAR_COL_OVERLAP = 0.6     # 같은 단으로 볼 x 겹침 비율
+_PAR_FULL_RIGHT = 0.04     # 단 오른쪽에서 이 비율 안쪽까지 오면 '끝까지 찬 줄'
+_PAR_GAP_MAX = 1.0         # 줄 간격이 줄높이의 이 배 이하일 때만 이음
+_PAR_INDENT_MIN = 0.6      # 단 왼쪽에서 줄높이의 이 배 넘게 들어가면 새 문단 첫 줄
+
+# 이을 때 공백을 넣을지 — 한국어 줄바꿈은 어절 경계에서도, 어절 가운데서도 일어난다.
+# 실측(job_260807103532 p1): '있을까'+'하고'는 띄어야 하고('있을까 하고'),
+# '거의 눈'+'물을'은 붙여야 한다('눈물을'). 눈으로도 규칙으로도 못 가른다 —
+# 상위 모델이 문맥을 보고 매긴 18쌍으로 채점했을 때
+#     항상 공백 9/18 · 항상 붙임 9/18 · 문장부호 규칙 9/18 · 낱말 사전 2/6
+# 전부 동전 던지기였다. **형태소 분석(kiwipiepy)은 18/18**이었다(아래 _join_words).
+# 부호가 확실히 가르는 자리는 분석 없이 _join_sep로 처리한다.
+_PAR_OPEN = "([{‘“〈《「『【<"
+_PAR_CLOSE_END = ".,!?;:”’)]}〉》」』】>"
+
+
+def _join_sep(a: str, b: str) -> str:
+    """앞 줄 끝 `a`와 뒤 줄 앞 `b` 사이에 넣을 것 — 공백 또는 빈 문자열(부호 규칙만)."""
+    if not a or not b:
+        return " "
+    if a[-1] in _PAR_CLOSE_END or a[-1].isdigit():
+        return " "
+    if b[0] in _PAR_OPEN or b[0].isdigit() or not ("가" <= b[0] <= "힣"):
+        return " "
+    return "" if "가" <= a[-1] <= "힣" else " "
+
+
+_kiwi = None
+_kiwi_tried = False
+
+
+def _get_kiwi():
+    """형태소 분석기(kiwipiepy) 지연 로드. 없으면 None — 부호 규칙으로 내려간다."""
+    global _kiwi, _kiwi_tried
+    if not _kiwi_tried:
+        _kiwi_tried = True
+        try:
+            from kiwipiepy import Kiwi
+            _kiwi = Kiwi()
+        except Exception as exc:  # noqa: BLE001 — 없으면 규칙으로 동작한다
+            logger.info("kiwipiepy 없음 — 줄 잇기는 문장부호 규칙으로 (%s)", exc)
+    return _kiwi
+
+
+def _join_words(prev_line: str, next_line: str) -> str:
+    """줄 끝 어절 + 줄 첫 어절을 붙일지 띄울지 — **형태소 분석으로** 가른다.
+
+    한국어 줄바꿈은 어절 경계에서도, 어절 가운데서도 일어난다. 실측 표본 18쌍
+    (상위 모델이 문맥을 보고 매긴 정답)에서
+        항상 공백 9/18 · 항상 붙임 9/18 · 문장부호 규칙 9/18 · **형태소 18/18**
+    이었다. 붙인 것과 띄운 것을 각각 분석해 **로그확률이 높은 쪽**을 고른다.
+        '있을까'+'하고' → 띄움('있을까 하고')   '눈'+'물을' → 붙임('눈물을')
+    """
+    wa = prev_line.rstrip().split()[-1] if prev_line.strip() else ""
+    wb = next_line.lstrip().split()[0] if next_line.strip() else ""
+    if not wa or not wb:
+        return " "
+    sep = _join_sep(wa[-1:], wb[:1])
+    if sep == " " or not ("가" <= wa[-1] <= "힣" and "가" <= wb[0] <= "힣"):
+        return sep                      # 부호가 확실히 가르는 자리는 분석 불필요
+    kiwi = _get_kiwi()
+    if kiwi is None:
+        return sep
+    try:
+        joined = kiwi.analyze(wa + wb, top_n=1)
+        apart = kiwi.analyze(f"{wa} {wb}", top_n=1)
+        if joined and apart:
+            return "" if joined[0][1] > apart[0][1] else " "
+    except Exception as exc:  # noqa: BLE001 — 분석 실패는 규칙으로 격리
+        logger.debug("줄 잇기 형태소 분석 실패(규칙으로): %s", exc)
+    return sep
+
+
+def _merge_paragraph_blocks(blocks: list[dict]) -> list[dict]:
+    """줄 단위로 쪼개진 블록을 문단으로 잇는다. 원 순서를 지킨다."""
+    items = [b for b in blocks if (b.get("content") or "").strip()]
+    if len(items) < 2:
+        return list(blocks)
+    heights = sorted(b["bbox"][3] - b["bbox"][1] for b in items)
+    lh = heights[len(heights) // 2] or 1.0
+
+    def ovl(p, q) -> float:
+        lo, hi = max(p[0], q[0]), min(p[2], q[2])
+        return 0.0 if hi <= lo else (hi - lo) / max(1e-6, min(p[2] - p[0], q[2] - q[0]))
+
+    out: list[dict] = []
+    # ★ 이어 붙인 문단의 bbox는 합집합이라 오른쪽 끝이 가장 넓은 줄 값이 된다. 그러면
+    #   '마지막 줄이 짧게 끝났다'는 신호가 지워진다. **직전 줄의** 오른쪽 끝을 따로 든다.
+    last_x1: list[float] = []
+    for b in items:
+        bx0, by0, bx1, by1 = b["bbox"]
+        if not out:
+            out.append({"content": b["content"], "bbox": list(b["bbox"])})
+            last_x1.append(bx1)
+            continue
+        a = out[-1]
+        ax0, ay0, ax1, ay1 = a["bbox"]
+        col = [x["bbox"] for x in items if ovl(x["bbox"], b["bbox"]) >= _PAR_COL_OVERLAP] or [b["bbox"]]
+        col_left, col_right = min(c[0] for c in col), max(c[2] for c in col)
+        width = max(1.0, col_right - col_left)
+        joinable = (
+            ovl(a["bbox"], b["bbox"]) >= _PAR_COL_OVERLAP
+            and -0.3 * lh <= by0 - ay1 <= _PAR_GAP_MAX * lh
+            and last_x1[-1] >= col_right - _PAR_FULL_RIGHT * width  # 직전 줄이 단 끝까지 참
+            and bx0 - col_left <= _PAR_INDENT_MIN * lh              # 뒤 줄이 들여쓰기로 시작 안 함
+        )
+        if joinable:
+            av, bv = a["content"].rstrip(), b["content"].lstrip()
+            a["content"] = f"{av}{_join_words(av, bv)}{bv}"
+            a["bbox"] = [min(ax0, bx0), min(ay0, by0), max(ax1, bx1), max(ay1, by1)]
+            last_x1[-1] = bx1
+        else:
+            out.append({"content": b["content"], "bbox": list(b["bbox"])})
+            last_x1.append(bx1)
+    return out
 
 
 def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int, int]:
@@ -170,7 +363,7 @@ def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int,
             page = doc[page_idx]
             w, h = page.rect.width, page.rect.height
             blocks: list[dict] = []
-            for b in _page_text_blocks_spaced(page):
+            for b in _merge_paragraph_blocks(_page_text_blocks_spaced(page)):
                 x0, y0, x1, y1 = b["bbox"]
                 blocks.append({
                     "content": b["content"],
@@ -182,6 +375,263 @@ def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int,
         if tmp_path:
             os.unlink(tmp_path)
     return blocks, int(round(w * 2)), int(round(h * 2))
+
+
+# ── 글상자 테두리(BBPG-1.2.5 · 원장 C-01b) ─────────────────────────────────
+# 지문·보기·설명 박스는 묵자에서 **벡터 사각형**으로 그려져 있어 텍스트 추출만으로는
+# 안 보인다(밑줄과 같은 사정). 정답 도서는 이걸 dev-2027 900쪽에서 1,783번 쓰는데
+# 우리는 0번이었다 — gold 셀의 5.2%가 테두리 줄이다.
+#
+# 가르는 조건 두 개(실측 사회문화 p8·p23):
+#   · **글자를 감싸야** 한다 — 제목 배너·머리말 띠는 안에 글이 없다(감싸는 게 아니라 덮는다).
+#   · 선(stroke)이 있어야 한다 — 채움만 있는 도형은 강조 음영이지 테두리가 아니다.
+_BOX_MIN_W = 0.20        # 페이지 폭 대비 최소 너비 — 이보다 좁으면 아이콘·라벨
+_BOX_MIN_H = 18.0        # 최소 높이(pt) — 밑줄·구분선 제외
+_BOX_MAX_AREA = 0.85     # 페이지 면적의 이 비율을 넘으면 페이지 테두리·배경
+_BOX_OPEN, _BOX_CLOSE = "<!테두리_위><!/테두리_위>", "<!테두리_아래><!/테두리_아래>"
+
+
+def box_rects(page) -> list:
+    """페이지의 글상자 후보 사각형(표시 좌표 Rect). 겹치는 후보는 큰 것 하나로 묶는다."""
+    pr = page.rect
+    W = pr.width
+    try:
+        tblocks = [fitz.Rect(b["bbox"]) for b in page.get_text("rawdict")["blocks"]
+                   if b.get("type") == 0]
+        drawings = page.get_drawings()
+    except Exception:  # noqa: BLE001 — 손상 페이지는 테두리 없이 진행
+        return []
+    out: list = []
+    for g in drawings:
+        r = fitz.Rect(g["rect"])
+        if not r.intersects(pr):
+            continue
+        r = r & pr
+        if r.width < W * _BOX_MIN_W or r.height < _BOX_MIN_H:
+            continue
+        if r.get_area() > pr.get_area() * _BOX_MAX_AREA:
+            continue
+        if "s" not in g["type"]:              # 채움 전용 = 음영·배너
+            continue
+        if not any(t in r for t in tblocks):  # 감싼 글이 없다
+            continue
+        out.append(r)
+    # 겹치는 후보는 하나로 — 다만 **안에 든 것은 남긴다**. gold는 상자를 중첩하고
+    # (자료 박스 안 표), 그 안쪽에 2단계 테두리를 쓴다(dev-2027 343개 중 81%가 1단계 안).
+    # 종전 규칙은 안쪽 사각형을 겹침으로 보고 통째로 버렸다.
+    merged: list = []
+    for r in sorted(out, key=lambda r: -r.get_area()):
+        # 완전히 안에 들었다 = 중첩, 남긴다. 단 **거의 같은 크기**는 중첩이 아니라
+        # 같은 테두리를 채움·선 두 경로로 그린 것이다 — 남기면 같은 상자를 두 번 감싼다.
+        if any(r in m and r.get_area() < m.get_area() * 0.98 for m in merged):
+            merged.append(r)
+            continue
+        if any((r & m).get_area() > r.get_area() * 0.7 for m in merged):
+            continue                                     # 어중간하게 겹친다 = 같은 상자
+        merged.append(r)
+    return merged
+
+
+# ── 정오 표시 ○·× (원장 M-04·C-14) ─────────────────────────────────────────
+# 해설은 선지마다 맞음/틀림을 ○·×로 찍는데, **텍스트레이어에도 MinerU 추출에도 안 나온다** —
+# 글리프가 **채움 경로**로 그려져 있어서다(밑줄·글상자와 같은 사정).
+# 정답 도서는 이걸 로마자 소괄호로 적는다: (O)=⠦⠄⠴⠠⠕⠠⠴ · (X)=⠦⠄⠴⠠⠭⠠⠴.
+# dev-2027 900쪽에 1,058회(≈6,300셀)인데 우리는 0회였다.
+#
+# 가르는 신호(실측 5쪽에서 O 54/54 · X 34/34 완전일치):
+#   · 채움 전용(type 'f')·선색 없음 — 획으로 그린 도형은 표·테두리다
+#   · 곡선만(c) 20~60항목 = ○ · 곡선+선(cl) 40~120항목 = ×
+#   · 페이지 **안**에 있어야 한다 — 판면 밖 장식이 같은 모양으로 잡힌다
+#   · ○이 하나도 없는 쪽의 ×는 **곱셈 기호**다(정오 표기는 쌍으로 온다)
+# 표시가 붙는 자리 — 선지 번호로 시작하는 요소만(⌧는 번호 위에 겹쳐 찍힌다)
+_CHOICE_HEAD_RE = re.compile(r"^\s*(?:[①-⑳]|[㉠-㉻]|[ㄱ-ㅎ]\s*[.)]|\d{1,2}\s*[.)])")
+_MARK_MIN, _MARK_MAX = 4.0, 14.0      # 글리프 한 자 크기(pt)
+_MARK_SQUARE = 3.0                    # 가로세로 차이 상한 — 정사각이어야 글자다
+
+
+def mark_glyphs(page) -> list[tuple[str, "fitz.Rect"]]:
+    """페이지의 정오 표시 글리프 [(O|X, 사각형)]. 없으면 빈 목록.
+
+    ★ ○이 하나도 없는 쪽의 ×는 **곱셈 기호**다 — 정오 표기는 쌍으로 온다.
+      이 가드가 없으면 수학1에서 곱셈 ×를 정오 표시로 오검출한다(실측 2쪽).
+    """
+    pr = page.rect
+    out: list[tuple[str, fitz.Rect]] = []
+    try:
+        drawings = page.get_drawings()
+    except Exception:  # noqa: BLE001
+        return []
+    for g in drawings:
+        r = fitz.Rect(g["rect"])
+        if r not in pr or g["type"] != "f" or g.get("color"):
+            continue
+        if not (_MARK_MIN <= r.width <= _MARK_MAX and _MARK_MIN <= r.height <= _MARK_MAX
+                and abs(r.width - r.height) <= _MARK_SQUARE):
+            continue
+        kinds = {it[0] for it in g.get("items", [])}
+        n = len(g.get("items", []))
+        if kinds == {"c"} and 20 <= n <= 60:
+            out.append(("O", r))
+        elif kinds == {"c", "l"} and 40 <= n <= 120:
+            out.append(("X", r))
+    if not any(m == "O" for m, _ in out):
+        return []                      # ○ 없는 쪽의 ×는 곱셈이다
+    return out
+
+
+def mark_glyphs_norm(pdf_data: bytes, page_no: int) -> list[tuple[str, list[float]]]:
+    """정오 표시를 0~1000 정규화 좌표로. 실패하면 빈 목록(본문은 나가야 한다)."""
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(_coerce_pdf_bytes(pdf_data))
+            tmp_path = f.name
+        doc = fitz.open(tmp_path)
+        try:
+            page = doc[max(0, min(page_no - 1, doc.page_count - 1))]
+            w, h = page.rect.width or 1, page.rect.height or 1
+            return [(k, [r.x0 / w * 1000, r.y0 / h * 1000, r.x1 / w * 1000, r.y1 / h * 1000])
+                    for k, r in mark_glyphs(page)]
+        finally:
+            doc.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("정오 표시 검출 실패(없이 진행): %s", exc)
+        return []
+    finally:
+        if tmp_path:
+            os.unlink(tmp_path)
+
+
+def tag_answer_marks(elements: list[dict], marks: list) -> int:
+    """정오 표시를 **바로 뒤 요소** 앞에 글자로 붙인다(in-place). 붙인 개수 반환.
+
+    ★ 표시는 **선지 번호 위에 겹쳐** 찍힌다(⌧ = ① 위의 ×). 그래서 표시를 품은 요소를 찾아
+    그 **앞**에 붙인다 — gold 배치가 `…해당한다.(X)①아메바가…`라 번호보다 앞이다.
+    선지로 시작하는 요소에만 붙인다(엉뚱한 본문에 붙지 않게).
+    """
+    if not marks or not elements:
+        return 0
+    n = 0
+    for kind, (mx0, my0, mx1, my1) in marks:
+        cx, cy = (mx0 + mx1) / 2, (my0 + my1) / 2
+        best, best_d = None, None
+        for el in elements:
+            bb = el.get("bbox")
+            if not bb or len(bb) != 4 or el.get("type") not in ("text", "list_item"):
+                continue
+            if not (bb[0] - 6 <= cx <= bb[2] and bb[1] - 6 <= cy <= bb[3] + 6):
+                continue                                  # 표시를 품은(또는 줄머리에 붙은) 요소
+            if not _CHOICE_HEAD_RE.match(el.get("content") or ""):
+                continue                                  # 선지로 시작하는 것만
+            d = abs(bb[1] - my0)
+            if best is None or d < best_d:
+                best, best_d = el, d
+        if best is not None:
+            best["content"] = f"({kind}){best['content']}"
+            n += 1
+    return n
+
+
+def box_rects_norm(pdf_data: bytes, page_no: int) -> list[list[float]]:
+    """글상자 후보를 **0~1000 정규화** 좌표로 돌려준다.
+
+    ⚠ 경계 파일의 `bbox`는 경로마다 좌표계가 다르다(`result_builder` 2026-07-19 주석):
+      · MinerU 경로 = **0~1000 정규화**
+      · ZERO 경로   = **2x 렌더 픽셀**
+    그래서 여기서는 한쪽으로 통일해 내보내고, 픽셀 경로는 부르는 쪽이 되돌린다.
+    (섞으면 사각형이 엉뚱한 요소를 감싼다 — 실측 사회문화 p80에서 지문 상자가 선택지를 감쌌다.)
+    """
+    tmp_path = None
+    try:
+        # ★ _coerce_pdf_bytes도 try 안이다 — 빈 bytes면 InvalidPDFError를 던지는데,
+        #   테두리는 있으면 좋은 것이라 그 예외로 페이지를 죽이면 안 된다.
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(_coerce_pdf_bytes(pdf_data))
+            tmp_path = f.name
+        doc = fitz.open(tmp_path)
+        try:
+            page = doc[max(0, min(page_no - 1, doc.page_count - 1))]
+            w, h = page.rect.width or 1, page.rect.height or 1
+            return [[r.x0 / w * 1000, r.y0 / h * 1000, r.x1 / w * 1000, r.y1 / h * 1000]
+                    for r in box_rects(page)]
+        finally:
+            doc.close()
+    except Exception as exc:  # noqa: BLE001 — 테두리는 있으면 좋은 것, 없어도 본문은 나가야 한다
+        logger.warning("글상자 사각형 검출 실패(테두리 없이 진행): %s", exc)
+        return []
+    finally:
+        if tmp_path:
+            os.unlink(tmp_path)
+
+
+def tag_boxed_elements(elements: list[dict], rects: list) -> int:
+    """사각형이 통째로 감싼 텍스트 요소 앞뒤에 테두리 태그를 넣는다(in-place). 감싼 상자 수 반환.
+
+    표·그림을 품은 사각형은 건드리지 않는다 — 그쪽 체인이 제 테두리를 그린다(원장 C-01a).
+
+    ★ **중첩을 살린다**(BBPG-1.2.5 위계). gold는 자료 박스 안에 표를 넣고 안쪽에 2단계
+      테두리(⠖⠒…⠲)를 쓴다 — dev-2027 900쪽에 343개, 그중 81%가 1단계 안이다. 우리는
+      0개였다. 사각형이 다른 사각형 안에 들면 그 깊이만큼 위계를 올려 태그한다.
+
+    ★ `rects`와 `elements`의 bbox는 **같은 좌표계**여야 한다(부르는 쪽 책임).
+    ★ 감싼 요소가 **읽기순서에서 연속**이어야 태그를 단다. 태그는 첫 요소 앞과 마지막 요소
+      뒤에 붙으므로, 중간에 상자 밖 요소가 끼면 그것까지 테두리 안으로 들어간다.
+      MinerU는 읽기순서를 다시 매기므로(단 클러스터링·문항번호 이동) 실제로 끊긴다.
+    """
+    if not rects or not elements:
+        return 0
+    def _inside(a, b) -> bool:
+        """a가 b 안에 완전히 드는가(같은 사각형은 아니다)."""
+        return (b[0] <= a[0] and b[1] <= a[1] and a[2] <= b[2] and a[3] <= b[3]
+                and (a[2] - a[0]) * (a[3] - a[1]) < (b[2] - b[0]) * (b[3] - b[1]) * 0.98)
+
+    ordered = sorted(rects, key=lambda r: -((r[2] - r[0]) * (r[3] - r[1])))
+    depth = {id(r): sum(1 for q in ordered if _inside(r, q)) for r in ordered}
+    claimed: dict[int, int] = {}          # 요소 → 그 요소를 이미 감싼 가장 안쪽 위계
+    opens: dict[int, list] = {}           # 요소 → [(위계, 여는 태그)]
+    closes: dict[int, list] = {}          # 요소 → [(위계, 닫는 태그)]
+    n = 0
+    for rect in ordered:
+        rx0, ry0, rx1, ry1 = rect
+        level = min(3, depth[id(rect)] + 1)          # 1단계부터, 3단계까지
+        inside: list[int] = []
+        skip = False
+        for i, el in enumerate(elements):
+            bb = el.get("bbox")
+            if not bb or len(bb) != 4:
+                continue
+            # 중심점으로 본다 — MinerU bbox는 테두리에 닿은 글에서 몇 px 삐져나와
+            # 완전포함으로 재면 실측 9요소가 든 상자에서 0개가 잡힌다(생물 p118·사문 p107).
+            cx, cy = (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2
+            if not (rx0 <= cx <= rx1 and ry0 <= cy <= ry1):
+                continue
+            if el.get("type") not in ("text", "list_item", "title", "caption"):
+                skip = True          # 표·수식·그림이 든 상자는 그 체인 소관
+                break
+            if claimed.get(i, 0) >= level:      # 같은 위계에서 이미 감쌌다
+                continue
+            inside.append(i)
+        if skip or not inside:
+            continue
+        if inside != list(range(inside[0], inside[-1] + 1)):
+            logger.debug("글상자 건너뜀 — 읽기순서가 끊겼다(%s)", inside)
+            continue
+        first, last = inside[0], inside[-1]
+        sfx = "" if level == 1 else str(level)        # <!테두리_위2> = 2단계(translator 규약)
+        opens.setdefault(first, []).append((level, f"<!테두리_위{sfx}><!/테두리_위{sfx}>"))
+        closes.setdefault(last, []).append((level, f"<!테두리_아래{sfx}><!/테두리_아래{sfx}>"))
+        for i in inside:                        # 안쪽 상자가 다시 감쌀 수 있게 위계를 기록
+            claimed[i] = max(claimed.get(i, 0), level)
+        n += 1
+
+    # 여는 것은 **바깥부터**, 닫는 것은 **안쪽부터** — 중첩이 뒤집히면 위계가 어긋난다.
+    for i, tags in opens.items():
+        head = "\n".join(t for _lv, t in sorted(tags))
+        elements[i]["content"] = f"{head}\n{elements[i]['content']}"
+    for i, tags in closes.items():
+        tail = "\n".join(t for _lv, t in sorted(tags, reverse=True))
+        elements[i]["content"] = f"{elements[i]['content']}\n{tail}"
+    return n
 
 
 # 벡터 그림 판정(교과서 지도·도표·그래프는 임베디드 이미지가 아니라 벡터로 그려진다).
@@ -261,6 +711,30 @@ def _page_has_visual(page) -> bool:
 
     순수 텍스트는 ZERO로 빠르게 처리하되, 표·그림 등 '텍스트 기반 시각자료'는 구조·캡션이
     필요해 MinerU가 처리해야 한다(태민 방침). 작은 장식 로고는 제외(페이지 3% 미만).
+
+    ★ 이 판정을 느슨하게 만들지 말 것 — 2026-08-02 코퍼스 1131쪽 실측 결론.
+
+    동기는 정당했다. MinerU는 쪽당 ~9초인데 ZERO는 ~0.1초라, 안 태워도 되는 쪽을
+    골라내면 처리량이 크게 는다. 실제로 **MinerU를 탔지만 표·수식·시각이 하나도
+    없던 쪽이 317쪽(28.0%)**이었다. 그런데 그 낭비를 줄이려는 완화안이 전부 실패했다.
+
+      규칙                          ZERO 라우팅   오판(구조를 놓침)
+      현행                          144쪽 12.7%   **0쪽**
+      표를 2행2열 이상만 인정        280쪽 24.8%   60쪽
+      + 이미지 임계 3%→5%           352쪽 31.1%   117쪽
+      + 벡터 도형 신호 제외          397쪽 35.1%   156쪽
+      반복 출현 이미지를 장식으로 제외 180쪽 15.9%   36쪽
+
+    놓친 쪽은 표·그림을 통째로 잃는다. 9초를 아끼자고 낼 대가가 아니다.
+    - `find_tables()`의 1행/1열 검출은 노이즈가 아니었다. 선이 부분만 있는 진짜 표가
+      거기 섞여 있고, MinerU는 그걸 표로 잡아낸다.
+    - '반복되는 이미지 = 장식' 휴리스틱은 하필 수학2에서 깨진다. 문제집은 비슷한 그래프가
+      비슷한 자리에 반복돼서, 내용 그림이 장식으로 오인된다(36쪽 중 대부분).
+
+    즉 현행 규칙은 이미 오판 0의 파레토 점이다. 남은 낭비 317쪽은 **추출 전 신호로는
+    구분되지 않는다.** 처리량을 늘리려면 이 판정이 아니라 GPU 쪽을 봐야 한다.
+    측정 스크립트는 `V2/temp/probe_routing*.py`, 분석은
+    `V2/docs/analysis/routing-textlayer-first-0802.md`.
     """
     page_area = (page.rect.width * page.rect.height) or 1.0
     try:

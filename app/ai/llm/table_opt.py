@@ -16,11 +16,11 @@ from typing import Optional
 
 from app.ai.braille.nested_block import box_narrative
 from app.ai.braille.regulations import make_rule
-from app.ai.braille.table_braille import build_table_tags
+from app.ai.braille.table_braille import build_table_tags, print_layout
 from app.ai.llm.base_opt import BaseOpt, decide_tier_timeout, generate_with_retry
 from app.ai.llm.draft_utils import ensure_tn_prefix
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
-from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
+from app.schemas.content import Draft, ExtractedContent, LLMOutput, RuleApplication
 
 logger = logging.getLogger(__name__)
 
@@ -303,18 +303,23 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
                 return "linear"
             if max_row == 1:
                 return "transposed"
-            return "unfold"   # 3열 이상 = 풀어쓰기 기본(BBPG-3.1.2), 격자는 대안 초안
+            # 3열 이상 = **격자형**(2026-08-06 판정 번복 — 원장 C-01a).
+            # 종전 기본은 풀어쓰기였다. gold 실측이 뒤집었다 — dev-2027의 테두리 표 445개 중
+            # 383개(86%)가 격자형 '행제목: 값  값' 형식이고, 우리 격자형 렌더러가 내는
+            # 내용 배치와 **동일**하다(EBS-E26-013 p8 실물 대조). 풀어쓰기는 행을 쪼개
+            # 배치가 통째로 다르다. 기본이 비선택 초안이면 contents에 안 실린다.
+            return "table_grid"
     # table_structure 없음/빈 셀: HTML 표(MinerU) 또는 '|' 격자로 추론(narrative 오분류 방지).
     if _is_html_table(text):
         grid = _html_to_grid(text)
         if grid:
             max_col = max(len(r) for r in grid)
-            return "linear" if max_col == 2 else "unfold"
+            return "linear" if max_col == 2 else "table_grid"
     rows = [ln for ln in (text or "").splitlines() if "|" in ln]
     if not rows:
         return "narrative"
     max_col = max(len(r.split("|")) for r in rows)
-    return "linear" if max_col == 2 else "unfold"
+    return "linear" if max_col == 2 else "table_grid"
 
 
 def _parse_tn_from_response(response: str) -> str:
@@ -336,6 +341,28 @@ def _parse_tn_from_response(response: str) -> str:
     if selected_idx is not None and 0 <= selected_idx < len(drafts):
         return drafts[selected_idx]
     return drafts[0]
+
+
+
+# 표 배치 4안의 **묵자** — 점역 전 산출물이라 opt 단계에서 만든다 (2026-08-06).
+# mode a는 점역을 하지 않으므로(include_braille=False) 여기서 안 만들면 대체 초안이 아예 없다.
+# mode b·c에서는 table_braille가 같은 배치에 점자를 붙여 덮어쓴다(값은 같다 — 같은 함수).
+_TABLE_DRAFT_MODES = [
+    (1, "unfold", "풀어쓰기(3칸·2칸)"),
+    (2, "table_grid", "격자형"),
+    (3, "transposed", "행↔열 전치"),
+    (4, "linear", "선형(키:값)"),
+]
+
+
+def _print_drafts(table_text: str, render_mode: str) -> tuple[list[Draft], int]:
+    """표 묵자 초안 4안 + 기본 선택 번호. `|`가 없으면(비정형) 초안을 만들지 않는다."""
+    if "|" not in (table_text or ""):
+        return [], 0
+    drafts = [Draft(option=n, text=print_layout(table_text, m), render_mode=m, label=lb)
+              for n, m, lb in _TABLE_DRAFT_MODES]
+    sel = {"unfold": 0, "table_grid": 1, "transposed": 2, "linear": 3}.get(render_mode, 0)
+    return drafts, sel
 
 
 class TableOpt(BaseOpt):
@@ -399,6 +426,7 @@ class TableOpt(BaseOpt):
                 rule_trail=_min_trail(table_tags),
                 table_title=title,
                 nested_text=nested_text,
+                **dict(zip(("drafts", "selected_idx"), _print_drafts(table_text, render_mode))),
             )
 
         tier, timeout = decide_tier_timeout(ext.ocr_confidence)   # 요소당 상한 = config(작게)
@@ -431,4 +459,5 @@ class TableOpt(BaseOpt):
             rule_trail=_min_trail(table_tags),
             table_title=title,
             nested_text=nested_text,
+            **dict(zip(("drafts", "selected_idx"), _print_drafts(table_text, render_mode))),
         )

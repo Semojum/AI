@@ -182,3 +182,40 @@ class TestCaptionRefLink:
         cap = _mk_el([0, 0, 100, 20], [0, 0, 200, 40]); cap["type"] = "caption"
         res = _build([cap], "t_capref2", 1, "OCR")
         assert res["elements"][0]["caption_ref"] == ""
+
+
+class TestEmptyCaptionKeepsElement:
+    """빈 캡션이 와도 시각요소가 사라지면 안 된다 (QA S0, 2026-08-07).
+
+    실측: job_260807160446 p1에서 만화 하나가 통째로 없어졌다. 로그는
+    `캡셔닝 56780743(image→cartoon) 12.5s`로 **성공**을 찍었는데(실패 표시 없음)
+    캡션이 빈 문자열이라 `build()`의 `not content.strip()` 가지에서 요소가 버려졌다.
+    그 결과 경계 파일 요소가 0개가 됐고, 뒤이어 그림 회수가 같은 그림을 다시 찾느라
+    LLM을 한 번 더 썼다. 빈 응답은 성공이 아니다.
+    """
+
+    def _img(self):
+        el = _mk_el([100, 100, 500, 400], [200, 200, 1000, 800])
+        el["type"] = "image"
+        el["image_path"] = "/tmp/none.jpg"
+        return el
+
+    def test_빈_캡션이어도_요소가_남는다(self, monkeypatch):
+        import app.ai.builder.result_builder as rb
+        monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("cartoon", 0.9))
+        monkeypatch.setattr(rb, "caption", lambda p, t: "   ")
+        monkeypatch.setattr(rb.Path, "exists", lambda self: True)
+        res = _build([self._img()], "t_emptycap", 1, "OCR")
+        assert len(res["elements"]) == 1
+        el = res["elements"][0]
+        assert el["type"] == "cartoon"          # 분류는 살린다
+        assert "CAPTION_FAILED" in el["flags"]  # 점역사에게 R11로 뜬다
+
+    def test_정상_캡션은_그대로(self, monkeypatch):
+        import app.ai.builder.result_builder as rb
+        monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("cartoon", 0.9))
+        monkeypatch.setattr(rb, "caption", lambda p, t: "만화: 후보 토론회")
+        monkeypatch.setattr(rb.Path, "exists", lambda self: True)
+        res = _build([self._img()], "t_okcap", 1, "OCR")
+        assert res["elements"][0]["content"] == "만화: 후보 토론회"
+        assert res["elements"][0]["flags"] == []

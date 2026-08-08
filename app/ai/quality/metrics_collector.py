@@ -15,7 +15,16 @@ import time
 from pathlib import Path
 
 from app.utils.logger import get_logger
-from app.utils.req_log import api_counts
+from app.utils.req_log import api_counts, stage_timeline
+
+
+def _llm_wait() -> float:
+    """외부 LLM 분당 상한 때문에 기다린 누적 초(프로세스 전역). 상한 미설정이면 0."""
+    try:
+        from app.core.limits import llm_limiter
+        return llm_limiter().waited_s
+    except Exception:      # noqa: BLE001 — 메트릭은 절대 파이프라인을 막지 않는다
+        return 0.0
 
 logger = get_logger(__name__)
 
@@ -51,6 +60,10 @@ class MetricsCollector:
             "fallback_ratio": (n_blocked / n_elements) if n_elements else 0.0,
             "hcxt_calls": api.get("hcxt", 0),
             "gpt4o_calls": api.get("gpt4o", 0),
+            # 단계별 점유 구간 — 여러 페이지 것을 겹쳐 그리면 병목 자원이 보인다(S4).
+            "stages": stage_timeline(),
+            # 외부 LLM 분당 상한 대기(S2). 0이 아니면 상한이 실제로 물린 것이다.
+            "llm_wait_s": round(_llm_wait(), 3),
         }
 
     def record(self, result: dict, *, elapsed_ms: int) -> dict:

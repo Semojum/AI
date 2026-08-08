@@ -193,24 +193,32 @@ def _render_grid(corrected_text: str) -> list[str]:
     rows = [ln for ln in corrected_text.splitlines() if ln.strip()]
     top = "⠿" + "⠛" * (_COLS - 2) + "⠿"
     bot = "⠿" + "⠶" * (_COLS - 2) + "⠿"
-    # ★ 도서 관행: 테두리 줄을 쓰지 않는다 (2026-07-29 실측).
-    #   지침 §3.1.3(2)는 위/아래 테두리(=GGG…= / =777…=)를 규정하지만, 코퍼스 정답
-    #   14,382줄에 테두리형 줄이 **0개**다(우리는 320개·10,240셀 = 출력의 2.5%).
-    #   메모리 [[gold-brl-fullcell-is-ong]]와 일치 — 정답의 ⠿는 약자 '옹'이지 테두리가 아니다.
-    #   테두리 줄은 정답에 대응이 없어 점역사가 전부 지워야 하는 순수 과잉 생산이다.
-    #   D-01(도서 관행 우선)에 따라 기본은 생략하고, BRAILLE_STYLE=regulation에서만 낸다.
-    border = not _BOOK_STYLE
+    # ★ 테두리를 낸다 (2026-08-06 판정 번복 — 원장 C-01a).
+    #   2026-07-29에는 "코퍼스 정답 14,382줄에 테두리형 줄 0개"를 근거로 뺐다. 그 표본이
+    #   **구판 수능특강 한 종류**였던 게 문제다. 82권으로 다시 재니 정반대다:
+    #     구 gold(수능특강) 0.00% / 신 gold(2027 EBS) 2.62% / 초등참고서 4.78% /
+    #     중등교과서 3.37% / 고등교과서 2.97%  — 일반도서만 0%(표가 거의 없다)
+    #   dev-2027 완결 테두리 블록 실측: 위 ⠿⠛…⠿ 1,096줄 · 아래 ⠿⠶…⠿ 1,783줄.
+    #   메모리 [[gold-brl-fullcell-is-ong]]("정답의 ⠿는 약자 '옹'")은 **낱개 ⠿** 얘기지
+    #   32칸 채움 줄 얘기가 아니다 — 그 둘을 같이 본 것이 오판의 원인이었다.
+    #   BRAILLE_STYLE 게이팅을 걸지 않는다. 규정(지침 §3.1.3(2))과 관행이 이제 같다.
+    #
+    # ★ 행 구분선 ⠐⠐…⠐ (2026-08-06 신설).
+    #   gold 표 445개 중 287개(64%)가 행 사이에 32칸 ⠐ 줄을 넣는다(EBS-E26-013 p8 실물).
+    #   마지막 행 뒤에는 넣지 않는다 — 아래 테두리가 그 자리를 맡는다.
+    rowsep = "⠐" * _COLS
     if not rows:
-        return [top, bot] if border else []
-    lines: list[str] = [top] if border else []
-    for row in rows:
+        return [top, bot]
+    lines: list[str] = [top]
+    for k, row in enumerate(rows):
         cells = [c.strip() for c in row.split("|")]
         head = _translate(cells[0]) if cells[0] else "⠿⠿"
         vals = [(_translate(c) if c else "⠿⠿") for c in cells[1:]]
         body = head + ("⠐⠂⠀" + "⠀⠀".join(vals) if vals else "")
         lines.append("⠀⠀" + body)
-    if border:
-        lines.append(bot)
+        if k == 0 and len(rows) > 1:
+            lines.append(rowsep)          # 머리행과 본문 사이(실측 위치)
+    lines.append(bot)
     return lines
 
 
@@ -593,6 +601,39 @@ def _render_unfold(corrected_text: str) -> list[str]:
     return head + lines if lines else (head or [""])
 
 
+def print_layout(corrected_text: str, mode: str) -> str:
+    """표 초안의 **묵자** 배치 (2026-08-06).
+
+    FE 피커는 묵자와 점자를 나란히 보여 준다(와이어프레임). 종전에는 초안 4개가 전부
+    `text=원문`이라 묵자 칸이 똑같아 무엇을 고르는지 알 수 없었다.
+
+    ★ 점자 렌더러(`_render_*`)를 재활용하지 않는다 — 그쪽은 `_translate`가 19곳에 박혀
+      있어 파라미터화하면 점자 출력이 흔들린다. 배치 규칙만 같은 별도 함수로 둔다.
+    ★ 32칸 접기는 하지 않는다. 묵자는 그 제약이 없고, 피커는 **배치 모양**을 보이는 게 목적이다.
+    """
+    if mode == "transposed":
+        corrected_text = _transpose_text(corrected_text)
+    rows = [[c.strip() for c in ln.split("|")]
+            for ln in corrected_text.splitlines() if ln.strip()]
+    if not rows:
+        return corrected_text
+    out: list[str] = []
+    if mode == "linear":                      # 키  값 (2열 표)
+        for r in rows:
+            out.append("  ".join(c for c in r if c) if len(r) > 1 else (r[0] if r else ""))
+    elif mode == "unfold":                    # 행머리 + 값들을 줄마다 (§3.1.2)
+        for r in rows:
+            head, vals = (r[0] if r else ""), [c for c in r[1:] if c]
+            out.append(f"{head}  " + "  ".join(vals) if vals else head)
+    else:                                     # table_grid · transposed — 행머리: 값  값
+        for r in rows:
+            head, vals = (r[0] if r else ""), [c or "(빈칸)" for c in r[1:]]
+            out.append(f"{head}: " + "  ".join(vals) if vals else head)
+    if mode == "transposed":
+        out.insert(0, "[점역자 주] 행과 열을 바꾸어 표기함")
+    return "\n".join(out)
+
+
 def _transpose_text(corrected_text: str) -> str:
     """'|' 구분 표 텍스트의 행↔열을 바꾼다."""
     rows = [[c.strip() for c in ln.split("|")] for ln in corrected_text.splitlines() if ln.strip()]
@@ -660,16 +701,16 @@ class TableBraille:
         # BBPG-1.2.6이 emit되게 한다(_base_trail은 원본에 태그가 있을 때만 emit).
         unfold_src = text + ("\n" + _TN_SRC if any(_TN_SRC_MARK in ln for ln in unfold_lines) else "")
         drafts = [
-            Draft(option=1, text=text, render_mode="unfold", label="풀어쓰기(3칸·2칸)",
+            Draft(option=1, text=print_layout(text, "unfold"), render_mode="unfold", label="풀어쓰기(3칸·2칸)",
                   braille_lines=unfold_lines,
                   rule_trail=_base_trail(unfold_lines, unfold_src) + [make_rule("BBPG-3.1.2")]),
-            Draft(option=2, text=text, render_mode="table_grid", label="격자형",
+            Draft(option=2, text=print_layout(text, "table_grid"), render_mode="table_grid", label="격자형",
                   braille_lines=grid_lines, rule_trail=_base_trail(grid_lines, text)),
-            Draft(option=3, text=text, render_mode="transposed", label="행↔열 전치",
+            Draft(option=3, text=print_layout(text, "transposed"), render_mode="transposed", label="행↔열 전치",
                   braille_lines=transposed_lines,
                   rule_trail=_base_trail(transposed_lines, text + "\n" + _TN_SRC)
                              + [make_rule("BBPG-3.1.2")]),
-            Draft(option=4, text=text, render_mode="linear", label="선형(키:값)",
+            Draft(option=4, text=print_layout(text, "linear"), render_mode="linear", label="선형(키:값)",
                   braille_lines=linear_lines, rule_trail=_base_trail(linear_lines, text)),
         ]
         # 기본 선택 = opt 추론 render_mode (없으면 풀어쓰기). 나머지는 대안 초안.

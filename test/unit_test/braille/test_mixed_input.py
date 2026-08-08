@@ -148,9 +148,14 @@ class TestSuperscriptCount:
     """수학 제18항: 위첨자 지시자 수."""
 
     def test_pythagorean_three_superscripts(self) -> None:
-        """a²+b²=c²: 위첨자 ⠘ 세 번."""
+        """a²+b²=c²: 위첨자 세 번 — 규정 제18항 ⠘+수표(2026-08-06 재정정, 원장 C-03)."""
         result = translate_tagged_text("<!수식>a^2+b^2=c^2<!/수식>")
-        assert result.count("⠣") == 3, f"제곱 약기 ⠣ 개수 불일치(관행, 정답 규정형 0회): {result!r}"
+        assert result.count("⠘⠼⠃") == 3, f"위첨자 개수 불일치: {result!r}"
+
+    def test_수가_앞에_붙은_단위_제곱만_약기(self) -> None:
+        """단위 제곱은 gold가 ⠣를 더 쓴다(m² 96 : 31). 변수 제곱과 갈라야 한다."""
+        assert translate_tagged_text("넓이 5 m²").endswith("⠣")
+        assert not translate_tagged_text("<!수식>m^2<!/수식>").endswith("⠣")
 
 
 class TestNumberIndicatorCount:

@@ -128,8 +128,12 @@ class TestConvertLatex:
         assert "⠜" in convert_latex("\\sqrt{x}")
 
     def test_superscript_indicator(self) -> None:
-        """수학 제18항: 위첨자 ⠘."""
-        assert "⠣" in convert_latex("x^2")  # ^2 관행 약기(정답 규정형 0회)
+        """수학 제18항: 위첨자 ⠘ + 수표 (2026-08-06 재정정, 원장 C-03).
+
+        종전 '관행 약기 ⠣'의 근거가 구판 한 종류였다. 신규 2027 수학1에서
+        x⠘⠼2 = 1,511회 · x⠣ = 0회. ⠣는 수가 앞에 붙은 단위 제곱에만 남는다.
+        """
+        assert convert_latex("x^2") == "⠭⠘⠼⠃"
 
     def test_no_double_wrap_on_parenthesized(self) -> None:
         """제53항: 이미 괄호로 묶인 식에 점역자 삽입 묶음을 겹치지 않는다.
@@ -203,10 +207,11 @@ class TestMathOperators:
         assert "⠌⠌" in convert_latex("6 \\div 2")        # ÷ ⠌⠌(폰트 //)
 
     def test_subscript(self) -> None:
-        # 문자 첨자는 규정 제19항 ⠰ 유지, 숫자 첨자는 도서 관행 내린 숫자
-        # (gold ⠰⠼N 전권 0회·m₁=⠍⠂ 실측, 2026-07-22 — formula_pairs sub_x1과 정합).
-        assert "⠰" in convert_latex("a_n")               # 아래첨자 ⠰(폰트 ;)
-        assert convert_latex("a_2").endswith("⠆")        # 숫자 첨자 = 내린 2(⠆) 관행
+        # 문자 첨자는 ⠰, **숫자 첨자는 ⠰ + 수표**(규정 제19항 1호).
+        # 2026-08-06 판정 번복(원장 M-02): 종전 '내린 숫자' 판정의 근거 'gold ⠰⠼N 0회'가
+        # 구판 한 종류 실측이었다. 신규 2027 코퍼스에 1,873회 — 수학·화학 양쪽 일관.
+        assert "⠰" in convert_latex("a_n")               # 문자 첨자 ⠰(폰트 ;)
+        assert convert_latex("a_2").endswith("⠰⠼⠃")      # 숫자 첨자 = 첨자표+수표+2
 
     def test_arrow_right(self) -> None:
         assert "⠒⠕" in convert_latex("x \\to y")         # → ⠒⠕(폰트 3o)

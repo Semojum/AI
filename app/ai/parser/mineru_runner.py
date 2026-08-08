@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import uuid
+from difflib import SequenceMatcher
 from pathlib import Path
 
 import fitz
@@ -38,6 +39,43 @@ TYPE_MAP = {
     "cartoon":             "cartoon",
     "figure":              "image",
 }
+
+# ── 제목 단계(BBPG 2장2절1) ──────────────────────────────────────────────────
+# MinerU는 제목 블록을 이미 찾아 놓는다. 다만 `content_list`에서는 type이 "text"로
+# 눕고 단계만 `text_level`에 남는다(vlm_middle_json_mkcontent.py: BlockType.TITLE →
+# ContentType.TEXT + text_level). 종전에는 그 값을 통째로 버리고 heading_level=None을
+# 박아, 조판이 1단계 가운데 정렬·2단계 7칸·3·4단계 5칸을 **한 번도 못 썼다**
+# (QA 실측 2026-08-07: 37쪽 558요소에 title 0개·heading_level 0개).
+#
+# ⚠ MinerU의 표시를 그대로 믿으면 안 된다. 전 코퍼스 7,273곳을 열어 보니 65%만
+#   진짜 제목이고 나머지는 **문항 발문·선택지**다(굵은 큰 글씨라 같이 잡힌다).
+#   발문이 제목이 되면 가운데 정렬로 나가고 앞뒤 빈 줄까지 붙어 더 나빠진다.
+#   그래서 아래 셋을 걸러 낸다.
+#
+# 단계 대응은 **정답 도서 실측**으로 정했다(refonly 94권 137만 줄):
+#     1단계 가운데   0.93%   ← MinerU lv1
+#     3·4단계 5칸    1.45%   ← MinerU lv2 이상
+#     2단계 7칸      0.18%   ← 거의 안 쓴다. 쓰지 않는다
+# ★ 3단계가 아니라 **4단계**다(2026-08-08 대표 결정). 정답 도서의 5칸 시작 줄 1,651줄을
+#   보면 위에 빈 줄 26.7% · 아래에 빈 줄 2.7%로, 아래를 거의 안 띄운다. 4단계가 (1,0)이라
+#   그 모양에 맞는다. 3단계로 두면 아래 빈 줄이 계속 들어가 정답보다 빈 줄이 많아진다.
+_HEAD_CHOICE_RE = re.compile(r"^\s*[①-⑳]")             # 선택지는 제목이 아니다
+_HEAD_END_RE = re.compile(r"[.?!]\s*$|것은\s*\??$|않은\s*것\s*은?\s*\??$|하시오\.?$")
+_HEAD_MAX_LEN = 28                                      # 이보다 길면 제목이 아니라 문장
+_HEAD_LEVEL_MAP = {1: 1}                                # lv1 → 1단계, 그 외 → 4단계
+
+
+def _heading_level(item: dict, mapped_type: str, content: str) -> int | None:
+    """MinerU `text_level` → BBPG 제목 단계. 제목이 아니면 None."""
+    lvl = item.get("text_level")
+    if not lvl or mapped_type != "text":
+        return None
+    t = (content or "").strip()
+    if not t or len(t) > _HEAD_MAX_LEN:
+        return None
+    if _HEAD_CHOICE_RE.match(t) or _HEAD_END_RE.search(t):
+        return None
+    return _HEAD_LEVEL_MAP.get(int(lvl), 4)
 
 
 def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | None = None) -> None:
@@ -190,6 +228,17 @@ def _bullet_item_keys(layer: str) -> list[str]:
     return keys
 
 
+# 블록 수식을 감싼 `$$`/`$` 한 쌍(QA 11번). 양끝에 붙은 것만 본다 — 식 안에 달러가
+# 남아 있으면(통화 표기 등) 짝이 안 맞으므로 손대지 않는다.
+_BLOCK_MATH_WRAP_RE = re.compile(r"^\s*(\${1,2})\s*(.*?)\s*\1\s*$", re.DOTALL)
+
+
+def _strip_block_math_delim(content: str) -> str:
+    r"""`$$\n식\n$$` → `식`. 구분자가 없으면 그대로(멱등)."""
+    m = _BLOCK_MATH_WRAP_RE.match(content or "")
+    return m.group(2) if m else content
+
+
 def _restore_table_bullets(fitz_page: fitz.Page, bbox: list[float], html: str) -> str:
     """표 셀에서 유실·오독된 글머리 기호를 텍스트 레이어를 근거로 되살린다.
 
@@ -269,6 +318,229 @@ def _restore_table_bullets(fitz_page: fitz.Page, bbox: list[float], html: str) -
     return out
 
 
+# ── 표 셀 글자 교정 ──────────────────────────────────────────────────────────
+# 표는 _NATIVE_TEXT_TYPES에서 빠져 있어(HTML 구조를 평문으로 덮으면 표가 깨진다)
+# MinerU OCR 글자가 그대로 남는다. 실측(코퍼스 1131p·표 384개)에서 남은 오독의
+# 사실상 전부가 여기 있었다: 흔성반(혼성반)·건년방(건넌방)·상총(상충)·디담돌(디딤돌)·
+# 쇠큐(쇄국)·카유웨이(캉유웨이)·설탐(설탕)·이미노산(아미노산) 등.
+#
+# 셀을 레이어 값으로 **통째 교체하지 않는다.** 레이어는 시각적 줄 단위라 셀 경계에서
+# 잘리고(`빛(400~700nm의 가시광선)` → `빛(400~700nm의 가시`), 밑줄 마커·PUA 잔재가
+# 섞여 들어온다. 통째 교체하면 글자를 고치는 대신 문장을 잘라먹는다.
+# 그래서 **한글 음절 ↔ 한글 음절, 같은 길이** 치환만 적용한다:
+#   - 길이가 바뀌는 편집(삽입·삭제)은 전부 버린다 → 잘림·중복이 반영될 수 없다.
+#   - 기호·숫자·로마자는 건드리지 않는다. 물결표(~ vs ∼)·붙임표(– vs -)는 레이어 쪽이
+#     원문 글리프지만, 그건 특수기호 축이 따로 규정으로 다루는 영역이라 여기서 손대면
+#     담당이 섞인다.
+_CELL_RE = re.compile(r"(<t[dh][^>]*>)(.*?)(</t[dh]>)", re.IGNORECASE | re.DOTALL)
+_HANGUL_RUN_RE = re.compile(r"^[가-힣]+$")
+_CELL_SIM_MIN = 0.80      # 셀이 레이어에서 이만큼도 안 닮은 자리밖에 없으면 대조 실패
+_CELL_SUB_MAX = 4         # 한 번에 이보다 길게 바꾸지 않는다(문장 교체 방지)
+
+
+def _best_layer_window(cell: str, layer_ns: str) -> tuple[float, int]:
+    """레이어(공백 제거)에서 cell과 가장 닮은 **같은 길이** 구간의 (유사도, 시작위치)."""
+    n = len(cell)
+    if n == 0 or n > len(layer_ns):
+        return 0.0, -1
+    probe = cell[:4]
+    starts: list[int] = []
+    if len(probe) >= 3:
+        starts = [m.start() for m in re.finditer(re.escape(probe), layer_ns)]
+    if not starts:
+        starts = list(range(0, len(layer_ns) - n + 1, max(1, n // 4)))
+    best, best_pos = 0.0, -1
+    for s in starts:
+        seg = layer_ns[s:s + n]
+        if not seg:
+            continue
+        r = SequenceMatcher(None, cell, seg, autojunk=False).ratio()
+        if r > best:
+            best, best_pos = r, s
+    return best, best_pos
+
+
+def _hangul_substitutions(cell: str, window: str) -> list[tuple[int, int, str]]:
+    """(셀 내 오프셋, 길이, 대체문자열). 한글↔한글 동일 길이 치환만."""
+    out: list[tuple[int, int, str]] = []
+    for tag, i1, i2, j1, j2 in SequenceMatcher(None, cell, window,
+                                               autojunk=False).get_opcodes():
+        if tag != "replace":
+            continue
+        a, b = cell[i1:i2], window[j1:j2]
+        if len(a) != len(b) or len(a) > _CELL_SUB_MAX:
+            continue
+        if not (_HANGUL_RUN_RE.match(a) and _HANGUL_RUN_RE.match(b)):
+            continue
+        out.append((i1, i2 - i1, b))
+    return out
+
+
+# ── 괘선 없는 '표'는 표가 아니다 (QA 9번, 2026-08-08) ────────────────────────
+# MinerU의 표 모델은 **글이 격자처럼 늘어선 쪽**을 통째로 표로 싼다. 대표 QA 실측:
+# 2026학년도 수능 수학 문제지 2쪽이 각각 쪽 본문 전체(폭 80%·높이 75%)가 <table> 한
+# 덩이였고, 문항 하나가 <td> 하나였다. 그러면 32칸 표 테두리와 두 칸 셀 구분이 붙어
+# 초안이 통째로 망가진다.
+#
+# 가르는 신호는 대표님 말 그대로 **가로 괘선**이다(실측):
+#   dev-2027 200쪽의 표 104개 — 가로 괘선 최소 2 · 중앙값 5 (하나도 예외 없음)
+#   대표 QA가 올린 원본(2026학년도 수능 수학 문제지)의 그 bbox — 가로 괘선 1
+# ⚠ 판단할 근거가 없는 두 경우는 **손대지 않는다**(표로 둔다):
+#     · 쪽에 벡터 선이 아예 없다(스캔본)
+#     · 그 자리가 래스터 이미지로 덮여 있다 — 표를 그림으로 붙인 쪽(언어 p223 실측).
+#       괘선이 화소 안에 있어 벡터로는 0으로 세어져, 진짜 표를 내릴 뻔했다.
+# ⚠ MinerU가 차트에서 뽑아 준 데이터 표(_chart_data_table)는 원래 괘선이 없으므로 제외 —
+#   이 판정은 MinerU가 직접 "table"이라고 한 요소에만 건다.
+_RULE_FLAT = 1.5      # 이보다 얇으면 '선'
+_RULE_PAD = 4.0       # bbox 여유(pt) — 테두리는 bbox에 딱 붙거나 살짝 밖이다
+_RULE_SPAN = 0.4      # 표 폭의 이 비율 이상 뻗어야 괘선(밑줄 토막·화살표 제외)
+_RULE_MIN_H = 2       # 가로 괘선이 이보다 적으면 표가 아니다
+_RULE_IMG_COVER = 0.6  # 래스터 이미지가 이 비율 이상 덮으면 벡터로 판단 불가
+
+
+def _h_rules(fitz_page: fitz.Page, bbox: list[float]) -> int | None:
+    """bbox 안 가로 괘선 수. 벡터로 판단할 수 없으면 None."""
+    w, h = fitz_page.rect.width, fitz_page.rect.height
+    r = fitz.Rect(bbox[0] / 1000 * w, bbox[1] / 1000 * h,
+                  bbox[2] / 1000 * w, bbox[3] / 1000 * h)
+    rot = fitz_page.rotation_matrix
+    if r.get_area() > 0:
+        for blk in fitz_page.get_text("rawdict").get("blocks", []):
+            if blk.get("type") != 1:        # 1 = 이미지 블록
+                continue
+            ib = fitz.Rect(blk.get("bbox") or (0, 0, 0, 0)) * rot
+            ib.normalize()
+            if (ib & r).get_area() >= r.get_area() * _RULE_IMG_COVER:
+                return None
+    segs: list[tuple[float, float, float, float]] = []
+    for g in fitz_page.get_drawings():
+        for it in g["items"]:
+            if it[0] == "l":
+                p1, p2 = it[1] * rot, it[2] * rot
+                segs.append((min(p1.x, p2.x), min(p1.y, p2.y),
+                             max(p1.x, p2.x), max(p1.y, p2.y)))
+            elif it[0] == "re":
+                q = fitz.Rect(it[1]) * rot
+                q.normalize()
+                # 얇은 사각형은 그 자체가 선, 두꺼우면 위·아래 변이 행 구분선(음영 머리행)
+                segs += ([(q.x0, q.y0, q.x1, q.y1)] if min(q.width, q.height) <= _RULE_FLAT
+                         else [(q.x0, q.y0, q.x1, q.y0), (q.x0, q.y1, q.x1, q.y1)])
+    if not segs:
+        return None
+    bx0, by0 = r.x0 - _RULE_PAD, r.y0 - _RULE_PAD
+    bx1, by1 = r.x1 + _RULE_PAD, r.y1 + _RULE_PAD
+    # ⚠ PyMuPDF의 Rect.intersects()는 높이 0인 사각형(=가로선)을 '빈' 것으로 보고 False를
+    #   낸다. 그래서 겹침은 사각형이 아니라 좌표로 직접 따진다.
+    spans: dict[int, float] = {}
+    for x0, y0, x1, y1 in segs:
+        if y1 - y0 > _RULE_FLAT or x1 < bx0 or x0 > bx1 or y1 < by0 or y0 > by1:
+            continue
+        cut = min(x1, bx1) - max(x0, bx0)
+        if cut > 1:                       # 조각난 괘선은 y가 같으면 하나로 합산한다
+            k = round((y0 + y1) / 2)
+            spans[k] = spans.get(k, 0.0) + cut
+    need = max(r.width, 1.0) * _RULE_SPAN
+    return sum(1 for length in spans.values() if length >= need)
+
+
+_TR_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S | re.I)
+_TD_RE = re.compile(r"<t[dh]([^>]*)>(.*?)</t[dh]>", re.S | re.I)
+_COLSPAN_RE = re.compile(r"colspan\s*=\s*[\"']?(\d+)", re.I)
+
+
+# 셀 글자 중앙값이 이보다 길면 '표의 셀'이 아니라 **단에 흐르는 글**로 본다
+_COL_CELL_LEN = 40
+
+
+def _table_to_text(html: str) -> str:
+    """괘선 없는 '표' HTML → 평문. 격자 모양에 따라 읽는 방향이 다르다.
+
+    · 셀이 긴 글이면 **다단 조판**이다 → 단 순서(세로)로 읽는다. 수능 문제지는 한 <tr>이
+      [1번 문항, 3번 문항]이라 행으로 읽으면 1·3·2·4가 된다(단으로 읽어야 1·2·3·4).
+      다단 쪽을 단 순서로 읽는 판단은 pipeline._reorder_columns에도 이미 있다.
+    · 셀이 짧으면 **선택지 표**다(① 뜯기 / 치기) → 행이 곧 인쇄 줄이므로 행 순서로 읽고
+      한 행은 한 줄로 두 칸씩 띄어 잇는다(「점자 도서 제작 지침」 3장 3절 4)(3)①).
+    """
+    grid: list[list[tuple[int, str]]] = []
+    for tr in _TR_RE.findall(html):
+        row: list[tuple[int, str]] = []
+        col = 0
+        for attr, cell in _TD_RE.findall(tr):
+            row.append((col, re.sub(r"<[^>]+>", "", cell).strip()))
+            m = _COLSPAN_RE.search(attr)
+            col += int(m.group(1)) if m else 1
+        if row:
+            grid.append(row)
+    if not grid:
+        return re.sub(r"<[^>]+>", " ", html).strip()
+    lens = sorted(len(t) for row in grid for _, t in row if t)
+    ncol = max(row[-1][0] + 1 for row in grid)
+    if ncol > 1 and lens and lens[len(lens) // 2] >= _COL_CELL_LEN:
+        return "\n".join(txt for c in range(ncol) for row in grid
+                         for col, txt in row if col == c and txt)
+    return "\n".join("  ".join(t for _, t in row if t) for row in grid
+                     if any(t for _, t in row))
+
+
+def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> str:
+    """표 셀의 한글 오독을 텍스트 레이어를 근거로 고친다. 구조(HTML)는 건드리지 않는다.
+
+    ★ 부분 교정 금지(_restore_table_bullets와 같은 원칙): 내용 있는 셀 하나라도 레이어에서
+    못 찾으면 그 표는 통째로 손대지 않는다. 못 찾는다는 건 레이어와 표가 다른 것을
+    가리킨다는 뜻이라, 찾은 셀의 교정도 근거가 없다.
+    """
+    if not html or not bbox:
+        return html
+    layer = _native_text_spaced(fitz_page, bbox)
+    if not layer or _pua_ratio(layer) > _PUA_RATIO_MAX:
+        return html
+    # 레이어에는 우리가 붙이는 인라인 태그(<!드러냄> 등)가 들어 있다 — 대조 전에 걷어낸다.
+    layer_ns = re.sub(r"\s+", "", re.sub(r"<!/?[^>]*>", "", layer))
+    if not layer_ns:
+        return html
+
+    edits: list[tuple[int, int, str]] = []
+    for m in _CELL_RE.finditer(html):
+        inner = m.group(2)
+        # 대조본(태그·공백·수식 구분자 $ 제거) ↔ 원문 인덱스 대응
+        ns_chars: list[str] = []
+        ns_idx: list[int] = []
+        i = 0
+        while i < len(inner):
+            ch = inner[i]
+            if ch == "<":                       # 셀 안 중첩 태그는 건너뛴다
+                j = inner.find(">", i)
+                if j < 0:
+                    break
+                i = j + 1
+                continue
+            if ch not in _BULLET_SKIP_CHARS:
+                ns_chars.append(ch)
+                ns_idx.append(i)
+            i += 1
+        cell = "".join(ns_chars)
+        if not cell:
+            continue                            # 빈 셀은 대조 대상이 아니다
+        sim, pos = _best_layer_window(cell, layer_ns)
+        if sim < _CELL_SIM_MIN:
+            return html                         # 한 셀이라도 실패 → 이 표는 포기
+        if sim >= 1.0:
+            continue
+        for off, ln, repl in _hangul_substitutions(cell, layer_ns[pos:pos + len(cell)]):
+            src = ns_idx[off:off + ln]
+            # 원문에서도 연속이어야 한다 — 중간에 태그·공백이 끼어 있으면 건드리지 않는다.
+            if src != list(range(src[0], src[0] + ln)):
+                continue
+            edits.append((m.start(2) + src[0], ln, repl))
+
+    if not edits:
+        return html
+    out = html
+    for pos, ln, repl in sorted(edits, reverse=True):
+        out = out[:pos] + repl + out[pos + ln:]
+    return out
+
+
 def _pua_ratio(s: str) -> float:
     if not s:
         return 0.0
@@ -284,7 +556,8 @@ def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
     규칙이라 그대로 점역하면 정답과 크게 어긋난다(세계사 p086 실측: cell_ns 0.87→0.39).
     pdf_analyzer의 글자 간격 기반 복원(_page_text_blocks_spaced)을 재사용한다.
     """
-    from app.ai.preprocessor.pdf_analyzer import _line_text_with_word_gaps, underline_rects
+    from app.ai.preprocessor.pdf_analyzer import (
+        _line_text_with_word_gaps, rows_to_text, underline_rects)
 
     w, h = fitz_page.rect.width, fitz_page.rect.height
     uls = underline_rects(fitz_page)   # 밑줄(드러냄표, 규정 제56항) — 벡터 선으로만 존재
@@ -294,7 +567,7 @@ def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
     # 좌표계라 MinerU가 쓰는 렌더(표시) 좌표와 어긋난다. rotation_matrix로 표시 좌표로 옮긴다.
     # (이걸 빠뜨리면 회전 페이지에서 매칭이 전부 실패해 OCR 오탈자가 그대로 남는다.)
     rot = fitz_page.rotation_matrix
-    lines: list[str] = []
+    lines: list[tuple] = []
     for blk in fitz_page.get_text("rawdict").get("blocks", []):
         if blk.get("type") != 0:      # 0 = 텍스트 블록
             continue
@@ -306,8 +579,10 @@ def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
                 continue
             t = _line_text_with_word_gaps(ln, rot, uls)
             if t:
-                lines.append(t)
-    return "\n".join(lines).strip()
+                # ★ 같은 인쇄 줄이 여러 line으로 쪼개진 것(정답표·선택지)은 rows_to_text가
+                #   한 줄로 이어 두 칸을 띈다 — 지침 3장 3절 4)(3)① (QA S4)
+                lines.append((lb, t))
+    return rows_to_text(lines)
 
 
 def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) -> str | None:
@@ -525,6 +800,17 @@ def run(
         if content and "<su" in content:
             content = re.sub(r"</?su[bp]>", "", content)
 
+        # 블록 수식 구분자 벗기기(QA 11번, 2026-08-08). MinerU는 수식을 마크다운 관례대로
+        # `$$\n식\n$$` 세 줄로 내보낸다 — 한 줄짜리 수식인데 경계 파일에 줄바꿈이 두 개
+        # 들어가고, 점역사 편집창에도 `$$`가 그대로 보인다. 경계 계약은
+        # `formula(content=LaTeX)`(SPEC-INTERFACE §2)이므로 구분자는 우리 몫이 아니다.
+        # 점자에는 영향이 없다(convert_latex의 _MATH_DELIM_RE가 어차피 지운다) — 이건
+        # 사람이 읽고 고치는 텍스트를 계약대로 되돌리는 것이다.
+        # ⚠ 본문(text) 요소 안의 인라인 `$…$`는 건드리지 않는다. translator가 그 구분자로
+        #   수식을 라우팅한다(_INLINE_MATH_RE) — 지우면 \frac이 영어 단어로 점역된다.
+        if mapped_type == "formula":
+            content = _strip_block_math_delim(content)
+
         # 글자는 PDF 텍스트 레이어 우선(하이브리드) — 티어와 무관하게 블록별로 시도한다.
         # TEXT_NATIVE(스캔 아님이 확실)면 가드 없이 대체, 그 외(OCR 라우팅)는 가드 통과 시만.
         if mapped_type in _NATIVE_TEXT_TYPES:
@@ -533,8 +819,15 @@ def run(
             else:
                 content = _native_override(fitz_page, bb, content) or content
         elif mapped_type == "table":
-            # 표는 구조 때문에 전면 대체를 못 하므로 글머리 기호(제72항)만 되돌린다.
-            content = _restore_table_bullets(fitz_page, bb, content)
+            # 괘선 없는 '표'는 표가 아니다 — 위 _h_rules 주석 참조(QA 9번)
+            n_rules = _h_rules(fitz_page, bb) if item_type == "table" else None
+            if n_rules is not None and n_rules < _RULE_MIN_H:
+                mapped_type, content = "text", _table_to_text(content)
+            else:
+                # 표는 구조 때문에 전면 대체를 못 하므로 글머리 기호(제72항)만 되돌리고,
+                # 셀 안 글자는 레이어를 근거로 한글 오독만 고친다(둘 다 전부-아니면-전무).
+                content = _restore_table_bullets(fitz_page, bb, content)
+                content = _correct_table_cells(fitz_page, bb, content)
 
         # 인쇄 캡션 강제 적용(위 forced_caption) — 생성 placeholder/빈 content를 덮어쓴다.
         if forced_caption and mapped_type == "caption":
@@ -543,6 +836,11 @@ def run(
         # page_number인데 숫자가 아닌 경우 type을 text로 정정
         if mapped_type == "page_number" and not content.strip().lstrip('-').isnumeric():
             mapped_type = "text"
+
+        # 제목 단계(BBPG 2장2절1) — MinerU가 이미 찾아 둔 것을 살린다. 위 _heading_level 주석 참조.
+        hlevel = _heading_level(item, mapped_type, content)
+        if hlevel:
+            mapped_type = "title"
 
         # MinerU bbox는 0~1000 정규화 좌표 → 실제 픽셀로 변환
         bb_px = [bb[0] / 1000 * img_w, bb[1] / 1000 * img_h,
@@ -560,7 +858,7 @@ def run(
             "page_height": img_h,
             "content": content,
             "image_path": image_path,
-            "heading_level": None,
+            "heading_level": hlevel,
             "caption_ref": None,
             "flags": [],
         })

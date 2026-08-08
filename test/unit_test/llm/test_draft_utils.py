@@ -1,3 +1,4 @@
+import pytest
 """draft_utils — 점역사주 태그 포장 + 방식-라벨 제거(프리필 방식 채택 후)."""
 from app.ai.llm.draft_utils import ensure_tn_prefix, parse_labeled_drafts
 
@@ -31,3 +32,84 @@ class TestParseLabeledDrafts:
         assert ds[0].text == "<!점역자주>원 안에 삼각형<!/점역자주>"
         assert ds[2].text == "<!점역자주>원과 삼각형<!/점역자주>"
         assert len({d.text for d in ds}) == 3   # 세 초안 서로 다름
+
+
+class TestWrapStyleSwitch:
+    """시각 초안 포장 A/B — 주표(tn, 기본) vs 글상자(box). 원장 C-02 축.
+
+    평가 실측(LLM-켬 12쪽): 우리 주표 9개 중 3개(33%)를 gold는 같은 내용의 **본문**으로
+    낸다. 내용은 필요한데 포장만 다르다. 규칙 경로(`visual_drafts`)와 **같은 스위치**를
+    읽어야 한 번의 A/B로 두 경로를 함께 본다 — 이 테스트가 그 정합을 묶는다.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore(self):
+        """⚠ reload는 모듈 전역을 바꾼다 — 끝나면 기본값으로 되돌려야 다른 테스트가 안 샌다."""
+        yield
+        import importlib, os
+        os.environ.pop("VISUAL_WRAP_STYLE", None)
+        from app.ai.llm import draft_utils, visual_drafts
+        importlib.reload(draft_utils); importlib.reload(visual_drafts)
+
+    @staticmethod
+    def _reload(monkeypatch, style: str):
+        import importlib
+        from app.ai.llm import draft_utils, visual_drafts
+        monkeypatch.setenv("VISUAL_WRAP_STYLE", style)
+        return importlib.reload(draft_utils), importlib.reload(visual_drafts)
+
+    def test_기본은_주표(self, monkeypatch) -> None:
+        d, v = self._reload(monkeypatch, "tn")
+        assert d.ensure_tn_prefix("그래프: 설명").startswith("<!점역자주>")
+        assert v._tn("그래프: 설명").startswith("<!점역자주>")
+
+    def test_box면_두_경로_모두_글상자(self, monkeypatch) -> None:
+        d, v = self._reload(monkeypatch, "box")
+        for out in (d.ensure_tn_prefix("그래프: 설명"), v._tn("그래프: 설명")):
+            assert out.startswith("<!테두리_위>") and out.endswith("<!/테두리_아래>")
+            assert "점역자주" not in out
+
+    def test_전환해도_내용은_보존된다(self, monkeypatch) -> None:
+        d, _ = self._reload(monkeypatch, "box")
+        assert "카드 1: 기능론" in d.ensure_tn_prefix("카드 1: 기능론")
+
+
+class TestAutoWrapRule:
+    """auto 포장 — 전사(글상자)와 서술(주표)을 초안 모양으로 가른다. 원장 C-02.
+
+    gold는 **둘 다 쓴다**(평가 실측 12쪽: gold 주표 888셀 · 테두리 33줄). 전면 전환은
+    한쪽 오차를 다른 쪽 오차로 바꿀 뿐이다 — box 전면 전환 시 CER 62.8% → 62.2%.
+      · 원문에 글로 있는 것(카드·보기 나열) → 글상자 본문 (사회문화 p147)
+      · 그림을 말로 푼 것(그래프 추세·장치 묘사) → 주표
+    """
+
+    @pytest.fixture(autouse=True)
+    def _auto(self, monkeypatch):
+        import importlib
+        from app.ai.llm import draft_utils
+        monkeypatch.setenv("VISUAL_WRAP_STYLE", "auto")
+        self.d = importlib.reload(draft_utils)
+        yield
+        import os
+        os.environ.pop("VISUAL_WRAP_STYLE", None)
+        importlib.reload(draft_utils)
+
+    @pytest.mark.parametrize("text", [
+        "그래프: 관점 비교 / 카드 1: 기능론 / 카드 2: 갈등론",
+        "표: 항목 / ① 자유 / ② 평등 / ③ 박애",
+        "그림: 단계\n1. 준비\n2. 실행\n3. 정리",
+    ])
+    def test_나열은_글상자(self, text: str) -> None:
+        assert self.d.ensure_tn_prefix(text).startswith("<!테두리_위>")
+
+    @pytest.mark.parametrize("text", [
+        "그래프: 가로축은 연도, 세로축은 인구수이며 2010년 이후 완만히 증가한다.",
+        "사진: 광화문 앞 시위 장면",
+        "그림: 실험 장치가 왼쪽에 놓여 있고 오른쪽으로 관이 이어진다.",
+    ])
+    def test_서술은_주표(self, text: str) -> None:
+        assert self.d.ensure_tn_prefix(text).startswith("<!점역자주>")
+
+    def test_항목이_하나뿐이면_서술로_본다(self) -> None:
+        """한 항목은 나열이 아니다 — 오검출을 막는 하한."""
+        assert self.d.ensure_tn_prefix("그림: ① 자유만 표시됨").startswith("<!점역자주>")

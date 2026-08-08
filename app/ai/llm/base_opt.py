@@ -35,6 +35,14 @@ class HcxtBudgetExceeded(Exception):
     """페이지 누적 HCXT 예산 소진 — 이 요소는 HCXT를 건너뛰고 GPT-4o로 폴백."""
 
 
+class HcxtDisabled(Exception):
+    """HCXT 비활성(config.hcxt_backend="off") — 추론을 시도하지 않고 곧바로 폴백.
+
+    ★ 전이 예외(OOM 등)와 섞이면 안 된다. 섞이면 generate_with_retry가 요소마다
+    _TRANSIENT_RETRIES회 헛돌고 나서야 폴백한다(비활성인데 재시도할 대상이 없다).
+    """
+
+
 def hcxt_generate_sync(prompt: str, max_new_tokens: int = 512, prefill: str = "") -> str:
     """HyperCLOVA X 동기 추론. prefill이 있으면 답변 시작을 강제해 포맷을 고정한다.
 
@@ -77,12 +85,17 @@ async def hcxt_optimize(
 ) -> str:
     """HCXT 추론 + 타임아웃. 백엔드에 따라 경로가 갈린다(config.hcxt_backend).
 
+    - off(기본, 2026-08-02): 아무것도 하지 않고 HcxtDisabled를 올린다 → 호출부가 즉시 폴백.
+      모델을 로드하지도, 서버에 붙지도 않으므로 연결 실패 지연·에러로그가 없다.
     - vllm: 별도 vLLM 서버로 오프로드. 서버가 배칭/동시성을 처리하므로 GPU 락·페이지 예산
       없이 요소들이 병렬로 돈다. 타임아웃만 건다.
-    - transformers(기본): 인프로세스 단일 GPU 직렬(inference_lock 공유). 락 안에서만 실제 추론
+    - transformers: 인프로세스 단일 GPU 직렬(inference_lock 공유). 락 안에서만 실제 추론
       시간을 재 파트별 사용량(req_log)에 기록한다(대기 시간 제외). 페이지 누적 예산도 여기서만.
     """
     from app.utils.req_log import record_hcxt
+
+    if not config.hcxt_enabled:
+        raise HcxtDisabled(kind)
 
     if config.hcxt_backend == "vllm":
         from app.ai.llm.hcxt_client import vllm_generate
@@ -139,12 +152,25 @@ async def fallback_optimize(prompt: str, *, max_tokens: int = 300, kind: str = "
       ≈$9.5 발생, 원장과 청구액이 $12 어긋남). 도구마다 키를 비우는 규약은 하나만
       빠뜨려도 뚫리므로, 호출 길목에서 한 번에 막는다.
     """
+    from app.core.limits import estimate_tokens, llm_limiter, llm_slot
     from app.utils.req_log import record_gpt4o
 
     if os.environ.get("DISABLE_LLM_FALLBACK") == "1":
         logger.warning("LLM 폴백 차단됨(DISABLE_LLM_FALLBACK=1) — %s", kind)
         return ""
 
+    # 동시 연결 슬롯 → 분당 상한 순서로 잡는다. 순서를 바꾸면 상한을 기다리는 코루틴이
+    # 슬롯을 붙잡은 채 놀아 동시성이 헛돈다.
+    # ★ 타임아웃(FALLBACK_TIMEOUT)은 **둘 다 잡은 뒤에** 시작한다 — 대기를 상한에 넣으면
+    #   줄이 길 때 정상 호출이 '느린 호출'로 오인돼 끊긴다(limits.py 규약).
+    async with llm_slot():
+        await llm_limiter().acquire(estimate_tokens(prompt), max_tokens)
+        return await _fallback_call(prompt, max_tokens=max_tokens, kind=kind,
+                                    record_gpt4o=record_gpt4o)
+
+
+async def _fallback_call(prompt: str, *, max_tokens: int, kind: str, record_gpt4o) -> str:
+    """`fallback_optimize`의 실제 호출부. 슬롯·상한을 잡은 뒤 불린다."""
     if config.anthropic_api_key:
         import anthropic
         client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
@@ -240,10 +266,14 @@ async def generate_with_retry(
                 prompt, timeout, prefill=prefill, max_new_tokens=max_new_tokens, kind=kind
             )
             return (transform(resp) if transform else resp), False
-        except (asyncio.TimeoutError, HcxtBudgetExceeded) as exc:
-            # 느린 추론/예산 소진 재시도 금지 → 곧바로 폴백(락 점유 시간 최소화).
-            reason = "예산 소진" if isinstance(exc, HcxtBudgetExceeded) else "타임아웃"
-            logger.warning("HyperCLOVA X %s %s → 즉시 FALLBACK id=%s", kind, reason, element_id)
+        except (asyncio.TimeoutError, HcxtBudgetExceeded, HcxtDisabled) as exc:
+            # 느린 추론/예산 소진/비활성은 재시도 금지 → 곧바로 폴백(락 점유 시간 최소화).
+            if isinstance(exc, HcxtDisabled):
+                # 비활성은 설정대로 도는 정상 경로다 — 요소마다 warning을 찍으면 로그가 묻힌다.
+                logger.debug("HCXT 비활성 → FALLBACK id=%s (%s)", element_id, kind)
+            else:
+                reason = "예산 소진" if isinstance(exc, HcxtBudgetExceeded) else "타임아웃"
+                logger.warning("HyperCLOVA X %s %s → 즉시 FALLBACK id=%s", kind, reason, element_id)
             resp = await fallback_optimize(prompt, max_tokens=fallback_max_tokens, kind=kind)
             return resp, True
         except Exception as exc:
