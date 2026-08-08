@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import atexit
 import os
+import signal
 import subprocess
 import time
 import urllib.request
@@ -27,6 +28,9 @@ logger = get_logger(__name__)
 
 _PORT = int(os.environ.get("MINERU_API_PORT", "30000"))
 _proc: subprocess.Popen | None = None
+# 기동 때 그룹 id를 붙잡아 둔다. 부모가 죽으면 pid가 회수돼 os.getpgid가 못 찾는데,
+# **고아가 생기는 경우가 정확히 그때**다(세그폴트로 부모만 날아가고 손자가 남는다).
+_pgid: int | None = None
 _url: str | None = None
 
 
@@ -55,7 +59,7 @@ def get_url() -> str | None:
 
 def ensure_started(wait: float = 240.0) -> str | None:
     """영구 mineru-api를 보장(외부 URL 사용 또는 자동 기동). 사용 URL 반환, 실패 시 None."""
-    global _proc, _url
+    global _proc, _pgid, _url
 
     ext = os.environ.get("MINERU_API_URL")
     if ext:
@@ -117,7 +121,13 @@ def ensure_started(wait: float = 240.0) -> str | None:
              "--enable-vlm-preload", "true",
              "--gpu-memory-utilization", gpu_util],
             stdout=sink, stderr=subprocess.STDOUT, env=env,
+            # 자식들을 한 프로세스 그룹으로 묶는다. vLLM 백엔드는 `VLLM::EngineCore`를
+            # 손자 프로세스로 띄우는데, 부모만 죽이면 그놈이 고아로 남아 VRAM을
+            # 5.2GB씩 문다(실측 12,158MiB까지 누적). `pkill -f mineru-api`로도 안 잡힌다 —
+            # 이름이 안 맞기 때문이다. 그룹으로 묶어야 stop()이 통째로 거둘 수 있다.
+            start_new_session=True,
         )
+        _pgid = _proc.pid          # start_new_session이면 pgid == 자식 pid
     except Exception as exc:  # noqa: BLE001
         logger.warning("MinerU 서비스 기동 실패(%s) → 요청마다 CLI 폴백", exc)
         return None
@@ -140,12 +150,38 @@ def ensure_started(wait: float = 240.0) -> str | None:
 
 
 def stop() -> None:
-    """자동 기동한 mineru-api 종료(atexit)."""
-    global _proc
-    if _proc and _proc.poll() is None:
-        _proc.terminate()
+    """자동 기동한 mineru-api를 **프로세스 그룹째** 종료(atexit).
+
+    부모만 죽이면 vLLM 백엔드의 `VLLM::EngineCore` 손자가 고아로 남아 VRAM을 문다.
+    기동 때 `start_new_session=True`로 묶어 뒀으므로 그룹에 신호를 보낸다.
+
+    부모가 이미 죽은 뒤에도(세그폴트) 그룹은 살아 있을 수 있으므로, `poll()`이
+    None이 아니어도 그룹 정리는 시도한다 — 고아가 생기는 게 바로 그 경우다.
+    """
+    global _proc, _pgid
+    if not _proc:
+        return
+    pgid = _pgid
+    if pgid is None:                     # 예전 경로 호환
         try:
-            _proc.wait(timeout=5)
-        except Exception:  # noqa: BLE001
-            _proc.kill()
+            pgid = os.getpgid(_proc.pid)
+        except OSError:
+            pgid = None
+
+    if pgid is not None:
+        for sig, wait_s in ((signal.SIGTERM, 5), (signal.SIGKILL, 2)):
+            try:
+                os.killpg(pgid, sig)
+            except OSError:
+                break                    # 그룹이 비었다 = 다 죽었다
+            try:
+                _proc.wait(timeout=wait_s)
+            except Exception:            # noqa: BLE001 — 타임아웃이면 다음 신호로
+                continue
+            # 부모는 거뒀다. 손자가 남았을 수 있으니 그룹이 빌 때까지 본다.
+            try:
+                os.killpg(pgid, 0)
+            except OSError:
+                break                    # 그룹이 비었다
     _proc = None
+    _pgid = None
