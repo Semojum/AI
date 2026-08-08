@@ -265,6 +265,11 @@ def _center(text: str, width: int = _COLS) -> str:
     return " " * ((width - _cell_count(t)) // 2) + t
 
 
+# 가운데에 빈칸을 품어서 어절 분리(`[^ ⠀]+`)로 갈리면 안 되는 기호들 (원장 C-16).
+_ATOMIC_SEQS = ("⠸⠦⠀⠴⠇",)   # 규정 제73항 네모 빈칸
+_ATOMIC_SENTINEL = "\x01"     # 길이 1 — 1:1 치환이라 wraps 오프셋이 안 밀린다
+
+
 def _break_line(
     line: str, width: int = _COLS, first_width: Optional[int] = None,
     keep_indent: bool = False,
@@ -275,6 +280,17 @@ def _break_line(
     keep_indent: 줄머리 빈칸을 첫 출력 줄에 보존한다(기본 False = 종전 동작).
     반환: (분리된 줄 목록, 강제분리 횟수, 줄바꿈이 삽입된 원본 char 오프셋 목록).
     """
+    if any(seq in line for seq in _ATOMIC_SEQS):
+        # 가운데에 빈칸이 든 기호는 어절 분리(`[^ ⠀]+`)가 반으로 가른다. 규정 제73항
+        # 네모 빈칸 ⠸⠦⠀⠴⠇이 그렇다 — 32칸 경계에 걸리면 ⠸⠦가 줄 끝, ⠴⠇가 다음 줄로
+        # 갈려 점역사가 빈칸이 어디서 끝나는지 못 읽는다(전수 확인: 14개 위치 중 3개).
+        # 빈칸을 같은 길이 sentinel로 바꿔 한 어절로 만들고, 접은 뒤 되돌린다.
+        # 1:1 치환이라 wraps 오프셋은 그대로 유효하다.
+        guarded = line
+        for seq in _ATOMIC_SEQS:
+            guarded = guarded.replace(seq, seq.replace("⠀", _ATOMIC_SENTINEL))
+        out, forced, wraps = _break_line(guarded, width, first_width, keep_indent)
+        return ([o.replace(_ATOMIC_SENTINEL, "⠀") for o in out], forced, wraps)
     fw = width if first_width is None else first_width
     if _cell_count(line) <= fw:
         return ([line], 0, [])
