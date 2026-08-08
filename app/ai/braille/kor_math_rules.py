@@ -36,6 +36,28 @@ _SUPERSCRIPT_IND = "⠘"
 _SUBSCRIPT_IND   = "⠰"
 # 수학 점자 제22항: 근호 > = ⠜ (dots 3,4,5)
 _SQRT_IND        = "⠜"
+
+# ── 유니코드 첨자 → LaTeX (QA 10번, 2026-08-08) ─────────────────────────────
+# 캡셔닝 LLM은 수식을 `x²`처럼 유니코드로 쓴다(대표님 QA 실측: `곡선: y = x² + 3`).
+# 이 표기가 convert_latex에 그대로 들어오면 첨자 문자가 **아무 규칙에도 안 걸려**
+# 원문자 그대로 점자 파일에 실린다 — `x²` → `⠭²`. 숫자 2가 통째로 사라지므로
+# 수표(⠼)도 같이 사라진다 = **C5**(배포 블로커). 제18·19항 형태로 되돌린다.
+# inline_math도 같은 표를 쓴다(정의는 여기 하나) — 거기선 '수식 구간 판정'에도 쓴다.
+UNI_SUP = {"⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4", "⁵": "5", "⁶": "6",
+           "⁷": "7", "⁸": "8", "⁹": "9", "⁺": "+", "⁻": "-", "⁼": "=",
+           "⁽": "(", "⁾": ")", "ⁿ": "n", "ⁱ": "i", "ˣ": "x"}
+UNI_SUB = {"₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4", "₅": "5", "₆": "6",
+           "₇": "7", "₈": "8", "₉": "9", "₊": "+", "₋": "-", "₌": "=",
+           "₍": "(", "₎": ")", "ₙ": "n", "ₖ": "k", "ₘ": "m", "ₚ": "p",
+           "ₜ": "t", "ᵢ": "i", "ⱼ": "j"}
+_UNI_SUP_RE = re.compile(f"[{''.join(UNI_SUP)}]+")
+_UNI_SUB_RE = re.compile(f"[{''.join(UNI_SUB)}]+")
+
+
+def unicode_scripts_to_latex(s: str) -> str:
+    """유니코드 위·아래첨자를 LaTeX `^{}`·`_{}`로. (x² → x^{2}, aₙ₊₁ → a_{n+1})"""
+    s = _UNI_SUP_RE.sub(lambda m: "^{" + "".join(UNI_SUP[c] for c in m.group()) + "}", s)
+    return _UNI_SUB_RE.sub(lambda m: "_{" + "".join(UNI_SUB[c] for c in m.group()) + "}", s)
 # 수학 점자 제22항 붙임1: 세제곱근 이상 근수 기호 ] = ⠻ (dots 1,2,4,5,6)
 _SQRT_N_IND      = "⠻"
 
@@ -613,6 +635,9 @@ def _normalize_latex_input(latex: str) -> str:
     s = _MATH_DELIM_RE.sub(" ", s)
     # ★ 다른 어떤 규칙보다 먼저 — 백슬래시가 없으면 아래 정규식이 하나도 안 걸린다.
     s = _restore_lost_backslash(s)
+    # 유니코드 첨자 → ^{}·_{} (QA 10번). 첨자 공백 정리(_SUBSUP_SP_RE)보다 먼저 와야
+    # `Ca²⁺`가 한 첨자 덩이 `Ca^{2+}`로 묶인다. 프라임 ′는 제17항 ' 로 통일.
+    s = unicode_scripts_to_latex(s).replace("′", "'").replace("″", "''")
     # 원문자(제64항). \text{…} 래퍼보다 먼저 잡아야 \textcircled가 \text로 오인되지 않는다.
     s = _TEXTCIRCLED_RE.sub(_textcircled_repl, s)
     # MinerU 수식 OCR은 토큰을 글자 단위로 띄어 낸다 — `\operatorname* { l i m }`,

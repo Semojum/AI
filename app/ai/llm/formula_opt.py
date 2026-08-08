@@ -91,7 +91,21 @@ _JAMO_ALIAS = [(re.compile(r"\\neg\s*\."), "ㄱ."),
                (re.compile(r"\\sqsubset\s*\."), "ㄷ.")]
 
 
+# 블록 수식 구분자 `$$…$$`(QA 11번, 2026-08-08). 종전에는 _extract에서만 지웠는데,
+# _extract는 **HCLOVA X 응답에만** 걸린다(base_opt.generate_with_retry의 transform은
+# 폴백 응답을 통과시킨다). 그래서 실제 운영에서는 세 갈래로 새어 나갔다:
+#   ZERO 티어      → _normalize(raw)로 MinerU 원문을 그대로 통과
+#   GPT-4o 폴백    → 응답에 `$$`가 있어도 transform 미적용
+#   LLM 실패       → `response or raw`의 raw 쪽
+# 대표님 QA 10 job 전부 FALLBACK이라 `$$\n…\n$$`가 편집창까지 그대로 갔다.
+# _normalize는 네 갈래가 **모두** 지나는 유일한 지점이라 여기서 한 번 지운다.
+_BLOCK_WRAP_RE = re.compile(r"^\s*(\${1,2})\s*(.*?)\s*\1\s*$", re.DOTALL)
+
+
 def _normalize(latex: str) -> str:
+    m = _BLOCK_WRAP_RE.match(latex or "")
+    if m:
+        latex = m.group(2)
     latex = _DIGIT_GAP_RE.sub("", latex)
     latex = _KOR_SYL_GAP_RE.sub(lambda m: m.group(1).replace(" ", ""), latex)
     for pat, repl in _JAMO_ALIAS:

@@ -25,6 +25,24 @@ from __future__ import annotations
 import re
 
 from app.ai.braille.constants import WRAP_HYPHEN_CLOSE, WRAP_HYPHEN_OPEN
+from app.ai.braille.kor_math_rules import UNI_SUB, UNI_SUP, unicode_scripts_to_latex
+
+# 캡셔닝 LLM이 쓰는 유니코드 수학 표기(QA 10번, 2026-08-08). 아래 _ATOM·_STRONG에
+# 넣어야 `Ca²⁺`·`aₙ₊₁`·`f′(x)`·`2ˣ`가 **한 구간**으로 잡힌다. 안 넣으면 구간이 그
+# 글자에서 끊겨 뒷조각이 한글 텍스트 경로로 새고, 그 이음매에 빈칸이 하나 더 생긴다
+# (두 칸 = 항목 구분 부호라 점역사가 오독) — 또는 앞에 로마자표 ⠴가 붙는다.
+# 실측(현실적 표기 14개, 유니코드형 vs LaTeX형 점형 대조): 다름 10 → 6.
+# ⚠ 화살표 →는 **일부러 뺐다**. 캡셔닝 프롬프트가 흐름을 →로 적으라고 지시하므로
+#   ('Client → 서버: 요청') 수식으로 삼키면 본문 개조식이 깨진다.
+# ⚠ ∽도 뺐다 — 점역자 주 마커(⠠⠄)와 자형이 겹쳐 오인 위험이 있다.
+# ⚠ △도 뺐다 — 제57항 숨김표다(△△도서관 = ⠸⠬⠬⠇). 수식 삼각형으로 보면 숨김표가
+#   깨진다(test_hidden_marks_reg57). ○☆◇◆도 같은 이유로 애초에 넣지 않는다.
+_UNI_SCRIPTS = "".join(UNI_SUP) + "".join(UNI_SUB)
+# ⚠ °도 뺐다 — dev-2027 실측 80건이 각도가 아니라 **깨진 아래첨자 ₅**다
+#   (생물 `d°`=d₅ · `A°`=A₅. 교재 폰트가 첨자를 U+00B0에 매핑했다).
+#   수식 신호로 삼으면 그 80건이 도(⠴⠙)로 나간다.
+# ⚠ ∴·∵도 뺐다 — 국어 문장 안에서 접속어로 쓰인다("개체 수 증가(∵ 많은 영양염류)").
+_UNI_RELATIONS = "∈∉⊂⊃⊆⊇∪∩∠⊥∥≡≈∝′″"
 
 # 수식 구간을 이룰 수 있는 문자 — 한글이 나오면 여기서 끊긴다.
 # `|`(절댓값·조건제시 세로바)를 포함한다: 없으면 |α-β| 같은 구간이 막대에서 끊겨
@@ -33,22 +51,23 @@ from app.ai.braille.constants import WRAP_HYPHEN_CLOSE, WRAP_HYPHEN_OPEN
 # ★ 감쌈 붙임표 자리표시자(WRAP_HYPHEN_*)는 하이픈의 대역이라 하이픈과 같이 원자로 친다.
 #   빼면 "x(x-a)(x-1)²<0"처럼 감쌈이 낀 수식 구간이 표식에서 쪼개져 라우팅이 달라진다.
 _ATOM = (r"[A-Za-z0-9αβγδεζηθικλμνξπρστυφχψωΑΒΓΔΘΛΞΠΣΦΨΩ"
-         r"⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉+\-=×÷<>≤≥≠±∞√∑∫·^_(){}\[\]/,.'\\| "
+         r"+\-=×÷<>≤≥≠±∞√∑∫·^_(){}\[\]/,.'\\| "
+         + _UNI_SCRIPTS + _UNI_RELATIONS
          + WRAP_HYPHEN_OPEN + WRAP_HYPHEN_CLOSE + "]")
 _SPAN_RE = re.compile(rf"{_ATOM}{{2,}}")
 # 아래첨자를 지닌 2자 토큰(O₂·t₂ 등 원소·변수)도 수식으로 잡기 위한 신호.
 # 3자 임계는 유지하되 아래첨자만 예외로 2자를 허용한다 — 아래첨자 유니코드는 한글
 # 본문에 안 나오고(코퍼스 실측 0건, r15) 깨진 글리프 정화 후에만 생기므로 오탐이 없다.
 # 없으면 짧은 O₂·t₂가 라우팅을 못 타 규정형 ⠰⠼(gold 0회)로 나가 되레 어긋난다(r16 생물 p073).
-_SUB_CHARS = re.compile(r"[₀₁₂₃₄₅₆₇₈₉]")
+_SUB_CHARS = re.compile(f"[{''.join(UNI_SUB)}]")
 
 # 강한 수식 신호 — 이게 없으면 수식으로 보지 않는다.
 _STRONG = re.compile(
     r"[αβγδεζηθικλμνξπρστυφχψωΑΒΓΔΘΛΞΠΣΦΨΩ]"          # 그리스 문자
-    r"|[⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉]"                        # 위·아래 첨자
+    f"|[{_UNI_SCRIPTS}]"                                 # 위·아래 첨자
     r"|(?<![A-Za-z])(?:sin|cos|tan|sec|csc|cot|log|ln|lim)(?![A-Za-z])"
     r"|\\[a-zA-Z]{2,}"                                   # LaTeX 명령
-    r"|[√∑∫∞≤≥≠±×÷]"
+    f"|[√∑∫∞≤≥≠±×÷{_UNI_RELATIONS}]"
     # 등식(양쪽에 피연산자) — 오른쪽 피연산자 집합에 감쌈 자리표시자도 넣는다(하이픈 대역)
     r"|[A-Za-z0-9)\]]\s*=\s*[-A-Za-z0-9(\\" + WRAP_HYPHEN_OPEN + WRAP_HYPHEN_CLOSE + r"]"
 )
@@ -69,10 +88,6 @@ def _has_strong(core: str) -> bool:
     return any(_LETTER_RE.search(m.group()) for m in _ABS_PAIR_RE.finditer(core))
 _FUNCS = ("arcsin", "arccos", "arctan", "sinh", "cosh", "tanh",
           "sin", "cos", "tan", "sec", "csc", "cot", "log", "ln", "lim")
-_SUP = {"⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4",
-        "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9"}
-_SUB = {"₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4",
-        "₅": "5", "₆": "6", "₇": "7", "₈": "8", "₉": "9"}
 _TAGGED_RE = re.compile(r"<!수식>.*?<!/수식>", re.DOTALL)
 
 # 계수분수(1/2x 등)는 인쇄 원문이 세로분수라 gold도 분수형(제7항 1호)으로 적는다.
@@ -89,8 +104,7 @@ def normalize(span: str) -> str:
     s = span
     for f in _FUNCS:                      # 긴 이름부터(arcsin이 sin보다 먼저)
         s = re.sub(rf"(?<![A-Za-z\\]){f}(?![A-Za-z])", rf"\\{f}", s)
-    s = re.sub(f"[{''.join(_SUP)}]+", lambda m: "^{" + "".join(_SUP[c] for c in m.group()) + "}", s)
-    s = re.sub(f"[{''.join(_SUB)}]+", lambda m: "_{" + "".join(_SUB[c] for c in m.group()) + "}", s)
+    s = unicode_scripts_to_latex(s).replace("′", "'").replace("″", "''")
     s = _COEF_FRAC_RE.sub(r"\\frac{\1}{\2}", s)
     return s
 
