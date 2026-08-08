@@ -41,8 +41,8 @@ class TestFourDrafts:
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         outline = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0].drafts[2].text
         assert "장면 1" in outline                                     # §5.3.3(1)
-        assert "학생:안녕?" in outline                                 # §5.3.3(2)(3) 대사 전사
-        assert "말풍선:반가워" in outline                              # §6.3.4(3) 화자 불명
+        assert "학생: 안녕?" in outline                                 # §5.3.3(2)(3) 대사 전사
+        assert "말풍선: 반가워" in outline                              # §6.3.4(3) 화자 불명
 
     def test_구조없음_캡션_4안(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, corrected_text="두 컷 만화")
