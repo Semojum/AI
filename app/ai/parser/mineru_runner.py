@@ -228,6 +228,17 @@ def _bullet_item_keys(layer: str) -> list[str]:
     return keys
 
 
+# 블록 수식을 감싼 `$$`/`$` 한 쌍(QA 11번). 양끝에 붙은 것만 본다 — 식 안에 달러가
+# 남아 있으면(통화 표기 등) 짝이 안 맞으므로 손대지 않는다.
+_BLOCK_MATH_WRAP_RE = re.compile(r"^\s*(\${1,2})\s*(.*?)\s*\1\s*$", re.DOTALL)
+
+
+def _strip_block_math_delim(content: str) -> str:
+    r"""`$$\n식\n$$` → `식`. 구분자가 없으면 그대로(멱등)."""
+    m = _BLOCK_MATH_WRAP_RE.match(content or "")
+    return m.group(2) if m else content
+
+
 def _restore_table_bullets(fitz_page: fitz.Page, bbox: list[float], html: str) -> str:
     """표 셀에서 유실·오독된 글머리 기호를 텍스트 레이어를 근거로 되살린다.
 
@@ -788,6 +799,17 @@ def run(
         # 진짜 수식 첨자는 interline_equation(LaTeX) 경로라 여기 영향 없다.
         if content and "<su" in content:
             content = re.sub(r"</?su[bp]>", "", content)
+
+        # 블록 수식 구분자 벗기기(QA 11번, 2026-08-08). MinerU는 수식을 마크다운 관례대로
+        # `$$\n식\n$$` 세 줄로 내보낸다 — 한 줄짜리 수식인데 경계 파일에 줄바꿈이 두 개
+        # 들어가고, 점역사 편집창에도 `$$`가 그대로 보인다. 경계 계약은
+        # `formula(content=LaTeX)`(SPEC-INTERFACE §2)이므로 구분자는 우리 몫이 아니다.
+        # 점자에는 영향이 없다(convert_latex의 _MATH_DELIM_RE가 어차피 지운다) — 이건
+        # 사람이 읽고 고치는 텍스트를 계약대로 되돌리는 것이다.
+        # ⚠ 본문(text) 요소 안의 인라인 `$…$`는 건드리지 않는다. translator가 그 구분자로
+        #   수식을 라우팅한다(_INLINE_MATH_RE) — 지우면 \frac이 영어 단어로 점역된다.
+        if mapped_type == "formula":
+            content = _strip_block_math_delim(content)
 
         # 글자는 PDF 텍스트 레이어 우선(하이브리드) — 티어와 무관하게 블록별로 시도한다.
         # TEXT_NATIVE(스캔 아님이 확실)면 가드 없이 대체, 그 외(OCR 라우팅)는 가드 통과 시만.
