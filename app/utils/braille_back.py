@@ -433,8 +433,37 @@ def _classify_token(tok: str) -> str:
         return "GREEK"
     has_num = _NUMBER_SIGN in tok
     if has_num and (_MATH_SIGNAL_RE.search(tok) or any(p in tok for p in _MATH_PAREN_CELLS)):
-        return "MATH"
+        # ★ 단위 기호가 수식 신호를 품는다 (2026-08-09). 규정 제68항이 ㎡를 문자 그대로
+        #   `m` 위첨자 `2`로 적으므로(`0m^#b` = ⠴⠍⠘⠼⠃) 토큰 안에 ⠘⠼가 들어 있고,
+        #   그대로 두면 `2㎡`가 수식으로 분류돼 `2)m^2`로 풀린다.
+        #   등록된 기호가 그 수식 신호를 **덮고 있으면** 수식이 아니라 기호다.
+        #   (기호표에 없는 진짜 첨자 수식은 종전대로 MATH로 남는다.)
+        if not _math_signal_is_inside_symbol(tok):
+            return "MATH"
     return "NUM" if has_num else "TEXT"
+
+
+def _math_signal_is_inside_symbol(tok: str) -> bool:
+    """토큰의 수식 신호(⠘⠼ 등)가 등록된 기호 시퀀스 안에 들어 있는가."""
+    covered: set[int] = set()
+    i, n = 0, len(tok)
+    while i < n:                                   # 긴 셀 우선으로 기호 구간을 표시
+        for ln in range(min(_MAX_CELLS, n - i), 1, -1):
+            if tok[i:i + ln] in _SYMBOL_REV:
+                covered.update(range(i, i + ln))
+                i += ln
+                break
+        else:
+            i += 1
+    if not covered:
+        return False
+    for m in _MATH_SIGNAL_RE.finditer(tok):        # 신호가 하나라도 기호 밖이면 진짜 수식
+        if not (set(range(m.start(), m.end())) <= covered):
+            return False
+    for idx, ch in enumerate(tok):
+        if ch in _MATH_PAREN_CELLS and idx not in covered:
+            return False
+    return True
 
 
 def _resolve_math_context(classes: list[str]) -> list[bool]:

@@ -20,6 +20,10 @@ from pathlib import Path
 
 import fitz
 
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 TYPE_MAP = {
     "title":               "title",
     "text":                "text",
@@ -65,6 +69,31 @@ _HEAD_MAX_LEN = 28                                      # 이보다 길면 제�
 _HEAD_LEVEL_MAP = {1: 1}                                # lv1 → 1단계, 그 외 → 4단계
 
 
+_announced_engine: str | None = None
+
+
+def _announce_engine(mineru_bin: str) -> None:
+    """어느 MinerU를 쓰는지 **처음 한 번 크게 찍는다**.
+
+    ★ 2026-08-09 — 이게 없어서 평가 세션이 20분을 날렸다. 셸에 `MINERU_BIN`이 이미
+      export돼 있으면 자식이 상속받고, 우선순위가 `환경변수 > .env`라 `.env`에 vLLM을
+      적어 두어도 **조용히 transformers로 돈다**. 예외가 안 나서 결과만 보면 모른다.
+
+      우선순위를 환경변수 우선으로 둔 건 의도다(측정 스크립트가 엔진 A/B를 해야 한다).
+      그래서 순서를 바꾸는 대신 **무엇이 이겼는지 보이게** 한다.
+
+      절차: `env -u MINERU_BIN …`으로 지우고 돌린 뒤
+            `grep "init successfully" storage/logs/mineru_api.log`로 엔진을 확인할 것.
+    """
+    global _announced_engine
+    if _announced_engine == mineru_bin:
+        return
+    _announced_engine = mineru_bin
+    src = "환경변수 MINERU_BIN" if os.environ.get("MINERU_BIN") else ".env(config.mineru_bin)"
+    kind = "vLLM" if "vllm" in mineru_bin.lower() else "transformers(또는 미상)"
+    logger.info("MinerU 실행 파일 = %s  [출처: %s · 추정 엔진: %s]", mineru_bin, src, kind)
+
+
 def _heading_level(item: dict, mapped_type: str, content: str) -> int | None:
     """MinerU `text_level` → BBPG 제목 단계. 제목이 아니면 None."""
     lvl = item.get("text_level")
@@ -85,6 +114,7 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | N
     # 한 번만 덮어쓸 수 있게 한다(엔진 A/B에 쓴다).
     from app.core.config import config as _cfg
     mineru_bin = os.environ.get("MINERU_BIN") or _cfg.mineru_bin or "mineru"
+    _announce_engine(mineru_bin)
     cmd = [
         mineru_bin, "-p", str(pdf_path), "-o", str(out_dir),
         "-s", str(page_idx), "-e", str(page_idx),   # 도착 PDF 내 0-based 인덱스
