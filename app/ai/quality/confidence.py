@@ -19,6 +19,12 @@
 
 왕복 일치도(round-trip)는 점역 결과를 역점역해 원문과 대조한 값이다. 정답이 없어도
 런타임에 계산되고 추가 비용이 0이라 운영에서 그대로 쓸 수 있다.
+
+⚠ 위 표는 **오프라인 실측값**이다. 파이프라인에서는 `annotate`가 원문을 못 읽어(아래
+`_source_text` 주석) 2026-08-10까지 전 요소가 MEDIUM으로 나갔다 — 신호가 죽어 있었다.
+키를 고친 뒤 dev+val 839쪽 재계산: HIGH 7,372요소(21.2%)의 **71.1%가 편집 0셀**
+(전체 평균 41.7%), 크게 틀릴 확률은 12.5%로 평균 33.2%의 0.38배다. 등급 계산 비용은
+33요소 4ms로 무시할 수준이다.
 """
 from __future__ import annotations
 
@@ -117,6 +123,20 @@ def page_content_risk(braille_elements: list[dict]) -> str | None:
     return None
 
 
+def _source_text(entry: dict | None) -> str:
+    """원문 요소 → 대조용 텍스트.
+
+    ★ 응답의 `text_list` 항목은 원문을 **`contents`(줄 배열)** 로 싣는다. 종전 코드는
+    `content`(단수) 하나만 봤고 그 키는 존재하지 않아 **항상 빈 문자열**이었다 —
+    `round_trip`이 `len(src) < 10`에서 전량 None을 돌려주고, 그래서 실측 34,709요소가
+    전부 MEDIUM으로 나왔다(HIGH 0건). 왕복 일치도라는 무료 신호가 통째로 죽어 있었다.
+    경계 파일 형식(`content` 단수)도 그대로 읽을 수 있게 둘 다 받는다.
+    """
+    if not entry:
+        return ""
+    return "\n".join(entry.get("contents") or []) or (entry.get("content") or "")
+
+
 def annotate(elements: list[dict], sources: dict, decode) -> None:
     """응답 요소 목록에 `review_grade`·`round_trip`을 붙인다(제자리 수정).
 
@@ -125,7 +145,7 @@ def annotate(elements: list[dict], sources: dict, decode) -> None:
     for el in elements:
         cells = "".join(ch for ch in "".join(el.get("contents") or [])
                         if 0x2800 < ord(ch) <= 0x28FF)
-        src = (sources.get(el.get("id")) or {}).get("content") or ""
+        src = _source_text(sources.get(el.get("id")))
         g, rt = grade(element_type=el.get("type", "text"), cells=cells,
                       source_text=src, decode=decode,
                       ocr_confidence=el.get("ocr_confidence"))
