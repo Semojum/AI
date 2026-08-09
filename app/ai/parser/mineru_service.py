@@ -17,6 +17,7 @@ import atexit
 import os
 import signal
 import subprocess
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -52,9 +53,54 @@ def _mineru_api_bin() -> str:
     return "mineru-api"
 
 
+# 죽은 서비스를 되살릴 때 쓰는 자물쇠·한도.
+# 쪽은 병렬로 도는데 하나가 재기동하는 동안 나머지가 우르르 또 띄우면 GPU가 터진다.
+_restart_lock = threading.Lock()
+_restarts = 0
+_last_restart = 0.0
+_MAX_RESTARTS = int(os.environ.get("MINERU_MAX_RESTARTS", "3"))
+_RESTART_COOLDOWN = float(os.environ.get("MINERU_RESTART_COOLDOWN", "60"))
+# 재기동은 기동보다 짧게 기다린다 — 쪽 예산이 180초라 여기서 다 쓰면 안 된다.
+# 실측 기동 중앙 26.6초(75회)라 120초면 넉넉하다.
+_RESTART_WAIT = float(os.environ.get("MINERU_RESTART_WAIT", "120"))
+
+
 def get_url() -> str | None:
-    """현재 사용 가능한 mineru-api URL(health 통과 시). 없으면 None."""
-    return _url if (_url and _health(_url, 1.0)) else None
+    """현재 사용 가능한 mineru-api URL. 죽어 있으면 **한 번 되살려 본다**.
+
+    ★ 2026-08-09 — 종전엔 health가 실패하면 그냥 None을 돌려줬다. 그러면 쪽마다 CLI가
+      자기 서버를 새로 띄워 조용히 느려지고, 그 작업의 **남은 쪽이 전부 폴백**한다.
+      폴트 주입으로 재현했다: mineru-api에 SIGSEGV를 넣으니 뒤따른 4쪽이 4쪽 다 폴백했고
+      health는 계속 False였다(`temp/segv/inject.jsonl`). vLLM 백엔드는 세그폴트가
+      드물지만(75회 450쪽 0건, 조건별 95% 상한 12%) **한 번 나면 그 뒤가 통째로 무너진다** —
+      그래서 빈도보다 회복이 중요하다.
+
+    되살리기 전에 `stop()`으로 죽은 그룹을 먼저 거둔다. 안 그러면 `VLLM::EngineCore`가
+    VRAM을 문 채 남아 새 인스턴스가 메모리를 못 잡는다(실측 5,955MiB 잔존).
+    """
+    global _restarts, _last_restart
+    if _url and _health(_url, 1.0):
+        return _url
+    # 우리가 띄운 게 아니면 손대지 않는다(외부 URL은 남의 것, 비활성은 의도된 것).
+    if os.environ.get("MINERU_API_URL") or os.environ.get("MINERU_PERSISTENT", "1") == "0":
+        return None
+
+    with _restart_lock:
+        # 자물쇠를 기다리는 동안 다른 쪽이 이미 살렸을 수 있다.
+        if _url and _health(_url, 1.0):
+            return _url
+        now = time.time()
+        if _restarts >= _MAX_RESTARTS:
+            logger.error("MinerU 재기동 한도 초과(%d회) → CLI 폴백으로 계속한다", _restarts)
+            return None
+        if now - _last_restart < _RESTART_COOLDOWN:
+            return None                     # 방금 살려봤는데 또 죽었다 — 잠시 쉰다
+        _restarts += 1
+        _last_restart = now
+        logger.warning("MinerU 서비스가 죽었다(health 실패) → 재기동 %d/%d",
+                       _restarts, _MAX_RESTARTS)
+        stop()                              # 죽은 그룹을 먼저 거둔다(VRAM 회수)
+        return ensure_started(wait=_RESTART_WAIT)
 
 
 def ensure_started(wait: float = 240.0) -> str | None:
@@ -158,7 +204,7 @@ def stop() -> None:
     부모가 이미 죽은 뒤에도(세그폴트) 그룹은 살아 있을 수 있으므로, `poll()`이
     None이 아니어도 그룹 정리는 시도한다 — 고아가 생기는 게 바로 그 경우다.
     """
-    global _proc, _pgid
+    global _proc, _pgid, _url
     if not _proc:
         return
     pgid = _pgid
@@ -185,3 +231,4 @@ def stop() -> None:
                 break                    # 그룹이 비었다
     _proc = None
     _pgid = None
+    _url = None          # 죽은 URL을 남겨두면 get_url이 계속 그걸 물고 health를 친다
