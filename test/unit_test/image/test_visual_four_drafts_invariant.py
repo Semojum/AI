@@ -117,3 +117,21 @@ def test_표는_렌더_4안() -> None:
     assert len(out) == 1
     assert len(out[0].drafts) == _EXPECTED
     assert len({d.label for d in out[0].drafts}) == _EXPECTED
+
+
+def test_짧은제목은_캡션_첫줄까지만() -> None:
+    """1안 '짧은 제목'은 캡션 **첫 줄**로 끊는다 — 둘째 줄 데이터 한가운데서 자르지 않는다.
+
+    캡셔너 프롬프트가 "전체 윤곽을 한 줄로 먼저"(지침 §6.1.4(4))라고 지시하므로 첫 줄이
+    곧 제목이다. 종전 구현은 줄 구조를 먼저 뭉개고 45자에서 잘라 val 50건 중 29건이
+    '… 전체: 7.6% 1~2세: 6.8%…' 꼴로 끝났다(2026-08-09 실측).
+    """
+    from app.ai.llm.visual_drafts import _shorten
+
+    cap = "막대그래프, 연령별 비율(%)\n전체: 7.6%\n1~2세: 6.8%\n3~5세: 8.8%"
+    assert _shorten(cap) == "막대그래프, 연령별 비율(%)"
+    assert _shorten("한 줄뿐인 짧은 캡션") == "한 줄뿐인 짧은 캡션"   # 한 줄이면 종전 그대로
+    assert _shorten("") == ""
+    assert _shorten("\n둘째 줄만 내용") == "둘째 줄만 내용"          # 첫 줄이 비면 전문 폴백
+    long1 = "가" * 80
+    assert _shorten(long1 + "\n둘째 줄").endswith("…")              # 첫 줄이 길면 종전 절단

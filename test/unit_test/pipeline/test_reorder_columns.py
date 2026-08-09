@@ -169,3 +169,43 @@ class TestRotatedPage:
         items = self._many_columns()
         _rc(items, rotation=0)
         assert [b.reading_order for b in items] == [1, 2, 3, 4, 5, 6]
+
+
+# ── 다중 시각요소 쪽 (2026-08-09) ────────────────────────────────────────────
+# 대표 지적 "그림·표가 여러 개인 쪽에서 읽기순서가 흐트러진다"를 실측해 고친 세 자리.
+class TestMultiVisualPage:
+    def test_lone_figure_stays_in_body_flow(self):
+        # 생물 p026: 본문 옆에 홀로 놓인 아이콘(자기만의 열)이 '연속 순번 + 좁은 폭'을
+        # 공짜로 만족해 쪽 맨 뒤로 밀렸다. 낱개 그림은 '참고 자료 단'이 아니다.
+        icon = _box(3, 267, 355, 305, 400, etype="chart_graph")
+        main = [_box(1, 400, 100, 1040, 300), _box(2, 400, 320, 1040, 500),
+                _box(4, 400, 520, 1040, 900), _box(5, 400, 920, 1040, 1200)]
+        _reorder_columns([main[0], main[1], icon, main[2], main[3]])
+        assert icon.reading_order == 3
+        assert _orders(main) == [1, 2, 4, 5]
+
+    def test_lone_text_label_still_deferred(self):
+        # 반대쪽 회귀 방어: 좌측 여백의 낱개 '유형' 라벨(텍스트)은 종전대로 본문 뒤로.
+        # (사회문화 p034 — 이걸 같이 막으면 τ 0.927 → 0.709로 떨어진다)
+        label = _box(3, 118, 786, 298, 830)
+        main = [_box(1, 400, 100, 1040, 300), _box(2, 400, 320, 1040, 500),
+                _box(4, 400, 820, 1040, 1000), _box(5, 400, 1020, 1040, 1200)]
+        _reorder_columns([main[0], main[1], label, main[2], main[3]])
+        assert label.reading_order == 5
+
+    def test_sidebar_deferred_despite_one_stray_member(self):
+        # 생물 p180: 좌측 보충설명 열(연속 순번 4개)에 쪽 아래 출전 한 줄이 같은 열로
+        # 묶여 '연속'이 깨졌다 → 후치가 막혔다. 블록 3개 이상이면 한 개 이탈은 봐준다.
+        side = [_box(i + 1, 96, 200 + i * 150, 264, 320 + i * 150) for i in range(4)]
+        stray = _box(9, 138, 1390, 264, 1420)          # 쪽 아래 출전 줄(같은 열)
+        main = [_box(i + 5, 309, 130 + i * 300, 1047, 380 + i * 300) for i in range(4)]
+        _reorder_columns(side + main + [stray])
+        assert max(b.reading_order for b in main) < min(b.reading_order for b in side)
+
+    def test_main_column_is_the_bigger_one_not_the_busier_one(self):
+        # 생물 p180: 좁은 보충설명 열이 요소 수만 많아 '본문'으로 뽑혔다.
+        # 본문은 면적이 큰 열이다(주종 관계의 다단 — 본문 단이 먼저).
+        side = [_box(i + 1, 96, 200 + i * 120, 264, 300 + i * 120) for i in range(6)]
+        main = [_box(i + 7, 309, 130 + i * 400, 1047, 500 + i * 400) for i in range(3)]
+        _reorder_columns(side + main)
+        assert max(b.reading_order for b in main) < min(b.reading_order for b in side)
