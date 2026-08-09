@@ -68,11 +68,11 @@ def test_no_body_no_structure():
 
 
 def test_opt_dispatches_skeleton_from_caption():
-    """캡션만 있어도 §6.6.5 조직도 골격이 돈다(최상위 1칸·하위 +2칸)."""
+    """캡션만 있어도 §6.6.5 조직도 골격이 돈다(최상위 1칸=빈칸0·하위 +2칸)."""
     ext = ExtractedContent(element_id=uuid4(), corrected_text=_ORG, ocr_confidence=1.0)
     out = asyncio.run(DiagramOpt().optimize([ext], "ZERO"))[0]
     assert "<!점역자주>조직도<!/점역자주>" in out.corrected_text
-    assert out.line_indents[3:] == [1, 3, 5, 5, 3, 5]
+    assert out.line_indents[3:] == [0, 2, 4, 4, 2, 4]
     assert "황제" in out.corrected_text.split("\n")[3]
 
 
