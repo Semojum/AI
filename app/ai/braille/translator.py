@@ -26,7 +26,7 @@ from functools import lru_cache
 from app.ai.braille.kor_math_rules import convert_latex, digits_to_braille
 from app.ai.braille import eng_braille, inline_math
 from app.ai.braille.constants import WRAP_HYPHEN_CLOSE, WRAP_HYPHEN_OPEN
-from app.ai.braille.symbol_rules import substitute_symbols
+from app.ai.braille.symbol_rules import SYMBOL_TABLE, substitute_symbols
 
 logger = logging.getLogger(__name__)
 
@@ -589,6 +589,18 @@ def _box_blank_repl(m: re.Match) -> str:
 # 이 조건은 `2×3`·`반지름×반지름` 같은 진짜 곱셈을 건드리지 않는다.
 # 단독 ×는 그대로 둔다. 문맥 없이는 곱셈인지 숨김표인지 못 가른다(원장 §8 중의성).
 _HIDDEN_X_RUN_RE = re.compile(r"×{2,}")
+# 프라임 ′는 조항 둘로 갈린다 (원장 C-19).
+#   수학 제17항 프라임 ′ = `-`(⠤)        f′(x)·y′
+#   제69항 단위 분·피트 ′ = `0-`(⠴⠤)     30° 15′ 20″   (″는 초·인치 ⠴⠤⠤)
+# 수식 세그먼트는 `_translate_with_braillify`가 `_FORMULA_RE`로 갈라 convert_latex에
+# 넘기므로 제17항 쪽은 이미 맞다(inline_math.normalize가 ′→'로 바꾼 뒤 ⠤로 나간다).
+# 갈리는 자리는 **숫자 바로 뒤**뿐이다 — 도·분·초 표기는 inline_math가 ′를 강한 수식
+# 신호로 보고 통째로 수식 구간에 삼켜 제69항이 실행되지 않는다(15′ → ⠤). 그래서
+# 라우팅 전에 단위 점형으로 굳힌다. 값은 symbol_table의 단위기호 항목을 그대로 쓴다.
+# ⚠ 실측 빈도 **0** — dev+val 1,131쪽·신규 2027 400쪽 어디에도 U+2032/U+2033이 없다
+#   (수학2의 프라임은 추출이 ASCII '로 낸다). 이 코퍼스는 글꼴 매핑이 깨진 판본을 포함해
+#   "없다"가 아니라 **못 쟀다**일 수 있으므로, 이 분기의 이득도 손실도 측정된 바 없다.
+_UNIT_PRIME_RE = re.compile(r"(?<=\d)[′″]")
 _TILDE_RE = re.compile(r"[~∼〜]")
 # MinerU는 〈보기〉 상자를 괄호 없이 '보기\x00'로 낸다. 정답 관행은 위치별로 다르다
 # (생물 p011 원본 27-28행 실측): **문중 참조 = ‘보기’(따옴표), 박스 제목 줄 = 맨 '보기'**.
@@ -1594,6 +1606,8 @@ def translate_tagged_text(text: str) -> str:
     # inline_math가 ×를 수식 원자로 보고 `×××`를 통째로 수식 구간에 삼키면
     # convert_latex이 곱셈 ⠡ 셋으로 낸다(규정 예시는 ⠸⠭⠭⠭⠇).
     text = _HIDDEN_X_RUN_RE.sub(lambda m: "⠸" + "⠭" * len(m.group()) + "⠇", text)
+    # 숫자 뒤 ′″는 프라임이 아니라 단위 분·초다(제69항) — 같은 이유로 라우팅보다 먼저.
+    text = _UNIT_PRIME_RE.sub(lambda m: SYMBOL_TABLE[m.group()], text)
     text = _UNIT_BACKTICK_RE.sub("", text)
     text = _BACKTICK_MATH_RE.sub(lambda m: f"<!수식>{m.group(1).rstrip()}<!/수식> ", text)
     text = _normalize_inline_math(text)     # $…$/\(…\) → <!수식> (P1: 수식 라우팅)
@@ -1719,6 +1733,45 @@ def _restore_ascii_single_quotes(text: str) -> str:
     return "".join(out)
 
 
+# ── 아포스트로피 ’ ↔ 닫는 작은따옴표 ’ (원장 C-19, 2026-08-09) ────────────────
+# 같은 묵자 글자가 조항 둘로 갈린다.
+#   제49항 닫는 작은따옴표 ’ = `0'`(⠴⠄)   ·   제61항 아포스트로피 ’ = `'`(⠄)
+# symbol_table은 기호 하나에 값 하나라 닫는 따옴표 쪽만 담고 있다. 아포스트로피 쪽은
+# 여기서 ASCII '로 되돌려 이미 있는 `'`→⠄ 매핑에 태운다 —
+# 바로 위 `_restore_ascii_single_quotes`의 **정확히 반대 방향**이고, 그쪽은 안쪽에
+# 한글이 있는 짝만 건드리므로 둘이 서로를 되돌리지 않는다.
+#
+# 판정 = ① 여는 ‘와 짝이 안 맞고 ② 로마자에 붙어 있을 때만 아포스트로피.
+#   ①만 보면 추출이 여는 ‘를 흘린 한글 인용부호를 아포스트로피로 오인한다
+#     (사회문화 p062 `당’, ‘캠핑당’등` · p073 `…사원’의` 등 4건).
+#   ②만 보면 한글 본문이 로마자를 인용한 ‘cultus’·‘S’·‘a’를 아포스트로피로 만든다(52건).
+# 실측(dev+val 1,131쪽, 요소 단위 ’ 2,140회 = 짝없음 387 / 짝맞음 1,753):
+#   ①∧② → 옳게 바꿈 376 · 잘못 바꿈 0 · 놓침 11
+#          (놓침 = 진짜 닫는 따옴표 4 + 공백이 낀 OCR 산물 `You ’ ll`·`I ’ m` 7)
+#   짝없음 387건 중 383건이 외국어 지문의 hasn’t·someone’s·monkeys’다.
+# gold 대조: 외국어 p011 원문 BRF `HASN'T`·`"S"O'S`(someone's) — 한 셀 `'`이 정답이고
+#   현행 ⠴⠄는 영어 낱말 한가운데 로마자표 셀(⠴)을 끼워 넣고 있었다.
+# 재현: V2/temp/c19_rule_eval.py
+_ROMAN_CH_RE = re.compile(r"[A-Za-z]")
+
+
+def _normalize_apostrophe(text: str) -> str:
+    """제61항 아포스트로피로 쓰인 ’만 ASCII '로 (제49항 닫는 따옴표와 구분)."""
+    if "’" not in text:
+        return text
+    out = list(text)
+    depth = 0
+    for i, ch in enumerate(text):
+        if ch == "‘":
+            depth += 1
+        elif ch == "’":
+            if depth:
+                depth -= 1
+            elif _ROMAN_CH_RE.search(text[max(0, i - 1):i + 2]):
+                out[i] = "'"
+    return "".join(out)
+
+
 EMPHASIS_OPEN, EMPHASIS_CLOSE = _TAG_PAIR_MARKER["드러냄"]  # ⠠⠤ … ⠤⠄ (제56항)
 
 
@@ -1773,6 +1826,10 @@ def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
     text = _drop_nonkorean_emphasis(text)
     # 추출이 평탄화한 ASCII 작은따옴표 복원 — 줄 분리 전에 요소 전체에서 짝을 본다.
     text = _restore_ascii_single_quotes(text)
+    # 아포스트로피 판정도 짝을 세야 하므로 같은 자리에서(줄로 쪼개면 여는 ‘가 다른 줄에
+    # 있는 인용부호가 전부 짝없음으로 보인다). 반드시 위 복원 **뒤**에 — 그쪽이 만든
+    # 곡선 따옴표는 짝이 맞으므로 여기서 다시 ASCII로 돌아가지 않는다.
+    text = _normalize_apostrophe(text)
     if _BOOK_STYLE:
         # ★ 보기 마커 원문 복원(ㄱㄴㄷㄹ)은 나열 시퀀스가 필요해 요소 전체에서 선적용해야
         #   한다 — 줄 분리 후엔 줄당 마커 1개라 ≥2 가드에 걸려 발동 못 한다(2026-07-18).
