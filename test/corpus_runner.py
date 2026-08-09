@@ -320,6 +320,24 @@ def _write_e2e_state(job_dir: Path, job_id: str, subject: str, pages: list[dict]
     }, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def empty_caption_tally(summaries: list[dict]) -> tuple[int, int]:
+    """(시각요소 수, 빈 캡션 수). 런 밖에서도 같은 잣대로 다시 세려고 함수로 뺐다."""
+    cap_tot = cap_fail = 0
+    for s in summaries:
+        for p in s["pages"]:
+            for f in (STORAGE / s["job_id"] / "temp" /
+                      f"page_{p['local_no']:03d}" / "data").glob("*_txt_result.json"):
+                try:
+                    els = json.loads(f.read_text(encoding="utf-8")).get("elements", [])
+                except (OSError, ValueError):
+                    continue
+                for e in els:
+                    if e.get("type") in ("image", "cartoon", "chart_graph", "diagram"):
+                        cap_tot += 1
+                        cap_fail += "CAPTION_FAILED" in (e.get("flags") or [])
+    return cap_tot, cap_fail
+
+
 # ── main ─────────────────────────────────────────────────────────────────
 def main():
     ap = argparse.ArgumentParser(description="Semojum V2 코퍼스 러너(mode c)")
@@ -405,19 +423,7 @@ def main():
     #   러너 요약만 보면 정상 런과 구별이 안 된다. 빈 캡션이 많으면 시각 축 점수는
     #   캡션 품질이 아니라 '생략' 스텁을 재는 것이 되므로 그 런은 시각 축에 못 쓴다.
     #   원인 둘 다 조용하다: (1) 키 없음 → 전량 실패, (2) thinking 미차단 → 산발 빈 응답.
-    cap_tot = cap_fail = 0
-    for s in summaries:
-        for p in s["pages"]:
-            for f in (STORAGE / s["job_id"] / "temp" /
-                      f"page_{p['local_no']:03d}" / "data").glob("*_txt_result.json"):
-                try:
-                    els = json.loads(f.read_text(encoding="utf-8")).get("elements", [])
-                except (OSError, ValueError):
-                    continue
-                for e in els:
-                    if e.get("type") in ("image", "cartoon", "chart_graph", "diagram"):
-                        cap_tot += 1
-                        cap_fail += "CAPTION_FAILED" in (e.get("flags") or [])
+    cap_tot, cap_fail = empty_caption_tally(summaries)
     if cap_fail:
         pct = cap_fail / cap_tot
         print(f"{'⚠⚠' if pct >= 0.2 else '⚠'} 빈 캡션 {cap_fail}/{cap_tot}개 ({pct:.0%})"

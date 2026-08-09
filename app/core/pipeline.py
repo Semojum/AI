@@ -810,6 +810,36 @@ def _split_list_marker_items(elements: list[dict]) -> list[dict]:
     return out
 
 
+# ── 한 줄로 뭉친 선택지 갈라 놓기 (2026-08-10) ───────────────────────────────
+# MinerU는 선택지를 쪽마다 다르게 낸다 — 어떤 쪽은 ①②③이 **각각 제 줄**, 어떤 쪽은
+# **한 줄에 몰려서** 나온다. 뒤쪽이면 `layout_braille._mark_item_lines`가
+# `len(src) < 2`로 조기 반환해 **항목 들여쓰기도 구분도 안 붙고**, 원문의 한 칸 띄어쓰기가
+# 그대로 나간다.
+#
+# 실측(valall 6권 951쪽): 선택지 블록 243개 중 **48개(19.8%)**가 두 번째 모양으로 나갔다.
+# 정답 도서는 결정적으로 일관적이다 — 항목 구분 **2칸 97.8%**(1500/1534),
+# 선택지 줄 들여쓰기 **2칸 99.5%**(6981/7018). 규정도 같다(지침 3장3절4-(3)①).
+#
+# 한 줄에 항목 머리가 둘 이상이면 각 항목을 제 줄로 갈라 놓는다. 그 뒤는 기존 기계가
+# 알아서 한다 — 여기서 들여쓰기를 직접 만지지 않는 게 중요하다(중복 적용을 피한다).
+#
+# ⚠ 항목이 하나뿐인 줄은 건드리지 않는다. 본문 안의 `①`(주석 참조 등)까지 가르면
+#   멀쩡한 문장이 토막 난다.
+_INLINE_CHOICE_SPLIT = re.compile(r"(?<=\S)\s+(?=[\u2460-\u2473]\s*\S)")
+
+
+def _split_inline_choices(text: str) -> str:
+    """한 줄에 몰린 ①②③…을 줄마다 하나씩으로 갈라 놓는다."""
+    if not text or "\u2460" not in text and not any(
+            "\u2460" <= ch <= "\u2473" for ch in text):
+        return text
+    out = []
+    for line in text.split("\n"):
+        heads = sum(1 for ch in line if "\u2460" <= ch <= "\u2473")
+        out.append(_INLINE_CHOICE_SPLIT.sub("\n", line) if heads >= 2 else line)
+    return "\n".join(out)
+
+
 def _parse_txt_result(
     extraction: dict, page_id: str
 ) -> tuple[LayoutResult, dict[UUID, ExtractedContent], str]:
@@ -837,6 +867,7 @@ def _parse_txt_result(
         vsub = el.get("visual_subtype") or _SUBTYPE_FROM_TYPE.get(orig_type)
         order = int(el.get("order", idx))
         content = el.get("content", "") or ""
+        content = _split_inline_choices(content)
         if etype in _TEXT_TYPES and _is_boilerplate(content):
             logger.info("보일러플레이트 드롭(%s): %.60s", etype, content)
             continue

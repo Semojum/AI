@@ -44,6 +44,22 @@ _COMMON = (
     "- 한 번 읽고 이해되도록 명료하게 (규정 3).\n"
     "- 전체 윤곽을 한 줄로 먼저, 그 다음 부분을 나누어 (규정 4).\n"
     "- 자료 **안의 이름표·수치**는 그대로 옮기세요. 지어내지 마세요.\n"
+    # ★ 환각 방어(2026-08-10 실측). dev 실설명 331건을 크롭과 1:1 대조하니 사실오류 35.0%
+    #   (오독 28.4% · 환각 9.4%)였다. 원인은 이 프롬프트가 **단정을 요구**한 것이다 —
+    #   "무엇을 뜻하는지 쓰라"·"이름만 적으라"·"하나도 빠뜨리지 마라"가, 크롭만으로는
+    #   알 수 없는 자리에서도 답을 만들게 했다(실물: 상자 둘을 선 둘로 이은 그림을
+    #   "전지에 전구 두 개를 병렬 연결"로 지어냈고, 이름표 ㉠을 ⊙로 옮겼다).
+    #   위의 "지어내지 마세요" 한 줄로는 안 막혔다 — 무엇이 지어내는 것인지 예로 못 박는다.
+    #   규정도 같은 편이다: 「제작 지침」 §6.6.6(3) "정확한 연도를 알 수 없는 경우 대략적인
+    #   추정 연도를 적고, 이를 점역자 주로 알린다" / §5.3.3(5)·화자가 불분명하면 이름을
+    #   지어내지 말고 '말풍선'이라 적는다. 규정은 모르면 모른다고 밝히라는 쪽이다.
+    "- **그림에 없는 것은 쓰지 마세요.** 이름·수치·연결 관계·쓰임새는 그림에 글자로 적혀\n"
+    "  있거나 그림에서 명백히 보일 때만 씁니다. 아는 지식으로 빈자리를 메우지 마세요.\n"
+    "  예) 상자 둘을 선 둘로 이은 그림 → '상자 2개가 선 2개로 이어져 있다'(O)\n"
+    "      / '전지에 전구 두 개를 병렬 연결'(X — 전지·전구·병렬은 그림에 없습니다)\n"
+    "- **글자가 작아 못 읽겠으면 지어내지 마세요.** 비슷한 기호로 바꿔 적는 것이 가장\n"
+    "  나쁩니다(㉠을 ⊙로 적는 따위). 못 읽으면 '읽을 수 없는 기호'라 적거나 빼십시오.\n"
+    "- 단정하기 어려우면 **'…로 보임'**을 붙여도 됩니다. 틀린 단정보다 낫습니다.\n"
     # ── 아래 넷은 「점자 도서 제작 지침」 3장 2절 정답 24건을 실측해 뽑은 규칙이다
     #    (2026-08-08 QA 16번, tools/…/step16_gold_spans.py). 괄호 안이 정답에서의 빈도.
     "- **짧게.** 정답 설명은 한글 28자(중앙값)입니다. 두 문장을 넘기지 마세요.\n"
@@ -73,6 +89,7 @@ _PROMPTS = {
     "image": _COMMON + (
         "이 그림의 내용을 사실 위주로 진술하세요 (규정 7).\n"
         "- 그린 대상이 **하나**면 그 이름만 적으세요. 문장으로 늘리지 마세요.\n"
+        "  단, 이름은 **확실히 알 때만** 씁니다. 모르겠으면 보이는 모양을 짧게 적으세요.\n"
         "  예) '사진: 퍼킨스 점자 타자기'(O) / '사진: 손잡이 달린 몸체에 자판이 배열된…'(X)\n"
         "- 대상이 **여럿**이면 각 이름표를 쉼표로 이어 나열만 하세요. 항목마다 설명을 붙이지 마세요.\n"
         "- 부분(상단·자판·하단 …)으로 쪼개 묘사하지 마세요.\n"
@@ -130,9 +147,14 @@ _PROMPTS = {
     # 예3-51 순서도). 조직도(예3-46)는 화살표 0개 — 위계 번호 '1. / 1) / ①'로만 적는다.
     # 연표(예3-47)는 사건을 시간순으로 나열할 뿐 화살표를 쓰지 않는다.
     "diagram": _COMMON + (
-        "이 도식이 **무엇을 나타내는지**를 한 줄로 먼저 밝히고(모식도·구조도·개념도·흐름도·"
-        "조직도·계통도·지도 중 무엇인지 그 말을 쓰세요), 그 다음 구성 요소를 옮기세요.\n"
-        "- 도식 안의 이름표·글자는 그대로 옮기세요. 하나도 빠뜨리지 마세요.\n"
+        # 종전에는 "이 도식이 **무엇을 나타내는지** 한 줄로 먼저 밝히고"였다. 그 지시가
+        # 환각의 최대 발원지였다(도표 환각 30건/47건) — 제목 없는 도식에도 주제를
+        # 짓게 만든다. 종류는 보고 알 수 있고, 주제는 적혀 있어야 안다. 둘을 가른다.
+        "이 도식의 **종류**를 한 줄로 먼저 밝히고(모식도·구조도·개념도·흐름도·"
+        "조직도·계통도·지도 중 하나), 그 다음 구성 요소를 옮기세요.\n"
+        "- 무엇에 **관한** 도식인지는 그림에 제목·이름표로 적혀 있을 때만 쓰세요.\n"
+        "  적혀 있지 않으면 종류만 쓰고 넘어갑니다. 주제를 추측해 붙이지 마세요.\n"
+        "- 도식 안의 이름표·글자는 **읽을 수 있는 것을** 그대로 옮기세요. 빠뜨리지 마세요.\n"
         "- **조직도·계통도·구조도는 화살표를 쓰지 말고 위계 번호로** 적으세요 —\n"
         "  큰 항목 '1.', 그 아래 '1)', 그 아래 '①'. 층이 깊어질 때마다 한 단계 내립니다.\n"
         "- **화살표 →는 순서도·흐름도처럼 순서가 뜻인 도식에만** 쓰세요.\n"
@@ -161,6 +183,36 @@ def _get_client() -> OpenAI:
     if _client is None:
         _client = OpenAI(api_key=config.openai_api_key or None)
     return _client
+
+
+# MinerU가 잘라 주는 크롭은 작다 — dev 331장 실측 중앙값 334×214px, 86%가 한 변 300px 미만.
+# 크롭이 작을수록 캡션이 틀린다(짧은 변 ≤146px 42.7% vs ≥312px 28.2%, 2026-08-10 실측).
+# 확대해도 화소 정보는 안 늘지만 비전 인코더가 같은 내용에 더 많은 패치를 쓴다.
+# `CAPTION_UPSCALE=3`처럼 배율을 줄 때만 동작한다(기본 꺼짐 — 운영 동작 불변).
+_MAX_EDGE = 1568   # 이보다 크면 서버가 되레 줄이고 토큰만 더 든다
+
+
+def _maybe_upscale(raw: bytes) -> bytes:
+    try:
+        f = float(os.getenv("CAPTION_UPSCALE", "") or 0)
+    except ValueError:
+        return raw
+    if f <= 1:
+        return raw
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+        im = Image.open(BytesIO(raw))
+        f = min(f, _MAX_EDGE / max(im.size))
+        if f <= 1:
+            return raw
+        buf = BytesIO()
+        im.resize((round(im.width * f), round(im.height * f)), Image.LANCZOS).save(
+            buf, format=im.format or "JPEG", quality=95)
+        return buf.getvalue()
+    except Exception:  # noqa: BLE001 — 확대는 있으면 좋은 것, 실패하면 원본으로 간다
+        return raw
 
 
 # 백엔드 전환 — 모델 비교 실험용. 기본은 기존 GPT-4o 경로 그대로.
@@ -263,6 +315,26 @@ def _ensure_type_word(text: str, image_type: str) -> str:
     return f"{tw}: {t}"
 
 
+# ★ 메타 응답 차단(2026-08-10 실측). 이미지를 분명히 보냈는데도 모델이 "이미지가 첨부되지
+#   않았습니다. 파일을 첨부해 주시면 …"이라고 되묻는 응답이 dev 371건 중 5건(1.3%) 나왔고,
+#   그대로 캡션으로 저장돼 점역자 주로 나갔다. 시각장애 학생이 손으로 읽는 자리에
+#   "파일을 첨부해 주세요"가 찍히는 것이라 빈 캡션보다 나쁘다.
+#   빈 응답과 같은 취급(= 빈 문자열 → CAPTION_FAILED)으로 돌린다. 결정적 방어라 비용 0.
+#   dev 371건 대조: 적중 5/5, 오탐 0('제공/없/첨부'가 든 정상 캡션 20건은 통과).
+# 2026-08-10 보강 — 요청 문구가 없는 **맨 거부**("이미지를 볼 수 없습니다")가 위 패턴을
+#   빠져나갔다. dev 실제 캡션 371건에 넓힌 식을 걸어 **적중은 그대로 5건, 오탐 0**을 확인했다.
+_META_RE = re.compile(
+    r"(첨부|제공|업로드)(되지|해|하지)\s*않|이미지가\s*(없|첨부|제공)|"
+    r"주시면|드리겠습니다|드릴게요|알려\s*주세요|보내\s*주세요|"
+    r"(이미지|그림|사진)(을|를)?\s*(볼|확인할|읽을)\s*수\s*없|"
+    r"^죄송|도와\s*드릴|무엇을\s*도와")
+
+
+def _reject_meta(text: str) -> str:
+    """그림 대신 사용자에게 말을 거는 응답이면 실패로 돌린다."""
+    return "" if _META_RE.search(text or "") else text
+
+
 def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
     """★ A/B 판정용 캡션 캐시(2026-08-08). `CAPTION_CACHE_DIR`를 줄 때만 동작한다.
 
@@ -295,7 +367,7 @@ def caption(image_path: str, image_type: str = "image") -> str:
     prompt = _PROMPTS.get(image_type, _PROMPTS["image"])
 
     with open(image_path, "rb") as f:
-        raw = f.read()
+        raw = _maybe_upscale(f.read())   # 캐시 키도 확대본 기준 — 배율이 다르면 캐시가 갈린다
     b64 = base64.b64encode(raw).decode()
 
     cache = _cache_file(raw, image_type, prompt)
@@ -306,8 +378,9 @@ def caption(image_path: str, image_type: str = "image") -> str:
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
-        text = _ensure_type_word(_caption_anthropic(b64, mime, prompt), image_type)
-        if cache is not None:
+        text = _ensure_type_word(_reject_meta(_caption_anthropic(b64, mime, prompt)), image_type)
+        # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
+        if cache is not None and text.strip():
             cache.write_text(text, encoding="utf-8")
         return text
 
@@ -327,7 +400,7 @@ def caption(image_path: str, image_type: str = "image") -> str:
         max_tokens=500,
         temperature=0.3,
     )
-    text = _ensure_type_word(resp.choices[0].message.content.strip(), image_type)
-    if cache is not None:
+    text = _ensure_type_word(_reject_meta(resp.choices[0].message.content.strip()), image_type)
+    if cache is not None and text.strip():
         cache.write_text(text, encoding="utf-8")
     return text

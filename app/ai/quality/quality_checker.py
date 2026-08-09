@@ -18,13 +18,27 @@ C5(수표 누락)는 배포 전 test_rule_engine.py 전수 통과가 1차 방어
 플래그 신뢰성(30초 케이스: COMPLETED를 믿고 스킴)의 전제라 조용히 COMPLETED로 나가면 안 된다.
 C7(타임아웃)은 pipeline.run()의 asyncio.wait_for가 직접 BLOCKED 응답을 만들므로
 이 검사기는 C1~C6을 판정한다.
+
+★ 플래그 신뢰성 감사(2026-08-10, dev-2027+val-2027 839쪽·34,709요소를 gold 대비 셀 편집으로
+  라벨). 감사 전 플래그는 **무작위보다 나빴다** — 붙은 자리의 28.2%만 크게 틀렸는데 기준선이
+  33.2%다(리프트 0.85x). 소음원 셋을 걷어내고 빠진 축 둘을 채웠다:
+    · C5 게이트가 태그 이름의 숫자로 열려 146건 중 142건(97.3%)이 오탐 → 게이트에서 태그·원문자를 벗김
+    · MinerU 폴백 R1이 요소마다 떠서 38쪽에 2,096건(쪽당 55건) → 쪽 1건으로 합침
+    · 시각자료 R11이 '캡셔닝 실패'일 때만 떠서, 오늘 캡션이 복구되자 371요소가 무플래그가 됐다 →
+      AI가 쓴 설명 자체를 검토 대상으로(설명이 있다 ≠ 맞다. 눈검사 3건 중 2건 내용 오류)
+    · 표에 플래그가 사실상 없었다(0.8%) — 편집량 2위 축(전체 편집셀의 11.2%)인데 →
+      R10 배선(편집필요 정밀도 98.7% · 기준선 58.3%)
+  결과: 플래그 4,211→2,389건(−43%), '수정필요' 정밀도 60.6%→73.4%. 보고서
+  `V2/temp/reports/Flag_reliability_report.html`, 재현 `V2/temp/flagaudit/`.
+  ⚠ 그래도 **재현율은 6.9%**고 COMPLETED 쪽의 21.2%가 셀의 30% 이상 수정을 필요로 한다 —
+  "플래그 없는 쪽은 안 봐도 된다"를 아직 숫자로 지지할 수 없다. 지금 플래그는 **검수 순서** 신호다.
 """
 from __future__ import annotations
 
 import re
 from typing import Iterable, Optional
 
-from app.ai.braille.number_sign import has_number_sign
+from app.ai.braille.number_sign import _TAG_TOKEN_RE, has_number_sign
 from app.schemas.content import BrailleOutput, ExtractedContent, LLMOutput
 from app.schemas.layout import LayoutResult
 from app.schemas.quality import CriticalError, QualityReport, ReviewFlag
@@ -53,6 +67,23 @@ R2_SUBTYPE_CONFIDENCE_THRESHOLD = 0.75
 
 # C5: 수표(⠼) 런타임 스캐너 — 아라비아 숫자와 수표 기호
 _C5_DIGIT_RE = re.compile(r"[0-9]")
+# ★ 게이트는 **점역 대상 글자에만** 연다(2026-08-10). 종전엔 corrected_text를 원문 그대로
+# 훑어 인라인 태그 이름의 숫자(`<!테두리_아래2>`)가 게이트를 열었다 — 태그는 테두리 점형으로
+# 치환되니 수표가 나올 리 없고, 그래서 무조건 C5가 떴다. 실측(dev+val 839쪽) C5 146건 중
+# **142건(97.3%)이 이 오탐**이고, 남은 4건도 제64항 원문자(`\textcircled{7}`)라 number_sign
+# 주석대로 수표가 아니다. C5는 배포 블로커 신호다 — 오탐이 쌓이면 점역사가 제일 중요한
+# 플래그부터 무시하게 되므로 진짜 누락만 남긴다. 태그 제거는 contraction_lookalikes와
+# **같은 정규식**을 쓴다(둘이 갈리면 판정이 어긋난다).
+_C5_CIRCLED_RE = re.compile(r"\\textcircled\{[^}]*\}")
+
+
+def _c5_gate_text(text: str) -> str:
+    """C5 숫자 게이트가 볼 원문 — 인라인 태그와 원문자를 벗긴 것."""
+    return _C5_CIRCLED_RE.sub("", _TAG_TOKEN_RE.sub("", text or ""))
+
+
+# 시각자료 유형(레이아웃 type 기준) — 본문 글자를 옮기는 게 아니라 **AI가 설명을 쓴다**.
+_VISUAL_TYPES = frozenset({"image", "cartoon", "chart_graph", "diagram"})
 
 # opt/점역 placeholder → Critical 유형 (구체 패턴을 먼저 검사한다 — "[처리 불가"가 가장 광범위)
 # 실패 문자열이 본문에 남으면 그대로 점자로 찍혀 학생에게 나간다 → 반드시 Critical로 잡는다.
@@ -133,7 +164,8 @@ class QualityChecker:
             eid = str(o.element_id)
             if eid in blocked_ids:
                 continue
-            if not _C5_DIGIT_RE.search(o.corrected_text or ""):
+            gate_text = _c5_gate_text(o.corrected_text)
+            if not _C5_DIGIT_RE.search(gate_text):
                 continue
             ext = ext_by_id.get(eid)
             if ext is not None and ext.visual_subtype:
@@ -151,14 +183,44 @@ class QualityChecker:
                 blocked_ids.add(eid)
 
         # ── 요소 단위: 추출 신호 → R 플래그 ──────────────────────────────
+        # 레이아웃 유형은 여기서만 알 수 있다(ExtractedContent에는 type이 없다).
+        types = {str(b.element_id): b.type
+                 for b in (layout_result.elements if layout_result else ())}
+        n_fallback = 0        # MinerU 폴백은 쪽 전체가 같은 사정이라 쪽 단위로 한 번만 띄운다
         for e in extracted:
             eid = str(e.element_id)
             for flag in e.flags or []:
+                if flag.endswith("_FALLBACK"):
+                    # 폴백은 **요소마다 같은 문구**로 떠서 실측 38쪽에 2,096건이 쌓였다.
+                    # 한 쪽에 55건이 같은 말을 하면 그건 신호가 아니라 소음이고, 진짜
+                    # 신호(캡션 실패·표)를 화면 밖으로 밀어낸다. 아래에서 쪽 1건으로 낸다.
+                    n_fallback += 1
+                    continue
                 mapped = _FLAG_TO_REVIEW.get(flag)
                 if mapped is None and _GENERIC_R_FLAG.match(flag):
                     mapped = (flag, f"검토 권고 플래그 {flag}")
                 if mapped:
                     reviews.append(ReviewFlag(type=mapped[0], element_id=eid, message=mapped[1]))
+            # 시각자료 설명은 **AI가 쓴 글**이다 — 캡셔닝이 성공해도 검토를 빼면 안 된다.
+            # 종전엔 CAPTION_FAILED(=설명 없음)일 때만 R11이 떴다. 2026-08-10 빈 캡션
+            # 371건을 복구하자 그 플래그가 그대로 꺼졌는데, 복구된 설명은 눈검사 3건 중
+            # 2건이 내용 오류였다(누락·지어냄). "설명이 있다"는 "맞다"가 아니다.
+            # 실측 리프트: 시각 요소는 크게 틀릴 확률이 80~94%(쪽 평균 33%)로 가장 높다.
+            if (eid not in blocked_ids and types.get(eid) in _VISUAL_TYPES
+                    and "CAPTION_FAILED" not in (e.flags or [])):
+                reviews.append(ReviewFlag(
+                    type="R11", element_id=eid,
+                    message="AI가 쓴 시각자료 설명 — 원본 그림과 대조가 필요합니다",
+                ))
+            # 표는 조판 재량이 크고(도서지침 "점역자에 따라서 표기") 실측 편집량이 본문 다음으로
+            # 많다(전체 편집셀의 11.2%, 요소의 1.1%). 실측 839쪽: 표 요소의 98.7%가 편집이
+            # 필요했고 53.9%는 크게 틀렸다(쪽 평균 33.2%). 지금까지 표에는 플래그가 사실상
+            # 안 붙었다(0.8%) — 점역사에게 본문과 같은 안전도로 보였다는 뜻이다.
+            if eid not in blocked_ids and types.get(eid) == "table":
+                reviews.append(ReviewFlag(
+                    type="R10", element_id=eid,
+                    message="표 — 전개 방식이 점역사 재량이라 초안과 다를 수 있습니다",
+                ))
             if eid not in blocked_ids and e.ocr_confidence < R1_CONFIDENCE_THRESHOLD:
                 reviews.append(ReviewFlag(
                     type="R1", element_id=eid,
@@ -190,6 +252,12 @@ class QualityChecker:
                 ))
 
         # ── 페이지 단위 ───────────────────────────────────────────────────
+        # ⚠ 미해결 구멍(2026-08-10 실측): **추출이 빈약한 쪽**에 아무 플래그도 없다. MinerU가
+        # 한 쪽에서 6요소만 내면(EBS-E26-004 p0198 — 정답 1,484셀 중 8%만 덮음) 아래 C1에도
+        # 안 걸려 플래그 0개 COMPLETED로 나간다(839쪽 중 3쪽이 'COMPLETED인데 gold 커버리지<0.7').
+        # 여기서 못 고친 이유: "적다"를 판정하려면 **쪽 규모 기준**(원본 PDF 쪽·이미지)이
+        # 있어야 하는데 check()는 그걸 안 받는다. 요소 수·글자 수만으로 임계를 잡으면 정상적으로
+        # 짧은 쪽과 구별되지 않는다(단위 테스트 12건이 그 자리에서 깨졌다). pipeline.py 배선 사안.
         n_elements = len(layout_result.elements) if layout_result else 0
         c1_message = ""
         if n_elements == 0 and not llm_outputs:
@@ -201,6 +269,13 @@ class QualityChecker:
             c1_message = "전체 처리 실패 — 모든 요소가 placeholder로 대체됨"
         if c1_message:
             criticals.append(CriticalError(type="C1", element_id="page", message=c1_message))
+
+        if n_fallback:
+            reviews.append(ReviewFlag(
+                type="R1", element_id="page",
+                message=(f"MinerU 추출 실패로 텍스트레이어 폴백 — 표·그림 구조가 소실된 채 "
+                         f"본문만 살렸습니다({n_fallback}요소). 원본과 대조가 필요합니다."),
+            ))
 
         if line_overflow_rate > C6_OVERFLOW_THRESHOLD:
             criticals.append(CriticalError(
