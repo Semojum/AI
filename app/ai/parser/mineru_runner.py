@@ -205,6 +205,55 @@ def _flatten_mineru_output(raw_dir: Path) -> None:
             shutil.rmtree(str(item))
 
 
+# ── 캡셔닝용 크롭 재렌더 ────────────────────────────────────────────────────
+# MinerU가 주는 크롭은 **200DPI로 렌더된 페이지 비트맵을 자른 것**이다(실측: 크롭 픽셀
+# 폭 = bbox/1000 × 페이지pt/72 × 200, 오차 1px). dev 331장 중앙 334×214px이라 도식의
+# 이름표(㉠·㉡, 축 눈금, 첨자)가 뭉개져 캡션이 그걸 잘못 읽었다.
+# 원본 PDF는 벡터라 같은 자리를 더 높은 DPI로 다시 렌더하면 **화소가 진짜로 는다**.
+# 실측(2026-08-10, 오독 확인 도표·그래프 30장, 같은 600DPI 이미지로 판정):
+#   200DPI(MinerU 그대로) 오독 77건/21장 · 300DPI 46건/13장(p=0.0015)
+#   600DPI 38건/9장(p=0.0001) · 150DPI 69건/24장(개선 없음 — DPI가 원인이 맞다)
+#   근거 있는 진술(ok)은 7.57 → 9.73으로 **늘었다**(짧게 써서 줄인 게 아니다).
+# ⚠ 이미 렌더된 비트맵의 **업스케일은 반대로 나쁘다**(3배 확대 사실오류 35.0%→44.5%,
+#   p=0.002). 없는 화소를 늘리면 모델이 더 확신하고 더 틀린다. 그래서 아래 _raster_dpi_cap이
+#   스캔 쪽(래스터 원본)에서는 원본 해상도 위로 못 올라가게 막는다.
+_CROP_DPI = 600        # 300→600은 표본 30장에서 유의하지 않았다(p=0.42). 점추정이 나은 쪽.
+_CROP_MAX_EDGE = 1568  # 이보다 크면 API가 되레 줄여 이득 없이 토큰만 든다
+_MINERU_CROP_DPI = 200
+
+
+def _raster_dpi_cap(clip: fitz.Rect, img_info: list[dict]) -> float:
+    """clip에 걸친 래스터 이미지의 실제 해상도(DPI). 벡터뿐이면 무한대.
+
+    스캔 PDF에서 원본 해상도 위로 렌더하면 그냥 업스케일이라 오히려 해롭다(위 주석).
+    """
+    caps = [im["width"] / max(fitz.Rect(im["bbox"]).width, 1e-6) * 72
+            for im in img_info
+            if im.get("width") and fitz.Rect(im["bbox"]).intersects(clip)]
+    return min(caps) if caps else float("inf")
+
+
+def _recrop_hidpi(fitz_page: fitz.Page, bbox: list[float], dst: str,
+                  img_info: list[dict]) -> bool:
+    """MinerU 크롭을 원본 PDF의 고DPI 재렌더로 교체한다. 실패해도 원본 크롭이 남는다."""
+    r = fitz_page.rect
+    clip = fitz.Rect(r.x0 + bbox[0] / 1000 * r.width, r.y0 + bbox[1] / 1000 * r.height,
+                     r.x0 + bbox[2] / 1000 * r.width, r.y0 + bbox[3] / 1000 * r.height)
+    if clip.is_empty or clip.width < 1 or clip.height < 1:
+        return False
+    dpi = min(_CROP_DPI, _CROP_MAX_EDGE * 72 / max(clip.width, clip.height),
+              _raster_dpi_cap(clip, img_info))
+    if dpi <= _MINERU_CROP_DPI:
+        return False                      # 더 얻을 화소가 없다 — MinerU 크롭 그대로 둔다
+    try:
+        # 내림 — 반올림하면 상한을 1~2px 넘겨 서버가 되레 축소한다
+        fitz_page.get_pixmap(dpi=int(dpi), clip=clip).save(dst, jpg_quality=95)
+    except Exception as exc:  # noqa: BLE001 — 크롭 품질은 있으면 좋은 것, 실패는 격리
+        logger.warning("고DPI 재크롭 실패 %s: %s", Path(dst).name, exc)
+        return False
+    return True
+
+
 def _extract_text_native(fitz_page: fitz.Page, bbox: list[float]) -> str:
     w, h = fitz_page.rect.width, fitz_page.rect.height
     rect = fitz.Rect(
@@ -773,6 +822,7 @@ def run(
     rect = fitz_page.rect
     img_w = int(rect.width * 2)
     img_h = int(rect.height * 2)
+    page_img_info = fitz_page.get_image_info()   # 재크롭 DPI 상한 판정용, 쪽당 1회
 
     merged_layout = []
     order = 1
@@ -897,6 +947,12 @@ def run(
         hlevel = _heading_level(item, mapped_type, content)
         if hlevel:
             mapped_type = "title"
+
+        # 캡셔닝으로 갈 시각요소만 원본에서 다시 자른다(위 _recrop_hidpi 주석).
+        # 타입이 다 정해진 뒤에 한다 — 도중에 table/text로 바뀌면 캡셔닝을 안 타므로
+        # 그림 쪽에만 비용(중앙 41ms/장)이 붙게 둔다.
+        if image_path and mapped_type in ("image", "chart_graph", "cartoon"):
+            _recrop_hidpi(fitz_page, bb, image_path, page_img_info)
 
         # MinerU bbox는 0~1000 정규화 좌표 → 실제 픽셀로 변환
         bb_px = [bb[0] / 1000 * img_w, bb[1] / 1000 * img_h,
