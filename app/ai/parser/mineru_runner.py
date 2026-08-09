@@ -81,7 +81,10 @@ def _heading_level(item: dict, mapped_type: str, content: str) -> int | None:
 def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | None = None) -> None:
     # MinerU는 별도 env에 설치(transformers 버전 충돌 회피). bare 'mineru'가 PATH에
     # 없을 수 있어 MINERU_BIN으로 실행 파일 경로를 덮어쓸 수 있게 한다(GCP는 심볼릭).
-    mineru_bin = os.environ.get("MINERU_BIN", "mineru")
+    # 우선순위: 환경변수 > .env(config) > PATH. 환경변수를 위에 두어 측정 스크립트가
+    # 한 번만 덮어쓸 수 있게 한다(엔진 A/B에 쓴다).
+    from app.core.config import config as _cfg
+    mineru_bin = os.environ.get("MINERU_BIN") or _cfg.mineru_bin or "mineru"
     cmd = [
         mineru_bin, "-p", str(pdf_path), "-o", str(out_dir),
         "-s", str(page_idx), "-e", str(page_idx),   # 도착 PDF 내 0-based 인덱스

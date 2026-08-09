@@ -45,7 +45,7 @@ def _health(url: str, timeout: float = 2.0) -> bool:
 
 def _mineru_api_bin() -> str:
     """MINERU_BIN(.../bin/mineru) 옆의 mineru-api. 없으면 PATH의 mineru-api."""
-    mb = os.environ.get("MINERU_BIN")
+    mb = os.environ.get("MINERU_BIN") or config.mineru_bin
     if mb:
         cand = Path(mb).with_name("mineru-api")
         if cand.exists():
@@ -139,6 +139,16 @@ def ensure_started(wait: float = 240.0) -> str | None:
     env = {**os.environ,
            "PATH": _path,
            "MINERU_API_MAX_CONCURRENT_REQUESTS": str(config.mineru_max_concurrent)}
+
+    # vLLM 백엔드 필수 둘. 자식 프로세스에만 얹는다 — 우리 프로세스의 링커를 건드리면
+    # 다른 확장 모듈이 엉뚱한 libstdc++를 물 수 있다.
+    ld = os.environ.get("MINERU_LD_LIBRARY_PATH") or config.mineru_ld_library_path
+    if ld:
+        prev = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = f"{ld}{os.pathsep}{prev}" if prev else ld
+    if config.mineru_batch_invariant:
+        # 같은 입력 → 같은 출력. 끄면 같은 조건 재실행이 80.0%만 일치해 A/B가 불가능하다.
+        env.setdefault("VLLM_BATCH_INVARIANT", "1")
 
     # vLLM이 선점할 VRAM 비율. MinerU 기본 0.5는 HCXT와 GPU 한 장을 나눠 쓰는
     # 우리 배치에서 확보에 실패한다 — A10G 24GB 실측(2026-07-30):
