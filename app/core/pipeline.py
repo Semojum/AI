@@ -48,6 +48,9 @@ logger = get_logger(__name__)
 # 텍스트 요소 유형 — text 체인이 처리하는 요소들
 _TEXT_TYPES = {"text", "title", "caption", "list_item", "footnote", "sidebar", "header_footer", "page_number"}
 
+# 시각 요소 유형 — 그림 회수 판정(_extract_with_hyunju)과 읽기순서(_reorder_columns)가 공유
+_VISUAL_TYPES = {"image", "chart_graph", "cartoon", "diagram", "figure", "table"}
+
 # 현주 type 값 → 태민/plan type 값 매핑 (현주는 chart 사용)
 # 도표(§6.6 개념도·흐름도)는 단일 diagram 체인으로 라우팅하고, 하위유형은 visual_subtype로 보존한다.
 _TYPE_ALIAS = {
@@ -462,7 +465,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         # 놓친 그림 회수 — 앞단이 시각 요소를 **0개** 낸 쪽만 비전 모델로 다시 본다.
         # 평가 실측: 시각 요소가 0인 26쪽에서 우리가 gold의 1%만 쓴다(프롬프트로는 안 움직인다).
         from app.ai.parser import figure_detect
-        _VIS = ("image", "chart_graph", "cartoon", "diagram", "figure")
+        _VIS = _VISUAL_TYPES - {"table"}     # 표가 있어도 그림은 회수 대상이다
         if figure_detect.enabled() and not any(e.get("type") in _VIS for e in elements):
             figs = await asyncio.to_thread(figure_detect.detect, task.pdf_data, task.page_no)
             if figs:
@@ -614,6 +617,11 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
         통째로(연속 순번) 방출하는 것이 주 실패 양상(세계사 p086·p106).
         반대로 순번이 본문 사이에 흩어진 좁은 요소(문항별 포인트 라벨 등)는
         MinerU의 의도 배치 → 보존(세계사 p160).
+        '연속'은 3개 이상 블록일 때 이탈 하나까지 봐준다 — 쪽 아래 출전 한 줄이 같은
+        열로 묶여 후치가 통째로 막히는 쪽이 있었다(생물 p180 τ −0.111 → 1.000).
+        낱개 '그림'은 아예 후치 대상이 아니다 — 아래 lone_visual 주석.
+    (1') 본문 열은 요소가 많은 열이 아니라 **면적이 큰 열**이다. 잘게 쪼개진 보충설명
+        열이 개수로 본문을 이기는 쪽이 있었다(생물 p180: 사이드 9개 vs 본문 7개).
     (2) 대등한 2단 본문은 MinerU가 열 단위로 옳게 방출 — y-정렬하면 두 열이 섞여
         파괴되므로, MinerU 순서가 y-흐름을 심하게 거스를 때만 열 내부를 y-정렬
         (사회문화 p035: MinerU 순서 자체가 뒤죽박죽인 페이지).
@@ -668,11 +676,12 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
               enumerate(sorted(clusters.values(), key=lambda c: min(b.bbox[0] for b in c)))
               for b in cl}
 
-    # 2) main = 최대 클러스터(동수면 총면적). main 헐과 자기 폭 50% 이상 겹치는
-    #    클러스터(선지 ①②③ 조각 등)는 흡수.
-    main_key = max(clusters, key=lambda k: (len(clusters[k]),
-                                            sum((b.bbox[2] - b.bbox[0]) * (b.bbox[3] - b.bbox[1])
-                                                for b in clusters[k])))
+    # 2) main = 총면적이 가장 큰 클러스터(동률이면 요소 수). main 헐과 자기 폭 50% 이상
+    #    겹치는 클러스터(선지 ①②③ 조각 등)는 흡수.
+    #    ★ 예전에는 요소 수를 먼저 봤는데, 잘게 쪼개진 좁은 보충설명 열이 개수로 본문을
+    #      이겨 본문이 통째로 뒤로 밀렸다(생물 p180: 사이드 9개 vs 본문 7개, τ −0.111).
+    main_key = max(clusters, key=lambda k: (sum((b.bbox[2] - b.bbox[0]) * (b.bbox[3] - b.bbox[1])
+                                                for b in clusters[k]), len(clusters[k])))
     main = clusters.pop(main_key)
     hull0, hull1 = min(b.bbox[0] for b in main), max(b.bbox[2] for b in main)
     sides: list[list[BBoxItem]] = []
@@ -689,10 +698,22 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
     deferred: list[list[BBoxItem]] = []
     for cl in sides:
         ranks = sorted(body_rank[id(b)] for b in cl)
-        contiguous = ranks[-1] - ranks[0] == len(ranks) - 1
+        run = best = 1
+        for _a, _c in zip(ranks, ranks[1:]):
+            run = run + 1 if _c == _a + 1 else 1
+            best = max(best, run)
+        contiguous = best == len(ranks) or (best >= 3 and best >= len(ranks) - 1)
         narrow = (max(b.bbox[2] for b in cl) - min(b.bbox[0] for b in cl)) \
             <= 0.5 * (hull1 - hull0)
-        if contiguous and narrow:
+        # ★ 요소 하나짜리 클러스터는 '연속 순번'이 공짜로 참이라 이 조건을 못 거른다.
+        #   그래서 본문 옆에 홀로 놓인 그림·아이콘·표가 통째로 쪽 끝으로 밀려났다
+        #   (실측 devall+valall 13쪽 — 생물 p026 '유형' 아이콘이 y=355인데 마지막에서 두 번째).
+        #   규정이 뒤로 미루라는 것은 '참고 자료 단'이지 낱개 그림이 아니다
+        #   (「점자 도서 제작 지침」 2장 5, 주종 관계의 다단). 그림 하나는 단이 아니다.
+        #   텍스트 낱개(좌측 여백의 유형 라벨 등)는 종전대로 후치한다 — 정답 배치가 그렇다
+        #   (사회문화 p034: 후치를 막으면 τ 0.927 → 0.709).
+        lone_visual = len(cl) == 1 and cl[0].type in _VISUAL_TYPES
+        if contiguous and narrow and not lone_visual:
             deferred.append(cl)
         else:
             main.extend(cl)
