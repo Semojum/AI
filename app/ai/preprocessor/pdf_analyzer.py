@@ -452,10 +452,13 @@ def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int,
 # 가르는 조건 두 개(실측 사회문화 p8·p23):
 #   · **글자를 감싸야** 한다 — 제목 배너·머리말 띠는 안에 글이 없다(감싸는 게 아니라 덮는다).
 #   · 선(stroke)이 있어야 한다 — 채움만 있는 도형은 강조 음영이지 테두리가 아니다.
+#     ※ 규정(1장5 1))은 음영 글상자도 글상자라 하지만, 실측하면 **점수가 내려간다**
+#       (2026-08-09 A/B: dev −0.0p·val −0.3p, 새로 만든 상자의 76%가 정답에 없는 상자).
+#       규정↔실측이 갈리는 자리라 원장에 올릴 항목이다.
 _BOX_MIN_W = 0.20        # 페이지 폭 대비 최소 너비 — 이보다 좁으면 아이콘·라벨
 _BOX_MIN_H = 18.0        # 최소 높이(pt) — 밑줄·구분선 제외
 _BOX_MAX_AREA = 0.85     # 페이지 면적의 이 비율을 넘으면 페이지 테두리·배경
-_BOX_OPEN, _BOX_CLOSE = "<!테두리_위><!/테두리_위>", "<!테두리_아래><!/테두리_아래>"
+_BOX_X_TOL = 2.0         # 좌우가 이만큼 안에서 같으면 같은 상자의 위·아래 조각(pt)
 
 
 def box_rects(page) -> list:
@@ -478,7 +481,7 @@ def box_rects(page) -> list:
             continue
         if r.get_area() > pr.get_area() * _BOX_MAX_AREA:
             continue
-        if "s" not in g["type"]:              # 채움 전용 = 음영·배너
+        if "s" not in g["type"]:              # 채움 전용 = 음영·배너(위 주석 참조)
             continue
         if not any(t in r for t in tblocks):  # 감싼 글이 없다
             continue
@@ -488,6 +491,16 @@ def box_rects(page) -> list:
     # 종전 규칙은 안쪽 사각형을 겹침으로 보고 통째로 버렸다.
     merged: list = []
     for r in sorted(out, key=lambda r: -r.get_area()):
+        # ★ 한 글상자를 **머리띠 + 본문** 두 사각형으로 그린 것을 먼저 합친다 —
+        #   좌우가 같고 세로로 겹치면 같은 상자다. 안 합치면 위 조각이 제목 요소를
+        #   먼저 claim해 gold의 상자 하나가 둘로 쪼개진다(실측 생명과학 p72·p152).
+        #   2026-08-09 A/B: 이 병합 하나가 dev +0.28p·val +0.68p(CER)로 이번 라운드 최대 레버.
+        hit = next((k for k, m in enumerate(merged)
+                    if abs(r.x0 - m.x0) <= _BOX_X_TOL and abs(r.x1 - m.x1) <= _BOX_X_TOL
+                    and r.y0 < m.y1 and m.y0 < r.y1), None)
+        if hit is not None:
+            merged[hit] = r | merged[hit]
+            continue
         # 완전히 안에 들었다 = 중첩, 남긴다. 단 **거의 같은 크기**는 중첩이 아니라
         # 같은 테두리를 채움·선 두 경로로 그린 것이다 — 남기면 같은 상자를 두 번 감싼다.
         if any(r in m and r.get_area() < m.get_area() * 0.98 for m in merged):
@@ -632,9 +645,12 @@ def box_rects_norm(pdf_data: bytes, page_no: int) -> list[list[float]]:
 
 
 def tag_boxed_elements(elements: list[dict], rects: list) -> int:
-    """사각형이 통째로 감싼 텍스트 요소 앞뒤에 테두리 태그를 넣는다(in-place). 감싼 상자 수 반환.
+    """사각형이 감싼 텍스트 요소 앞뒤에 테두리 태그를 넣는다(in-place). 감싼 상자 수 반환.
 
-    표·그림을 품은 사각형은 건드리지 않는다 — 그쪽 체인이 제 테두리를 그린다(원장 C-01a).
+    ★ **표·그림을 품은 사각형도 글상자다**(「제작 지침」 3장 지문 (4): 지문 속 글상자는
+      속글상자). 종전에는 통째로 버려서 dev 816쪽에서 388개(검출의 25.6%)를 잃었다.
+      태그는 글 요소에만 붙이되(표 HTML 안에 태그를 넣으면 표 체인이 깨진다), 시각 요소도
+      읽기순서 연속성 판정에는 함께 센다.
 
     ★ **중첩을 살린다**(BBPG-1.2.5 위계). gold는 자료 박스 안에 표를 넣고 안쪽에 2단계
       테두리(⠖⠒…⠲)를 쓴다 — dev-2027 900쪽에 343개, 그중 81%가 1단계 안이다. 우리는
@@ -657,15 +673,22 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
     claimed: dict[int, int] = {}          # 요소 → 그 요소를 이미 감싼 가장 안쪽 위계
     opens: dict[int, list] = {}           # 요소 → [(위계, 여는 태그)]
     closes: dict[int, list] = {}          # 요소 → [(위계, 닫는 태그)]
+    promoted: set[int] = set()            # 테두리 제목으로 올라가 본문에서 뺄 요소
     n = 0
     for rect in ordered:
         rx0, ry0, rx1, ry1 = rect
         level = min(3, depth[id(rect)] + 1)          # 1단계부터, 3단계까지
-        inside: list[int] = []
-        skip = False
+        # 윗변에 걸친 짧은 한 줄은 **테두리 제목**으로 올린다(1장5 2)(4)②). 본문 줄이 아니라
+        # 테두리 안에 박히므로 상자 몸통에서는 뺀다. ★ 첫 요소로 한정하면 안 된다 —
+        # MinerU 읽기순서가 제목을 몸통 중간에 놓는 일이 잦아, 한정하면 이득의 2/3가 날아간다
+        # (실측 2026-08-09: 한정 dev −6,297셀 / 전체 탐색 dev −9,000셀).
+        blocked = promoted | opens.keys() | closes.keys()   # 태그를 인 요소는 못 뺀다
+        title_i = _box_title_index(elements, rect, blocked)
+        inside: list[int] = []            # 읽기순서 연속성 판정용(시각요소 포함)
+        texts: list[int] = []             # 태그를 붙일 수 있는 요소만
         for i, el in enumerate(elements):
             bb = el.get("bbox")
-            if not bb or len(bb) != 4:
+            if not bb or len(bb) != 4 or i == title_i or i in promoted:
                 continue
             # 중심점으로 본다 — MinerU bbox는 테두리에 닿은 글에서 몇 px 삐져나와
             # 완전포함으로 재면 실측 9요소가 든 상자에서 0개가 잡힌다(생물 p118·사문 p107).
@@ -673,21 +696,29 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
             if not (rx0 <= cx <= rx1 and ry0 <= cy <= ry1):
                 continue
             if el.get("type") not in ("text", "list_item", "title", "caption"):
-                skip = True          # 표·수식·그림이 든 상자는 그 체인 소관
-                break
+                inside.append(i)     # 표·그림: 자리만 차지한다(태그는 글 요소에만)
+                continue
             if claimed.get(i, 0) >= level:      # 같은 위계에서 이미 감쌌다
                 continue
             inside.append(i)
-        if skip or not inside:
+            texts.append(i)
+        if not texts and title_i is not None:
+            # 제목만 남으면 상자가 통째로 사라진다 — 승격을 물리고 상자를 살린다.
+            inside, texts, title_i = sorted(inside + [title_i]), [title_i], None
+        if not texts:
             continue
         if inside != list(range(inside[0], inside[-1] + 1)):
             logger.debug("글상자 건너뜀 — 읽기순서가 끊겼다(%s)", inside)
             continue
-        first, last = inside[0], inside[-1]
+        title = ""
+        if title_i is not None:
+            title = _tag_title(elements[title_i])
+            promoted.add(title_i)
+        first, last = texts[0], texts[-1]
         sfx = "" if level == 1 else str(level)        # <!테두리_위2> = 2단계(translator 규약)
-        opens.setdefault(first, []).append((level, f"<!테두리_위{sfx}><!/테두리_위{sfx}>"))
+        opens.setdefault(first, []).append((level, f"<!테두리_위{sfx}>{title}<!/테두리_위{sfx}>"))
         closes.setdefault(last, []).append((level, f"<!테두리_아래{sfx}><!/테두리_아래{sfx}>"))
-        for i in inside:                        # 안쪽 상자가 다시 감쌀 수 있게 위계를 기록
+        for i in texts:                         # 안쪽 상자가 다시 감쌀 수 있게 위계를 기록
             claimed[i] = max(claimed.get(i, 0), level)
         n += 1
 
@@ -698,7 +729,42 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
     for i, tags in closes.items():
         tail = "\n".join(t for _lv, t in sorted(tags, reverse=True))
         elements[i]["content"] = f"{elements[i]['content']}\n{tail}"
+    for i in sorted(promoted, reverse=True):   # 제목은 테두리 안으로 갔으니 본문에서 뺀다
+        elements.pop(i)
     return n
+
+
+# 테두리에 박히는 제목(「제작 지침」 1장5 2)(4)②: 제목을 테두리 7칸에 양옆 띄어 넣는다).
+# 정답 도서는 dev-2027 900쪽에서 705번 쓰는데(보기 274·〈보기 N〉 198·개념 체크 48…)
+# 우리는 0번이었다 — 렌더러(`layout._render_box_top`)는 있는데 태그가 늘 빈 제목이었다.
+_BOX_TITLE_BAND = 22.0    # 윗변 위아래 허용폭(0~1000 정규화). 좁혀도 재현율만 깎였다
+_BOX_TITLE_MAX = 12       # 제목 최대 글자수
+
+
+def _tag_title(el: dict) -> str:
+    return re.sub(r"<!/?[^>]+>", "", el.get("content") or "").strip()
+
+
+def _box_title_index(elements: list[dict], rect, blocked) -> int | None:
+    """사각형 윗변에 걸친 **짧은 한 줄** 요소의 인덱스(테두리 제목). 없으면 None."""
+    rx0, ry0, rx1, _ry1 = rect
+    best = None
+    for i, el in enumerate(elements):
+        bb = el.get("bbox")
+        if (not bb or len(bb) != 4 or i in blocked
+                or el.get("type") not in ("text", "list_item", "title", "caption")):
+            continue
+        if not (rx0 <= (bb[0] + bb[2]) / 2 <= rx1):
+            continue
+        d = abs((bb[1] + bb[3]) / 2 - ry0)
+        if d > _BOX_TITLE_BAND:
+            continue
+        txt = _tag_title(el)
+        if not txt or "\n" in txt or len(txt) > _BOX_TITLE_MAX:
+            continue
+        if best is None or d < best[0]:
+            best = (d, i)
+    return best[1] if best else None
 
 
 # 벡터 그림 판정(교과서 지도·도표·그래프는 임베디드 이미지가 아니라 벡터로 그려진다).
