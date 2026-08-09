@@ -1,6 +1,6 @@
 {
   "type": "symbols",
-  "description": "특수기호 (단위·수학·괄호·화살표 등). symbol_table 권위 골드. 점형 충돌(한글·기호·원문자)은 ambiguous로 분리(한글우선 정책). ★2026-08-09: 규정 원문 대조로 12건 정정. grounded=false는 아직 symbol_table 거울(순환)이라는 뜻이다 — 나머지 263건은 규정 근거를 아직 못 붙였다.",
+  "description": "특수기호 (단위·수학·괄호·화살표 등). symbol_table 권위 골드. 점형 충돌(한글·기호·원문자)은 ambiguous로 분리(한글우선 정책). ★2026-08-09: 규정 원문 대조로 12건 정정. grounded=false는 아직 symbol_table 거울(순환)이라는 뜻이다 — 나머지 263건은 규정 근거를 아직 못 붙였다. ★2026-08-09: `_rule_overrides`(rule_trail용 규칙 ID 블록)가 점형으로 새어 들어온 2행 정정. 생성기가 `_`로 시작하는 메타 블록을 안 걸렀다.",
   "split_ratio": "build:test = 7:3 (비모호 기준)",
   "counts": {
     "build": 101,
@@ -1402,11 +1402,11 @@
     {
       "korean": "◇",
       "brf_ascii": null,
-      "braille_unicode": "KBR-6.13.57",
+      "braille_unicode": "⠸⠢⠇",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
-      "source": "규정 대조(표가 정본)",
+      "source": "symbol_table(규칙 ID 오염 정정 2026-08-09)",
       "grounded": false
     },
     {
@@ -1432,11 +1432,11 @@
     {
       "korean": "☆",
       "brf_ascii": null,
-      "braille_unicode": "KBR-6.13.57",
+      "braille_unicode": "⠸⠔⠇",
       "split": "build",
       "ambiguous": false,
       "ambiguous_reason": null,
-      "source": "규정 대조(표가 정본)",
+      "source": "symbol_table(규칙 ID 오염 정정 2026-08-09)",
       "grounded": false
     },
     {
