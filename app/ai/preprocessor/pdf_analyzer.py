@@ -1,5 +1,6 @@
 import base64
 import binascii
+import collections
 import os
 import re
 import tempfile
@@ -19,6 +20,64 @@ MIN_TEXT_LENGTH = 10
 # raw 코드포인트로 추출한다. 텍스트는 '있으나' 수식이 글자로 안 읽혀 ZERO로는 점역 불가 →
 # STANDARD(MinerU)로 보내 OCR/수식 추출을 거치게 한다.
 PUA_RATIO_THRESHOLD = 0.10
+
+# ── 글꼴 매핑이 어긋난 PDF (2026-08-09 실측) ────────────────────────────────
+# PUA 규칙이 못 잡는 **다른 유형**이다. 레거시 한국어 조판 글꼴(ST*·TK*·Mathmungjo·
+# T### 등)은 윗/아래첨자·그리스문자·분수선·근호·큰괄호를 라틴-1과 한자 확장A 자리에
+# 얹어 놓고, 배포기가 그 (거짓) 글리프 이름을 그대로 ToUnicode로 굳혔다. 그래서
+# **PUA가 0%인데 글자가 틀린다** — 예외도 안 나고 결과만 보면 모른다.
+#
+# 실물 대조(렌더 확인, 코퍼스 1,131쪽):
+#     STksaA-Italic  ¤ → ²    ‹ → ³    ¡ → ₁    ™ → ₂    æ → °C
+#     STkyak         a → α    b → β    p → π    … → ≤    ¶ → ∞    ⁄ → (i)
+#     STkboNA        ; → 분수선    ∂ → √    { → 큰중괄호   (숫자도 분수선이다)
+#     TKup           ` → ¹⁴    ± → ²⁺    ™ → ₂
+#     UNIDOCS 본문   䤎 → •    (한자 확장A 자리)
+#     YGO11          ⇂ → □(빈칸)      Skia-Regular  Ã → ✓
+# ★ **같은 코드가 글꼴마다 다른 뜻이다**(¤ = ² 또는 (ii)). 그래서 되돌리려면 글꼴마다
+#   글리프를 눈으로 확인한 표가 있어야 하고, 그 표가 있어도 수식은 못 살린다 — 이 PDF들은
+#   분자·분모를 따로 찍어 놔서 추출 순서가 이미 무너져 있다("2x\n1\nx¤\n2\nx+1").
+#   그래서 **복구하지 않고 STANDARD(MinerU)로 보낸다** — PUA 때와 같은 처방이다.
+#
+# 가르는 신호: '한국 교과서 묵자에 안 나오는 코드포인트'. 폰트 이름 목록보다 낫다 —
+# 이름은 책마다 바뀌지만 이 코드포인트들은 어느 책에서도 정상일 수 없다.
+# 실측 오탐 0/1,251쪽: ± ™ £ ¥ ¢ § œ æ ç ß ﬂ Ã ´ ¨ 는 코퍼스 전체에서 **단 한 번도**
+# 정상으로 쓰이지 않았다(전부 레거시 글꼴 출처). 반대로 ° · × ÷ 는 본문 글꼴에서
+# 정상으로 나오므로 아래 집합에서 뺐다.
+#
+# ★ 두 갈래로 나눈다 — **처방이 다르기 때문**이다.
+#   A. 조판이 통째로 무너진 쪽: 윗/아래첨자·그리스·분수선을 잃었다 → 텍스트레이어 폐기,
+#      STANDARD로. 수학2 147쪽 전부와 생물 상당수가 여기.
+#   B. **기호 하나만** 어긋난 쪽: 본문은 멀쩡한데 글머리 기호(●·▶)가 한자 확장A 자리로
+#      떨어졌다 — `䤋compress 압축하다` · `䭅들려주는내용을…`. 여기서 STANDARD로 돌리면
+#      멀쩡한 외국어 본문 76쪽을 쪽당 9초짜리 OCR에 태우면서 깨끗한 텍스트를 버린다.
+#      **경고만 남긴다**(원장 등재 대상). 되돌리려면 글꼴별 글리프 대조표가 필요한데
+#      글꼴마다 뜻이 달라 책마다 새로 떠야 한다 — 일반 해가 없다.
+_MANGLED_LAYER_RE = re.compile(          # A. 텍스트레이어를 통째로 못 믿는다
+    "["
+    "\x00-\x08\x0b\x0c\x0e-\x1f"   # 매핑이 아예 없어 raw 코드가 나온 자리(T### 표 글꼴)
+    "\u00a1-\u00af\u00b1-\u00b6\u00b8-\u00bf"  # 라틴-1 기호 (° U+00B0 · U+00B7 제외)
+    "\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u00ff"  # 라틴-1 악센트 (× U+00D7 ÷ U+00F7 제외)
+    "\u0100-\u024f"                    # 라틴 확장 A/B — œ ƒ 등
+    "\u02b0-\u02ff"                    # 수식 수정 문자 — ˘ ˙ ˚ ˆ
+    "\u2039\u203a\u2044\u201a\u201e\u2020\u2021"  # ‹ › ⁄ ‚ „ † ‡ = 윗첨자·(i)·분수 자리
+    "\ufb00-\ufb06"                    # ﬁ ﬂ 합자
+    "\ue000-\uf8ff"                    # PUA (종전 규칙과 같은 구간, 여기선 개수로도 본다)
+    "]"
+)
+_MANGLED_SYMBOL_RE = re.compile(         # B. 기호 하나만 어긋났다 — 경고만
+    "["
+    "\u3400-\u4dbf"                    # 한자 확장 A — 교과서 한자는 U+4E00~ 뿐이다(글머리 기호가 여기로)
+    "\u21c0-\u21c3"                    # 하푼 화살표 — ⇂ = 빈칸 □ (정상인 ⇄·⇌는 뺐다)
+    "]"
+)
+# 한 글자만 나와도 그 자리는 확실히 틀렸다(위 집합은 '정상일 수 없는' 것만 모았다).
+# 비율이 아니라 개수로 보는 이유: 수학2 p004는 700자 중 ¤가 5자(0.7%)뿐인데 그 5자가
+# 지수 전부다. 비율 임계(10%)로는 영원히 안 걸린다.
+MANGLED_GLYPH_THRESHOLD = 1
+
+# 라틴 문자권 원서를 함께 다루게 되면 'café'의 é가 A에 걸린다(현 코퍼스 외국어 234쪽에는
+# 0건). 그때는 위 라틴-1 악센트 줄만 빼면 된다 — 나머지 신호는 그대로 쓸 수 있다.
 
 # 유효 PDF는 항상 "%PDF-"로 시작한다(앞쪽 일부 공백/BOM 허용).
 _PDF_MAGIC = b"%PDF-"
@@ -760,6 +819,20 @@ def _page_has_visual(page) -> bool:
     return _has_vector_figure(page)     # 벡터 지도·도표·그래프
 
 
+def mangled_glyph_chars(text: str) -> tuple["collections.Counter[str]", "collections.Counter[str]"]:
+    """글꼴 매핑이 어긋나 잘못 추출된 글자들 → (A: 레이어 폐기, B: 기호만 어긋남).
+
+    각각 {글자: 횟수}. 부르는 쪽은 보통 **A의 개수만** 보면 된다 — 한 글자라도 있으면
+    그 텍스트레이어는 통째로 못 믿는다. B는 경고용이다(본문은 멀쩡하니 버리지 않는다).
+
+    ⚠ 이 함수는 '고칠 수 있다'는 뜻이 아니다. 되돌리기는 글꼴마다 다른 표가 필요하고
+      (¤ = ² 또는 (ii)), 표가 있어도 2차원으로 찍힌 수식은 못 살린다. 위 주석 참조.
+    """
+    t = text or ""
+    return (collections.Counter(_MANGLED_LAYER_RE.findall(t)),
+            collections.Counter(_MANGLED_SYMBOL_RE.findall(t)))
+
+
 def _pua_ratio(text: str) -> float:
     """비공백 글자 중 PUA(U+E000~U+F8FF, 보충 PUA) 비율."""
     chars = [c for c in text if not c.isspace()]
@@ -883,6 +956,24 @@ def analyze_pdf(
             logger.info(
                 "PUA 비율 %.1f%% (≥%.0f%%) → 텍스트레이어 비신뢰, STANDARD 라우팅 page=%s",
                 pua * 100, PUA_RATIO_THRESHOLD * 100, page_no,
+            )
+            return DocumentMeta(pdf_confidence=0.5, routing_tier="STANDARD", scan_only=False), ""
+        # ★ 경고를 꼭 남긴다 — 조용히 틀린 값이 나가는 게 제일 나쁘다. 이 쪽에서 뽑은
+        #   기호 빈도는 "0회 = 없다"가 아니라 "0회 = 못 쟀다"이다.
+        layer_bad, symbol_bad = mangled_glyph_chars(text)
+        if symbol_bad:
+            logger.warning(
+                "글꼴 매핑 어긋남(기호 %d자 %s) — 본문은 유지하되 이 쪽의 기호 빈도는 "
+                "믿지 말 것 page=%s",
+                sum(symbol_bad.values()),
+                "".join(c for c, _ in symbol_bad.most_common(8)), page_no,
+            )
+        if sum(layer_bad.values()) >= MANGLED_GLYPH_THRESHOLD:
+            # PUA는 0%인데 글꼴 매핑이 어긋난 PDF(수학2 판 등) → 같은 처방(STANDARD).
+            logger.warning(
+                "글꼴 매핑 어긋남 %d자 %s → 텍스트레이어 비신뢰, STANDARD 라우팅 page=%s",
+                sum(layer_bad.values()),
+                "".join(c for c, _ in layer_bad.most_common(8)), page_no,
             )
             return DocumentMeta(pdf_confidence=0.5, routing_tier="STANDARD", scan_only=False), ""
         if has_visual:

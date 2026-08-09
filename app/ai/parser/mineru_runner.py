@@ -285,7 +285,7 @@ def _restore_table_bullets(fitz_page: fitz.Page, bbox: list[float], html: str) -
     layer = _extract_text_native(fitz_page, bbox)
     if not layer or not _BULLET_ANY_RE.search(layer):
         return html
-    if _pua_ratio(layer) > _PUA_RATIO_MAX:
+    if _layer_untrustworthy(layer):
         return html
     keys = _bullet_item_keys(layer)
     if not keys or not all(keys):
@@ -525,7 +525,7 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     if not html or not bbox:
         return html
     layer = _native_text_spaced(fitz_page, bbox)
-    if not layer or _pua_ratio(layer) > _PUA_RATIO_MAX:
+    if not layer or _layer_untrustworthy(layer):
         return html
     # 레이어에는 우리가 붙이는 인라인 태그(<!드러냄> 등)가 들어 있다 — 대조 전에 걷어낸다.
     layer_ns = re.sub(r"\s+", "", re.sub(r"<!/?[^>]*>", "", layer))
@@ -581,6 +581,29 @@ def _pua_ratio(s: str) -> float:
     return pua / len(s)
 
 
+def _layer_untrustworthy(s: str) -> bool:
+    """텍스트 레이어를 믿으면 안 되는가 — PUA **또는** 글꼴 매핑 거짓말.
+
+    ★ 2026-08-09 — 종전엔 PUA 비율만 봤다. 그런데 코퍼스 1,251쪽 중 **753쪽(60.2%)**은
+      PUA가 0%인데도 글꼴이 거짓말을 한다: `/Encoding`과 `/ToUnicode`가 실제로 그려지는
+      글리프와 **다른 문자**를 가리킨다(수학2는 147/147 전량). 예: STkboNA의 코드 0x02는
+      스스로를 `∂`(U+2202)라 부르는데 실제로 그려지는 건 근호 `√`다.
+      그래서 PUA만 보면 이 쪽들이 전부 "믿을 만함"으로 통과해, 깨진 텍스트가 멀쩡한
+      MinerU OCR을 덮어쓴다.
+
+      판정은 `pdf_analyzer.mangled_glyph_chars`가 한다 — "교과서에 절대 안 나오는
+      코드포인트"(± ™ £ ¥ ¢ § œ æ ç ß ﬂ Ã ´ ¨ 등)를 신호로 쓰고 전수 1,251쪽에서
+      **오탐 0**이었다. 폰트 이름·영폭 글리프·`/Widths` 퇴화도는 전부 분리에 실패해 기각됐다.
+    """
+    if not s:
+        return False
+    if _pua_ratio(s) > _PUA_RATIO_MAX:
+        return True
+    from app.ai.preprocessor.pdf_analyzer import mangled_glyph_chars
+    layer_bad, _symbol_bad = mangled_glyph_chars(s)
+    return bool(layer_bad)          # 조판을 무너뜨리는 종류만 — 기호 하나짜리는 통과시킨다
+
+
 def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
     """bbox 안의 텍스트를 어절 경계 복원해서 뽑는다.
 
@@ -621,7 +644,7 @@ def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
 def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) -> str | None:
     """텍스트 레이어로 대체할 값. 못 믿으면 None(= MinerU 결과 유지)."""
     native = _native_text_spaced(fitz_page, bbox)
-    if not native or _pua_ratio(native) > _PUA_RATIO_MAX:
+    if not native or _layer_untrustworthy(native):
         return None
     base = (mineru_text or "").strip()
     if not base:
