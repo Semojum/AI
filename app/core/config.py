@@ -63,6 +63,21 @@ class Settings(BaseSettings):
     # ⚠ 위 수치는 전부 개발 랩탑 값이다. 운영(A10G 24GB)에서 무릎을 다시 재라.
     mineru_max_concurrent: int = 2
 
+    # MinerU 실행 파일 경로. 환경변수 MINERU_BIN이 있으면 그쪽이 이긴다.
+    # ★ 이 자리가 필요한 이유: MINERU_BIN은 셸에서 매번 넘겨야 해서 항구적인 집이 없었다.
+    #   `.env`는 pydantic이 Settings로만 읽고 os.environ에는 안 실으므로, 여기 필드가
+    #   없으면 `.env`에 적어도 아무 효과가 없다. 기계마다 경로가 다르니 코드에 못 박지 않는다.
+    mineru_bin: str = ""
+
+    # mineru-api 자식에게 얹을 LD_LIBRARY_PATH 접두. vLLM 백엔드에 필수다 —
+    # 없으면 flashinfer JIT가 GLIBCXX_3.4.32를 못 찾아 EngineCore가 죽고, 예외가 아니라
+    # **조용히 CLI 폴백으로 느려진다**(시스템 libstdc++는 3.4.30까지, 2026-08-09 실측).
+    mineru_ld_library_path: str = ""
+
+    # 같은 입력에 같은 출력을 강제한다(vLLM). A/B 판정을 하려면 필수다 —
+    # 끄면 같은 조건 재실행이 80.0%만 일치한다. 대가는 속도 1.19배·표 칸 −1.1%.
+    mineru_batch_invariant: bool = True
+
     # 점역·조판(순수 CPU 동기 작업) 전용 스레드풀 크기. 기본 실행기와 갈라 두어
     # 점역이 밀려도 MinerU·PDF 추출의 I/O 대기를 막지 않게 한다.
     # GIL 때문에 늘려도 처리량은 안 는다 — 한 페이지의 긴 점역(실측 p95 2.1초)이 다른
