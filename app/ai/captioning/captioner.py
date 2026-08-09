@@ -307,7 +307,8 @@ def caption(image_path: str, image_type: str = "image") -> str:
 
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
         text = _ensure_type_word(_caption_anthropic(b64, mime, prompt), image_type)
-        if cache is not None:
+        # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
+        if cache is not None and text.strip():
             cache.write_text(text, encoding="utf-8")
         return text
 
@@ -328,6 +329,6 @@ def caption(image_path: str, image_type: str = "image") -> str:
         temperature=0.3,
     )
     text = _ensure_type_word(resp.choices[0].message.content.strip(), image_type)
-    if cache is not None:
+    if cache is not None and text.strip():
         cache.write_text(text, encoding="utf-8")
     return text
