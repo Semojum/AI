@@ -64,10 +64,19 @@ def _grits(extracted: ExtractedContent, output: BrailleOutput, render_mode: str)
     checks: list[bool] = []
 
     if render_mode == "linear":
-        # linear(도서 관행): 각 행이 3칸(앞 2칸 빈칸)에서 시작하는 한 줄로 출력됨
+        # linear: 각 행이 3칸(앞 2칸 빈칸)에서 시작하는 한 줄 + 위/아래 테두리.
+        # ★ 2026-08-10 — 테두리 두 줄을 불변량에 넣었다(원장 C-22). 종전에는 선형만
+        #   테두리 없이 나갔는데, 자료지침 §3.1.3(2)는 표에 테두리를 요구하며 열 수로
+        #   예외를 두지 않고(도서지침 예3-2가 2열 표 실물), 코퍼스도 우리가 선형으로 낸
+        #   표의 dev 92%·val 100%를 테두리 안에 둔다.
         indented = [ln for ln in output.braille_lines if ln.startswith("  ")]
-        checks.append(len(indented) == max_row)              # 행 수 정확히 일치
-        checks.append(len(output.braille_lines) == max_row)  # 총 줄 수 일치
+        top = [ln for ln in output.braille_lines
+               if len(ln) >= 8 and ln[0] == "⠿" and ln[-1] == "⠿" and set(ln[1:-1]) == {"⠛"}]
+        bot = [ln for ln in output.braille_lines
+               if len(ln) >= 8 and ln[0] == "⠿" and ln[-1] == "⠿" and set(ln[1:-1]) == {"⠶"}]
+        checks.append(len(indented) == max_row)                  # 행 수 정확히 일치
+        checks.append(len(top) == 1 and len(bot) == 1)           # 위·아래 테두리 각 한 줄
+        checks.append(len(output.braille_lines) == max_row + 2)  # 총 줄 수 = 행 + 테두리 2
     elif render_mode == "unfold":
         # 풀어쓰기(BBPG-3.1.2)는 지침 §3.1.1(1)에 따라 **두 조판**이 다 정답이다
         # (2026-07-20 정정 — 정답 도서 실측으로 확인):
