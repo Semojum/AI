@@ -82,6 +82,92 @@ def _c5_gate_text(text: str) -> str:
     return _C5_CIRCLED_RE.sub("", _TAG_TOKEN_RE.sub("", text or ""))
 
 
+# ── R13: 본문 텍스트 위험 구간 (2026-08-10) ─────────────────────────────────
+# 플래그 재현율이 6.9%인 이유는 편집의 85.8%가 본문 텍스트인데 본문에 플래그가 사실상
+# 없었기 때문이다(본문 요소의 11.8%만 플래그, 재현 8.8%). gold 없이 본문 오류를 짚는
+# 신호를 찾아 dev+val 839쪽·32,310 본문요소를 gold 대비 셀 편집으로 라벨해 재봤다.
+#
+# 재보고 **기각한** 후보(temp/reports/Recall_signals.html §5):
+#   · 역점역 왕복 일치도 — 순수 산문에서 길이 계층 안 AUC 0.50~0.55로 사실상 무정보.
+#     (전체 AUC가 0.64로 보이는 건 길이 대리효과다. 다만 rt=1.0은 '안전' 쪽으로는
+#      쓸 만해서 confidence.py의 review_grade가 이미 그 용도로 쓰고 있다.)
+#   · 형태소 OOV·1음절 비율(언어모델 이상치) — AUC 0.479~0.505. 완전 무정보.
+#   · 쪽 규모 대비 커버리지 — 쪽 단위로는 되지만(아래) 요소 단위 신호가 아니다.
+#
+# 남은 것은 **어디가 위험한지**를 내용 종류로 가르는 것뿐이었다. 실측(839쪽, 본문 32,310요소):
+#   태그(테두리 등) 포함   3,182요소  수정필요 88.3%  크게틀림 58.9%  본문 편집셀의 25.5%
+#   로마자 2자 이상        5,390요소  수정필요 88.6%  크게틀림 55.8%  본문 편집셀의 36.3%
+#   숫자 2자 이상          7,928요소  수정필요 81.2%  크게틀림 48.1%  본문 편집셀의 41.6%
+#   └ 합집합             12,303요소  수정필요 82.1%  크게틀림 48.9%  본문 편집셀의 67.6%
+#   남는 순수 산문        20,007요소  수정필요 41.4%  크게틀림 19.6%  본문 편집셀의 32.4%
+# 기준선은 수정필요 58.3% · 크게틀림 33.2%다. 리프트는 dev 1.52x · val 1.57x로 책이
+# 달라도 안정적이다(정밀도 자체는 책의 기준율을 따라 움직인다).
+#
+# 임계 2자는 **한계정밀도로 골랐다**. 현행∪R13 기준으로 임계를 낮출 때 새로 붙는 플래그의
+# '수정필요' 정밀도: 5→3자 80%대 유지 · 3→2자 80.2% · 2→1자 **64.6%**(기준선 58.3%에
+# 근접 = 소음). 그래서 2에서 멈춘다. 전체 수치는 임계 3자→2자로 재현율(크게) 46.8→57.4%,
+# 편집셀 재현 64.7→71.8%, 정밀도(수정필요)는 81.2→81.0%로 사실상 불변이다.
+#
+# ★ 이건 '탐지기'가 아니라 R10(표)과 같은 **등급**이다. 조건에 걸린 요소 안에서 어느
+#   것이 더 위험한지는 못 가른다. 쓸 수 있는 말은 "여기는 본문 평균보다 훨씬 자주
+#   고쳐야 한다"까지고, **순수 산문 32.4%의 편집셀은 여전히 무신호**다.
+# ── R14: 글꼴이 거짓말한 추출 (2026-08-10) ──────────────────────────────────
+# 코퍼스 PDF의 **60.2%**(수학2는 147/147 전량)가 `/Encoding`·`/ToUnicode`와 실제로 그려지는
+# 글리프가 다르다. 탐지는 `pdf_analyzer.mangled_glyph_chars`가 이미 하는데 **라우팅과 경고
+# 로그까지만 가고 요소 플래그로는 안 올라왔다.** 그래서 깨진 글자가 **그대로 점역돼 나간다**:
+#
+#   묵자  "삼각형 "#$에서 …"                    ← ABC여야 한다
+#   묵자  "TJOÛ(A+B)+DPTÛA=TJOÛB+1이 성립할 때"  ← sin²(A+B)+cos²A=sin²B+1
+#   점자  ⠦⠸⠹⠴⠈⠎⠝⠠⠎ …                        ← 점역사가 이걸 읽는다
+#
+# 기존 R1('글자 소실')은 제어문자만 보므로 이 유형을 못 잡는다. 점역사가 원본을 봐야만
+# 고칠 수 있는 자리라 반드시 띄운다 — **등급이 아니라 결함**이므로 status에도 반영한다.
+#
+# ⚠ **못 잡는 것이 있다 — 알고 두는 것이다.** 위 예의 `"#$`(= ABC를 +31 민 것)는 안 걸린다.
+#   `"`·`#`·`$`가 정상 텍스트에도 나오는 ASCII라 "교과서에 없는 코드포인트" 규칙 밖이다.
+#   텍스트만으로 잡아 보려고 둘을 재보고 **둘 다 기각**했다(본문 284,711요소 실측):
+#     · 한글에 바로 붙은 ASCII 기호 2자 이상 → 오탐 **8.2%**. `(가), (나)`·`(스\n웨덴,`이 걸린다.
+#     · +31 하면 전부 라틴 글자가 되는 런 → 오탐 **23.3%**. `(1)`→`GPH`·`01`→`OP`처럼
+#       숫자·괄호가 전부 글자로 밀린다.
+#   같은 이유로 `〈`(홑화살괄호)도 못 잡는다 — 진짜 부등호와 코드가 같다.
+#   **다음 사람이 같은 둘을 또 시도하지 않게 여기 적어 둔다.** 잡으려면 텍스트 밖으로 나가야
+#   한다(렌더 이미지 OCR과 텍스트 레이어를 대조하는 식) — 비싸지만 결정적이다.
+def _r14_reason(text: str) -> str:
+    """글꼴 매핑이 깨져 추출된 흔적이 있으면 사유, 없으면 빈 문자열."""
+    if not text:
+        return ""
+    try:
+        from app.ai.preprocessor.pdf_analyzer import mangled_glyph_chars
+    except Exception:                       # noqa: BLE001 — 전처리 모듈 없이도 검사는 돈다
+        return ""
+    layer_bad, _symbol_bad = mangled_glyph_chars(text)
+    if not layer_bad:
+        return ""
+    top = "".join(ch for ch, _ in layer_bad.most_common(4))
+    return f"원본 글꼴이 깨져 추출됨({top}) — 원본을 보고 확인해야 합니다"
+
+
+_R13_LATIN_RE = re.compile(r"[A-Za-z]")
+_R13_MIN_CHARS = 2
+
+
+def _r13_reason(text: str) -> Optional[str]:
+    """본문 텍스트 요소의 '위험 구간' 사유(없으면 None). gold 없이 원문만 본다."""
+    why: list[str] = []
+    if _TAG_TOKEN_RE.search(text or ""):
+        why.append("테두리·점역자주 등 레이아웃 태그")
+    if len(_R13_LATIN_RE.findall(text or "")) >= _R13_MIN_CHARS:
+        why.append("로마자")
+    # 숫자는 C5와 **같은 게이트**로 센다 — 태그 이름의 숫자(`<!테두리_아래2>`)를 세면
+    # C5가 밟았던 오탐을 그대로 반복한다.
+    if len(_C5_DIGIT_RE.findall(_c5_gate_text(text))) >= _R13_MIN_CHARS:
+        why.append("아라비아 숫자")
+    if not why:
+        return None
+    return (f"{' · '.join(why)}가 있는 본문 — 실측상 이런 본문은 82.1%가 수정이 "
+            f"필요했습니다(본문 평균 56.9%). 우선 확인 권장")
+
+
 # 시각자료 유형(레이아웃 type 기준) — 본문 글자를 옮기는 게 아니라 **AI가 설명을 쓴다**.
 _VISUAL_TYPES = frozenset({"image", "cartoon", "chart_graph", "diagram"})
 
@@ -221,6 +307,16 @@ class QualityChecker:
                     type="R10", element_id=eid,
                     message="표 — 전개 방식이 점역사 재량이라 초안과 다를 수 있습니다",
                 ))
+            # 본문 텍스트 위험 구간 — 근거·한계는 위 _r13_reason 주석.
+            if eid not in blocked_ids and types.get(eid) == "text":
+                r13 = _r13_reason(e.corrected_text or "")
+                if r13:
+                    reviews.append(ReviewFlag(type="R13", element_id=eid, message=r13))
+            # 글꼴이 거짓말한 추출 — 등급이 아니라 결함이다(위 _r14_reason 주석).
+            if eid not in blocked_ids:
+                r14 = _r14_reason(e.corrected_text or "")
+                if r14:
+                    reviews.append(ReviewFlag(type="R14", element_id=eid, message=r14))
             if eid not in blocked_ids and e.ocr_confidence < R1_CONFIDENCE_THRESHOLD:
                 reviews.append(ReviewFlag(
                     type="R1", element_id=eid,
@@ -304,6 +400,10 @@ class QualityChecker:
     def _decide_status(criticals: list[CriticalError], reviews: list[ReviewFlag]) -> str:
         if any(c.type in ("C1", "C7") for c in criticals):
             return "BLOCKED"
-        if criticals or reviews:
+        # R13은 **결함 탐지가 아니라 등급**이다 — 본문의 26%에 붙으므로 status에 넣으면
+        # 거의 모든 쪽이 NEEDS_REVIEW가 된다(실측 839쪽: COMPLETED 255→9). 쪽 판정이
+        # 무정보해지면 지금 그나마 있는 신호(status가 CER을 가르는 AUC 0.651)까지 잃는다.
+        # 요소 화면에는 그대로 뜨고, 쪽 판정만 종전과 동일하게 둔다.
+        if criticals or any(r.type != "R13" for r in reviews):
             return "NEEDS_REVIEW"
         return "COMPLETED"
