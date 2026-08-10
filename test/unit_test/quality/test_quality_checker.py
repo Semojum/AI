@@ -480,3 +480,61 @@ class TestFallbackFlagIsPageLevel:
         assert len(fb) == 1 and fb[0].element_id == "page" and fb[0].type == "R1"
         assert "3요소" in fb[0].message and "구조가 소실" in fb[0].message
         assert rep.status == "NEEDS_REVIEW"
+
+
+class TestR13TextRiskySegment:
+    """본문 위험 구간 R13 — 2026-08-10 배선.
+
+    근거(dev+val 839쪽·32,310 본문요소, gold 대비 셀 편집): 태그·로마자·숫자가 든 본문은
+    수정필요율 83.5%·크게틀림 52.7%로 본문 평균(56.9%·30.8%)의 1.5~1.7배이고, 본문
+    편집셀의 58.5%가 여기 몰려 있다. 종전엔 본문에 플래그가 사실상 없어(11.8%) 전체
+    재현율이 6.9%였다. 상세·기각한 신호는 quality_checker._r13_reason 주석 참조.
+    """
+
+    def _flags(self, text, typ="text"):
+        item = BBoxItem(element_id=uuid4(), type=typ, bbox=(0, 0, 10, 10), reading_order=1)
+        layout = LayoutResult(page_id="p_001", elements=[item])
+        eid = item.element_id
+        ext = ExtractedContent(element_id=eid, corrected_text=text, ocr_confidence=1.0,
+                               visual_subtype=None, subtype_confidence=None, flags=[])
+        rep = QualityChecker().check("p_001", layout_result=layout, extracted=[ext],
+                                     llm_outputs=[_llm(eid, text)])
+        return rep, [r for r in rep.review_flags if r.type == "R13"]
+
+    def test_순수_한글_산문은_발화하지_않는다(self):
+        _, f = self._flags("광합성은 엽록체에서 일어나는 물질대사 과정이다.")
+        assert f == []
+
+    def test_로마자가_있으면_발화한다(self):
+        _, f = self._flags("ATP는 세포의 에너지 화폐이다.")
+        assert len(f) == 1 and "로마자" in f[0].message
+
+    def test_숫자가_있으면_발화한다(self):
+        _, f = self._flags("조사 대상은 2024년 기준 350명이다.")
+        assert len(f) == 1 and "아라비아 숫자" in f[0].message
+
+    def test_레이아웃_태그가_있으면_발화한다(self):
+        _, f = self._flags("<!테두리_위><!/테두리_위>\n다음 자료를 보고 물음에 답하시오.")
+        assert len(f) == 1 and "태그" in f[0].message
+
+    def test_태그_이름의_숫자만으로는_숫자_사유가_안_붙는다(self):
+        # C5가 밟았던 오탐(태그 이름의 '2')을 R13이 되풀이하면 안 된다.
+        _, f = self._flags("<!테두리_아래2><!/테두리_아래2>\n다음을 보시오.")
+        assert len(f) == 1 and "아라비아 숫자" not in f[0].message
+
+    def test_로마자_한_자는_발화하지_않는다(self):
+        # 임계 2자는 한계정밀도로 골랐다 — 1자까지 내리면 새 플래그의 정밀도가
+        # 64.6%로 기준선(58.3%)에 근접해 소음이 된다(_r13_reason 주석).
+        _, f = self._flags("가설 A를 검증하여 서술하시오.")
+        assert f == []
+
+    def test_표_시각자료에는_안_붙는다(self):
+        # R13은 본문 전용 — 표는 R10, 시각자료는 R11 소관이다.
+        _, f = self._flags("2024년 인구 350만 명", typ="table")
+        assert f == []
+
+    def test_R13만_있으면_쪽은_COMPLETED로_남는다(self):
+        # R13은 결함이 아니라 등급이다. 쪽 판정에 넣으면 실측 839쪽에서 COMPLETED가
+        # 255→9로 무너져 status가 무정보해진다.
+        rep, f = self._flags("ATP는 2024년에 350회 측정되었다.")
+        assert len(f) == 1 and rep.status == "COMPLETED"
