@@ -530,7 +530,14 @@ def _src_bracket_repl(m: re.Match) -> str:
     return _OPEN_PAREN_CELL + inner + _CLOSE_PAREN_CELL
 
 
-_HANJA_ONLY_RE = re.compile(r"^[\u4e00-\u9fff\s·]+$")
+# 한자 병기 괄호 — **한자가 최소 하나는 있어야 한다.** 종전 `^[한자·공백]+$`는
+# 공백·가운뎃점만 든 괄호까지 삼켜서 기입용 빈 괄호 `(   )`가 통째로 사라졌다
+# (dev·val 1,131p + 2027 실측 189건 전량 소실). 정답은 지우지 않는다 — 같은 189건에서
+# gold는 `⠦⠄⠀⠠⠴`(소괄호 + 한 칸)를 181건 적었고, 밑줄 빈칸 ⠸⠤·숨김표는 0건이다.
+# 규정도 같다(제49항 소괄호), 지침도 같다(예 2-13·2-15 `( )이/가 이루어졌다`).
+_HANJA_ONLY_RE = re.compile(r"^[\u4e00-\u9fff\s·]*[\u4e00-\u9fff][\u4e00-\u9fff\s·]*$")
+# 기입용 빈 괄호: 안이 공백뿐이면 폭과 무관하게 한 칸으로 적는다(gold 181/181이 한 칸).
+_BLANK_PAREN_RE = re.compile(r"^\s+$")
 
 
 def _paren_repl(m: re.Match) -> str:
@@ -554,6 +561,8 @@ def _paren_repl(m: re.Match) -> str:
         구판 외국어 516건). 신규 코퍼스에 외국어 권이 없어 재확인 못 했으므로 유지한다.
     """
     inner = m.group(1)
+    if _BLANK_PAREN_RE.match(inner):
+        return "( )"               # 기입용 빈 괄호 — 폭과 무관하게 한 칸(gold 181/181)
     if _HANJA_ONLY_RE.match(inner):
         return ""                  # 한자 병기 괄호는 통째 생략
     if len(inner) == 1 and inner.isascii() and inner.isalpha() and inner.isupper():

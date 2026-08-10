@@ -106,3 +106,28 @@ def test_점자_파일에_한글_리터럴이_남지_않는다() -> None:
     joined = "".join(out[0].braille_lines)
     stray = [c for c in joined if not c.isspace() and not (0x2800 <= ord(c) <= 0x28FF)]
     assert not stray, f"점자가 아닌 문자가 남았다: {stray}"
+
+
+# ── 3. 기입용 빈 괄호 (2026-08-10) ───────────────────────────────────────────
+# 한자 병기 괄호를 지우는 규칙이 `^[한자\s·]+$`라 **공백만 든 괄호까지 삼켰다**.
+# 문제집의 기입 빈칸 "(   )이/가 이루어졌다"가 통째로 사라진다(dev·val+2027 189건 전량).
+# 정답은 지우지 않는다 — 같은 189건에서 gold는 `⠦⠄⠀⠠⠴`(소괄호 + **한 칸**)를 181건
+# 적었고 밑줄 빈칸 ⠸⠤·숨김표 ⠸⠭⠇는 0건이다. 규정 제49항(소괄호)·「점자 자료 제작 지침」
+# 예 2-13·2-15와도 같다.
+_BLANK_PAREN = "⠦⠄⠀⠠⠴"
+
+
+class Test기입용_빈_괄호:
+    @pytest.mark.parametrize("gap", [" ", "   ", "      "])
+    def test_빈_괄호는_소괄호_한_칸으로_남는다(self, gap: str) -> None:
+        out = translate_tagged_text(f"근대에는 ({gap})이/가 이루어졌다.")
+        assert _BLANK_PAREN in out, out
+
+    def test_폭이_달라도_안은_한_칸이다(self) -> None:
+        """gold 181건이 전부 한 칸 — 묵자 전각 공백 개수를 따라가지 않는다."""
+        wide = translate_tagged_text("영국의 (            )에")
+        assert "⠦⠄⠀⠀⠠⠴" not in wide
+        assert _BLANK_PAREN in wide
+
+    def test_한자_병기_괄호는_여전히_지운다(self) -> None:
+        assert translate_tagged_text("과목(果木)은") == translate_tagged_text("과목은")
