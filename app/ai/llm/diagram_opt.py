@@ -55,6 +55,7 @@ from app.ai.llm.visual_drafts import (
     OUTLINE_IDX,
     LABELS,
     build_visual_drafts,
+    extra_drafts,
     omission_draft,
     prose_draft,
     title_draft,
@@ -437,6 +438,7 @@ class DiagramOpt(BaseOpt):
                 title_draft(label, title),
                 Draft(option=3, text=skeleton_text, render_mode="narrative", label=LABELS[OUTLINE_IDX]),
                 prose_draft(label, _skeleton_prose(skeleton_text)),
+                *extra_drafts(label),
             ]
             return LLMOutput(
                 element_id=ext.element_id,

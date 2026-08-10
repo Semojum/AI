@@ -1,4 +1,4 @@
-"""차트 대체텍스트 4안 회귀 — 생략/짧은 제목/개조식(표 변환)/줄글 (QA 2026-07-05).
+"""차트 대체텍스트 6안 회귀 — 생략/짧은 제목/개조식(표 변환)/줄글/유형만/별책 참조.
 
 개조식 = §6.4·Q5 표 변환(data_points 전사). 줄글 = 수학적 서술. 수치 보존(누락 시 R5).
 """
@@ -54,7 +54,7 @@ class TestFourDrafts:
         eid = uuid4()
         ext = ExtractedContent(element_id=eid, ocr_confidence=1.0, structure=_STRUCT)
         bo = ChartGraphBraille().translate(asyncio.run(ChartGraphOpt().optimize([ext], "ZERO")))
-        assert len(bo[0].drafts) == 4
+        assert len(bo[0].drafts) == len(LABELS)
         lr = LayoutResult(page_id="p", elements=[
             BBoxItem(element_id=eid, type="chart_graph", bbox=(0, 0, 0, 0), reading_order=1)])
         LayoutBraille().layout(bo, page_no=1, job_id="cg", layout_result=lr)

@@ -1,8 +1,11 @@
-"""시각자료 대체텍스트 **4안 보장** 불변식 (D-02).
+"""시각자료 대체텍스트 **안 개수 보장** 불변식 (D-02).
 
-계약: 시각 요소(image·cartoon·chart_graph·diagram·table)는 **언제나 4안**을 낸다.
-LLM이 죽든, 형식을 어기든, 캡션이 비든 개수는 4로 고정이다 — 점역사가 고르는 피커가
+계약: 시각 요소(image·cartoon·chart_graph·diagram)는 **언제나 6안**, 표는 **4안**을 낸다.
+LLM이 죽든, 형식을 어기든, 캡션이 비든 개수는 고정이다 — 점역사가 고르는 피커가
 비거나 줄어들면 안 되기 때문이다.
+
+★ 시각 4→6 (2026-08-10, 원장 C-28): 정답 실측에서 '유형만'(13.6%)·'별책 참조'(9.3%)가
+  나와 두 안을 붙였다. 표 4안(풀어쓰기·격자·전치·선형)은 성격이 달라 그대로다.
 
 배경(2026-07-28): BE가 "대체 텍스트가 1개만 온다"고 보고했다. 조사 결과 **AI 출력은 정상**
 (코퍼스 실측 image 4·table 4)이고, 원인은 **BE 스텁이 5월 협의본 proto로 생성돼
@@ -23,7 +26,8 @@ import pytest
 
 from app.ai.llm import visual_drafts as vd
 
-_EXPECTED = 4
+_EXPECTED = 6          # 시각 6안
+_EXPECTED_TABLE = 4    # 표 렌더 4안(성격이 다르다)
 
 
 def _ext(conf: float = 1.0):
@@ -39,7 +43,7 @@ def _build(**kw) -> list:
 
 
 class TestAlwaysFourWithoutLLM:
-    """ZERO 티어(모델 미사용) — 입력이 어떻든 4안."""
+    """ZERO 티어(모델 미사용) — 입력이 어떻든 6안."""
 
     def test_캡션도_제목도_없을_때(self) -> None:
         assert len(_build()) == _EXPECTED
@@ -67,7 +71,7 @@ class TestAlwaysFourWithoutLLM:
 
 
 class TestAlwaysFourWhenLLMMisbehaves:
-    """LLM이 죽거나 형식을 어겨도 4안 — 과거 1안 사고의 회귀 가드."""
+    """LLM이 죽거나 형식을 어겨도 6안 — 과거 1안 사고의 회귀 가드."""
 
     def _with_llm(self, monkeypatch: pytest.MonkeyPatch, reply):
         """LLM 응답을 주입한다. 실제 심볼은 `generate_with_retry`(모듈 네임스페이스에 import돼 있다)."""
@@ -96,14 +100,14 @@ class TestAlwaysFourWhenLLMMisbehaves:
         assert len(self._with_llm(monkeypatch, None)) == _EXPECTED
 
 
-def test_초안_라벨이_네_개_모두_구별된다() -> None:
+def test_초안_라벨이_모두_구별된다() -> None:
     """피커에 같은 이름이 두 번 뜨면 점역사가 고를 수 없다."""
     labels = [d.label for d in _build(caption="설명")]
     assert len(labels) == _EXPECTED
     assert len(set(labels)) == _EXPECTED, labels
 
 
-def test_표는_렌더_4안() -> None:
+def test_표는_렌더_4안_그대로() -> None:
     """표는 visual_drafts가 아니라 table_braille이 4안(풀어쓰기·격자·전치·선형)을 만든다."""
     from app.ai.braille.table_braille import TableBraille
     from app.schemas.content import LLMOutput
@@ -115,8 +119,8 @@ def test_표는_렌더_4안() -> None:
     )
     out = TableBraille().translate([opt])
     assert len(out) == 1
-    assert len(out[0].drafts) == _EXPECTED
-    assert len({d.label for d in out[0].drafts}) == _EXPECTED
+    assert len(out[0].drafts) == _EXPECTED_TABLE
+    assert len({d.label for d in out[0].drafts}) == _EXPECTED_TABLE
 
 
 def test_짧은제목은_캡션_첫줄까지만() -> None:

@@ -1,14 +1,19 @@
-"""시각자료 대체텍스트 4안 생성 (이미지·만화·차트·도표 공통).
+"""시각자료 대체텍스트 6안 생성 (이미지·만화·차트·도표 공통).
 
-점역사가 고를 4가지 대체텍스트(QA 2026-07-05 요건). 각 안은 그 자체로 완결된 대체텍스트다:
+점역사가 고를 6가지 대체텍스트. 각 안은 그 자체로 완결된 대체텍스트다:
   0) 생략     : 점자 규정(§6.3.4(2)②)에 맞춘 생략 표기 — 결정적, LLM 미사용.
   1) 짧은 제목: 인쇄 캡션이 있으면 그대로, 없으면 LLM이 짧은 제목 생성.
   2) 개조식   : 위계 있는 개조식 + 짧은 설명 — 구조가 있으면 rule-based 전사, 없으면 LLM.
   3) 줄글     : 자세한 줄글 설명 — 구조가 있으면 rule-based, 없으면 LLM.
+  4) 유형만   : `,'그림,'` — 설명 없이 유형만. 무-LLM.
+  5) 별책 참조: `,'그림 20-4 참조,'` — 시각 자료를 별책으로 뺐을 때. 무-LLM.
 
-성능·안정성: 0·1안은 무-LLM(또는 캡션 전사)이라 **항상** 나온다. 2·3안 중 LLM이 필요한
+4·5안은 2026-08-10에 붙였다(원장 C-28). 정답 실측에서 이 두 형식이 23%였고, 어느 형식을
+쓸지는 그림이 아니라 **책·권 단위 편집 방침**이라 우리가 못 고른다 — 안으로 내주고 고르게 한다.
+
+성능·안정성: 0·1·4·5안은 무-LLM(또는 캡션 전사)이라 **항상** 나온다. 2·3안 중 LLM이 필요한
 부분만 **1회 호출**로 함께 생성한다(방식별 N회 호출 → 1회로 축소, 페이지 타임아웃 완화).
-LLM 파싱이 실패해도 캡션 폴백으로 4안이 보장된다(구 3안 포맷 미준수 문제 해소).
+LLM 파싱이 실패해도 캡션 폴백으로 6안이 보장된다(구 3안 포맷 미준수 문제 해소).
 
 기본 선택(selected_idx): 장식용이면 0(생략), 그 외엔 2(개조식)를 기본 초안으로 둔다.
 """
@@ -34,9 +39,16 @@ logger = get_logger(__name__)
 #   → 기본 tn 유지. 스위치는 후속 실험 대비용으로만 남김.
 _WRAP_STYLE = os.environ.get("VISUAL_WRAP_STYLE", "tn")
 
-# 4안 라벨(FE 피커 표시) — 순서 = option 1..4
-LABELS = ("생략", "짧은 제목", "개조식 설명", "줄글 설명")
-OMIT_IDX, TITLE_IDX, OUTLINE_IDX, PROSE_IDX = 0, 1, 2, 3
+# 6안 라벨(FE 피커 표시) — 순서 = option 1..6
+#
+# ★ 4→6 (2026-08-10, 원장 C-28). 정답 도서 2,917쪽의 점역자주 1,297건을 세니 시각 자료
+#   처리가 다섯 갈래였다: 설명 45.1% · 유형만 13.6% · 생략 고지 11.5% · 별책 참조 9.3% ·
+#   점자 그래픽. 그런데 이건 **그림의 성질이 아니라 책·권 단위 편집 방침**이다
+#   (009 본책 별책참조 100% / 004 본책 생략고지 74% / 001 본책 설명 82%).
+#   그림만 보고는 못 고르니 우리가 정하지 않는다 — 안으로 내주고 점역사가 고른다.
+#   기존 0~3의 순번은 그대로 둔다(BE·FE 계약 유지). 새 안은 뒤에 붙인다.
+LABELS = ("생략", "짧은 제목", "개조식 설명", "줄글 설명", "유형만", "별책 참조")
+OMIT_IDX, TITLE_IDX, OUTLINE_IDX, PROSE_IDX, TYPEONLY_IDX, VOLREF_IDX = 0, 1, 2, 3, 4, 5
 
 # 개조식 들여쓰기(칸): 제목 5칸(§6.3.3(1)), 유형/설명 점역자주 0칸, 전사 항목 level0=3칸(+2/단계).
 # ⚠ 원장 C-15 — 정답 도서에는 3칸 줄이 **0.0%**다(dev+val 2027 각 200쪽 줄머리 실측:
@@ -237,6 +249,36 @@ def prose_draft(label: str, prose: str) -> Draft:
                  render_mode="narrative", label=LABELS[PROSE_IDX])
 
 
+def typeonly_draft(label: str) -> Draft:
+    """4안: 유형만(`,'그림,'`) — 설명 없이 거기 무엇이 있었는지만 알린다.
+
+    「점자 도서 제작 지침」 [예 3-30] '내용을 설명하기 어려운 시각 자료'가 이 형식이다.
+    정답 실측 176건(13.6%)이고 014·015 본책은 이게 최빈(51~54%)이다.
+    """
+    return Draft(option=5, text=_tn(label), render_mode="narrative",
+                 label=LABELS[TYPEONLY_IDX], type_label=label)
+
+
+def extra_drafts(label: str, ref: str = "") -> list[Draft]:
+    """4·5안(유형만·별책 참조). 공통 빌더와 도표 골격 경로가 같이 쓴다."""
+    return [typeonly_draft(label), volume_ref_draft(label, ref)]
+
+
+def volume_ref_draft(label: str, ref: str = "") -> Draft:
+    """5안: 별책 참조(`,'그림 20-4 참조,'`) — 시각 자료를 별책으로 분권했을 때.
+
+    「점자 자료 제작 지침」 (3)(3): 시각 자료만 별책으로 분권하면 본문의 해당 위치마다
+    별책 위치를 점역자 주로 알려 참조하게 한다. 정답 실측 120건(9.3%)이고
+    009 본책은 **85건 전부**가 이 형식이다(`그림 4-1 참조`·`그림 20-4 참조`).
+
+    ref는 '묵자쪽-그 쪽에서의 순번'이라 요소 하나만 봐서는 못 만든다. 여기서는 빈 채로
+    두고 `pipeline._number_volume_refs`가 페이지 단위로 채운다.
+    """
+    body = f"{label} {ref} 참조" if ref else f"{label} 참조"
+    return Draft(option=6, text=_tn(body), render_mode="narrative",
+                 label=LABELS[VOLREF_IDX], type_label=label)
+
+
 def _parse_sections(response: str) -> dict[str, object]:
     """LLM 응답 → {제목:str, 개조식:list[(level,text)], 줄글:str}."""
     title = ""
@@ -365,7 +407,7 @@ async def build_visual_drafts(
     d_title = title_draft(label, short_title)
     d_outline, indents = outline_draft(label, title, outline_desc, outline_items)
     d_prose = prose_draft(label, prose)
-    drafts = [d_omit, d_title, d_outline, d_prose]
+    drafts = [d_omit, d_title, d_outline, d_prose, *extra_drafts(label)]
 
     selected_idx = OMIT_IDX if decorative else OUTLINE_IDX
     line_indents = indents if selected_idx == OUTLINE_IDX else None

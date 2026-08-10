@@ -1304,6 +1304,26 @@ async def _run_pipeline(task: PageTask) -> dict:
     )
 
 
+def _number_volume_refs(llm_outputs: list[LLMOutput], page_no: int) -> None:
+    """'별책 참조' 안의 번호를 페이지 단위로 채운다 — `그림 20-4 참조` (원장 C-28).
+
+    번호는 정답 관행 그대로 **묵자쪽-그 쪽에서의 순번**이다(009 본책 85건 실측:
+    p0004 → `그림 4-1`·`그림 4-2`, p0020 → `그림 20-1`~`20-4`). 순번은 시각 요소끼리만
+    세므로 요소 하나만 봐서는 못 만든다 — 읽기 순서로 정렬된 뒤인 여기서 채운다.
+    llm_outputs를 **제자리에서** 고친다(호출부가 같은 객체를 계속 쓴다).
+    """
+    from app.ai.llm.visual_drafts import LABELS, VOLREF_IDX, volume_ref_draft
+
+    ordinal = 0
+    for o in llm_outputs:
+        for i, d in enumerate(o.drafts or []):
+            if d.label != LABELS[VOLREF_IDX]:
+                continue
+            ordinal += 1
+            o.drafts[i] = volume_ref_draft(d.type_label, f"{page_no}-{ordinal}")
+            break
+
+
 # ── 응답 조립 ────────────────────────────────────────────────────────────
 
 def _selected_lines(bo, flat: dict) -> list[str]:
@@ -1402,6 +1422,7 @@ def _build_response(
     # 그대로 내보내면 본문 위 그림 등에서 순서가 뒤바뀐다 — FE가 order로 렌더 가능하도록.)
     _order_of = {e.element_id: e.reading_order for e in layout_result.elements}
     llm_outputs = sorted(llm_outputs, key=lambda o: _order_of.get(o.element_id, 1_000_000))
+    _number_volume_refs(llm_outputs, task.page_no)
 
     # PART 11: 품질 판정 — C/R 감지 후 status 결정 (COMPLETED|NEEDS_REVIEW|BLOCKED)
     from app.ai.quality.quality_checker import QualityChecker
