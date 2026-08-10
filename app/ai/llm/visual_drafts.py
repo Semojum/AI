@@ -1,14 +1,19 @@
-"""시각자료 대체텍스트 4안 생성 (이미지·만화·차트·도표 공통).
+"""시각자료 대체텍스트 6안 생성 (이미지·만화·차트·도표 공통).
 
-점역사가 고를 4가지 대체텍스트(QA 2026-07-05 요건). 각 안은 그 자체로 완결된 대체텍스트다:
+점역사가 고를 6가지 대체텍스트. 각 안은 그 자체로 완결된 대체텍스트다:
   0) 생략     : 점자 규정(§6.3.4(2)②)에 맞춘 생략 표기 — 결정적, LLM 미사용.
   1) 짧은 제목: 인쇄 캡션이 있으면 그대로, 없으면 LLM이 짧은 제목 생성.
   2) 개조식   : 위계 있는 개조식 + 짧은 설명 — 구조가 있으면 rule-based 전사, 없으면 LLM.
   3) 줄글     : 자세한 줄글 설명 — 구조가 있으면 rule-based, 없으면 LLM.
+  4) 유형만   : `,'그림,'` — 설명 없이 유형만. 무-LLM.
+  5) 별책 참조: `,'그림 20-4 참조,'` — 시각 자료를 별책으로 뺐을 때. 무-LLM.
 
-성능·안정성: 0·1안은 무-LLM(또는 캡션 전사)이라 **항상** 나온다. 2·3안 중 LLM이 필요한
+4·5안은 2026-08-10에 붙였다(원장 C-28). 정답 실측에서 이 두 형식이 23%였고, 어느 형식을
+쓸지는 그림이 아니라 **책·권 단위 편집 방침**이라 우리가 못 고른다 — 안으로 내주고 고르게 한다.
+
+성능·안정성: 0·1·4·5안은 무-LLM(또는 캡션 전사)이라 **항상** 나온다. 2·3안 중 LLM이 필요한
 부분만 **1회 호출**로 함께 생성한다(방식별 N회 호출 → 1회로 축소, 페이지 타임아웃 완화).
-LLM 파싱이 실패해도 캡션 폴백으로 4안이 보장된다(구 3안 포맷 미준수 문제 해소).
+LLM 파싱이 실패해도 캡션 폴백으로 6안이 보장된다(구 3안 포맷 미준수 문제 해소).
 
 기본 선택(selected_idx): 장식용이면 0(생략), 그 외엔 2(개조식)를 기본 초안으로 둔다.
 """
@@ -34,12 +39,26 @@ logger = get_logger(__name__)
 #   → 기본 tn 유지. 스위치는 후속 실험 대비용으로만 남김.
 _WRAP_STYLE = os.environ.get("VISUAL_WRAP_STYLE", "tn")
 
-# 4안 라벨(FE 피커 표시) — 순서 = option 1..4
-LABELS = ("생략", "짧은 제목", "개조식 설명", "줄글 설명")
-OMIT_IDX, TITLE_IDX, OUTLINE_IDX, PROSE_IDX = 0, 1, 2, 3
+# 6안 라벨(FE 피커 표시) — 순서 = option 1..6
+#
+# ★ 4→6 (2026-08-10, 원장 C-28). 정답 도서 2,917쪽의 점역자주 1,297건을 세니 시각 자료
+#   처리가 다섯 갈래였다: 설명 45.1% · 유형만 13.6% · 생략 고지 11.5% · 별책 참조 9.3% ·
+#   점자 그래픽. 그런데 이건 **그림의 성질이 아니라 책·권 단위 편집 방침**이다
+#   (009 본책 별책참조 100% / 004 본책 생략고지 74% / 001 본책 설명 82%).
+#   그림만 보고는 못 고르니 우리가 정하지 않는다 — 안으로 내주고 점역사가 고른다.
+#   기존 0~3의 순번은 그대로 둔다(BE·FE 계약 유지). 새 안은 뒤에 붙인다.
+LABELS = ("생략", "짧은 제목", "개조식 설명", "줄글 설명", "유형만", "별책 참조")
+OMIT_IDX, TITLE_IDX, OUTLINE_IDX, PROSE_IDX, TYPEONLY_IDX, VOLREF_IDX = 0, 1, 2, 3, 4, 5
 
 # 개조식 들여쓰기(칸): 제목 5칸(§6.3.3(1)), 유형/설명 점역자주 0칸, 전사 항목 level0=3칸(+2/단계).
-_TITLE_INDENT = 5
+# ⚠ 원장 C-15 — 정답 도서에는 3칸 줄이 **0.0%**다(dev+val 2027 각 200쪽 줄머리 실측:
+#   0칸 66.4% · 2칸 32.0% · 4칸 1.3% · 3칸 0.0%). 규정(§6.3.4(2)①·§6.6.1(3))은 3칸·5칸을
+#   말한다 — 규정 우선 원칙으로 3을 유지하되 점역사 자문 대상이다.
+# ★ 2026-08-10 정정 — 5는 **칸 번호**였다. 이 값은 `" " * indent`로 쓰이니 **앞 빈칸 수**다.
+#   §6.3.3(1) "제목 5칸에서 시작" = 앞 빈칸 4. 같은 조항을 쓰는 `diagram_opt._TITLE_INDENT`는
+#   이미 4인데 여기만 5로 남아 축끼리 어긋나 있었다(도표는 4칸, 시각 3안은 5칸으로 나갔다).
+#   정답 258건 첫 줄 앞 빈칸 분포: 4가 68건 · 5는 4건(17배 차).
+_TITLE_INDENT = 4
 _OUTLINE_BASE = 3
 _OUTLINE_STEP = 2
 
@@ -130,8 +149,15 @@ def _shorten(text: str, limit: int = 45) -> str:
     """긴 캡션(MinerU 캡셔너의 장문 설명)을 '짧은 제목'용으로 줄인다.
 
     짧은 인쇄 캡션은 그대로(요건 "캡션 있으면 그대로"), 장문 AI 설명만 첫 문장/limit자로 축약.
+
+    ★ 줄바꿈이 첫 번째 경계다(2026-08-09). 캡셔너 프롬프트는 "전체 윤곽을 한 줄로 먼저,
+      그 다음 부분을 나누어"(지침 §6.1.4(4))라고 지시하므로 **첫 줄이 곧 제목**이다.
+      그런데 종전 `" ".join(text.split())`이 줄 구조를 먼저 뭉개고 45자에서 잘라,
+      제목이 둘째 줄 데이터 한가운데서 끊겼다 — val 실측 50건 중 **29건(58%)**이
+      '…연령별 비율(%) 전체: 7.6% 1~2세: 6.8%…' 꼴이었다. 첫 줄을 먼저 취한다.
     """
-    t = " ".join((text or "").split())
+    head = (text or "").split("\n", 1)[0]
+    t = " ".join(head.split()) or " ".join((text or "").split())
     if len(t) <= limit:
         return t
     m = re.search(r"[.。!?]\s|[.。!?]$", t)          # 첫 문장 경계
@@ -171,7 +197,32 @@ def _outline_text_indents(
 
 
 def omission_draft(label: str) -> Draft:
-    """0안: 생략 표기(§6.3.4(2)②). 장식용·중요도 낮은 자료용."""
+    """0안: 생략 표기(§6.3.4(2)②). 장식용·중요도 낮은 자료용.
+
+    ★ 이 주석은 **점수를 내주고 사는 것**이다 — 빼지 마라(2026-08-09 대표 결정).
+      정답 도서는 그림을 대체로 **말없이** 뺀다(gold 400개 표본에서 '생략' 표기 3.5%).
+      우리는 그림마다 이 16셀을 달아서, 캡션이 없는 조건에서는 이게 시각자료 축 과잉의
+      거의 전부다(val 담당 gold 847셀에 우리 1,652셀 → 축 −95.0%).
+
+      그래도 유지한다. 주석을 빼면 **점역사도 학생도 거기 그림이 있었다는 사실 자체를
+      모른다.** 같은 이유로 Step0에서 빈 캡션 가드를 넣었다(요소를 통째로 버리지 않게).
+      점수는 대리지표이고 최종 KPI는 점역사 수정 시간이다 — 없는 걸 알아채는 비용이
+      16셀을 지우는 비용보다 크다.
+
+      ⚠ 시각자료 축이 음수인 것을 보고 "과잉이니 빼자"로 되돌리지 말 것. 이건 결함이 아니라
+        선택이다. 바꾸려면 점역사 자문을 먼저 받아라.
+
+      ★ 2026-08-10 정정(원장 C-27 철회 · C-28 신설) — 위 "말없이 뺀다"는 **측정이 틀렸다.**
+        정답 BRF는 BRF-ASCII라 점역자주표가 `,'`인데 유니코드 `⠠⠄`로 세서 0이 나왔다.
+        바르게 세면 정답도 점역자주를 단다(10쪽에서 gold 29건 : 우리 시각요소 26개).
+
+        진짜 사정은 **책·권마다 처리 방식이 다르다**는 것이다(gold 2,917쪽·1,297건 실측):
+        설명 45.1% / 유형만 13.6% / 생략 고지 11.5% / 별책 참조 9.3%, 그리고 점자 그래픽.
+        009 body는 별책참조 100%, 004 body는 생략고지 74%, 001 body는 설명 82%다.
+        개별 그림의 성질이 아니라 **편집 방침**이다 — 그래서 그림만 보고는 못 고른다.
+
+        위 "유지한다" 결정은 그대로 유효하다(없는 걸 알아채는 비용 > 16셀 지우는 비용).
+    """
     return Draft(option=1, text=_tn(f"{label} 생략"), render_mode="narrative", label=LABELS[OMIT_IDX])
 
 
@@ -196,6 +247,36 @@ def prose_draft(label: str, prose: str) -> Draft:
     body = _strip_dup_type(body, label)
     return Draft(option=4, text=_tn(f"{label}: {body}" if body else f"{label} 생략"),
                  render_mode="narrative", label=LABELS[PROSE_IDX])
+
+
+def typeonly_draft(label: str) -> Draft:
+    """4안: 유형만(`,'그림,'`) — 설명 없이 거기 무엇이 있었는지만 알린다.
+
+    「점자 도서 제작 지침」 [예 3-30] '내용을 설명하기 어려운 시각 자료'가 이 형식이다.
+    정답 실측 176건(13.6%)이고 014·015 본책은 이게 최빈(51~54%)이다.
+    """
+    return Draft(option=5, text=_tn(label), render_mode="narrative",
+                 label=LABELS[TYPEONLY_IDX], type_label=label)
+
+
+def extra_drafts(label: str, ref: str = "") -> list[Draft]:
+    """4·5안(유형만·별책 참조). 공통 빌더와 도표 골격 경로가 같이 쓴다."""
+    return [typeonly_draft(label), volume_ref_draft(label, ref)]
+
+
+def volume_ref_draft(label: str, ref: str = "") -> Draft:
+    """5안: 별책 참조(`,'그림 20-4 참조,'`) — 시각 자료를 별책으로 분권했을 때.
+
+    「점자 자료 제작 지침」 (3)(3): 시각 자료만 별책으로 분권하면 본문의 해당 위치마다
+    별책 위치를 점역자 주로 알려 참조하게 한다. 정답 실측 120건(9.3%)이고
+    009 본책은 **85건 전부**가 이 형식이다(`그림 4-1 참조`·`그림 20-4 참조`).
+
+    ref는 '묵자쪽-그 쪽에서의 순번'이라 요소 하나만 봐서는 못 만든다. 여기서는 빈 채로
+    두고 `pipeline._number_volume_refs`가 페이지 단위로 채운다.
+    """
+    body = f"{label} {ref} 참조" if ref else f"{label} 참조"
+    return Draft(option=6, text=_tn(body), render_mode="narrative",
+                 label=LABELS[VOLREF_IDX], type_label=label)
 
 
 def _parse_sections(response: str) -> dict[str, object]:
@@ -306,6 +387,11 @@ async def build_visual_drafts(
     short_title = _shorten(caption) or title or llm_title or ""
     # 개조식: 5칸 제목줄 = 구조적 표제(title), 점역자주 설명 = 캡션/생성 설명.
     outline_items = struct_outline if struct_outline is not None else llm_outline
+    # ※ 항목이 비면 캡션 여러 줄이 `_tn()`의 `_oneline`에 접혀 한 줄 점역자주가 된다
+    #   (실측 diagram 127건 중 109건). 캡션 줄을 그대로 개조식 항목으로 올리는 안(갈래 A)을
+    #   2026-08-08 dev-2027 200쪽에서 재 봤으나 **CER·시각자료 축이 한 셀도 안 움직였고**
+    #   들여쓰기 분포만 정답에서 멀어졌다(3칸 줄 0.0%→1.4%, 정답 3칸 0.0%). 그래서 안 넣는다.
+    #   도표는 갈래 B(캡션→structure→§6.6 골격, `diagram_structure`)가 대신 처리한다.
     # ★ 머리줄은 §6.3.4(1) '유형 + **짧은** 설명'이다(이 함수 docstring도 그렇게 적혀 있었다).
     #   그런데 캡션 **전문**을 넣고 그 아래 같은 내용을 개조식으로 또 깔았다 → 대표님 QA 13번
     #   "그 이후에 그림을 전체적으로 또 설명하고 있어서 내용이 중복됨"의 실제 코드 위치다
@@ -321,10 +407,44 @@ async def build_visual_drafts(
     d_title = title_draft(label, short_title)
     d_outline, indents = outline_draft(label, title, outline_desc, outline_items)
     d_prose = prose_draft(label, prose)
-    drafts = [d_omit, d_title, d_outline, d_prose]
+    drafts = [d_omit, d_title, d_outline, d_prose, *extra_drafts(label)]
 
     selected_idx = OMIT_IDX if decorative else OUTLINE_IDX
     line_indents = indents if selected_idx == OUTLINE_IDX else None
     logger.info("    4안 %s %s: %.1fs (tier=%s%s)", kind, str(ext.element_id)[:8],
                 time.monotonic() - _t0, tier, ", LLM" if use_llm else "")
-    return drafts, selected_idx, line_indents, tier
+    return drafts, selected_idx, line_indents, tier, caption_source(
+        selected_idx, used_llm=bool(llm_title or llm_outline or llm_prose),
+        has_print_caption=bool(caption), has_struct=struct_outline is not None,
+    )
+
+
+def visual_trail(rule_id: str, drafts: list[Draft], selected_idx: int, source: str):
+    """시각자료 근거 한 줄 — 규정 조항 + **어느 안을 왜 골랐는지**(Step17).
+
+    대체텍스트는 100% 우리 재량이다(대표 지시 (A) 전형). 종전에는 조항 하나만 달려서
+    점역사가 "이 문구가 어떻게 나온 건지" 알 방법이 rule_trail에 없었다.
+    tag = "개조식 설명·AI 생성" 처럼 [선택된 안]·[출처]로 적는다.
+    """
+    from app.ai.braille.regulations import make_rule
+
+    label = drafts[selected_idx].label if 0 <= selected_idx < len(drafts) else ""
+    return [make_rule(rule_id, tag=f"{label}·{source}".strip("·"))]
+
+
+def caption_source(
+    selected_idx: int, *, used_llm: bool, has_print_caption: bool, has_struct: bool
+) -> str:
+    """선택된 대체텍스트가 **어디서 왔는지** 한 마디로 (Step17, 2026-08-08 대표 지시).
+
+    점역사가 시각자료 초안을 볼 때 제일 먼저 판단해야 하는 것은 "이 문장을 믿어도 되는가"다.
+    인쇄 캡션을 옮긴 것이면 원본 대조로 끝나지만, AI가 만든 문구면 그림과 하나하나 맞춰
+    봐야 한다 — 확인 비용이 다르다. 지금까지 이 구분이 rule_trail 어디에도 없었다.
+    """
+    if selected_idx == OMIT_IDX:
+        return "생략(장식용 판정)"
+    if has_struct:
+        return "구조 전사(무-LLM)"
+    if used_llm:
+        return "AI 생성"
+    return "인쇄 캡션 전사" if has_print_caption else "제목 전사"

@@ -68,7 +68,7 @@ message CriticalError {
 }
 
 message ReviewFlag {
-  string type       = 1;  // R1~R12
+  string type       = 1;  // R1~R14
   string element_id = 2;
   string message    = 3;
 }

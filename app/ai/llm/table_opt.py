@@ -38,9 +38,20 @@ def _nested_image_text(ext: ExtractedContent) -> Optional[str]:
     return None
 
 
-def _min_trail(text: str) -> list[RuleApplication]:
-    """표 점역 일반 사항(BBPG-3.1.1) — 요소 전체(line_no=-1)."""
-    return [make_rule("BBPG-3.1.1")]
+_RENDER_LABEL = {"table_grid": "격자형", "transposed": "행열 바꿈",
+                 "linear": "선형(풀어쓰기)", "text_only": "풀어쓰기"}
+
+
+def _min_trail(render_mode: str = "") -> list[RuleApplication]:
+    """표 점역 일반 사항(BBPG-3.1.1) — 요소 전체(line_no=-1).
+
+    이 조항은 그 자체가 (B)다: "표는 …풀어주는 것을 원칙으로 하며 **점역자에 따라서
+    표기 형식이 다를 수 있다**". 그래서 남기되, Step17에서 **우리가 고른 형식**을 tag에
+    담는다 — 격자/행열바꿈/선형 중 어느 것으로 냈는지가 점역사가 제일 먼저 바꿀 자리다
+    (원장 C-01a 표 격자 테두리도 같은 갈림길이다).
+    """
+    label = _RENDER_LABEL.get(render_mode, "")
+    return [make_rule("BBPG-3.1.1", tag=label)]
 
 _PROMPT_TABLE_GRID = """당신은 한국어 점역 전문가입니다.
 다음 표 내용을 점역사주([점역사주])로 표현하는 2가지 방식을 제안하세요.
@@ -68,6 +79,22 @@ def _table_title(ext: ExtractedContent) -> Optional[str]:
 
     구조화 입력(table_structure 또는 structure)의 'title'을 그대로 전사한다(rule-based).
     원본에서 제목이 표 안에 있어도 점역 자료에서는 표 위로 올린다(§3 5)(2)).
+
+    ⚠ **지금 이 함수는 실동작에서 한 번도 안 돈다 — 채우는 쪽이 없다**(2026-08-10 실측).
+      10쪽 표본에서 발동 0회였고, 파이프라인 어디에도 `table_structure['title']`을 쓰는
+      코드가 없다. 소비자만 있고 생산자가 없는 상태다.
+
+      문을 열까 재봤는데 **열 값어치가 없었다.** MinerU는 `table_caption`을 표마다 주지만
+      (키 자체는 286/286), 실측 표 326개 중 캡션이 **있는 것이 13개(4%)**뿐이고
+      그중 괄호형 제목처럼 보이는 4개도 **절반이 문항 번호**다(`[26022-0184]`).
+      나머지는 발문·본문 조각이라 제목이 아니다. 규칙으로 가려도 유효 신호가 두어 건이다.
+
+      즉 **교재 표에는 애초에 제목이 거의 없다.** 지침 §3 5)는 제목이 있을 때의 조판을
+      정한 것이지 없는 제목을 만들라는 게 아니다.
+
+      그래서 이 코드는 **지우지 않고 둔다** — 제목을 주는 입력(현주 구조화 핸드오프,
+      다른 교재)이 오면 그대로 동작한다. 다만 **"표 제목 조판을 고쳤다"를 성과로 세지 마라.**
+      실물에서 안 돈다. 앞 빈칸 4(= "5칸에서 시작")로 맞춘 것은 규정 준수일 뿐 점수 영향 0이다.
     """
     for src in (ext.table_structure, ext.structure):
         if src:
@@ -218,11 +245,25 @@ def _cell_text(body: str) -> str:
     return _fix_decimal_comma(_html_unescape(_HTML_TAG_RE.sub("", body)).strip())
 
 
-def _html_to_grid(html: str) -> list[list[str]]:
-    """MinerU <table> HTML → 행렬(병합 셀 펼침). 내부 태그 제거(이미지 셀=빈칸).
+def _html_to_grid(html: str, *, expand: bool = True) -> list[list[str]]:
+    """MinerU <table> HTML → 행렬. 내부 태그 제거(이미지 셀=빈칸).
 
-    colspan/rowspan은 같은 값을 복제해 채운다 — 점역은 격자를 전제하므로 병합을 그대로
-    두면 열 정렬이 무너진다. 풀어쓰기(_render_unfold)도 열 머리를 복제된 값에서 읽는다.
+    expand=True  colspan/rowspan을 같은 값으로 복제해 **직사각 격자**를 만든다.
+                 열 수를 세거나(`_infer_render_mode`) 열 정렬이 필요한 곳 전용.
+    expand=False 병합 셀을 **원본대로 한 번만** 낸다(행 길이가 들쭉날쭉해진다).
+                 점역 출력에 쓰는 표기다.
+
+    ★ 병합 복제를 그대로 찍던 것이 표 축 과잉생산의 최대 원인이었다(2026-08-08).
+      실측: dev-2027 표 4,311개에서 비어 있지 않은 칸 78,525개 중 **11,145개(14.2%)가
+      병합 복제**다. gold는 병합 셀을 한 번만 적는다 — 지침 §3.1.3에 복제를 적으라는
+      조항이 없고 §3.1.4(3)은 되레 "반복된 열 제목은 생략한다"이며, 실물
+      (EBS-E26-009 p0091·EBS-E26-004 p0002)에서도 한 번씩만 나온다.
+      우리는 colspan="8" 셀을 여덟 번 찍어, 한 표가 gold 1,648셀 자리에 6,304셀을 냈다.
+      ⚠ 값이 같은 인접 칸을 지우는 '값 기준' 축약으로 대체하지 말 것 — 같은 실측에서
+        후보의 31.4%(3,618칸)가 병합이 아닌 **진짜 반복 값**('+', '-', '없다')이라
+        내용을 지운다. 병합 여부는 파싱 시점에만 알 수 있다.
+      ※ 규정·관행이 같은 방향이라 원장(규정-관행_대조원장.md) 등재 대상이 아니다 —
+        충돌이 아니라 우리 결손이다.
     단, 값 없는 범용 코너 라벨(_GENERIC_CORNER_LABELS)은 앵커 칸에만 남긴다.
     """
     grid: list[list[str]] = []
@@ -232,7 +273,9 @@ def _html_to_grid(html: str) -> list[list[str]]:
         c = 0
         for _tag, attrs, body in _TD_RE.findall(tr):
             while (r, c) in pending:            # 위에서 내려온 rowspan 자리 먼저 채움
-                row.append(pending.pop((r, c)))
+                v = pending.pop((r, c))
+                if expand:
+                    row.append(v)
                 c += 1
             text = _cell_text(body)
             if _LEADER_DOTS_RE.match(text):
@@ -242,16 +285,19 @@ def _html_to_grid(html: str) -> list[list[str]]:
                 text in _GENERIC_CORNER_LABELS and (colspan > 1 or rowspan > 1))
             for dc in range(colspan):
                 keep = (not is_generic_merge) or (dc == 0)
-                row.append(text if keep else "")
+                if expand or dc == 0:
+                    row.append(text if keep else "")
                 for dr in range(1, rowspan):
                     pending[(r + dr, c + dc)] = "" if is_generic_merge else text
             c += colspan
         while (r, c) in pending:                 # 행 끝에 남은 rowspan 자리
-            row.append(pending.pop((r, c)))
+            v = pending.pop((r, c))
+            if expand:
+                row.append(v)
             c += 1
         if row:
             grid.append(row)
-    if grid:                                     # 행 길이 정규화
+    if grid and expand:                          # 행 길이 정규화(직사각일 때만)
         w = max(len(r) for r in grid)
         grid = [r + [""] * (w - len(r)) for r in grid]
     return grid
@@ -285,7 +331,7 @@ def _table_tags(table_structure, table_text: str) -> str:
     """표 구조 → <!표> 태그(stage② 표시·table_braille 입력). 비정형은 원문 유지."""
     grid = _table_to_grid(table_structure) if table_structure else []
     if not grid and _is_html_table(table_text):
-        grid = _html_to_grid(table_text)
+        grid = _html_to_grid(table_text, expand=False)   # 병합은 원본대로 한 번만
     if not grid and "|" in table_text:
         grid = _pipe_to_grid(table_text)
     return build_table_tags(_normalize_grid(grid)) if grid else table_text
@@ -311,7 +357,7 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
             return "table_grid"
     # table_structure 없음/빈 셀: HTML 표(MinerU) 또는 '|' 격자로 추론(narrative 오분류 방지).
     if _is_html_table(text):
-        grid = _html_to_grid(text)
+        grid = _html_to_grid(text)      # 여기만 expand=True — 진짜 열 수를 세야 한다
         if grid:
             max_col = max(len(r) for r in grid)
             return "linear" if max_col == 2 else "table_grid"
@@ -386,7 +432,7 @@ class TableOpt(BaseOpt):
                 render_mode="narrative",
                 routing_tier="FALLBACK",
                 processing_time_ms=0,
-                rule_trail=_min_trail("[표 수동 입력 필요]"),
+                rule_trail=_min_trail(),
             )
 
         # 텍스트 준비
@@ -395,8 +441,9 @@ class TableOpt(BaseOpt):
         else:
             table_text = ext.corrected_text or ""
         # MinerU HTML 표 → '|' 격자 텍스트로 정규화(셀 보존·tn 요약·rule_trail용, P5)
+        # 병합 복제는 펴지 않는다 — 이 텍스트가 묵자 4안(print_layout)에도 그대로 간다.
         if _is_html_table(table_text):
-            grid = _html_to_grid(table_text)
+            grid = _html_to_grid(table_text, expand=False)
             if grid:
                 table_text = "\n".join(" | ".join(row) for row in grid)
 
@@ -407,7 +454,7 @@ class TableOpt(BaseOpt):
                 render_mode="narrative",
                 routing_tier="FALLBACK",
                 processing_time_ms=0,
-                rule_trail=_min_trail("[처리 불가: 표 내용 없음]"),
+                rule_trail=_min_trail(),
             )
 
         # 점역 직전 텍스트(stage②) = 표 구조 태그. table_braille가 파싱해 4안 렌더에 위임.
@@ -423,7 +470,7 @@ class TableOpt(BaseOpt):
                 tn_text=tn,
                 routing_tier="ZERO",
                 processing_time_ms=0,
-                rule_trail=_min_trail(table_tags),
+                rule_trail=_min_trail(render_mode),
                 table_title=title,
                 nested_text=nested_text,
                 **dict(zip(("drafts", "selected_idx"), _print_drafts(table_text, render_mode))),
@@ -456,7 +503,7 @@ class TableOpt(BaseOpt):
             tn_text=tn_text,
             routing_tier=tier,
             processing_time_ms=elapsed_ms,
-            rule_trail=_min_trail(table_tags),
+            rule_trail=_min_trail(render_mode),
             table_title=title,
             nested_text=nested_text,
             **dict(zip(("drafts", "selected_idx"), _print_drafts(table_text, render_mode))),

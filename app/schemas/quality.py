@@ -29,9 +29,11 @@ class ReviewFlag(BaseModel):
     R4: HALLUCINATION_SUSPECTED  R10: TABLE_FORMULA_COMPLEX
     R5: TN_INCOMPLETE            R11: IMAGE_TEXT_MISSING
     R6: DIAGRAM_SUBTYPE_UNKNOWN  R12: FOOTNOTE_SIDEBAR_MIXED
+    R13: TEXT_RISKY_SEGMENT — 본문 중 태그·로마자·숫자가 든 구간(등급 신호, 2026-08-10)
+    R14: FONT_MANGLED — 원본 글꼴이 깨져 추출된 요소(결함, 2026-08-10)
     """
 
-    type: str       # R1~R12
+    type: str       # R1~R14
     element_id: str
     message: str
 

@@ -72,18 +72,19 @@ _SLIDE = {
 class TestHierIndent:
     def test_위계_들여쓰기(self):
         # 최상위 1칸, 하위 단계마다 +2칸 (§6.6.5(2)·§6.6.4(2)②)
-        assert [_hier_indent(l) for l in (0, 1, 2)] == [1, 3, 5]
+        # ★ 단위는 **앞 빈칸** — "1칸에 적는다" = 빈칸 0. 정답 예6-21·6-22 실측과 일치.
+        assert [_hier_indent(l) for l in (0, 1, 2)] == [0, 2, 4]
 
 
 class TestOrgChart:
     def test_위계_전사(self):
         text, indents = assemble_org_chart(_ORG)
         lines = text.split("\n")
-        assert (lines[0], indents[0]) == ("회사 조직", 5)                     # §6.3.3(1)
+        assert (lines[0], indents[0]) == ("회사 조직", 4)                     # §6.3.3(1) 5칸
         assert lines[1] == "<!점역자주>조직도<!/점역자주>:"          # 유형(도서지침 예3-46)
         assert lines[2] == "<!점역자주>들여쓰기로 상하 위계를 나타냄<!/점역자주>"
         assert lines[3:] == ["대표", "개발팀", "프론트", "백엔드", "영업팀"]
-        assert indents[3:] == [1, 3, 5, 5, 3]                                # §6.6.5(2)
+        assert indents[3:] == [0, 2, 4, 4, 2]                                # §6.6.5(2)·예6-22
 
 
 class TestFamilyTree:
@@ -93,7 +94,7 @@ class TestFamilyTree:
         assert lines[0] == "<!점역자주>가계도<!/점역자주>:"
         assert lines[1] == "<!점역자주>선조에서 후손 순(하향식)<!/점역자주>"
         assert lines[2:] == ["할아버지", "아버지", "나"]
-        assert indents[2:] == [1, 3, 5]                                      # §6.6.4(2)②
+        assert indents[2:] == [0, 2, 4]                                      # §6.6.4(2)②·예6-21
 
     def test_상향식_평면_3칸(self):
         text, indents = assemble_family_tree(_FAM_UP)
@@ -101,7 +102,7 @@ class TestFamilyTree:
         assert lines[0] == "<!점역자주>가계도<!/점역자주>:"
         assert lines[1] == "<!점역자주>후손에서 선조 순(상향식)<!/점역자주>"
         assert lines[2:] == ["나", "어머니", "외할머니"]
-        assert indents[2:] == [3, 3, 3]                                      # §6.6.4(3)②
+        assert indents[2:] == [2, 2, 2]                                      # §6.6.4(3)② 3칸
 
 
 class TestTimeline:
@@ -115,16 +116,16 @@ class TestTimeline:
         text, indents = assemble_timeline(_TIMELINE)
         lines = text.split("\n")
         assert lines[0] == "<!점역자주>연대표<!/점역자주>:"
-        # 단일=날짜+사건 한 줄(0칸), 동일연도=연도 5칸·사건 3칸, 사건 없는 1500은 생략
+        # 단일=날짜+사건 한 줄(3칸), 동일연도=연도 5칸·사건 3칸, 사건 없는 1500은 생략
         assert lines[1:] == ["1392 조선 건국", "1443", "훈민정음 창제", "집현전 확대"]
-        assert indents[1:] == [0, 5, 3, 3]                                   # §6.6.6(2)②·(4)
+        assert indents[1:] == [2, 4, 2, 2]                                   # §6.6.6(2)②·(4)·예6-23
 
 
 class TestForm:
     def test_글상자_항목_노트(self):
         text, indents = assemble_form(_FORM)
         lines = text.split("\n")
-        assert (lines[0], indents[0]) == ("신청서", 5)
+        assert (lines[0], indents[0]) == ("신청서", 4)                        # §6.3.3(1) 5칸
         assert lines[1] == "<!점역자주>양식<!/점역자주>:"
         assert lines[2] == "<!테두리_위><!/테두리_위>"                     # §6.6.3(2) 글상자
         assert lines[3] == "이름:" and lines[4] == "주소:"                   # §6.6.3(3) 한 줄에 하나
@@ -138,8 +139,9 @@ class TestScreenImage:
         lines = text.split("\n")
         assert lines[0] == "<!점역자주>화면 이미지<!/점역자주>:"
         assert lines[1] == "<!테두리_위><!/테두리_위>"                     # §6.6.7(1)
-        assert lines[2:-1] == ["주 메뉴", "홈", "소개", "본문", "환영합니다"]  # §6.6.7(3)①
-        assert indents[2:-1] == [0, 2, 2, 0, 2]
+        # 구획은 빈 줄로 가르고 내용은 전부 3칸(정답 예6-24)
+        assert lines[2:-1] == ["주 메뉴", "홈", "소개", "", "본문", "환영합니다"]  # §6.6.7(3)①
+        assert indents[2:-1] == [2, 2, 2, 0, 2, 2]
         assert lines[-1] == "<!테두리_아래><!/테두리_아래>"
 
 
@@ -147,10 +149,10 @@ class TestSlide:
     def test_제목_들여쓰기_노트(self):
         text, indents = assemble_slide(_SLIDE)
         lines = text.split("\n")
-        assert (lines[0], indents[0]) == ("발표 제목", 5)
+        assert (lines[0], indents[0]) == ("발표 제목", 4)                     # §6.3.3(1) 5칸
         assert lines[1] == "<!점역자주>발표용 슬라이드<!/점역자주>:"
-        assert (lines[2], indents[2]) == ("개요", 0)
-        assert (lines[3], indents[3]) == ("세부", 2)                         # §6.6.8(2)
+        assert (lines[2], indents[2]) == ("개요", 2)                         # 예6-25 항목 3칸
+        assert (lines[3], indents[3]) == ("세부", 4)                         # §6.6.8(2)
         assert lines[4] == "<!점역자주>노트: 추가 설명<!/점역자주>"          # §6.6.8(3)
 
 
@@ -171,7 +173,7 @@ class TestOptimizeRouting:
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
                                structure=st, visual_subtype="org_chart")
         opt = asyncio.run(DiagramOpt().optimize([ext], "ZERO"))[0]
-        assert "대표" in opt.corrected_text and opt.line_indents[-1] == 3  # 영업팀 1단계
+        assert "대표" in opt.corrected_text and opt.line_indents[-1] == 2  # 영업팀 1단계
 
 
 class TestE2E:
@@ -186,11 +188,11 @@ class TestE2E:
         result = (tmp_path / "storage/jobs/og/temp/page_001/result/001_result.txt"
                   ).read_text(encoding="utf-8").split("\n")
         content = [l for l in result if l.strip()]
-        # 최상위 1칸·최하위(프론트) 5칸 들여쓰기가 result.txt에 반영
+        # 최상위 1칸(빈칸0)·최하위(프론트) 5칸(빈칸4) 들여쓰기가 result.txt에 반영
         top = next(l for l in content if "대표" in decode(l))
-        assert top.startswith(" ") and not top.startswith("  ")
+        assert not top.startswith(" ")
         leaf = next(l for l in content if "프론트" in decode(l))
-        assert leaf.startswith(" " * 5) and not leaf.startswith(" " * 6)
+        assert leaf.startswith(" " * 4) and not leaf.startswith(" " * 5)
 
     def test_화면이미지_글상자_재렌더(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)

@@ -1,7 +1,7 @@
-"""이미지 대체텍스트 4안 회귀 — 생략/짧은 제목/개조식/줄글 (QA 2026-07-05).
+"""이미지 대체텍스트 6안 회귀 — 생략/짧은 제목/개조식/줄글/유형만/별책 참조.
 
 §6.3.4(2)② 생략 표기·짧은 제목(캡션 전사)·개조식(§6.3.4(2)① 원본 글자 전사)·줄글.
-ZERO 티어는 LLM 미사용(결정적)이라 항상 4안이 나온다.
+ZERO 티어는 LLM 미사용(결정적)이라 항상 6안이 나온다.
 """
 from __future__ import annotations
 
@@ -11,8 +11,14 @@ from uuid import uuid4
 from app.ai.braille.image_braille import ImageBraille
 from app.ai.braille.layout_braille import LayoutBraille
 from app.ai.llm.image_opt import ImageOpt
-from app.ai.llm.visual_drafts import LABELS
-from app.schemas.content import ExtractedContent
+from app.ai.llm.visual_drafts import (
+    LABELS,
+    omission_draft,
+    typeonly_draft,
+    volume_ref_draft,
+)
+from app.core.pipeline import _number_volume_refs
+from app.schemas.content import ExtractedContent, LLMOutput
 from app.schemas.layout import BBoxItem, LayoutResult
 from app.utils.braille_back import decode
 
@@ -26,7 +32,7 @@ class TestFourDrafts:
     def test_4안_라벨(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(ImageOpt().optimize([ext], "ZERO"))[0]
-        assert [d.label for d in opt.drafts] == list(LABELS)   # 생략/짧은 제목/개조식/줄글
+        assert [d.label for d in opt.drafts] == list(LABELS)
         assert opt.selected_idx == 2                           # 기본=개조식
 
     def test_생략안_규정표기(self):
@@ -64,7 +70,7 @@ class TestFourDrafts:
         assert "[처리 불가" not in opt.corrected_text
         assert "생략" in opt.corrected_text
         assert opt.selected_idx == 0          # 0안 = 생략
-        assert len(opt.drafts) == 4           # 4안은 유지 — 점역사가 다른 안 선택 가능
+        assert len(opt.drafts) == len(LABELS)   # 안 개수 유지 — 점역사가 다른 안 선택 가능
 
 
 class TestEndToEnd:
@@ -76,7 +82,7 @@ class TestEndToEnd:
             "ocr_texts": ["핵"], "caption_src": "둥근 세포 안에 핵이 있다"})
         opt = asyncio.run(ImageOpt().optimize([ext], "ZERO"))
         bo = ImageBraille().translate(opt)
-        assert len(bo[0].drafts) == 4                          # 4안 모두 점역됨
+        assert len(bo[0].drafts) == len(LABELS)                # 모든 안이 점역됨
         lr = LayoutResult(page_id="p", elements=[
             BBoxItem(element_id=eid, type="image", bbox=(0, 0, 0, 0), reading_order=1)])
         LayoutBraille().layout(bo, page_no=1, job_id="img", layout_result=lr)
@@ -84,3 +90,40 @@ class TestEndToEnd:
                   ).read_text(encoding="utf-8")
         dec = decode(result)
         assert "세포 구조" in dec and "핵" in dec
+
+
+class TestExtraDrafts:
+    """4·5안(유형만·별책 참조) — 정답 도서의 점형과 셀 단위로 같아야 한다 (원장 C-28).
+
+    아래 기대값은 EBS-E26-009 본책 p0020(별책 참조)과 여러 책의 '유형만'·'생략 고지'에서
+    그대로 떠 온 정답 셀이다. 형식이 흔들리면 여기서 깨진다.
+    """
+
+    def _cells(self, draft) -> str:
+        opt = LLMOutput(element_id=uuid4(), corrected_text=draft.text, render_mode="narrative",
+                        routing_tier="ZERO", processing_time_ms=0,
+                        drafts=[draft], selected_idx=0)
+        return "".join(ImageBraille().translate([opt])[0].drafts[0].braille_lines)
+
+    def test_유형만_정답셀(self):
+        assert self._cells(typeonly_draft("그림")) == "⠠⠄⠈⠪⠐⠕⠢⠠⠄"
+        assert self._cells(typeonly_draft("지도")) == "⠠⠄⠨⠕⠊⠥⠠⠄"
+
+    def test_별책참조_정답셀(self):
+        assert self._cells(volume_ref_draft("그림", "20-4")) == \
+            "⠠⠄⠈⠪⠐⠕⠢⠀⠼⠃⠚⠤⠼⠙⠀⠰⠣⠢⠨⠥⠠⠄"
+
+    def test_생략고지_정답셀(self):
+        assert self._cells(omission_draft("그림")) == "⠠⠄⠈⠪⠐⠕⠢⠀⠠⠗⠶⠐⠜⠁⠠⠄"
+
+    def test_별책참조_번호는_묵자쪽_순번(self):
+        """번호는 '묵자쪽-그 쪽에서의 순번'이다 — 요소 하나만 봐서는 못 만든다."""
+        outs = [LLMOutput(element_id=uuid4(), corrected_text="x", render_mode="narrative",
+                          routing_tier="ZERO", processing_time_ms=0,
+                          drafts=[volume_ref_draft("그림")], selected_idx=0) for _ in range(3)]
+        _number_volume_refs(outs, 20)
+        assert [o.drafts[0].text for o in outs] == [
+            "<!점역자주>그림 20-1 참조<!/점역자주>",
+            "<!점역자주>그림 20-2 참조<!/점역자주>",
+            "<!점역자주>그림 20-3 참조<!/점역자주>",
+        ]

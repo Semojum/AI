@@ -15,6 +15,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from app.ai.captioning.captioner import caption
 from app.ai.captioning.classifier import classify_with_confidence
+from app.ai.llm.diagram_structure import subtype_from_caption
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -311,6 +312,13 @@ def build(
             entry["heading_level"] = el["heading_level"]
         if subconf is not None:
             entry["subtype_confidence"] = subconf
+        # 도표 세분류(§6.6 8종) — 분류기는 'diagram' 넉 자까지만 낸다. 캡션 첫 줄이 유형어를
+        # 달고 오므로(캡셔너 diagram 프롬프트) 거기서 읽어 경계 JSON에 싣는다. 이 칸이
+        # 비어 있어서 pipeline._parse_txt_result → diagram_opt._ASSEMBLERS가 한 번도 안 돌았다.
+        if el_type == "diagram":
+            vsub = subtype_from_caption(content)
+            if vsub:
+                entry["visual_subtype"] = vsub
         elements.append(entry)
 
         if debug:

@@ -8,10 +8,14 @@
 
 from __future__ import annotations
 
-from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import BaseOpt
 from app.ai.llm.base_opt import numbers_grounded as _verify_numbers  # noqa: F401 (테스트가 import)
-from app.ai.llm.visual_drafts import resolve_label, PROSE_IDX, build_visual_drafts
+from app.ai.llm.visual_drafts import (
+    PROSE_IDX,
+    build_visual_drafts,
+    resolve_label,
+    visual_trail,
+)
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
@@ -24,8 +28,9 @@ _SUBTYPE_LABEL = {
 }
 
 
-def _trail() -> list[RuleApplication]:
-    return [make_rule(_RULE_ID)]
+def _trail(drafts, selected_idx: int, source: str) -> list[RuleApplication]:
+    """§6.4 그래프 형식 + 어느 안을 왜 골랐는지(Step17)."""
+    return visual_trail(_RULE_ID, drafts, selected_idx, source)
 
 
 def _label(structure: dict) -> str:
@@ -80,7 +85,7 @@ class ChartGraphOpt(BaseOpt):
         # ZERO/캡션 없음: 생성 없이 축+데이터를 rule-based 줄글로(수치 보존).
         rule_prose = ", ".join(p for p in ([axes] + [t for _, t in data_items]) if p) or caption
         struct_prose = rule_prose if (routing_tier == "ZERO" or not caption) else None
-        drafts, selected_idx, line_indents, tier = await build_visual_drafts(
+        drafts, selected_idx, line_indents, tier, cap_src = await build_visual_drafts(
             ext, routing_tier, label=label, title=title, caption=caption, kind="차트",
             struct_outline=struct_outline, struct_prose=struct_prose,
             decorative=no_seed,          # 시드 없음 → 기본 선택 '생략'
@@ -99,7 +104,7 @@ class ChartGraphOpt(BaseOpt):
             tn_text=drafts[selected_idx].text,
             routing_tier=tier,
             processing_time_ms=0,
-            rule_trail=_trail(),
+            rule_trail=_trail(drafts, selected_idx, cap_src),
             drafts=drafts,
             selected_idx=selected_idx,
             line_indents=line_indents,

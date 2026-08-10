@@ -20,6 +20,10 @@ from pathlib import Path
 
 import fitz
 
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 TYPE_MAP = {
     "title":               "title",
     "text":                "text",
@@ -65,6 +69,31 @@ _HEAD_MAX_LEN = 28                                      # 이보다 길면 제�
 _HEAD_LEVEL_MAP = {1: 1}                                # lv1 → 1단계, 그 외 → 4단계
 
 
+_announced_engine: str | None = None
+
+
+def _announce_engine(mineru_bin: str) -> None:
+    """어느 MinerU를 쓰는지 **처음 한 번 크게 찍는다**.
+
+    ★ 2026-08-09 — 이게 없어서 평가 세션이 20분을 날렸다. 셸에 `MINERU_BIN`이 이미
+      export돼 있으면 자식이 상속받고, 우선순위가 `환경변수 > .env`라 `.env`에 vLLM을
+      적어 두어도 **조용히 transformers로 돈다**. 예외가 안 나서 결과만 보면 모른다.
+
+      우선순위를 환경변수 우선으로 둔 건 의도다(측정 스크립트가 엔진 A/B를 해야 한다).
+      그래서 순서를 바꾸는 대신 **무엇이 이겼는지 보이게** 한다.
+
+      절차: `env -u MINERU_BIN …`으로 지우고 돌린 뒤
+            `grep "init successfully" storage/logs/mineru_api.log`로 엔진을 확인할 것.
+    """
+    global _announced_engine
+    if _announced_engine == mineru_bin:
+        return
+    _announced_engine = mineru_bin
+    src = "환경변수 MINERU_BIN" if os.environ.get("MINERU_BIN") else ".env(config.mineru_bin)"
+    kind = "vLLM" if "vllm" in mineru_bin.lower() else "transformers(또는 미상)"
+    logger.info("MinerU 실행 파일 = %s  [출처: %s · 추정 엔진: %s]", mineru_bin, src, kind)
+
+
 def _heading_level(item: dict, mapped_type: str, content: str) -> int | None:
     """MinerU `text_level` → BBPG 제목 단계. 제목이 아니면 None."""
     lvl = item.get("text_level")
@@ -81,7 +110,11 @@ def _heading_level(item: dict, mapped_type: str, content: str) -> int | None:
 def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | None = None) -> None:
     # MinerU는 별도 env에 설치(transformers 버전 충돌 회피). bare 'mineru'가 PATH에
     # 없을 수 있어 MINERU_BIN으로 실행 파일 경로를 덮어쓸 수 있게 한다(GCP는 심볼릭).
-    mineru_bin = os.environ.get("MINERU_BIN", "mineru")
+    # 우선순위: 환경변수 > .env(config) > PATH. 환경변수를 위에 두어 측정 스크립트가
+    # 한 번만 덮어쓸 수 있게 한다(엔진 A/B에 쓴다).
+    from app.core.config import config as _cfg
+    mineru_bin = os.environ.get("MINERU_BIN") or _cfg.mineru_bin or "mineru"
+    _announce_engine(mineru_bin)
     cmd = [
         mineru_bin, "-p", str(pdf_path), "-o", str(out_dir),
         "-s", str(page_idx), "-e", str(page_idx),   # 도착 PDF 내 0-based 인덱스
@@ -172,6 +205,55 @@ def _flatten_mineru_output(raw_dir: Path) -> None:
             shutil.rmtree(str(item))
 
 
+# ── 캡셔닝용 크롭 재렌더 ────────────────────────────────────────────────────
+# MinerU가 주는 크롭은 **200DPI로 렌더된 페이지 비트맵을 자른 것**이다(실측: 크롭 픽셀
+# 폭 = bbox/1000 × 페이지pt/72 × 200, 오차 1px). dev 331장 중앙 334×214px이라 도식의
+# 이름표(㉠·㉡, 축 눈금, 첨자)가 뭉개져 캡션이 그걸 잘못 읽었다.
+# 원본 PDF는 벡터라 같은 자리를 더 높은 DPI로 다시 렌더하면 **화소가 진짜로 는다**.
+# 실측(2026-08-10, 오독 확인 도표·그래프 30장, 같은 600DPI 이미지로 판정):
+#   200DPI(MinerU 그대로) 오독 77건/21장 · 300DPI 46건/13장(p=0.0015)
+#   600DPI 38건/9장(p=0.0001) · 150DPI 69건/24장(개선 없음 — DPI가 원인이 맞다)
+#   근거 있는 진술(ok)은 7.57 → 9.73으로 **늘었다**(짧게 써서 줄인 게 아니다).
+# ⚠ 이미 렌더된 비트맵의 **업스케일은 반대로 나쁘다**(3배 확대 사실오류 35.0%→44.5%,
+#   p=0.002). 없는 화소를 늘리면 모델이 더 확신하고 더 틀린다. 그래서 아래 _raster_dpi_cap이
+#   스캔 쪽(래스터 원본)에서는 원본 해상도 위로 못 올라가게 막는다.
+_CROP_DPI = 600        # 300→600은 표본 30장에서 유의하지 않았다(p=0.42). 점추정이 나은 쪽.
+_CROP_MAX_EDGE = 1568  # 이보다 크면 API가 되레 줄여 이득 없이 토큰만 든다
+_MINERU_CROP_DPI = 200
+
+
+def _raster_dpi_cap(clip: fitz.Rect, img_info: list[dict]) -> float:
+    """clip에 걸친 래스터 이미지의 실제 해상도(DPI). 벡터뿐이면 무한대.
+
+    스캔 PDF에서 원본 해상도 위로 렌더하면 그냥 업스케일이라 오히려 해롭다(위 주석).
+    """
+    caps = [im["width"] / max(fitz.Rect(im["bbox"]).width, 1e-6) * 72
+            for im in img_info
+            if im.get("width") and fitz.Rect(im["bbox"]).intersects(clip)]
+    return min(caps) if caps else float("inf")
+
+
+def _recrop_hidpi(fitz_page: fitz.Page, bbox: list[float], dst: str,
+                  img_info: list[dict]) -> bool:
+    """MinerU 크롭을 원본 PDF의 고DPI 재렌더로 교체한다. 실패해도 원본 크롭이 남는다."""
+    r = fitz_page.rect
+    clip = fitz.Rect(r.x0 + bbox[0] / 1000 * r.width, r.y0 + bbox[1] / 1000 * r.height,
+                     r.x0 + bbox[2] / 1000 * r.width, r.y0 + bbox[3] / 1000 * r.height)
+    if clip.is_empty or clip.width < 1 or clip.height < 1:
+        return False
+    dpi = min(_CROP_DPI, _CROP_MAX_EDGE * 72 / max(clip.width, clip.height),
+              _raster_dpi_cap(clip, img_info))
+    if dpi <= _MINERU_CROP_DPI:
+        return False                      # 더 얻을 화소가 없다 — MinerU 크롭 그대로 둔다
+    try:
+        # 내림 — 반올림하면 상한을 1~2px 넘겨 서버가 되레 축소한다
+        fitz_page.get_pixmap(dpi=int(dpi), clip=clip).save(dst, jpg_quality=95)
+    except Exception as exc:  # noqa: BLE001 — 크롭 품질은 있으면 좋은 것, 실패는 격리
+        logger.warning("고DPI 재크롭 실패 %s: %s", Path(dst).name, exc)
+        return False
+    return True
+
+
 def _extract_text_native(fitz_page: fitz.Page, bbox: list[float]) -> str:
     w, h = fitz_page.rect.width, fitz_page.rect.height
     rect = fitz.Rect(
@@ -252,7 +334,7 @@ def _restore_table_bullets(fitz_page: fitz.Page, bbox: list[float], html: str) -
     layer = _extract_text_native(fitz_page, bbox)
     if not layer or not _BULLET_ANY_RE.search(layer):
         return html
-    if _pua_ratio(layer) > _PUA_RATIO_MAX:
+    if _layer_untrustworthy(layer):
         return html
     keys = _bullet_item_keys(layer)
     if not keys or not all(keys):
@@ -492,7 +574,7 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     if not html or not bbox:
         return html
     layer = _native_text_spaced(fitz_page, bbox)
-    if not layer or _pua_ratio(layer) > _PUA_RATIO_MAX:
+    if not layer or _layer_untrustworthy(layer):
         return html
     # 레이어에는 우리가 붙이는 인라인 태그(<!드러냄> 등)가 들어 있다 — 대조 전에 걷어낸다.
     layer_ns = re.sub(r"\s+", "", re.sub(r"<!/?[^>]*>", "", layer))
@@ -548,6 +630,29 @@ def _pua_ratio(s: str) -> float:
     return pua / len(s)
 
 
+def _layer_untrustworthy(s: str) -> bool:
+    """텍스트 레이어를 믿으면 안 되는가 — PUA **또는** 글꼴 매핑 거짓말.
+
+    ★ 2026-08-09 — 종전엔 PUA 비율만 봤다. 그런데 코퍼스 1,251쪽 중 **753쪽(60.2%)**은
+      PUA가 0%인데도 글꼴이 거짓말을 한다: `/Encoding`과 `/ToUnicode`가 실제로 그려지는
+      글리프와 **다른 문자**를 가리킨다(수학2는 147/147 전량). 예: STkboNA의 코드 0x02는
+      스스로를 `∂`(U+2202)라 부르는데 실제로 그려지는 건 근호 `√`다.
+      그래서 PUA만 보면 이 쪽들이 전부 "믿을 만함"으로 통과해, 깨진 텍스트가 멀쩡한
+      MinerU OCR을 덮어쓴다.
+
+      판정은 `pdf_analyzer.mangled_glyph_chars`가 한다 — "교과서에 절대 안 나오는
+      코드포인트"(± ™ £ ¥ ¢ § œ æ ç ß ﬂ Ã ´ ¨ 등)를 신호로 쓰고 전수 1,251쪽에서
+      **오탐 0**이었다. 폰트 이름·영폭 글리프·`/Widths` 퇴화도는 전부 분리에 실패해 기각됐다.
+    """
+    if not s:
+        return False
+    if _pua_ratio(s) > _PUA_RATIO_MAX:
+        return True
+    from app.ai.preprocessor.pdf_analyzer import mangled_glyph_chars
+    layer_bad, _symbol_bad = mangled_glyph_chars(s)
+    return bool(layer_bad)          # 조판을 무너뜨리는 종류만 — 기호 하나짜리는 통과시킨다
+
+
 def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
     """bbox 안의 텍스트를 어절 경계 복원해서 뽑는다.
 
@@ -588,7 +693,7 @@ def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
 def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) -> str | None:
     """텍스트 레이어로 대체할 값. 못 믿으면 None(= MinerU 결과 유지)."""
     native = _native_text_spaced(fitz_page, bbox)
-    if not native or _pua_ratio(native) > _PUA_RATIO_MAX:
+    if not native or _layer_untrustworthy(native):
         return None
     base = (mineru_text or "").strip()
     if not base:
@@ -717,6 +822,7 @@ def run(
     rect = fitz_page.rect
     img_w = int(rect.width * 2)
     img_h = int(rect.height * 2)
+    page_img_info = fitz_page.get_image_info()   # 재크롭 DPI 상한 판정용, 쪽당 1회
 
     merged_layout = []
     order = 1
@@ -841,6 +947,12 @@ def run(
         hlevel = _heading_level(item, mapped_type, content)
         if hlevel:
             mapped_type = "title"
+
+        # 캡셔닝으로 갈 시각요소만 원본에서 다시 자른다(위 _recrop_hidpi 주석).
+        # 타입이 다 정해진 뒤에 한다 — 도중에 table/text로 바뀌면 캡셔닝을 안 타므로
+        # 그림 쪽에만 비용(중앙 41ms/장)이 붙게 둔다.
+        if image_path and mapped_type in ("image", "chart_graph", "cartoon"):
+            _recrop_hidpi(fitz_page, bb, image_path, page_img_info)
 
         # MinerU bbox는 0~1000 정규화 좌표 → 실제 픽셀로 변환
         bb_px = [bb[0] / 1000 * img_w, bb[1] / 1000 * img_h,

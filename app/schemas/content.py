@@ -58,6 +58,9 @@ class Draft(BaseModel):
     text: str                            # 점역사주 원문 (점역 대상)
     render_mode: str = "narrative"       # table_grid|transposed|linear|narrative|...
     label: str = ""                      # 방식명 (예: "행↔열 전치", "위치 중심", "요약")
+    # 시각 자료 유형 낱말("그림"·"그래프"·"도표"…). '별책 참조' 안의 번호를 페이지 단위로
+    # 채울 때 필요하다 — 그 시점에는 text가 이미 점역자주로 감싸여 있어 되파싱이 위험하다.
+    type_label: str = ""
     braille_lines: list[str] = Field(default_factory=list)  # braille 단계에서 채움(조판 후 32칸)
     break_points: list[list[int]] = Field(default_factory=list)  # 음절 줄바꿈 offset(layout 조판용)
     rule_trail: list[RuleApplication] = Field(default_factory=list)

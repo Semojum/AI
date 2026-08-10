@@ -49,27 +49,28 @@ class TestConceptIndent:
         assert _tree_depth(_CONCEPT_2["nodes"]) == 2
 
     def test_들여쓰기_규칙(self):
+        # ★ 단위는 **앞 빈칸**이다 — 규정의 "N칸에서 시작" = 빈칸 N-1.
         # 2단계: 상위 5칸·하위 3칸 (§6.6.1(3)①)
-        assert _concept_indent(0, 2) == 5 and _concept_indent(1, 2) == 3
+        assert _concept_indent(0, 2) == 4 and _concept_indent(1, 2) == 2
         # 3단계: 최상위 7칸·중위 5칸·하위 3칸 (§6.6.1(3)②)
-        assert [_concept_indent(l, 3) for l in (0, 1, 2)] == [7, 5, 3]
+        assert [_concept_indent(l, 3) for l in (0, 1, 2)] == [6, 4, 2]
 
 
 class TestConceptAssemble:
     def test_3단계_개조식_전사(self):
         text, indents = assemble_concept_map(_CONCEPT_3)
         lines = text.split("\n")
-        assert lines[0] == "<!점역자주>개념도<!/점역자주>:" and indents[0] == 0   # §6.3.4(1)
-        # 중심개념부터 하위로(§6.6.1(2)), 7/5/3 들여쓰기
+        assert lines[0] == "<!점역자주>개념도<!/점역자주>:" and indents[0] == 4   # §2.1.8(3) 5칸
+        # 중심개념부터 하위로(§6.6.1(2)), 7/5/3칸 = 빈칸 6/4/2
         assert lines[1:] == ["생물", "동물", "포유류", "조류", "식물", "속씨식물"]
-        assert indents[1:] == [7, 5, 3, 3, 5, 3]
+        assert indents[1:] == [6, 4, 2, 2, 4, 2]
 
     def test_2단계_제목5칸(self):
         text, indents = assemble_concept_map(_CONCEPT_2)
         lines = text.split("\n")
-        assert lines[0] == "먹이 사슬" and indents[0] == 5                      # §6.3.3(1)
+        assert lines[0] == "먹이 사슬" and indents[0] == 4                      # §6.3.3(1) 5칸
         assert lines[1] == "<!점역자주>개념도<!/점역자주>:"
-        assert (lines[2], indents[2]) == ("생산자", 5) and (lines[3], indents[3]) == ("소비자", 3)
+        assert (lines[2], indents[2]) == ("생산자", 4) and (lines[3], indents[3]) == ("소비자", 2)
 
 
 class TestFlowAssemble:
@@ -77,9 +78,10 @@ class TestFlowAssemble:
         text, indents = assemble_flowchart(_FLOW)
         lines = text.split("\n")
         assert lines[0] == "<!점역자주>흐름도<!/점역자주>:"                      # §6.3.4(1)
-        assert lines[1:] == ["1 시작", "2 조건?", "예: 3", "아니오: 4", "3 처리", "4 종료"]
-        # 상자 indent 0, 분기 선택지 3칸(§6.6.2(4)⑥)
-        assert indents[1:] == [0, 0, 3, 3, 0, 0]
+        # §6.6.2(4)⑥ "3o 선택사항 3o 목적지" — 정답 예6-19(⠒⠕ = →)
+        assert lines[1:] == ["1 시작", "2 조건?", "→ 예 → 3", "→ 아니오 → 4", "3 처리", "4 종료"]
+        # 상자 1칸(빈칸0), 분기 선택지 3칸(빈칸2)
+        assert indents[1:] == [0, 0, 2, 2, 0, 0]
 
 
 class TestOptimize:
@@ -87,7 +89,7 @@ class TestOptimize:
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_CONCEPT_3)
         opt = asyncio.run(DiagramOpt().optimize([ext], "ZERO"))[0]
         assert opt.render_mode == "narrative"
-        assert "생물" in opt.corrected_text and opt.line_indents[1] == 7
+        assert "생물" in opt.corrected_text and opt.line_indents[1] == 6
 
     def test_flow_라우팅_visual_subtype(self):
         # structure.subtype 없이 visual_subtype로만 흐름도 판별
@@ -124,8 +126,54 @@ class TestE2E:
         content = [l for l in result if l.strip()]
         dec = decode("\n".join(result))
         assert "생물" in dec and "포유류" in dec                       # 셀 값 전사
-        # 최상위 7칸·하위 3칸 들여쓰기가 result.txt에 반영
+        # 최상위 7칸(빈칸6)·하위 3칸(빈칸2) 들여쓰기가 result.txt에 반영
         top = next(l for l in content if "생물" in decode(l))
-        assert top.startswith(" " * 7) and not top.startswith(" " * 8)
+        assert top.startswith(" " * 6) and not top.startswith(" " * 7)
         leaf = next(l for l in content if "포유류" in decode(l))
-        assert leaf.startswith(" " * 3) and not leaf.startswith(" " * 4)
+        assert leaf.startswith(" " * 2) and not leaf.startswith(" " * 3)
+
+
+class TestStep17DiagramTrail:
+    """Step17 — 도표 근거는 subtype마다 제 조항으로, tag에 판정·조립 방식을 담는다."""
+
+    def test_subtype마다_제_조항(self):
+        from app.ai.llm.diagram_opt import _min_trail
+
+        assert _min_trail("flowchart", "골격 조립")[0].rule_id == "JAJAK-6.6.2"
+        assert _min_trail("org_chart", "골격 조립")[0].rule_id == "JAJAK-6.6.5"
+        assert _min_trail("timeline", "골격 조립")[0].rule_id == "JAJAK-6.6.6"
+        # 종전에는 셋 다 개념도(§6.6.1)로 나갔다 — 흐름도에 개념도 조항이 근거로 붙었다.
+        assert _min_trail("concept_map", "골격 조립")[0].rule_id == "JAJAK-6.6.1"
+
+    def test_tag에_유형과_조립방식(self):
+        from app.ai.llm.diagram_opt import _min_trail
+
+        assert _min_trail("flowchart", "골격 조립")[0].tag == "흐름도·골격 조립"
+
+    def test_모든_조항이_레지스트리에_있다(self):
+        from app.ai.braille.regulations import all_rule_ids
+        from app.ai.llm.diagram_opt import _SUBTYPE_RULE
+
+        assert set(_SUBTYPE_RULE.values()) <= all_rule_ids()
+
+
+class TestStep17CaptionSource:
+    """Step17 — 대체텍스트의 출처(인쇄 캡션 전사 / AI 생성 / 구조 전사)를 근거에 남긴다."""
+
+    def test_출처_구분(self):
+        from app.ai.llm.visual_drafts import OMIT_IDX, OUTLINE_IDX, caption_source
+
+        f = caption_source
+        assert f(OUTLINE_IDX, used_llm=True, has_print_caption=True, has_struct=False) == "AI 생성"
+        assert f(OUTLINE_IDX, used_llm=False, has_print_caption=True, has_struct=False) == "인쇄 캡션 전사"
+        assert f(OUTLINE_IDX, used_llm=True, has_print_caption=True, has_struct=True) == "구조 전사(무-LLM)"
+        assert f(OMIT_IDX, used_llm=False, has_print_caption=False, has_struct=False).startswith("생략")
+
+    def test_근거_tag는_선택안과_출처(self):
+        from app.ai.llm.visual_drafts import OUTLINE_IDX, LABELS, visual_trail
+        from app.schemas.content import Draft
+
+        drafts = [Draft(option=i + 1, text="x", render_mode="narrative", label=lb)
+                  for i, lb in enumerate(LABELS)]
+        r = visual_trail("JAJAK-6.3.4", drafts, OUTLINE_IDX, "AI 생성")[0]
+        assert r.tag == "개조식 설명·AI 생성"

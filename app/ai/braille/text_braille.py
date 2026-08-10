@@ -5,13 +5,12 @@ LLMOutput.corrected_text → translator.translate_tagged_text() → BrailleOutpu
 
 from __future__ import annotations
 
-import re
-
 from app.ai.braille.isolation import safe_translate
-from app.ai.braille.number_sign import number_sign_indices
-from app.ai.braille.regulations import make_rule, make_rule_at
+from app.ai.braille.regulations import make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import (
+    _BLANK_TAG_RULE,
+    blank_marker_spans,
     box_borders_from_source,
     emphasis_marker_spans,
     translate_with_breaks,
@@ -19,33 +18,19 @@ from app.ai.braille.translator import (
 )
 from app.schemas.content import BoxBorder, BrailleOutput, LLMOutput, RuleApplication
 
-# 인라인 태그(<!이름>) 제거 — 숫자·문장부호 탐지는 점역 대상 '내용'만 본다.
-_TAG_TOKEN_RE = re.compile(r"<!(/?)([^>]+)>")
-# 문장 부호(원본 기준) — 있으면 문장부호 규정(KBR-6.13.49)을 블록 규정으로 표시.
-_PUNCT_RE = re.compile(r"[.?!,;:…·•（）()\[\]{}「」『』“”‘’\"'—~]")
-
-
 def content_rules(source: str, lines: list[str]) -> list[RuleApplication]:
-    """점역된 '내용'에 적용된 구체 규정(수표·문장부호)을 rule_trail로 emit.
+    """★ Step17(2026-08-08 대표 지시) — 수표·문장부호 포괄 규정을 더 이상 달지 않는다.
 
-    포괄 규칙(KBR-0.1)·조판 규칙은 정책상 제외하고(태민 2026-06-01), 점역사가 규정으로
-    확인할 실제 변환만 기록한다. FE 규정 패널이 평문에서도 비지 않도록 하는 핵심:
-      - 수표(⠼): 원본에 아라비아 숫자가 있으면 출력 점자의 **수표 자리** ⠼를 정밀 span으로
-        (KBR-5.11.40). 영어 약자 ble이 만든 같은 점형은 number_sign이 걸러 낸다.
-      - 문장부호: 원본에 문장부호가 있으면 블록 규정(line_no=-1)으로(KBR-6.13.49).
-    표 경로(table_braille._base_trail)도 이 함수를 공용으로 쓴다 — text/table 비대칭 금지.
+    종전 emit(dev 400쪽 실측):
+      · KBR-5.11.40 수표 ⠼ — **14,179회.** "숫자는 수표를 앞세운다"는 점역사에게 자명하고
+        고를 여지가 없다(기계적 변환). 판정 기준의 '뺄 것' 예시 그대로다.
+      · KBR-6.13.49 문장부호 블록(line_no=-1) — **12,192회.** 같은 요소에 기호별 span
+        (tag=symbol) 13,417회가 이미 붙는데 블록 규정이 한 번 더 붙었다 — '같은 줄 중복'.
+    둘을 합치면 전체 55,639건 중 **26,371건(47%)**이 이 두 줄에서 나왔다.
+    빈 목록을 반환하는 껍데기를 남긴 이유 = table_braille._base_trail이 같이 쓰는 공용
+    진입점이라, 나중에 '표 내용에만 필요한 근거'가 생기면 여기 한 곳에 붙이기 위함이다.
     """
-    clean = _TAG_TOKEN_RE.sub("", source or "")
-    joined = "\n".join(lines)
-    rules: list[RuleApplication] = []
-    if any(ch.isdigit() for ch in clean):   # 수표는 원본에 숫자가 있을 때만(오탐 방지)
-        # ⠼는 영어 약자 ble과 같은 점형이라(possible=⠏⠕⠎⠎⠊⠼) 위치를 걸러 낸다 —
-        # 안 그러면 영어 낱말 속 셀이 수표 규정으로 표시된다(number_sign.py).
-        for i in number_sign_indices(joined):
-            rules.append(make_rule_at("KBR-5.11.40", lines, i, i + 1, tag="number_sign"))
-    if _PUNCT_RE.search(clean):
-        rules.append(make_rule("KBR-6.13.49", tag="punctuation"))
-    return rules
+    return []
 
 
 class TextBraille:
@@ -58,9 +43,11 @@ class TextBraille:
     def _translate_one(self, opt: LLMOutput) -> BrailleOutput:
         # 논리 줄 + 음절 줄바꿈 offset. 32칸 줄바꿈은 layout이 수행(BBPG-1.2.1).
         lines, breaks = translate_with_breaks(opt.corrected_text)
-        # braille_text_list 기준 = 점자. rule_trail은 '내용 변환'만 기록한다
-        # (태민 정책 2026-06-01): 포괄 규칙(KBR-0.1)·조판 규칙(32칸 줄바꿈) 제외.
-        # 점역자 주 마커 + 특수기호·수식 규칙 emit (Phase B). 둘 다 source-gated.
+        # braille_text_list 기준 = 점자. rule_trail은 **점역사가 판단해야 할 자리**만 기록한다
+        # (Step17 2026-08-08 대표 지시 — 종전 "내용 변환만"에서 좁혔다):
+        #   ① 우리가 재량으로 넣은 것(점역자 주·글상자·빈칸 태그)
+        #   ② 규정↔관행이 갈리거나 규정끼리 갈리는 기호(symbol_rules._DISCRETIONARY)
+        # 포괄 규칙(KBR-0.1)·수표·문장부호 같은 자명한 것은 넣지 않는다. 전부 source-gated.
         joined = "\n".join(lines)
         # 좌표 = 요소-로컬(lines 기준 line_no/col). 원본 태그 유무로 gate —
         # ∽·ː의 ⠠⠄를 점역자 주로 오인하지 않도록(B1).
@@ -77,7 +64,12 @@ class TextBraille:
             make_rule_at("KBR-6.13.56", lines, s, e, tag=tag)
             for s, e, tag in emphasis_marker_spans(joined, opt.corrected_text)
         ]
-        # 수표·문장부호 규정 — 평문에서도 FE 규정 패널이 비지 않게 실제 변환을 기록.
+        # 빈칸 마커(제73항) — 묵자 □·____를 '채워 넣을 빈칸'으로 본 것은 LLM 태깅의 판단이고,
+        # 그 점형은 원장 C-04·C-05·C-06이 자문 대기 중인 관행이다(Step17).
+        trail += [
+            make_rule_at(_BLANK_TAG_RULE, lines, s, e, tag=tag)
+            for s, e, tag in blank_marker_spans(joined, opt.corrected_text)
+        ]
         trail += content_rules(opt.corrected_text, lines)
         box_borders = [
             BoxBorder(kind=kind, level=level, title=title)

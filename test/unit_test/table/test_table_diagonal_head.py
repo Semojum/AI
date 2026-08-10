@@ -54,13 +54,17 @@ class TestDiagonalRemoved:
 
 class TestMergedCorner:
     def test_rowspan_복제분도_함께(self):
-        """2단 머리에서 대각선 칸은 rowspan을 갖는다 — 복제분에 역빗금이 남으면 안 된다."""
+        """2단 머리에서 대각선 칸은 rowspan을 갖는다 — 복제분에 역빗금이 남으면 안 된다.
+
+        2026-08-08: 병합 셀은 이제 **한 번만** 실린다(_html_to_grid expand=False).
+        구 기대값 2는 rowspan 복제를 세던 것이고, 그 복제가 표 축 과잉생산의 원인이었다.
+        """
         html = ('<table><tr><td rowspan="2">연도\\구분</td><td colspan="2">A</td></tr>'
                 '<tr><td>인원</td><td>비율</td></tr>'
                 '<tr><td>2003</td><td>1,374</td><td>2.84</td></tr></table>')
         tags = _table_tags(None, html)
         assert "\\" not in tags
-        assert tags.count("연도 구분") == 2
+        assert tags.count("연도 구분") == 1
 
 
 class TestScope:

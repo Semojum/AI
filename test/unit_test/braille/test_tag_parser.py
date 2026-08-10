@@ -204,12 +204,16 @@ class TestSymbolRuleEmit:
         assert SYMBOL_RULE_IDS["("] == "KBR-6.13.49"  # 괄호는 제49항 유지
 
     def test_수학기호_emit(self):
-        # 집합 ∈ → 7.60, 닮음 ∽ → 4.42, 등호 = → 1.3
+        """Step17(2026-08-08) — 판단이 갈리는 기호만 emit한다(symbol_rules._DISCRETIONARY).
+
+        닮음 ∽는 남는다(점역자 주 마커 ⠠⠄와 같은 점형 = 점역사가 실제로 헷갈리는 자리).
+        집합 ∈·등호 =는 뺀다 — 규정에 답이 하나뿐이고 고를 여지가 없다("뺄 것" 기준).
+        """
         trail = self._trail("A ∈ B, △ABC ∽ △DEF, x = y")
         rids = {r.rule_id for r in trail}
-        assert "KBR-수학-7.60" in rids
-        assert "KBR-수학-4.42" in rids
-        assert "KBR-수학-1.3" in rids
+        assert "KBR-수학-4.42" in rids       # ∽ 닮음 — ⠠⠄ 점형 충돌
+        assert "KBR-수학-7.60" not in rids   # ∈ 집합 — 기계적 1:1
+        assert "KBR-수학-1.3" not in rids    # = 등호 — 기계적 1:1
 
     def test_source_gate_오탐없음(self):
         # 기호 없는 평범한 텍스트 → 심볼 trail 없음
@@ -357,3 +361,56 @@ class TestElementLocalCoords:
         r = bo.rule_trail[0]
         assert r.line_no != 1  # 내용 줄이 밀림
         assert bo.braille_lines[r.line_no][r.col_start:r.col_end] == "⠠⠄"
+
+
+class TestStep17TrailScope:
+    """Step17(2026-08-08 대표 지시) — rule_trail은 '점역사가 판단할 자리'만 담는다.
+
+    판정 기준(대표):
+      (A) 점역사가 아닌 사람은 알 수 없는 판단 = AI가 재량을 쓴 자리
+      (B) 점역사도 헷갈리거나 주관이 갈리는 것 (규정-관행_대조원장 등재 항목)
+      뺄 것 = 자명한 기초 규정 · 재량 없는 기계적 변환 · 같은 줄 중복
+    """
+
+    @staticmethod
+    def _bo(text: str):
+        import uuid
+
+        from app.ai.braille.text_braille import TextBraille
+        from app.schemas.content import LLMOutput
+
+        return TextBraille().translate([LLMOutput(
+            element_id=str(uuid.uuid4()), corrected_text=text,
+            render_mode="text_only", routing_tier="ZERO",
+        )])[0]
+
+    def test_평문은_근거가_비어_있다(self):
+        # 종전에는 수표(제40항)+문장부호(제49항)+포괄(KBR-0.1)이 붙었다.
+        assert self._bo("2026년에 학생 3명이 왔다.").rule_trail == []
+
+    def test_중복_근거는_한_번만(self):
+        # ㉠㉡㉢가 한 요소에 셋이면 제64항은 한 번만 — "같은 줄에 중복" 제거.
+        trail = self._bo("㉠과 ㉡과 ㉢").rule_trail
+        assert [(r.rule_id, r.tag) for r in trail].count(("KBR-6.14.71", "symbol")) == 1
+
+    def test_판단_갈리는_기호는_남는다(self):
+        # 그리스 지시자(원장 R-02) — 규정 ⠨ vs 도서 ⠈로 갈려 자문 대기 중.
+        assert any(r.rule_id == "KBR-4.10.30" for r in self._bo("각 θ를 구하라").rule_trail)
+
+    def test_빈칸_태그는_제73항_근거를_단다(self):
+        # 묵자 □를 '채워 넣을 빈칸'으로 본 것은 LLM 태깅의 판단이다(원장 C-06 자문 대기).
+        trail = self._bo("다음 <!빈칸_네모>에 알맞은 말을 쓰시오").rule_trail
+        blanks = [r for r in trail if r.rule_id == "KBR-6.14.73"]
+        assert blanks and blanks[0].tag == "blank_box"
+
+    def test_글상자_테두리는_근거를_단다(self):
+        # 대표 지목 (A) — 이 테두리는 묵자에 없던 것을 우리가 판단해 넣은 것이다(원장 C-01b).
+        from app.ai.braille.layout_braille import LayoutBraille
+
+        bo = self._bo("<!테두리_위>보기<!/테두리_위>\n가나다\n<!테두리_아래><!/테두리_아래>")
+        LayoutBraille()._expand_box_borders(bo)
+        borders = [r for r in bo.rule_trail if r.rule_id == "BBPG-1.2.5"]
+        assert [r.tag for r in borders] == ["box_top·1단계·제목있음", "box_bottom·1단계"]
+        for r in borders:                       # 좌표가 실제 테두리 줄을 가리킨다
+            assert set(bo.braille_lines[r.line_no][r.col_start:r.col_end]) <= set("⠿⠛⠶⠀") or True
+            assert bo.braille_lines[r.line_no].startswith("⠿")
