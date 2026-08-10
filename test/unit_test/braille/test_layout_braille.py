@@ -699,10 +699,16 @@ class TestBoxBorderBBPG125:
         assert "⠘⠎⠢" in line
 
     def test_render_top_긴제목_윗줄5칸_케이스1(self) -> None:
+        """긴 제목은 테두리 위 별도 줄에 "5칸에서 시작" = **앞 빈칸 4**.
+
+        ★ 2026-08-10 정정 — 기대값이 앞 빈칸 5였다. 규정 문구의 **칸 번호**를 그대로 적어
+          둔 것이라, 상수의 off-by-one을 테스트가 굳혀 지켜 주고 있었다(도표 8종에서 같은
+          일이 있었다). 정답 258건 첫 줄 앞 빈칸 분포는 4가 68건 · 5가 4건으로 17배 차다.
+        """
         title = "⠁" * 30                            # 24칸 초과
         out = LayoutBraille()._render_box_top(1, title)
         assert len(out) >= 2                         # 윗줄 제목(들) + 테두리
-        assert out[0].startswith(" " * 5)            # 윗줄 5칸 들여
+        assert out[0].startswith(" " * 4) and not out[0].startswith(" " * 5)
         assert out[-1] == "⠿" + "⠛" * 30 + "⠿"        # 테두리는 제목 없이
         assert all(len(ln) <= _COLS for ln in out)
 
