@@ -60,6 +60,8 @@ _WORD_RE = re.compile(r"[^ ⠀]+")
 
 # rule_trail rule_id (regulations.json 키)
 _RULE_LINE_WRAP = "BBPG-1.2.1"      # 줄바꿈(32칸), tag=line_wrap
+# 인라인 태그(§3-5 `<!이름>`/`<!/이름>`) 제거용 — 발문 판정은 묵자만 본다.
+_TAG_RE = re.compile(r"<!/?[^>]+>")
 _RULE_HEADING_BLANK = "BBPG-2.2.1"  # 단계별 제목 표기, tag=heading_blank
 _RULE_PARA_INDENT = "BBPG-2.2.2"    # 문단 형식(새 문단 3칸), tag=indent
 _RULE_BULLET_INDENT = "BBPG-2.3.5"  # 글머리 3칸, tag=indent
@@ -445,9 +447,17 @@ class LayoutBraille:
         formatted: list[tuple[int, str, list[str]]] = []  # (heading_level, etype, 조판 줄)
         total = 0
         forced_total = 0
+        # 발문을 만나면 그 문항이 끝날 때까지 '지문 구간'이다(원장 C-33). 발문과 상자
+        # 사이에 단서 `(단, …)`·그림 캡션이 끼는 일이 잦아 직전 요소만 보면 2/6밖에 못 잡는다.
+        # 구간은 다음 **제목**에서 닫는다 — 제목이 나오면 새 단락·새 개념 설명이다.
+        in_passage = False
         for bo in body:
             etype, _order, hlevel = meta.get(bo.element_id, _DEFAULT_META)
-            el_lines, forced = self._format_element(bo, etype, hlevel)
+            if etype == "title":
+                in_passage = False
+            el_lines, forced = self._format_element(bo, etype, hlevel, tight_box=in_passage)
+            if self._is_prompt_text(getattr(bo, "corrected_text", "") or ""):
+                in_passage = True
             if not el_lines:                       # 빈 요소는 빈 줄·태깅 없이 건너뜀
                 continue
             formatted.append((hlevel, etype, el_lines))
@@ -547,7 +557,7 @@ class LayoutBraille:
         return self._assemble_pages(formatted, footer, orig_page, page_no)
 
     def _format_element(
-        self, bo: BrailleOutput, etype: str, hlevel: int
+        self, bo: BrailleOutput, etype: str, hlevel: int, *, tight_box: bool = False
     ) -> tuple[list[str], int]:
         """요소 점자 줄 → 들여쓰기·정렬·32칸 브레이킹 적용. (표시 줄, 강제분리 수).
 
@@ -560,7 +570,7 @@ class LayoutBraille:
         """
         # 시각요소 drafts와 rule_trail 객체 공유 시 in-place 변형이 새지 않도록 분리.
         bo.rule_trail = [r.model_copy() for r in bo.rule_trail]
-        self._expand_box_borders(bo)
+        self._expand_box_borders(bo, tight=tight_box)
         if not any(ln.strip() for ln in bo.braille_lines):
             return [], 0
         # 글머리표는 요소 타입이 아니라 "줄머리에 글머리 글리프가 있는가"로 결정된다.
@@ -674,7 +684,29 @@ class LayoutBraille:
         start, fill, end = _BOX_LEVELS.get(level, _BOX_LEVELS[1])["bottom"]
         return start + fill * (_COLS - 2) + end
 
-    def _expand_box_borders(self, bo: BrailleOutput) -> None:
+    @staticmethod
+    def _is_prompt_text(src: str) -> bool:
+        """이 요소가 **발문·지시문**인가 — 뒤따르는 글상자를 '지문 상자'로 보는 신호.
+
+        원장 C-33. 조항이 둘 겹쳐 있다:
+          §2.1.6(5) 글상자 위아래를 한 줄씩 띈다.
+                    단, 평가문제에서 글상자가 지문으로 제시된 경우 '4.2.2 (2)'를 따른다.
+          §4.2.2(2) 발문과 선택지, 발문과 지문, 지시문과 지문 사이에는 **빈 줄을 두지 않는다.**
+
+        우리는 §2.1.6(5)만 보고 상자 위아래를 전부 띄웠다(실측 10쪽: 위 100%·아래 94%).
+        정답 도서는 2,917쪽에서 위 21.1%·아래 31.1%다 — 관행이 아니라 **규정과 맞는 값**이다
+        (일반 상자는 띄고 지문 상자는 안 띈다).
+
+        판정은 **묵자 원문**으로 한다. 점자 물음표 `⠦`는 여는 따옴표·괄호와 같은 점형이라
+        조판된 줄만 보고 가르면 오탐이 난다.
+        """
+        t = _TAG_RE.sub("", src or "").strip()
+        if not t:
+            return False
+        last = t.splitlines()[-1].strip()
+        return last.endswith(("?", "？"))
+
+    def _expand_box_borders(self, bo: BrailleOutput, *, tight: bool = False) -> None:
         """글상자 테두리 위치 마커(인라인 32칸 줄)를 box_borders와 순서대로 짝지어 재렌더(in-place).
 
         translator가 남긴 32칸 테두리 줄을 위계·제목 배치로 다시 그리고(BBPG-1.2.5),
@@ -702,17 +734,20 @@ class LayoutBraille:
                 spec = specs[si]
                 si += 1
                 if spec.kind == "top":
-                    new_lines.append("")  # 위 한 줄 띔
+                    if not tight:
+                        new_lines.append("")  # 위 한 줄 띔 (§2.1.6(5))
                     top = self._render_box_top(spec.level, spec.title)
                     border_trail.append(self._border_rule(spec, len(new_lines), top[0]))
                     new_lines.extend(top)
-                    new_breaks.extend([[]] * (1 + len(top)))
+                    new_breaks.extend([[]] * ((0 if tight else 1) + len(top)))
                 else:
                     bottom = self._render_box_bottom(spec.level)
                     border_trail.append(self._border_rule(spec, len(new_lines), bottom))
                     new_lines.append(bottom)
-                    new_lines.append("")  # 아래 한 줄 띔
-                    new_breaks.extend([[], []])
+                    new_breaks.append([])
+                    if not tight:
+                        new_lines.append("")  # 아래 한 줄 띔 (§2.1.6(5))
+                        new_breaks.append([])
             else:
                 index_map[old_idx] = len(new_lines)
                 new_lines.append(ln)
