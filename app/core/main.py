@@ -40,8 +40,9 @@ logger = get_logger(__name__)
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="Semojum V2 AI Server",
-        version="2.0.0",
+        title="Semojum V3 AI Server",
+        # 태그와 맞춘다(github_template §7). v3.0.0을 찍을 때 여기를 안 고쳐 2.0.0으로 남아 있었다.
+        version="3.0.1",
         description="AI 점자 번역 파이프라인 — gRPC 기반 페이지 단위 처리",
     )
     app.include_router(router)
