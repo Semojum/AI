@@ -419,6 +419,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         box_rects_norm,
         extract_text_blocks,
         mark_glyphs_norm,
+        regroup_boxed,
         tag_answer_marks,
         tag_boxed_elements,
     )
@@ -450,6 +451,10 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         if bbox_space == "pixel" and image_width and image_height:
             rects = [[r[0] / 1000 * image_width, r[1] / 1000 * image_height,
                       r[2] / 1000 * image_width, r[3] / 1000 * image_height] for r in rects]
+        # 추출기 읽기순서가 상자를 가로지르면 먼저 모아 준다 — 안 그러면 아래 태깅이
+        # "읽기순서가 끊겼다"로 상자를 통째로 건너뛴다(원장 C-17 후속).
+        if n := regroup_boxed(elements, rects):
+            logger.info("글상자 %d개 순서 재정렬 (page=%d)", n, task.page_no)
         if n := tag_boxed_elements(elements, rects):
             logger.info("글상자 %d개 태깅 (page=%d)", n, task.page_no)
 

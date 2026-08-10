@@ -644,6 +644,55 @@ def box_rects_norm(pdf_data: bytes, page_no: int) -> list[list[float]]:
             os.unlink(tmp_path)
 
 
+def _center_in(bb, rect) -> bool:
+    """요소 중심이 사각형 안인가. 테두리에 닿은 글이 몇 px 삐져나오므로 완전포함은 안 쓴다."""
+    return (rect[0] <= (bb[0] + bb[2]) / 2 <= rect[2]
+            and rect[1] <= (bb[1] + bb[3]) / 2 <= rect[3])
+
+
+def regroup_boxed(elements: list[dict], rects: list) -> int:
+    """사각형이 감싼 요소가 읽기순서에서 끊겨 있으면 **끼어든 요소를 상자 뒤로 뺀다**(in-place).
+    옮긴 상자 수 반환.
+
+    4분류: ③ AI 오류 — 추출기(MinerU) 읽기순서가 다단 지면에서 상자를 가로지른다.
+    실측 `EBS-E26-001/0137`: 탐구자료 상자(`[107,78,733,923]`) 안 요소가 `1~16`과 `25~27`로
+    끊기고 그 사이 `17~24`는 오른쪽 단의 다른 상자(개념 체크, x766~924)다. 그래서
+    `tag_boxed_elements`의 연속성 가드가 상자를 통째로 건너뛰었고, 바깥 상자가 없으니 안의
+    표 셋이 전부 깊이 0으로 1단계 테두리를 달았다. **정답은 그 표들을 2단계로 적는다**
+    (도서지침 예3-59: 1단계 지문 글상자 안의 표가 2단계). 실측 10쪽에서 gold 2단계 10줄 :
+    우리 0줄.
+
+    **사각형이 진실이다.** 묵자에 그려진 테두리는 추출기 순서보다 확실한 묶음 근거다.
+    다만 함부로 옮기면 본문이 뒤섞이므로 두 가지를 다 만족할 때만 옮긴다:
+      · 끼어든 요소가 **하나도 빠짐없이** 그 사각형 밖일 것(하나라도 안이면 판단 불가)
+      · 옮겨서 상자가 실제로 연속이 될 것
+    옮긴 뒤 `order`를 다시 매긴다 — 소비자(`pipeline._parse_txt_result`)가 그 값을 읽는다.
+    """
+    if not rects or not elements:
+        return 0
+    moved = 0
+    for rect in sorted(rects, key=lambda r: -((r[2] - r[0]) * (r[3] - r[1]))):
+        idx = [i for i, el in enumerate(elements)
+               if el.get("bbox") and len(el["bbox"]) == 4 and _center_in(el["bbox"], rect)]
+        if len(idx) < 2:
+            continue
+        span = range(idx[0], idx[-1] + 1)
+        outs = [i for i in span if i not in set(idx)]
+        if not outs:
+            continue                                   # 이미 연속
+        if any(_center_in(elements[i].get("bbox") or [0, 0, 0, 0], rect) for i in outs):
+            continue                                   # 있을 수 없지만 방어
+        keep = [elements[i] for i in span if i in set(idx)]
+        tail = [elements[i] for i in outs]
+        elements[idx[0]:idx[-1] + 1] = keep + tail
+        moved += 1
+    if moved:
+        for k, el in enumerate(elements, start=1):
+            if "order" in el:
+                el["order"] = k
+    return moved
+
+
 def tag_boxed_elements(elements: list[dict], rects: list) -> int:
     """사각형이 감싼 텍스트 요소 앞뒤에 테두리 태그를 넣는다(in-place). 감싼 상자 수 반환.
 
