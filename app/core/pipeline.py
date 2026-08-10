@@ -840,6 +840,47 @@ def _split_inline_choices(text: str) -> str:
     return "\n".join(out)
 
 
+# ── 글상자 제목 승격 (2026-08-10) ────────────────────────────────────────────
+# 4분류: ③ AI 오류 — 태깅 LLM이 상자 제목을 `<!테두리_위>` 안에 넣을 때와 본문 줄로 남길 때가
+#   갈린다. 원인은 MinerU 병합이다: 제목이 **별도 요소**로 오면(`보기`) 승격되고, 첫 항목에
+#   **붙어 오면**(`보기ㄱ. A는 간기에…`) LLM이 떼어 내 본문 끝줄로 밀어 놓는다.
+#   실측 EBS-E26-001 p0118: 네 상자 중 **둘만 승격**(별도 요소 2건 성공 / 병합 2건 실패).
+#   정답은 넷 다 위 테두리에 제목을 박는다(지침 §2.1.6(1)②).
+#
+# ⚠ "짧은 한 줄이면 제목" 같은 일반 규칙은 쓰지 않는다 — 같은 표본의 004 p0118에서
+#   `▵▵고교복`(글꼴 깨진 본문 첫 줄)이 걸렸는데 정답은 그걸 승격하지 않았다.
+#   그래서 **정답에서 실제로 관측된 제목 낱말만** 승격한다(gold 2,917쪽 위 테두리 1,634건 실측:
+#   〈보기〉 549 · 개념 체크 292 · 보기 285 · 수능 기본/실전 문제 각 72 · 자료 플러스 57 …).
+#   ※ 괄호 유무(`〈보기〉` vs `보기`)는 **책마다 갈린다** — 우리는 원문 그대로 둔다(원장 C-28 성격).
+_BOX_TITLE_PROMOTABLE = frozenset({
+    "보기", "개념 체크", "수능 기본 문제", "수능 실전 문제",
+    "자료 플러스", "개념 플러스", "기출 플러스", "학습의 길잡이", "학습 활동",
+})
+_BOX_BLOCK_RE = re.compile(
+    r"(<!테두리_위(\d?)>)(.*?)(<!/테두리_위\2>)(.*?)(?=<!테두리_아래)", re.S)
+
+
+def _promote_box_title(text: str) -> str:
+    """제목 없는 글상자의 본문 첫/끝 줄이 정답에서 관측된 제목 낱말이면 위 테두리로 올린다."""
+    if "<!테두리_위" not in text:
+        return text
+
+    def fix(m: re.Match) -> str:
+        open_tag, _lv, title, close_tag, body = m.group(1, 2, 3, 4, 5)
+        if title.strip():
+            return m.group(0)
+        lines = body.split("\n")
+        idxs = [i for i, ln in enumerate(lines) if ln.strip()]
+        for i in (idxs[:1] + idxs[-1:]) if idxs else ():
+            if lines[i].strip().strip("〈〉<>") in _BOX_TITLE_PROMOTABLE:
+                new_title = lines[i].strip()
+                rest = [ln for j, ln in enumerate(lines) if j != i]
+                return open_tag + new_title + close_tag + "\n".join(rest)
+        return m.group(0)
+
+    return _BOX_BLOCK_RE.sub(fix, text)
+
+
 def _parse_txt_result(
     extraction: dict, page_id: str
 ) -> tuple[LayoutResult, dict[UUID, ExtractedContent], str]:
@@ -867,7 +908,7 @@ def _parse_txt_result(
         vsub = el.get("visual_subtype") or _SUBTYPE_FROM_TYPE.get(orig_type)
         order = int(el.get("order", idx))
         content = el.get("content", "") or ""
-        content = _split_inline_choices(content)
+        content = _promote_box_title(_split_inline_choices(content))
         if etype in _TEXT_TYPES and _is_boilerplate(content):
             logger.info("보일러플레이트 드롭(%s): %.60s", etype, content)
             continue
