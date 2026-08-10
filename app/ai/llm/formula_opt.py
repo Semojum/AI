@@ -14,7 +14,6 @@ import logging
 import re
 import time
 
-from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import BaseOpt, decide_tier_timeout, generate_with_retry
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
@@ -24,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 def _min_trail(text: str) -> list[RuleApplication]:
-    """수학 점자 일반(KBR-수학-1.1) — 요소 전체(line_no=-1)."""
-    return [make_rule("KBR-수학-1.1")]
+    """Step17(2026-08-08) — 포괄 규정을 달지 않는다. 근거는 formula_braille가 구조별로 낸다."""
+    return []
 
 # stage3_complex.md T3-3: LaTeX 기호 → 유니코드 정규화 (LLM 교정 보조용)
 # \\times / \\div / \\cdot 는 kor_math_rules에서 단일 처리 — 여기서 제거

@@ -106,4 +106,6 @@ class TestE2E:
         dec = decode("\n".join(result))
         assert "국가별 인구" in dec                        # 중첩 그래프 설명 본문 포함
         title = next(l for l in content if "유럽 지도" in decode(l))
-        assert title.startswith(" " * 5) and not title.startswith(" " * 6)  # 제목 5칸 유지
+        # §6.3.3(1) 제목 "5칸에서 시작" = **앞 빈칸 4**(2026-08-10 정정).
+        # 종전 기대값 5는 칸 번호를 그대로 적은 것이라 상수의 off-by-one을 지켜 주고 있었다.
+        assert title.startswith(" " * 4) and not title.startswith(" " * 5)

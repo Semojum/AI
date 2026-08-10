@@ -43,3 +43,36 @@ class TestPageContentRisk:
     def test_no_cells_no_flag(self):
         assert page_content_risk([]) is None
         assert page_content_risk([{"type": "text", "contents": []}]) is None
+
+
+class TestAnnotateReadsSourceText:
+    """`annotate`가 원문을 실제로 읽는가 (2026-08-10 회귀).
+
+    응답 `text_list` 항목은 원문을 `contents`(줄 배열)로 싣는데 종전 코드는 `content`
+    (단수)만 봐서 항상 빈 문자열을 넘겼다 → `round_trip`이 전량 None → 실측 34,709요소가
+    전부 MEDIUM(HIGH 0건). 왕복 일치도 신호가 통째로 죽어 있었다.
+    """
+
+    def test_contents_배열을_읽는다(self):
+        from app.ai.quality.confidence import HIGH, annotate
+        eid = "e1"
+        els = [{"id": eid, "type": "text", "contents": ["⠚⠣⠉⠶⠶" * 5]}]
+        # 역점역이 원문과 완전히 일치하도록 decode를 주입(신호 배선만 검증)
+        annotate(els, {eid: {"contents": ["한국 사람들은 책을 읽는다"]}},
+                 lambda cells: "한국 사람들은 책을 읽는다")
+        assert els[0]["review_grade"] == HIGH
+        assert els[0]["round_trip"] == 1.0
+
+    def test_content_단수_형식도_읽는다(self):
+        from app.ai.quality.confidence import annotate
+        eid = "e1"
+        els = [{"id": eid, "type": "text", "contents": ["⠚⠣⠉⠶⠶" * 5]}]
+        annotate(els, {eid: {"content": "한국 사람들은 책을 읽는다"}},
+                 lambda cells: "한국 사람들은 책을 읽는다")
+        assert els[0]["round_trip"] == 1.0
+
+    def test_원문이_없으면_판단_보류(self):
+        from app.ai.quality.confidence import MEDIUM, annotate
+        els = [{"id": "e1", "type": "text", "contents": ["⠚⠣⠉⠶⠶" * 5]}]
+        annotate(els, {}, lambda cells: "무엇이든")
+        assert els[0]["review_grade"] == MEDIUM and "round_trip" not in els[0]

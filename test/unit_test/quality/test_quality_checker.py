@@ -389,3 +389,152 @@ class TestLostGlyphFlag:
     def test_신뢰도가_높아도_발화한다(self):
         # 이 요소들은 ocr_confidence가 높게 잡혀 R1 임계(0.85)에 안 걸린다.
         assert len(self._flags("가\x00나")) == 1
+
+
+class TestC5TagDigitFalsePositive:
+    """C5 게이트는 **점역 대상 글자**에만 열린다 (2026-08-10).
+
+    실측(dev+val 839쪽): C5 146건 중 142건(97.3%)이 인라인 태그 이름의 숫자로 열린
+    오탐이었다. `<!테두리_아래2>`의 '2'는 테두리 점형으로 치환되니 수표가 나올 수 없다.
+    C5는 배포 블로커 신호라 오탐이 쌓이면 제일 중요한 플래그부터 무시하게 된다.
+    """
+
+    def _report(self, text, cells):
+        layout, ids = _layout(1)
+        return QualityChecker().check(
+            "p_001", layout_result=layout, extracted=[_ext(ids[0])],
+            llm_outputs=[_llm(ids[0], text)],
+            braille_outputs=[BrailleOutput(element_id=ids[0], braille_lines=[cells])],
+        )
+
+    def test_태그_이름의_숫자는_게이트를_안_연다(self):
+        rep = self._report("ㄷ. 소득 분포를 고려하지 않는다.\n<!테두리_아래2><!/테두리_아래2>",
+                           "⠇⠚⠽⠀⠿⠶⠶⠶")
+        assert not any(c.type == "C5" for c in rep.critical_errors)
+
+    def test_원문자는_수표가_아니라_게이트를_안_연다(self):
+        # 제64항 원문자(⠼+내린 숫자)는 수표로 세지 않는다 — number_sign.py 주석.
+        rep = self._report(r"세포 $\textcircled{7}$ 상대량", "⠠⠗⠙⠥⠀⠼⠒")
+        assert not any(c.type == "C5" for c in rep.critical_errors)
+
+    def test_태그가_있어도_본문_숫자_누락은_잡는다(self):
+        rep = self._report("<!테두리_위2><!/테두리_위2>\n정답은 3번", "⠿⠛⠛⠀⠨⠻⠊⠣⠃⠵⠀⠉⠘⠞")
+        assert [c.type for c in rep.critical_errors] == ["C5"]
+
+
+class TestVisualAndTableFlags:
+    """AI가 쓴 시각자료 설명(R11)·표(R10) — 2026-08-10 추가.
+
+    근거(dev+val 839쪽, gold 대비 셀 편집): 시각 요소는 80~94%가 크게 틀리고(쪽 평균
+    33.2%), 표는 98.7%가 편집을 필요로 하는데 종전 플래그율이 각각 5%·0.8%였다.
+    """
+
+    def _layout_typed(self, *types):
+        items = [BBoxItem(element_id=uuid4(), type=t, bbox=(0, 0, 10, 10), reading_order=i + 1)
+                 for i, t in enumerate(types)]
+        return LayoutResult(page_id="p_001", elements=items), [b.element_id for b in items]
+
+    def test_캡셔닝_성공한_시각자료도_R11(self):
+        layout, ids = self._layout_typed("image")
+        rep = QualityChecker().check("p_001", layout_result=layout,
+                                     extracted=[_ext(ids[0])], llm_outputs=[_llm(ids[0])])
+        assert [r.type for r in rep.review_flags] == ["R11"]
+        assert "AI가 쓴" in rep.review_flags[0].message
+
+    def test_캡셔닝_실패는_R11_한_번만(self):
+        layout, ids = self._layout_typed("image")
+        rep = QualityChecker().check("p_001", layout_result=layout,
+                                     extracted=[_ext(ids[0], flags=["CAPTION_FAILED"])],
+                                     llm_outputs=[_llm(ids[0])])
+        assert [r.type for r in rep.review_flags] == ["R11"]
+        assert "직접 작성" in rep.review_flags[0].message
+
+    def test_표는_R10(self):
+        layout, ids = self._layout_typed("table")
+        rep = QualityChecker().check("p_001", layout_result=layout,
+                                     extracted=[_ext(ids[0])], llm_outputs=[_llm(ids[0])])
+        assert [r.type for r in rep.review_flags] == ["R10"]
+
+    def test_본문은_새_플래그_없음(self):
+        layout, ids = self._layout_typed("text", "title")
+        rep = QualityChecker().check("p_001", layout_result=layout,
+                                     extracted=[_ext(i) for i in ids],
+                                     llm_outputs=[_llm(i) for i in ids])
+        assert rep.review_flags == [] and rep.status == "COMPLETED"
+
+
+class TestFallbackFlagIsPageLevel:
+    """MinerU 폴백은 쪽 전체가 같은 사정 — 요소마다 띄우면 소음이다 (2026-08-10).
+
+    실측: 38쪽에 2,096건(쪽당 55건)이 같은 문구로 쌓여 진짜 신호를 화면 밖으로 밀어냈다.
+    """
+
+    def test_요소마다가_아니라_쪽에_한_번(self):
+        layout, ids = _layout(3)
+        rep = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(i, flags=["C2_FALLBACK"]) for i in ids],
+            llm_outputs=[_llm(i) for i in ids],
+        )
+        fb = [r for r in rep.review_flags if "폴백" in r.message]
+        assert len(fb) == 1 and fb[0].element_id == "page" and fb[0].type == "R1"
+        assert "3요소" in fb[0].message and "구조가 소실" in fb[0].message
+        assert rep.status == "NEEDS_REVIEW"
+
+
+class TestR13TextRiskySegment:
+    """본문 위험 구간 R13 — 2026-08-10 배선.
+
+    근거(dev+val 839쪽·32,310 본문요소, gold 대비 셀 편집): 태그·로마자·숫자가 든 본문은
+    수정필요율 83.5%·크게틀림 52.7%로 본문 평균(56.9%·30.8%)의 1.5~1.7배이고, 본문
+    편집셀의 58.5%가 여기 몰려 있다. 종전엔 본문에 플래그가 사실상 없어(11.8%) 전체
+    재현율이 6.9%였다. 상세·기각한 신호는 quality_checker._r13_reason 주석 참조.
+    """
+
+    def _flags(self, text, typ="text"):
+        item = BBoxItem(element_id=uuid4(), type=typ, bbox=(0, 0, 10, 10), reading_order=1)
+        layout = LayoutResult(page_id="p_001", elements=[item])
+        eid = item.element_id
+        ext = ExtractedContent(element_id=eid, corrected_text=text, ocr_confidence=1.0,
+                               visual_subtype=None, subtype_confidence=None, flags=[])
+        rep = QualityChecker().check("p_001", layout_result=layout, extracted=[ext],
+                                     llm_outputs=[_llm(eid, text)])
+        return rep, [r for r in rep.review_flags if r.type == "R13"]
+
+    def test_순수_한글_산문은_발화하지_않는다(self):
+        _, f = self._flags("광합성은 엽록체에서 일어나는 물질대사 과정이다.")
+        assert f == []
+
+    def test_로마자가_있으면_발화한다(self):
+        _, f = self._flags("ATP는 세포의 에너지 화폐이다.")
+        assert len(f) == 1 and "로마자" in f[0].message
+
+    def test_숫자가_있으면_발화한다(self):
+        _, f = self._flags("조사 대상은 2024년 기준 350명이다.")
+        assert len(f) == 1 and "아라비아 숫자" in f[0].message
+
+    def test_레이아웃_태그가_있으면_발화한다(self):
+        _, f = self._flags("<!테두리_위><!/테두리_위>\n다음 자료를 보고 물음에 답하시오.")
+        assert len(f) == 1 and "태그" in f[0].message
+
+    def test_태그_이름의_숫자만으로는_숫자_사유가_안_붙는다(self):
+        # C5가 밟았던 오탐(태그 이름의 '2')을 R13이 되풀이하면 안 된다.
+        _, f = self._flags("<!테두리_아래2><!/테두리_아래2>\n다음을 보시오.")
+        assert len(f) == 1 and "아라비아 숫자" not in f[0].message
+
+    def test_로마자_한_자는_발화하지_않는다(self):
+        # 임계 2자는 한계정밀도로 골랐다 — 1자까지 내리면 새 플래그의 정밀도가
+        # 64.6%로 기준선(58.3%)에 근접해 소음이 된다(_r13_reason 주석).
+        _, f = self._flags("가설 A를 검증하여 서술하시오.")
+        assert f == []
+
+    def test_표_시각자료에는_안_붙는다(self):
+        # R13은 본문 전용 — 표는 R10, 시각자료는 R11 소관이다.
+        _, f = self._flags("2024년 인구 350만 명", typ="table")
+        assert f == []
+
+    def test_R13만_있으면_쪽은_COMPLETED로_남는다(self):
+        # R13은 결함이 아니라 등급이다. 쪽 판정에 넣으면 실측 839쪽에서 COMPLETED가
+        # 255→9로 무너져 status가 무정보해진다.
+        rep, f = self._flags("ATP는 2024년에 350회 측정되었다.")
+        assert len(f) == 1 and rep.status == "COMPLETED"

@@ -14,6 +14,7 @@ from app.ai.preprocessor.pdf_analyzer import (
     _pua_ratio,
     analyze_pdf,
     diagnose_pdf_bytes,
+    mangled_glyph_chars,
 )
 
 
@@ -57,6 +58,41 @@ class TestCoerce:
     def test_빈_거부(self):
         with pytest.raises(InvalidPDFError):
             _coerce_pdf_bytes(b"")
+
+
+class TestMangledGlyphs:
+    """글꼴 매핑이 어긋난 PDF 탐지 (2026-08-09). PUA는 0%인데 글자가 틀리는 유형.
+
+    표본은 전부 코퍼스 1,131쪽에서 **렌더로 눈 확인**한 실물이다 —
+    수학2 `x¤`=x² · STkyak `…`=≤ · STkboNA `∂`=√ · 외국어 `䤋`=글머리 기호.
+    """
+
+    def test_정상_교과서_문자는_안_걸린다(self):
+        # ° · × ÷ … ‘’ ① ㉠ → ★ □ ℃ 한자(U+4E00~)는 본문 글꼴에서 정상으로 나온다.
+        ok = "사회·문화 25°C A×B÷C … ‘보기’ ① ㉠ → ★ □ ℃ 因果關係 abc 123"
+        layer, symbol = mangled_glyph_chars(ok)
+        assert not layer and not symbol
+
+    def test_수식글꼴_깨짐은_레이어_폐기(self):
+        # 수학2 p004 실물: `x¤ -4` = x²-4 (¤ = 윗첨자 2)
+        layer, _ = mangled_glyph_chars("다음분수방정식의근을구하시오 x¤ -4")
+        assert layer == {"¤": 1}
+
+    def test_기호만_어긋난_것은_레이어_폐기_아님(self):
+        # 외국어 p012 실물: `䤋compress 압축하다` — 글머리 기호가 한자 확장A 자리로.
+        layer, symbol = mangled_glyph_chars("䤋compress 압축하다")
+        assert not layer          # 본문은 멀쩡 → STANDARD로 돌리지 않는다
+        assert symbol == {"䤋": 1}
+
+    def test_매핑없는_glyph는_레이어_폐기(self):
+        layer, _ = mangled_glyph_chars("갑국\x00A 집단")
+        assert layer == {"\x00": 1}
+
+    def test_라우팅_STANDARD로_바뀐다(self):
+        # ¤ 한 글자만 있어도 그 쪽 텍스트레이어는 못 믿는다(비율은 1% 미만이다).
+        meta, text = analyze_pdf(_make_pdf("분수방정식의 근을 구하시오 x¤ -4 " * 3), 1)
+        assert meta.routing_tier == "STANDARD"
+        assert text == ""
 
 
 class TestPUARouting:

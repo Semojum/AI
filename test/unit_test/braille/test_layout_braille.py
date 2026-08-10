@@ -291,6 +291,18 @@ class TestBreakLine:
     def test_short_line_noop(self) -> None:
         assert _break_line("짧은 줄") == (["짧은 줄"], 0, [])
 
+    def test_네모빈칸은_줄바꿈에서_안_갈린다(self) -> None:
+        """규정 제73항 ⠸⠦⠀⠴⠇ — 가운데 빈칸이 어절 경계로 보여 반으로 갈리던 것(원장 C-16).
+
+        어느 칸에 걸리든 ⠸⠦가 줄 끝에, ⠴⠇가 다음 줄 머리에 오면 안 된다.
+        """
+        for pad in range(1, 40):
+            lines, _, _ = _break_line("⠫" * pad + "⠀⠸⠦⠀⠴⠇⠀⠊⠍")
+            assert not any(ln.rstrip("⠀").endswith("⠸⠦") for ln in lines), f"pad={pad}"
+            assert not any(ln.lstrip("⠀").startswith("⠴⠇") for ln in lines), f"pad={pad}"
+            assert all(len(ln) <= 32 for ln in lines), f"32칸 초과 pad={pad}"
+            assert "\x01" not in "".join(lines), f"sentinel 유출 pad={pad}"
+
     def test_word_boundary_split(self) -> None:
         # 각 단어 2셀, 32칸이면 단어 경계에서만 분리 (강제분리 0)
         line = " ".join(["가나"] * 15)  # 15단어 → 한 줄 초과
@@ -687,10 +699,16 @@ class TestBoxBorderBBPG125:
         assert "⠘⠎⠢" in line
 
     def test_render_top_긴제목_윗줄5칸_케이스1(self) -> None:
+        """긴 제목은 테두리 위 별도 줄에 "5칸에서 시작" = **앞 빈칸 4**.
+
+        ★ 2026-08-10 정정 — 기대값이 앞 빈칸 5였다. 규정 문구의 **칸 번호**를 그대로 적어
+          둔 것이라, 상수의 off-by-one을 테스트가 굳혀 지켜 주고 있었다(도표 8종에서 같은
+          일이 있었다). 정답 258건 첫 줄 앞 빈칸 분포는 4가 68건 · 5가 4건으로 17배 차다.
+        """
         title = "⠁" * 30                            # 24칸 초과
         out = LayoutBraille()._render_box_top(1, title)
         assert len(out) >= 2                         # 윗줄 제목(들) + 테두리
-        assert out[0].startswith(" " * 5)            # 윗줄 5칸 들여
+        assert out[0].startswith(" " * 4) and not out[0].startswith(" " * 5)
         assert out[-1] == "⠿" + "⠛" * 30 + "⠿"        # 테두리는 제목 없이
         assert all(len(ln) <= _COLS for ln in out)
 

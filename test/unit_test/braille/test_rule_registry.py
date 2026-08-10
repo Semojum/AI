@@ -57,7 +57,9 @@ def _llm(text: str, *, drafts=None, render_mode="text_only") -> LLMOutput:
 class TestRuleRegistry:
 
     def test_registry_size(self):
-        assert len(all_rule_ids()) == 233  # KBR+BBPG 226 + 자료지침(JAJAK) 7
+        # KBR+BBPG 226 + 자료지침(JAJAK) 13 (Step17에서 §6.6.3~6.6.8 여섯 조항 추가 —
+        # 도표 8종이 저마다 제 조항을 근거로 달 수 있게. 원문은 braille-source/text/ 발췌)
+        assert len(all_rule_ids()) == 239
 
     def test_make_rule_literals_subset_of_registry(self):
         scanned = _scan_make_rule_ids()

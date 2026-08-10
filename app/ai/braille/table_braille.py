@@ -30,11 +30,12 @@ from app.schemas.content import BrailleOutput, Draft, LLMOutput, RuleApplication
 def _base_trail(
     lines: list[str], source: str = "", *, content: bool = True
 ) -> list[RuleApplication]:
-    """점역자 주 마커(BBPG-1.2.6)·특수기호·수표·문장부호를 점자 좌표로 emit.
+    """점역자 주 마커(BBPG-1.2.6)·판단이 갈리는 특수기호를 점자 좌표로 emit.
 
-    rule_trail은 '내용 변환'만 기록한다(태민 정책 2026-06-01). 포괄·조판 규칙 제외.
-    수표(KBR-5.11.40)·문장부호(KBR-6.13.49)는 text 경로와 같은 content_rules 공용 —
-    표 셀 숫자·문장부호만 근거가 빠지던 비대칭 해소(r12).
+    rule_trail은 **점역사가 판단해야 할 자리**만 기록한다(Step17 2026-08-08 대표 지시 —
+    종전 "내용 변환만"에서 좁혔다). 수표·문장부호 같은 자명한 규정은 `content_rules`가
+    더 이상 내지 않고, 기호는 `symbol_rules._DISCRETIONARY`가 거른다.
+    text 경로와 같은 함수를 쓰는 것은 그대로다 — text/table 비대칭 금지(r12).
 
     source = 점역 전 원본 텍스트. 원본에 점역자 주 태그가 있을 때만 emit하여
     ∽·ː 등 동일 점형(⠠⠄)을 오인하지 않는다(B1 오탐 방지).
@@ -135,7 +136,16 @@ _BOOK_STYLE = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
 _TN_TRANSPOSE = "행과 열을 바꾸어 표기함"
 _TN_SRC = f"<!점역자주>{_TN_TRANSPOSE}<!/점역자주>"   # 태그 형식(§3-5) — rule_trail emit용
 _TN_SRC_MARK = "⠠⠄"                                  # 점역자 주 마커(양끝) — 출력 검출용
-_TITLE_INDENT = 5  # 도서 제작 지침 제3장 5)(1): 표 제목은 5칸에서 시작
+# 표 제목 "5칸에서 시작" = 앞 빈칸 **4**(도서지침 §3 5)(1)·자료지침 §3.1.3(1)).
+# 5로 적어 한 칸 밀려 있었다(2026-08-10 정정, 원장 C-21). 근거 3단이 모두 4다:
+#   규정 실물 5건 — 도서지침 예3-1·3-5·3-9·3-2, 자료지침 예3-4 모두 앞 빈칸 4
+#   코퍼스 관행   — dev+val 2027의 `〈표 N〉` 제목 줄 6/6이 앞 빈칸 4
+#   같은 오해가 오늘 도표 축(diagram_opt._TITLE_INDENT)에서도 4로 고쳐졌다
+_TITLE_INDENT = 4
+
+# 표 위/아래 테두리 (자료지침 §3.1.3(2) `=GGG…=` / `=777…=`). 격자·선형이 같이 쓴다.
+_TBL_TOP = "⠿" + "⠛" * (_COLS - 2) + "⠿"
+_TBL_BOT = "⠿" + "⠶" * (_COLS - 2) + "⠿"
 
 
 def _tn_transpose_line() -> str:
@@ -144,7 +154,10 @@ def _tn_transpose_line() -> str:
 
 
 def _title_line(title: str) -> str:
-    """표 제목(전사) → 5칸 들여쓴 점자 줄 (§3 5)(1)). layout이 폭을 건드리지 않도록 공백을 직접 적는다."""
+    """표 제목(전사) → 5칸에서 시작(앞 빈칸 4)하는 점자 줄 (§3 5)(1)).
+
+    layout이 폭을 건드리지 않도록 공백을 직접 적는다.
+    """
     return " " * _TITLE_INDENT + _translate(title)
 
 
@@ -191,8 +204,7 @@ def _render_grid(corrected_text: str) -> list[str]:
      layout._is_border_line이 이 테두리 형을 정식 인정해 들여쓰기 미적용도 유지된다.)
     """
     rows = [ln for ln in corrected_text.splitlines() if ln.strip()]
-    top = "⠿" + "⠛" * (_COLS - 2) + "⠿"
-    bot = "⠿" + "⠶" * (_COLS - 2) + "⠿"
+    top, bot = _TBL_TOP, _TBL_BOT
     # ★ 테두리를 낸다 (2026-08-06 판정 번복 — 원장 C-01a).
     #   2026-07-29에는 "코퍼스 정답 14,382줄에 테두리형 줄 0개"를 근거로 뺐다. 그 표본이
     #   **구판 수능특강 한 종류**였던 게 문제다. 82권으로 다시 재니 정반대다:
@@ -226,6 +238,14 @@ def _render_linear(corrected_text: str) -> list[str]:
     """2열 표 → 한 줄에 '키  값'. 3칸에서 시작하고 키와 값을 두 칸 띄운다.
         `  언어 문제  64.9`   (유도점·콜론 없음 — 코퍼스 확인)
 
+    ★ 위/아래 테두리를 두른다 (2026-08-10 신설 — 원장 C-22). 종전에는 격자형만 테두리를
+      냈고 선형은 맨몸으로 나갔다. 자료지침 §3.1.3(2)는 표에 테두리를 요구하고 열 수로
+      예외를 두지 않으며, 도서지침 예 3-2(2열 표)가 테두리를 두른 실물을 싣는다.
+      코퍼스도 같다 — 우리가 선형으로 낸 표를 gold에서 찾아 보니 **dev 69/75(92%) ·
+      val 49/49(100%)가 테두리 안**이었다(temp/boxtbl/linear_probe2.py).
+      머리행 구분선 ⠐×32는 넣지 **않는다**: dev gold 324 vs 우리 297로 이미 비슷하고
+      val은 gold 7 vs 우리 18로 이미 넘친다 — 여기서 더 넣으면 val이 악화한다.
+
     ★ 이 렌더러만은 BRAILLE_STYLE을 타지 않는다(2026-07-17 판단, 2026-07-21 재확인).
       표 축 전체가 스위치를 안 탄다는 옛 주석은 이제 사실이 아니다 — 모듈 상단 _BOOK_STYLE
       게이팅 표를 볼 것. 여기가 예외인 이유는 따로다: 전에 여기 있던 '규정 모드'
@@ -258,7 +278,7 @@ def _render_linear(corrected_text: str) -> list[str]:
             result.append(entry)
         else:
             result.extend(_split_lines(entry))
-    return result or [""]
+    return [_TBL_TOP, *(result or [""]), _TBL_BOT]
 
 
 _NUMERIC_CELL_RE = re.compile(r"^[\d.,()%~\-\s]+$")

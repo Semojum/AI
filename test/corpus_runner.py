@@ -320,6 +320,24 @@ def _write_e2e_state(job_dir: Path, job_id: str, subject: str, pages: list[dict]
     }, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def empty_caption_tally(summaries: list[dict]) -> tuple[int, int]:
+    """(시각요소 수, 빈 캡션 수). 런 밖에서도 같은 잣대로 다시 세려고 함수로 뺐다."""
+    cap_tot = cap_fail = 0
+    for s in summaries:
+        for p in s["pages"]:
+            for f in (STORAGE / s["job_id"] / "temp" /
+                      f"page_{p['local_no']:03d}" / "data").glob("*_txt_result.json"):
+                try:
+                    els = json.loads(f.read_text(encoding="utf-8")).get("elements", [])
+                except (OSError, ValueError):
+                    continue
+                for e in els:
+                    if e.get("type") in ("image", "cartoon", "chart_graph", "diagram"):
+                        cap_tot += 1
+                        cap_fail += "CAPTION_FAILED" in (e.get("flags") or [])
+    return cap_tot, cap_fail
+
+
 # ── main ─────────────────────────────────────────────────────────────────
 def main():
     ap = argparse.ArgumentParser(description="Semojum V2 코퍼스 러너(mode c)")
@@ -337,6 +355,20 @@ def main():
 
     if not os.environ.get("MINERU_BIN"):
         print("⚠ MINERU_BIN 미설정 — STANDARD 라우팅 페이지는 빈 추출이 될 수 있음.")
+
+    # ★ 캡셔닝 키 사전 점검(2026-08-10). 키가 없으면 anthropic 클라이언트가 요청을 보내기도
+    #   전에 TypeError("Could not resolve authentication method")로 죽고, _do_caption이
+    #   요소를 살리려 빈 캡션 + CAPTION_FAILED로 넘긴다 — 페이지 status는 NEEDS_REVIEW라
+    #   러너 요약만 보면 정상으로 보인다. 실제 사고: sub400-dev2027(2026-08-06, 816쪽)이
+    #   이 상태로 3.5시간을 돌아 시각요소 371/371이 전부 빈 캡션이 됐고, 그 캐시로 잰
+    #   "시각자료 26.1%"는 캡션 품질이 아니라 스텁 껍데기를 재고 있었다.
+    #   키는 .env가 아니라 셸 환경변수로 들어온다(운영 .env에 ANTHROPIC_API_KEY 없음).
+    #   워크트리에서 돌릴 때 셸이 프로필을 안 읽으면 그대로 재현된다.
+    if os.environ.get("CAPTION_BACKEND", "anthropic") == "anthropic":
+        from app.core.config import config as _cfg
+        if not _cfg.anthropic_api_key:
+            print("⚠ ANTHROPIC_API_KEY 없음 — 시각자료 캡션이 **전부** 빈다. "
+                  "이 런은 시각 축 채점에 쓸 수 없다. (export ANTHROPIC_API_KEY=…)")
 
     # ★ 영구 MinerU 서비스 연결. ensure_started는 main.py(서버 모드)만 부르고 있어서
     #   오프라인 러너는 get_url()=None → 페이지마다 vLLM 엔진을 새로 띄웠다(기동 ~45s/페이지,
@@ -372,6 +404,32 @@ def main():
     print("-" * 60)
     print(f"완료: COMPLETED{prog['ok']} NEEDS_REVIEW{prog['review']} BLOCKED{prog['blocked']} fail{prog['fail']} "
           f"timeout{prog['to']} / {total}  ({int(time.time()-prog['t0'])}s)")
+    # ★ MinerU 조용한 폴백 집계(2026-08-08). 추출이 실패·타임아웃하면 파이프라인이
+    #   텍스트레이어 폴백으로 내려가는데, 그 경고는 WARNING이라 러너 로그에 안 찍히고
+    #   페이지 status는 COMPLETED/NEEDS_REVIEW로 남는다 — 런이 조용히 다른 물건이 된다.
+    #   실제 사고: 한 GPU에 라운드 3개를 동시에 물렸더니 무거운 쪽이 60초 상한을 넘겨
+    #   B면 33쪽·C면 42쪽이 폴백으로 떨어졌고, 그 차이가 A/B 판정에 ±1p로 섞여 들어갔다.
+    #   폴백이 1쪽이라도 있으면 그 런은 다른 런과 비교하면 안 된다.
+    fb = [(s["job_id"], p["page"]) for s in summaries for p in s["pages"]
+          if p.get("tier") not in (None, "ZERO")
+          and not list((STORAGE / s["job_id"] / "temp" /
+                        f"page_{p['local_no']:03d}" / "mineru_raw").glob("*_content_list.json"))]
+    if fb:
+        print(f"⚠ MinerU 추출 폴백 {len(fb)}쪽 — 이 런은 A/B 비교에 쓰지 말 것"
+              f" (동시 실행·GPU 경합 확인): {[f'{j.split(chr(45))[-1]} p{p}' for j, p in fb[:10]]}")
+
+    # ★ 빈 캡션 집계(2026-08-10). 위 폴백 집계와 같은 이유다 — 캡셔닝이 실패해도 요소는
+    #   빈 캡션 + CAPTION_FAILED로 살아남고(불변규칙 1) 페이지는 NEEDS_REVIEW로 끝나서,
+    #   러너 요약만 보면 정상 런과 구별이 안 된다. 빈 캡션이 많으면 시각 축 점수는
+    #   캡션 품질이 아니라 '생략' 스텁을 재는 것이 되므로 그 런은 시각 축에 못 쓴다.
+    #   원인 둘 다 조용하다: (1) 키 없음 → 전량 실패, (2) thinking 미차단 → 산발 빈 응답.
+    cap_tot, cap_fail = empty_caption_tally(summaries)
+    if cap_fail:
+        pct = cap_fail / cap_tot
+        print(f"{'⚠⚠' if pct >= 0.2 else '⚠'} 빈 캡션 {cap_fail}/{cap_tot}개 ({pct:.0%})"
+              + (" — 시각 축 채점에 쓰지 말 것. ANTHROPIC_API_KEY·캡셔닝 로그 확인"
+                 if pct >= 0.2 else " — 산발 실패, 로그 확인"))
+
     # 실패/타임아웃 페이지 목록
     bad = [(s["job_id"], p["page"], p["status"], p.get("error"))
            for s in summaries for p in s["pages"]

@@ -111,8 +111,11 @@ class TestTitle:
         opt = asyncio.run(TableOpt().optimize([ext], "ZERO"))
         bo = TableBraille().translate(opt)[0]
         lines = bo.drafts[1].braille_lines                     # 격자형(테두리 있는 대안)
-        # 제목 줄이 위 테두리보다 먼저(§3 5)(2)), 5칸 들여(§3 5)(1))
-        assert lines[0].startswith(" " * 5) and not lines[0].startswith(" " * 6)
+        # 제목 줄이 위 테두리보다 먼저(§3 5)(2)), **5칸에서 시작 = 앞 빈칸 4**(§3 5)(1)).
+        # ★ 2026-08-10 정정(원장 C-21) — 종전 단언은 앞 빈칸 5였다. 지침 자체의 BRF
+        #   예3-1이 백틱 4개로 시작하고(도서지침 §3), 예3-5·3-9·3-2·자료지침 예3-4와
+        #   코퍼스 `〈표 N〉` 6/6도 모두 앞 빈칸 4다.
+        assert lines[0].startswith(" " * 4) and not lines[0].startswith(" " * 5)
         assert lines[0].strip() and not _is_border(lines[0])
         # 제목 다음 줄이 위 테두리다(§3 5)(2) — 제목이 테두리 **앞**).
         assert lines[1] == _TBL_TOP

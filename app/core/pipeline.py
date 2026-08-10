@@ -48,6 +48,9 @@ logger = get_logger(__name__)
 # 텍스트 요소 유형 — text 체인이 처리하는 요소들
 _TEXT_TYPES = {"text", "title", "caption", "list_item", "footnote", "sidebar", "header_footer", "page_number"}
 
+# 시각 요소 유형 — 그림 회수 판정(_extract_with_hyunju)과 읽기순서(_reorder_columns)가 공유
+_VISUAL_TYPES = {"image", "chart_graph", "cartoon", "diagram", "figure", "table"}
+
 # 현주 type 값 → 태민/plan type 값 매핑 (현주는 chart 사용)
 # 도표(§6.6 개념도·흐름도)는 단일 diagram 체인으로 라우팅하고, 하위유형은 visual_subtype로 보존한다.
 _TYPE_ALIAS = {
@@ -416,6 +419,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         box_rects_norm,
         extract_text_blocks,
         mark_glyphs_norm,
+        regroup_boxed,
         tag_answer_marks,
         tag_boxed_elements,
     )
@@ -447,6 +451,10 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         if bbox_space == "pixel" and image_width and image_height:
             rects = [[r[0] / 1000 * image_width, r[1] / 1000 * image_height,
                       r[2] / 1000 * image_width, r[3] / 1000 * image_height] for r in rects]
+        # 추출기 읽기순서가 상자를 가로지르면 먼저 모아 준다 — 안 그러면 아래 태깅이
+        # "읽기순서가 끊겼다"로 상자를 통째로 건너뛴다(원장 C-17 후속).
+        if n := regroup_boxed(elements, rects):
+            logger.info("글상자 %d개 순서 재정렬 (page=%d)", n, task.page_no)
         if n := tag_boxed_elements(elements, rects):
             logger.info("글상자 %d개 태깅 (page=%d)", n, task.page_no)
 
@@ -462,7 +470,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         # 놓친 그림 회수 — 앞단이 시각 요소를 **0개** 낸 쪽만 비전 모델로 다시 본다.
         # 평가 실측: 시각 요소가 0인 26쪽에서 우리가 gold의 1%만 쓴다(프롬프트로는 안 움직인다).
         from app.ai.parser import figure_detect
-        _VIS = ("image", "chart_graph", "cartoon", "diagram", "figure")
+        _VIS = _VISUAL_TYPES - {"table"}     # 표가 있어도 그림은 회수 대상이다
         if figure_detect.enabled() and not any(e.get("type") in _VIS for e in elements):
             figs = await asyncio.to_thread(figure_detect.detect, task.pdf_data, task.page_no)
             if figs:
@@ -614,6 +622,11 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
         통째로(연속 순번) 방출하는 것이 주 실패 양상(세계사 p086·p106).
         반대로 순번이 본문 사이에 흩어진 좁은 요소(문항별 포인트 라벨 등)는
         MinerU의 의도 배치 → 보존(세계사 p160).
+        '연속'은 3개 이상 블록일 때 이탈 하나까지 봐준다 — 쪽 아래 출전 한 줄이 같은
+        열로 묶여 후치가 통째로 막히는 쪽이 있었다(생물 p180 τ −0.111 → 1.000).
+        낱개 '그림'은 아예 후치 대상이 아니다 — 아래 lone_visual 주석.
+    (1') 본문 열은 요소가 많은 열이 아니라 **면적이 큰 열**이다. 잘게 쪼개진 보충설명
+        열이 개수로 본문을 이기는 쪽이 있었다(생물 p180: 사이드 9개 vs 본문 7개).
     (2) 대등한 2단 본문은 MinerU가 열 단위로 옳게 방출 — y-정렬하면 두 열이 섞여
         파괴되므로, MinerU 순서가 y-흐름을 심하게 거스를 때만 열 내부를 y-정렬
         (사회문화 p035: MinerU 순서 자체가 뒤죽박죽인 페이지).
@@ -668,11 +681,12 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
               enumerate(sorted(clusters.values(), key=lambda c: min(b.bbox[0] for b in c)))
               for b in cl}
 
-    # 2) main = 최대 클러스터(동수면 총면적). main 헐과 자기 폭 50% 이상 겹치는
-    #    클러스터(선지 ①②③ 조각 등)는 흡수.
-    main_key = max(clusters, key=lambda k: (len(clusters[k]),
-                                            sum((b.bbox[2] - b.bbox[0]) * (b.bbox[3] - b.bbox[1])
-                                                for b in clusters[k])))
+    # 2) main = 총면적이 가장 큰 클러스터(동률이면 요소 수). main 헐과 자기 폭 50% 이상
+    #    겹치는 클러스터(선지 ①②③ 조각 등)는 흡수.
+    #    ★ 예전에는 요소 수를 먼저 봤는데, 잘게 쪼개진 좁은 보충설명 열이 개수로 본문을
+    #      이겨 본문이 통째로 뒤로 밀렸다(생물 p180: 사이드 9개 vs 본문 7개, τ −0.111).
+    main_key = max(clusters, key=lambda k: (sum((b.bbox[2] - b.bbox[0]) * (b.bbox[3] - b.bbox[1])
+                                                for b in clusters[k]), len(clusters[k])))
     main = clusters.pop(main_key)
     hull0, hull1 = min(b.bbox[0] for b in main), max(b.bbox[2] for b in main)
     sides: list[list[BBoxItem]] = []
@@ -689,10 +703,22 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
     deferred: list[list[BBoxItem]] = []
     for cl in sides:
         ranks = sorted(body_rank[id(b)] for b in cl)
-        contiguous = ranks[-1] - ranks[0] == len(ranks) - 1
+        run = best = 1
+        for _a, _c in zip(ranks, ranks[1:]):
+            run = run + 1 if _c == _a + 1 else 1
+            best = max(best, run)
+        contiguous = best == len(ranks) or (best >= 3 and best >= len(ranks) - 1)
         narrow = (max(b.bbox[2] for b in cl) - min(b.bbox[0] for b in cl)) \
             <= 0.5 * (hull1 - hull0)
-        if contiguous and narrow:
+        # ★ 요소 하나짜리 클러스터는 '연속 순번'이 공짜로 참이라 이 조건을 못 거른다.
+        #   그래서 본문 옆에 홀로 놓인 그림·아이콘·표가 통째로 쪽 끝으로 밀려났다
+        #   (실측 devall+valall 13쪽 — 생물 p026 '유형' 아이콘이 y=355인데 마지막에서 두 번째).
+        #   규정이 뒤로 미루라는 것은 '참고 자료 단'이지 낱개 그림이 아니다
+        #   (「점자 도서 제작 지침」 2장 5, 주종 관계의 다단). 그림 하나는 단이 아니다.
+        #   텍스트 낱개(좌측 여백의 유형 라벨 등)는 종전대로 후치한다 — 정답 배치가 그렇다
+        #   (사회문화 p034: 후치를 막으면 τ 0.927 → 0.709).
+        lone_visual = len(cl) == 1 and cl[0].type in _VISUAL_TYPES
+        if contiguous and narrow and not lone_visual:
             deferred.append(cl)
         else:
             main.extend(cl)
@@ -789,6 +815,77 @@ def _split_list_marker_items(elements: list[dict]) -> list[dict]:
     return out
 
 
+# ── 한 줄로 뭉친 선택지 갈라 놓기 (2026-08-10) ───────────────────────────────
+# MinerU는 선택지를 쪽마다 다르게 낸다 — 어떤 쪽은 ①②③이 **각각 제 줄**, 어떤 쪽은
+# **한 줄에 몰려서** 나온다. 뒤쪽이면 `layout_braille._mark_item_lines`가
+# `len(src) < 2`로 조기 반환해 **항목 들여쓰기도 구분도 안 붙고**, 원문의 한 칸 띄어쓰기가
+# 그대로 나간다.
+#
+# 실측(valall 6권 951쪽): 선택지 블록 243개 중 **48개(19.8%)**가 두 번째 모양으로 나갔다.
+# 정답 도서는 결정적으로 일관적이다 — 항목 구분 **2칸 97.8%**(1500/1534),
+# 선택지 줄 들여쓰기 **2칸 99.5%**(6981/7018). 규정도 같다(지침 3장3절4-(3)①).
+#
+# 한 줄에 항목 머리가 둘 이상이면 각 항목을 제 줄로 갈라 놓는다. 그 뒤는 기존 기계가
+# 알아서 한다 — 여기서 들여쓰기를 직접 만지지 않는 게 중요하다(중복 적용을 피한다).
+#
+# ⚠ 항목이 하나뿐인 줄은 건드리지 않는다. 본문 안의 `①`(주석 참조 등)까지 가르면
+#   멀쩡한 문장이 토막 난다.
+_INLINE_CHOICE_SPLIT = re.compile(r"(?<=\S)\s+(?=[\u2460-\u2473]\s*\S)")
+
+
+def _split_inline_choices(text: str) -> str:
+    """한 줄에 몰린 ①②③…을 줄마다 하나씩으로 갈라 놓는다."""
+    if not text or "\u2460" not in text and not any(
+            "\u2460" <= ch <= "\u2473" for ch in text):
+        return text
+    out = []
+    for line in text.split("\n"):
+        heads = sum(1 for ch in line if "\u2460" <= ch <= "\u2473")
+        out.append(_INLINE_CHOICE_SPLIT.sub("\n", line) if heads >= 2 else line)
+    return "\n".join(out)
+
+
+# ── 글상자 제목 승격 (2026-08-10) ────────────────────────────────────────────
+# 4분류: ③ AI 오류 — 태깅 LLM이 상자 제목을 `<!테두리_위>` 안에 넣을 때와 본문 줄로 남길 때가
+#   갈린다. 원인은 MinerU 병합이다: 제목이 **별도 요소**로 오면(`보기`) 승격되고, 첫 항목에
+#   **붙어 오면**(`보기ㄱ. A는 간기에…`) LLM이 떼어 내 본문 끝줄로 밀어 놓는다.
+#   실측 EBS-E26-001 p0118: 네 상자 중 **둘만 승격**(별도 요소 2건 성공 / 병합 2건 실패).
+#   정답은 넷 다 위 테두리에 제목을 박는다(지침 §2.1.6(1)②).
+#
+# ⚠ "짧은 한 줄이면 제목" 같은 일반 규칙은 쓰지 않는다 — 같은 표본의 004 p0118에서
+#   `▵▵고교복`(글꼴 깨진 본문 첫 줄)이 걸렸는데 정답은 그걸 승격하지 않았다.
+#   그래서 **정답에서 실제로 관측된 제목 낱말만** 승격한다(gold 2,917쪽 위 테두리 1,634건 실측:
+#   〈보기〉 549 · 개념 체크 292 · 보기 285 · 수능 기본/실전 문제 각 72 · 자료 플러스 57 …).
+#   ※ 괄호 유무(`〈보기〉` vs `보기`)는 **책마다 갈린다** — 우리는 원문 그대로 둔다(원장 C-28 성격).
+_BOX_TITLE_PROMOTABLE = frozenset({
+    "보기", "개념 체크", "수능 기본 문제", "수능 실전 문제",
+    "자료 플러스", "개념 플러스", "기출 플러스", "학습의 길잡이", "학습 활동",
+})
+_BOX_BLOCK_RE = re.compile(
+    r"(<!테두리_위(\d?)>)(.*?)(<!/테두리_위\2>)(.*?)(?=<!테두리_아래)", re.S)
+
+
+def _promote_box_title(text: str) -> str:
+    """제목 없는 글상자의 본문 첫/끝 줄이 정답에서 관측된 제목 낱말이면 위 테두리로 올린다."""
+    if "<!테두리_위" not in text:
+        return text
+
+    def fix(m: re.Match) -> str:
+        open_tag, _lv, title, close_tag, body = m.group(1, 2, 3, 4, 5)
+        if title.strip():
+            return m.group(0)
+        lines = body.split("\n")
+        idxs = [i for i, ln in enumerate(lines) if ln.strip()]
+        for i in (idxs[:1] + idxs[-1:]) if idxs else ():
+            if lines[i].strip().strip("〈〉<>") in _BOX_TITLE_PROMOTABLE:
+                new_title = lines[i].strip()
+                rest = [ln for j, ln in enumerate(lines) if j != i]
+                return open_tag + new_title + close_tag + "\n".join(rest)
+        return m.group(0)
+
+    return _BOX_BLOCK_RE.sub(fix, text)
+
+
 def _parse_txt_result(
     extraction: dict, page_id: str
 ) -> tuple[LayoutResult, dict[UUID, ExtractedContent], str]:
@@ -816,6 +913,7 @@ def _parse_txt_result(
         vsub = el.get("visual_subtype") or _SUBTYPE_FROM_TYPE.get(orig_type)
         order = int(el.get("order", idx))
         content = el.get("content", "") or ""
+        content = _promote_box_title(_split_inline_choices(content))
         if etype in _TEXT_TYPES and _is_boilerplate(content):
             logger.info("보일러플레이트 드롭(%s): %.60s", etype, content)
             continue
@@ -1252,6 +1350,26 @@ async def _run_pipeline(task: PageTask) -> dict:
     )
 
 
+def _number_volume_refs(llm_outputs: list[LLMOutput], page_no: int) -> None:
+    """'별책 참조' 안의 번호를 페이지 단위로 채운다 — `그림 20-4 참조` (원장 C-28).
+
+    번호는 정답 관행 그대로 **묵자쪽-그 쪽에서의 순번**이다(009 본책 85건 실측:
+    p0004 → `그림 4-1`·`그림 4-2`, p0020 → `그림 20-1`~`20-4`). 순번은 시각 요소끼리만
+    세므로 요소 하나만 봐서는 못 만든다 — 읽기 순서로 정렬된 뒤인 여기서 채운다.
+    llm_outputs를 **제자리에서** 고친다(호출부가 같은 객체를 계속 쓴다).
+    """
+    from app.ai.llm.visual_drafts import LABELS, VOLREF_IDX, volume_ref_draft
+
+    ordinal = 0
+    for o in llm_outputs:
+        for i, d in enumerate(o.drafts or []):
+            if d.label != LABELS[VOLREF_IDX]:
+                continue
+            ordinal += 1
+            o.drafts[i] = volume_ref_draft(d.type_label, f"{page_no}-{ordinal}")
+            break
+
+
 # ── 응답 조립 ────────────────────────────────────────────────────────────
 
 def _selected_lines(bo, flat: dict) -> list[str]:
@@ -1350,6 +1468,7 @@ def _build_response(
     # 그대로 내보내면 본문 위 그림 등에서 순서가 뒤바뀐다 — FE가 order로 렌더 가능하도록.)
     _order_of = {e.element_id: e.reading_order for e in layout_result.elements}
     llm_outputs = sorted(llm_outputs, key=lambda o: _order_of.get(o.element_id, 1_000_000))
+    _number_volume_refs(llm_outputs, task.page_no)
 
     # PART 11: 품질 판정 — C/R 감지 후 status 결정 (COMPLETED|NEEDS_REVIEW|BLOCKED)
     from app.ai.quality.quality_checker import QualityChecker

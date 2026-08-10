@@ -47,8 +47,30 @@ def safe_translate(
                 getattr(opt, "element_id", "?"), lost[:30],
             )
             out = _placeholder(opt, f"점역 불가 문자 {lost[:12]}")
+        out.rule_trail = dedupe_trail(out.rule_trail)
         results.append(out)
     return results
+
+
+def dedupe_trail(trail: list) -> list:
+    """같은 근거가 한 요소에 여러 번 붙는 것을 첫 번째만 남긴다 (Step17, 2026-08-08).
+
+    대표 판정 기준의 '뺄 것' 셋째 항목("같은 줄에 중복으로 여러 번 붙는 것") 구현.
+    한 문단에 ①②③④⑤가 있으면 종전에는 제64항이 다섯 번 붙었다 — 점역사는 그 정책을
+    한 번 확인하면 끝이고, 나머지 넷은 정작 봐야 할 다른 근거를 화면 밖으로 밀어낸다.
+    (rule_id, tag)로 가른다 — 드러냄표 tn_open/tn_close 같은 여닫이 쌍은 서로 다른 tag라
+    둘 다 살아남고, 좌표는 그 근거의 **첫 등장 자리**를 가리킨다.
+    모든 점역 체인이 safe_translate를 지나므로 여기 한 곳에서 건다.
+    """
+    seen: set[tuple[str, str]] = set()
+    out = []
+    for r in trail:
+        key = (r.rule_id, r.tag)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out
 
 
 # 내용 없음 판정 — 공백·점자 빈칸(⠀ U+2800)·제어문자는 '내용'이 아니다.

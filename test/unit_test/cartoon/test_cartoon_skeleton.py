@@ -1,4 +1,4 @@
-"""만화 대체텍스트 4안 회귀 — 생략/짧은 제목/개조식/줄글 (QA 2026-07-05).
+"""만화 대체텍스트 6안 회귀 — 생략/짧은 제목/개조식/줄글/유형만/별책 참조.
 
 개조식은 §5.3 골격(장면·대사 전사): §5.3.3(1) 장면·§5.3.3(2)(3) 대사·§6.3.4(3) 화자불명 말풍선.
 ZERO 티어는 LLM 미사용(결정적).
@@ -44,10 +44,10 @@ class TestFourDrafts:
         assert "학생: 안녕?" in outline                                 # §5.3.3(2)(3) 대사 전사
         assert "말풍선: 반가워" in outline                              # §6.3.4(3) 화자 불명
 
-    def test_구조없음_캡션_4안(self):
+    def test_구조없음_캡션_6안(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, corrected_text="두 컷 만화")
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
-        assert len(opt.drafts) == 4
+        assert len(opt.drafts) == len(LABELS)
         assert "두 컷 만화" in opt.drafts[1].text                      # 캡션 → 짧은 제목
 
     def test_전부_없음_생략표기(self):
@@ -67,7 +67,7 @@ class TestEndToEnd:
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))
         assert opt[0].line_indents is not None                         # 개조식 골격 들여쓰기
         bo = CartoonBraille().translate(opt)
-        assert len(bo[0].drafts) == 4
+        assert len(bo[0].drafts) == len(LABELS)
         lr = LayoutResult(page_id="p", elements=[
             BBoxItem(element_id=eid, type="cartoon", bbox=(0, 0, 0, 0), reading_order=1)])
         LayoutBraille().layout(bo, page_no=1, job_id="cartoon", layout_result=lr)

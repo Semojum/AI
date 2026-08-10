@@ -1,5 +1,6 @@
 import base64
 import binascii
+import collections
 import os
 import re
 import tempfile
@@ -19,6 +20,64 @@ MIN_TEXT_LENGTH = 10
 # raw 코드포인트로 추출한다. 텍스트는 '있으나' 수식이 글자로 안 읽혀 ZERO로는 점역 불가 →
 # STANDARD(MinerU)로 보내 OCR/수식 추출을 거치게 한다.
 PUA_RATIO_THRESHOLD = 0.10
+
+# ── 글꼴 매핑이 어긋난 PDF (2026-08-09 실측) ────────────────────────────────
+# PUA 규칙이 못 잡는 **다른 유형**이다. 레거시 한국어 조판 글꼴(ST*·TK*·Mathmungjo·
+# T### 등)은 윗/아래첨자·그리스문자·분수선·근호·큰괄호를 라틴-1과 한자 확장A 자리에
+# 얹어 놓고, 배포기가 그 (거짓) 글리프 이름을 그대로 ToUnicode로 굳혔다. 그래서
+# **PUA가 0%인데 글자가 틀린다** — 예외도 안 나고 결과만 보면 모른다.
+#
+# 실물 대조(렌더 확인, 코퍼스 1,131쪽):
+#     STksaA-Italic  ¤ → ²    ‹ → ³    ¡ → ₁    ™ → ₂    æ → °C
+#     STkyak         a → α    b → β    p → π    … → ≤    ¶ → ∞    ⁄ → (i)
+#     STkboNA        ; → 분수선    ∂ → √    { → 큰중괄호   (숫자도 분수선이다)
+#     TKup           ` → ¹⁴    ± → ²⁺    ™ → ₂
+#     UNIDOCS 본문   䤎 → •    (한자 확장A 자리)
+#     YGO11          ⇂ → □(빈칸)      Skia-Regular  Ã → ✓
+# ★ **같은 코드가 글꼴마다 다른 뜻이다**(¤ = ² 또는 (ii)). 그래서 되돌리려면 글꼴마다
+#   글리프를 눈으로 확인한 표가 있어야 하고, 그 표가 있어도 수식은 못 살린다 — 이 PDF들은
+#   분자·분모를 따로 찍어 놔서 추출 순서가 이미 무너져 있다("2x\n1\nx¤\n2\nx+1").
+#   그래서 **복구하지 않고 STANDARD(MinerU)로 보낸다** — PUA 때와 같은 처방이다.
+#
+# 가르는 신호: '한국 교과서 묵자에 안 나오는 코드포인트'. 폰트 이름 목록보다 낫다 —
+# 이름은 책마다 바뀌지만 이 코드포인트들은 어느 책에서도 정상일 수 없다.
+# 실측 오탐 0/1,251쪽: ± ™ £ ¥ ¢ § œ æ ç ß ﬂ Ã ´ ¨ 는 코퍼스 전체에서 **단 한 번도**
+# 정상으로 쓰이지 않았다(전부 레거시 글꼴 출처). 반대로 ° · × ÷ 는 본문 글꼴에서
+# 정상으로 나오므로 아래 집합에서 뺐다.
+#
+# ★ 두 갈래로 나눈다 — **처방이 다르기 때문**이다.
+#   A. 조판이 통째로 무너진 쪽: 윗/아래첨자·그리스·분수선을 잃었다 → 텍스트레이어 폐기,
+#      STANDARD로. 수학2 147쪽 전부와 생물 상당수가 여기.
+#   B. **기호 하나만** 어긋난 쪽: 본문은 멀쩡한데 글머리 기호(●·▶)가 한자 확장A 자리로
+#      떨어졌다 — `䤋compress 압축하다` · `䭅들려주는내용을…`. 여기서 STANDARD로 돌리면
+#      멀쩡한 외국어 본문 76쪽을 쪽당 9초짜리 OCR에 태우면서 깨끗한 텍스트를 버린다.
+#      **경고만 남긴다**(원장 등재 대상). 되돌리려면 글꼴별 글리프 대조표가 필요한데
+#      글꼴마다 뜻이 달라 책마다 새로 떠야 한다 — 일반 해가 없다.
+_MANGLED_LAYER_RE = re.compile(          # A. 텍스트레이어를 통째로 못 믿는다
+    "["
+    "\x00-\x08\x0b\x0c\x0e-\x1f"   # 매핑이 아예 없어 raw 코드가 나온 자리(T### 표 글꼴)
+    "\u00a1-\u00af\u00b1-\u00b6\u00b8-\u00bf"  # 라틴-1 기호 (° U+00B0 · U+00B7 제외)
+    "\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u00ff"  # 라틴-1 악센트 (× U+00D7 ÷ U+00F7 제외)
+    "\u0100-\u024f"                    # 라틴 확장 A/B — œ ƒ 등
+    "\u02b0-\u02ff"                    # 수식 수정 문자 — ˘ ˙ ˚ ˆ
+    "\u2039\u203a\u2044\u201a\u201e\u2020\u2021"  # ‹ › ⁄ ‚ „ † ‡ = 윗첨자·(i)·분수 자리
+    "\ufb00-\ufb06"                    # ﬁ ﬂ 합자
+    "\ue000-\uf8ff"                    # PUA (종전 규칙과 같은 구간, 여기선 개수로도 본다)
+    "]"
+)
+_MANGLED_SYMBOL_RE = re.compile(         # B. 기호 하나만 어긋났다 — 경고만
+    "["
+    "\u3400-\u4dbf"                    # 한자 확장 A — 교과서 한자는 U+4E00~ 뿐이다(글머리 기호가 여기로)
+    "\u21c0-\u21c3"                    # 하푼 화살표 — ⇂ = 빈칸 □ (정상인 ⇄·⇌는 뺐다)
+    "]"
+)
+# 한 글자만 나와도 그 자리는 확실히 틀렸다(위 집합은 '정상일 수 없는' 것만 모았다).
+# 비율이 아니라 개수로 보는 이유: 수학2 p004는 700자 중 ¤가 5자(0.7%)뿐인데 그 5자가
+# 지수 전부다. 비율 임계(10%)로는 영원히 안 걸린다.
+MANGLED_GLYPH_THRESHOLD = 1
+
+# 라틴 문자권 원서를 함께 다루게 되면 'café'의 é가 A에 걸린다(현 코퍼스 외국어 234쪽에는
+# 0건). 그때는 위 라틴-1 악센트 줄만 빼면 된다 — 나머지 신호는 그대로 쓸 수 있다.
 
 # 유효 PDF는 항상 "%PDF-"로 시작한다(앞쪽 일부 공백/BOM 허용).
 _PDF_MAGIC = b"%PDF-"
@@ -242,6 +301,10 @@ _PAR_INDENT_MIN = 0.6      # 단 왼쪽에서 줄높이의 이 배 넘게 들어
 # 부호가 확실히 가르는 자리는 분석 없이 _join_sep로 처리한다.
 _PAR_OPEN = "([{‘“〈《「『【<"
 _PAR_CLOSE_END = ".,!?;:”’)]}〉》」』】>"
+# 그중 **닫는 부호**만 따로 든다. 이 뒤에는 조사가 그대로 붙는다(「곤여만국전도」를 ·
+# 예(禮)를 · 조약(1860)이). 부호 규칙만으로 무조건 띄웠더니 `「곤여만국전도」 를`가
+# 나갔다(val-2027 200쪽 19건 실측). 그래서 이 자리도 한글끼리와 똑같이 형태소로 가른다.
+_PAR_CLOSE_MARK = "”’)]}〉》」』】>"
 
 
 def _join_sep(a: str, b: str) -> str:
@@ -286,7 +349,11 @@ def _join_words(prev_line: str, next_line: str) -> str:
     if not wa or not wb:
         return " "
     sep = _join_sep(wa[-1:], wb[:1])
-    if sep == " " or not ("가" <= wa[-1] <= "힣" and "가" <= wb[0] <= "힣"):
+    # 앞 줄이 한글로 끝났거나 **닫는 부호**로 끝났고 뒤 줄이 한글로 시작하면 형태소로 가른다.
+    # 닫는 부호를 넣은 것은 2026-08-08 — 종전에는 부호 규칙이 무조건 공백을 넣어
+    # `「곤여만국전도」 를`·`예(禮) 를`가 나갔다(val-2027 실측 19건, 형태소 판정 10/10).
+    if not (("가" <= wa[-1] <= "힣" or wa[-1] in _PAR_CLOSE_MARK)
+            and "가" <= wb[0] <= "힣"):
         return sep                      # 부호가 확실히 가르는 자리는 분석 불필요
     kiwi = _get_kiwi()
     if kiwi is None:
@@ -385,10 +452,13 @@ def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int,
 # 가르는 조건 두 개(실측 사회문화 p8·p23):
 #   · **글자를 감싸야** 한다 — 제목 배너·머리말 띠는 안에 글이 없다(감싸는 게 아니라 덮는다).
 #   · 선(stroke)이 있어야 한다 — 채움만 있는 도형은 강조 음영이지 테두리가 아니다.
+#     ※ 규정(1장5 1))은 음영 글상자도 글상자라 하지만, 실측하면 **점수가 내려간다**
+#       (2026-08-09 A/B: dev −0.0p·val −0.3p, 새로 만든 상자의 76%가 정답에 없는 상자).
+#       규정↔실측이 갈리는 자리라 원장에 올릴 항목이다.
 _BOX_MIN_W = 0.20        # 페이지 폭 대비 최소 너비 — 이보다 좁으면 아이콘·라벨
 _BOX_MIN_H = 18.0        # 최소 높이(pt) — 밑줄·구분선 제외
 _BOX_MAX_AREA = 0.85     # 페이지 면적의 이 비율을 넘으면 페이지 테두리·배경
-_BOX_OPEN, _BOX_CLOSE = "<!테두리_위><!/테두리_위>", "<!테두리_아래><!/테두리_아래>"
+_BOX_X_TOL = 2.0         # 좌우가 이만큼 안에서 같으면 같은 상자의 위·아래 조각(pt)
 
 
 def box_rects(page) -> list:
@@ -411,7 +481,7 @@ def box_rects(page) -> list:
             continue
         if r.get_area() > pr.get_area() * _BOX_MAX_AREA:
             continue
-        if "s" not in g["type"]:              # 채움 전용 = 음영·배너
+        if "s" not in g["type"]:              # 채움 전용 = 음영·배너(위 주석 참조)
             continue
         if not any(t in r for t in tblocks):  # 감싼 글이 없다
             continue
@@ -421,6 +491,16 @@ def box_rects(page) -> list:
     # 종전 규칙은 안쪽 사각형을 겹침으로 보고 통째로 버렸다.
     merged: list = []
     for r in sorted(out, key=lambda r: -r.get_area()):
+        # ★ 한 글상자를 **머리띠 + 본문** 두 사각형으로 그린 것을 먼저 합친다 —
+        #   좌우가 같고 세로로 겹치면 같은 상자다. 안 합치면 위 조각이 제목 요소를
+        #   먼저 claim해 gold의 상자 하나가 둘로 쪼개진다(실측 생명과학 p72·p152).
+        #   2026-08-09 A/B: 이 병합 하나가 dev +0.28p·val +0.68p(CER)로 이번 라운드 최대 레버.
+        hit = next((k for k, m in enumerate(merged)
+                    if abs(r.x0 - m.x0) <= _BOX_X_TOL and abs(r.x1 - m.x1) <= _BOX_X_TOL
+                    and r.y0 < m.y1 and m.y0 < r.y1), None)
+        if hit is not None:
+            merged[hit] = r | merged[hit]
+            continue
         # 완전히 안에 들었다 = 중첩, 남긴다. 단 **거의 같은 크기**는 중첩이 아니라
         # 같은 테두리를 채움·선 두 경로로 그린 것이다 — 남기면 같은 상자를 두 번 감싼다.
         if any(r in m and r.get_area() < m.get_area() * 0.98 for m in merged):
@@ -564,10 +644,62 @@ def box_rects_norm(pdf_data: bytes, page_no: int) -> list[list[float]]:
             os.unlink(tmp_path)
 
 
-def tag_boxed_elements(elements: list[dict], rects: list) -> int:
-    """사각형이 통째로 감싼 텍스트 요소 앞뒤에 테두리 태그를 넣는다(in-place). 감싼 상자 수 반환.
+def _center_in(bb, rect) -> bool:
+    """요소 중심이 사각형 안인가. 테두리에 닿은 글이 몇 px 삐져나오므로 완전포함은 안 쓴다."""
+    return (rect[0] <= (bb[0] + bb[2]) / 2 <= rect[2]
+            and rect[1] <= (bb[1] + bb[3]) / 2 <= rect[3])
 
-    표·그림을 품은 사각형은 건드리지 않는다 — 그쪽 체인이 제 테두리를 그린다(원장 C-01a).
+
+def regroup_boxed(elements: list[dict], rects: list) -> int:
+    """사각형이 감싼 요소가 읽기순서에서 끊겨 있으면 **끼어든 요소를 상자 뒤로 뺀다**(in-place).
+    옮긴 상자 수 반환.
+
+    4분류: ③ AI 오류 — 추출기(MinerU) 읽기순서가 다단 지면에서 상자를 가로지른다.
+    실측 `EBS-E26-001/0137`: 탐구자료 상자(`[107,78,733,923]`) 안 요소가 `1~16`과 `25~27`로
+    끊기고 그 사이 `17~24`는 오른쪽 단의 다른 상자(개념 체크, x766~924)다. 그래서
+    `tag_boxed_elements`의 연속성 가드가 상자를 통째로 건너뛰었고, 바깥 상자가 없으니 안의
+    표 셋이 전부 깊이 0으로 1단계 테두리를 달았다. **정답은 그 표들을 2단계로 적는다**
+    (도서지침 예3-59: 1단계 지문 글상자 안의 표가 2단계). 실측 10쪽에서 gold 2단계 10줄 :
+    우리 0줄.
+
+    **사각형이 진실이다.** 묵자에 그려진 테두리는 추출기 순서보다 확실한 묶음 근거다.
+    다만 함부로 옮기면 본문이 뒤섞이므로 두 가지를 다 만족할 때만 옮긴다:
+      · 끼어든 요소가 **하나도 빠짐없이** 그 사각형 밖일 것(하나라도 안이면 판단 불가)
+      · 옮겨서 상자가 실제로 연속이 될 것
+    옮긴 뒤 `order`를 다시 매긴다 — 소비자(`pipeline._parse_txt_result`)가 그 값을 읽는다.
+    """
+    if not rects or not elements:
+        return 0
+    moved = 0
+    for rect in sorted(rects, key=lambda r: -((r[2] - r[0]) * (r[3] - r[1]))):
+        idx = [i for i, el in enumerate(elements)
+               if el.get("bbox") and len(el["bbox"]) == 4 and _center_in(el["bbox"], rect)]
+        if len(idx) < 2:
+            continue
+        span = range(idx[0], idx[-1] + 1)
+        outs = [i for i in span if i not in set(idx)]
+        if not outs:
+            continue                                   # 이미 연속
+        if any(_center_in(elements[i].get("bbox") or [0, 0, 0, 0], rect) for i in outs):
+            continue                                   # 있을 수 없지만 방어
+        keep = [elements[i] for i in span if i in set(idx)]
+        tail = [elements[i] for i in outs]
+        elements[idx[0]:idx[-1] + 1] = keep + tail
+        moved += 1
+    if moved:
+        for k, el in enumerate(elements, start=1):
+            if "order" in el:
+                el["order"] = k
+    return moved
+
+
+def tag_boxed_elements(elements: list[dict], rects: list) -> int:
+    """사각형이 감싼 텍스트 요소 앞뒤에 테두리 태그를 넣는다(in-place). 감싼 상자 수 반환.
+
+    ★ **표·그림을 품은 사각형도 글상자다**(「제작 지침」 3장 지문 (4): 지문 속 글상자는
+      속글상자). 종전에는 통째로 버려서 dev 816쪽에서 388개(검출의 25.6%)를 잃었다.
+      태그는 글 요소에만 붙이되(표 HTML 안에 태그를 넣으면 표 체인이 깨진다), 시각 요소도
+      읽기순서 연속성 판정에는 함께 센다.
 
     ★ **중첩을 살린다**(BBPG-1.2.5 위계). gold는 자료 박스 안에 표를 넣고 안쪽에 2단계
       테두리(⠖⠒…⠲)를 쓴다 — dev-2027 900쪽에 343개, 그중 81%가 1단계 안이다. 우리는
@@ -590,15 +722,22 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
     claimed: dict[int, int] = {}          # 요소 → 그 요소를 이미 감싼 가장 안쪽 위계
     opens: dict[int, list] = {}           # 요소 → [(위계, 여는 태그)]
     closes: dict[int, list] = {}          # 요소 → [(위계, 닫는 태그)]
+    promoted: set[int] = set()            # 테두리 제목으로 올라가 본문에서 뺄 요소
     n = 0
     for rect in ordered:
         rx0, ry0, rx1, ry1 = rect
         level = min(3, depth[id(rect)] + 1)          # 1단계부터, 3단계까지
-        inside: list[int] = []
-        skip = False
+        # 윗변에 걸친 짧은 한 줄은 **테두리 제목**으로 올린다(1장5 2)(4)②). 본문 줄이 아니라
+        # 테두리 안에 박히므로 상자 몸통에서는 뺀다. ★ 첫 요소로 한정하면 안 된다 —
+        # MinerU 읽기순서가 제목을 몸통 중간에 놓는 일이 잦아, 한정하면 이득의 2/3가 날아간다
+        # (실측 2026-08-09: 한정 dev −6,297셀 / 전체 탐색 dev −9,000셀).
+        blocked = promoted | opens.keys() | closes.keys()   # 태그를 인 요소는 못 뺀다
+        title_i = _box_title_index(elements, rect, blocked)
+        inside: list[int] = []            # 읽기순서 연속성 판정용(시각요소 포함)
+        texts: list[int] = []             # 태그를 붙일 수 있는 요소만
         for i, el in enumerate(elements):
             bb = el.get("bbox")
-            if not bb or len(bb) != 4:
+            if not bb or len(bb) != 4 or i == title_i or i in promoted:
                 continue
             # 중심점으로 본다 — MinerU bbox는 테두리에 닿은 글에서 몇 px 삐져나와
             # 완전포함으로 재면 실측 9요소가 든 상자에서 0개가 잡힌다(생물 p118·사문 p107).
@@ -606,21 +745,29 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
             if not (rx0 <= cx <= rx1 and ry0 <= cy <= ry1):
                 continue
             if el.get("type") not in ("text", "list_item", "title", "caption"):
-                skip = True          # 표·수식·그림이 든 상자는 그 체인 소관
-                break
+                inside.append(i)     # 표·그림: 자리만 차지한다(태그는 글 요소에만)
+                continue
             if claimed.get(i, 0) >= level:      # 같은 위계에서 이미 감쌌다
                 continue
             inside.append(i)
-        if skip or not inside:
+            texts.append(i)
+        if not texts and title_i is not None:
+            # 제목만 남으면 상자가 통째로 사라진다 — 승격을 물리고 상자를 살린다.
+            inside, texts, title_i = sorted(inside + [title_i]), [title_i], None
+        if not texts:
             continue
         if inside != list(range(inside[0], inside[-1] + 1)):
             logger.debug("글상자 건너뜀 — 읽기순서가 끊겼다(%s)", inside)
             continue
-        first, last = inside[0], inside[-1]
+        title = ""
+        if title_i is not None:
+            title = _tag_title(elements[title_i])
+            promoted.add(title_i)
+        first, last = texts[0], texts[-1]
         sfx = "" if level == 1 else str(level)        # <!테두리_위2> = 2단계(translator 규약)
-        opens.setdefault(first, []).append((level, f"<!테두리_위{sfx}><!/테두리_위{sfx}>"))
+        opens.setdefault(first, []).append((level, f"<!테두리_위{sfx}>{title}<!/테두리_위{sfx}>"))
         closes.setdefault(last, []).append((level, f"<!테두리_아래{sfx}><!/테두리_아래{sfx}>"))
-        for i in inside:                        # 안쪽 상자가 다시 감쌀 수 있게 위계를 기록
+        for i in texts:                         # 안쪽 상자가 다시 감쌀 수 있게 위계를 기록
             claimed[i] = max(claimed.get(i, 0), level)
         n += 1
 
@@ -631,7 +778,42 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
     for i, tags in closes.items():
         tail = "\n".join(t for _lv, t in sorted(tags, reverse=True))
         elements[i]["content"] = f"{elements[i]['content']}\n{tail}"
+    for i in sorted(promoted, reverse=True):   # 제목은 테두리 안으로 갔으니 본문에서 뺀다
+        elements.pop(i)
     return n
+
+
+# 테두리에 박히는 제목(「제작 지침」 1장5 2)(4)②: 제목을 테두리 7칸에 양옆 띄어 넣는다).
+# 정답 도서는 dev-2027 900쪽에서 705번 쓰는데(보기 274·〈보기 N〉 198·개념 체크 48…)
+# 우리는 0번이었다 — 렌더러(`layout._render_box_top`)는 있는데 태그가 늘 빈 제목이었다.
+_BOX_TITLE_BAND = 22.0    # 윗변 위아래 허용폭(0~1000 정규화). 좁혀도 재현율만 깎였다
+_BOX_TITLE_MAX = 12       # 제목 최대 글자수
+
+
+def _tag_title(el: dict) -> str:
+    return re.sub(r"<!/?[^>]+>", "", el.get("content") or "").strip()
+
+
+def _box_title_index(elements: list[dict], rect, blocked) -> int | None:
+    """사각형 윗변에 걸친 **짧은 한 줄** 요소의 인덱스(테두리 제목). 없으면 None."""
+    rx0, ry0, rx1, _ry1 = rect
+    best = None
+    for i, el in enumerate(elements):
+        bb = el.get("bbox")
+        if (not bb or len(bb) != 4 or i in blocked
+                or el.get("type") not in ("text", "list_item", "title", "caption")):
+            continue
+        if not (rx0 <= (bb[0] + bb[2]) / 2 <= rx1):
+            continue
+        d = abs((bb[1] + bb[3]) / 2 - ry0)
+        if d > _BOX_TITLE_BAND:
+            continue
+        txt = _tag_title(el)
+        if not txt or "\n" in txt or len(txt) > _BOX_TITLE_MAX:
+            continue
+        if best is None or d < best[0]:
+            best = (d, i)
+    return best[1] if best else None
 
 
 # 벡터 그림 판정(교과서 지도·도표·그래프는 임베디드 이미지가 아니라 벡터로 그려진다).
@@ -750,6 +932,20 @@ def _page_has_visual(page) -> bool:
     except Exception:  # noqa: BLE001
         pass
     return _has_vector_figure(page)     # 벡터 지도·도표·그래프
+
+
+def mangled_glyph_chars(text: str) -> tuple["collections.Counter[str]", "collections.Counter[str]"]:
+    """글꼴 매핑이 어긋나 잘못 추출된 글자들 → (A: 레이어 폐기, B: 기호만 어긋남).
+
+    각각 {글자: 횟수}. 부르는 쪽은 보통 **A의 개수만** 보면 된다 — 한 글자라도 있으면
+    그 텍스트레이어는 통째로 못 믿는다. B는 경고용이다(본문은 멀쩡하니 버리지 않는다).
+
+    ⚠ 이 함수는 '고칠 수 있다'는 뜻이 아니다. 되돌리기는 글꼴마다 다른 표가 필요하고
+      (¤ = ² 또는 (ii)), 표가 있어도 2차원으로 찍힌 수식은 못 살린다. 위 주석 참조.
+    """
+    t = text or ""
+    return (collections.Counter(_MANGLED_LAYER_RE.findall(t)),
+            collections.Counter(_MANGLED_SYMBOL_RE.findall(t)))
 
 
 def _pua_ratio(text: str) -> float:
@@ -875,6 +1071,24 @@ def analyze_pdf(
             logger.info(
                 "PUA 비율 %.1f%% (≥%.0f%%) → 텍스트레이어 비신뢰, STANDARD 라우팅 page=%s",
                 pua * 100, PUA_RATIO_THRESHOLD * 100, page_no,
+            )
+            return DocumentMeta(pdf_confidence=0.5, routing_tier="STANDARD", scan_only=False), ""
+        # ★ 경고를 꼭 남긴다 — 조용히 틀린 값이 나가는 게 제일 나쁘다. 이 쪽에서 뽑은
+        #   기호 빈도는 "0회 = 없다"가 아니라 "0회 = 못 쟀다"이다.
+        layer_bad, symbol_bad = mangled_glyph_chars(text)
+        if symbol_bad:
+            logger.warning(
+                "글꼴 매핑 어긋남(기호 %d자 %s) — 본문은 유지하되 이 쪽의 기호 빈도는 "
+                "믿지 말 것 page=%s",
+                sum(symbol_bad.values()),
+                "".join(c for c, _ in symbol_bad.most_common(8)), page_no,
+            )
+        if sum(layer_bad.values()) >= MANGLED_GLYPH_THRESHOLD:
+            # PUA는 0%인데 글꼴 매핑이 어긋난 PDF(수학2 판 등) → 같은 처방(STANDARD).
+            logger.warning(
+                "글꼴 매핑 어긋남 %d자 %s → 텍스트레이어 비신뢰, STANDARD 라우팅 page=%s",
+                sum(layer_bad.values()),
+                "".join(c for c, _ in layer_bad.most_common(8)), page_no,
             )
             return DocumentMeta(pdf_confidence=0.5, routing_tier="STANDARD", scan_only=False), ""
         if has_visual:

@@ -219,3 +219,35 @@ class TestEmptyCaptionKeepsElement:
         res = _build([self._img()], "t_okcap", 1, "OCR")
         assert res["elements"][0]["content"] == "만화: 후보 토론회"
         assert res["elements"][0]["flags"] == []
+
+
+class TestDiagramSubtypeOnBoundary:
+    """경계 JSON에 도표 세분류를 싣는다 (2026-08-08).
+
+    분류기는 'diagram' 넉 자까지만 낸다. 이 칸이 비어 있어서
+    `pipeline._parse_txt_result` → `diagram_opt._ASSEMBLERS`가 한 번도 안 돌았고
+    §6.6 골격 8종이 전부 캡션 한 줄 폴백으로 나갔다(경계 JSON 실측: structure·
+    visual_subtype 3,315건 전부 0건).
+    """
+
+    def _img(self):
+        el = _mk_el([100, 100, 500, 400], [200, 200, 1000, 800])
+        el["type"] = "image"
+        el["image_path"] = "/tmp/none.jpg"
+        return el
+
+    def _run(self, monkeypatch, cap, job):
+        import app.ai.builder.result_builder as rb
+        monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("diagram", 0.9))
+        monkeypatch.setattr(rb, "caption", lambda p, t: cap)
+        monkeypatch.setattr(rb.Path, "exists", lambda self: True)
+        return _build([self._img()], job, 1, "OCR")["elements"][0]
+
+    def test_유형어가_있으면_세분류를_싣는다(self, monkeypatch):
+        el = self._run(monkeypatch, "도표: 고려 중앙 통치 조직도\n1. 황제\n1) 3성", "t_vsub1")
+        assert el["type"] == "diagram"
+        assert el["visual_subtype"] == "org_chart"
+
+    def test_유형어가_없으면_칸을_비운다(self, monkeypatch):
+        el = self._run(monkeypatch, "도표: 몽골 제국 최대 영역 지도\n중앙아시아", "t_vsub2")
+        assert "visual_subtype" not in el      # §6.6에 골격 없는 유형 → 캡션 폴백

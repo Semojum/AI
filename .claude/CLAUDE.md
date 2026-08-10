@@ -118,7 +118,7 @@ app/
 ## 핵심 불변 규칙
 
 1. **빈 결과 금지**: 실패 시 `[처리 불가: {사유}]` 플레이스홀더. pipeline의 `_placeholder_extracted`가 표준.
-2. **rule_trail 필수**: 점자 출력에 `{rule_id, source, section, title, excerpt, priority}` 기록.
+2. **rule_trail은 근거가 있을 때만**(2026-08-08 개정): 점자 출력에 `{rule_id, source, section, title, excerpt, priority}` 기록. 단 **모든 요소에 붙이지 않는다** — 점역사가 이미 아는 자명한 규정("점형은 6점", "수는 수표를 앞세운다")은 노이즈라 오히려 검수 시간을 늘린다. 남기는 기준은 ⓐ **AI가 재량을 쓴 자리**(캡션 문구, 레이아웃 기호 선택, 도표 subtype 판정)와 ⓑ **점역사도 헷갈리거나 주관이 갈리는 자리**(규정 모호·규정↔관행 충돌 = 원장 등재 항목) 둘뿐이다. 근거 없는 요소는 **빈 배열**이 정상이다(필드는 유지 — proto/FE 계약 불변). 실측 쪽당 139건 → 9.4건.
 3. **요소 단위 격리**: 6-체인은 반드시 `asyncio.gather(return_exceptions=True)`. 한 요소 실패가 페이지를 막지 않음.
 4. **C5 배포 블로커**: 아라비아 숫자는 수표(⠼) 없이 점형 시작 불가. 로직은 `kor_math_rules.digits_to_braille`/`_num_replace`(`_NUMBER_INDICATOR="⠼"`). `test/unit_test/braille/test_rule_engine.py` 전수 통과(1차 방어선, 미통과=배포 차단) + `quality_checker`의 런타임 C5 스캐너(2차, 2026-07-13: opt 텍스트에 숫자가 있는데 요소 점자에 ⠼ 0개면 C5 — rule-based 요소만, 시각자료는 R5 소관이라 제외).
 5. **2-GPU 정적 배치**: VRAM Swap 코드 금지. `model_manager.load_all` 1회 로드 후 상주. GPU0=Qwen3-VL+YOLO+TableFormer, GPU1=HyperCLOVA X.

@@ -46,6 +46,16 @@ class TestValidateTagging:
     def test_빈출력_거부(self):
         assert not _validate_tagging("③ □", "")
 
+    def test_안닫힌_테두리_거부(self):
+        # 위 테두리만 = 32칸 줄 하나를 그려 놓고 상자를 안 닫는다 (BBPG 1장5 (2))
+        assert not _validate_tagging("<보기>\nㄱ. 가", "<!테두리_위>보기<!/테두리_위>\nㄱ. 가")
+        assert not _validate_tagging("<보기>\nㄱ. 가", "<보기>\nㄱ. 가\n<!테두리_아래><!/테두리_아래>")
+
+    def test_표지로_시작하면_전체를_감싼다(self):
+        assert _validate_tagging(
+            "[자료1]\n갑국의 인구는 늘었다.",
+            "<!테두리_위>자료1<!/테두리_위>\n갑국의 인구는 늘었다.\n<!테두리_아래><!/테두리_아래>")
+
 
 class TestStripFence:
     def test_코드펜스_제거(self):

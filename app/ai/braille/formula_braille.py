@@ -29,11 +29,11 @@ class FormulaBraille:
             lines = [convert_latex(text)]   # 논리 줄, 32칸 줄바꿈은 layout
             struct_rules = latex_rule_ids(text)
         breaks = [_space_breaks(ln) for ln in lines]
-        # rule_trail은 '내용 변환'만 기록(태민 정책 2026-06-01): 조판 규칙(32칸 줄바꿈) 제외.
-        # 수식 일반(KBR-수학-1.1) + 구조별 rule(분수·근·첨자·로그·극한 등, Phase B).
-        # 수식 일반·구조 rule은 요소 전체(line_no=-1) — 구조 단위 정밀 좌표는 추후.
-        trail = [make_rule("KBR-수학-1.1")]
-        trail += [
+        # 구조별 rule(분수·근·첨자·로그·극한 등)만 기록 — 요소 전체(line_no=-1).
+        # ★ Step17(2026-08-08) — 포괄 규정 KBR-수학-1.1("숫자는 수표를 앞세워 적는다")을 뺐다.
+        #   모든 수식 요소에 붙던 자명한 규정이라 정작 봐야 할 구조 판정(제곱 ⠣/⠘⠼2 원장 C-03,
+        #   아래첨자 M-02)이 그 밑에 묻혔다.
+        trail = [
             make_rule(rule_id, tag="math_struct")
             for rule_id in struct_rules
         ]

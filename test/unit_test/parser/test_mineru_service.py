@@ -12,7 +12,14 @@ class TestBinResolve:
         assert ms._mineru_api_bin() == str(tmp_path / "mineru-api")
 
     def test_없으면_PATH의_mineru_api(self, monkeypatch):
+        """환경변수도 .env도 없으면 PATH에 맡긴다.
+
+        ★ 2026-08-09 — `config.mineru_bin`(.env) 폴백이 생겨서 환경변수만 지우면
+          부족하다. 이 기계의 .env에는 vLLM 경로가 들어 있어 그게 이긴다.
+          우선순위는 `환경변수 > .env > PATH`이므로 **둘 다** 비워야 PATH 경로를 본다.
+        """
         monkeypatch.delenv("MINERU_BIN", raising=False)
+        monkeypatch.setattr(ms.config, "mineru_bin", "", raising=False)
         assert ms._mineru_api_bin() == "mineru-api"
 
 
@@ -29,5 +36,13 @@ class TestEnsureStarted:
 
 class TestGetUrl:
     def test_서비스없으면_None(self, monkeypatch):
+        """URL을 모르면 None.
+
+        ★ 2026-08-09 — `_url=None`만으로는 부족해졌다. get_url이 죽은 서비스를 **되살리려
+          시도**하므로(#142), 개발 기계에 mineru-api가 실제로 떠 있으면 그걸 잡아 온다.
+          이 테스트가 보려는 건 "모르면 None"이지 "재기동이 되는가"가 아니므로,
+          우리가 띄운 게 아닌 상태(외부 URL 지정)로 고정해 재기동 경로를 끈다.
+        """
         monkeypatch.setattr(ms, "_url", None)
+        monkeypatch.setenv("MINERU_PERSISTENT", "0")      # 자동 기동 비활성 = 되살리지 않는다
         assert ms.get_url() is None
