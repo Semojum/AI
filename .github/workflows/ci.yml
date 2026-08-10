@@ -89,7 +89,11 @@ jobs:
         id: diff
         run: |
           base="origin/${{ github.base_ref }}"
-          git fetch --no-tags origin "${{ github.base_ref }}" --depth=50 || true
+          # ⚠ --depth를 주면 안 된다. checkout이 fetch-depth: 0으로 전체를 받아 놨는데
+          #   여기서 얕게 다시 받으면 그 ref에 shallow 경계가 생겨 merge-base를 못 찾는다.
+          #   그러면 `base...HEAD`(대칭차)가 옛 히스토리까지 삼켜, 백머지 PR에서 아래
+          #   '커밋 트레일러' 단계가 규칙 생기기 전 커밋을 잡아 **오탐**을 냈다(PR #166).
+          git fetch --no-tags origin "${{ github.base_ref }}" || true
           git diff --name-only "$base"...HEAD > /tmp/changed.txt || git diff --name-only HEAD~1 > /tmp/changed.txt
           echo "변경 $(wc -l < /tmp/changed.txt)개"
           cat /tmp/changed.txt
@@ -136,7 +140,9 @@ jobs:
       - name: 커밋 트레일러
         run: |
           base="origin/${{ github.base_ref }}"
-          if git log "$base"...HEAD --format=%B 2>/dev/null | grep -q 'Claude-Session:'; then
+          # 이 PR이 **새로 얹는** 커밋만 본다. 대칭차(...)를 쓰면 base 쪽 히스토리까지
+          #   훑어, 규칙이 생기기 전에 들어간 옛 커밋으로 백머지 PR이 막힌다(PR #166).
+          if git log "$base"..HEAD --format=%B 2>/dev/null | grep -q 'Claude-Session:'; then
             echo "::error::커밋에 'Claude-Session:' 트레일러가 있습니다. 저장소가 public입니다."
             exit 1
           fi
