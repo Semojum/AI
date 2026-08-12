@@ -169,7 +169,7 @@ def _shorten(text: str, limit: int = 45) -> str:
 
 
 def _outline_text_indents(
-    label: str, title: str, desc: str, items: list[tuple[int, str]]
+    label: str, title: str, desc: str, items: list[tuple[int, str]], kind: str = ""
 ) -> tuple[str, list[int]]:
     """개조식 → (텍스트, 줄별 들여쓰기). §6.3 규정 배치:
       제목(5칸, 점역자주 밖·§6.3.3(1)) → 유형+짧은 설명(점역자주·§6.3.4(1)) → 전사 항목(위계 들여).
@@ -194,7 +194,12 @@ def _outline_text_indents(
     #   정본 자료지침 예6-22가 조직도에서 같은 말을 쓴다("하위에 속한 기구를 2칸씩
     #   들여 쓰기함"). 위계가 없는 평평한 나열에는 붙이지 않는다 — 없는 구조를
     #   있다고 알리는 꼴이 되고, 32칸 지면만 먹는다.
-    if any(lv > 0 for lv, tx in items if (tx or "").strip()):
+    # ⚠ 만화는 제외한다. 만화의 장면(5칸)·대사(3칸) 들여쓰기는 **§5.3.3(1)(2)가 정한
+    #   규정 형식**이지 우리가 임의로 고른 것이 아니다. 거기에 "임의로 정했다"는 뜻의
+    #   고지를 붙이면 규정 형식을 우리 재량인 것처럼 알리는 꼴이 된다.
+    #   정본 만화 예5-4·5-5에도 그런 고지가 없다(2026-08-12 실측 — 이 가드가 없어
+    #   테스트_이미지 p2·p5 만화에 잘못 붙었다).
+    if kind != "만화" and any(lv > 0 for lv, tx in items if (tx or "").strip()):
         lines.append(_tn(_TN_NOTICES.indent_hierarchy(_OUTLINE_STEP)))
         indents.append(_NOTE_INDENT)
     for level, text in items:
@@ -253,10 +258,10 @@ def title_draft(label: str, title: str) -> Draft:
 
 
 def outline_draft(
-    label: str, title: str, desc: str, items: list[tuple[int, str]]
+    label: str, title: str, desc: str, items: list[tuple[int, str]], kind: str = ""
 ) -> tuple[Draft, list[int]]:
     """2안: 위계 개조식(제목 5칸 + 유형/설명 점역자주 + 전사 항목). 반환 (Draft, line_indents)."""
-    text, indents = _outline_text_indents(label, title, desc, items)
+    text, indents = _outline_text_indents(label, title, desc, items, kind)
     return Draft(option=3, text=text, render_mode="narrative", label=LABELS[OUTLINE_IDX]), indents
 
 
@@ -461,7 +466,7 @@ async def build_visual_drafts(
 
     d_omit = omission_draft(label)
     d_title = title_draft(label, short_title)
-    d_outline, indents = outline_draft(label, title, outline_desc, outline_items)
+    d_outline, indents = outline_draft(label, title, outline_desc, outline_items, kind)
     d_prose = prose_draft(label, prose)
     drafts = [d_omit, d_title, d_outline, d_prose, *extra_drafts(label)]
 
