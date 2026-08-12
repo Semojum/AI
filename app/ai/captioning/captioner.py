@@ -183,6 +183,19 @@ _PROMPTS = {
         "- 칸이 하나면 '장면' 줄을 쓰지 말고 대사만 적으세요.\n"
         "- **'(상황)'·'상황:' 같은 말머리를 붙이지 마세요.** 장면 설정은 말머리 없이 바로\n"
         "  문장으로 씁니다 — 지침 예5-4·5-5도 '만화:' 뒤에 바로 문장이 옵니다.\n"
+        "- **대사마다 상황을 덧붙이지 마세요.** 대사 줄은 '인물명: 대사' 하나뿐입니다.\n"
+        "  인물이 무엇을 하는지, 어떤 표정인지, 무엇을 가리키는지 따로 줄을 만들지 않습니다.\n"
+        "  · 이렇게 쓰지 마세요:\n"
+        "      철수가 지도를 가리킨다\n"
+        "      철수: 여기가 어디야?\n"
+        "      영희가 고개를 든다\n"
+        "      영희: 도서관이야\n"
+        "  · 이렇게 쓰세요:\n"
+        "      철수: 여기가 어디야?\n"
+        "      영희: 도서관이야\n"
+        "  장면 설정은 맨 앞 '만화:' 뒤에 **한 문장까지만** 쓰고, 없어도 됩니다\n"
+        "  (지침 예3-53은 장면 문장 없이 바로 대사로 들어갑니다).\n"
+        "  동작·표정이 **문제를 푸는 데 꼭 필요할 때만** 그 장면 문장에 함께 담으세요.\n"
         # ★ 2026-08-10 정정. 종전 규칙은 "대사가 있으면 상황 설명을 쓰지 마세요"였는데
         #   새 정답이 정면으로 뒤집는다: 자료지침 예5-4(한 장면·대사 3줄)와 예5-5(세 장면·
         #   대사 3줄)는 **둘 다 대사가 있는데도** 맨 앞 '만화:' 뒤에 장면 설정 한 문장을 쓴다
@@ -457,6 +470,37 @@ def _strip_situation_head(text: str) -> str:
     return _SITUATION_HEAD_RE.sub(lambda m: m.group(1), text or "")
 
 
+# 대사 줄: '인물명: 대사'. 인물명은 짧다(§5.3.3(3)).
+_SPEECH_RE = re.compile(r"^\s*(?P<who>[^:：\n]{1,12})\s*[:：]\s*(?P<what>.+)$")
+
+
+def _drop_per_speech_narration(text: str) -> str:
+    """대사 바로 앞에 붙은 **그 인물의 동작 줄**을 지운다 (2026-08-12 대표 지시).
+
+    모델이 대사마다 상황을 한 줄씩 깔았다:
+        철수가 지도를 가리킨다
+        철수: 여기가 어디야?
+    지침 예5-4·5-5·예3-53 어디에도 이런 줄이 없다 — 대사 줄은 '인물명: 대사' 하나뿐이고,
+    장면 설정은 맨 앞에 한 문장까지다(예3-53은 그마저 없이 바로 대사로 들어간다).
+    점자로는 이 군더더기가 그대로 셀을 먹고, 점역사는 줄마다 지워야 한다.
+
+    ⚠ 좁게만 지운다 — **다음 줄 화자의 이름이 그 줄에 나올 때만**. 그래야 진짜 장면
+      설명("교실에서 두 사람이 만난다")이나 지문을 잘못 지우지 않는다.
+    """
+    lines = (text or "").splitlines()
+    out: list[str] = []
+    for i, ln in enumerate(lines):
+        nxt = lines[i + 1] if i + 1 < len(lines) else ""
+        m = _SPEECH_RE.match(nxt)
+        if m and ln.strip() and not _SPEECH_RE.match(ln):
+            who = m.group("who").strip()
+            # 화자 이름이 앞줄에 들어 있으면 그 인물의 동작 서술이다.
+            if who and who in ln:
+                continue
+        out.append(ln)
+    return "\n".join(out)
+
+
 def _split_enumerations(text: str) -> str:
     """한 줄에 이어 쓴 열거 항목 사이에 줄바꿈을 넣는다."""
     out = []
@@ -516,8 +560,8 @@ def caption(image_path: str, image_type: str = "image") -> str:
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
-        text = _split_enumerations(_strip_situation_head(
-            _ensure_type_word(_reject_meta(_caption_anthropic(b64, mime, prompt)), image_type)))
+        text = _split_enumerations(_drop_per_speech_narration(_strip_situation_head(
+            _ensure_type_word(_reject_meta(_caption_anthropic(b64, mime, prompt)), image_type))))
         # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
         if cache is not None and text.strip():
             cache.write_text(text, encoding="utf-8")

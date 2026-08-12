@@ -36,3 +36,40 @@ class TestStrip:
 
     def test_빈_입력(self) -> None:
         assert strip("") == ""
+
+
+class TestPerSpeechNarration:
+    """대사마다 붙는 상황 줄을 걷는다 (2026-08-12 대표 지시).
+
+    지침 예5-4·5-5·예3-53 어디에도 대사마다 붙는 동작 줄이 없다 — 대사 줄은
+    '인물명: 대사' 하나뿐이고, 장면 설정은 맨 앞 한 문장까지다(예3-53은 그마저 없다).
+    """
+
+    def test_대사_앞_동작줄을_지운다(self) -> None:
+        from app.ai.captioning.captioner import _drop_per_speech_narration as drop
+
+        src = ("만화: 교실에서 두 사람이 만난다\n"
+               "철수가 지도를 가리킨다\n철수: 여기가 어디야?\n"
+               "영희가 고개를 든다\n영희: 도서관이야")
+        assert drop(src) == ("만화: 교실에서 두 사람이 만난다\n"
+                             "철수: 여기가 어디야?\n영희: 도서관이야")
+
+    def test_장면_설정_문장은_남긴다(self) -> None:
+        """맨 앞 한 문장은 지침이 쓰는 형식이다 — 지우면 장면을 알 수 없다."""
+        from app.ai.captioning.captioner import _drop_per_speech_narration as drop
+
+        src = "만화: 교실에서 두 사람이 만난다\n철수: 안녕\n영희: 그래"
+        assert drop(src) == src
+
+    def test_화자_이름이_없는_줄은_안_지운다(self) -> None:
+        """진짜 장면 서술까지 지우면 그림을 이해할 수 없다 — 좁게만 지운다."""
+        from app.ai.captioning.captioner import _drop_per_speech_narration as drop
+
+        src = "만화: 등산로\n약수터에 사람들이 모여 있다\n철수: 물 맛있다"
+        assert drop(src) == src
+
+    def test_장면_표지는_남는다(self) -> None:
+        from app.ai.captioning.captioner import _drop_per_speech_narration as drop
+
+        src = "만화: 토론회\n장면 1\n후보1: 안녕하세요\n장면 2\n후보2: 반갑습니다"
+        assert drop(src) == src
