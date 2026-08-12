@@ -54,6 +54,7 @@ from app.ai.llm.diagram_structure import structure_from_caption, subtype_from_ca
 from app.ai.llm.visual_drafts import (
     OUTLINE_IDX,
     LABELS,
+    _dedupe,
     build_visual_drafts,
     extra_drafts,
     omission_draft,
@@ -440,6 +441,9 @@ class DiagramOpt(BaseOpt):
                 prose_draft(label, _skeleton_prose(skeleton_text)),
                 *extra_drafts(label),
             ]
+            # 골격 경로는 build_visual_drafts를 안 타므로 접기를 여기서 직접 부른다.
+            # (실측: 제목 없는 개념도에서 짧은 제목과 유형만이 둘 다 "개념도"였다)
+            drafts, sel_idx = _dedupe(drafts, OUTLINE_IDX)
             return LLMOutput(
                 element_id=ext.element_id,
                 corrected_text=skeleton_text,
@@ -449,8 +453,9 @@ class DiagramOpt(BaseOpt):
                 processing_time_ms=0,
                 rule_trail=_min_trail(subtype, "골격 조립"),
                 drafts=drafts,
-                selected_idx=OUTLINE_IDX,
-                line_indents=skeleton_indents,
+                selected_idx=sel_idx,
+                line_indents=skeleton_indents if sel_idx == drafts.index(
+                    next(d for d in drafts if d.option == 3)) else None,
             )
 
         # 폴백: 구조 없음 → 캡션으로 공통 4안 빌더(제목·개조식·줄글 LLM)
