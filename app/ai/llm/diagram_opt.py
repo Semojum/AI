@@ -51,6 +51,8 @@ from typing import Optional
 from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import BaseOpt
 from app.ai.llm.diagram_structure import structure_from_caption, subtype_from_caption
+from app.ai.braille import tag_names as _TN
+from app.ai.braille import tn_notices as _TN_NOTICES
 from app.ai.llm.visual_drafts import (
     OUTLINE_IDX,
     LABELS,
@@ -237,7 +239,11 @@ def assemble_org_chart(structure: dict) -> tuple[str, list[int]]:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
     # §6.3.4(1) 유형 + §6.6.5(3) 들여쓰기 방식 점역자 주
     lines.append("<!주>조직도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
-    lines.append("<!주>들여쓰기로 상하 위계를 나타냄<!/주>"); indents.append(_NOTE_INDENT)
+    # ★ 2026-08-12 — 칸 수를 밝힌다. 정본(자료지침 예6-22)은 "하위에 속한 기구를 **2칸씩**
+    #   들여 쓰기함"이라고 쓴다. 점자에는 선·상자가 없어 위계가 들여쓰기로만 남는데,
+    #   몇 칸이 한 단계인지 말해 주지 않으면 독자는 빈칸을 세도 단계를 못 센다.
+    lines.append(_TN.tn(_TN_NOTICES.indent_hierarchy(_HIER_STEP, "기구")))
+    indents.append(_NOTE_INDENT)
     _flatten_hier(structure.get("nodes") or [], 0, lines, indents)           # §6.6.5(1)(2)
     return "\n".join(lines), indents
 

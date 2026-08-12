@@ -25,6 +25,7 @@ import re
 import time
 
 from app.ai.llm.base_opt import decide_tier_timeout, generate_with_retry
+from app.ai.braille import tn_notices as _TN_NOTICES
 from app.core.config import config
 from app.schemas.content import Draft
 from app.utils.logger import get_logger
@@ -61,6 +62,7 @@ OMIT_IDX, TITLE_IDX, OUTLINE_IDX, PROSE_IDX, TYPEONLY_IDX, VOLREF_IDX = 0, 1, 2,
 _TITLE_INDENT = 4
 _OUTLINE_BASE = 3
 _OUTLINE_STEP = 2
+_NOTE_INDENT = 2          # 형식 안내 점역자 주 3칸 (정본 예6-19·6-22·6-23·6-24)
 
 # 최적화 프롬프트 — GPT-4o가 만든 캡션(묘사)을 HCXT가 점자 초안용으로 '다듬는다'(재생성 금지).
 # 짧은 제목은 캡션 첫 문장(rule-based)이라 LLM은 개조식·줄글 두 형식만 담당 → 토큰↓·속도↑.
@@ -186,6 +188,15 @@ def _outline_text_indents(
         if title:
             lines.append(title); indents.append(_TITLE_INDENT)      # §6.3.3(1) 제목 5칸(plain)
         lines.append(_tn(head)); indents.append(0)                   # §6.3.4(1) 유형/설명 점역자주
+    # ★ 2026-08-12 — 항목에 **위계가 있으면** 들여쓰기 칸 수를 독자에게 밝힌다.
+    #   점자에는 선·상자·글머리 기호가 없어 위계가 들여쓰기로만 남는다. 몇 칸이 한
+    #   단계인지 말해 주지 않으면 독자는 빈칸을 세도 단계를 못 센다.
+    #   정본 자료지침 예6-22가 조직도에서 같은 말을 쓴다("하위에 속한 기구를 2칸씩
+    #   들여 쓰기함"). 위계가 없는 평평한 나열에는 붙이지 않는다 — 없는 구조를
+    #   있다고 알리는 꼴이 되고, 32칸 지면만 먹는다.
+    if any(lv > 0 for lv, tx in items if (tx or "").strip()):
+        lines.append(_tn(_TN_NOTICES.indent_hierarchy(_OUTLINE_STEP)))
+        indents.append(_NOTE_INDENT)
     for level, text in items:
         text = (text or "").strip()
         if not text:
