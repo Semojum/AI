@@ -25,6 +25,7 @@ import re
 import time
 
 from app.ai.llm.base_opt import decide_tier_timeout, generate_with_retry
+from app.ai.braille import tn_notices as _TN_NOTICES
 from app.core.config import config
 from app.schemas.content import Draft
 from app.utils.logger import get_logger
@@ -61,6 +62,7 @@ OMIT_IDX, TITLE_IDX, OUTLINE_IDX, PROSE_IDX, TYPEONLY_IDX, VOLREF_IDX = 0, 1, 2,
 _TITLE_INDENT = 4
 _OUTLINE_BASE = 3
 _OUTLINE_STEP = 2
+_NOTE_INDENT = 2          # 형식 안내 점역자 주 3칸 (정본 예6-19·6-22·6-23·6-24)
 
 # 최적화 프롬프트 — GPT-4o가 만든 캡션(묘사)을 HCXT가 점자 초안용으로 '다듬는다'(재생성 금지).
 # 짧은 제목은 캡션 첫 문장(rule-based)이라 LLM은 개조식·줄글 두 형식만 담당 → 토큰↓·속도↑.
@@ -167,7 +169,7 @@ def _shorten(text: str, limit: int = 45) -> str:
 
 
 def _outline_text_indents(
-    label: str, title: str, desc: str, items: list[tuple[int, str]]
+    label: str, title: str, desc: str, items: list[tuple[int, str]], kind: str = ""
 ) -> tuple[str, list[int]]:
     """개조식 → (텍스트, 줄별 들여쓰기). §6.3 규정 배치:
       제목(5칸, 점역자주 밖·§6.3.3(1)) → 유형+짧은 설명(점역자주·§6.3.4(1)) → 전사 항목(위계 들여).
@@ -186,6 +188,12 @@ def _outline_text_indents(
         if title:
             lines.append(title); indents.append(_TITLE_INDENT)      # §6.3.3(1) 제목 5칸(plain)
         lines.append(_tn(head)); indents.append(0)                   # §6.3.4(1) 유형/설명 점역자주
+    # ⚠ 여기에 "하위에 속한 항목을 2칸씩 들여 쓰기함" 고지를 붙였다가 뺐다(2026-08-12 대표 지시).
+    #   점역자 주는 **일반적이지 않은 처리**를 했을 때 쓰는 것이다 — 표를 전치했다거나,
+    #   반복되는 문구를 축약했다거나. 위계를 들여쓰기로 펴는 것은 점자 조판에서 일반적이라
+    #   매번 알릴 일이 아니다. 알릴수록 32칸 지면만 먹고 정작 봐야 할 고지가 묻힌다.
+    #   (정본 예6-22가 조직도에 그 말을 쓰는 것은 조직도가 도형을 잃기 때문이다 —
+    #    그 자리는 `diagram_opt`가 따로 낸다.)
     for level, text in items:
         text = (text or "").strip()
         if not text:
@@ -242,10 +250,10 @@ def title_draft(label: str, title: str) -> Draft:
 
 
 def outline_draft(
-    label: str, title: str, desc: str, items: list[tuple[int, str]]
+    label: str, title: str, desc: str, items: list[tuple[int, str]], kind: str = ""
 ) -> tuple[Draft, list[int]]:
     """2안: 위계 개조식(제목 5칸 + 유형/설명 점역자주 + 전사 항목). 반환 (Draft, line_indents)."""
-    text, indents = _outline_text_indents(label, title, desc, items)
+    text, indents = _outline_text_indents(label, title, desc, items, kind)
     return Draft(option=3, text=text, render_mode="narrative", label=LABELS[OUTLINE_IDX]), indents
 
 
@@ -450,7 +458,7 @@ async def build_visual_drafts(
 
     d_omit = omission_draft(label)
     d_title = title_draft(label, short_title)
-    d_outline, indents = outline_draft(label, title, outline_desc, outline_items)
+    d_outline, indents = outline_draft(label, title, outline_desc, outline_items, kind)
     d_prose = prose_draft(label, prose)
     drafts = [d_omit, d_title, d_outline, d_prose, *extra_drafts(label)]
 
