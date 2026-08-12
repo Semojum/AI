@@ -22,6 +22,7 @@ from app.ai.llm.base_opt import (
     generate_with_retry,
     hcxt_optimize,
 )
+from app.ai.braille import tag_names as _TAGS
 from app.core.config import config
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
@@ -38,7 +39,10 @@ _TAG_CANDIDATE_RE = re.compile(
     r"[□☐▢☑✓]|_{3,}|[<〈【\[]\s*(?:보기|자료|예시)"
 )
 
-_KNOWN_TAGS = {"테두리_위", "테두리_아래", "점역자주", "빈칸_네모", "빈칸_표", "빈칸_밑줄"}
+# 이름은 한 벌뿐이다(`braille/tag_names.py`). 구 이름은 미지 태그로 걸러 낸다 —
+# LLM이 옛 이름을 내면 그 출력은 버리고 원문을 쓴다(태깅 없음 > 갈린 이름).
+_KNOWN_TAGS = {_TAGS.BOX_TOP, _TAGS.BOX_BOTTOM, _TAGS.TN,
+               _TAGS.BLANK_SQUARE, _TAGS.BLANK_TABLE, _TAGS.BLANK_RULE}
 _TAG_TOKEN_RE = re.compile(r"<!(/?)([^>]+)>")
 _FENCE_RE = re.compile(r"```[a-zA-Z]*\n?|```")
 
@@ -46,13 +50,13 @@ _TAG_PROMPT = """다음 '대상 텍스트'에 한국어 점자 레이아웃 태�
 글자·내용·띄어쓰기는 절대 바꾸지 말고 태그만 추가한다. 설명·추론 없이 변환된 텍스트만 한 번 출력한다.
 
 태그 규칙:
-- 네모 빈칸 □ 또는 ☐ → <!빈칸_네모> (개수만큼 각각).
-- 본문 속 밑줄 빈칸(____) → <!빈칸_밑줄>.  ← 규정 제73항 '밑줄 빈칸'
-- 표 안의 비어 있는 칸 → <!빈칸_표>.       ← 규정 제73항 '표의 빈칸'(다른 기호다)
-- 글상자: 대상 텍스트가 자료/보기 표지 줄로 '시작'하면 그 줄을 <!테두리_위>표지<!/테두리_위>로 바꾸고, 텍스트 맨 끝에 새 줄로 <!테두리_아래><!/테두리_아래>를 붙여 전체를 감싼다.
+- 네모 빈칸 □ 또는 ☐ → <!네모> (개수만큼 각각).
+- 본문 속 밑줄 빈칸(____) → <!밑줄>.  ← 규정 제73항 '밑줄 빈칸'
+- 표 안의 비어 있는 칸 → <!빈칸>.       ← 규정 제73항 '표의 빈칸'(다른 기호다)
+- 글상자: 대상 텍스트가 자료/보기 표지 줄로 '시작'하면 그 줄을 <!상자>표지<!/상자>로 바꾸고, 텍스트 맨 끝에 새 줄로 <!상자끝><!/상자끝>를 붙여 전체를 감싼다.
   표지 예: <보기>, 〈보기 1〉, [자료1], [A], 개념 체크, 개념 플러스, 자료 플러스, 기출 플러스, 수능 기본 문제.
   ★ 위 테두리를 넣었으면 아래 테두리도 반드시 넣는다. 한쪽만 있으면 상자가 닫히지 않는다.
-- 점역자 주(독자에게 덧붙인 설명) → <!점역자주>설명<!/점역자주>.
+- 점역자 주(독자에게 덧붙인 설명) → <!주>설명<!/주>.
 
 [중요] 표지 뒤에 조사·서술·다른 글자가 한 글자라도 붙어 있으면 그것은 '참조'다. 글상자가 아니므로 절대 태그하지 않는다.
 - "①[자료1]은 ~이다." → 그대로 (태그 없음)
@@ -82,10 +86,10 @@ def _borders_balanced(tagged: str) -> bool:
     (`layout_braille._expand_box_borders`는 짝을 맞추지 않는다). 요소 단위로 도는
     LLM은 상자의 끝을 못 보므로 위 테두리만 내기 쉬웠다 — 그 출력은 버린다.
 
-    위계(<!테두리_위2>)는 여기서 안 본다 — `_KNOWN_TAGS`가 앞에서 이미 걸러 낸다
+    위계(<!상자2>)는 여기서 안 본다 — `_KNOWN_TAGS`가 앞에서 이미 걸러 낸다
     (LLM에는 위계를 요구하지 않는다. 위계 태그는 pdf_analyzer의 벡터 검출 몫이다).
     """
-    return tagged.count("<!테두리_위>") == tagged.count("<!테두리_아래>")
+    return tagged.count(f"<!{_TAGS.BOX_TOP}>") == tagged.count(f"<!{_TAGS.BOX_BOTTOM}>")
 
 
 def _validate_tagging(original: str, tagged: str) -> bool:
@@ -137,7 +141,7 @@ def _min_trail(text: str) -> list[RuleApplication]:
     달았다 — dev 400쪽 실측 **19,381/19,650 요소(98.6%)**. 대표가 직접 지목한 바로 그
     항목이다("점형은 6점자로 적는다. 이런 건 점역사에게 전혀 필요없는 규정"). 점역사가
     이미 아는 것을 매 요소에 붙이면 정작 봐야 할 판단(캡션 문구·글상자·관행 갈림)이 묻힌다.
-    태깅(<!점역자주>·<!테두리_위>)이 실제로 붙은 자리는 text_braille가 좌표와 함께 emit한다.
+    태깅(<!주>·<!상자>)이 실제로 붙은 자리는 text_braille가 좌표와 함께 emit한다.
     """
     return []
 

@@ -92,4 +92,4 @@ class TestScriptFormat:
 class TestTnNoBlankLine:
     def test_점역자주는_논리_줄_하나로_접힌다(self):
         """QA 14번 근본 위치 — 캡션 34건 중 27건이 빈 줄을 갖고 있었다."""
-        assert _tn("가\n\n나\n다") == "<!점역자주>가 나 다<!/점역자주>"
+        assert _tn("가\n\n나\n다") == "<!주>가 나 다<!/주>"

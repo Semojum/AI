@@ -13,7 +13,7 @@ from pathlib import Path
 import fitz
 from PIL import Image, ImageDraw, ImageFont
 
-from app.ai.captioning.captioner import caption
+from app.ai.captioning.captioner import caption, log_backend_status
 from app.ai.captioning.classifier import classify_with_confidence
 from app.ai.llm.diagram_structure import subtype_from_caption
 from app.utils.logger import get_logger
@@ -78,6 +78,55 @@ _TRANSIENT_EXC = {"RateLimitError", "APITimeoutError", "APIConnectionError", "In
 _CAPTION_RETRIES = 2
 _CAPTION_BACKOFF = 1.5   # 초, 지수 증가
 
+# ── 실행 단위 캡셔닝 중단 (2026-08-12) ───────────────────────────────────────
+# 캡셔닝 실패는 **그림마다 따로 나지 않는다. 실행 통째로 난다.** 전 job 실측:
+# 시각요소 11,483개 중 6,892개(60.0%)가 CAPTION_FAILED인데, job별로 보면
+# **실패율 100%인 job 152개 · 0%인 job 215개**로 완전히 갈린다. 중간이 거의 없다.
+# 원인은 그림이 아니라 API 접근이다.
+#
+# ★ 정정(2026-08-12) — 처음엔 이 자리에 "OpenAI(api_key=None)이 생성자에서 터진다"고
+#   적었는데 **틀렸다.** 캡셔닝 기본 백엔드는 OpenAI가 아니라 anthropic이다
+#   (`captioner.py`·`classifier.py`의 `os.getenv("CAPTION_BACKEND", "anthropic")`,
+#   모델 기본값 `claude-sonnet-5`). GPT-4o는 CAPTION_BACKEND를 다른 값으로 줬을 때만 탄다.
+#
+# 실제 실패 모양은 이렇다(실측):
+#   · 키 없음 → anthropic 클라이언트 **생성자는 통과**하고, 첫 호출에서
+#     `TypeError: Could not resolve authentication method…`가 난다.
+#     예외 이름만 보면 코드 버그와 구분이 안 되므로 **메시지로 가른다**.
+#   · 키가 틀림/권한 없음 → `AuthenticationError` · `PermissionDeniedError`
+#     (두 SDK가 같은 이름을 쓴다 — anthropic·openai 모두 있다)
+#
+# 이런 설정성 오류는 다시 해도 결과가 같다. 한 번 만나면 프로세스 단위로 잠그고, 이유를
+# 경계 파일 플래그에 실어 보낸다. 종전에는 요소마다 클라이언트를 다시 만들어 같은 예외를
+# 다시 맞았고(200요소 페이지면 200번), 그 이유는 **로그에만** 남는데 파일 핸들러가 없어
+# 실행이 끝나면 증발했다 — "왜 캡셔닝이 실패하나"를 사후에 알 수가 없던 진짜 이유다.
+_FATAL_EXC = {"AnthropicError", "OpenAIError",          # 각 SDK의 기반 예외
+              "AuthenticationError", "PermissionDeniedError", "NotFoundError"}
+# 이름만으로는 못 가르는 것 — 인증 미해결 TypeError. 메시지로 판별한다.
+_FATAL_MSG_RE = re.compile(r"resolve authentication|api[_ ]?key|auth_token", re.I)
+_backend_logged = False                # 백엔드·키 상태 1회 로깅 여부
+_caption_fatal: str | None = None      # 잠긴 사유(예: "AuthenticationError: …")
+
+
+def _is_fatal(exc: Exception) -> bool:
+    """다시 해도 같은 결과인 설정성 오류인가(키·인증·권한)."""
+    name = type(exc).__name__
+    if name in _FATAL_EXC:
+        return True
+    # TypeError는 코드 버그일 수도 있다 — 인증 문구가 있을 때만 설정 오류로 본다.
+    return isinstance(exc, TypeError) and bool(_FATAL_MSG_RE.search(str(exc)))
+
+
+def caption_fatal_reason() -> str | None:
+    """이번 프로세스에서 캡셔닝이 통째로 막힌 사유(없으면 None). 보고·진단용."""
+    return _caption_fatal
+
+
+def reset_caption_fatal() -> None:
+    """테스트·재시도용 — 잠금 해제."""
+    global _caption_fatal
+    _caption_fatal = None
+
 
 def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
     """(캡션, 확정 타입, 성공여부, 세분류 신뢰도).
@@ -88,9 +137,15 @@ def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
     내며 품질검사가 R11로 점역사에게 띄운다.
     세분류 신뢰도(logprob 기반)는 경계 JSON의 subtype_confidence로 나가 R2 판정에 쓰인다.
     """
+    global _caption_fatal
     img_path = el.get("image_path")
     original_type = el.get("type", "image")
     eid = str(el.get("element_id", ""))[:8]
+
+    # 설정성 오류로 이미 잠겼으면 API를 다시 두드리지 않는다 — 같은 실패를 요소 수만큼
+    # 반복해 봐야 시간만 버린다(200요소 페이지면 재시도 포함 600회).
+    if _caption_fatal:
+        return "", original_type, False, None
 
     if not img_path or not Path(img_path).exists():
         logger.warning("캡셔닝 불가 — 이미지 경로 없음 id=%s path=%r", eid, img_path)
@@ -114,7 +169,14 @@ def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
             return text, mapped_type, True, subconf
         except Exception as exc:  # noqa: BLE001 — 요소 격리(불변규칙 3)
             last = exc
-            if type(exc).__name__ not in _TRANSIENT_EXC or attempt == _CAPTION_RETRIES:
+            name = type(exc).__name__
+            if _is_fatal(exc):
+                # 키·인증·엔드포인트 문제 — 다시 해도 같다. 실행 단위로 잠근다.
+                _caption_fatal = f"{name}: {exc}"
+                logger.error("캡셔닝 전면 중단 — %s. 이번 실행의 남은 시각요소는 "
+                             "API를 부르지 않고 '생략'으로 나간다.", _caption_fatal)
+                break
+            if name not in _TRANSIENT_EXC or attempt == _CAPTION_RETRIES:
                 break
             time.sleep(_CAPTION_BACKOFF * (2 ** attempt))
 
@@ -216,6 +278,12 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
     vis = [el for el in ordered if el["type"] in _VISUAL_TYPES]
     if not vis:
         return {}
+    # 백엔드·키 상태를 프로세스당 1회 남긴다 — 키가 없으면 여기서 error로 뜬다.
+    # (종전엔 실패가 요소별 로그로만 흘러 실행이 끝나면 원인이 사라졌다.)
+    global _backend_logged
+    if not _backend_logged:
+        _backend_logged = True
+        log_backend_status()
     workers = max(1, int(os.environ.get("CAPTION_CONCURRENCY", "4")))
     t0 = time.monotonic()
     out: dict[int, tuple] = {}
@@ -304,7 +372,10 @@ def build(
             "content": content,
             "bbox": [int(round(v)) for v in bbox_out] if bbox_out else None,
             "caption_ref": "",   # 아래 _link_captions가 채움
-            "flags": ["CAPTION_FAILED"] if caption_failed else [],
+            # CAPTION_FAILED는 quality_checker가 R11로 올리는 정확한 키다(문자열 변경 금지).
+            # 사유는 **별도 플래그**로 붙여 사후에 원인을 알 수 있게 한다.
+            "flags": (["CAPTION_FAILED"] + ([f"CAPTION_ERR:{_caption_fatal.split(':', 1)[0]}"]
+                                            if _caption_fatal else [])) if caption_failed else [],
         }
         # 제목 단계(BBPG 2장2절1) — 여기서 안 실으면 조판이 가운데 정렬·들여쓰기를 못 쓴다.
         # mineru_runner가 MinerU의 text_level을 걸러 넣어 준다.

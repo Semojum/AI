@@ -32,13 +32,17 @@ class TestFourDrafts:
     def test_4안_라벨(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(ImageOpt().optimize([ext], "ZERO"))[0]
-        assert [d.label for d in opt.drafts] == list(LABELS)
+        labels = [d.label for d in opt.drafts]
+        # 재료가 겹쳐 접힌 안이 있을 수 있다(`visual_drafts._dedupe`) — 남은 것은
+        # LABELS의 **부분 수열**이고 서로 달라야 한다.
+        assert labels == [x for x in LABELS if x in labels], labels
+        assert len(set(labels)) == len(labels), labels
         assert opt.selected_idx == 2                           # 기본=개조식
 
     def test_생략안_규정표기(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(ImageOpt().optimize([ext], "ZERO"))[0]
-        assert opt.drafts[0].text == "<!점역자주>그림 생략<!/점역자주>"   # §6.3.4(2)②
+        assert opt.drafts[0].text == "<!주>그림 생략<!/주>"   # §6.3.4(2)②
 
     def test_짧은제목_캡션_전사(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
@@ -70,7 +74,8 @@ class TestFourDrafts:
         assert "[처리 불가" not in opt.corrected_text
         assert "생략" in opt.corrected_text
         assert opt.selected_idx == 0          # 0안 = 생략
-        assert len(opt.drafts) == len(LABELS)   # 안 개수 유지 — 점역사가 다른 안 선택 가능
+        assert [d.label for d in opt.drafts] == ["생략"], \
+            "캡셔닝 실패·캡션 없음이면 생략 한 안만 (2026-08-12 대표 지시)"   # 안 개수 유지 — 점역사가 다른 안 선택 가능
 
 
 class TestEndToEnd:
@@ -82,7 +87,7 @@ class TestEndToEnd:
             "ocr_texts": ["핵"], "caption_src": "둥근 세포 안에 핵이 있다"})
         opt = asyncio.run(ImageOpt().optimize([ext], "ZERO"))
         bo = ImageBraille().translate(opt)
-        assert len(bo[0].drafts) == len(LABELS)                # 모든 안이 점역됨
+        assert 3 <= len(bo[0].drafts) <= len(LABELS)                # 모든 안이 점역됨
         lr = LayoutResult(page_id="p", elements=[
             BBoxItem(element_id=eid, type="image", bbox=(0, 0, 0, 0), reading_order=1)])
         LayoutBraille().layout(bo, page_no=1, job_id="img", layout_result=lr)
@@ -123,7 +128,7 @@ class TestExtraDrafts:
                           drafts=[volume_ref_draft("그림")], selected_idx=0) for _ in range(3)]
         _number_volume_refs(outs, 20)
         assert [o.drafts[0].text for o in outs] == [
-            "<!점역자주>그림 20-1 참조<!/점역자주>",
-            "<!점역자주>그림 20-2 참조<!/점역자주>",
-            "<!점역자주>그림 20-3 참조<!/점역자주>",
+            "<!주>그림 20-1 참조<!/주>",
+            "<!주>그림 20-2 참조<!/주>",
+            "<!주>그림 20-3 참조<!/주>",
         ]

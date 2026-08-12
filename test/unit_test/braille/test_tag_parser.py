@@ -20,26 +20,26 @@ from app.ai.braille.translator import (
 
 class TestPointMarkers:
     def test_점역자주_양끝_마커(self):
-        out = translate_tagged_text("<!점역자주>그림 설명<!/점역자주>")
+        out = translate_tagged_text("<!주>그림 설명<!/주>")
         assert out.startswith(TN_MARKER)
         assert out.endswith(TN_MARKER)
         assert out.count(TN_MARKER) == 2  # 내부 ⠠⠄ 없는 일반 텍스트 → 양끝만
 
     def test_점역자주_한글음절_버그_없음(self):
         # 구버그: [점역사주]/점역자주 한글이 그대로 점자화되면 안 됨
-        out = translate_tagged_text("<!점역자주>치킨<!/점역자주>")
+        out = translate_tagged_text("<!주>치킨<!/주>")
         assert "⠨⠎⠢⠱⠁⠇⠨⠍" not in out   # "점역자주" 음절
         assert "⠨⠎⠢⠱⠁⠠⠣⠨⠍" not in out  # "점역사주" 음절
 
     def test_점역자주_구형식_동일토큰(self):
-        out = translate_tagged_text("<!점역자주>X<!점역자주>")
+        out = translate_tagged_text("<!주>X<!주>")
         assert out.startswith(TN_MARKER) and out.endswith(TN_MARKER)
 
     def test_빈칸_표(self):
-        assert "⠿⠿" in substitute_tags("성명 <!빈칸_표>")
+        assert "⠿⠿" in substitute_tags("성명 <!빈칸>")
 
     def test_빈칸_네모(self):
-        assert "⠸⠦" in substitute_tags("동의 <!빈칸_네모> 예 <!빈칸_네모> 아니오")
+        assert "⠸⠦" in substitute_tags("동의 <!네모> 예 <!네모> 아니오")
 
     def test_미지태그_안전제거(self):
         out = substitute_tags("도형 1<!직사각형> 끝")
@@ -51,24 +51,24 @@ class TestBorder:
     """글상자=표 테두리 (BBPG-1.2.5). 캡 ⠿, 위 채움 ⠛(=g), 아래 채움 ⠶(=7), 32칸."""
 
     def test_위테두리_제목없음_전체채움(self):
-        out = substitute_tags("<!테두리_위><!/테두리_위>")
+        out = substitute_tags("<!상자><!/상자>")
         assert out == "⠿" + "⠛" * 30 + "⠿"
         assert len(out) == 32
 
     def test_아랫테두리_제목없음_전체채움(self):
-        out = substitute_tags("<!테두리_아래><!/테두리_아래>")
+        out = substitute_tags("<!상자끝><!/상자끝>")
         assert out == "⠿" + "⠶" * 30 + "⠿"
         assert len(out) == 32
 
     def test_위테두리_제목_32칸_7칸배치(self):
         # BBPG-1.2.5(4)②: 제목 7번째 칸부터, 양옆 한 칸 띔
-        out = substitute_tags("<!테두리_위>범례<!/테두리_위>")
+        out = substitute_tags("<!상자>범례<!/상자>")
         assert len(out) == 32
         assert out.startswith("⠿⠛⠛⠛⠛⠀")  # 캡1+채움4+빈칸1 → 제목 col7
         assert out.endswith("⠿")
 
     def test_위테두리_구형식_동일토큰(self):
-        out = substitute_tags("<!테두리_위>범례<!테두리_위>")
+        out = substitute_tags("<!상자>범례<!상자>")
         assert len(out) == 32
 
     @pytest.mark.skipif(not _tr._BRAILLIFY_AVAILABLE,
@@ -76,7 +76,7 @@ class TestBorder:
     def test_위테두리_범례_testdata_정본대조(self):
         # testdata_complex.txt 60행 (글상자 범례 위 테두리, 태민 정본)
         expect = "⠿⠛⠛⠛⠛⠀⠘⠎⠢⠐⠌⠀⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠿"
-        assert substitute_tags("<!테두리_위>범례<!/테두리_위>") == expect
+        assert substitute_tags("<!상자>범례<!/상자>") == expect
 
 
 class TestTnMarkerSpans:
@@ -97,7 +97,7 @@ class TestTnFalsePositiveB1:
     """
 
     def test_source_has_tn_태그있음(self):
-        assert _tr.source_has_tn("<!점역자주>설명<!/점역자주>")
+        assert _tr.source_has_tn("<!주>설명<!/주>")
 
     def test_source_has_tn_기호만(self):
         # ∽·ː만 있고 점역자 주 태그가 없으면 False
@@ -112,7 +112,7 @@ class TestTnFalsePositiveB1:
         assert tn_marker_spans("⠠⠄⠁⠃", "ABC ∽ DEF") == []
 
     def test_marker_spans_source_gate_진짜TN(self):
-        spans = tn_marker_spans("⠠⠄⠁⠃⠠⠄", "<!점역자주>x<!/점역자주>")
+        spans = tn_marker_spans("⠠⠄⠁⠃⠠⠄", "<!주>x<!/주>")
         assert spans == [(0, 2, "tn_open"), (4, 6, "tn_close")]
 
     def test_marker_spans_source_none이면_무게이트(self):
@@ -155,7 +155,7 @@ class TestTnFalsePositivePipeline:
 
     def test_진짜_점역자주_emit(self):
         # 점역자 주 태그만 있는 경우 — 내부에 ∽·ː 없으므로 심볼 emit 없이 TN만.
-        trail = self._trail("<!점역자주>그림 설명<!/점역자주>")
+        trail = self._trail("<!주>그림 설명<!/주>")
         assert [r.tag for r in trail] == ["tn_open", "tn_close"]
 
 
@@ -258,7 +258,7 @@ class TestSyllableBreaks:
     def test_점역자주_마커_내부_미분리(self):
         from app.ai.braille.translator import TN_MARKER, translate_with_breaks
 
-        lines, breaks = translate_with_breaks("<!점역자주>설명 내용<!/점역자주>")
+        lines, breaks = translate_with_breaks("<!주>설명 내용<!/주>")
         ln, bk = lines[0], breaks[0]
         m = ln.find(TN_MARKER)
         while m != -1:
@@ -308,7 +308,7 @@ class TestElementLocalCoords:
     def test_점역자주_마커_좌표_정확(self):
         from app.ai.braille.translator import TN_MARKER
 
-        bo = self._bo("<!점역자주>그림 설명<!/점역자주>")
+        bo = self._bo("<!주>그림 설명<!/주>")
         marks = [r for r in bo.rule_trail if r.tag in ("tn_open", "tn_close")]
         assert marks, "TN 마커 좌표가 emit돼야 함"
         for r in marks:
@@ -399,7 +399,7 @@ class TestStep17TrailScope:
 
     def test_빈칸_태그는_제73항_근거를_단다(self):
         # 묵자 □를 '채워 넣을 빈칸'으로 본 것은 LLM 태깅의 판단이다(원장 C-06 자문 대기).
-        trail = self._bo("다음 <!빈칸_네모>에 알맞은 말을 쓰시오").rule_trail
+        trail = self._bo("다음 <!네모>에 알맞은 말을 쓰시오").rule_trail
         blanks = [r for r in trail if r.rule_id == "KBR-6.14.73"]
         assert blanks and blanks[0].tag == "blank_box"
 
@@ -407,7 +407,7 @@ class TestStep17TrailScope:
         # 대표 지목 (A) — 이 테두리는 묵자에 없던 것을 우리가 판단해 넣은 것이다(원장 C-01b).
         from app.ai.braille.layout_braille import LayoutBraille
 
-        bo = self._bo("<!테두리_위>보기<!/테두리_위>\n가나다\n<!테두리_아래><!/테두리_아래>")
+        bo = self._bo("<!상자>보기<!/상자>\n가나다\n<!상자끝><!/상자끝>")
         LayoutBraille()._expand_box_borders(bo)
         borders = [r for r in bo.rule_trail if r.rule_id == "BBPG-1.2.5"]
         assert [r.tag for r in borders] == ["box_top·1단계·제목있음", "box_bottom·1단계"]

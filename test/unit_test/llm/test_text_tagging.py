@@ -27,18 +27,18 @@ class TestCandidateGate:
 
 class TestValidateTagging:
     def test_내용보존_빈칸치환_통과(self):
-        assert _validate_tagging("③ □과 □은", "③ <!빈칸_네모>과 <!빈칸_네모>은")
+        assert _validate_tagging("③ □과 □은", "③ <!네모>과 <!네모>은")
 
     def test_글상자_통과(self):
         assert _validate_tagging(
-            "<보기>\nㄱ. 가", "<!테두리_위>보기<!/테두리_위>\nㄱ. 가\n<!테두리_아래><!/테두리_아래>")
+            "<보기>\nㄱ. 가", "<!상자>보기<!/상자>\nㄱ. 가\n<!상자끝><!/상자끝>")
 
     def test_평문_무변경_통과(self):
         assert _validate_tagging("평범한 문장", "평범한 문장")
 
     def test_내용변경_거부(self):
         # LLM이 단어를 바꾸거나 추가하면 검증 실패
-        assert not _validate_tagging("정답: ____", "정답(주관식): <!빈칸_표>")
+        assert not _validate_tagging("정답: ____", "정답(주관식): <!빈칸>")
 
     def test_미지태그_거부(self):
         assert not _validate_tagging("가나", "<!마름모>가나<!/마름모>")
@@ -48,26 +48,26 @@ class TestValidateTagging:
 
     def test_안닫힌_테두리_거부(self):
         # 위 테두리만 = 32칸 줄 하나를 그려 놓고 상자를 안 닫는다 (BBPG 1장5 (2))
-        assert not _validate_tagging("<보기>\nㄱ. 가", "<!테두리_위>보기<!/테두리_위>\nㄱ. 가")
-        assert not _validate_tagging("<보기>\nㄱ. 가", "<보기>\nㄱ. 가\n<!테두리_아래><!/테두리_아래>")
+        assert not _validate_tagging("<보기>\nㄱ. 가", "<!상자>보기<!/상자>\nㄱ. 가")
+        assert not _validate_tagging("<보기>\nㄱ. 가", "<보기>\nㄱ. 가\n<!상자끝><!/상자끝>")
 
     def test_표지로_시작하면_전체를_감싼다(self):
         assert _validate_tagging(
             "[자료1]\n갑국의 인구는 늘었다.",
-            "<!테두리_위>자료1<!/테두리_위>\n갑국의 인구는 늘었다.\n<!테두리_아래><!/테두리_아래>")
+            "<!상자>자료1<!/상자>\n갑국의 인구는 늘었다.\n<!상자끝><!/상자끝>")
 
 
 class TestStripFence:
     def test_코드펜스_제거(self):
-        assert _strip_fence("```plaintext\n③ <!빈칸_네모>\n```") == "③ <!빈칸_네모>"
+        assert _strip_fence("```plaintext\n③ <!네모>\n```") == "③ <!네모>"
 
     def test_펜스없음_그대로(self):
-        assert _strip_fence("정답: <!빈칸_표>") == "정답: <!빈칸_표>"
+        assert _strip_fence("정답: <!빈칸>") == "정답: <!빈칸>"
 
 
 class TestContentSig:
     def test_빈칸문자_제거(self):
-        assert _content_sig("③ □과") == _content_sig("③ <!빈칸_네모>과")
+        assert _content_sig("③ □과") == _content_sig("③ <!네모>과")
 
     def test_상자구획문자_제거(self):
-        assert _content_sig("<보기>가나") == _content_sig("<!테두리_위>보기<!/테두리_위>가나")
+        assert _content_sig("<보기>가나") == _content_sig("<!상자>보기<!/상자>가나")

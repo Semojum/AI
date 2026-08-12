@@ -576,7 +576,7 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     layer = _native_text_spaced(fitz_page, bbox)
     if not layer or _layer_untrustworthy(layer):
         return html
-    # 레이어에는 우리가 붙이는 인라인 태그(<!드러냄> 등)가 들어 있다 — 대조 전에 걷어낸다.
+    # 레이어에는 우리가 붙이는 인라인 태그(<!강조> 등)가 들어 있다 — 대조 전에 걷어낸다.
     layer_ns = re.sub(r"\s+", "", re.sub(r"<!/?[^>]*>", "", layer))
     if not layer_ns:
         return html

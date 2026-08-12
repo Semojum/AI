@@ -11,6 +11,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 from app.core.config import config
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 load_dotenv()
 
@@ -222,6 +225,36 @@ _PROMPTS = {
 
 
 
+def backend_status() -> dict:
+    """캡셔닝 백엔드와 키 유무 (기동 점검·진단용).
+
+    ★ 이 함수가 있는 이유(2026-08-12): 캡셔닝이 통째로 죽은 job이 152개인데 **어느
+      백엔드가 왜 죽었는지**를 사후에 알 방법이 없었다. 키는 `.env`가 아니라 셸
+      환경변수로만 들어오는 구조라(config가 pydantic-settings로 env를 읽는다),
+      같은 코드가 실행 환경에 따라 조용히 갈렸다.
+      값은 절대 싣지 않는다 — 유무만 본다.
+    """
+    backend = os.getenv("CAPTION_BACKEND", "anthropic")
+    key = config.anthropic_api_key if backend == "anthropic" else config.openai_api_key
+    return {
+        "backend": backend,
+        "model": os.getenv("CAPTION_MODEL", "claude-sonnet-5") if backend == "anthropic" else "gpt-4o",
+        "key_env": "ANTHROPIC_API_KEY" if backend == "anthropic" else "OPENAI_API_KEY",
+        "key_present": bool((key or "").strip()),
+    }
+
+
+def log_backend_status() -> dict:
+    """기동 시 1회 — 키가 없으면 **경고로** 남긴다. 조용히 죽는 것을 막는다."""
+    st = backend_status()
+    if st["key_present"]:
+        logger.info("캡셔닝 백엔드 %s (%s) — 키 있음", st["backend"], st["model"])
+    else:
+        logger.error("캡셔닝 백엔드 %s (%s) — **%s 없음**. 이번 실행의 시각자료는 "
+                     "설명 없이 '생략'으로만 나간다.", st["backend"], st["model"], st["key_env"])
+    return st
+
+
 def _get_client() -> OpenAI:
     global _client
     if _client is None:
@@ -379,6 +412,46 @@ def _reject_meta(text: str) -> str:
     return "" if _META_RE.search(text or "") else text
 
 
+
+# ── 열거 항목은 줄을 나눈다 (2026-08-12 대표 지시) ──────────────────────────
+# 캡셔너는 여러 정보를 **한 줄에 쭉** 이어 쓰는 버릇이 있다:
+#   "1. 광개토대왕릉비의 모습이다 2. 장수왕비의 모습이다"
+# 점역사 편집창에서 이걸 읽으려면 눈으로 번호를 찾아 끊어야 한다. 항목 앞에서 줄을 나눈다.
+#
+# 줄을 나누는 게 점자에도 이롭다 — `visual_drafts`의 개조식(2안)은 **줄 단위로** 항목을
+# 만들기 때문에(`_outline_item`), 한 줄로 뭉친 캡션은 개조식이 되어도 항목이 하나뿐이다.
+# 여기서 나눠 주면 개조식이 실제로 개조식이 된다.
+#
+# ⚠ 점자 출력의 줄 수가 늘지는 않는다. 점역자 주 한 덩이는 논리 줄 하나라
+#   `visual_drafts._oneline`이 다시 접는다(§6.3.4(1)). 나눈 줄이 쓰이는 곳은
+#   개조식 항목화와 사람이 읽는 편집창이다.
+_ENUM_SPLIT_RE = re.compile(
+    r"(?<=[^\s])\s+(?="                     # 앞에 글자가 있고, 뒤가 항목 머리일 때만
+    r"\d{1,2}\s*[.)]\s|"                    # 1. 2) …
+    r"[①-⑳㉑-㉟]|"                            # ①②③ …
+    r"[가-힣]\s*[.)]\s|"                     # 가. 나) …
+    r"[-·•]\s"                               # - · •
+    r")")
+# 문장 끝 마침표는 숫자 항목과 구분이 어렵다 — 소수점·연도는 안 쪼갠다.
+_DECIMAL_RE = re.compile(r"\d\s*[.]\s*\d")
+
+
+def _split_enumerations(text: str) -> str:
+    """한 줄에 이어 쓴 열거 항목 사이에 줄바꿈을 넣는다."""
+    out = []
+    for line in (text or "").splitlines():
+        if len(line) < 20 or _DECIMAL_RE.search(line):
+            out.append(line)
+            continue
+        out.append(_ENUM_SPLIT_RE.sub("\n", line))
+    lines = "\n".join(out).splitlines()
+    # 유형 제시어만 홀로 남는 줄("그림:")은 다음 항목에 붙인다 — §6.3.4(1)은 유형과 설명을
+    # 한 덩이로 본다. 편집창에서도 콜론 하나짜리 줄은 읽는 데 방해만 된다.
+    if len(lines) > 1 and lines[0].rstrip().endswith((":", "：")):
+        lines[:2] = [f"{lines[0].rstrip()} {lines[1].lstrip()}"]
+    return "\n".join(lines)
+
+
 def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
     """★ A/B 판정용 캡션 캐시(2026-08-08). `CAPTION_CACHE_DIR`를 줄 때만 동작한다.
 
@@ -422,7 +495,8 @@ def caption(image_path: str, image_type: str = "image") -> str:
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
-        text = _ensure_type_word(_reject_meta(_caption_anthropic(b64, mime, prompt)), image_type)
+        text = _split_enumerations(
+            _ensure_type_word(_reject_meta(_caption_anthropic(b64, mime, prompt)), image_type))
         # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
         if cache is not None and text.strip():
             cache.write_text(text, encoding="utf-8")

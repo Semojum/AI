@@ -27,6 +27,7 @@ from app.ai.braille.kor_math_rules import convert_latex, digits_to_braille
 from app.ai.braille import eng_braille, inline_math
 from app.ai.braille.constants import WRAP_HYPHEN_CLOSE, WRAP_HYPHEN_OPEN
 from app.ai.braille.symbol_rules import SYMBOL_TABLE, substitute_symbols
+from app.ai.braille import tag_names as _TAGS
 
 logger = logging.getLogger(__name__)
 
@@ -812,38 +813,38 @@ _TAG_TOKEN_RE = re.compile(r"<!/?[^>]+>")
 
 # 단일·대칭 인라인 마커: 태그명 → 점자 글리프
 _TAG_INLINE_MARKER: dict[str, str] = {
-    "점역자주": "⠠⠄",   # BBPG-1.2.6 점역자 주 — 양끝 동일(대칭)
-    "빈칸_표":   "⠿⠿",   # 표 기입칸 (규정 제73항 "표의 빈칸" `==` → ⠿⠿)
+    _TAGS.TN: "⠠⠄",     # BBPG-1.2.6 점역자 주 — 양끝 동일(대칭)
+    _TAGS.BLANK_TABLE: "⠿⠿",   # 표 기입칸 (규정 제73항 "표의 빈칸" `==` → ⠿⠿)
     # 규정 제73항 "밑줄 빈칸" `_-` → ⠸⠤. **표의 빈칸과 다른 기호다.**
     # 종전엔 이 태그가 없어 text_opt 지시가 본문 밑줄(____)까지 빈칸_표로 보냈다 —
     # 같은 입력이 조판 경로(format_underline_blank=⠸⠤)와 태깅 경로(⠿⠿)로 갈렸다.
-    "빈칸_밑줄": "⠸⠤",
+    _TAGS.BLANK_RULE: "⠸⠤",
     # 규정 제73항 "네모 빈칸" — 원문 BRF `_8`0l` = ⠸⠦⠀⠴⠇ (원장 C-16, 2026-08-08).
     # 종전엔 여는 쪽 ⠸⠦만 찍어 **반쪽짜리 기호**가 나갔다. 닫는 ⠴⠇가 없으면 점역사는
     # 빈칸이 어디서 끝나는지 알 수 없다.
     # ★ 이 태그는 **쌍이 아니라 단독**으로 쓰인다 — text_opt의 태깅 지시가
-    #   "네모 빈칸 □ 또는 ☐ → <!빈칸_네모> (개수만큼 각각)"이라 □ 하나에 태그 하나다.
+    #   "네모 빈칸 □ 또는 ☐ → <!네모> (개수만큼 각각)"이라 □ 하나에 태그 하나다.
     #   그래서 한 토큰이 여는·빈칸·닫는을 통째로 낸다(쌍 마커로 두면 닫는 쪽이 영영 안 나온다).
-    "빈칸_네모": "⠸⠦⠀⠴⠇",
+    _TAGS.BLANK_SQUARE: "⠸⠦⠀⠴⠇",
 }
 
 # 비대칭 인라인 마커: (여는, 닫는)
 _TAG_PAIR_MARKER: dict[str, tuple[str, str]] = {
     # 규정 제56항: 밑줄·드러냄표로 강조된 글자체 = ⠠⠤ … ⠤⠄ (정답 도서 1204회)
-    "드러냄": ("⠠⠤", "⠤⠄"),
+    _TAGS.EMPH: ("⠠⠤", "⠤⠄"),
 }
 
 # 테두리(글상자 = 표, BBPG-1.2.5): (캡, 채움) 글리프. 32칸 한 줄로 렌더.
 _BORDER_FILL: dict[str, tuple[str, str]] = {
-    "테두리_위":   ("⠿", "⠛"),  # 위: 첫/끝 = , 중간 g
-    "테두리_아래": ("⠿", "⠶"),  # 아래: 첫/끝 = , 중간 7
+    _TAGS.BOX_TOP:    ("⠿", "⠛"),  # 위: 첫/끝 = , 중간 g
+    _TAGS.BOX_BOTTOM: ("⠿", "⠶"),  # 아래: 첫/끝 = , 중간 7
 }
 from app.ai.braille.constants import COLS as _BORDER_COLS  # noqa: E402 (공용 상수)
 _BORDER_BLANK     = "⠀"   # 점자 빈칸(U+2800)
 _BORDER_LEFT_FILL = 4     # 캡 뒤 채움 칸 → 제목 7칸에서 시작(BBPG-1.2.5(4)②: 캡1+채움4+빈칸1)
 
 # 신형식 <!이름>…<!/이름> + 구형식 <!이름>…<!이름> 모두 수용(닫기 슬래시 옵션).
-# 위계: 이름 뒤 단계 숫자 옵션(<!테두리_위2>=2단계, 없으면 1단계). group(1)=단계, group(2)=제목.
+# 위계: 이름 뒤 단계 숫자 옵션(<!상자2>=2단계, 없으면 1단계). group(1)=단계, group(2)=제목.
 _BORDER_PAIR_RE = {
     name: re.compile(rf"<!{re.escape(name)}([23]?)>(.*?)<!/?{re.escape(name)}\1>", re.DOTALL)
     for name in _BORDER_FILL
@@ -866,8 +867,10 @@ def _border_line(name: str, title_braille: str) -> str:
 
 # 글상자 테두리 태그(위/아래, 위계 옵션) 문서 순서 수집 — box_borders(BBPG-1.2.5) layout 재렌더
 # group(1)=이름, group(2)=단계 숫자(옵션), group(3)=제목
-_BORDER_ANY_RE = re.compile(r"<!(테두리_위|테두리_아래)([23]?)>(.*?)<!/?\1\2>", re.DOTALL)
-_BORDER_KIND = {"테두리_위": "top", "테두리_아래": "bottom"}
+_BORDER_ANY_RE = re.compile(
+    rf"<!({re.escape(_TAGS.BOX_TOP)}|{re.escape(_TAGS.BOX_BOTTOM)})([23]?)>(.*?)<!/?\1\2>",
+    re.DOTALL)
+_BORDER_KIND = {_TAGS.BOX_TOP: "top", _TAGS.BOX_BOTTOM: "bottom"}
 
 
 def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
@@ -875,7 +878,7 @@ def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
 
     layout이 이 목록으로 위계별 테두리·제목 배치(중간7칸/윗줄5칸/케이스①)를 재렌더한다.
     translator는 인라인 32칸 테두리(위치 마커, 항상 1단계 ⠿ 형식)도 그대로 둔다(_border_line).
-    위계: 태그 이름 뒤 단계 숫자(<!테두리_위2>=2단계, 없으면 1단계). ※§3-5 태그 규약 확장(태민 검토).
+    위계: 태그 이름 뒤 단계 숫자(<!상자2>=2단계, 없으면 1단계). ※§3-5 태그 규약 확장(태민 검토).
     """
     out: list[tuple[str, int, str]] = []
     for m in _BORDER_ANY_RE.finditer(source_text):
@@ -916,7 +919,7 @@ def source_has_tn(text: str) -> bool:
 #       "규정 모호 → 관행 채택 · ❓ 자문" 상태다.
 # dev 400쪽 실측: ⠸⠦ 131개·⠿⠿ 26개가 근거 0건으로 나갔다.
 _BLANK_TAG_RULE = "KBR-6.14.73"
-_BLANK_TAG_NAMES = {"빈칸_표": "blank_table", "빈칸_네모": "blank_box"}
+_BLANK_TAG_NAMES = {_TAGS.BLANK_TABLE: "blank_table", _TAGS.BLANK_SQUARE: "blank_box"}
 
 
 def blank_marker_spans(
@@ -924,7 +927,7 @@ def blank_marker_spans(
 ) -> list[tuple[int, int, str]]:
     """빈칸 태그가 만든 점자 마커 위치 → (start, end, tag) 목록.
 
-    source-gated — 원본(점역 전)에 `<!빈칸_*>` 태그가 있을 때, 그 개수만큼만 출력에서 찾는다.
+    source-gated — 원본(점역 전)에 `<!빈칸>`·`<!네모>` 태그가 있을 때, 그 개수만큼만 출력에서 찾는다.
     ⠿⠿·⠸⠦는 다른 경로(표 격자·묵자 기호)로도 나올 수 있어 출력 스캔만으로는 못 가른다.
     """
     want: dict[str, int] = {}
@@ -971,7 +974,7 @@ def tn_marker_spans(braille: str, source_text: str | None = None) -> list[tuple[
 
 # 리터럴 점역자주 마커 방어: LLM·외부 입력이 태그 대신 리터럴(【점역자주】·[점역자주])을
 # 내면 대괄호+한글 음절 21셀이 통째로 점자화된다(2026-07-17 실측 — <!태그> 형식을 쓰는 이유).
-# 쌍 단위로 <!점역자주>/<!/점역자주>로 승격하고, 홀수 잔여는 제거한다.
+# 쌍 단위로 <!주>/<!/주>로 승격하고, 홀수 잔여는 제거한다.
 _LITERAL_TN_RE = re.compile(r"【점역자주】|\[점역자주\]")
 
 
@@ -980,13 +983,13 @@ def _promote_literal_tn(text: str) -> str:
 
     def _sub(m: re.Match) -> str:
         n[0] += 1
-        return "<!점역자주>" if n[0] % 2 else "<!/점역자주>"
+        return "<!주>" if n[0] % 2 else "<!/주>"
 
     out = _LITERAL_TN_RE.sub(_sub, text)
     if n[0] % 2:                       # 홀수 — 마지막으로 승격된 여는 태그가 짝이 없다
-        i = out.rfind("<!점역자주>")
+        i = out.rfind("<!주>")
         if i >= 0:
-            out = out[:i] + out[i + len("<!점역자주>"):]
+            out = out[:i] + out[i + len("<!주>"):]
         logger.warning("translator: 리터럴 점역자주 마커 홀수(%d) — 마지막 1개 제거", n[0])
     if n[0]:
         logger.info("translator: 리터럴 점역자주 마커 %d개를 태그로 승격", n[0])
@@ -1686,7 +1689,7 @@ def _break_offsets(src: str, braille: str) -> list[int]:
 #   전부 분수 분자다(가로선=분수선 오인). 외국어 175건은 영문 빈칸선, 생물 40건은 선지 ①ㄱ.
 # 근본 수정은 pdf_analyzer.underline_rects(분수선 배제)지만 그건 재추출이 필요하다.
 # 여기서는 '한글 없는 드러냄'만 태그를 걷어낸다(내용은 보존 — 글자를 잃지 않는다).
-_EMPH_PAIR_RE = re.compile(r"<!드러냄>(.*?)<!/드러냄>", re.S)
+_EMPH_PAIR_RE = re.compile(r"<!강조>(.*?)<!/강조>", re.S)
 _HANGUL_ANY_RE = re.compile(r"[가-힣]")
 
 
@@ -1781,7 +1784,7 @@ def _normalize_apostrophe(text: str) -> str:
     return "".join(out)
 
 
-EMPHASIS_OPEN, EMPHASIS_CLOSE = _TAG_PAIR_MARKER["드러냄"]  # ⠠⠤ … ⠤⠄ (제56항)
+EMPHASIS_OPEN, EMPHASIS_CLOSE = _TAG_PAIR_MARKER[_TAGS.EMPH]  # ⠠⠤ … ⠤⠄ (제56항)
 
 
 def emphasis_marker_spans(

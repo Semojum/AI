@@ -9,7 +9,7 @@ BE·FE 와이어프레임은 대체 초안을 **묵자와 점자를 나란히** 
      묵자 초안은 점역 **전** 산출물이므로 opt 단계에서 만든다.
   2. **표 초안 4개의 묵자가 전부 같았다** — 전부 `text=원문`이라 피커에서 무엇을 고르는지
      알 수 없었다. 배치마다 묵자를 따로 만든다(`table_braille.print_layout`).
-  3. **묵자에 내부 태그가 섞여 나갔다** — `<!점역자주>…<!/점역자주>` 는 점역기가 마커
+  3. **묵자에 내부 태그가 섞여 나갔다** — `<!주>…<!/주>` 는 점역기가 마커
      점형으로 바꾸는 기계 표식이지 사람이 읽을 글자가 아니다.
 
 ## 계약
@@ -132,7 +132,7 @@ class TestNoInternalTags:
     def test_태그_제거_함수(self) -> None:
         from app.core.pipeline import _draft_print_text
 
-        assert _draft_print_text("<!점역자주>그래프 생략<!/점역자주>") == "그래프 생략"
+        assert _draft_print_text("<!주>그래프 생략<!/주>") == "그래프 생략"
         assert _draft_print_text("평범한 텍스트") == "평범한 텍스트"
         assert _draft_print_text("") == ""
 
@@ -140,7 +140,7 @@ class TestNoInternalTags:
         """줄바꿈은 배치다 — 지우면 피커가 배치를 못 보여 준다."""
         from app.core.pipeline import _draft_print_text
 
-        assert _draft_print_text("<!점역자주>가\n\n나<!/점역자주>") == "가\n\n나"
+        assert _draft_print_text("<!주>가\n\n나<!/주>") == "가\n\n나"
 
 
 class TestTextElementsHaveNoDrafts:

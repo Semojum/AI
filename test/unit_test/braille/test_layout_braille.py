@@ -621,7 +621,7 @@ class TestBorderIndentB2:
         # 제목(범례) 포함 테두리는 내부에 빈칸이 있어 단어경계 분리가 더 잘 일어남
         from app.ai.braille.translator import substitute_tags
         eid = uuid4()
-        border = substitute_tags("<!테두리_위>범례<!/테두리_위>")
+        border = substitute_tags("<!상자>범례<!/상자>")
         assert _cell_count(border) == _COLS
         lr = _layout((eid, "text", 1, 0))
         lb.layout([_out([border], eid)], page_no=1, job_id="b2tt", layout_result=lr)
@@ -685,7 +685,7 @@ class TestBoxBorderBBPG125:
     def test_box_borders_from_source_순서수집(self) -> None:
         from app.ai.braille.translator import box_borders_from_source
 
-        src = "<!테두리_위>범례<!/테두리_위>\n내용\n<!테두리_아래><!/테두리_아래>"
+        src = "<!상자>범례<!/상자>\n내용\n<!상자끝><!/상자끝>"
         bb = box_borders_from_source(src)
         assert [k for k, _, _ in bb] == ["top", "bottom"]
         assert bb[0][1] == 1 and bb[0][2] != ""   # top, level1, 제목 점자 있음
@@ -748,7 +748,7 @@ class TestBoxBorderBBPG125:
 
         opt = LLMOutput(
             element_id=str(uuid.uuid4()),
-            corrected_text="<!테두리_위>범례<!/테두리_위>\n내용\n<!테두리_아래><!/테두리_아래>",
+            corrected_text="<!상자>범례<!/상자>\n내용\n<!상자끝><!/상자끝>",
             render_mode="text_only", routing_tier="ZERO",
         )
         bo = TextBraille().translate([opt])[0]
@@ -762,7 +762,7 @@ class TestBoxBorderBBPG125:
         from app.ai.braille.image_braille import ImageBraille
         from app.schemas.content import LLMOutput
 
-        src = "<!테두리_위>설명<!/테두리_위>\n내용\n<!테두리_아래><!/테두리_아래>"
+        src = "<!상자>설명<!/상자>\n내용\n<!상자끝><!/상자끝>"
         for Cls in (ImageBraille, CartoonBraille, ChartGraphBraille):
             opt = LLMOutput(element_id=str(uuid.uuid4()), corrected_text=src,
                             render_mode="narrative", routing_tier="ZERO")
@@ -781,11 +781,11 @@ class TestBoxBorderBBPG125:
     def test_위계_태그_파싱(self) -> None:
         from app.ai.braille.translator import box_borders_from_source
 
-        lv2 = box_borders_from_source("<!테두리_위2>설명<!/테두리_위2>")
+        lv2 = box_borders_from_source("<!상자2>설명<!/상자2>")
         assert lv2[0][1] == 2
-        lv3 = box_borders_from_source("<!테두리_위3><!/테두리_위3>")
+        lv3 = box_borders_from_source("<!상자3><!/상자3>")
         assert lv3[0][1] == 3
-        lv1 = box_borders_from_source("<!테두리_위>범례<!/테두리_위>")
+        lv1 = box_borders_from_source("<!상자>범례<!/상자>")
         assert lv1[0][1] == 1
 
     def test_위계별_테두리_글리프(self) -> None:
@@ -808,7 +808,7 @@ class TestBoxBorderBBPG125:
         # substitute_tags는 위계 태그도 인라인 32칸 마커(위치용)로 렌더 — 손실 없음
         from app.ai.braille.translator import substitute_tags
 
-        out = substitute_tags("<!테두리_위2>설명<!/테두리_위2>")
+        out = substitute_tags("<!상자2>설명<!/상자2>")
         assert len(out) == _COLS and out.startswith("⠿") and out.endswith("⠿")
 
     def test_expand_위계2단계_재렌더(self) -> None:
@@ -850,7 +850,7 @@ class TestPostLayoutCoords:
     def test_문단들여_후_TN좌표_셀일치(self, lb, tmp_path) -> None:
         from app.ai.braille.translator import TN_MARKER
 
-        bo = self._text_bo("<!점역자주>설명<!/점역자주>")
+        bo = self._text_bo("<!주>설명<!/주>")
         eid = bo.element_id
         lr = _layout((eid, "text", 1, 0))           # text → 문단 3칸 들여
         lb.layout([bo], page_no=1, job_id="tnc", layout_result=lr)
@@ -942,8 +942,8 @@ class TestSyllableLineWrap:
         # 관찰된 버그 회귀: 닫는 ⠠⠄가 줄 경계에서 ⠠/⠄로 갈려 마커가 소실되면 안 된다.
         from app.ai.braille.translator import TN_MARKER
 
-        text = ("<!점역자주>원 안에 작은 삼각형이 있는 그림이 매우 길게 설명되어 "
-                "여러 줄에 걸쳐 이어지는 점역자 주석<!/점역자주>")
+        text = ("<!주>원 안에 작은 삼각형이 있는 그림이 매우 길게 설명되어 "
+                "여러 줄에 걸쳐 이어지는 점역자 주석<!/주>")
         bo = self._layout_text(lb, text)
         assert len(bo.braille_lines) >= 2
         # 마커가 줄 경계에서 분리되면 어느 한 줄에도 온전한 ⠠⠄가 안 잡혀 합계가 2 미만이 된다.
