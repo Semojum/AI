@@ -171,9 +171,18 @@ _PROMPTS = {
         "지켜야 할 것:\n"
         "- **말풍선·생각풍선 대사는 하나도 빠뜨리지 말고 원문 그대로** 옮기세요. 요약·의역 금지 (§5.3.3(2)).\n"
         "- 인물명과 대사는 쌍점(:)으로 구분하고, 인물마다 줄을 바꾸세요 (§5.3.3(3)).\n"
-        "- 인물 이름이 만화에 없으면 특징으로 부르세요 — 남학생1·여학생2·모자 쓴 부인 (§5.3.3(5)).\n"
+        "- 인물 이름이 **만화에 나오면 그 이름을 그대로** 쓰세요(철수, 영희 …).\n"
+        "- 이름이 없으면 **가장 짧은 호칭**으로 부르세요 (§5.3.3(5)).\n"
+        "  · '남성 후보1·여성 후보2'가 아니라 '후보1·후보2'처럼 군더더기를 빼세요.\n"
+        "  · 다만 **그림을 이해하는 데 필요한 정보는 빼지 마세요.** 문제가 성별·나이·역할을\n"
+        "    묻고 있으면(예: \"여자가 할 말을 고르시오\") 그 정보는 호칭에 남깁니다.\n"
+        "- **번호는 같은 호칭이 둘 이상일 때만** 붙이고, 호칭마다 1부터 셉니다.\n"
+        "  · 남자 1명·여자 1명이면 '남자·여자'입니다. '남자1·여자2'가 아닙니다.\n"
+        "  · 학생이 둘이면 '학생1·학생2'입니다.\n"
         "  같은 인물은 장면이 바뀌어도 같은 이름으로 부르세요 (§5.3.3(4)).\n"
         "- 칸이 하나면 '장면' 줄을 쓰지 말고 대사만 적으세요.\n"
+        "- **'(상황)'·'상황:' 같은 말머리를 붙이지 마세요.** 장면 설정은 말머리 없이 바로\n"
+        "  문장으로 씁니다 — 지침 예5-4·5-5도 '만화:' 뒤에 바로 문장이 옵니다.\n"
         # ★ 2026-08-10 정정. 종전 규칙은 "대사가 있으면 상황 설명을 쓰지 마세요"였는데
         #   새 정답이 정면으로 뒤집는다: 자료지침 예5-4(한 장면·대사 3줄)와 예5-5(세 장면·
         #   대사 3줄)는 **둘 다 대사가 있는데도** 맨 앞 '만화:' 뒤에 장면 설정 한 문장을 쓴다
@@ -436,6 +445,18 @@ _ENUM_SPLIT_RE = re.compile(
 _DECIMAL_RE = re.compile(r"\d\s*[.]\s*\d")
 
 
+# '(상황)'·'상황:' 말머리 — 프롬프트로 막아도 모델이 붙이는 일이 있어 후처리로도 걷는다.
+# 지침 예5-4·5-5는 '만화:' 뒤에 말머리 없이 바로 문장이 온다.
+_SITUATION_HEAD_RE = re.compile(
+    r"(?m)(^|^\s*\S{1,4}\s*[:：]\s*)"      # 줄머리, 또는 '만화:' 같은 유형 제시어 뒤
+    r"[(（\[【]?\s*상황(?![가-힣])\s*[)）\]】]?\s*[:：]?\s*")
+
+
+def _strip_situation_head(text: str) -> str:
+    """줄머리의 '(상황)'·'상황:' 말머리를 뗀다. 문장 자체는 남긴다."""
+    return _SITUATION_HEAD_RE.sub(lambda m: m.group(1), text or "")
+
+
 def _split_enumerations(text: str) -> str:
     """한 줄에 이어 쓴 열거 항목 사이에 줄바꿈을 넣는다."""
     out = []
@@ -495,8 +516,8 @@ def caption(image_path: str, image_type: str = "image") -> str:
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
-        text = _split_enumerations(
-            _ensure_type_word(_reject_meta(_caption_anthropic(b64, mime, prompt)), image_type))
+        text = _split_enumerations(_strip_situation_head(
+            _ensure_type_word(_reject_meta(_caption_anthropic(b64, mime, prompt)), image_type)))
         # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
         if cache is not None and text.strip():
             cache.write_text(text, encoding="utf-8")
