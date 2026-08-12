@@ -141,8 +141,8 @@ def _tn(text: str) -> str:
     """시각자료 감싸기 — tn(현행): 점역자주 / box(A/B): 글상자 테두리."""
     text = _oneline(text)
     if _WRAP_STYLE == "box":
-        return (f"<!테두리_위><!/테두리_위>\n{text}\n<!테두리_아래><!/테두리_아래>")
-    return f"<!점역자주>{text}<!/점역자주>"
+        return (f"<!상자><!/상자>\n{text}\n<!상자끝><!/상자끝>")
+    return f"<!주>{text}<!/주>"
 
 
 def _shorten(text: str, limit: int = 45) -> str:
@@ -180,7 +180,7 @@ def _outline_text_indents(
     head = f"{label}: {desc}" if (desc and desc != title) else label
     if _WRAP_STYLE == "box":
         # box(A/B): 블록 전체를 글상자로 — 제목은 위 테두리 안(BBPG-1.2.5), 유형/설명은 첫 줄.
-        lines.append(f"<!테두리_위>{title}<!/테두리_위>"); indents.append(0)
+        lines.append(f"<!상자>{title}<!/상자>"); indents.append(0)
         lines.append(head); indents.append(0)
     else:
         if title:
@@ -192,7 +192,7 @@ def _outline_text_indents(
             continue
         lines.append(text); indents.append(_OUTLINE_BASE + _OUTLINE_STEP * max(0, level))  # 전사 §6.3.4(2)①
     if _WRAP_STYLE == "box":
-        lines.append("<!테두리_아래><!/테두리_아래>"); indents.append(0)
+        lines.append("<!상자끝><!/상자끝>"); indents.append(0)
     return "\n".join(lines), indents
 
 
@@ -227,9 +227,17 @@ def omission_draft(label: str) -> Draft:
 
 
 def title_draft(label: str, title: str) -> Draft:
-    """1안: 짧은 제목(캡션 그대로 또는 생성)."""
+    """1안: 짧은 제목(캡션 그대로 또는 생성).
+
+    ★ 재료가 없을 때 `f"{label} 생략"`으로 떨어뜨리지 않는다(2026-08-12 대표 지시).
+      '생략'은 **0안의 몫**이다. 여기서 같은 문구를 내면 점역사 피커에 같은 선택지가
+      두 번 뜨고, 6안을 둔 목적(설명 방식을 **고르게** 한다)이 무너진다.
+      실측: 캡션이 없는 조건의 코퍼스 job에서 2안의 41.3%가 "…생략"이었고,
+      4안 중 서로 다른 것이 4개인 요소는 10%뿐이었다.
+      재료가 없으면 유형만 남긴다 — 그리고 그렇게 겹친 안은 `_dedupe`가 접는다.
+    """
     title = _strip_dup_type(title, label)      # "그래프: 그래프: …" 중복 방지
-    body = f"{label}: {title}".strip().rstrip(":") if title else f"{label} 생략"
+    body = f"{label}: {title}".strip().rstrip(":") if title else label
     return Draft(option=2, text=_tn(body), render_mode="narrative", label=LABELS[TITLE_IDX])
 
 
@@ -242,10 +250,10 @@ def outline_draft(
 
 
 def prose_draft(label: str, prose: str) -> Draft:
-    """3안: 줄글 자세한 설명."""
+    """3안: 줄글 자세한 설명. 재료 없으면 유형만(‘생략’은 0안 몫 — `title_draft` 주석)."""
     body = (prose or "").strip()
     body = _strip_dup_type(body, label)
-    return Draft(option=4, text=_tn(f"{label}: {body}" if body else f"{label} 생략"),
+    return Draft(option=4, text=_tn(f"{label}: {body}" if body else label),
                  render_mode="narrative", label=LABELS[PROSE_IDX])
 
 
@@ -257,6 +265,37 @@ def typeonly_draft(label: str) -> Draft:
     """
     return Draft(option=5, text=_tn(label), render_mode="narrative",
                  label=LABELS[TYPEONLY_IDX], type_label=label)
+
+
+def _dedupe(drafts: list[Draft], selected_idx: int) -> tuple[list[Draft], int]:
+    """문구가 똑같아진 안을 접는다. 반환 (남은 안, 옮겨진 selected_idx).
+
+    재료가 **조금** 있을 때도 형식끼리 같아질 수 있다. 캡션이 한 문장이면 짧은 제목(첫
+    문장)과 줄글(전문)이 같은 글이고, 개조식도 항목이 없으면 같은 한 줄이다 — 세 칸에
+    똑같은 줄이 선다. 점역사는 셋 다 읽어 보고서야 같은 것임을 안다.
+
+    ⚠ `selected_idx`는 리스트 인덱스다. 접힌 만큼 다시 매기지 않으면 상위
+      `drafts[selected_idx]`가 엉뚱한 안을 가리킨다.
+    """
+    seen: dict[str, int] = {}
+    kept: list[Draft] = []
+    new_idx = 0
+    for i, d in enumerate(drafts):
+        key = " ".join((d.text or "").split())
+        if key in seen:
+            if i == selected_idx:
+                new_idx = seen[key]
+            continue
+        seen[key] = len(kept)
+        if i == selected_idx:
+            new_idx = len(kept)
+        kept.append(d)
+    return kept, new_idx
+
+
+def _no_material(*parts: str) -> bool:
+    """캡셔닝이 실패했거나 인쇄 캡션이 없다 — 설명을 지어낼 재료가 하나도 없는 자리."""
+    return not any((p or "").strip() for p in parts)
 
 
 def extra_drafts(label: str, ref: str = "") -> list[Draft]:
@@ -383,8 +422,13 @@ async def build_visual_drafts(
                            kind, str(ext.element_id)[:8], type(exc).__name__, exc)
             tier = "FALLBACK"
 
+    # 그림 안에서 뽑아 낸 원본 글자(struct_outline). 종전에는 **개조식에만** 넘어가서,
+    # 캡션이 없고 원본 글자만 있는 그림에서 개조식만 살고 짧은 제목·줄글은 빈손이 됐다
+    # (실측 안별 붕괴율: 개조식 0.0% vs 짧은 제목·줄글 각 41.3%). 같은 재료를 셋이 나눠 쓴다.
+    struct_text = " ".join(t for _lv, t in (struct_outline or []) if t).strip()
+
     # 짧은 제목: 인쇄 캡션 우선(요건 — "캡션 있으면 그대로"), 단 장문 AI 캡션은 짧게 축약. 없으면 제목/LLM.
-    short_title = _shorten(caption) or title or llm_title or ""
+    short_title = _shorten(caption) or title or llm_title or _shorten(struct_text) or ""
     # 개조식: 5칸 제목줄 = 구조적 표제(title), 점역자주 설명 = 캡션/생성 설명.
     outline_items = struct_outline if struct_outline is not None else llm_outline
     # ※ 항목이 비면 캡션 여러 줄이 `_tn()`의 `_oneline`에 접혀 한 줄 점역자주가 된다
@@ -401,7 +445,8 @@ async def build_visual_drafts(
     outline_desc = caption or llm_title or ""
     if outline_items:
         outline_desc = _shorten(outline_desc)
-    prose = struct_prose if struct_prose is not None else (llm_prose or caption or title)
+    prose = (struct_prose if struct_prose is not None
+             else (llm_prose or caption or title or struct_text))
 
     d_omit = omission_draft(label)
     d_title = title_draft(label, short_title)
@@ -410,7 +455,21 @@ async def build_visual_drafts(
     drafts = [d_omit, d_title, d_outline, d_prose, *extra_drafts(label)]
 
     selected_idx = OMIT_IDX if decorative else OUTLINE_IDX
-    line_indents = indents if selected_idx == OUTLINE_IDX else None
+
+    # ★ 재료가 하나도 없으면 **생략 한 안만** 낸다 (2026-08-12 대표 지시).
+    #   캡션·제목·원본 글자가 다 없으면 짧은 제목·개조식·줄글은 낼 게 없어 전부
+    #   '유형만'이나 '…생략'과 같은 문구가 된다 — 여섯 칸에 같은 줄을 세우면 점역사는
+    #   여섯 개를 다 읽고서야 고를 게 없다는 걸 안다. 규정상 정답도 생략 표기다(§6.3.4(2)②).
+    #   ⚠ 이 자리가 자주 나오면 그건 **캡셔닝이 실패하고 있다는 신호**지 초안 문제가 아니다.
+    #     경계 파일의 CAPTION_FAILED와 품질검사 R11이 그 사실을 따로 알린다.
+    if _no_material(caption, title, struct_text, struct_prose or "",
+                    llm_title, llm_prose, " ".join(t for _l, t in (llm_outline or []))):
+        return [d_omit], 0, None, tier, caption_source(
+            OMIT_IDX, used_llm=False, has_print_caption=False, has_struct=False)
+
+    # 재료가 조금이라도 있으면 6안을 내되, 문구가 똑같아진 안은 접는다.
+    drafts, selected_idx = _dedupe(drafts, selected_idx)
+    line_indents = indents if drafts[selected_idx] is d_outline else None
     logger.info("    4안 %s %s: %.1fs (tier=%s%s)", kind, str(ext.element_id)[:8],
                 time.monotonic() - _t0, tier, ", LLM" if use_llm else "")
     return drafts, selected_idx, line_indents, tier, caption_source(

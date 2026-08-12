@@ -46,7 +46,7 @@ def _is_transcription(text: str) -> bool:
 
 
 def ensure_tn_prefix(text: str) -> str:
-    """점역자 주 텍스트를 인라인 태그 `<!점역자주>…<!/점역자주>`로 감싼다 (plan §3-5).
+    """점역자 주 텍스트를 인라인 태그 `<!주>…<!/주>`로 감싼다 (plan §3-5).
 
     구 `[점역사주]`·`점역사주:` 리터럴 접두나 이미 붙은 태그가 있으면 제거 후 재포장(중복 방지).
     점역 직전 텍스트의 이 태그를 translator가 점자 마커 `⠠⠄`(양끝)로 치환한다.
@@ -54,7 +54,7 @@ def ensure_tn_prefix(text: str) -> str:
     t = (text or "").strip()
     if not t:
         return ""
-    t = t.replace("<!점역자주>", "").replace("<!/점역자주>", "").strip()  # 기존 태그 제거
+    t = t.replace("<!주>", "").replace("<!/주>", "").strip()  # 기존 태그 제거
     t = _TN_LEGACY_RE.sub("", t).strip()               # [점역사주]·점역사주: 등 라벨 제거
     t = _PERSPECTIVE_LABEL_RE.sub("", t).strip()       # 상황/위치/요약 등 방식 라벨 제거
     if not t:
@@ -67,15 +67,15 @@ def ensure_tn_prefix(text: str) -> str:
         #     (사회문화 p147: 우리가 주표로 감싼 300셀을 gold는 글상자에 넣었다)
         #   · **그림을 말로 푼 것**(그래프 추세·장치 묘사) → gold는 주표 (gold 888셀이 이쪽)
         # auto는 그 둘을 초안 **모양**으로 가른다 — 나열이면 전사, 줄글이면 서술.
-        return f"<!테두리_위><!/테두리_위>\n{t}\n<!테두리_아래><!/테두리_아래>"
-    return f"<!점역자주>{t}<!/점역자주>"
+        return f"<!상자><!/상자>\n{t}\n<!상자끝><!/상자끝>"
+    return f"<!주>{t}<!/주>"
 
 
 def parse_labeled_drafts(response: str, methods: list[tuple[str, str]]) -> list[Draft]:
     """LLM 응답의 [방식N] 라인 → Draft 목록.
 
     methods: 옵션 순서대로 [(render_mode, label), ...] (보통 3개).
-    파싱된 방식만 Draft로 만든다(부족하면 가능한 만큼). text는 `<!점역자주>…<!/점역자주>` 포장.
+    파싱된 방식만 Draft로 만든다(부족하면 가능한 만큼). text는 `<!주>…<!/주>` 포장.
     """
     found: dict[int, str] = {}
     for raw in response.splitlines():

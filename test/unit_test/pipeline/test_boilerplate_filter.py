@@ -56,11 +56,11 @@ class TestIsRunningFoot:
             "SCIENCE",                       # 생물 러닝풋
             "수능 SCIENCE 29 테 스트",        # OCR 변형
             "SCIENCE\n수능\n점",
-            "<!드러냄>SCIENCE<!/드러냄>",     # 태그 감쌈 변형
+            "<!강조>SCIENCE<!/강조>",     # 태그 감쌈 변형
             "테스트",                         # 생물 단독 배너
             "中",                             # 사회문화·세계사 장식 OCR 노이즈
             "04 | 혈액의 구성과 혈액형",       # 생물 강 러닝헤더
-            "<!드러냄>13 | 유전 형질과 염색체 이상<!/드러냄>",
+            "<!강조>13 | 유전 형질과 염색체 이상<!/강조>",
             "www e b si co k r",              # ebsi URL OCR 흩뿌림 변형
             "w w w e b s i c o k r",
             "www. e b s i . co . k r",

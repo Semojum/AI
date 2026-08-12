@@ -462,7 +462,7 @@ class TableOpt(BaseOpt):
         table_tags = _table_tags(ext.table_structure, table_text)
 
         if routing_tier == "ZERO":
-            tn = ensure_tn_prefix(f"표. {table_text[:100]}")  # <!점역자주>…<!/점역자주>
+            tn = ensure_tn_prefix(f"표. {table_text[:100]}")  # <!주>…<!/주>
             return LLMOutput(
                 element_id=ext.element_id,
                 corrected_text=table_tags,

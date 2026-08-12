@@ -167,5 +167,5 @@ class TestClosingMarkJoin:
             assert _join_words(a, b) == " ", f"{a}+{b}"
 
     def test_태그로_끝난_줄은_손대지_않는다(self):
-        # `모든<!/드러냄>` + `<!드러냄>사람이` — 뒤가 한글이 아니라 종전대로 공백
-        assert _join_words("모든<!/드러냄>", "<!드러냄>사람이") == " "
+        # `모든<!/강조>` + `<!강조>사람이` — 뒤가 한글이 아니라 종전대로 공백
+        assert _join_words("모든<!/강조>", "<!강조>사람이") == " "

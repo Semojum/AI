@@ -6,9 +6,9 @@ from app.ai.llm.draft_utils import ensure_tn_prefix, parse_labeled_drafts
 class TestEnsureTnPrefix:
     def test_방식라벨_제거(self):
         # 모델이 본문 앞에 붙이는 방식 이름은 점자에 안 찍히게 제거
-        assert ensure_tn_prefix("상황 중심: 원 안에 삼각형") == "<!점역자주>원 안에 삼각형<!/점역자주>"
-        assert ensure_tn_prefix("[점역사주] 위치 중심: 칠판 앞") == "<!점역자주>칠판 앞<!/점역자주>"
-        assert ensure_tn_prefix("요약 중심: 수업 장면").endswith("수업 장면<!/점역자주>")
+        assert ensure_tn_prefix("상황 중심: 원 안에 삼각형") == "<!주>원 안에 삼각형<!/주>"
+        assert ensure_tn_prefix("[점역사주] 위치 중심: 칠판 앞") == "<!주>칠판 앞<!/주>"
+        assert ensure_tn_prefix("요약 중심: 수업 장면").endswith("수업 장면<!/주>")
         assert "대사 중심" not in ensure_tn_prefix("대사 중심: 선생님 안녕")
 
     def test_유형라벨_보존(self):
@@ -29,8 +29,8 @@ class TestParseLabeledDrafts:
         methods = [("narrative", "상황 중심"), ("narrative", "위치 중심"), ("narrative", "요약")]
         ds = parse_labeled_drafts(raw, methods)
         assert len(ds) == 3
-        assert ds[0].text == "<!점역자주>원 안에 삼각형<!/점역자주>"
-        assert ds[2].text == "<!점역자주>원과 삼각형<!/점역자주>"
+        assert ds[0].text == "<!주>원 안에 삼각형<!/주>"
+        assert ds[2].text == "<!주>원과 삼각형<!/주>"
         assert len({d.text for d in ds}) == 3   # 세 초안 서로 다름
 
 
@@ -60,13 +60,13 @@ class TestWrapStyleSwitch:
 
     def test_기본은_주표(self, monkeypatch) -> None:
         d, v = self._reload(monkeypatch, "tn")
-        assert d.ensure_tn_prefix("그래프: 설명").startswith("<!점역자주>")
-        assert v._tn("그래프: 설명").startswith("<!점역자주>")
+        assert d.ensure_tn_prefix("그래프: 설명").startswith("<!주>")
+        assert v._tn("그래프: 설명").startswith("<!주>")
 
     def test_box면_두_경로_모두_글상자(self, monkeypatch) -> None:
         d, v = self._reload(monkeypatch, "box")
         for out in (d.ensure_tn_prefix("그래프: 설명"), v._tn("그래프: 설명")):
-            assert out.startswith("<!테두리_위>") and out.endswith("<!/테두리_아래>")
+            assert out.startswith("<!상자>") and out.endswith("<!/상자끝>")
             assert "점역자주" not in out
 
     def test_전환해도_내용은_보존된다(self, monkeypatch) -> None:
@@ -100,7 +100,7 @@ class TestAutoWrapRule:
         "그림: 단계\n1. 준비\n2. 실행\n3. 정리",
     ])
     def test_나열은_글상자(self, text: str) -> None:
-        assert self.d.ensure_tn_prefix(text).startswith("<!테두리_위>")
+        assert self.d.ensure_tn_prefix(text).startswith("<!상자>")
 
     @pytest.mark.parametrize("text", [
         "그래프: 가로축은 연도, 세로축은 인구수이며 2010년 이후 완만히 증가한다.",
@@ -108,8 +108,8 @@ class TestAutoWrapRule:
         "그림: 실험 장치가 왼쪽에 놓여 있고 오른쪽으로 관이 이어진다.",
     ])
     def test_서술은_주표(self, text: str) -> None:
-        assert self.d.ensure_tn_prefix(text).startswith("<!점역자주>")
+        assert self.d.ensure_tn_prefix(text).startswith("<!주>")
 
     def test_항목이_하나뿐이면_서술로_본다(self) -> None:
         """한 항목은 나열이 아니다 — 오검출을 막는 하한."""
-        assert self.d.ensure_tn_prefix("그림: ① 자유만 표시됨").startswith("<!점역자주>")
+        assert self.d.ensure_tn_prefix("그림: ① 자유만 표시됨").startswith("<!주>")

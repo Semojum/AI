@@ -70,7 +70,7 @@ class TestTextBrailleOutput:
         assert "BBPG-1.2.1" not in rids and "KBR-0.1" not in rids
 
     def test_rule_trail_tn_marker_when_present(self):
-        results = TextBraille().translate([_text_out("<!점역자주>주석<!/점역자주>")])
+        results = TextBraille().translate([_text_out("<!주>주석<!/주>")])
         tags = [r.tag for r in results[0].rule_trail]
         assert "tn_open" in tags and "tn_close" in tags
 

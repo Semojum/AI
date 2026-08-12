@@ -4,7 +4,7 @@ Q11:
   · 그림 안의 그래프 → 그래프 설명 부분을 **테두리로 묶어** 준다.
   · 표 안의 그림   → 그림을 **글상자처럼 1단으로 쭉 풀어 써서** 설명한다.
 
-두 경우 모두 "테두리(<!테두리_위>/<!테두리_아래>)로 감싼 1단 narrative"라는 동일 골격이다.
+두 경우 모두 "테두리(<!상자>/<!상자끝>)로 감싼 1단 narrative"라는 동일 골격이다.
 opt가 `box_narrative()`로 보조 텍스트를 만들어 LLMOutput.nested_text에 담고,
 braille 모듈이 `append_nested()`로 본 요소 점자 끝에 덧붙인다(테두리는 layout이 재렌더).
 """
@@ -28,15 +28,15 @@ def box_narrative(blocks: list[dict], default_label: str = "그래프") -> Optio
     for b in blocks or []:
         label = (b.get("label") or default_label).strip()
         desc = (b.get("description") or b.get("caption") or "").strip()
-        body = (f"<!점역자주>{label}: {desc}<!/점역자주>" if desc
-                else f"<!점역자주>{label}<!/점역자주>")
-        out.append("<!테두리_위><!/테두리_위>")   # Q11 테두리 묶기 / 글상자 1단(빈 제목 쌍)
+        body = (f"<!주>{label}: {desc}<!/주>" if desc
+                else f"<!주>{label}<!/주>")
+        out.append("<!상자><!/상자>")   # Q11 테두리 묶기 / 글상자 1단(빈 제목 쌍)
         out.append(body)
         for t in b.get("ocr_texts") or []:          # 원본 내용 전사(축 수치·셀 등)
             t = str(t).strip()
             if t:
                 out.append(t)
-        out.append("<!테두리_아래><!/테두리_아래>")
+        out.append("<!상자끝><!/상자끝>")
     return "\n".join(out) if out else None
 
 

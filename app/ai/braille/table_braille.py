@@ -134,7 +134,7 @@ _BOOK_STYLE = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
 # 우리 translator가 내는 점자와 셀 단위로 일치함을 확인했다(25셀).
 # 옛 문구 "표의 가로와 세로를 바꾸어 점역함."은 지침에 없는 자작 표현이고 8셀 더 길었다.
 _TN_TRANSPOSE = "행과 열을 바꾸어 표기함"
-_TN_SRC = f"<!점역자주>{_TN_TRANSPOSE}<!/점역자주>"   # 태그 형식(§3-5) — rule_trail emit용
+_TN_SRC = f"<!주>{_TN_TRANSPOSE}<!/주>"   # 태그 형식(§3-5) — rule_trail emit용
 _TN_SRC_MARK = "⠠⠄"                                  # 점역자 주 마커(양끝) — 출력 검출용
 # 표 제목 "5칸에서 시작" = 앞 빈칸 **4**(도서지침 §3 5)(1)·자료지침 §3.1.3(1)).
 # 5로 적어 한 칸 밀려 있었다(2026-08-10 정정, 원장 C-21). 근거 3단이 모두 4다:
