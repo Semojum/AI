@@ -56,7 +56,7 @@ class TestRegroup:
         regroup_boxed(els, [BOX])
         assert tag_boxed_elements(els, [BOX]) == 1
         joined = "\n".join(e["content"] for e in els)
-        assert "<!테두리_위>" in joined and "<!테두리_아래>" in joined
+        assert "<!상자>" in joined and "<!상자끝>" in joined
 
     def test_표를_품어도_모은다(self) -> None:
         """표·그림도 상자 안 자리를 차지한다(§3장 지문 (4) 속글상자)."""

@@ -173,7 +173,7 @@ _UL_GAP_MAX = 6.0        # 글자 아랫변에서 선까지 허용 거리(pt)
 _UL_GAP_MIN = -1.5       # 글자와 살짝 겹치는 밑줄도 허용
 _UL_PAGE_W_RATIO = 0.8   # 페이지 폭의 이 비율을 넘는 선은 머리말 구분선 등 → 제외
 _UL_COVER = 0.5          # 글자 폭이 선과 이만큼 겹쳐야 밑줄로 인정
-_UL_OPEN, _UL_CLOSE = "<!드러냄>", "<!/드러냄>"
+_UL_OPEN, _UL_CLOSE = "<!강조>", "<!/강조>"
 
 
 def underline_rects(page) -> list:
@@ -764,9 +764,9 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
             title = _tag_title(elements[title_i])
             promoted.add(title_i)
         first, last = texts[0], texts[-1]
-        sfx = "" if level == 1 else str(level)        # <!테두리_위2> = 2단계(translator 규약)
-        opens.setdefault(first, []).append((level, f"<!테두리_위{sfx}>{title}<!/테두리_위{sfx}>"))
-        closes.setdefault(last, []).append((level, f"<!테두리_아래{sfx}><!/테두리_아래{sfx}>"))
+        sfx = "" if level == 1 else str(level)        # <!상자2> = 2단계(translator 규약)
+        opens.setdefault(first, []).append((level, f"<!상자{sfx}>{title}<!/상자{sfx}>"))
+        closes.setdefault(last, []).append((level, f"<!상자끝{sfx}><!/상자끝{sfx}>"))
         for i in texts:                         # 안쪽 상자가 다시 감쌀 수 있게 위계를 기록
             claimed[i] = max(claimed.get(i, 0), level)
         n += 1

@@ -11,6 +11,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 from app.core.config import config
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 load_dotenv()
 
@@ -168,9 +171,31 @@ _PROMPTS = {
         "지켜야 할 것:\n"
         "- **말풍선·생각풍선 대사는 하나도 빠뜨리지 말고 원문 그대로** 옮기세요. 요약·의역 금지 (§5.3.3(2)).\n"
         "- 인물명과 대사는 쌍점(:)으로 구분하고, 인물마다 줄을 바꾸세요 (§5.3.3(3)).\n"
-        "- 인물 이름이 만화에 없으면 특징으로 부르세요 — 남학생1·여학생2·모자 쓴 부인 (§5.3.3(5)).\n"
+        "- 인물 이름이 **만화에 나오면 그 이름을 그대로** 쓰세요(철수, 영희 …).\n"
+        "- 이름이 없으면 **가장 짧은 호칭**으로 부르세요 (§5.3.3(5)).\n"
+        "  · '남성 후보1·여성 후보2'가 아니라 '후보1·후보2'처럼 군더더기를 빼세요.\n"
+        "  · 다만 **그림을 이해하는 데 필요한 정보는 빼지 마세요.** 문제가 성별·나이·역할을\n"
+        "    묻고 있으면(예: \"여자가 할 말을 고르시오\") 그 정보는 호칭에 남깁니다.\n"
+        "- **번호는 같은 호칭이 둘 이상일 때만** 붙이고, 호칭마다 1부터 셉니다.\n"
+        "  · 남자 1명·여자 1명이면 '남자·여자'입니다. '남자1·여자2'가 아닙니다.\n"
+        "  · 학생이 둘이면 '학생1·학생2'입니다.\n"
         "  같은 인물은 장면이 바뀌어도 같은 이름으로 부르세요 (§5.3.3(4)).\n"
         "- 칸이 하나면 '장면' 줄을 쓰지 말고 대사만 적으세요.\n"
+        "- **'(상황)'·'상황:' 같은 말머리를 붙이지 마세요.** 장면 설정은 말머리 없이 바로\n"
+        "  문장으로 씁니다 — 지침 예5-4·5-5도 '만화:' 뒤에 바로 문장이 옵니다.\n"
+        "- **대사마다 상황을 덧붙이지 마세요.** 대사 줄은 '인물명: 대사' 하나뿐입니다.\n"
+        "  인물이 무엇을 하는지, 어떤 표정인지, 무엇을 가리키는지 따로 줄을 만들지 않습니다.\n"
+        "  · 이렇게 쓰지 마세요:\n"
+        "      철수가 지도를 가리킨다\n"
+        "      철수: 여기가 어디야?\n"
+        "      영희가 고개를 든다\n"
+        "      영희: 도서관이야\n"
+        "  · 이렇게 쓰세요:\n"
+        "      철수: 여기가 어디야?\n"
+        "      영희: 도서관이야\n"
+        "  장면 설정은 맨 앞 '만화:' 뒤에 **한 문장까지만** 쓰고, 없어도 됩니다\n"
+        "  (지침 예3-53은 장면 문장 없이 바로 대사로 들어갑니다).\n"
+        "  동작·표정이 **문제를 푸는 데 꼭 필요할 때만** 그 장면 문장에 함께 담으세요.\n"
         # ★ 2026-08-10 정정. 종전 규칙은 "대사가 있으면 상황 설명을 쓰지 마세요"였는데
         #   새 정답이 정면으로 뒤집는다: 자료지침 예5-4(한 장면·대사 3줄)와 예5-5(세 장면·
         #   대사 3줄)는 **둘 다 대사가 있는데도** 맨 앞 '만화:' 뒤에 장면 설정 한 문장을 쓴다
@@ -220,6 +245,36 @@ _PROMPTS = {
     ),
 }
 
+
+
+def backend_status() -> dict:
+    """캡셔닝 백엔드와 키 유무 (기동 점검·진단용).
+
+    ★ 이 함수가 있는 이유(2026-08-12): 캡셔닝이 통째로 죽은 job이 152개인데 **어느
+      백엔드가 왜 죽었는지**를 사후에 알 방법이 없었다. 키는 `.env`가 아니라 셸
+      환경변수로만 들어오는 구조라(config가 pydantic-settings로 env를 읽는다),
+      같은 코드가 실행 환경에 따라 조용히 갈렸다.
+      값은 절대 싣지 않는다 — 유무만 본다.
+    """
+    backend = os.getenv("CAPTION_BACKEND", "anthropic")
+    key = config.anthropic_api_key if backend == "anthropic" else config.openai_api_key
+    return {
+        "backend": backend,
+        "model": os.getenv("CAPTION_MODEL", "claude-sonnet-5") if backend == "anthropic" else "gpt-4o",
+        "key_env": "ANTHROPIC_API_KEY" if backend == "anthropic" else "OPENAI_API_KEY",
+        "key_present": bool((key or "").strip()),
+    }
+
+
+def log_backend_status() -> dict:
+    """기동 시 1회 — 키가 없으면 **경고로** 남긴다. 조용히 죽는 것을 막는다."""
+    st = backend_status()
+    if st["key_present"]:
+        logger.info("캡셔닝 백엔드 %s (%s) — 키 있음", st["backend"], st["model"])
+    else:
+        logger.error("캡셔닝 백엔드 %s (%s) — **%s 없음**. 이번 실행의 시각자료는 "
+                     "설명 없이 '생략'으로만 나간다.", st["backend"], st["model"], st["key_env"])
+    return st
 
 
 def _get_client() -> OpenAI:
@@ -379,6 +434,89 @@ def _reject_meta(text: str) -> str:
     return "" if _META_RE.search(text or "") else text
 
 
+
+# ── 열거 항목은 줄을 나눈다 (2026-08-12 대표 지시) ──────────────────────────
+# 캡셔너는 여러 정보를 **한 줄에 쭉** 이어 쓰는 버릇이 있다:
+#   "1. 광개토대왕릉비의 모습이다 2. 장수왕비의 모습이다"
+# 점역사 편집창에서 이걸 읽으려면 눈으로 번호를 찾아 끊어야 한다. 항목 앞에서 줄을 나눈다.
+#
+# 줄을 나누는 게 점자에도 이롭다 — `visual_drafts`의 개조식(2안)은 **줄 단위로** 항목을
+# 만들기 때문에(`_outline_item`), 한 줄로 뭉친 캡션은 개조식이 되어도 항목이 하나뿐이다.
+# 여기서 나눠 주면 개조식이 실제로 개조식이 된다.
+#
+# ⚠ 점자 출력의 줄 수가 늘지는 않는다. 점역자 주 한 덩이는 논리 줄 하나라
+#   `visual_drafts._oneline`이 다시 접는다(§6.3.4(1)). 나눈 줄이 쓰이는 곳은
+#   개조식 항목화와 사람이 읽는 편집창이다.
+_ENUM_SPLIT_RE = re.compile(
+    r"(?<=[^\s])\s+(?="                     # 앞에 글자가 있고, 뒤가 항목 머리일 때만
+    r"\d{1,2}\s*[.)]\s|"                    # 1. 2) …
+    r"[①-⑳㉑-㉟]|"                            # ①②③ …
+    r"[가-힣]\s*[.)]\s|"                     # 가. 나) …
+    r"[-·•]\s"                               # - · •
+    r")")
+# 문장 끝 마침표는 숫자 항목과 구분이 어렵다 — 소수점·연도는 안 쪼갠다.
+_DECIMAL_RE = re.compile(r"\d\s*[.]\s*\d")
+
+
+# '(상황)'·'상황:' 말머리 — 프롬프트로 막아도 모델이 붙이는 일이 있어 후처리로도 걷는다.
+# 지침 예5-4·5-5는 '만화:' 뒤에 말머리 없이 바로 문장이 온다.
+_SITUATION_HEAD_RE = re.compile(
+    r"(?m)(^|^\s*\S{1,4}\s*[:：]\s*)"      # 줄머리, 또는 '만화:' 같은 유형 제시어 뒤
+    r"[(（\[【]?\s*상황(?![가-힣])\s*[)）\]】]?\s*[:：]?\s*")
+
+
+def _strip_situation_head(text: str) -> str:
+    """줄머리의 '(상황)'·'상황:' 말머리를 뗀다. 문장 자체는 남긴다."""
+    return _SITUATION_HEAD_RE.sub(lambda m: m.group(1), text or "")
+
+
+# 대사 줄: '인물명: 대사'. 인물명은 짧다(§5.3.3(3)).
+_SPEECH_RE = re.compile(r"^\s*(?P<who>[^:：\n]{1,12})\s*[:：]\s*(?P<what>.+)$")
+
+
+def _drop_per_speech_narration(text: str) -> str:
+    """대사 바로 앞에 붙은 **그 인물의 동작 줄**을 지운다 (2026-08-12 대표 지시).
+
+    모델이 대사마다 상황을 한 줄씩 깔았다:
+        철수가 지도를 가리킨다
+        철수: 여기가 어디야?
+    지침 예5-4·5-5·예3-53 어디에도 이런 줄이 없다 — 대사 줄은 '인물명: 대사' 하나뿐이고,
+    장면 설정은 맨 앞에 한 문장까지다(예3-53은 그마저 없이 바로 대사로 들어간다).
+    점자로는 이 군더더기가 그대로 셀을 먹고, 점역사는 줄마다 지워야 한다.
+
+    ⚠ 좁게만 지운다 — **다음 줄 화자의 이름이 그 줄에 나올 때만**. 그래야 진짜 장면
+      설명("교실에서 두 사람이 만난다")이나 지문을 잘못 지우지 않는다.
+    """
+    lines = (text or "").splitlines()
+    out: list[str] = []
+    for i, ln in enumerate(lines):
+        nxt = lines[i + 1] if i + 1 < len(lines) else ""
+        m = _SPEECH_RE.match(nxt)
+        if m and ln.strip() and not _SPEECH_RE.match(ln):
+            who = m.group("who").strip()
+            # 화자 이름이 앞줄에 들어 있으면 그 인물의 동작 서술이다.
+            if who and who in ln:
+                continue
+        out.append(ln)
+    return "\n".join(out)
+
+
+def _split_enumerations(text: str) -> str:
+    """한 줄에 이어 쓴 열거 항목 사이에 줄바꿈을 넣는다."""
+    out = []
+    for line in (text or "").splitlines():
+        if len(line) < 20 or _DECIMAL_RE.search(line):
+            out.append(line)
+            continue
+        out.append(_ENUM_SPLIT_RE.sub("\n", line))
+    lines = "\n".join(out).splitlines()
+    # 유형 제시어만 홀로 남는 줄("그림:")은 다음 항목에 붙인다 — §6.3.4(1)은 유형과 설명을
+    # 한 덩이로 본다. 편집창에서도 콜론 하나짜리 줄은 읽는 데 방해만 된다.
+    if len(lines) > 1 and lines[0].rstrip().endswith((":", "：")):
+        lines[:2] = [f"{lines[0].rstrip()} {lines[1].lstrip()}"]
+    return "\n".join(lines)
+
+
 def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
     """★ A/B 판정용 캡션 캐시(2026-08-08). `CAPTION_CACHE_DIR`를 줄 때만 동작한다.
 
@@ -422,7 +560,8 @@ def caption(image_path: str, image_type: str = "image") -> str:
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
-        text = _ensure_type_word(_reject_meta(_caption_anthropic(b64, mime, prompt)), image_type)
+        text = _split_enumerations(_drop_per_speech_narration(_strip_situation_head(
+            _ensure_type_word(_reject_meta(_caption_anthropic(b64, mime, prompt)), image_type))))
         # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
         if cache is not None and text.strip():
             cache.write_text(text, encoding="utf-8")

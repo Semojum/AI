@@ -89,12 +89,12 @@ def _caption_items(caption: str) -> tuple[str, list[tuple[int, str]]]:
             scenes += 1
             rest = m.group(2).strip()
             if rest:                                   # "장면 1 …" 꼬리는 상황 설명 취급
-                items.append((_LV_LINE, f"<!점역자주>{rest}<!/점역자주>"))
+                items.append((_LV_LINE, f"<!주>{rest}<!/주>"))
             continue
         if _SITU_RE.match(line):                       # §5.3.3(6)(7) 행동·상황은 점역자주 안
             body = _SITU_RE.sub("", line).strip()
             if body:
-                items.append((_LV_LINE, f"<!점역자주>{body}<!/점역자주>"))
+                items.append((_LV_LINE, f"<!주>{body}<!/주>"))
             continue
         m = _SAY_RE.match(line)
         if m:

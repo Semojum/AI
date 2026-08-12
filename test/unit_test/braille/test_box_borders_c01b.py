@@ -34,8 +34,8 @@ class TestTagging:
                _el(2, bbox=(10, 60, 90, 70)),          # 상자 안
                _el(3, bbox=(10, 200, 90, 210))]        # 상자 밖
         assert tag_boxed_elements(els, [BOX]) == 1
-        assert els[0]["content"].startswith("<!테두리_위>")
-        assert els[1]["content"].endswith("<!테두리_아래><!/테두리_아래>")
+        assert els[0]["content"].startswith("<!상자>")
+        assert els[1]["content"].endswith("<!상자끝><!/상자끝>")
         assert "테두리" not in els[2]["content"]
 
     def test_표를_품은_상자도_글상자다(self):
@@ -44,7 +44,7 @@ class TestTagging:
         els = [_el(1, bbox=(10, 40, 90, 50)),
                _el(2, typ="table", bbox=(10, 60, 90, 70), content="<table></table>")]
         assert tag_boxed_elements(els, [BOX]) == 1
-        assert els[0]["content"].startswith("<!테두리_위>")
+        assert els[0]["content"].startswith("<!상자>")
         assert "테두리" not in els[1]["content"]
 
     def test_읽기순서가_끊기면_건너뛴다(self):
@@ -62,13 +62,13 @@ class TestTagging:
                _el(2, bbox=(10, 40, 90, 50))]
         assert tag_boxed_elements(els, [BOX]) == 1
         assert len(els) == 1                                     # 제목은 본문에서 빠진다
-        assert els[0]["content"].startswith("<!테두리_위>보기<!/테두리_위>")
+        assert els[0]["content"].startswith("<!상자>보기<!/상자>")
 
     def test_제목만_있는_상자는_열지_않는다(self):
         """본문이 남지 않으면 제목으로 올리지 않는다 — 상자가 통째로 사라지면 안 된다."""
         els = [_el(1, bbox=(10, 0, 40, 8), content="보기")]
         assert tag_boxed_elements(els, [BOX]) == 1
-        assert els[0]["content"].startswith("<!테두리_위><!/테두리_위>")
+        assert els[0]["content"].startswith("<!상자><!/상자>")
 
     def test_중첩은_위계로_남긴다(self):
         """gold는 상자를 중첩한다(자료 박스 안 표) — dev-2027 900쪽에 2단계 테두리 343개,
@@ -76,16 +76,16 @@ class TestTagging:
         """
         els = [_el(1, bbox=(20, 20, 80, 40)), _el(2, bbox=(20, 50, 80, 60))]
         assert tag_boxed_elements(els, [BOX, [10, 45, 90, 65]]) == 2
-        assert els[0]["content"].startswith("<!테두리_위>")          # 바깥 1단계
-        assert "<!테두리_위2>" in els[1]["content"]                  # 안쪽 2단계
+        assert els[0]["content"].startswith("<!상자>")          # 바깥 1단계
+        assert "<!상자2>" in els[1]["content"]                  # 안쪽 2단계
         tail = els[1]["content"]
-        assert tail.index("<!테두리_아래2>") < tail.index("<!테두리_아래>")  # 안쪽부터 닫는다
+        assert tail.index("<!상자끝2>") < tail.index("<!상자끝>")  # 안쪽부터 닫는다
 
     def test_같은_위계에서는_한_상자만(self):
         """겹치지 않는 같은 위계 상자 둘이 같은 요소를 가져가면 안 된다."""
         els = [_el(1, bbox=(10, 10, 90, 20))]
         assert tag_boxed_elements(els, [BOX, [0, 0, 100, 99]]) <= 2
-        assert els[0]["content"].count("<!테두리_위>") == 1
+        assert els[0]["content"].count("<!상자>") == 1
 
     def test_사각형_없으면_무변경(self):
         els = [_el(1)]
@@ -98,9 +98,9 @@ class TestLayout:
     def boxed(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         eid = uuid4()
-        src = ("<!테두리_위><!/테두리_위>\n"
+        src = ("<!상자><!/상자>\n"
                "사회·문화 현상을 연구하는 이 방법은 기존의 연구 방법과는 다른 특성을 지닌다.\n"
-               "<!테두리_아래><!/테두리_아래>")
+               "<!상자끝><!/상자끝>")
         opt = LLMOutput(element_id=eid, corrected_text=src, render_mode="text_only",
                         routing_tier="ZERO", processing_time_ms=0)
         bo = TextBraille().translate([opt])[0]

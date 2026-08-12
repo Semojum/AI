@@ -26,7 +26,30 @@ import pytest
 
 from app.ai.llm import visual_drafts as vd
 
-_EXPECTED = 6          # 시각 6안
+_EXPECTED = 6          # 재료(캡션·제목·원본 글자)가 있을 때의 시각 6안
+# 재료(캡션·제목·원본 글자)가 하나도 없으면 **생략 한 안만** 낸다.
+
+# ★ 2026-08-12 계약 강화 (대표 지시 "4가지 유형 모두 생략으로 나온다").
+#   종전 계약은 "언제나 6안"뿐이라 **여섯 칸이 같은 문구로 채워져도 통과**했다.
+#   실측(캡션 없는 조건의 코퍼스 job 10,185요소): 짧은 제목·줄글이 각 41.3%에서
+#   "…생략"으로 떨어져, 4안 중 서로 다른 것이 4개인 요소는 10%뿐이었다.
+#   개수만 지키는 계약은 목적(설명 방식을 **고르게** 한다)을 못 지킨다.
+#   그래서 "개수" 대신 "**서로 다른** 안의 수"를 센다. 재료가 없으면 3안으로 줄되
+#   중복은 없다 — 과거 사고(drafts 1개)는 이 하한이 막는다.
+
+
+def _assert_distinct(drafts, *, expect: int | None = None) -> None:
+    """안은 서로 달라야 한다. 개수는 재료에 따라 1~6."""
+    texts = [d.text for d in drafts]
+    assert len(set(texts)) == len(texts), f"같은 문구의 안이 겹친다: {texts}"
+    assert drafts, "안이 하나도 없다"
+    if expect is not None:
+        assert len(drafts) == expect, f"{expect}안이어야 하는데 {len(drafts)}: {texts}"
+
+
+def _assert_omit_only(drafts) -> None:
+    """재료가 없으면 생략 한 안만 (2026-08-12 대표 지시)."""
+    assert [d.label for d in drafts] == ["생략"], [d.label for d in drafts]
 _EXPECTED_TABLE = 4    # 표 렌더 4안(성격이 다르다)
 
 
@@ -46,28 +69,28 @@ class TestAlwaysFourWithoutLLM:
     """ZERO 티어(모델 미사용) — 입력이 어떻든 6안."""
 
     def test_캡션도_제목도_없을_때(self) -> None:
-        assert len(_build()) == _EXPECTED
+        _assert_omit_only(_build())
 
     def test_캡션만_있을_때(self) -> None:
-        assert len(_build(caption="막대그래프. 연도별 인구.")) == _EXPECTED
+        _assert_distinct(_build(caption="막대그래프. 연도별 인구."))
 
     def test_제목만_있을_때(self) -> None:
-        assert len(_build(title="연도별 인구")) == _EXPECTED
+        _assert_distinct(_build(title="연도별 인구"))
 
     def test_공백만_있는_캡션(self) -> None:
-        assert len(_build(caption="   ", title="  ")) == _EXPECTED
+        _assert_omit_only(_build(caption="   ", title="  "))
 
     def test_장식용_요소(self) -> None:
         """장식용은 기본 선택이 '생략'으로 바뀔 뿐, 개수는 그대로 4다."""
         drafts, sel, _ind, _t, _src = asyncio.run(vd.build_visual_drafts(
             _ext(), routing_tier="ZERO", label="그림", caption="장식", kind="image",
             decorative=True))
-        assert len(drafts) == _EXPECTED
+        _assert_distinct(drafts)
         assert sel == vd.OMIT_IDX
 
     @pytest.mark.parametrize("kind", ["image", "cartoon", "chart_graph", "diagram"])
     def test_모든_시각_유형(self, kind: str) -> None:
-        assert len(_build(kind=kind, caption="설명")) == _EXPECTED
+        _assert_distinct(_build(kind=kind, caption="막대그래프. 연도별 인구 추이. 2020년 5,200만 명, 2021년 5,180만 명."))
 
 
 class TestAlwaysFourWhenLLMMisbehaves:
@@ -84,27 +107,55 @@ class TestAlwaysFourWhenLLMMisbehaves:
         return _build(routing_tier="STANDARD", caption="원본 캡션 문장.")
 
     def test_LLM이_빈_문자열(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assert len(self._with_llm(monkeypatch, "")) == _EXPECTED
+        _assert_distinct(self._with_llm(monkeypatch, ""))
 
     def test_LLM이_형식을_어김(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """구 사고 재현 — 섹션 표지 없이 한 덩어리로 답하는 경우."""
-        assert len(self._with_llm(monkeypatch, "그냥 줄글로만 답한다 방식 구분 없이")) == _EXPECTED
+        _assert_distinct(self._with_llm(monkeypatch, "그냥 줄글로만 답한다 방식 구분 없이"))
 
     def test_LLM이_한_섹션만(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assert len(self._with_llm(monkeypatch, "[개조식]\n- 항목 하나")) == _EXPECTED
+        _assert_distinct(self._with_llm(monkeypatch, "[개조식]\n- 항목 하나"))
 
     def test_LLM이_예외를_던짐(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assert len(self._with_llm(monkeypatch, RuntimeError("추론 실패"))) == _EXPECTED
+        _assert_distinct(self._with_llm(monkeypatch, RuntimeError("추론 실패")))
 
     def test_LLM이_None(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assert len(self._with_llm(monkeypatch, None)) == _EXPECTED
+        _assert_distinct(self._with_llm(monkeypatch, None))
 
 
 def test_초안_라벨이_모두_구별된다() -> None:
     """피커에 같은 이름이 두 번 뜨면 점역사가 고를 수 없다."""
-    labels = [d.label for d in _build(caption="설명")]
-    assert len(labels) == _EXPECTED
-    assert len(set(labels)) == _EXPECTED, labels
+    labels = [d.label for d in _build(caption="막대그래프. 연도별 인구 추이. 2020년 5,200만 명, 2021년 5,180만 명.",
+                                      struct_outline=[(0, "2020년 5,200만"), (0, "2021년 5,180만")])]
+    assert len(set(labels)) == len(labels), labels
+
+
+def test_구조_항목이_있으면_6안이_다_다르다() -> None:
+    """개조식이 **항목**을 가지면 여섯 안이 전부 다른 문구가 된다 — 여기가 정상 상태다.
+
+    여섯이 다 다르려면 두 조건이 같이 필요하다:
+      · 개조식이 **항목**을 가질 것 — 없으면 개조식과 줄글이 둘 다 '유형: 캡션 전문' 한 줄
+      · 캡션이 **한 문장보다 길 것** — 한 문장이면 짧은 제목(첫 문장)과 줄글(전문)이 같다
+    둘 중 하나라도 없으면 겹치는 게 사실이므로 접는다
+    (아래 `test_한_낱말_캡션은_형식이_겹쳐_접힌다`).
+    """
+    drafts = _build(
+        caption="막대그래프. 연도별 인구 추이를 보여 준다. "
+                "2020년 5,200만 명에서 2021년 5,180만 명으로 줄었다.",
+        struct_outline=[(0, "2020년 5,200만 명"), (0, "2021년 5,180만 명")])
+    _assert_distinct(drafts, expect=_EXPECTED)
+
+
+def test_한_낱말_캡션은_형식이_겹쳐_접힌다() -> None:
+    """캡션이 한 낱말이면 짧은 제목·개조식·줄글이 **같은 문구**가 된다 — 접는 게 맞다.
+
+    세 칸에 똑같은 줄을 세워 두면 점역사는 셋 다 읽어 보고서야 같은 것임을 안다.
+    접고 나면 실제로 다른 안(생략 / 그림: 설명 / 유형만 / 별책 참조)만 남는다.
+    """
+    drafts = _build(caption="설명")
+    _assert_distinct(drafts)
+    assert len(drafts) < _EXPECTED, "한 낱말 캡션인데 6안이 다 다르다면 접기가 안 걸린 것"
+    assert [d.label for d in drafts] == ["생략", "짧은 제목", "유형만", "별책 참조"]
 
 
 def test_표는_렌더_4안_그대로() -> None:

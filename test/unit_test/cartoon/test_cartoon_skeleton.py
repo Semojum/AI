@@ -29,13 +29,17 @@ class TestFourDrafts:
     def test_4안_라벨(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
-        assert [d.label for d in opt.drafts] == list(LABELS)
+        labels = [d.label for d in opt.drafts]
+        # 재료가 겹쳐 접힌 안이 있을 수 있다(`visual_drafts._dedupe`) — 남은 것은
+        # LABELS의 **부분 수열**이고 서로 달라야 한다.
+        assert labels == [x for x in LABELS if x in labels], labels
+        assert len(set(labels)) == len(labels), labels
         assert opt.selected_idx == 2                                   # 기본=개조식
 
     def test_생략안(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
-        assert opt.drafts[0].text == "<!점역자주>만화 생략<!/점역자주>"
+        assert opt.drafts[0].text == "<!주>만화 생략<!/주>"
 
     def test_개조식_장면_대사_전사(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
@@ -47,7 +51,9 @@ class TestFourDrafts:
     def test_구조없음_캡션_6안(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, corrected_text="두 컷 만화")
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
-        assert len(opt.drafts) == len(LABELS)
+        labels = [d.label for d in opt.drafts]
+        assert labels == [x for x in LABELS if x in labels], labels
+        assert len(set(labels)) == len(labels) >= 3, labels
         assert "두 컷 만화" in opt.drafts[1].text                      # 캡션 → 짧은 제목
 
     def test_전부_없음_생략표기(self):
@@ -67,7 +73,7 @@ class TestEndToEnd:
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))
         assert opt[0].line_indents is not None                         # 개조식 골격 들여쓰기
         bo = CartoonBraille().translate(opt)
-        assert len(bo[0].drafts) == len(LABELS)
+        assert 3 <= len(bo[0].drafts) <= len(LABELS)
         lr = LayoutResult(page_id="p", elements=[
             BBoxItem(element_id=eid, type="cartoon", bbox=(0, 0, 0, 0), reading_order=1)])
         LayoutBraille().layout(bo, page_no=1, job_id="cartoon", layout_result=lr)

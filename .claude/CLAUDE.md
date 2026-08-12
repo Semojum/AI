@@ -133,19 +133,13 @@ app/
 
 코드가 plan과 어긋나거나 미구현인 부분. **plan이 정본**이므로 아래는 "코드를 이렇게 고쳐야 한다"는 목록이다.
 
-**A. 수정 완료 (2026-05-29)**
-1. ✅ **bounding_box 좌표**: `_build_response`가 이제 `{"x","y","x2","y2"}` 키로 내보냄(proto 일치). (단, 현재 경계 파일에 bbox가 없어 값은 0,0,0,0)
-2. ✅ **QualityReport.status 표기**: `quality.py` 주석 `COMPLETED|NEEDS_REVIEW|BLOCKED`로 정정.
-6'. ✅ **현주 파일 소비 + 단계별 json 기록**: pipeline이 `data/NNN_txt_result.json`을 생성(현주 ZERO)·소비(태민)하고 `type/{type}/*_ocr|cap·*_opt·*_braille.json`을 기록(위 실행 흐름). 차트 파일명은 `cg_*.json`(plan 일치).
-10'. ✅ **입력 태깅 파서 구현(§3-5)**: `translator.substitute_tags`가 `<!이름>`/`<!/이름>`을 점자 마커로 치환(점역자주 `⠠⠄`·글상자 테두리·빈칸), tn_open/tn_close·symbol rule_trail emit. 시각 opt는 `<!점역자주>…<!/점역자주>` 태그로 감쌈. 회귀 `test_tag_parser`.
-11'. ✅ **rule_trail 요소-로컬 좌표(§3-4)**: `line_no/col_start/col_end`(조판 후 contents 기준, `-1`=요소전체) + `tag`. proto·grpc 반영. `make_rule_at`/내용기반 재매핑(`_remap_trail_to_formatted`).
-12'. ✅ **음절 단위 줄바꿈(BBPG-1.2.1)**: `translate_with_breaks`(접두 일관성으로 약자·수·마커 미분리) + layout `_wrap_line`. 모듈은 논리 줄+`break_points`, 32칸 줄바꿈은 layout 단독.
-13'. ✅ **응답 계약 정리**: `_build_response` 읽기순서 정렬·braille_text_list heading_level·비선택 draft도 32칸 조판(contents==drafts[selected_idx].contents).
-14'. ✅ **마감 조판 REST `POST /finalize`**: 점역사 편집 블록 → BBPG 페이지 조립(`LayoutBraille.finalize`/`_assemble_pages`, 재-wrap 없음). 점자 규정은 AI 소유, BE/FE는 호출만.
+> (2026-08-11) 2026-05-29·07-03자 완료 이력은 현재 코드 상태와 이미 합쳐져 있어 정리함 — 이 파일
+> 헤더가 밝히듯 여기는 "현재 상태" 기술이지 변경 로그가 아니다. 지웠던 항목: bounding_box 좌표 형식,
+> QualityReport.status 표기, 현주/태민 파일 핸드오프, 입력 태깅 파서, rule_trail 좌표, 음절 단위
+> 줄바꿈, 응답 계약, `/finalize`, PART 3-4 분류기, PART 11 품질검사 — 전부 위 섹션들에 이미 현재
+> 동작으로 반영돼 있다.
 
 **B. 미구현 stub (plan 기준 구현 필요)**
-3. ✅ **PART 3-4 분류기**(2026-07-03 확인): MinerU 경로의 `captioning/classifier.py`(GPT-4o, image/cartoon/chart 1-word 분류)를 `result_builder._do_caption`이 소비 — 구현 완료. subtype_confidence는 logprobs 기반 생성(2026-07-13, `classify_with_confidence`) → 경계 JSON `subtype_confidence` → quality_checker가 <0.75면 R2. 라벨 형식 이탈 응답은 신뢰도 0.0, logprobs 미제공은 None(플래그 안 띄움).
-4. ✅ **PART 11 품질검사**(2026-07-03 구현): `quality_checker.py` — placeholder(C2/C3/C4)·전체실패(C1)·32칸초과(C6) 감지 + flags(R1/R2/R5/R7) 승격, plan §4-1 status 규칙으로 페이지 status 결정(pipeline `_build_response` 연결, 하드코딩 제거). `metrics_collector.py` — 페이지 메트릭 JSONL(`storage/metrics/ai_metrics.jsonl`) 기록(TimescaleDB는 배포 인프라 확정 후 sink 교체). 테스트 `test/unit_test/quality/` 활성.
 5. **현주 파트(모델 의존)**: layout/ocr/captioning 일부 모델 미탑재 시 동작 안 함. pipeline이 `ImportError/AttributeError`로 격리 → `[처리 불가]` 플레이스홀더.
 11. **시각 복수초안(T4-2) 실모델 3안 생성**: `image/cartoon_opt`가 HCLOVA X 실모델에서 `[방식N]` 3줄 포맷을 안 따라 1안만 생성(파싱·토큰·폴백 인프라는 정상, chart는 동일 인프라로 3안 정상). → **Stage 5 프롬프트 튜닝 backlog**(메모리 `stage5-backlog-visual-3draft`). few-shot 강화·sampling·입력 복잡도별 분기.
 
@@ -163,19 +157,32 @@ app/
 ## 실행 명령 (작업 디렉토리 = `code/AI/`)
 
 ```bash
-bash setup.sh                          # 최초 환경 설정
-cp .env.example .env                   # TLS_ENABLED=false 로컬 권장
-docker compose up -d                   # TimescaleDB + ChromaDB + formulanet
-python -m app.core.main                # 서버 기동 (gRPC 50051 + REST 8080)
 bash protos/build.sh                   # proto 재생성
 
-# 테스트 (braillify 미설치 시 폴백 모드 — 약자·약어 미지원)
-pytest test/unit_test/ -q --tb=short
+# 테스트 (braillify 미설치 시 폴백 모드 — 약자·약어 미지원. 운영 엔진은 requirements-ai.txt)
 pytest test/unit_test/braille/test_rule_engine.py -v   # ★ C5 배포 블로커
-pytest test/integration/test_grpc_pipeline.py -v
 python test/local_runner.py            # 로컬 E2E
-
-pip install braillify                   # 운영 점자 엔진 (또는 requirements-ai.txt)
 ```
 
+기동·설치(`setup.sh`·`.env`·`docker compose`·`python -m app.core.main`)와 전체 단위 실행은
+표준 호출 그대로다 — `README`/`docker-compose.yml`/`pytest.ini` 참조.
+
 상세 테스트 구조는 `test/.claude/CLAUDE.md`, 단계별 구현 지침은 `../prompts/.claude/CLAUDE.md`.
+
+---
+
+## GitHub · 버전 관리 규칙
+
+**팀 공용 정본 = `code/github_template.md`** (2026-08-01 갱신, 상위 `code/` 디렉토리). 커밋·브랜치·PR·릴리스 작업 전에 읽는다.
+버전 체계 초안은 `temp/version_plan.md` (확정 전).
+
+- PR 제목: `type: [#이슈] 제목` / 커밋: `타입(범위): 제목` + 본문("왜", 72자 줄바꿈) + 푸터(`Refs #N`) —
+  Conventional Commits 3부 구조. 타입 **소문자** (`feat` `fix` `refactor` `perf` `test` `docs` `style` `chore` `exp`).
+  제목에 이슈번호 금지(푸터로). `.gitmessage` 템플릿이 `git commit` 때 안내한다.
+  **제목은 결과 서술형** — "…가 …되던 문제 수정" 꼴. 경고·명령형("~하지 말 것")과 구현 내부
+  관점("~를 보게 한다") 금지, 코드 모르는 팀원이 제목만 보고 이해돼야 한다
+- 브랜치: `{타입}/{이슈}-{제목}`. 흐름 `feat/*` → `develop` → `release/x.y` → `main`(태그)
+- 머지: 작업→develop만 **Squash**, 나머지는 merge commit. **Rebase 금지**
+- 버전: 세 저장소(`AI`·`BE`·`FE`)에 **같은 태그**. 세대=MAJOR (V3 → `v3.x.x`)
+- 커밋에 `Claude-Session:` 트레일러 금지 (저장소 public)
+- git 저장소 루트는 `code/AI/` (remote: `Semojum/AI`). `code/AI/` 바깥(docs/, tools/, code/prompts/ 등)은 미포함

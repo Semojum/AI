@@ -26,9 +26,9 @@ from app.ai.braille.text_braille import TextBraille
 from app.schemas.content import LLMOutput
 from app.schemas.layout import BBoxItem, LayoutResult
 
-_BOX = ("<!테두리_위>보기<!/테두리_위>\n"
+_BOX = ("<!상자>보기<!/상자>\n"
         "ㄱ. A는 간기에 복제된다.\n"
-        "<!테두리_아래><!/테두리_아래>")
+        "<!상자끝><!/상자끝>")
 _PROMPT = "이에 대한 설명으로 옳은 것만을 <보기>에서 있는 대로 고른 것은?"
 _PLAIN = "등차수열과 등비수열의 뜻을 정리하면 다음과 같다."
 
@@ -105,7 +105,7 @@ class TestPromptDetect:
     @pytest.mark.parametrize("src,want", [
         (_PROMPT, True),
         ("옳은 것은?", True),
-        ("<!점역자주>그림<!/점역자주>", False),
+        ("<!주>그림<!/주>", False),
         (_PLAIN, False),
         ("", False),
         ("여러 줄\n마지막이 물음인가?", True),

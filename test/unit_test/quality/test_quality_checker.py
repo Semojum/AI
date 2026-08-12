@@ -395,7 +395,7 @@ class TestC5TagDigitFalsePositive:
     """C5 게이트는 **점역 대상 글자**에만 열린다 (2026-08-10).
 
     실측(dev+val 839쪽): C5 146건 중 142건(97.3%)이 인라인 태그 이름의 숫자로 열린
-    오탐이었다. `<!테두리_아래2>`의 '2'는 테두리 점형으로 치환되니 수표가 나올 수 없다.
+    오탐이었다. `<!상자끝2>`의 '2'는 테두리 점형으로 치환되니 수표가 나올 수 없다.
     C5는 배포 블로커 신호라 오탐이 쌓이면 제일 중요한 플래그부터 무시하게 된다.
     """
 
@@ -408,7 +408,7 @@ class TestC5TagDigitFalsePositive:
         )
 
     def test_태그_이름의_숫자는_게이트를_안_연다(self):
-        rep = self._report("ㄷ. 소득 분포를 고려하지 않는다.\n<!테두리_아래2><!/테두리_아래2>",
+        rep = self._report("ㄷ. 소득 분포를 고려하지 않는다.\n<!상자끝2><!/상자끝2>",
                            "⠇⠚⠽⠀⠿⠶⠶⠶")
         assert not any(c.type == "C5" for c in rep.critical_errors)
 
@@ -418,7 +418,7 @@ class TestC5TagDigitFalsePositive:
         assert not any(c.type == "C5" for c in rep.critical_errors)
 
     def test_태그가_있어도_본문_숫자_누락은_잡는다(self):
-        rep = self._report("<!테두리_위2><!/테두리_위2>\n정답은 3번", "⠿⠛⠛⠀⠨⠻⠊⠣⠃⠵⠀⠉⠘⠞")
+        rep = self._report("<!상자2><!/상자2>\n정답은 3번", "⠿⠛⠛⠀⠨⠻⠊⠣⠃⠵⠀⠉⠘⠞")
         assert [c.type for c in rep.critical_errors] == ["C5"]
 
 
@@ -514,12 +514,12 @@ class TestR13TextRiskySegment:
         assert len(f) == 1 and "아라비아 숫자" in f[0].message
 
     def test_레이아웃_태그가_있으면_발화한다(self):
-        _, f = self._flags("<!테두리_위><!/테두리_위>\n다음 자료를 보고 물음에 답하시오.")
+        _, f = self._flags("<!상자><!/상자>\n다음 자료를 보고 물음에 답하시오.")
         assert len(f) == 1 and "태그" in f[0].message
 
     def test_태그_이름의_숫자만으로는_숫자_사유가_안_붙는다(self):
         # C5가 밟았던 오탐(태그 이름의 '2')을 R13이 되풀이하면 안 된다.
-        _, f = self._flags("<!테두리_아래2><!/테두리_아래2>\n다음을 보시오.")
+        _, f = self._flags("<!상자끝2><!/상자끝2>\n다음을 보시오.")
         assert len(f) == 1 and "아라비아 숫자" not in f[0].message
 
     def test_로마자_한_자는_발화하지_않는다(self):

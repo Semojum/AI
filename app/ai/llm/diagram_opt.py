@@ -7,7 +7,7 @@
 
 공통(§6.3.3·§6.3.4):
   제목줄  : 5칸 {제목}                           §6.3.3(1) 시각 자료 제목은 윗줄 5칸
-  유형    : <!점역자주>{개념도|흐름도}<!/점역자주> §6.3.4(1) 유형 제시(점역자 주) — 5칸(§2.1.8(3))
+  유형    : <!주>{개념도|흐름도}<!/주> §6.3.4(1) 유형 제시(점역자 주) — 5칸(§2.1.8(3))
 
 개념도(§6.6.1) — 위계가 있는 개조식 항목(들여쓰기):
   2단계: 상위 5칸 · 하위 3칸                      §6.6.1(3)①
@@ -51,9 +51,12 @@ from typing import Optional
 from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import BaseOpt
 from app.ai.llm.diagram_structure import structure_from_caption, subtype_from_caption
+from app.ai.braille import tag_names as _TN
+from app.ai.braille import tn_notices as _TN_NOTICES
 from app.ai.llm.visual_drafts import (
     OUTLINE_IDX,
     LABELS,
+    _dedupe,
     build_visual_drafts,
     extra_drafts,
     omission_draft,
@@ -87,8 +90,8 @@ _BOTTOMUP_INDENT = 2      # §6.6.4(3)② 상향식 가계도 항목 3칸
 _TIMELINE_YEAR = 4        # §6.6.6(4) 동일 연도 연도줄 5칸
 _TIMELINE_EVENT = 2       # §6.6.6(4) 동일 연도 사건줄 3칸
 _FLOW_ARROW = "→"         # §6.6.2(4)⑥ 반직선 `3o`(⠒⠕) — symbol_table 화살표 항목이 점역
-_BOX_TOP = "<!테두리_위><!/테두리_위>"      # 글상자 위 테두리(빈 제목 쌍) — layout 재렌더
-_BOX_BOTTOM = "<!테두리_아래><!/테두리_아래>"  # 글상자 아래 테두리
+_BOX_TOP = "<!상자><!/상자>"      # 글상자 위 테두리(빈 제목 쌍) — layout 재렌더
+_BOX_BOTTOM = "<!상자끝><!/상자끝>"  # 글상자 아래 테두리
 _TYPE_LABEL = {
     "concept_map": "개념도", "flowchart": "흐름도",
     "org_chart": "조직도", "family_tree": "가계도", "timeline": "연대표",
@@ -172,7 +175,7 @@ def assemble_concept_map(structure: dict) -> tuple[str, list[int]]:
 
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!점역자주>개념도<!/점역자주>:"); indents.append(_TYPE_NOTE_INDENT)        # §6.3.4(1)
+    lines.append("<!주>개념도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)        # §6.3.4(1)
 
     depth = _tree_depth(nodes)
     _flatten_concept(nodes, 0, depth, lines, indents)                        # §6.6.1(2)(3)
@@ -194,7 +197,7 @@ def assemble_flowchart(structure: dict) -> tuple[str, list[int]]:
 
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!점역자주>흐름도<!/점역자주>:"); indents.append(_TYPE_NOTE_INDENT)        # §6.3.4(1)
+    lines.append("<!주>흐름도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)        # §6.3.4(1)
 
     for box in boxes:
         no = box.get("no", "")
@@ -235,8 +238,12 @@ def assemble_org_chart(structure: dict) -> tuple[str, list[int]]:
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
     # §6.3.4(1) 유형 + §6.6.5(3) 들여쓰기 방식 점역자 주
-    lines.append("<!점역자주>조직도<!/점역자주>:"); indents.append(_TYPE_NOTE_INDENT)
-    lines.append("<!점역자주>들여쓰기로 상하 위계를 나타냄<!/점역자주>"); indents.append(_NOTE_INDENT)
+    lines.append("<!주>조직도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
+    # ★ 2026-08-12 — 칸 수를 밝힌다. 정본(자료지침 예6-22)은 "하위에 속한 기구를 **2칸씩**
+    #   들여 쓰기함"이라고 쓴다. 점자에는 선·상자가 없어 위계가 들여쓰기로만 남는데,
+    #   몇 칸이 한 단계인지 말해 주지 않으면 독자는 빈칸을 세도 단계를 못 센다.
+    lines.append(_TN.tn(_TN_NOTICES.indent_hierarchy(_HIER_STEP, "기구")))
+    indents.append(_NOTE_INDENT)
     _flatten_hier(structure.get("nodes") or [], 0, lines, indents)           # §6.6.5(1)(2)
     return "\n".join(lines), indents
 
@@ -255,15 +262,15 @@ def assemble_family_tree(structure: dict) -> tuple[str, list[int]]:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
 
     if (structure.get("mode") or "top_down").strip() == "bottom_up":
-        lines.append("<!점역자주>가계도<!/점역자주>:"); indents.append(_TYPE_NOTE_INDENT)
-        lines.append("<!점역자주>후손에서 선조 순(상향식)<!/점역자주>"); indents.append(_NOTE_INDENT)
+        lines.append("<!주>가계도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
+        lines.append("<!주>후손에서 선조 순(상향식)<!/주>"); indents.append(_NOTE_INDENT)
         for it in structure.get("items") or []:                             # §6.6.4(3)①
             t = (it.get("text") or "").strip()
             if t:
                 lines.append(t); indents.append(_BOTTOMUP_INDENT)           # §6.6.4(3)②
     else:
-        lines.append("<!점역자주>가계도<!/점역자주>:"); indents.append(_TYPE_NOTE_INDENT)
-        lines.append("<!점역자주>선조에서 후손 순(하향식)<!/점역자주>"); indents.append(_NOTE_INDENT)
+        lines.append("<!주>가계도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
+        lines.append("<!주>선조에서 후손 순(하향식)<!/주>"); indents.append(_NOTE_INDENT)
         _flatten_hier(structure.get("nodes") or [], 0, lines, indents)      # §6.6.4(2)①②
     return "\n".join(lines), indents
 
@@ -290,7 +297,7 @@ def assemble_timeline(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!점역자주>연대표<!/점역자주>:"); indents.append(_TYPE_NOTE_INDENT)        # §6.3.4(1)
+    lines.append("<!주>연대표<!/주>:"); indents.append(_TYPE_NOTE_INDENT)        # §6.3.4(1)
 
     for date, texts in _group_timeline(structure.get("events") or []):
         texts = [t for t in texts if t]
@@ -318,7 +325,7 @@ def assemble_form(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!점역자주>양식<!/점역자주>:"); indents.append(_TYPE_NOTE_INDENT)          # §6.3.4(1)
+    lines.append("<!주>양식<!/주>:"); indents.append(_TYPE_NOTE_INDENT)          # §6.3.4(1)
     lines.append(_BOX_TOP); indents.append(0)                               # §6.6.3(2) 글상자
     for it in structure.get("items") or []:
         t = (it.get("text") or it.get("label") or "").strip()
@@ -326,7 +333,7 @@ def assemble_form(structure: dict) -> tuple[str, list[int]]:
             lines.append(t); indents.append(_ITEM_INDENT)                   # §6.6.3(3) 한 줄에 하나·예6-20
         note = (it.get("note") or "").strip()
         if note:                                                            # §6.6.3(5) 빈칸 길이 정보
-            lines.append(f"<!점역자주>{note}<!/점역자주>"); indents.append(_NOTE_INDENT)
+            lines.append(f"<!주>{note}<!/주>"); indents.append(_NOTE_INDENT)
     lines.append(_BOX_BOTTOM); indents.append(0)
     return "\n".join(lines), indents
 
@@ -341,7 +348,7 @@ def assemble_screen_image(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!점역자주>화면 이미지<!/점역자주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
+    lines.append("<!주>화면 이미지<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
     lines.append(_BOX_TOP); indents.append(0)                               # §6.6.7(1) 글상자 테두리
     # §6.6.7(3)① 구획별 표기 — 구획은 **빈 줄**로 가르고 내용은 전부 3칸(정답 예6-24).
     # 종전에는 구획명 1칸·내용 3칸으로 층을 뒀는데 정답에는 그런 층이 없다.
@@ -371,7 +378,7 @@ def assemble_slide(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!점역자주>발표용 슬라이드<!/점역자주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
+    lines.append("<!주>발표용 슬라이드<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
     for it in structure.get("items") or []:                                 # §6.6.8(2)
         t = (it.get("text") or "").strip()
         if t:
@@ -379,7 +386,7 @@ def assemble_slide(structure: dict) -> tuple[str, list[int]]:
             lines.append(t); indents.append(_ITEM_INDENT + _HIER_STEP * lvl)  # 예6-25 항목 3칸
     note = (structure.get("note") or "").strip()
     if note:                                                                # §6.6.8(3)·예6-25
-        lines.append(f"<!점역자주>노트: {note}<!/점역자주>"); indents.append(_NOTE_INDENT)
+        lines.append(f"<!주>노트: {note}<!/주>"); indents.append(_NOTE_INDENT)
     return "\n".join(lines), indents
 
 
@@ -440,6 +447,9 @@ class DiagramOpt(BaseOpt):
                 prose_draft(label, _skeleton_prose(skeleton_text)),
                 *extra_drafts(label),
             ]
+            # 골격 경로는 build_visual_drafts를 안 타므로 접기를 여기서 직접 부른다.
+            # (실측: 제목 없는 개념도에서 짧은 제목과 유형만이 둘 다 "개념도"였다)
+            drafts, sel_idx = _dedupe(drafts, OUTLINE_IDX)
             return LLMOutput(
                 element_id=ext.element_id,
                 corrected_text=skeleton_text,
@@ -449,8 +459,9 @@ class DiagramOpt(BaseOpt):
                 processing_time_ms=0,
                 rule_trail=_min_trail(subtype, "골격 조립"),
                 drafts=drafts,
-                selected_idx=OUTLINE_IDX,
-                line_indents=skeleton_indents,
+                selected_idx=sel_idx,
+                line_indents=skeleton_indents if sel_idx == drafts.index(
+                    next(d for d in drafts if d.option == 3)) else None,
             )
 
         # 폴백: 구조 없음 → 캡션으로 공통 4안 빌더(제목·개조식·줄글 LLM)
@@ -458,11 +469,17 @@ class DiagramOpt(BaseOpt):
         if not cap:
             return LLMOutput(
                 element_id=ext.element_id,
-                corrected_text="[처리 불가: 도표 캡션 없음]",
+                # ★ 2026-08-12 — 종전엔 "[처리 불가: 도표 캡션 없음]"을 냈다. 그 한글 열 글자가
+                #   **그대로 점자로 찍혀 학생에게 나갔고**, drafts가 0개라 점역사 피커에는
+                #   아무것도 안 떴다(생략조차 없었다). 재료가 없을 때의 정답은 생략 표기다
+                #   (§6.3.4(2)②) — `build_visual_drafts`의 무-재료 경로와 같은 결론이다.
+                corrected_text=omission_draft(label).text,
                 render_mode="narrative",
-                routing_tier="FALLBACK",
+                routing_tier=routing_tier,
                 processing_time_ms=0,
-                rule_trail=_min_trail(subtype, "캡션 없음 — 처리 불가"),
+                rule_trail=_min_trail(subtype, "캡션 없음 — 생략 표기"),
+                drafts=[omission_draft(label)],
+                selected_idx=0,
             )
         drafts, selected_idx, line_indents, tier, cap_src = await build_visual_drafts(
             ext, routing_tier, label=label, caption=cap, kind="도표",

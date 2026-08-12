@@ -31,7 +31,7 @@ type: text(문단 단위로, 중간에 자르지 말 것) | list_item(선택지 
 header_footer | page_number | caption | table(행은 |, 줄은 개행) | formula(LaTeX) |
 image(content는 빈 문자열)
 
-규칙: 글자를 지어내지 마세요. 강조 구간은 <!드러냄>…<!/드러냄>. JSON 외 출력 금지."""
+규칙: 글자를 지어내지 마세요. 강조 구간은 <!강조>…<!/강조>. JSON 외 출력 금지."""
 
 
 def enabled() -> bool:
