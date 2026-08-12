@@ -463,11 +463,17 @@ class DiagramOpt(BaseOpt):
         if not cap:
             return LLMOutput(
                 element_id=ext.element_id,
-                corrected_text="[처리 불가: 도표 캡션 없음]",
+                # ★ 2026-08-12 — 종전엔 "[처리 불가: 도표 캡션 없음]"을 냈다. 그 한글 열 글자가
+                #   **그대로 점자로 찍혀 학생에게 나갔고**, drafts가 0개라 점역사 피커에는
+                #   아무것도 안 떴다(생략조차 없었다). 재료가 없을 때의 정답은 생략 표기다
+                #   (§6.3.4(2)②) — `build_visual_drafts`의 무-재료 경로와 같은 결론이다.
+                corrected_text=omission_draft(label).text,
                 render_mode="narrative",
-                routing_tier="FALLBACK",
+                routing_tier=routing_tier,
                 processing_time_ms=0,
-                rule_trail=_min_trail(subtype, "캡션 없음 — 처리 불가"),
+                rule_trail=_min_trail(subtype, "캡션 없음 — 생략 표기"),
+                drafts=[omission_draft(label)],
+                selected_idx=0,
             )
         drafts, selected_idx, line_indents, tier, cap_src = await build_visual_drafts(
             ext, routing_tier, label=label, caption=cap, kind="도표",
