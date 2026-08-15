@@ -810,6 +810,9 @@ def _fix_leading_roman(text_orig: str, braille: str) -> str:
 # 형식: 여는 <!이름>, 닫는 <!/이름>. 유일 인식 앵커 <!. 정규식 옵션 슬래시.
 # 매핑은 다대일(태그명 달라도 점자 동일 가능). 미지 태그는 안전 제거(점자화로 안 깨뜨림).
 _TAG_TOKEN_RE = re.compile(r"<!/?[^>]+>")
+# 이미 경고한 미지 태그(프로세스 수명). 조판이 접두를 수천 번 재점역해 같은 토큰이
+# 수백 줄을 찍는다 — _token_sub 주석 참조.
+_warned_unknown_tags: set[str] = set()
 
 # 단일·대칭 인라인 마커: 태그명 → 점자 글리프
 _TAG_INLINE_MARKER: dict[str, str] = {
@@ -1022,7 +1025,12 @@ def substitute_tags(text: str) -> str:
         # 이 잡음으로 채우면 진짜 미지 태그가 묻힌다.
         if name.rstrip("23") in _BORDER_FILL:
             return ""
-        logger.warning("translator: 미지 태그 제거 %s", tok)
+        # 같은 이유로 미지 태그도 한 토큰이 수백 줄을 찍는다(실측: `<!표>` 하나에 172줄).
+        # 토큰당 한 번만 남긴다 — 이 경고는 "이름이 틀렸다"는 신호라 한 번이면 족하고,
+        # 홍수로 두면 오히려 진짜 신호가 스크롤 밖으로 밀린다.
+        if tok not in _warned_unknown_tags:
+            _warned_unknown_tags.add(tok)
+            logger.warning("translator: 미지 태그 제거 %s (이름표는 tag_names.py)", tok)
         return ""
 
     text = _TAG_TOKEN_RE.sub(_token_sub, text)
