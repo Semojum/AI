@@ -113,16 +113,46 @@ _GPU_USD_PER_HOUR = _env_float("GPU_USD_PER_HOUR", 1.2370)
 # 크론은 기계마다 따로 걸어야 하는데(개발 PJ14 · 운영 AWS), 하나만 빠뜨려도 그 기계는
 # 옛 환율로 원가를 보고한다. 캐시 파일이 7일 넘으면 다음 호출이 알아서 받아 온다.
 #
-# ⚠ 이건 **매매기준율**이지 카드 청구 환율이 아니다. 카드사가 자기 환율에 수수료를
-#   얹으므로 실제 원화 청구액은 이보다 약 1% 높다. 배수를 지어내지 않고 노출만 해 둔다 —
-#   명세서로 실측한 값을 `FX_CARD_MARKUP`에 넣으면 그때부터 반영된다.
+# ⚠ **원화는 원리상 청구서와 정확히 못 맞춘다. 정확한 건 USD다.**
+#   Anthropic·OpenAI는 USD로 청구하고, 원화 환산은 카드사가 **매입일**(결제일이 아니라
+#   며칠 뒤) 환율로 한다. 우리가 요청 시점에 아는 환율과 다를 수밖에 없다.
+#   그래서 `cost_usd`가 정본이고 `cost_krw`는 참고값이다 — 대조는 USD로 한다.
+#
+#   원화 오차 중 **줄일 수 있는 부분은 수수료**다. 해외 카드결제는 매매기준율에
+#   두 가지가 얹힌다(공시 요율):
+#       국제브랜드 수수료   VISA·Mastercard 1.0%
+#       카드사 해외서비스료  0.18 ~ 0.35% (발급사마다 다름)
+#   합쳐 1.18~1.35%. 기본값은 원가를 낮게 잡지 않도록 위쪽(1.3%)을 쓴다 —
+#   원가를 실제보다 싸게 보고하면 가격 결정이 틀어진다.
+#
+#   명세서로 실측하면 그 값이 이긴다: `python -m app.core.pricing --calibrate <원화> <USD>`
+#   (해당 기간 매입일 환율을 세 번째 인자로 주면 더 정확하다.)
+_FX_MARKUP_ESTIMATE = 1.013           # 공시 요율 기반 추정(브랜드 1.0% + 발급사 0.3%)
+_FX_MARKUP_FILE = Path(os.getenv("FX_MARKUP_PATH", "storage/fx_markup.json"))
 _FX_FALLBACK = 1380.0                 # 조회도 캐시도 없을 때만 쓰는 최후값
 _FX_MIN, _FX_MAX = 500.0, 5000.0      # 이 밖은 자릿수 사고로 보고 거부
 _FX_TTL_S = 7 * 86400                 # 주 1회
 _FX_RETRY_S = 3600                    # 조회 실패 시 재시도 간격(매 호출 재시도 방지)
 _FX_URL = "https://open.er-api.com/v6/latest/USD"
 _FX_CACHE = Path(os.getenv("FX_CACHE_PATH", "storage/fx_rate.json"))
-_FX_MARKUP = _env_float("FX_CARD_MARKUP", 1.0)
+
+
+def _markup() -> tuple[float, str]:
+    """(카드 수수료 배수, 근거). 우선순위: 환경변수 > 명세서 실측 > 공시요율 추정.
+
+    근거를 같이 돌려주는 이유: 추정치를 실측인 양 넘기면 대시보드가 원가를 사실로
+    믿는다. `fx_basis`로 보고해 "이건 아직 추정"임을 드러낸다.
+    """
+    if os.getenv("FX_CARD_MARKUP"):
+        return _env_float("FX_CARD_MARKUP", _FX_MARKUP_ESTIMATE), "env"
+    try:
+        d = json.loads(_FX_MARKUP_FILE.read_text(encoding="utf-8"))
+        m = float(d["markup"])
+        if 1.0 <= m < 1.2:            # 20% 넘는 수수료는 입력 사고다
+            return m, "calibrated"
+    except Exception:  # noqa: BLE001 — 실측 없음이 정상 상태
+        pass
+    return _FX_MARKUP_ESTIMATE, "estimated"
 
 _fx_cached: tuple[float, float] | None = None   # (rate, fetched_at epoch)
 _fx_last_try = 0.0
@@ -215,7 +245,7 @@ def fx_rate(*, force: bool = False) -> float:
     """
     global _fx_cached, _fx_last_try
     if os.getenv("USD_KRW"):
-        return _env_float("USD_KRW", _FX_FALLBACK) * _FX_MARKUP
+        return _env_float("USD_KRW", _FX_FALLBACK) * _markup()[0]
 
     if _fx_cached is None:
         _fx_cached = _fx_read_cache()
@@ -232,7 +262,7 @@ def fx_rate(*, force: bool = False) -> float:
             _fx_cached = got
 
     rate = _fx_cached[0] if _fx_cached else _FX_FALLBACK
-    return rate * _FX_MARKUP
+    return rate * _markup()[0]
 
 
 def fx_age_days() -> float | None:
@@ -241,6 +271,42 @@ def fx_age_days() -> float | None:
         return 0.0
     c = _fx_cached or _fx_read_cache()
     return max(0.0, (time.time() - c[1]) / 86400) if c else None
+
+
+def fx_basis() -> str:
+    """원화 환산 근거 — `env` / `calibrated`(명세서 실측) / `estimated`(공시요율 추정).
+
+    대시보드가 추정치를 사실로 오해하지 않게 함께 내보낸다.
+    """
+    return _markup()[1]
+
+
+def card_markup() -> float:
+    return _markup()[0]
+
+
+def calibrate(krw: float, usd: float, settled_rate: float | None = None) -> float:
+    """명세서 실측으로 수수료 배수를 확정한다.
+
+        markup = (청구 원화 / 청구 USD) / 그 시점 매매기준율
+
+    `settled_rate`(매입일 환율)를 주면 정확하다. 안 주면 오늘 환율로 나누는데,
+    그 사이 환율이 움직인 만큼 배수에 섞여 든다 — 그래서 되도록 주라고 안내한다.
+    """
+    if usd <= 0 or krw <= 0:
+        raise ValueError("원화·USD 모두 0보다 커야 한다")
+    base = settled_rate or fx_rate()
+    markup = (krw / usd) / base
+    if not 1.0 <= markup < 1.2:
+        raise ValueError(f"수수료 배수 {markup:.4f} — 입력이나 기준환율을 다시 보라 "
+                         f"(정상 범위 1.00~1.20)")
+    _FX_MARKUP_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _FX_MARKUP_FILE.write_text(json.dumps(
+        {"markup": markup, "krw": krw, "usd": usd, "base_rate": base,
+         "effective_rate": krw / usd,
+         "measured_at_kst": time.strftime("%Y-%m-%d %H:%M")},
+        ensure_ascii=False), encoding="utf-8")
+    return markup
 
 
 def to_krw(usd: float) -> int:
@@ -256,9 +322,20 @@ def pricing_version() -> str:
     return "2026-08-13"
 
 
+if __name__ == "__main__" and "--calibrate" in sys.argv:
+    # 사용: --calibrate <청구원화> <청구USD> [매입일환율]
+    a = sys.argv[sys.argv.index("--calibrate") + 1:]
+    if not 2 <= len(a) <= 3:
+        print("사용: python -m app.core.pricing --calibrate <청구원화> <청구USD> [매입일환율]")
+        raise SystemExit(2)
+    m = calibrate(float(a[0]), float(a[1]), float(a[2]) if len(a) == 3 else None)
+    print(f"수수료 배수 {m:.4f} ({(m - 1) * 100:.2f}%) 확정 — {_FX_MARKUP_FILE}")
+    print(f"실효환율 USD 1 = {float(a[0]) / float(a[1]):.2f} KRW")
+    raise SystemExit(0)
+
 if __name__ == "__main__" and "--fx" in sys.argv:  # 수동/크론 강제 갱신
     print(f"USD 1 = {fx_rate(force=True):.2f} KRW  (캐시 {_FX_CACHE}, "
-          f"{fx_age_days():.2f}일 전 갱신, markup {_FX_MARKUP:g})")
+          f"{fx_age_days():.2f}일 전 갱신, 수수료배수 {_markup()[0]:g}[{_markup()[1]}])")
     raise SystemExit(0)
 
 if __name__ == "__main__":  # 자체 점검: 기간 한정가·캐시·GPU가 실제로 갈리는지
@@ -277,7 +354,7 @@ if __name__ == "__main__":  # 자체 점검: 기간 한정가·캐시·GPU가 �
     _FX_URL = "http://127.0.0.1:9/없는주소"          # noqa: F811 — 일부러 죽인다
     _FX_CACHE = Path("/없는/경로/fx.json")           # noqa: F811
     _fx_cached, _fx_last_try = None, 0.0
-    assert fx_rate(force=True) == _FX_FALLBACK, "조회·캐시 모두 실패하면 최후값이어야"
+    assert fx_rate(force=True) == _FX_FALLBACK * _markup()[0], "조회·캐시 모두 실패하면 최후값이어야"
     # 잘못된 env가 서버를 죽이면 안 된다(원가 표시용 설정이다)
     os.environ["FX_CARD_MARKUP"] = "oops"
     assert _env_float("FX_CARD_MARKUP", 1.0) == 1.0
@@ -292,7 +369,19 @@ if __name__ == "__main__":  # 자체 점검: 기간 한정가·캐시·GPU가 �
     _fx_last_try = 0.0
     if _fx_fetch():
         _fx_cached, _fx_last_try = None, 0.0
-        assert fx_rate(force=True) != _FX_FALLBACK, "쓰기 실패로 조회값을 버리면 안 된다"
+        assert fx_rate(force=True) != _FX_FALLBACK * _markup()[0], \
+            "쓰기 실패로 조회값을 버리면 안 된다"
     else:
         print("  (망 없음 — 조회 성공 경로는 건너뜀)")
+    # 수수료 배수: 추정 → 실측 전환과 이상값 거부
+    assert _markup() == (_FX_MARKUP_ESTIMATE, "estimated")
+    _FX_MARKUP_FILE = Path("/tmp/claude-1000/_fx_markup_selfcheck.json")  # noqa: F811
+    assert abs(calibrate(141890, 100, 1415.43) - 1.0025) < 1e-3
+    assert _markup()[1] == "calibrated"
+    try:
+        calibrate(1_000_000, 100)      # 배수 7배 — 입력 사고는 막아야
+        raise AssertionError("이상값을 통과시켰다")
+    except ValueError:
+        pass
+    _FX_MARKUP_FILE.unlink(missing_ok=True)
     print("pricing 자체 점검 통과")

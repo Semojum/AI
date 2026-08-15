@@ -1,4 +1,8 @@
 """요청 로그 — API 사용량 카운터·단계 컨텍스트 회귀 테스트."""
+from pathlib import Path
+
+import pytest
+
 import app.utils.req_log as rl
 from app.core import pricing
 
@@ -66,17 +70,60 @@ class TestBadEnvDoesNotKillServer:
     def test_잘못된_값은_기본값으로(self, monkeypatch):
         monkeypatch.setenv("USD_KRW", "abc")
         monkeypatch.setattr(pricing, "_warned_env", set())   # 경고 억제 상태 초기화
-        assert pricing.fx_rate() == pricing._FX_FALLBACK
+        assert pricing.fx_rate() == pricing._FX_FALLBACK * pricing.card_markup()
 
     def test_0은_거부한다(self, monkeypatch):
         """0을 통과시키면 원가가 전부 0원으로 보고된다."""
         monkeypatch.setenv("USD_KRW", "0")
         monkeypatch.setattr(pricing, "_warned_env", set())
-        assert pricing.fx_rate() == pricing._FX_FALLBACK
+        assert pricing.fx_rate() == pricing._FX_FALLBACK * pricing.card_markup()
 
     def test_정상값은_그대로(self, monkeypatch):
         monkeypatch.setenv("USD_KRW", "1400")
-        assert pricing.fx_rate() == 1400.0        # env가 있으면 조회하지 않는다
+        monkeypatch.delenv("FX_CARD_MARKUP", raising=False)
+        monkeypatch.setattr(pricing, "_FX_MARKUP_FILE", Path("/없는/markup.json"))
+        # env가 있으면 조회하지 않는다. 카드 수수료 배수는 그 위에 곱한다.
+        assert pricing.fx_rate() == 1400.0 * pricing._FX_MARKUP_ESTIMATE
+
+
+class TestCardMarkup:
+    """원화는 매매기준율이 아니라 **카드 수수료가 얹힌 값**으로 환산해야 한다."""
+
+    def _no_file(self, monkeypatch):
+        monkeypatch.delenv("FX_CARD_MARKUP", raising=False)
+        monkeypatch.setattr(pricing, "_FX_MARKUP_FILE", Path("/없는/markup.json"))
+
+    def test_기본은_공시요율_추정이고_그렇다고_밝힌다(self, monkeypatch):
+        self._no_file(monkeypatch)
+        assert pricing.fx_basis() == "estimated"
+        assert pricing.card_markup() == pricing._FX_MARKUP_ESTIMATE
+
+    def test_명세서_실측이_추정을_이긴다(self, monkeypatch, tmp_path):
+        self._no_file(monkeypatch)
+        monkeypatch.setattr(pricing, "_FX_MARKUP_FILE", tmp_path / "m.json")
+        # $100 청구가 141,890원으로 찍혔고 그때 기준환율이 1415.43이었다면
+        m = pricing.calibrate(141890, 100, 1415.43)
+        assert abs(m - 1.0025) < 1e-3
+        assert pricing.fx_basis() == "calibrated" and pricing.card_markup() == m
+
+    def test_env가_최우선(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(pricing, "_FX_MARKUP_FILE", tmp_path / "m.json")
+        pricing.calibrate(141890, 100, 1415.43)
+        monkeypatch.setenv("FX_CARD_MARKUP", "1.05")
+        assert pricing.fx_basis() == "env" and pricing.card_markup() == 1.05
+
+    def test_입력_사고는_거부한다(self, monkeypatch, tmp_path):
+        """자릿수를 틀리면 배수가 7배가 된다 — 파일에 쓰기 전에 막아야."""
+        monkeypatch.setattr(pricing, "_FX_MARKUP_FILE", tmp_path / "m.json")
+        with pytest.raises(ValueError):
+            pricing.calibrate(1_000_000, 100, 1415.43)
+        assert not (tmp_path / "m.json").exists()
+
+    def test_깨진_실측파일은_추정으로_되돌아간다(self, monkeypatch, tmp_path):
+        self._no_file(monkeypatch)
+        f = tmp_path / "m.json"; f.write_text('{"markup": 99}', encoding="utf-8")
+        monkeypatch.setattr(pricing, "_FX_MARKUP_FILE", f)
+        assert pricing.fx_basis() == "estimated"
 
 
 class TestApiCounts:

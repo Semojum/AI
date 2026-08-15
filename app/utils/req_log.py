@@ -274,6 +274,10 @@ def cost_report() -> dict:
         "gpu_seconds": round(t["gpu_seconds"], 2),
         "fx_rate": pricing.fx_rate(),
         "fx_age_days": pricing.fx_age_days(),    # 며칠 된 환율인지 — 오래되면 대시보드가 경고
+        # 원화는 참고값이다. 카드사가 **매입일**(며칠 뒤) 환율로 환산하므로 요청 시점
+        # 원화는 청구서와 정확히 같을 수 없다. 대조는 cost_usd로 한다.
+        "fx_basis": pricing.fx_basis(),          # env | calibrated(명세서 실측) | estimated
+        "card_markup": pricing.card_markup(),
         "gpu_usd_per_hour": pricing.gpu_usd_per_hour(),
         "pricing_version": pricing.pricing_version(),
         "unpriced_calls": t["unpriced_calls"],   # >0이면 단가표에 없는 모델을 썼다
