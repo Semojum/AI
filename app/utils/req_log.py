@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import contextvars
+import functools
 import time
 from dataclasses import dataclass, field
 
@@ -27,6 +28,27 @@ from app.core import pricing
 from app.utils.logger import get_logger
 
 logger = get_logger("app.progress")
+
+
+def _never_raises(fallback):
+    """관측 함수를 감싼다 — **로그가 페이지를 죽이면 안 된다.**
+
+    `api_summary()`/`breakdown_lines()`는 pipeline의 **성공 로그** 안에서 불린다. 거기서
+    예외가 나면 `except Exception`이 잡아, 점역이 다 끝난 결과를 버리고 C1 BLOCKED로
+    뒤집는다. 원가 표시 하나 때문에 페이지가 막히는 건 등급이 다른 사고라 길목에서
+    막는다(계산이 틀리는 것과 파이프라인이 죽는 것은 다른 문제다).
+    """
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrap(*a, **kw):
+            try:
+                return fn(*a, **kw)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("%s 실패(로그만 생략): %s", fn.__name__, exc)
+                return fallback() if callable(fallback) else fallback
+        return wrap
+    return deco
+
 
 @dataclass
 class _PartApi:
@@ -98,6 +120,19 @@ def _cur() -> _ReqStats | None:
 
 # ── 외부 API(GPT-4o) 기록 — 파트별 실토큰·실비용 ────────────────────────────
 
+def _as_int(v) -> int:
+    """토큰 수를 정수로 강제. 숫자가 아니면 0.
+
+    `usage`는 **외부 SDK가 주는 객체**다. 형이 바뀌거나(버전업) 목 객체가 섞이면
+    그 값이 그대로 누계에 더해져 이후 이 요청의 원가가 통째로 못 쓰게 된다
+    (실제로 테스트에서 MagicMock이 흘러들어 집계가 오염됐다). 입구에서 막는다.
+    """
+    try:
+        return max(0, int(v))
+    except (TypeError, ValueError):
+        return 0
+
+
 def record_llm(kind: str, model: str, input_tokens: int = 0, output_tokens: int = 0,
                cache_read_tokens: int = 0, cache_write_tokens: int = 0) -> None:
     """외부 LLM 호출 1건 기록 — **모델별 단가**로 실비용을 계산한다.
@@ -107,9 +142,12 @@ def record_llm(kind: str, model: str, input_tokens: int = 0, output_tokens: int 
     st = _cur()
     if st is None:
         return
+    input_tokens, output_tokens = _as_int(input_tokens), _as_int(output_tokens)
+    cache_read_tokens = _as_int(cache_read_tokens)
+    cache_write_tokens = _as_int(cache_write_tokens)
     p = st.part(kind)
     p.gpt4o_calls += 1
-    p.models.add(model)
+    p.models.add(str(model))
     p.prompt_tokens += input_tokens
     p.completion_tokens += output_tokens
     p.cache_read_tokens += cache_read_tokens
@@ -202,6 +240,7 @@ def _totals() -> dict:
     }
 
 
+@_never_raises(dict)
 def cost_report() -> dict:
     """이번 요청의 원가 내역 — BE 응답(CostReport)·대시보드가 그대로 쓴다.
 
@@ -249,6 +288,7 @@ def api_counts() -> dict:
     return {"hcxt": t["hcxt"], "gpt4o": t["gpt4o"]}
 
 
+@_never_raises("")
 def api_summary() -> str:
     """한 줄 요약(요청 총계)."""
     t = _totals()
@@ -264,6 +304,7 @@ def api_summary() -> str:
     return s
 
 
+@_never_raises(list)
 def stage_timeline() -> list[dict]:
     """이 요청의 단계별 점유 구간. E2E 병렬 측정(S4)이 메트릭에 싣는다.
 
@@ -278,6 +319,7 @@ def stage_timeline() -> list[dict]:
             for lbl, dt, note, off in st.stages]
 
 
+@_never_raises(list)
 def breakdown_lines() -> list[str]:
     """파트별 LLM 사용 내역(요청 종료 로그용). 사용 없으면 빈 리스트."""
     st = _cur()
