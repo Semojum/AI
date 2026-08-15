@@ -234,6 +234,7 @@ def cost_report() -> dict:
         "gpu_cost_usd": round(t["gpu_cost"], 6),
         "gpu_seconds": round(t["gpu_seconds"], 2),
         "fx_rate": pricing.fx_rate(),
+        "fx_age_days": pricing.fx_age_days(),    # 며칠 된 환율인지 — 오래되면 대시보드가 경고
         "gpu_usd_per_hour": pricing.gpu_usd_per_hour(),
         "pricing_version": pricing.pricing_version(),
         "unpriced_calls": t["unpriced_calls"],   # >0이면 단가표에 없는 모델을 썼다

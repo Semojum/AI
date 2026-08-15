@@ -24,9 +24,12 @@ Anthropic `usage`는 `input_tokens`에 **캐시 토큰을 포함하지 않는다
 """
 from __future__ import annotations
 
+import json
 import os
+import time
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 
 from app.utils.logger import get_logger
 
@@ -76,9 +79,59 @@ _warned: set[str] = set()
 # 인스턴스를 바꾸면 `GPU_USD_PER_HOUR`로 덮어쓴다.
 _GPU_USD_PER_HOUR = float(os.getenv("GPU_USD_PER_HOUR", "1.2370"))
 
-# 환율. **자동 조회하지 않는다** — 조회 실패가 곧 원가 오류가 되면 안 된다.
-# 운영에서 `USD_KRW`로 넣고, 보고 응답에 이 값을 함께 실어 "무슨 환율 기준인지" 밝힌다.
-_USD_KRW = float(os.getenv("USD_KRW", "1380"))
+# ── 환율 ────────────────────────────────────────────────────────────────────
+# 주 1회 자동 갱신한다(2026-08-15 대표 지시). **크론이 아니라 지연 갱신(TTL)이다** —
+# 크론은 기계마다 따로 걸어야 하는데(개발 PJ14 · 운영 AWS), 하나만 빠뜨려도 그 기계는
+# 옛 환율로 원가를 보고한다. 캐시 파일이 7일 넘으면 다음 호출이 알아서 받아 온다.
+#
+# ⚠ 이건 **매매기준율**이지 카드 청구 환율이 아니다. 카드사가 자기 환율에 수수료를
+#   얹으므로 실제 원화 청구액은 이보다 약 1% 높다. 배수를 지어내지 않고 노출만 해 둔다 —
+#   명세서로 실측한 값을 `FX_CARD_MARKUP`에 넣으면 그때부터 반영된다.
+_FX_FALLBACK = 1380.0                 # 조회도 캐시도 없을 때만 쓰는 최후값
+_FX_TTL_S = 7 * 86400                 # 주 1회
+_FX_RETRY_S = 3600                    # 조회 실패 시 재시도 간격(매 호출 재시도 방지)
+_FX_URL = "https://open.er-api.com/v6/latest/USD"
+_FX_CACHE = Path(os.getenv("FX_CACHE_PATH", "storage/fx_rate.json"))
+_FX_MARKUP = float(os.getenv("FX_CARD_MARKUP", "1.0"))
+
+_fx_cached: tuple[float, float] | None = None   # (rate, fetched_at epoch)
+_fx_last_try = 0.0
+
+
+def _fx_read_cache() -> tuple[float, float] | None:
+    try:
+        d = json.loads(_FX_CACHE.read_text(encoding="utf-8"))
+        return float(d["rate"]), float(d["fetched_at"])
+    except Exception:  # noqa: BLE001 — 캐시 없음/깨짐은 정상 경로(그냥 받아 온다)
+        return None
+
+
+def _fx_fetch() -> tuple[float, float] | None:
+    """USD→KRW 조회. 실패는 None — **절대 예외를 올리지 않는다**(원가는 파이프라인을 막지 않는다)."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen(_FX_URL, timeout=5) as r:
+            d = json.loads(r.read().decode())
+        rate = float(d["rates"]["KRW"])
+        if not 500 < rate < 5000:      # 자릿수 사고·이상값 방어
+            raise ValueError(f"환율 이상값 {rate}")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("환율 조회 실패(직전 값 유지): %s", exc)
+        return None
+
+    # 캐시 쓰기 실패는 조회 실패가 **아니다.** 받아온 값은 그대로 쓴다 — 여기서 같이
+    # 버리면 읽기전용 스토리지에서 매번 새로 받고도 영영 최후값으로 계산한다.
+    now = time.time()
+    try:
+        _FX_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        _FX_CACHE.write_text(json.dumps(
+            {"rate": rate, "fetched_at": now, "source": _FX_URL,
+             "fetched_at_kst": time.strftime("%Y-%m-%d %H:%M", time.localtime(now))},
+            ensure_ascii=False), encoding="utf-8")
+    except OSError as exc:
+        logger.warning("환율 캐시 기록 실패(값은 사용): %s", exc)
+    logger.info("환율 갱신: USD 1 = %.2f KRW (%s)", rate, _FX_URL)
+    return rate, now
 
 
 def _rate(model: str, on: date) -> _Rate:
@@ -121,13 +174,43 @@ def gpu_cost_usd(seconds: float) -> float:
     return max(0.0, seconds) * _GPU_USD_PER_HOUR / 3600.0
 
 
-def fx_rate() -> float:
-    """USD→KRW 환율. 응답에 함께 실어 어느 환율 기준인지 밝힌다."""
-    return _USD_KRW
+def fx_rate(*, force: bool = False) -> float:
+    """USD→KRW 환율. 7일 지나면 조회해 갱신하고, 실패하면 직전 값을 그대로 쓴다.
+
+    `USD_KRW`가 설정돼 있으면 **조회하지 않는다** — 값을 못 박고 싶을 때(재현 가능한
+    측정, 폐쇄망)를 위한 탈출구다.
+    """
+    global _fx_cached, _fx_last_try
+    env = os.getenv("USD_KRW")
+    if env:
+        return float(env) * _FX_MARKUP
+
+    if _fx_cached is None:
+        _fx_cached = _fx_read_cache()
+
+    now = time.time()
+    stale = _fx_cached is None or (now - _fx_cached[1]) > _FX_TTL_S
+    # 조회가 죽어 있을 때 매 호출 재시도하면 페이지마다 5초씩 문다.
+    if (force or stale) and (now - _fx_last_try) > _FX_RETRY_S:
+        _fx_last_try = now
+        got = _fx_fetch()
+        if got:
+            _fx_cached = got
+
+    rate = _fx_cached[0] if _fx_cached else _FX_FALLBACK
+    return rate * _FX_MARKUP
+
+
+def fx_age_days() -> float | None:
+    """캐시된 환율이 며칠 됐나. None이면 조회한 적 없음(최후값 사용 중)."""
+    if os.getenv("USD_KRW"):
+        return 0.0
+    c = _fx_cached or _fx_read_cache()
+    return (time.time() - c[1]) / 86400 if c else None
 
 
 def to_krw(usd: float) -> int:
-    return round(usd * _USD_KRW)
+    return round(usd * fx_rate())
 
 
 def gpu_usd_per_hour() -> float:
@@ -138,6 +221,11 @@ def pricing_version() -> str:
     """단가표 판 — 청구서와 대조할 때 '어느 표로 계산했는지' 식별자."""
     return "2026-08-13"
 
+
+if __name__ == "__main__" and "--fx" in os.sys.argv:  # 수동/크론 강제 갱신
+    print(f"USD 1 = {fx_rate(force=True):.2f} KRW  (캐시 {_FX_CACHE}, "
+          f"{fx_age_days():.2f}일 전 갱신, markup {_FX_MARKUP:g})")
+    raise SystemExit(0)
 
 if __name__ == "__main__":  # 자체 점검: 기간 한정가·캐시·GPU가 실제로 갈리는지
     promo = llm_cost_usd("claude-sonnet-5", 1_000_000, 0, on=date(2026, 8, 15))
@@ -150,4 +238,15 @@ if __name__ == "__main__":  # 자체 점검: 기간 한정가·캐시·GPU가 �
                             on=date(2026, 9, 1)) - 0.30) < 1e-9
     assert abs(gpu_cost_usd(3600) - _GPU_USD_PER_HOUR) < 1e-9
     assert not is_priced("claude-made-up-9")        # 미상 모델은 표에 없다고 답해야
+    # 환율: 조회가 죽어도 원가 계산이 멈추면 안 된다. 캐시도 없애고 강제로 태운다 —
+    # 캐시가 신선하면 조회를 건너뛰어 실패 경로를 안 본다(첫 판 자체점검의 구멍이었다).
+    _FX_URL = "http://127.0.0.1:9/없는주소"          # noqa: F811 — 일부러 죽인다
+    _FX_CACHE = Path("/없는/경로/fx.json")           # noqa: F811
+    _fx_cached, _fx_last_try = None, 0.0
+    assert fx_rate(force=True) == _FX_FALLBACK, "조회·캐시 모두 실패하면 최후값이어야"
+    # 캐시 쓰기가 막혀도(읽기전용 스토리지) **받아온 값은 써야 한다** — 같이 버리면
+    # 매번 새로 받고도 영영 최후값으로 계산한다(첫 판의 실제 버그).
+    _FX_URL = "https://open.er-api.com/v6/latest/USD"
+    _fx_last_try = 0.0
+    assert fx_rate(force=True) != _FX_FALLBACK, "쓰기 실패로 조회값을 버리면 안 된다"
     print("pricing 자체 점검 통과")
