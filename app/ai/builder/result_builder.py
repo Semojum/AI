@@ -142,6 +142,16 @@ def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
     original_type = el.get("type", "image")
     eid = str(el.get("element_id", ""))[:8]
 
+    # 오프라인 차단 스위치 — base_opt와 같은 플래그를 캡셔닝도 본다(2026-08-16).
+    # 종전엔 이 가드가 없어 무-LLM 실행에서도 캡셔너가 API를 두드렸다. 키가 비어 있으면
+    # SDK가 "Could not resolve authentication method…" **TypeError**를 던지고, 그게
+    # _is_fatal에 걸려 실행이 잠긴다. 결과는 설계대로(빈 캡션 + CAPTION_FAILED)지만
+    # 로그에 `CAPTION_ERR:TypeError`가 남아 **"캡셔닝이 100% 죽었다"로 읽힌다** —
+    # 실제로 그 오독으로 두 세션이 몇 시간을 썼다(2026-08-16). 조용히 건너뛴다.
+    if os.environ.get("DISABLE_LLM_FALLBACK") == "1":
+        logger.debug("캡셔닝 건너뜀(DISABLE_LLM_FALLBACK=1) id=%s", eid)
+        return "", original_type, False, None
+
     # 설정성 오류로 이미 잠겼으면 API를 다시 두드리지 않는다 — 같은 실패를 요소 수만큼
     # 반복해 봐야 시간만 버린다(200요소 페이지면 재시도 포함 600회).
     if _caption_fatal:
