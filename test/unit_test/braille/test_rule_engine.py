@@ -195,10 +195,11 @@ class TestMathOperators:
         assert "⠲⠲" in convert_latex("x \\geq 5")        # ≥ ⠲⠲(폰트 44)
 
     def test_neq(self) -> None:
-        # ≠ 규정(수학 제4항 1호)은 .33(⠨⠒⠒)이나 도서 관행은 .3(⠨⠒) —
-        # gold 수학2 .3 91회 vs .33 0회(2026-07-20 실측, F4). book 모드 기본.
-        assert "⠨⠒" in convert_latex("x \\neq y")
-        assert "⠨⠒⠒" not in convert_latex("x \\neq y")
+        # ≠ 규정(수학 제4항 1호)은 .33(⠨⠒⠒).
+        # ⚠ A/B 판정 대기(2026-08-15, exp-neq). 종전 기대값은 도서 관행 .3(⠨⠒)이었고
+        #   근거는 구판 수학2 한 권의 '91회 vs 0회'다. 앞서 같은 뿌리 셋이 뒤집혔다
+        #   (원장 R-13·R-14·R-15). 기각되면 ⠨⠒로 되돌린다.
+        assert "⠨⠒⠒" in convert_latex("x \\neq y")
 
     def test_times(self) -> None:
         assert "⠡" in convert_latex("3 \\times 4")       # × ⠡(폰트 *)
