@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 from app.utils.logger import get_logger
-from app.utils.req_log import api_counts, stage_timeline
+from app.utils.req_log import api_counts, cost_report, stage_timeline
 
 
 def _llm_wait() -> float:
@@ -60,6 +60,10 @@ class MetricsCollector:
             "fallback_ratio": (n_blocked / n_elements) if n_elements else 0.0,
             "hcxt_calls": api.get("hcxt", 0),
             "gpt4o_calls": api.get("gpt4o", 0),
+            # 쪽당 원가(2026-08-13). proto에 CostReport 필드가 붙기 전에도 대시보드가
+            # 이 JSONL만 모으면 쪽·유형별 원가를 집계할 수 있다.
+            # 환율·단가판이 함께 실리므로 나중에 "어느 기준이었나"를 되짚을 수 있다.
+            "cost": cost_report(),
             # 단계별 점유 구간 — 여러 페이지 것을 겹쳐 그리면 병목 자원이 보인다(S4).
             "stages": stage_timeline(),
             # 외부 LLM 분당 상한 대기(S2). 0이 아니면 상한이 실제로 물린 것이다.

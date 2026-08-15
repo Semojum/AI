@@ -3,13 +3,19 @@
 서버 터미널/통합 테스트 로그가 한눈에 읽히고 디버깅이 쉽도록 요청 단위(contextvar)로:
   - 단계(추출/분해/점역/조판)마다 시작 ▶ / 종료 ✓ 소요시간을 실시간으로 찍는다(stage).
   - 7체인 중 진행 단계를 `[3/7] 표` 형태로 찍는다(step).
-  - GPT-4o(외부 API)를 **파트별**로 실제 토큰(prompt/completion)·실비용($)까지 집계한다.
-  - HyperCLOVA X(로컬 GPU)를 **파트별** 호출 수·소요시간·타임아웃 수로 집계한다.
+  - 외부 LLM(Claude·GPT-4o)을 **파트별**로 실제 토큰·실비용($)까지 집계한다.
+  - HyperCLOVA X(로컬 GPU)를 **파트별** 호출 수·소요시간·타임아웃 수·GPU 시간비용으로 집계한다.
   - GPU 메모리 점유(로컬 LLM)를 조회해 단계 로그·요약에 싣는다.
 요청 종료 시 `breakdown_lines()`로 파트별 표를 출력해 "어느 파트가 얼마나 먹었는지" 바로 본다.
 
-토큰 집계: OpenAI 응답의 `usage`(prompt_tokens/completion_tokens)를 그대로 받아 누적하고,
-gpt-4o 단가로 실비용을 계산한다. usage가 없으면(구버전 응답) 근사 토큰으로 채운다.
+## 토큰·단가 규약 (2026-08-13 개정 — "실제 청구값과 거의 일치")
+
+- 토큰은 **응답 `usage`의 실값만** 쓴다. 근사치(구 `_APPROX_IN/_OUT` 1500/500)는 제거했다 —
+  가장 비싼 항목이 가짜 숫자면 그 위에 무엇을 쌓아도 틀린다.
+- 단가는 `app/core/pricing.py`가 정본. 모델마다 다르고 기간 한정가가 있다. 여기서 곱하지 않는다.
+  (구 버전은 Claude를 부르면서 gpt-4o 단가를 곱하고 있었다.)
+- `usage`가 없는 호출(예외로 끝난 폴백)은 **토큰 0·비용 0**으로 남긴다. 실제로 얼마 나갔는지
+  모르는 걸 지어내지 않는다. 호출 수만 센다.
 """
 from __future__ import annotations
 
@@ -17,28 +23,27 @@ import contextvars
 import time
 from dataclasses import dataclass, field
 
+from app.core import pricing
 from app.utils.logger import get_logger
 
 logger = get_logger("app.progress")
 
-# gpt-4o 단가(2024-11, USD/토큰). 입력 $2.5/1M · 출력 $10/1M.
-_GPT4O_IN_PER_TOK = 2.5 / 1_000_000
-_GPT4O_OUT_PER_TOK = 10.0 / 1_000_000
-# usage가 없을 때만 쓰는 근사(입력 1.5K·출력 0.5K 가정).
-_APPROX_IN, _APPROX_OUT = 1500, 500
-
-
 @dataclass
 class _PartApi:
     """한 파트(kind)의 외부/로컬 LLM 사용 누계."""
-    gpt4o_calls: int = 0
+    gpt4o_calls: int = 0          # 이름은 하위호환. 실제로는 '외부 LLM 호출 수'
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    cost: float = 0.0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    cost: float = 0.0             # 외부 LLM 토큰 비용(USD)
+    models: set[str] = field(default_factory=set)
+    unpriced_calls: int = 0       # 단가표에 없는 모델로 계산한 호출 수
     hcxt_calls: int = 0
     hcxt_time_s: float = 0.0
     hcxt_timeouts: int = 0
     hcxt_fails: int = 0
+    gpu_cost: float = 0.0         # HCXT 점유 시간 안분(USD)
 
 
 @dataclass
@@ -93,22 +98,57 @@ def _cur() -> _ReqStats | None:
 
 # ── 외부 API(GPT-4o) 기록 — 파트별 실토큰·실비용 ────────────────────────────
 
-def record_gpt4o(kind: str, prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
-    """GPT-4o 호출 1건 기록. usage(prompt/completion 토큰)가 있으면 실비용까지 계산.
+def record_llm(kind: str, model: str, input_tokens: int = 0, output_tokens: int = 0,
+               cache_read_tokens: int = 0, cache_write_tokens: int = 0) -> None:
+    """외부 LLM 호출 1건 기록 — **모델별 단가**로 실비용을 계산한다.
 
-    토큰이 0(usage 없음)이면 근사치로 채워 비용 감각을 유지한다(정확 청구 아님).
+    토큰은 응답 `usage`의 실값만 넘긴다. 모르면 0으로 두라(지어내지 말 것).
     """
     st = _cur()
     if st is None:
         return
-    if not prompt_tokens and not completion_tokens:
-        prompt_tokens, completion_tokens = _APPROX_IN, _APPROX_OUT
-    cost = prompt_tokens * _GPT4O_IN_PER_TOK + completion_tokens * _GPT4O_OUT_PER_TOK
     p = st.part(kind)
     p.gpt4o_calls += 1
-    p.prompt_tokens += prompt_tokens
-    p.completion_tokens += completion_tokens
-    p.cost += cost
+    p.models.add(model)
+    p.prompt_tokens += input_tokens
+    p.completion_tokens += output_tokens
+    p.cache_read_tokens += cache_read_tokens
+    p.cache_write_tokens += cache_write_tokens
+    p.cost += pricing.llm_cost_usd(model, input_tokens, output_tokens,
+                                   cache_read_tokens, cache_write_tokens)
+    if not pricing.is_priced(model):
+        p.unpriced_calls += 1
+
+
+def record_anthropic(kind: str, model: str, usage) -> None:
+    """Anthropic 응답 `usage` 객체를 그대로 받아 기록(캐시 토큰 포함).
+
+    `input_tokens`에 캐시 토큰이 **안 들어 있어서** 따로 더해야 한다 — 캐시를 켜는 순간
+    조용히 과소 집계되는 자리라 여기서 한 번에 처리한다.
+    """
+    g = lambda name: getattr(usage, name, 0) or 0 if usage is not None else 0  # noqa: E731
+    record_llm(kind, model, g("input_tokens"), g("output_tokens"),
+               g("cache_read_input_tokens"), g("cache_creation_input_tokens"))
+
+
+def record_openai(kind: str, model: str, usage) -> None:
+    """OpenAI 응답 `usage`(prompt_tokens/completion_tokens)를 받아 기록."""
+    if usage is None:
+        record_llm(kind, model)
+        return
+    prompt = getattr(usage, "prompt_tokens", 0) or 0
+    cached = 0
+    details = getattr(usage, "prompt_tokens_details", None)
+    if details is not None:
+        cached = getattr(details, "cached_tokens", 0) or 0
+    # OpenAI의 prompt_tokens는 캐시분을 **포함**한다(Anthropic과 반대) — 중복 계산 방지.
+    record_llm(kind, model, max(0, prompt - cached),
+               getattr(usage, "completion_tokens", 0) or 0, cached, 0)
+
+
+def record_gpt4o(kind: str, prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
+    """하위호환 — 모델을 안 밝힌 구 호출부. gpt-4o 단가로 계산한다."""
+    record_llm(kind, "gpt-4o", prompt_tokens, completion_tokens)
 
 
 # ── 로컬 LLM(HCXT) 기록 — 파트별 호출 수·시간·타임아웃 ──────────────────────
@@ -121,6 +161,7 @@ def record_hcxt(kind: str, elapsed_s: float = 0.0, *, timed_out: bool = False, f
     p = st.part(kind)
     p.hcxt_calls += 1
     p.hcxt_time_s += elapsed_s
+    p.gpu_cost += pricing.gpu_cost_usd(elapsed_s)
     if timed_out:
         p.hcxt_timeouts += 1
     if failed:
@@ -142,13 +183,63 @@ def inc_gpt4o() -> None:
 def _totals() -> dict:
     st = _cur()
     if st is None:
-        return {"hcxt": 0, "gpt4o": 0, "prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0}
-    hcxt = sum(p.hcxt_calls for p in st.parts.values())
-    gpt4o = sum(p.gpt4o_calls for p in st.parts.values())
-    pt = sum(p.prompt_tokens for p in st.parts.values())
-    ct = sum(p.completion_tokens for p in st.parts.values())
-    cost = sum(p.cost for p in st.parts.values())
-    return {"hcxt": hcxt, "gpt4o": gpt4o, "prompt_tokens": pt, "completion_tokens": ct, "cost": cost}
+        return {"hcxt": 0, "gpt4o": 0, "prompt_tokens": 0, "completion_tokens": 0,
+                "cache_read_tokens": 0, "cache_write_tokens": 0, "cost": 0.0,
+                "gpu_cost": 0.0, "gpu_seconds": 0.0, "unpriced_calls": 0, "models": []}
+    add = lambda f: sum(f(p) for p in st.parts.values())  # noqa: E731
+    return {
+        "hcxt": add(lambda p: p.hcxt_calls),
+        "gpt4o": add(lambda p: p.gpt4o_calls),
+        "prompt_tokens": add(lambda p: p.prompt_tokens),
+        "completion_tokens": add(lambda p: p.completion_tokens),
+        "cache_read_tokens": add(lambda p: p.cache_read_tokens),
+        "cache_write_tokens": add(lambda p: p.cache_write_tokens),
+        "cost": add(lambda p: p.cost),
+        "gpu_cost": add(lambda p: p.gpu_cost),
+        "gpu_seconds": add(lambda p: p.hcxt_time_s),
+        "unpriced_calls": add(lambda p: p.unpriced_calls),
+        "models": sorted({m for p in st.parts.values() for m in p.models}),
+    }
+
+
+def cost_report() -> dict:
+    """이번 요청의 원가 내역 — BE 응답(CostReport)·대시보드가 그대로 쓴다.
+
+    `fx_rate`·`pricing_version`을 함께 실어 **어느 환율·어느 단가표로 계산했는지** 밝힌다.
+    나중에 청구서와 어긋났을 때 무엇을 의심할지 알 수 있어야 한다.
+    """
+    t = _totals()
+    total_usd = t["cost"] + t["gpu_cost"]
+    st = _cur()
+    parts = []
+    for kind, p in sorted((st.parts if st else {}).items(), key=lambda kv: -(kv[1].cost + kv[1].gpu_cost)):
+        if not p.gpt4o_calls and not p.hcxt_calls:
+            continue
+        parts.append({
+            "kind": kind,
+            "llm_calls": p.gpt4o_calls,
+            "models": sorted(p.models),
+            "input_tokens": p.prompt_tokens,
+            "output_tokens": p.completion_tokens,
+            "cache_read_tokens": p.cache_read_tokens,
+            "cache_write_tokens": p.cache_write_tokens,
+            "llm_cost_usd": round(p.cost, 6),
+            "gpu_seconds": round(p.hcxt_time_s, 2),
+            "gpu_cost_usd": round(p.gpu_cost, 6),
+        })
+    return {
+        "cost_usd": round(total_usd, 6),
+        "cost_krw": pricing.to_krw(total_usd),
+        "llm_cost_usd": round(t["cost"], 6),
+        "gpu_cost_usd": round(t["gpu_cost"], 6),
+        "gpu_seconds": round(t["gpu_seconds"], 2),
+        "fx_rate": pricing.fx_rate(),
+        "gpu_usd_per_hour": pricing.gpu_usd_per_hour(),
+        "pricing_version": pricing.pricing_version(),
+        "unpriced_calls": t["unpriced_calls"],   # >0이면 단가표에 없는 모델을 썼다
+        "models": t["models"],
+        "parts": parts,
+    }
 
 
 def api_counts() -> dict:
@@ -160,10 +251,15 @@ def api_counts() -> dict:
 def api_summary() -> str:
     """한 줄 요약(요청 총계)."""
     t = _totals()
-    s = f"HCXT {t['hcxt']}회 · GPT-4o {t['gpt4o']}회"
+    s = f"HCXT {t['hcxt']}회 · 외부LLM {t['gpt4o']}회"
     if t["gpt4o"]:
         tok = t["prompt_tokens"] + t["completion_tokens"]
-        s += f"({tok:,}토큰 ~${t['cost']:.4f})"
+        s += f"({tok:,}토큰 ${t['cost']:.4f})"
+    if t["gpu_cost"]:
+        s += f" · GPU {t['gpu_seconds']:.0f}s ${t['gpu_cost']:.4f}"
+    total = t["cost"] + t["gpu_cost"]
+    if total:
+        s += f" = ${total:.4f}(₩{pricing.to_krw(total):,})"
     return s
 
 
@@ -187,17 +283,23 @@ def breakdown_lines() -> list[str]:
     if st is None or not st.parts:
         return []
     lines = ["── 파트별 LLM 사용 내역 ──"]
-    header = f"  {'파트':<10} {'HCXT':>10} {'GPT-4o':>8} {'토큰(in/out)':>16} {'비용$':>9}"
-    lines.append(header)
-    for kind, p in sorted(st.parts.items(), key=lambda kv: -(kv[1].cost + kv[1].hcxt_time_s)):
+    lines.append(f"  {'파트':<10} {'HCXT':>12} {'LLM':>5} {'토큰(in/out)':>16} {'모델':<18} {'비용$':>9}")
+    for kind, p in sorted(st.parts.items(), key=lambda kv: -(kv[1].cost + kv[1].gpu_cost)):
         if not p.hcxt_calls and not p.gpt4o_calls:
             continue
-        hcxt = f"{p.hcxt_calls}회/{p.hcxt_time_s:.1f}s"
+        hcxt = f"{p.hcxt_calls}회/{p.hcxt_time_s:.1f}s" if p.hcxt_calls else "-"
         if p.hcxt_timeouts:
             hcxt += f"⏱{p.hcxt_timeouts}"
         tok = f"{p.prompt_tokens:,}/{p.completion_tokens:,}" if p.gpt4o_calls else "-"
-        cost = f"${p.cost:.4f}" if p.gpt4o_calls else "-"
-        lines.append(f"  {kind:<10} {hcxt:>10} {p.gpt4o_calls:>8} {tok:>16} {cost:>9}")
+        model = ",".join(sorted(p.models)) or "-"
+        lines.append(f"  {kind:<10} {hcxt:>12} {p.gpt4o_calls:>5} {tok:>16} {model:<18} "
+                     f"${p.cost + p.gpu_cost:>8.4f}")
+    t = _totals()
+    total = t["cost"] + t["gpu_cost"]
+    lines.append(f"  합계 LLM ${t['cost']:.4f} + GPU ${t['gpu_cost']:.4f} = ${total:.4f} "
+                 f"(₩{pricing.to_krw(total):,} @ {pricing.fx_rate():g})")
+    if t["unpriced_calls"]:
+        lines.append(f"  ⚠ 단가표에 없는 모델 호출 {t['unpriced_calls']}건 — 비용 추정치다")
     return lines
 
 
