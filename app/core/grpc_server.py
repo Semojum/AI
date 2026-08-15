@@ -166,7 +166,39 @@ def _build_proto_response(result: dict):
     for te in result.get("braille_text_list", []):
         resp.braille_text_list.append(_dict_to_text_element(te))
 
+    # [추가 08-15] 원가. BLOCKED에도 싣는다 — 막혔어도 돈은 나갔다.
+    resp.cost_report.CopyFrom(_dict_to_cost_report(result.get("cost") or {}))
+
     return resp
+
+
+_PB = braille_service_pb2
+_LAYOUT = {"text": _PB.PAGE_LAYOUT_TEXT, "formula": _PB.PAGE_LAYOUT_FORMULA,
+           "table": _PB.PAGE_LAYOUT_TABLE, "visual": _PB.PAGE_LAYOUT_VISUAL}
+
+
+def _dict_to_cost_report(c: dict):
+    """`req_log.cost_report()` dict → proto. 원가는 관측값이라 무슨 일이 있어도
+    응답을 막지 않는다 — 빈 dict가 오면 0으로 채운 메시지를 돌려준다.
+
+    proto로 나가는 건 대시보드가 실제로 쓰는 것 + 재계산 보관용뿐이다. 파트별 내역·
+    환율 근거는 메트릭 JSONL에만 남긴다(BE가 안 쓴다).
+    """
+    r = _PB.CostReport()
+    if not c:
+        return r
+    r.layout_type = _LAYOUT.get(c.get("layout_type", ""), _PB.PAGE_LAYOUT_UNSPECIFIED)
+    r.llm_cost_usd_nanos = int(c.get("llm_cost_usd_nanos", 0))
+    r.gpu_cost_usd_nanos = int(c.get("gpu_cost_usd_nanos", 0))
+    r.cost_krw_milli = int(c.get("cost_krw_milli", 0))
+    r.pricing_version = str(c.get("pricing_version", ""))
+    for m in c.get("models", []):
+        pm = r.models.add()
+        pm.model = str(m.get("model", ""))
+        pm.calls = int(m.get("calls", 0))
+        pm.input_tokens = int(m.get("input_tokens", 0))
+        pm.output_tokens = int(m.get("output_tokens", 0))
+    return r
 
 
 # 배압(M2, 2026-08-02) — admission 카운터. asyncio 단일 스레드 협조 스케줄링이라

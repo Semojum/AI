@@ -125,6 +125,62 @@ message TextElement {
   int32              selected_idx = 16;  // 기본 초안 번호(0-based)
 }
 
+// ── 원가 [추가 08-15] ────────────────────────────────────────────
+// 관리자 대시보드 T1-2(유형별 평균 원가)·T1-4(쪽별 결과 표)가 쓴다.
+//
+// 기획서가 못 박은 두 가지를 그대로 따른다:
+//   · "쪽마다 대표 유형과 원가를 함께 보내야 합니다"      → layout_type + 금액
+//   · "백엔드는 저장하고 더하기만 합니다"                  → BE는 계산하지 않는다
+//
+// `models`만 예외다. 금액은 단가표를 곱한 **해석**이라 바뀌지만(도입가 만료·단가 오기)
+// 토큰은 사실이라 안 바뀐다. BE DB에 사실이 남아 있으면 단가가 틀렸을 때 과거를 통째로
+// 고칠 수 있다. 실제로 Claude를 부르며 gpt-4o 단가를 곱하던 버그가 있었다(issue #176).
+// **BE가 평상시 이 값으로 계산하지는 않는다** — 보관용이다.
+// 축이 모델인 이유는 청구서가 모델별로 나오기 때문이다.
+//
+// ⚠ 금액 단위:  USD = cost_usd_nanos / 1e9   ·   원 = cost_krw_milli / 1000
+//   쪽당 원가가 ₩21~94이라 원 단위로 반올림해 보내면 수만 쪽에서 눈에 띄게 어긋난다.
+//
+// ⚠ **원화는 참고값이고 USD가 정본이다.** Anthropic·OpenAI는 USD로 청구하고, 원화
+//   환산은 카드사가 **매입일**(결제일이 아니라 며칠 뒤) 환율로 한다. 청구서 대조는 USD로.
+
+// 쪽 대표 유형. 대시보드 T1-2가 이 축으로 평균 원가를 낸다.
+// 한 쪽에 여러 유형이 섞이면 **비싼 쪽이 이긴다** — 실측 원가가 그림 94 > 표 58 >
+// 수식 46 > 본문 21원/쪽이라 그 순서다. 개수로 세면 비싼 요소가 본문에 묻혀
+// 유형별 평균이 흐려진다. 코퍼스 4,000쪽 분포: 본문 55.4 · 그림 29.0 · 표 14.6 · 수식 0.9%.
+enum PageLayoutType {
+  PAGE_LAYOUT_UNSPECIFIED = 0;     // 판정 불가 — 요소가 하나도 없는 쪽(BLOCKED 등)
+  PAGE_LAYOUT_TEXT        = 1;     // 본문 위주 — 아래 셋에 하나도 안 걸리는 쪽
+  PAGE_LAYOUT_FORMULA     = 2;     // 수식 포함 — formula 요소가 있고 표·그림은 없는 쪽
+  PAGE_LAYOUT_TABLE       = 3;     // 표 포함 — table 요소가 있고 그림은 없는 쪽
+  PAGE_LAYOUT_VISUAL      = 4;     // 그림·시각 — image·cartoon·chart_graph·diagram 중 하나라도 있는 쪽
+}
+
+// 이 쪽에서 부른 외부 LLM을 **모델별로** 합친 사용량. 축이 모델인 이유는 청구서가
+// 모델별로 나오기 때문이다. 단가가 틀렸을 때 BE가 이 토큰으로 과거를 다시 계산한다
+// — **평상시 계산에 쓰는 값이 아니라 보관용**이다.
+message ModelUsage {
+  string model         = 1;        // 모델 ID. "claude-sonnet-5" · "claude-opus-4-8" · "gpt-4o"
+  int32  calls         = 2;        // 이 모델을 부른 횟수(파트 구분 없이 합계)
+  int64  input_tokens  = 3;        // 입력 토큰 합계 (응답 usage 실값. 근사치 아님)
+  int64  output_tokens = 4;        // 출력 토큰 합계 (응답 usage 실값)
+}
+
+// 이 호출 1회(= 원본 1쪽)의 원가.
+message CostReport {
+  PageLayoutType layout_type = 1;  // 이 쪽의 대표 유형. 대시보드가 이 축으로 묶어 평균을 낸다
+
+  int64 llm_cost_usd_nanos = 2;    // 외부 LLM 비용(USD ×1e9). **청구서와 대조되는 값**
+  int64 gpu_cost_usd_nanos = 3;    // 로컬 GPU 점유 시간을 안분한 값(USD ×1e9). 인스턴스는 놀아도
+                                   //   24시간 과금되므로 가동률만큼 청구서와 벌어진다 — 그래서 분리
+  int64 cost_krw_milli     = 4;    // 화면 표시용 원화 총액(원 ×1000, LLM+GPU). 카드 수수료 반영,
+                                   //   매입일 환율을 모르므로 **참고값**이다
+
+  string pricing_version   = 5;    // 계산에 쓴 단가표 판("2026-08-13"). 나중에 대조할 때 식별자
+
+  repeated ModelUsage models = 6;  // 재계산용 원본. 이 쪽이 쓴 모델별 토큰. LLM 미사용 쪽은 빈 배열
+}
+
 // ── 응답 (AI → BE) ──────────────────────────────────────────────
 message BrailleResponse {
   string job_id      = 1;
@@ -139,6 +195,10 @@ message BrailleResponse {
   repeated TextElement    text_list           = 8;   // [변경 08-06] mode a, b, c 전부. 원문(묵자). 시각 요소는 drafts에 묵자 초안(contents 빈 배열)
   repeated TextElement    braille_text_list   = 9;   // [변경 08-05] 8 → 9. mode b, c. 시각 요소 drafts는 묵자+점자 둘 다
   QualityReport           quality_report      = 10;  // [변경 08-05] 9 → 10
+  // [추가 08-15] 이 호출의 원가. **BLOCKED에도 실린다** — 막혔어도 돈은 나갔다.
+  // LLM을 한 번도 안 부른 쪽(mode b 등)도 0으로 채운 메시지를 보낸다. 안 보내는 것과
+  // 0원인 것은 다르고, BE가 그 둘을 구분하려 애쓰게 만들 이유가 없다.
+  CostReport              cost_report         = 11;
 }
 
 message TranslateTextReply { // [추가 08-05] 꼬리말 점역

@@ -37,6 +37,7 @@ from app.utils.logger import get_logger
 from app.utils.req_log import (
     api_summary,
     breakdown_lines,
+    cost_report,
     elapsed,
     set_hcxt_budget,
     stage,
@@ -186,6 +187,27 @@ def _is_extraction_refusal(content: str) -> bool:
 
 
 # ── 응답 빌더 ─────────────────────────────────────────────────────────────
+
+# 쪽 대표 레이아웃 유형(대시보드 T1-2 집계 축) — **비싼 쪽이 이긴다.**
+# 실측 원가가 그림 94 > 표 58 > 수식 46 > 본문 21원/쪽이라 이 순서다. 그림 하나만
+# 섞여도 그 쪽은 그림 쪽이다 — 개수로 세면 비싼 요소가 본문에 묻혀 유형별 평균이 흐려진다.
+_LAYOUT_RANK = (
+    ("visual",  {"image", "cartoon", "chart_graph", "diagram"}),
+    ("table",   {"table"}),
+    ("formula", {"formula"}),
+)
+
+
+def _page_layout_type(result: dict) -> str:
+    """응답의 요소 유형들 → 쪽 대표 유형. 요소가 없으면 "" (BLOCKED 쪽 등)."""
+    types = {(t.get("type") or "") for t in (result.get("text_list") or [])}
+    if not types:
+        return ""
+    for name, members in _LAYOUT_RANK:
+        if types & members:
+            return name
+    return "text"
+
 
 def _build_timeout_response(task: PageTask, elapsed_ms: int) -> dict:
     return {
@@ -1658,6 +1680,8 @@ async def run(task: PageTask) -> dict:
         )
         for _line in breakdown_lines():   # 파트별 LLM 사용 내역(디버깅·비용 추적)
             logger.info(_line)
+        # 원가는 성공·타임아웃·예외 **셋 다** 싣는다 — 막혔어도 돈은 나갔다.
+        result["cost"] = {**cost_report(), "layout_type": _page_layout_type(result)}
         _record_metrics(result, elapsed_ms)
         return result
 
@@ -1666,6 +1690,8 @@ async def run(task: PageTask) -> dict:
         logger.warning("⛔ BLOCKED(타임아웃) %.1fs · API %s  (job=%s page=%d)",
                        elapsed_ms / 1000, api_summary(), task.job_id, task.page_no)
         result = _build_timeout_response(task, elapsed_ms)
+        # 원가는 성공·타임아웃·예외 **셋 다** 싣는다 — 막혔어도 돈은 나갔다.
+        result["cost"] = {**cost_report(), "layout_type": _page_layout_type(result)}
         _record_metrics(result, elapsed_ms)
         return result
 
@@ -1674,6 +1700,8 @@ async def run(task: PageTask) -> dict:
         logger.exception("⛔ BLOCKED(예외) %.1fs job=%s page=%d: %s",
                          elapsed_ms / 1000, task.job_id, task.page_no, exc)
         result = _build_exception_response(task, elapsed_ms, exc)
+        # 원가는 성공·타임아웃·예외 **셋 다** 싣는다 — 막혔어도 돈은 나갔다.
+        result["cost"] = {**cost_report(), "layout_type": _page_layout_type(result)}
         _record_metrics(result, elapsed_ms)
         return result
 
