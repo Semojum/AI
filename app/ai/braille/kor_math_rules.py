@@ -85,8 +85,16 @@ _BOOK_STYLE_ENV = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
 # ∴ 관행: 규정 제65항 2호는 ,*(⠠⠡)이나 정답 도서는 ⠌⠄만 쓴다(gold 86회 vs 규정형 0회,
 # 2026-07-19 실측). ∵(⠈⠌)은 gold 용례가 없어 규정형 유지.
 _THEREFORE = "⠌⠄" if _BOOK_STYLE_ENV else "⠠⠡"
-_WRAP_S = "⠦" if _BOOK_STYLE_ENV else "⠷"
-_WRAP_E = "⠴" if _BOOK_STYLE_ENV else "⠾"
+# ★ 2026-08-15 — 규정형 ⠷⠾로 고정(A/B 실험군). 종전 book 게이팅을 푼다.
+#   위 주석의 재점역 A/B는 `⠦⠴` vs **`⠶⠶`(중괄호)** 비교였다 — `⠷⠾`는 후보로 오른
+#   적이 없다. 규정 제6항 2호가 점역자 삽입 묶음을 ⠷⠾로 정하고(위 주석도 인정),
+#   2027 gold 정렬 대응에서도 우리 ⠦ → gold ⠷ 10건 · ⠴ → ⠾ 10건이 나온다.
+#   ⚠ 인쇄 소괄호(_MATH_PAREN_S/E)는 그대로 ⠦⠴다 — 그건 gold와 이미 맞다.
+#   ⚠ 빈도로 정하지 않았다: `⠷`·`⠾`는 한글 자모·로마자표와 겹쳐 셀만 세면 본문이
+#     통계에 섞인다(4회 시도 4회 오염). 근거는 **같은 요소에서 정렬한 대응**뿐이고
+#     표본이 10건이라 얇다. 판정은 재점역 A/B로 한다(2026-07-19 교훈).
+_WRAP_S = "⠷"
+_WRAP_E = "⠾"
 # ⇔ 관행: 규정 제61항 ⠪⠒⠒⠕ 대신 정답 도서는 ↔형 ⠪⠒⠕(gold 17 vs 0, 2026-07-22).
 _IFF_CELLS = "⠪⠒⠕" if _BOOK_STYLE_ENV else "⠪⠒⠒⠕"
 
@@ -1765,7 +1773,13 @@ def _wrap_ins(inner_braille: str) -> str:
     ⚠ 리터럴 중첩 괄호 f(g(x))는 이 함수와 무관 — gold도 ⠦⠦…⠴⠴ 그대로 겹친다
     (수학2 p056·p091 ⠋⠦⠛⠦⠭⠴⠴ 실측). regulation 모드는 항상 규정 원형 ⠷…⠾(제6항 2호).
     """
-    if _IS_BOOK_STYLE and ("⠦" in inner_braille or "⠴" in inner_braille):
+    # ★ 2026-08-15 — 승격을 묶음 점형에 **연동**한다(A/B 실험군 2).
+    #   승격의 존재 이유는 "⠦⠴ 묶음이 내용의 실제 괄호와 겹쳐 읽히는 것"을 피하는 데
+    #   있다. 묶음이 ⠷⠾면 그 겹침이 애초에 없으므로 승격할 까닭도 없다. 종전에는
+    #   승격이 _IS_BOOK_STYLE로 따로 게이팅돼 있어, 묶음만 규정형으로 바꾸면 같은
+    #   수식 안에 ⠷…⠾와 ⠶…⠶ 두 종류가 섞였다. 위 docstring이 "regulation 모드는
+    #   항상 규정 원형 ⠷…⠾"라고 적은 설계 의도가 이것이다.
+    if _WRAP_S == "⠦" and ("⠦" in inner_braille or "⠴" in inner_braille):
         return f"⠶{inner_braille}⠶"
     return f"{_WRAP_S}{inner_braille}{_WRAP_E}"
 
