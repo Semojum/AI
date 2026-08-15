@@ -1440,8 +1440,22 @@ def _stage11d_strip_unknown_commands(result: str) -> str:
     [입력] 지원 명령은 전부 소비됐고 남은 \\cmd는 미지원 명령뿐.
     [출력] 백슬래시 명령 소멸. 12단계 substitute_symbols가 백슬래시를 ⠸⠡로
       음역하기 전에 정리해야 하므로 이 위치다.
+
+    ⚠ **함수 이름은 예외다**(_BARE_FUNC_RE) — 이름 자체가 읽을 내용이라 지우면 기호가
+      흔적도 없이 사라진다. 규정 제51항이 "극한 기호 lim는 **lim으로 적은** 다음
+      범위의 시작…"이라고 이름을 그대로 적게 한다.
     """
+    result = _BARE_FUNC_RE.sub(r"\1", result)
     return re.sub(r"\\[a-zA-Z]+\*?", "", result)
+
+
+# 인자를 잃고 홀로 남은 **함수 이름** 명령. 이름 자체가 읽을 내용이라 지우면 안 된다 —
+# 규정 제51항은 "극한 기호 lim는 **lim으로 적은** 다음 범위의 시작…"이라고 이름을 그대로
+# 적게 하고, `\lim_{x \to a}` 정상 경로도 ⠇⠊⠍를 낸다. 아래 stage14가 로마자를 점형으로
+# 바꿔 주므로 여기서는 백슬래시만 떼면 된다.
+# ⚠ 구조 명령(\begin·\left·\frac·\quad…)은 계속 지운다 — 그건 이름이 읽을 내용이 아니라
+#   조판 지시라, 이름을 남기면 본문에 쓰레기 글자가 찍힌다.
+_BARE_FUNC_RE = re.compile(r"\\(lim|max|min|ln|exp|det|gcd|lcm|arg|deg)(?![a-zA-Z])")
 
 
 def _stage13_cleanup(result: str) -> str:
@@ -1449,7 +1463,14 @@ def _stage13_cleanup(result: str) -> str:
 
     [입력] substitute_symbols(12)를 지난 뒤. 그 과정에서 새로 드러난 잔여물이 있을 수 있다.
     [출력] \\cmd·{ } 완전 소멸. 이후 단계는 순수 점형 + 로마자 + 공백만 본다.
+
+    ⚠ 인자 없는 함수 이름은 **먼저 이름으로 되돌린다**. 종전에는 `\\lim` 단독이 통째로
+      사라져 극한 기호가 흔적도 없이 없어졌다(실측: lim 든 요소 30개 중 2개). 추출이
+      수식을 텍스트로 흘려 `lim`만 한 줄에 남으면 `inline_math.wrap`이 `\\lim`으로
+      감싸는데, 인자가 없어 이 정규식에 그대로 먹혔다. mode b가 줄 단위로 쪼개는 탓에
+      거기서 특히 잘 드러난다(`[처리 불가: 점역 불가 문자 lim]`).
     """
+    result = _BARE_FUNC_RE.sub(r"\1", result)
     result = re.sub(r"\\[a-zA-Z]+\*?", "", result)
     return re.sub(r"[{}]", "", result)
 
