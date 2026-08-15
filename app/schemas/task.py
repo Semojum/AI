@@ -17,6 +17,8 @@ class PageTask(BaseModel):
     pdf_data: bytes = b""
     mode: str  # "a" | "b" | "c"
     source_text: str = ""   # mode b 전용
+    # 개인 점역 기본값(기획서 T3). 정본 스키마는 app/core/braille_settings.py.
+    settings: dict[str, str] = Field(default_factory=dict)
 
     @classmethod
     def from_proto(cls, req) -> "PageTask":
@@ -28,4 +30,6 @@ class PageTask(BaseModel):
             pdf_data=req.pdf_data,
             mode=req.mode.lower() if req.mode else "c",
             source_text=req.source_text,
+            # 개인 점역 기본값(기획서 T3). 없으면 빈 dict → 전부 AI 기본값.
+            settings=dict(getattr(req, "settings", {}) or {}),
         )

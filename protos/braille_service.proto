@@ -19,6 +19,11 @@ message BrailleRequest {
   bytes  pdf_data    = 4;   // 단일 페이지 PDF (~100–500 KB)
   string mode        = 5;   // "a" | "b" | "c"
   string source_text = 6;   // mode b 전용
+  // [추가 08-15] 개인 점역 기본값(기획서 T3). BE가 계정 설정을 읽어 작업마다 싣는다.
+  // **항목 목록·기본값·허용범위의 정본은 AI**다 — `app/core/braille_settings.py`.
+  // 안 보내면 전부 기본값. 모르는 키·범위 밖 값은 조용히 버린다(설정 하나가 점역을
+  // 멈추면 안 된다). 항목마다 배선 진도가 달라 스키마의 `wired`를 함께 본다.
+  map<string, string> settings = 7;
 }
 
 message TranslateTextRequest { // [추가 08-05] 꼬리말 점역

@@ -231,6 +231,11 @@ def omission_draft(label: str) -> Draft:
 
         위 "유지한다" 결정은 그대로 유효하다(없는 걸 알아채는 비용 > 16셀 지우는 비용).
     """
+    # 개인 점역 기본값 `visual_omission_text`(기획서 T3). "blank"면 문구 없이 빈 초안 —
+    # 위 결정("없는 걸 알아채는 비용")은 **기본값**이고, 편집 방침이 다른 기관은 끌 수 있다.
+    from app.core import braille_settings
+    if braille_settings.get("visual_omission_text") == "blank":
+        return Draft(option=1, text="", render_mode="narrative", label=LABELS[OMIT_IDX])
     return Draft(option=1, text=_tn(f"{label} 생략"), render_mode="narrative", label=LABELS[OMIT_IDX])
 
 

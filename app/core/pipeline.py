@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Optional
 from uuid import UUID, uuid4
 
+from app.core import braille_settings
 from app.core.config import config
 from app.schemas.content import BrailleOutput, ExtractedContent, LLMOutput
 from app.schemas.layout import BBoxItem, DocumentMeta, LayoutResult
@@ -1662,6 +1663,8 @@ _DUMMY_ELEM = _DummyElem()
 async def run(task: PageTask) -> dict:
     """파이프라인 진입점. 300초 하드 타임아웃 강제."""
     start_request()   # 요청 단위 API 카운터 초기화
+    # 개인 점역 기본값(기획서 T3) — 이 요청 내내 유효. contextvar라 페이지끼리 안 섞인다.
+    braille_settings.set_current(braille_settings.Settings.from_dict(task.settings))
     logger.info("━━ job=%s page=%d/%d mode=%s 처리 시작 ━━",
                 task.job_id, task.page_no, task.total_pages, task.mode)
     start = time.monotonic()
