@@ -19,11 +19,6 @@ message BrailleRequest {
   bytes  pdf_data    = 4;   // 단일 페이지 PDF (~100–500 KB)
   string mode        = 5;   // "a" | "b" | "c"
   string source_text = 6;   // mode b 전용
-  // [추가 08-15] 개인 점역 기본값(기획서 T3). BE가 계정 설정을 읽어 작업마다 싣는다.
-  // **항목 목록·기본값·허용범위의 정본은 AI**다 — `app/core/braille_settings.py`.
-  // 안 보내면 전부 기본값. 모르는 키·범위 밖 값은 조용히 버린다(설정 하나가 점역을
-  // 멈추면 안 된다). 항목마다 배선 진도가 달라 스키마의 `wired`를 함께 본다.
-  map<string, string> settings = 7;
 }
 
 message TranslateTextRequest { // [추가 08-05] 꼬리말 점역
@@ -149,32 +144,41 @@ message TextElement {
 // ⚠ **원화는 참고값이고 USD가 정본이다.** Anthropic·OpenAI는 USD로 청구하고, 원화
 //   환산은 카드사가 **매입일**(결제일이 아니라 며칠 뒤) 환율로 한다. 청구서 대조는 USD로.
 
-enum PageLayoutType {              // 쪽 대표 유형. 한 쪽에 섞여 있으면 **비싼 쪽이 이긴다**
-  PAGE_LAYOUT_UNSPECIFIED = 0;     //   (실측 원가: 그림 94 > 표 58 > 수식 46 > 본문 21원/쪽)
-  PAGE_LAYOUT_TEXT        = 1;     // 본문 위주
-  PAGE_LAYOUT_FORMULA     = 2;     // 수식 포함
-  PAGE_LAYOUT_TABLE       = 3;     // 표 포함
-  PAGE_LAYOUT_VISUAL      = 4;     // 그림·시각 (그림·만화·그래프·도표)
+// 쪽 대표 유형. 대시보드 T1-2가 이 축으로 평균 원가를 낸다.
+// 한 쪽에 여러 유형이 섞이면 **비싼 쪽이 이긴다** — 실측 원가가 그림 94 > 표 58 >
+// 수식 46 > 본문 21원/쪽이라 그 순서다. 개수로 세면 비싼 요소가 본문에 묻혀
+// 유형별 평균이 흐려진다. 코퍼스 4,000쪽 분포: 본문 55.4 · 그림 29.0 · 표 14.6 · 수식 0.9%.
+enum PageLayoutType {
+  PAGE_LAYOUT_UNSPECIFIED = 0;     // 판정 불가 — 요소가 하나도 없는 쪽(BLOCKED 등)
+  PAGE_LAYOUT_TEXT        = 1;     // 본문 위주 — 아래 셋에 하나도 안 걸리는 쪽
+  PAGE_LAYOUT_FORMULA     = 2;     // 수식 포함 — formula 요소가 있고 표·그림은 없는 쪽
+  PAGE_LAYOUT_TABLE       = 3;     // 표 포함 — table 요소가 있고 그림은 없는 쪽
+  PAGE_LAYOUT_VISUAL      = 4;     // 그림·시각 — image·cartoon·chart_graph·diagram 중 하나라도 있는 쪽
 }
 
-message ModelUsage {               // 재계산·청구서 대조용 **보관 데이터**
-  string model         = 1;        // "claude-sonnet-5" — 청구서와 같은 축
-  int32  calls         = 2;
-  int64  input_tokens  = 3;
-  int64  output_tokens = 4;
+// 이 쪽에서 부른 외부 LLM을 **모델별로** 합친 사용량. 축이 모델인 이유는 청구서가
+// 모델별로 나오기 때문이다. 단가가 틀렸을 때 BE가 이 토큰으로 과거를 다시 계산한다
+// — **평상시 계산에 쓰는 값이 아니라 보관용**이다.
+message ModelUsage {
+  string model         = 1;        // 모델 ID. "claude-sonnet-5" · "claude-opus-4-8" · "gpt-4o"
+  int32  calls         = 2;        // 이 모델을 부른 횟수(파트 구분 없이 합계)
+  int64  input_tokens  = 3;        // 입력 토큰 합계 (응답 usage 실값. 근사치 아님)
+  int64  output_tokens = 4;        // 출력 토큰 합계 (응답 usage 실값)
 }
 
+// 이 호출 1회(= 원본 1쪽)의 원가.
 message CostReport {
-  PageLayoutType layout_type = 1;  // 대시보드 집계 축
+  PageLayoutType layout_type = 1;  // 이 쪽의 대표 유형. 대시보드가 이 축으로 묶어 평균을 낸다
 
-  int64 llm_cost_usd_nanos = 2;    // 외부 API — 청구서와 대조되는 값
-  int64 gpu_cost_usd_nanos = 3;    // 로컬 GPU 시간 안분. 인스턴스는 놀아도 24시간 과금되므로
-                                   //   가동률만큼 청구서와 벌어진다 — 그래서 따로 낸다
-  int64 cost_krw_milli     = 4;    // 화면 표시용 총액(LLM+GPU). 원 ×1000
+  int64 llm_cost_usd_nanos = 2;    // 외부 LLM 비용(USD ×1e9). **청구서와 대조되는 값**
+  int64 gpu_cost_usd_nanos = 3;    // 로컬 GPU 점유 시간을 안분한 값(USD ×1e9). 인스턴스는 놀아도
+                                   //   24시간 과금되므로 가동률만큼 청구서와 벌어진다 — 그래서 분리
+  int64 cost_krw_milli     = 4;    // 화면 표시용 원화 총액(원 ×1000, LLM+GPU). 카드 수수료 반영,
+                                   //   매입일 환율을 모르므로 **참고값**이다
 
-  string pricing_version   = 5;    // 어느 단가표로 계산했나
+  string pricing_version   = 5;    // 계산에 쓴 단가표 판("2026-08-13"). 나중에 대조할 때 식별자
 
-  repeated ModelUsage models = 6;  // 보관용. 평상시 BE가 계산에 쓰지 않는다
+  repeated ModelUsage models = 6;  // 재계산용 원본. 이 쪽이 쓴 모델별 토큰. LLM 미사용 쪽은 빈 배열
 }
 
 // ── 응답 (AI → BE) ──────────────────────────────────────────────

@@ -24,26 +24,19 @@ def box_narrative(blocks: list[dict], default_label: str = "그래프") -> Optio
     유형 라벨은 점역자 주(§6.3.4(1))로 표기하고, 원본 내용(축 수치·표 셀 등)은 전사한다.
     label이 없으면 default_label(그림 안 그래프=그래프 / 표 안 그림=그림). 빈 목록이면 None.
     """
-    # 개인 점역 기본값 `box_borders`(기획서 T3). 끄면 테두리 없이 1단으로만 편다 —
-    # 내용은 그대로 남고 경계 표시만 빠진다.
-    from app.core import braille_settings
-    borders = bool(braille_settings.get("box_borders"))
-
     out: list[str] = []
     for b in blocks or []:
         label = (b.get("label") or default_label).strip()
         desc = (b.get("description") or b.get("caption") or "").strip()
         body = (f"<!주>{label}: {desc}<!/주>" if desc
                 else f"<!주>{label}<!/주>")
-        if borders:
-            out.append("<!상자><!/상자>")   # Q11 테두리 묶기 / 글상자 1단(빈 제목 쌍)
+        out.append("<!상자><!/상자>")   # Q11 테두리 묶기 / 글상자 1단(빈 제목 쌍)
         out.append(body)
         for t in b.get("ocr_texts") or []:          # 원본 내용 전사(축 수치·셀 등)
             t = str(t).strip()
             if t:
                 out.append(t)
-        if borders:
-            out.append("<!상자끝><!/상자끝>")
+        out.append("<!상자끝><!/상자끝>")
     return "\n".join(out) if out else None
 
 

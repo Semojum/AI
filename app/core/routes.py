@@ -25,22 +25,6 @@ async def models_status():
     return get_models_status()
 
 
-@router.get("/braille/settings/schema")
-async def braille_settings_schema():
-    """개인 점역 기본값 항목 목록 — **BE가 설정 화면을 만들 때 읽는다.**
-
-    기획서 V11 §7이 "항목 목록은 AI가 스키마로 줍니다"라고 못 박은 자리다. 조판 규칙을
-    가진 쪽이 AI라서 값의 범위도 여기서 안다. BE는 저장한 값을
-    `BrailleRequest.settings`에 실어 보낸다.
-
-    각 항목의 `wired`가 false면 **저장은 되지만 아직 조판에 반영되지 않는다** —
-    사실대로 준다. 안 된 것을 된 것처럼 넘기면 설정 화면만 만들어 놓고 아무 일도
-    안 일어난다.
-    """
-    from app.core.braille_settings import schema_for_be
-    return {"items": schema_for_be()}
-
-
 # ── 마감 조판 (/finalize) ────────────────────────────────────────────────────
 # 점역사가 블록 단위로 편집한 점자(이미 32칸 줄)를 받아 BBPG 규정대로 페이지 조립.
 # 블록 간 빈 줄(제목 단계별)·25줄 페이지 나눔·페이지행(원본번호·꼬리말·점자번호) 적용.
