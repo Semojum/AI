@@ -901,7 +901,10 @@ def _stage1_math_brackets(result: str) -> str:
     # 1a. 병치 닫음표 생략(T2 관행) — 위 공백 정리로 병치가 확정된 뒤에 적용한다.
     # 대문자 함수명(F(x)G(x))은 제외: 닫음을 지우면 앞 인수와 붙어 연속 대문자가 되어
     # 14단계의 대문자 단어표 ⠠⠠가 잘못 붙는다(P(A)P(B) → "AP"). gold 실측 모수도 소문자다.
-    if _BOOK_STYLE_ENV:
+    # ★ 2026-08-15 A/B 실험군 — 생략을 끈다. 규정 제6항에 생략 근거가 없고(예시도
+    #   f8x0로 닫는다) 종전 근거는 구판 수학2 127p의 '생략 50 vs 유지 2'다.
+    #   앞서 같은 뿌리 셋이 뒤집혔다(원장 R-13·R-14·R-15). 기각되면 되돌린다.
+    if False:  # noqa: SIM223 — A/B 실험군 스위치
         result = _JUXT_CLOSE_RE.sub("", result)
     return result
 
