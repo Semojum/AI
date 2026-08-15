@@ -1231,6 +1231,32 @@ async def _run_chain_logged(label: str, elems: list, factory, idx: int, total: i
     return result
 
 
+# mode b 표 블록. table_opt/table_braille가 쓰는 것과 같은 태그다(tag_names 미등재 —
+# `표`·`행`·`칸`은 translator의 인라인 마커가 아니라 **표 체인 전용 구조 태그**다).
+_MODE_B_TABLE_RE = re.compile(r"<!표>.*?<!/표>", re.DOTALL)
+
+
+def _mode_b_segments(src: str) -> list[tuple[int, str, str]]:
+    """mode b source_text → [(원본 줄 번호, 요소 유형, 텍스트)].
+
+    `<!표>…<!/표>`는 여러 줄에 걸쳐도 **요소 하나**로 묶어 표 체인에 보낸다. 줄 단위로
+    쪼개면 `<!행>`만 든 조각이 생겨 표 구조가 복원 불가능해진다. 나머지는 종전대로
+    줄 하나 = 요소 하나(빈 줄은 요소를 만들지 않고 번호만 건너뛴다 — 2026-08-06).
+    """
+    def _lines(a: int, b: int) -> list[tuple[int, str, str]]:
+        base = src.count("\n", 0, a) + 1
+        return [(base + i, "text", ln)
+                for i, ln in enumerate(src[a:b].split("\n")) if ln.strip()]
+
+    segs: list[tuple[int, str, str]] = []
+    pos = 0
+    for m in _MODE_B_TABLE_RE.finditer(src):
+        segs += _lines(pos, m.start())
+        segs.append((src.count("\n", 0, m.start()) + 1, "table", m.group(0)))
+        pos = m.end()
+    return segs + _lines(pos, len(src))
+
+
 async def _run_pipeline(task: PageTask) -> dict:
     page_id = f"p_{task.page_no:03d}"
 
@@ -1248,25 +1274,39 @@ async def _run_pipeline(task: PageTask) -> dict:
         #     (BBPG 2장2절2 "3칸에서 시작"). 대신 `order`에 **원본 줄 번호**를 그대로 실어
         #     BE가 빈 줄이 어디였는지 알 수 있게 한다(번호가 건너뛴다).
         #   · id는 `text_list`와 `braille_text_list`가 같다 — 그게 짝짓기의 열쇠다.
-        src_lines = [(i, ln) for i, ln in enumerate((task.source_text or "").split("\n"), 1)
-                     if ln.strip()]
+        src_lines = _mode_b_segments(task.source_text or "")
         if not src_lines:                       # 내용이 없으면 빈 응답(빈 결과 금지 규칙은
-            src_lines = [(1, task.source_text or "")]   # 플레이스홀더가 담당)
+            src_lines = [(1, "text", task.source_text or "")]   # 플레이스홀더가 담당)
         line_ids = [uuid4() for _ in src_lines]
         layout_result = LayoutResult(
             page_id=page_id,
-            elements=[BBoxItem(element_id=eid, type="text", bbox=(0, 0, 0, 0),
+            elements=[BBoxItem(element_id=eid, type=typ, bbox=(0, 0, 0, 0),
                                reading_order=no)
-                      for eid, (no, _) in zip(line_ids, src_lines)],
+                      for eid, (no, typ, _) in zip(line_ids, src_lines)],
         )
         extracted_texts = [ExtractedContent(
             element_id=eid,
             corrected_text=ln,
             ocr_confidence=1.0,
-        ) for eid, (_, ln) in zip(line_ids, src_lines)]
-        ext, llm_outputs, braille_outputs = await _run_text_chain(
-            extracted_texts, layout_result, "ZERO", task, include_braille=True,
-        )
+        ) for eid, (_, _, ln) in zip(line_ids, src_lines)]
+        # 표 세그먼트는 표 체인으로 보낸다 — <!표>/<!행>/<!칸>을 아는 것은 table_braille뿐이라
+        # 텍스트 체인에 넣으면 translator가 미지 태그로 지우고 셀이 한 줄로 붙어 버린다.
+        _by_type = {"table": [], "text": []}
+        for e, (_, typ, _t) in zip(extracted_texts, src_lines):
+            _by_type[typ].append(e)
+        _chains = [_run_text_chain(_by_type["text"], layout_result, "ZERO", task,
+                                   include_braille=True)]
+        if _by_type["table"]:
+            _chains.append(_run_table_chain(_by_type["table"], layout_result, "ZERO", task,
+                                            include_braille=True))
+        # 요소 격리(불변 규칙 3) — 표 하나가 깨져도 본문은 나가야 한다.
+        ext, llm_outputs, braille_outputs = [], [], []
+        for _r in await asyncio.gather(*_chains, return_exceptions=True):
+            if isinstance(_r, Exception):
+                logger.error("mode b 체인 실패 (계속 진행): %s", _r)
+                continue
+            for _dst, _src in zip((ext, llm_outputs, braille_outputs), _r):
+                _dst.extend(_src)
         flat: dict = {}
         if braille_outputs:
             from app.ai.braille.layout_braille import LayoutBraille, flatten_elements
