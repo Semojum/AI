@@ -172,55 +172,32 @@ def _build_proto_response(result: dict):
     return resp
 
 
-# 내부 파트 이름(한글)은 로그용이라 그대로 두고, **proto 경계에서만** enum으로 옮긴다.
-# 여기 없는 이름은 OTHER로 떨어지고 값 자체는 안 잃는다.
 _PB = braille_service_pb2
-_COST_PART = {
-    "opus추출": _PB.COST_PART_EXTRACT,   "분류": _PB.COST_PART_CLASSIFY,
-    "캡셔닝": _PB.COST_PART_CAPTION,      "텍스트": _PB.COST_PART_TEXT,
-    "수식": _PB.COST_PART_FORMULA,        "표": _PB.COST_PART_TABLE,
-    "이미지": _PB.COST_PART_IMAGE,        "만화": _PB.COST_PART_CARTOON,
-    "차트": _PB.COST_PART_CHART_GRAPH,    "도표": _PB.COST_PART_DIAGRAM,
-    "태깅": _PB.COST_PART_TAGGING,
-}
-_FX_BASIS = {"estimated": _PB.FX_BASIS_ESTIMATED,
-             "calibrated": _PB.FX_BASIS_CALIBRATED,
-             "env": _PB.FX_BASIS_ENV}
+_LAYOUT = {"text": _PB.PAGE_LAYOUT_TEXT, "formula": _PB.PAGE_LAYOUT_FORMULA,
+           "table": _PB.PAGE_LAYOUT_TABLE, "visual": _PB.PAGE_LAYOUT_VISUAL}
 
 
 def _dict_to_cost_report(c: dict):
     """`req_log.cost_report()` dict → proto. 원가는 관측값이라 무슨 일이 있어도
-    응답을 막지 않는다 — 빈 dict가 오면 0으로 채운 메시지를 돌려준다."""
+    응답을 막지 않는다 — 빈 dict가 오면 0으로 채운 메시지를 돌려준다.
+
+    proto로 나가는 건 대시보드가 실제로 쓰는 것 + 재계산 보관용뿐이다. 파트별 내역·
+    환율 근거는 메트릭 JSONL에만 남긴다(BE가 안 쓴다).
+    """
     r = _PB.CostReport()
     if not c:
         return r
+    r.layout_type = _LAYOUT.get(c.get("layout_type", ""), _PB.PAGE_LAYOUT_UNSPECIFIED)
     r.llm_cost_usd_nanos = int(c.get("llm_cost_usd_nanos", 0))
     r.gpu_cost_usd_nanos = int(c.get("gpu_cost_usd_nanos", 0))
-    r.llm_cost_krw_nanos = int(c.get("llm_cost_krw_nanos", 0))
-    r.gpu_cost_krw_nanos = int(c.get("gpu_cost_krw_nanos", 0))
-    r.fx_rate = float(c.get("fx_rate", 0.0))
-    r.card_markup = float(c.get("card_markup", 0.0))
-    r.fx_basis = _FX_BASIS.get(c.get("fx_basis", ""), _PB.FX_BASIS_UNSPECIFIED)
-    r.fx_fetched_at_ms = int(c.get("fx_fetched_at_ms", 0))
+    r.cost_krw_milli = int(c.get("cost_krw_milli", 0))
     r.pricing_version = str(c.get("pricing_version", ""))
-    r.request_started_at_ms = int(c.get("request_started_at_ms", 0))
-    for e in c.get("entries", []):
-        pe = r.entries.add()
-        pe.part = _COST_PART.get(e.get("part", ""), _PB.COST_PART_OTHER)
-        pe.model = str(e.get("model", ""))
-        pe.calls = int(e.get("calls", 0))
-        pe.input_tokens = int(e.get("input_tokens", 0))
-        pe.output_tokens = int(e.get("output_tokens", 0))
-        pe.cache_read_tokens = int(e.get("cache_read_tokens", 0))
-        pe.cache_write_tokens = int(e.get("cache_write_tokens", 0))
-        pe.cost_usd_nanos = int(e.get("cost_usd_nanos", 0))
-        pe.unpriced = bool(e.get("unpriced", False))
-    for g in c.get("gpu", []):
-        pg = r.gpu.add()
-        pg.part = _COST_PART.get(g.get("part", ""), _PB.COST_PART_OTHER)
-        pg.calls = int(g.get("calls", 0))
-        pg.busy_millis = int(g.get("busy_millis", 0))
-        pg.cost_usd_nanos = int(g.get("cost_usd_nanos", 0))
+    for m in c.get("models", []):
+        pm = r.models.add()
+        pm.model = str(m.get("model", ""))
+        pm.calls = int(m.get("calls", 0))
+        pm.input_tokens = int(m.get("input_tokens", 0))
+        pm.output_tokens = int(m.get("output_tokens", 0))
     return r
 
 

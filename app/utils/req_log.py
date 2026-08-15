@@ -272,48 +272,42 @@ def cost_report() -> dict:
     st = _cur()
     fx = pricing.fx_rate()
 
-    # 외부 LLM: (파트 × 모델) — 재계산·청구서 대조가 되는 최소 단위
-    entries = [
-        {"part": kind, "model": model, "calls": e.calls,
-         "input_tokens": e.input_tokens, "output_tokens": e.output_tokens,
-         "cache_read_tokens": e.cache_read_tokens,
-         "cache_write_tokens": e.cache_write_tokens,
-         "cost_usd_nanos": _nanos(e.cost), "unpriced": e.unpriced}
-        for (kind, model), e in sorted((st.llm if st else {}).items(), key=lambda kv: -kv[1].cost)
-    ]
-    # 로컬 GPU: 토큰이 아니라 시간 안분이라 축이 다르다 — 섞지 않는다
-    gpu = [
-        {"part": kind, "calls": p.hcxt_calls,
-         "busy_millis": round(p.hcxt_time_s * 1000),
-         "cost_usd_nanos": _nanos(p.gpu_cost)}
-        for kind, p in sorted((st.parts if st else {}).items(), key=lambda kv: -kv[1].gpu_cost)
-        if p.hcxt_calls
-    ]
+    # proto로 나가는 것은 **모델별 총계**뿐이다. 축이 모델인 이유는 청구서가 모델별로
+    # 나오기 때문. 파트(kind) 축은 대시보드가 안 쓴다 — 기획서의 '유형별 원가'는
+    # 요소 파트가 아니라 **쪽 대표 레이아웃 4종**이다(그림/표/수식/본문).
+    by_model: dict[str, dict] = {}
+    for (_kind, model), e in (st.llm if st else {}).items():
+        m = by_model.setdefault(model, {"model": model, "calls": 0,
+                                        "input_tokens": 0, "output_tokens": 0})
+        m["calls"] += e.calls
+        m["input_tokens"] += e.input_tokens
+        m["output_tokens"] += e.output_tokens
+    total = t["cost"] + t["gpu_cost"]
     return {
-        # 합계. 금액은 **나노(1e-9)** — 쪽당 $0.0075·₩10.7이라 센트·원으로 반올림하면
-        # 10만 쪽에서 수만 원이 어긋난다.
+        # 금액 단위: USD는 나노(1e-9), 원은 밀리(×1000). 쪽당 ₩21~94이라
+        # 원 단위로 반올림하면 수만 쪽에서 눈에 띄게 어긋난다.
         "llm_cost_usd_nanos": _nanos(t["cost"]),
         "gpu_cost_usd_nanos": _nanos(t["gpu_cost"]),
-        "llm_cost_krw_nanos": _nanos(t["cost"] * fx),
-        "gpu_cost_krw_nanos": _nanos(t["gpu_cost"] * fx),
-        # 환산 근거 — 청구서와 어긋났을 때 무엇을 의심할지 알 수 있어야 한다.
-        # ⚠ 원화는 참고값이다. 카드사가 **매입일**(며칠 뒤) 환율로 환산하므로 요청 시점
-        #   원화는 청구서와 정확히 같을 수 없다. 대조는 USD로 한다.
+        "cost_krw_milli": round(total * fx * 1000),
+        "pricing_version": pricing.pricing_version(),
+        "models": sorted(by_model.values(), key=lambda m: -m["input_tokens"]),
+        # layout_type은 요소 유형을 아는 pipeline이 채운다(여기선 모른다).
+        # ── 아래는 로그·메트릭 편의값(proto에는 없다) ──
+        "cost_usd": round(total, 9),
+        "cost_krw": round(total * fx, 4),
         "fx_rate": fx,
         "card_markup": pricing.card_markup(),
-        "fx_basis": pricing.fx_basis(),          # estimated | calibrated | env
+        "fx_basis": pricing.fx_basis(),
         "fx_fetched_at_ms": pricing.fx_fetched_at_ms(),
-        "pricing_version": pricing.pricing_version(),
-        "entries": entries,
-        "gpu": gpu,
-        # 재시도 구분용. 같은 job_id·page_no가 다시 와도 이 값이 다르면 다른 시도다.
-        "request_started_at_ms": st.t0_wall_ms if st else 0,
-        # ── 아래는 로그·메트릭 편의값(proto에는 없다) ──
-        "cost_usd": round(t["cost"] + t["gpu_cost"], 9),
-        "cost_krw": round((t["cost"] + t["gpu_cost"]) * fx, 4),
         "gpu_seconds": round(t["gpu_seconds"], 2),
         "unpriced_calls": t["unpriced_calls"],
-        "models": t["models"],
+        "parts": [           # 파트별 내역은 메트릭 JSONL에만 남긴다(소급 분석용)
+            {"part": kind, "model": model, "calls": e.calls,
+             "input_tokens": e.input_tokens, "output_tokens": e.output_tokens,
+             "cost_usd": round(e.cost, 9), "unpriced": e.unpriced}
+            for (kind, model), e in sorted((st.llm if st else {}).items(),
+                                           key=lambda kv: -kv[1].cost)
+        ],
     }
 
 

@@ -171,7 +171,8 @@ class TestCost:
         rl.start_request()
         rl.record_llm("캡셔닝", "claude-sonnet-5", 100, 10)
         r = rl.cost_report()
-        assert r["fx_rate"] > 0 and r["pricing_version"] and r["models"] == ["claude-sonnet-5"]
+        assert r["fx_rate"] > 0 and r["pricing_version"]
+        assert [m["model"] for m in r["models"]] == ["claude-sonnet-5"]
         assert r["unpriced_calls"] == 0
 
     def test_단가표에_없는_모델은_드러난다(self):
