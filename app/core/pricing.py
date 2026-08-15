@@ -273,6 +273,17 @@ def fx_age_days() -> float | None:
     return max(0.0, (time.time() - c[1]) / 86400) if c else None
 
 
+def fx_fetched_at_ms() -> int:
+    """이 환율을 언제 받았나(Unix ms). 0 = 조회한 적 없음(최후값·env 사용 중).
+
+    BE가 청구서와 대조할 때 "며칠 전 환율로 계산된 값인지" 알아야 한다.
+    """
+    if os.getenv("USD_KRW"):
+        return 0
+    c = _fx_cached or _fx_read_cache()
+    return int(c[1] * 1000) if c else 0
+
+
 def fx_basis() -> str:
     """원화 환산 근거 — `env` / `calibrated`(명세서 실측) / `estimated`(공시요율 추정).
 

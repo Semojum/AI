@@ -51,16 +51,25 @@ def _never_raises(fallback):
 
 
 @dataclass
-class _PartApi:
-    """한 파트(kind)의 외부/로컬 LLM 사용 누계."""
-    gpt4o_calls: int = 0          # 이름은 하위호환. 실제로는 '외부 LLM 호출 수'
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
+class _LlmEntry:
+    """외부 LLM 누계 — **(파트, 모델) 하나**당 한 줄.
+
+    파트로만 묶으면 안 된다. 청구서는 **모델별**로 나오고 대시보드는 **유형별**로 본다.
+    한 파트가 두 모델을 쓰면(캡셔닝 sonnet + 폴백 opus) 뭉개진 토큰으로는 어느 쪽으로도
+    대조가 안 되고, 단가가 바뀌었을 때 다시 계산할 수도 없다.
+    """
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
-    cost: float = 0.0             # 외부 LLM 토큰 비용(USD)
-    models: set[str] = field(default_factory=set)
-    unpriced_calls: int = 0       # 단가표에 없는 모델로 계산한 호출 수
+    cost: float = 0.0             # USD
+    unpriced: bool = False        # 단가표에 없는 모델 = 금액이 추정치
+
+
+@dataclass
+class _PartApi:
+    """한 파트(kind)의 **로컬 GPU** 사용 누계. 외부 LLM은 `_LlmEntry`가 맡는다."""
     hcxt_calls: int = 0
     hcxt_time_s: float = 0.0
     hcxt_timeouts: int = 0
@@ -74,11 +83,18 @@ class _ReqStats:
     # (라벨, 소요초, 비고, 요청 시작 기준 시작 오프셋초).
     # 오프셋이 있어야 "어느 파트가 언제 점유했는가"를 그릴 수 있다(E2E 병렬 측정, S4).
     stages: list[tuple[str, float, str, float]] = field(default_factory=list)
+    # 외부 LLM: (파트, 모델) → 누계. 재계산·청구서 대조가 되는 최소 단위다.
+    llm: dict[tuple[str, str], _LlmEntry] = field(default_factory=dict)
     t0: float = 0.0                      # 요청 시작 monotonic
+    # 벽시계 시작 시각(ms). monotonic은 재시도 구분에 못 쓴다 — 기준점이 프로세스마다 다르다.
+    t0_wall_ms: int = 0
     hcxt_budget_s: float | None = None   # 페이지 누적 HCXT 상한(초). None=무제한
 
     def part(self, kind: str) -> _PartApi:
         return self.parts.setdefault(kind or "기타", _PartApi())
+
+    def entry(self, kind: str, model: str) -> _LlmEntry:
+        return self.llm.setdefault((kind or "기타", model or "unknown"), _LlmEntry())
 
     def hcxt_used(self) -> float:
         return sum(p.hcxt_time_s for p in self.parts.values())
@@ -90,7 +106,7 @@ _stats: contextvars.ContextVar[_ReqStats | None] = contextvars.ContextVar("req_s
 
 def start_request() -> None:
     """요청 시작 시 통계 초기화(gRPC 핸들러/파이프라인이 호출)."""
-    _stats.set(_ReqStats(t0=time.monotonic()))
+    _stats.set(_ReqStats(t0=time.monotonic(), t0_wall_ms=int(time.time() * 1000)))
 
 
 def elapsed() -> float:
@@ -145,17 +161,16 @@ def record_llm(kind: str, model: str, input_tokens: int = 0, output_tokens: int 
     input_tokens, output_tokens = _as_int(input_tokens), _as_int(output_tokens)
     cache_read_tokens = _as_int(cache_read_tokens)
     cache_write_tokens = _as_int(cache_write_tokens)
-    p = st.part(kind)
-    p.gpt4o_calls += 1
-    p.models.add(str(model))
-    p.prompt_tokens += input_tokens
-    p.completion_tokens += output_tokens
-    p.cache_read_tokens += cache_read_tokens
-    p.cache_write_tokens += cache_write_tokens
-    p.cost += pricing.llm_cost_usd(model, input_tokens, output_tokens,
+    e = st.entry(kind, str(model))
+    e.calls += 1
+    e.input_tokens += input_tokens
+    e.output_tokens += output_tokens
+    e.cache_read_tokens += cache_read_tokens
+    e.cache_write_tokens += cache_write_tokens
+    e.cost += pricing.llm_cost_usd(model, input_tokens, output_tokens,
                                    cache_read_tokens, cache_write_tokens)
     if not pricing.is_priced(model):
-        p.unpriced_calls += 1
+        e.unpriced = True
 
 
 def record_anthropic(kind: str, model: str, usage) -> None:
@@ -224,20 +239,26 @@ def _totals() -> dict:
         return {"hcxt": 0, "gpt4o": 0, "prompt_tokens": 0, "completion_tokens": 0,
                 "cache_read_tokens": 0, "cache_write_tokens": 0, "cost": 0.0,
                 "gpu_cost": 0.0, "gpu_seconds": 0.0, "unpriced_calls": 0, "models": []}
-    add = lambda f: sum(f(p) for p in st.parts.values())  # noqa: E731
+    add = lambda f: sum(f(p) for p in st.parts.values())      # noqa: E731 — 로컬 GPU
+    addl = lambda f: sum(f(e) for e in st.llm.values())       # noqa: E731 — 외부 LLM
     return {
         "hcxt": add(lambda p: p.hcxt_calls),
-        "gpt4o": add(lambda p: p.gpt4o_calls),
-        "prompt_tokens": add(lambda p: p.prompt_tokens),
-        "completion_tokens": add(lambda p: p.completion_tokens),
-        "cache_read_tokens": add(lambda p: p.cache_read_tokens),
-        "cache_write_tokens": add(lambda p: p.cache_write_tokens),
-        "cost": add(lambda p: p.cost),
+        "gpt4o": addl(lambda e: e.calls),      # 키 이름은 하위호환(metrics·api_counts)
+        "prompt_tokens": addl(lambda e: e.input_tokens),
+        "completion_tokens": addl(lambda e: e.output_tokens),
+        "cache_read_tokens": addl(lambda e: e.cache_read_tokens),
+        "cache_write_tokens": addl(lambda e: e.cache_write_tokens),
+        "cost": addl(lambda e: e.cost),
         "gpu_cost": add(lambda p: p.gpu_cost),
         "gpu_seconds": add(lambda p: p.hcxt_time_s),
-        "unpriced_calls": add(lambda p: p.unpriced_calls),
-        "models": sorted({m for p in st.parts.values() for m in p.models}),
+        "unpriced_calls": sum(e.calls for e in st.llm.values() if e.unpriced),
+        "models": sorted({m for _k, m in st.llm}),
     }
+
+
+def _nanos(usd: float) -> int:
+    """USD → 나노(1e-9) 정수. proto가 정수로 받는 이유는 부동소수 누적 오차 때문이다."""
+    return round(usd * 1_000_000_000)
 
 
 @_never_raises(dict)
@@ -248,41 +269,51 @@ def cost_report() -> dict:
     나중에 청구서와 어긋났을 때 무엇을 의심할지 알 수 있어야 한다.
     """
     t = _totals()
-    total_usd = t["cost"] + t["gpu_cost"]
     st = _cur()
-    parts = []
-    for kind, p in sorted((st.parts if st else {}).items(), key=lambda kv: -(kv[1].cost + kv[1].gpu_cost)):
-        if not p.gpt4o_calls and not p.hcxt_calls:
-            continue
-        parts.append({
-            "kind": kind,
-            "llm_calls": p.gpt4o_calls,
-            "models": sorted(p.models),
-            "input_tokens": p.prompt_tokens,
-            "output_tokens": p.completion_tokens,
-            "cache_read_tokens": p.cache_read_tokens,
-            "cache_write_tokens": p.cache_write_tokens,
-            "llm_cost_usd": round(p.cost, 6),
-            "gpu_seconds": round(p.hcxt_time_s, 2),
-            "gpu_cost_usd": round(p.gpu_cost, 6),
-        })
+    fx = pricing.fx_rate()
+
+    # 외부 LLM: (파트 × 모델) — 재계산·청구서 대조가 되는 최소 단위
+    entries = [
+        {"part": kind, "model": model, "calls": e.calls,
+         "input_tokens": e.input_tokens, "output_tokens": e.output_tokens,
+         "cache_read_tokens": e.cache_read_tokens,
+         "cache_write_tokens": e.cache_write_tokens,
+         "cost_usd_nanos": _nanos(e.cost), "unpriced": e.unpriced}
+        for (kind, model), e in sorted((st.llm if st else {}).items(), key=lambda kv: -kv[1].cost)
+    ]
+    # 로컬 GPU: 토큰이 아니라 시간 안분이라 축이 다르다 — 섞지 않는다
+    gpu = [
+        {"part": kind, "calls": p.hcxt_calls,
+         "busy_millis": round(p.hcxt_time_s * 1000),
+         "cost_usd_nanos": _nanos(p.gpu_cost)}
+        for kind, p in sorted((st.parts if st else {}).items(), key=lambda kv: -kv[1].gpu_cost)
+        if p.hcxt_calls
+    ]
     return {
-        "cost_usd": round(total_usd, 6),
-        "cost_krw": pricing.to_krw(total_usd),
-        "llm_cost_usd": round(t["cost"], 6),
-        "gpu_cost_usd": round(t["gpu_cost"], 6),
-        "gpu_seconds": round(t["gpu_seconds"], 2),
-        "fx_rate": pricing.fx_rate(),
-        "fx_age_days": pricing.fx_age_days(),    # 며칠 된 환율인지 — 오래되면 대시보드가 경고
-        # 원화는 참고값이다. 카드사가 **매입일**(며칠 뒤) 환율로 환산하므로 요청 시점
-        # 원화는 청구서와 정확히 같을 수 없다. 대조는 cost_usd로 한다.
-        "fx_basis": pricing.fx_basis(),          # env | calibrated(명세서 실측) | estimated
+        # 합계. 금액은 **나노(1e-9)** — 쪽당 $0.0075·₩10.7이라 센트·원으로 반올림하면
+        # 10만 쪽에서 수만 원이 어긋난다.
+        "llm_cost_usd_nanos": _nanos(t["cost"]),
+        "gpu_cost_usd_nanos": _nanos(t["gpu_cost"]),
+        "llm_cost_krw_nanos": _nanos(t["cost"] * fx),
+        "gpu_cost_krw_nanos": _nanos(t["gpu_cost"] * fx),
+        # 환산 근거 — 청구서와 어긋났을 때 무엇을 의심할지 알 수 있어야 한다.
+        # ⚠ 원화는 참고값이다. 카드사가 **매입일**(며칠 뒤) 환율로 환산하므로 요청 시점
+        #   원화는 청구서와 정확히 같을 수 없다. 대조는 USD로 한다.
+        "fx_rate": fx,
         "card_markup": pricing.card_markup(),
-        "gpu_usd_per_hour": pricing.gpu_usd_per_hour(),
+        "fx_basis": pricing.fx_basis(),          # estimated | calibrated | env
+        "fx_fetched_at_ms": pricing.fx_fetched_at_ms(),
         "pricing_version": pricing.pricing_version(),
-        "unpriced_calls": t["unpriced_calls"],   # >0이면 단가표에 없는 모델을 썼다
+        "entries": entries,
+        "gpu": gpu,
+        # 재시도 구분용. 같은 job_id·page_no가 다시 와도 이 값이 다르면 다른 시도다.
+        "request_started_at_ms": st.t0_wall_ms if st else 0,
+        # ── 아래는 로그·메트릭 편의값(proto에는 없다) ──
+        "cost_usd": round(t["cost"] + t["gpu_cost"], 9),
+        "cost_krw": round((t["cost"] + t["gpu_cost"]) * fx, 4),
+        "gpu_seconds": round(t["gpu_seconds"], 2),
+        "unpriced_calls": t["unpriced_calls"],
         "models": t["models"],
-        "parts": parts,
     }
 
 
@@ -327,20 +358,21 @@ def stage_timeline() -> list[dict]:
 def breakdown_lines() -> list[str]:
     """파트별 LLM 사용 내역(요청 종료 로그용). 사용 없으면 빈 리스트."""
     st = _cur()
-    if st is None or not st.parts:
+    if st is None or (not st.parts and not st.llm):
         return []
-    lines = ["── 파트별 LLM 사용 내역 ──"]
-    lines.append(f"  {'파트':<10} {'HCXT':>12} {'LLM':>5} {'토큰(in/out)':>16} {'모델':<18} {'비용$':>9}")
-    for kind, p in sorted(st.parts.items(), key=lambda kv: -(kv[1].cost + kv[1].gpu_cost)):
-        if not p.hcxt_calls and not p.gpt4o_calls:
+    lines = ["── 파트·모델별 LLM 사용 내역 ──"]
+    lines.append(f"  {'파트':<10} {'모델':<18} {'호출':>4} {'토큰(in/out)':>16} {'비용$':>9}")
+    for (kind, model), e in sorted(st.llm.items(), key=lambda kv: -kv[1].cost):
+        tok = f"{e.input_tokens:,}/{e.output_tokens:,}"
+        mark = "⚠" if e.unpriced else " "      # 단가표에 없는 모델 = 추정치
+        lines.append(f"  {kind:<10} {model:<18} {e.calls:>4} {tok:>16} ${e.cost:>8.4f}{mark}")
+    for kind, p in sorted(st.parts.items(), key=lambda kv: -kv[1].gpu_cost):
+        if not p.hcxt_calls:
             continue
-        hcxt = f"{p.hcxt_calls}회/{p.hcxt_time_s:.1f}s" if p.hcxt_calls else "-"
+        note = f"{p.hcxt_calls}회/{p.hcxt_time_s:.1f}s"
         if p.hcxt_timeouts:
-            hcxt += f"⏱{p.hcxt_timeouts}"
-        tok = f"{p.prompt_tokens:,}/{p.completion_tokens:,}" if p.gpt4o_calls else "-"
-        model = ",".join(sorted(p.models)) or "-"
-        lines.append(f"  {kind:<10} {hcxt:>12} {p.gpt4o_calls:>5} {tok:>16} {model:<18} "
-                     f"${p.cost + p.gpu_cost:>8.4f}")
+            note += f"⏱{p.hcxt_timeouts}"
+        lines.append(f"  {kind:<10} {'HCXT(로컬GPU)':<18} {note:>21} ${p.gpu_cost:>8.4f}")
     t = _totals()
     total = t["cost"] + t["gpu_cost"]
     lines.append(f"  합계 LLM ${t['cost']:.4f} + GPU ${t['gpu_cost']:.4f} = ${total:.4f} "

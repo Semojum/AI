@@ -42,10 +42,10 @@ class TestUsageCoercion:
         from unittest.mock import MagicMock
         rl.start_request()
         rl.record_anthropic("캡셔닝", "claude-sonnet-5", MagicMock())
-        p = rl._cur().part("캡셔닝")
+        e = rl._cur().entry("캡셔닝", "claude-sonnet-5")
         # 핵심은 **형이 숫자로 남는 것**이다. 목이 섞여 누계가 MagicMock이 되면
         # 이후 cost_report()가 정렬에서 TypeError로 죽고, 그 요청 원가가 통째로 날아간다.
-        assert isinstance(p.prompt_tokens, int) and isinstance(p.cost, float)
+        assert isinstance(e.input_tokens, int) and isinstance(e.cost, float)
         assert isinstance(rl.cost_report()["cost_usd"], float)
 
     def test_usage가_None이어도_호출수는_센다(self):

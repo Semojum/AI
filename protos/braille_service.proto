@@ -125,6 +125,97 @@ message TextElement {
   int32              selected_idx = 16;  // 기본 초안 번호(0-based)
 }
 
+// ── 원가 [추가 08-15] ────────────────────────────────────────────
+// 관리자 대시보드의 쪽·유형별 원가와, 실제 청구서 대조에 쓴다.
+//
+// 설계 원칙 둘. 둘 다 실제로 데인 자리라 적어 둔다.
+//
+//  1. **사실과 해석을 같이 보낸다.** 토큰·모델·초는 사실이라 안 바뀌지만, 금액은
+//     단가표를 곱한 해석이라 바뀐다(도입가 만료·단가 오기). BE가 사실을 저장해 두면
+//     나중에 과거 데이터를 통째로 재계산할 수 있다. 금액만 저장하면 못 고친다 —
+//     실제로 Claude를 부르면서 gpt-4o 단가를 곱하던 버그가 있었다(issue #176).
+//
+//  2. **집계 축은 (파트 × 모델)이다.** 청구서는 모델별로 나오고 대시보드는 유형별로
+//     본다. 파트로만 묶으면 한 파트가 두 모델을 쓸 때(캡셔닝 sonnet + 폴백 opus)
+//     토큰이 뭉개져 **어느 쪽으로도 대조가 안 된다.**
+//
+// ⚠ 금액 단위는 **나노(1e-9)**다:  USD = cost_usd_nanos / 1e9
+//   쪽당 원가가 $0.0075·₩10.7 수준이라 센트나 원 단위로 반올림해 보내면 10만 쪽에서
+//   수만 원이 어긋난다. 원(KRW)은 소수 단위가 없어 특히 위험하다.
+//
+// ⚠ **원화는 참고값이고 USD가 정본이다.** Anthropic·OpenAI는 USD로 청구하고, 원화
+//   환산은 카드사가 **매입일**(결제일이 아니라 며칠 뒤) 환율로 한다. 요청 시점에
+//   아는 환율과 다를 수밖에 없다. 청구서 대조는 USD로 한다.
+
+enum CostPart {                    // 원가가 발생한 파이프라인 구간
+  COST_PART_UNSPECIFIED = 0;       // 매핑 안 된 값(구버전 호환). 값이 사라지진 않는다
+  COST_PART_EXTRACT     = 1;       // 추출 폴백(Opus) — MinerU 결과가 빈약할 때
+  COST_PART_CLASSIFY    = 2;       // 시각자료 유형 분류
+  COST_PART_CAPTION     = 3;       // 시각자료 캡셔닝
+  COST_PART_TEXT        = 4;
+  COST_PART_FORMULA     = 5;
+  COST_PART_TABLE       = 6;
+  COST_PART_IMAGE       = 7;
+  COST_PART_CARTOON     = 8;
+  COST_PART_CHART_GRAPH = 9;
+  COST_PART_DIAGRAM     = 10;
+  COST_PART_TAGGING     = 11;      // LLM 레이아웃 태깅(점역자주·테두리·빈칸)
+  COST_PART_OTHER       = 12;      // 위 어디에도 안 붙는 호출
+}
+
+enum FxBasis {                     // 원화 환산에 쓴 수수료 배수의 근거
+  FX_BASIS_UNSPECIFIED = 0;
+  FX_BASIS_ESTIMATED   = 1;        // 공시 요율 추정(브랜드 1.0% + 발급사 0.3%)
+  FX_BASIS_CALIBRATED  = 2;        // 실제 명세서로 실측한 값
+  FX_BASIS_ENV         = 3;        // 운영에서 못 박은 값
+}
+
+// 외부 LLM 사용 1줄 = (파트 × 모델). **재계산 가능한 최소 단위**다.
+message CostEntry {
+  CostPart part               = 1;
+  string   model              = 2;   // "claude-sonnet-5" 등 — 청구서 대조축이라 문자열 그대로
+  int32    calls              = 3;
+  int64    input_tokens       = 4;   // ⚠ Anthropic은 캐시 토큰을 여기 **안** 넣는다(아래 두 필드로 따로)
+  int64    output_tokens      = 5;
+  int64    cache_read_tokens  = 6;   // 정가의 0.1배
+  int64    cache_write_tokens = 7;   // 5분 TTL 1.25배
+  int64    cost_usd_nanos     = 8;   // 편의값. 단가가 바뀌면 위 토큰으로 다시 계산할 것
+  bool     unpriced           = 9;   // true = 단가표에 없는 모델이라 금액이 추정치다
+}
+
+// 로컬 GPU(HyperCLOVA X) 점유. **LLM과 축이 다르다** — 토큰이 아니라 시간 안분이다.
+// 인스턴스는 놀아도 24시간 과금되므로(실측 CPU 점유 0.31%) 이 합계와 월 청구서는
+// 가동률만큼 벌어진다. 그래서 LLM 원가와 섞지 않고 따로 낸다.
+message GpuEntry {
+  CostPart part            = 1;
+  int32    calls           = 2;
+  int64    busy_millis     = 3;
+  int64    cost_usd_nanos  = 4;
+}
+
+message CostReport {
+  // 합계 — 대시보드가 바로 쓴다. entries/gpu를 더한 값과 같다.
+  int64 llm_cost_usd_nanos = 1;
+  int64 gpu_cost_usd_nanos = 2;
+  int64 llm_cost_krw_nanos = 3;
+  int64 gpu_cost_krw_nanos = 4;
+
+  // 환산 근거 — 나중에 청구서와 어긋났을 때 **무엇을 의심할지** 알 수 있어야 한다
+  double  fx_rate            = 5;   // USD→KRW 매매기준율
+  double  card_markup        = 6;   // 해외 카드결제 수수료 배수 (1.013 = 1.3%)
+  FxBasis fx_basis           = 7;
+  int64   fx_fetched_at_ms   = 8;   // 이 환율을 언제 받았나(Unix ms). 0 = 모름
+  string  pricing_version    = 9;   // 단가표 판 식별자
+
+  repeated CostEntry entries = 10;  // 외부 LLM (파트 × 모델)
+  repeated GpuEntry  gpu     = 11;  // 로컬 GPU
+
+  // 이 **호출 1회**의 시작 시각(Unix ms). 같은 job_id·page_no로 재시도가 들어오면
+  // BE가 이 값으로 시도를 구분한다. 재시도한 만큼 실제 돈은 나갔으므로,
+  // 정산은 합산하고 쪽당 원가 감각은 최신 것만 보는 식으로 나눠 쓸 수 있다.
+  int64 request_started_at_ms = 12;
+}
+
 // ── 응답 (AI → BE) ──────────────────────────────────────────────
 message BrailleResponse {
   string job_id      = 1;
@@ -139,6 +230,10 @@ message BrailleResponse {
   repeated TextElement    text_list           = 8;   // [변경 08-06] mode a, b, c 전부. 원문(묵자). 시각 요소는 drafts에 묵자 초안(contents 빈 배열)
   repeated TextElement    braille_text_list   = 9;   // [변경 08-05] 8 → 9. mode b, c. 시각 요소 drafts는 묵자+점자 둘 다
   QualityReport           quality_report      = 10;  // [변경 08-05] 9 → 10
+  // [추가 08-15] 이 호출의 원가. **BLOCKED 응답에도 실린다** — 막혔어도 돈은 나갔다.
+  // LLM을 한 번도 안 부른 쪽(mode b 등)도 0으로 채운 메시지를 보낸다. 안 보내는 것과
+  // 0원인 것은 다르고, BE가 그 둘을 구분하려 애쓰게 만들 이유가 없다.
+  CostReport              cost_report         = 11;
 }
 
 message TranslateTextReply { // [추가 08-05] 꼬리말 점역
