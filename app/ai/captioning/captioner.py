@@ -319,11 +319,11 @@ def _maybe_upscale(raw: bytes) -> bytes:
 def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
     import anthropic
     from app.core.limits import estimate_tokens, llm_limiter
-    from app.utils.req_log import inc_gpt4o
+    from app.utils.req_log import record_anthropic
     # 계정 분당 상한(요청·토큰). 동시 연결은 이미 caption_slot이 조인다.
     # b64는 원본의 4/3배라 실제 바이트로 환산해 넘긴다.
     llm_limiter().acquire_sync(estimate_tokens(prompt, len(b64) * 3 // 4), 500)
-    inc_gpt4o()                       # 호출 수 집계는 공용
+    model = os.getenv("CAPTION_MODEL", "claude-sonnet-5")
     client = anthropic.Anthropic(api_key=config.anthropic_api_key or None, timeout=60.0, max_retries=1)  # 행 방지(2026-07-19 스톨 실측)
     # ★ thinking을 꺼야 한다(2026-08-08 QA 16번 실측). claude-sonnet-5는 `thinking`을 안 주면
     #   **적응형 사고가 기본**이고, max_tokens는 사고+본문 합계 상한이라 복잡한 그림에서
@@ -332,7 +332,7 @@ def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
     #   규정 정답 22건 중 3건(14%)이 이 경로로 빈 캡션이었다. 캡셔닝은 묘사 과제라
     #   사고가 품질을 올리지 않는다 — 끄는 쪽이 정확하고 싸다.
     resp = client.messages.create(
-        model=os.getenv("CAPTION_MODEL", "claude-sonnet-5"),
+        model=model,
         max_tokens=500,
         thinking={"type": "disabled"},
         messages=[{
@@ -344,7 +344,9 @@ def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
             ],
         }],
     )
-    _record_usage(resp)
+    # 실토큰을 요청 집계로 흘린다 — 근사치 1500/500을 곱하던 자리(2026-08-13).
+    record_anthropic("캡셔닝", model, getattr(resp, "usage", None))
+    _record_usage(resp)               # 프로세스 전역 누계(오프라인 배치 비용 보고용)
     return "".join(b.text for b in resp.content if b.type == "text").strip()
 
 
@@ -567,8 +569,7 @@ def caption(image_path: str, image_type: str = "image") -> str:
             cache.write_text(text, encoding="utf-8")
         return text
 
-    from app.utils.req_log import inc_gpt4o
-    inc_gpt4o()
+    from app.utils.req_log import record_openai
     resp = _get_client().chat.completions.create(
         model="gpt-4o",
         messages=[
@@ -583,6 +584,7 @@ def caption(image_path: str, image_type: str = "image") -> str:
         max_tokens=500,
         temperature=0.3,
     )
+    record_openai("캡셔닝", "gpt-4o", getattr(resp, "usage", None))
     text = _ensure_type_word(_reject_meta(resp.choices[0].message.content.strip()), image_type)
     if cache is not None and text.strip():
         cache.write_text(text, encoding="utf-8")
