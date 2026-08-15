@@ -309,10 +309,11 @@ class TestWrapPromotionBookStyle:
 
     def test_partial_paren_still_wraps_and_promotes(self) -> None:
         # 분자 g(x)+1 은 괄호가 전체를 감싸지 않으므로 묶고, 내용에 ⠦가 있어 ⠶ 승격
-        # ⚠ 여는·닫는 묶음이 ⠷⠾인 것은 A/B 판정 대기다(2026-08-15, exp/wrap-paren-regulation).
-        #   기각되면 ⠦⠴로 되돌린다. 승격(⠶) 로직 자체는 이 변경과 무관하다.
-        assert self._cv("\\frac{g(x)+1}{x+2}") == "⠷⠭⠢⠼⠃⠾⠌⠶⠛⠦⠭⠴⠢⠼⠁⠶"
+        # ⚠ A/B 판정 대기(2026-08-15, exp/wrap-paren-no-promote). 묶음을 규정형 ⠷⠾로
+        #   두면 내용의 ⠦⠴와 겹칠 일이 없어 승격(⠶)도 일어나지 않는다 — 승격을 묶음
+        #   점형에 연동한 실험군이다. 기각되면 묶음 ⠦⠴ + 승격 ⠶로 되돌린다.
+        assert self._cv("\\frac{g(x)+1}{x+2}") == "⠷⠭⠢⠼⠃⠾⠌⠷⠛⠦⠭⠴⠢⠼⠁⠾"
 
     def test_two_adjacent_groups_still_wrap(self) -> None:
         # (a+b)(c+d)는 한 쌍이 전체를 감싸지 않는다 → 묶음 유지 + ⠶ 승격
-        assert self._cv("x^{(a+b)(c+d)}") == "⠭⠘⠶⠦⠁⠢⠃⠴⠦⠉⠢⠙⠴⠶"
+        assert self._cv("x^{(a+b)(c+d)}") == "⠭⠘⠷⠦⠁⠢⠃⠴⠦⠉⠢⠙⠴⠾"

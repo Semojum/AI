@@ -1773,7 +1773,13 @@ def _wrap_ins(inner_braille: str) -> str:
     ⚠ 리터럴 중첩 괄호 f(g(x))는 이 함수와 무관 — gold도 ⠦⠦…⠴⠴ 그대로 겹친다
     (수학2 p056·p091 ⠋⠦⠛⠦⠭⠴⠴ 실측). regulation 모드는 항상 규정 원형 ⠷…⠾(제6항 2호).
     """
-    if _IS_BOOK_STYLE and ("⠦" in inner_braille or "⠴" in inner_braille):
+    # ★ 2026-08-15 — 승격을 묶음 점형에 **연동**한다(A/B 실험군 2).
+    #   승격의 존재 이유는 "⠦⠴ 묶음이 내용의 실제 괄호와 겹쳐 읽히는 것"을 피하는 데
+    #   있다. 묶음이 ⠷⠾면 그 겹침이 애초에 없으므로 승격할 까닭도 없다. 종전에는
+    #   승격이 _IS_BOOK_STYLE로 따로 게이팅돼 있어, 묶음만 규정형으로 바꾸면 같은
+    #   수식 안에 ⠷…⠾와 ⠶…⠶ 두 종류가 섞였다. 위 docstring이 "regulation 모드는
+    #   항상 규정 원형 ⠷…⠾"라고 적은 설계 의도가 이것이다.
+    if _WRAP_S == "⠦" and ("⠦" in inner_braille or "⠴" in inner_braille):
         return f"⠶{inner_braille}⠶"
     return f"{_WRAP_S}{inner_braille}{_WRAP_E}"
 
