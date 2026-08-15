@@ -184,11 +184,25 @@ async def _fallback_call(prompt: str, *, max_tokens: int, kind: str) -> str:
                 client.messages.create(
                     model=model,
                     max_tokens=max_tokens,
+                    # ★ 사고를 꺼야 한다(2026-08-15 실측). claude-sonnet-5는 `thinking`을
+                    #   안 주면 **적응형 사고가 기본**이고, max_tokens는 사고+본문 합계
+                    #   상한이다. 같은 표 프롬프트로 재어 보니:
+                    #     사고 켬 → out 1024, stop_reason=max_tokens, 본문 238자 (잘림)
+                    #     사고 끔 → out  512, stop_reason=end_turn,   본문 553자
+                    #   비용이 2배인 데다 **본문이 잘린다.** opt는 원문을 다듬는 과제라
+                    #   사고가 품질을 올리지 않는다. 캡셔너는 2026-08-08 QA 16번에서 이미
+                    #   막았는데 이 경로만 남아 있었다(원가 계측을 붙이고서야 드러났다).
+                    thinking={"type": "disabled"},
                     messages=[{"role": "user", "content": prompt}],
                 ),
                 timeout=FALLBACK_TIMEOUT,
             )
             record_anthropic(kind, model, getattr(resp, "usage", None))
+            # 상한에 걸리면 **출력이 잘린 것**이다. 표는 잘리면 행이 통째로 사라지는데
+            # 응답만 봐서는 멀쩡해 보인다(닫는 태그가 없을 뿐). 조용히 지나가지 않게 남긴다.
+            if getattr(resp, "stop_reason", None) == "max_tokens":
+                logger.warning("FALLBACK %s 출력이 max_tokens(%d)에서 잘렸다 — "
+                               "상한을 올리거나 프롬프트를 줄여야 한다", kind, max_tokens)
             return "".join(b.text for b in resp.content if b.type == "text").strip()
         except Exception as exc:  # noqa: BLE001 — 폴백 실패는 원문 폴백으로 격리
             record_llm(kind, model)   # 호출 수만. 얼마 나갔는지 모르는 걸 지어내지 않는다
