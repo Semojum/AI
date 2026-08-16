@@ -887,6 +887,59 @@ _BOX_BLOCK_RE = re.compile(
     r"(<!상자(\d?)>)(.*?)(<!/상자\2>)(.*?)(?=<!상자끝)", re.S)
 
 
+# 인쇄면 줄바꿈을 잇는 요소 유형. list_item은 한 줄이 한 항목이라 제외한다.
+_PARA_JOIN_TYPES = {"text", "caption", "footnote", "sidebar"}
+# 인쇄면 한 단으로 볼 최소 폭. 이보다 좁고 들쭉날쭉하면 시·대사처럼 줄바꿈 자체가
+# 내용인 블록이라 잇지 않는다.
+_PARA_MIN_COL = 15
+_LIST_HEAD_RE = re.compile(r"^\s*(?:[①-⑮㉠-㉪]|[0-9]{1,2}\s*[.)]|[가-핳]\s*[.)]|[-•·])\s")
+
+
+def _join_wrapped_lines(text: str) -> str:
+    """인쇄면에서 끊긴 한 문단을 한 줄로 잇는다.
+
+    MinerU/OCR 추출은 **인쇄면 한 줄이 한 줄**이라 문단 가운데 줄바꿈이 그대로 남는다.
+    그대로 점역하면 어절이 인쇄면 줄 끝에서 갈린다 — `총 5개` / `의 문항이`가 두 어절로
+    나가고, 32칸을 못 채운 짧은 줄이 남는다. 점자는 **어절 단위로** 접는 것이 규정이라
+    (BBPG §1.2.1 "어절단위 줄바꿈"), 인쇄면 줄바꿈은 점역 전에 지워야 한다.
+    실측 OCR 텍스트 요소 5,621개 중 1,988개(35.4%)가 이 상태다.
+
+    어느 줄바꿈이 인쇄면 줄바꿈인지는 **다음 줄 첫 어절이 이 줄에 들어갔겠는가**로 가른다.
+    안 들어갔으면 단 폭에 밀린 것이니 잇고, 들어갔는데도 줄을 바꿨으면 그 줄바꿈은
+    내용이다(시행·대사). 임계 상수가 없고 단 폭이 스스로 판정한다.
+
+    붙일지 띄울지는 `pdf_analyzer._join_words`(형태소 분석)가 정한다 — TEXT_NATIVE
+    경로가 이미 쓰는 것과 같은 판정기다. 빈 줄은 문단 경계라 그대로 둔다.
+    """
+    if "\n" not in text:
+        return text
+    from app.ai.preprocessor.pdf_analyzer import _join_words
+
+    out: list[str] = []
+    for block in text.split("\n\n"):
+        lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
+        if len(lines) < 2:
+            out.append(block)
+            continue
+        col = max(len(ln) for ln in lines)
+        if col < _PARA_MIN_COL:
+            out.append(block)
+            continue
+        merged = [lines[0]]
+        for nxt in lines[1:]:
+            sep = _join_words(merged[-1], nxt)
+            head = nxt.split()[0]
+            fits = len(merged[-1]) + 1 + len(head) < col
+            # sep가 빈 문자열이면 어절 가운데서 갈린 것이라 무조건 잇는다 — 그 줄바꿈은
+            # 어떤 조판에서도 내용일 수 없다(`총 5개` / `의 문항이`).
+            if sep and (fits or _LIST_HEAD_RE.match(nxt)):
+                merged.append(nxt)               # 들어갔는데 바꾼 줄 = 내용상 줄바꿈
+            else:
+                merged[-1] += sep + nxt
+        out.append("\n".join(merged))
+    return "\n\n".join(out)
+
+
 def _promote_box_title(text: str) -> str:
     """제목 없는 글상자의 본문 첫/끝 줄이 정답에서 관측된 제목 낱말이면 위 테두리로 올린다."""
     if "<!상자" not in text:
@@ -935,6 +988,8 @@ def _parse_txt_result(
         vsub = el.get("visual_subtype") or _SUBTYPE_FROM_TYPE.get(orig_type)
         order = int(el.get("order", idx))
         content = el.get("content", "") or ""
+        if etype in _PARA_JOIN_TYPES:
+            content = _join_wrapped_lines(content)
         content = _promote_box_title(_split_inline_choices(content))
         if etype in _TEXT_TYPES and _is_boilerplate(content):
             logger.info("보일러플레이트 드롭(%s): %.60s", etype, content)
