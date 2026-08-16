@@ -860,6 +860,23 @@ def _tighten_operator_spacing(result: str) -> str:
 # 다를 수 있다** — 11e가 11d보다 먼저 돈다. 파이프라인 나열 순서가 진실이다.
 
 
+# 중괄호 없는 한 글자 인자(`\sqrt3`·`\frac 1 2`) — LaTeX에서 허용되는 표기인데
+# 우리 단계들은 `{}`만 본다. 그대로 두면 **조용히 망가진다**:
+#   \sqrt3   → ⠼⠉      (제곱근 기호가 사라진다)
+#   \sqrt x  → ''       (통째로 없어진다)
+#   \frac 1 2 → ⠀⠼⠁⠃   (분수가 사라지고 숫자가 12로 붙는다)
+# 실측 전 코퍼스 23건(`\sqrt3` 11 · `\frac 1 2` 12)으로 드물지만, 틀린 수가 나가는
+# 자리라 값이 다르다. `\sqrt[n]{}`는 대괄호라 안 걸린다.
+_BARE_FRAC_RE = re.compile(r"\\frac\s*([A-Za-z0-9])\s*([A-Za-z0-9])")
+_BARE_SQRT_RE = re.compile(r"\\sqrt\s*([A-Za-z0-9])")
+
+
+def _stage0c_bare_args(latex: str) -> str:
+    """중괄호 없는 한 글자 인자를 중괄호 꼴로 맞춘다."""
+    latex = _BARE_FRAC_RE.sub(r"\\frac{\1}{\2}", latex)
+    return _BARE_SQRT_RE.sub(r"\\sqrt{\1}", latex)
+
+
 def _stage0b_nth_root(result: str) -> str:
     r"""0b. n제곱근 \sqrt[n]{내용} → n⠻내용 (수학 제22항 [붙임1]).
 
@@ -1614,6 +1631,7 @@ def convert_latex(latex: str) -> str:
     latex, _text_store = _protect_text(latex)   # 0.  P2: \text{한글} → 한글 점자 sentinel
     result = _normalize_latex_input(latex)      # 0a. MinerU/마크다운 입력 정규화
 
+    result = _stage0c_bare_args(result)             # 0c. 중괄호 없는 한 글자 인자
     result = _stage0b_nth_root(result)              # 0b. \sqrt[n]{} — 대괄호 치환보다 먼저
     result = _stage1_math_brackets(result)          # 1·1a. 수학 괄호 + 병치 닫음표 생략
     result = _stage1b_accents(result)               # 1b. 문자 위 기호
