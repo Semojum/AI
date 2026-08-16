@@ -1218,7 +1218,7 @@ def _stage8_superscript(result: str) -> str:
         if raw_exp in ("2", "3") and _is_unit_square(base, m.string[:m.start()]):
             return base + ("⠣" if raw_exp == "2" else "⠩")
         exp  = convert_latex(raw_exp)
-        exp_w = _wrap_ins(exp) if _needs_wrap(raw_exp) else exp
+        exp_w = _wrap_ins(exp) if _needs_wrap_out(raw_exp, exp) else exp
         return f"{base}{_SUPERSCRIPT_IND}{exp_w}"
 
     return _SUP_RE.sub(_sup_replace, result)
@@ -1259,7 +1259,7 @@ def _stage9_subscript(result: str) -> str:
         #   규정 제19항 1호와 같은 형식이고 수학·화학 양쪽에서 일관된다 → 규정형으로 낸다.
         #   (내린 숫자 `_DROPPED_DIGIT`는 로그 밑 제46항 전용으로 남는다.)
         sub  = convert_latex(sub_raw)
-        sub_w = _wrap_ins(sub) if _needs_wrap(sub_raw) else sub
+        sub_w = _wrap_ins(sub) if _needs_wrap_out(sub_raw, sub) else sub
         return f"{base}{_SUBSCRIPT_IND}{sub_w}"
 
     return _SUB_RE.sub(_sub_replace, result)
@@ -1904,6 +1904,34 @@ def _is_monomial_product(raw: str) -> bool:
     return (len(raw) >= 2 and raw.isalnum() and not raw.isdigit()
             and _MONOMIAL_PRODUCT_RE.fullmatch(raw) is not None)
 
+
+
+def _already_wrapped(braille: str) -> bool:
+    """이미 묶음 괄호 하나로 통째로 싸여 있는가 — 이중 묶음 방지."""
+    if not (braille.startswith(_WRAP_S) and braille.endswith(_WRAP_E)):
+        return False
+    depth = 0
+    for i, ch in enumerate(braille):
+        if ch == _WRAP_S:
+            depth += 1
+        elif ch == _WRAP_E:
+            depth -= 1
+            if depth == 0:
+                return i == len(braille) - 1
+    return False
+
+
+def _needs_wrap_out(raw: str, braille: str) -> bool:
+    """묶음 괄호가 필요한가 — 원문(raw)과 **변환된 점형**을 함께 본다.
+
+    `_needs_wrap`은 원문만 보는데, 분수는 `_apply_fracs`가 첨자 단계보다 **먼저** 돌아서
+    첨자에 닿을 때는 이미 점형이다(`⠼⠉⠌⠷⠭⠢⠼⠁⠾`). 그래서 원문만 보면 "지수가 분수일
+    때 묶음 괄호로 묶는다"(제7항 붙임)가 안 걸렸다. 점형의 분수표 ⠌로도 판정한다.
+    """
+    if _already_wrapped(braille):
+        return False
+    return (_needs_wrap(raw) or _is_monomial_product(raw)
+            or _FRACTION_MID in braille)
 
 def _apply_fracs(latex: str) -> str:
     """\\frac{...}{...} 변환 — 중괄호 중첩 대응 (\\sqrt{...} 안의 \\frac 포함)."""
