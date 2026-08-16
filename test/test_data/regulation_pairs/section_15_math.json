@@ -2,7 +2,7 @@
   "section_id": "math_01",
   "section_name": "수학 점자 제1~9장 (규정 원문 예시 수동 도출)",
   "source": "braille-source/text/규정_텍스트.txt (=== PAGE 57~61)",
-  "note": "코드로 만들지 않았다 — 규정 원문의 BRF-ASCII 예시를 그대로 옮기고 묵자는 조항 문구에서 읽었다(test_guide 원칙 1 순환검증 금지). 디코드 결과를 한 건씩 눈으로 확인했다. ⚠ 이 세트를 역점역기로 되읽으면 한글 약어가 섞여 보인다(`a33b` → `그러면…`). 역점역기가 수식 문맥 없이 낱자를 한글로 푸는 것이라데이터 오류가 아니다(2026-08-16 eval 독립 검증).",
+  "note": "코드로 만들지 않았다 — 규정 원문의 BRF-ASCII 예시를 그대로 옮기고 묵자는 조항 문구에서 읽었다(test_guide 원칙 1 순환검증 금지). 디코드 결과를 한 건씩 눈으로 확인했다. ⚠ 이 세트를 역점역기로 되읽으면 한글 약어가 섞여 보인다(`a33b` → `그러면…`). 역점역기가 수식 문맥 없이 낱자를 한글로 푸는 것이라데이터 오류가 아니다(2026-08-16 eval 독립 검증). ★ 백틱은 **공백**이다(규정 원문 규약). 정답 코퍼스는 반대로 셀(⠈=ㄱ)이니 읽을 때 backtick=\"space\"를 쓸 것.",
   "pairs": [
     {
       "rule_id": "KBR-수학-1.2",
@@ -108,6 +108,182 @@
       "brf_ascii": "#aj\"1#c33#e\"1x",
       "braille_unicode": "⠼⠁⠚⠐⠂⠼⠉⠒⠒⠼⠑⠐⠂⠭",
       "item": "제9항 비"
+    },
+    {
+      "rule_id": "KBR-수학-2.15",
+      "latex": "x ⊕ y = 2x+3y",
+      "brf_ascii": "x`_5`y33#bx5#cy",
+      "braille_unicode": "⠭⠀⠸⠢⠀⠽⠒⠒⠼⠃⠭⠢⠼⠉⠽",
+      "item": "제15항 1호 동그라미 덧셈표"
+    },
+    {
+      "rule_id": "KBR-수학-2.15",
+      "latex": "a ⊖ b = 3(a+b)",
+      "brf_ascii": "a`_9`b33#c8a5b0",
+      "braille_unicode": "⠁⠀⠸⠔⠀⠃⠒⠒⠼⠉⠦⠁⠢⠃⠴",
+      "item": "제15항 2호"
+    },
+    {
+      "rule_id": "KBR-수학-2.16",
+      "latex": "1101_{(2)}",
+      "brf_ascii": "#aaja;8#b0",
+      "braille_unicode": "⠼⠁⠁⠚⠁⠰⠦⠼⠃⠴",
+      "item": "제16항 진법"
+    },
+    {
+      "rule_id": "KBR-수학-2.18",
+      "latex": "x^{7+9}",
+      "brf_ascii": "x^(#g5#i)",
+      "braille_unicode": "⠭⠘⠷⠼⠛⠢⠼⠊⠾",
+      "item": "제18항 붙임 지수가 다항식"
+    },
+    {
+      "rule_id": "KBR-수학-2.18",
+      "latex": "x^{0.3}",
+      "brf_ascii": "x^#j4c",
+      "braille_unicode": "⠭⠘⠼⠚⠲⠉",
+      "item": "제18항 지수가 소수 — 안 묶음"
+    },
+    {
+      "rule_id": "KBR-수학-2.18",
+      "latex": "2^{2(m+n)}",
+      "brf_ascii": "#b^(#b8m5n0)",
+      "braille_unicode": "⠼⠃⠘⠷⠼⠃⠦⠍⠢⠝⠴⠾",
+      "item": "제18항 붙임 지수가 곱"
+    },
+    {
+      "rule_id": "KBR-수학-2.18",
+      "latex": "3^{\\frac{1}{4}}",
+      "brf_ascii": "#c^(#d/#a)",
+      "braille_unicode": "⠼⠉⠘⠷⠼⠙⠌⠼⠁⠾",
+      "item": "제18항 붙임 지수가 분수"
+    },
+    {
+      "rule_id": "KBR-수학-2.19",
+      "latex": "a_{n}",
+      "brf_ascii": "a;n",
+      "braille_unicode": "⠁⠰⠝",
+      "item": "제19항 1호 아래첨자"
+    },
+    {
+      "rule_id": "KBR-수학-2.19",
+      "latex": "a_{n+3}",
+      "brf_ascii": "a;(n5#c)",
+      "braille_unicode": "⠁⠰⠷⠝⠢⠼⠉⠾",
+      "item": "제19항 붙임 아래첨자가 다항식"
+    },
+    {
+      "rule_id": "KBR-수학-2.19",
+      "latex": "x_{0.5}",
+      "brf_ascii": "x;#j4e",
+      "braille_unicode": "⠭⠰⠼⠚⠲⠑",
+      "item": "제19항 아래첨자가 소수 — 안 묶음"
+    },
+    {
+      "rule_id": "KBR-수학-2.20",
+      "latex": "\\sqrt{3}\\fallingdotseq1.732",
+      "brf_ascii": ">#c\"33#a4gcb",
+      "braille_unicode": "⠜⠼⠉⠐⠒⠒⠼⠁⠲⠛⠉⠃",
+      "item": "제20항 근삿값"
+    },
+    {
+      "rule_id": "KBR-수학-2.22",
+      "latex": "\\sqrt{2}",
+      "brf_ascii": ">#b",
+      "braille_unicode": "⠜⠼⠃",
+      "item": "제22항 근호"
+    },
+    {
+      "rule_id": "KBR-수학-3.27",
+      "latex": "4\\mid8",
+      "brf_ascii": "#d\\#h",
+      "braille_unicode": "⠼⠙⠳⠼⠓",
+      "item": "제27항 1호 나누어떨어진다"
+    },
+    {
+      "rule_id": "KBR-수학-3.27",
+      "latex": "2\\nmid3",
+      "brf_ascii": "#b.\\#c",
+      "braille_unicode": "⠼⠃⠨⠳⠼⠉",
+      "item": "제27항 2호"
+    },
+    {
+      "rule_id": "KBR-수학-4.35",
+      "latex": "\\overline{AB}",
+      "brf_ascii": "@c,,AB",
+      "braille_unicode": "⠈⠉⠠⠠⠁⠃",
+      "item": "제35항 선분(기호가 앞)"
+    },
+    {
+      "rule_id": "KBR-수학-4.36",
+      "latex": "\\overparen{AB}",
+      "brf_ascii": "@[,,AB",
+      "braille_unicode": "⠈⠪⠠⠠⠁⠃",
+      "item": "제36항 호"
+    },
+    {
+      "rule_id": "KBR-수학-4.37",
+      "latex": "\\overleftrightarrow{AB}",
+      "brf_ascii": "[3O,,AB",
+      "braille_unicode": "⠪⠒⠕⠠⠠⠁⠃",
+      "item": "제37항 직선"
+    },
+    {
+      "rule_id": "KBR-수학-4.38",
+      "latex": "\\overrightarrow{AB}",
+      "brf_ascii": "3O,,AB",
+      "braille_unicode": "⠒⠕⠠⠠⠁⠃",
+      "item": "제38항 반직선·벡터"
+    },
+    {
+      "rule_id": "KBR-수학-1.10",
+      "latex": "X → Y",
+      "brf_ascii": ",x`3o`,y",
+      "braille_unicode": "⠠⠭⠀⠒⠕⠀⠠⠽",
+      "item": "제10항 화살표 앞뒤 한 칸"
+    },
+    {
+      "rule_id": "KBR-수학-4.39",
+      "latex": "\\angle A",
+      "brf_ascii": "?,a",
+      "braille_unicode": "⠹⠠⠁",
+      "item": "제39항 각"
+    },
+    {
+      "rule_id": "KBR-수학-4.39",
+      "latex": "\\angle PO",
+      "brf_ascii": "?,,PO",
+      "braille_unicode": "⠹⠠⠠⠏⠕",
+      "item": "제39항 — 코퍼스 실측 꼴(251건)"
+    },
+    {
+      "rule_id": "KBR-수학-4.40",
+      "latex": "\\triangle ABC",
+      "brf_ascii": "_+,,ABC",
+      "braille_unicode": "⠸⠬⠠⠠⠁⠃⠉",
+      "item": "제40항 1호 삼각형"
+    },
+    {
+      "rule_id": "KBR-수학-4.43",
+      "latex": "\\triangle ABC\\equiv\\triangle DEF",
+      "brf_ascii": "_+,,ABC77_+,,DEF",
+      "braille_unicode": "⠸⠬⠠⠠⠁⠃⠉⠶⠶⠸⠬⠠⠠⠙⠑⠋",
+      "item": "제43항 합동"
+    },
+    {
+      "rule_id": "KBR-수학-2.21",
+      "latex": "|x|",
+      "brf_ascii": "\\x\\",
+      "braille_unicode": "⠳⠭⠳",
+      "item": "제21항 절댓값"
+    },
+    {
+      "rule_id": "KBR-수학-2.21",
+      "latex": "|2x+7|-8",
+      "brf_ascii": "\\#bx5#g\\9#h",
+      "braille_unicode": "⠳⠼⠃⠭⠢⠼⠛⠳⠔⠼⠓",
+      "item": "제21항 예시"
     }
-  ]
+  ],
+  "backtick": "space"
 }

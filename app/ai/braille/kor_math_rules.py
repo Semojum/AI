@@ -871,10 +871,23 @@ _BARE_FRAC_RE = re.compile(r"\\frac\s*([A-Za-z0-9])\s*([A-Za-z0-9])")
 _BARE_SQRT_RE = re.compile(r"\\sqrt\s*([A-Za-z0-9])")
 
 
+# 기하 기호 명령과 꼭짓점 사이의 공백(`\angle PO`·`\triangle ABC`). 규정 제39·40항
+# 예시는 붙여 적는다(`?,a`·`_+,,ABC`). 유니코드 꼴(∠PO)은 이미 맞게 나가므로 그리로
+# 맞춘다 — 공백만 지우면 `\anglePO`가 되어 미지 명령으로 **통째로 사라진다**.
+# 실측 전 코퍼스 251건. `\triangleq`·`\triangledown`은 뒤에 공백이 없어 안 걸린다.
+# `\angle`는 0a 단계가 이미 `∠ `로 바꾸므로(공백은 남는다) 점형과 명령 둘 다 본다.
+# 대문자 꼭짓점 앞에서만 지운다 — 일반연산 기호(x ⊕ y, 제15항 "앞뒤 한 칸")는 소문자
+# 변수를 쓰므로 안 걸린다. 실측: 공백을 두는 다른 기하 기호는 코퍼스에 없다.
+_GEOM_CMD_SPACE_RE = re.compile(r"(?:\\(?:angle|triangle)|[∠△])\s+(?=[A-Z])")
+_GEOM_CMD_SYMBOL = {"\\angle": "∠", "\\triangle": "△"}
+
+
 def _stage0c_bare_args(latex: str) -> str:
-    """중괄호 없는 한 글자 인자를 중괄호 꼴로 맞춘다."""
+    """중괄호 없는 한 글자 인자·기하 기호 뒤 공백을 정규화한다."""
     latex = _BARE_FRAC_RE.sub(r"\\frac{\1}{\2}", latex)
-    return _BARE_SQRT_RE.sub(r"\\sqrt{\1}", latex)
+    latex = _BARE_SQRT_RE.sub(r"\\sqrt{\1}", latex)
+    return _GEOM_CMD_SPACE_RE.sub(
+        lambda m: _GEOM_CMD_SYMBOL.get(m.group(0).rstrip(), m.group(0).rstrip()), latex)
 
 
 def _stage0b_nth_root(result: str) -> str:

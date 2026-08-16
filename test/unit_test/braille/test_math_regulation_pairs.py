@@ -30,7 +30,10 @@ def test_규정_예시대로_점역된다(pair):
 @pytest.mark.parametrize("pair", _PAIRS, ids=_IDS)
 def test_기록된_점형이_원문_ASCII와_일치한다(pair):
     """데이터 자체의 무결성 — 손으로 옮긴 BRF-ASCII와 유니코드가 어긋나면 안 된다."""
-    assert ascii_to_unicode(pair["brf_ascii"], backtick="cell") == pair["braille_unicode"]
+    # ★ 백틱 규약이 **문서마다 반대**다 — 규정 원문은 공백, 정답 코퍼스는 셀(⠈=ㄱ).
+    #   이 세트는 규정 원문에서 옮긴 것이라 space로 읽어야 한다. cell로 읽으면 화살표·
+    #   일반연산 예시의 띄어쓰기가 ⠈로 둔갑한다(2026-08-16 실측).
+    assert ascii_to_unicode(pair["brf_ascii"], backtick="space") == pair["braille_unicode"]
 
 
 # ── 중괄호 없는 한 글자 인자 (LaTeX 허용 표기) ────────────────────────────────
