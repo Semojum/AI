@@ -1100,7 +1100,7 @@ def _stage3_limit(result: str) -> str:
     def _lim_replace(m: re.Match) -> str:
         var = convert_latex(m.group(1).strip())
         val = convert_latex(m.group(2).strip())
-        # 도서 관행(2026-07-19 실측): gold의 lim 420건 **전부** 화살표 없이
+        # 원장 M-07. 도서 관행(2026-07-19 실측): gold의 lim 420건 **전부** 화살표 없이
         # `lim⠰변수 점근값 본식`으로 적는다(0%). 규정 제51항은 화살표를 명시하므로
         # regulation 모드는 규정형을 유지하고 book 모드만 생략한다.
         if _IS_BOOK_STYLE:
