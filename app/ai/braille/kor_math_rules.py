@@ -1890,6 +1890,21 @@ def _extract_brace_content(s: str, start: int) -> tuple[str, int]:
     return s[start + 1:], len(s)
 
 
+# 분수 분모·분자가 **순수 영숫자 단항의 곱**인가(ab·2a·2R). 규정 제6항 2호는 "단항의 곱,
+# 다항 등"을 묶음 괄호로 묶으라 하고 예시가 `(ab)/#a`다.
+# ⚠ 2026-07-22에 곱 묶음을 되살렸다가 기각된 적이 있다(요소 win 4 : lose 42). 그때 깨진
+#   것은 `\sqrt{3}`·`f(x)`를 2인수로 세어 과잉으로 묶은 자리였다. 그래서 여기서는
+#   **역슬래시·괄호·공백이 하나도 없는 영숫자 덩어리**만 본다 — 함수 적용은 애초에 안 걸린다.
+_MONOMIAL_PRODUCT_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*|[0-9]+[A-Za-z][A-Za-z0-9]*")
+
+
+def _is_monomial_product(raw: str) -> bool:
+    """`ab`·`2a`·`2R`처럼 문자가 든 두 자 이상 영숫자 덩어리인가."""
+    raw = raw.strip()
+    return (len(raw) >= 2 and raw.isalnum() and not raw.isdigit()
+            and _MONOMIAL_PRODUCT_RE.fullmatch(raw) is not None)
+
+
 def _apply_fracs(latex: str) -> str:
     """\\frac{...}{...} 변환 — 중괄호 중첩 대응 (\\sqrt{...} 안의 \\frac 포함)."""
     result = []
@@ -1901,8 +1916,12 @@ def _apply_fracs(latex: str) -> str:
                 den_raw, after_den = _extract_brace_content(latex, after_num)
                 num = convert_latex(num_raw)
                 den = convert_latex(den_raw)
-                den_wrapped = _wrap_ins(den) if _needs_wrap(den_raw) else den
-                num_wrapped = _wrap_ins(num) if _needs_wrap(num_raw) else num
+                den_wrapped = (_wrap_ins(den)
+                               if _needs_wrap(den_raw) or _is_monomial_product(den_raw)
+                               else den)
+                num_wrapped = (_wrap_ins(num)
+                               if _needs_wrap(num_raw) or _is_monomial_product(num_raw)
+                               else num)
                 result.append(f"{den_wrapped}{_FRACTION_MID}{num_wrapped}")
                 i = after_den
                 continue
