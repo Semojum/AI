@@ -262,11 +262,17 @@ def _nanos(usd: float) -> int:
 
 
 @_never_raises(dict)
-def cost_report() -> dict:
-    """이번 요청의 원가 내역 — BE 응답(CostReport)·대시보드가 그대로 쓴다.
+def usage_report() -> dict:
+    """이번 요청의 사용량 — BE 응답(UsageReport)이 쓴다.
 
-    `fx_rate`·`pricing_version`을 함께 실어 **어느 환율·어느 단가표로 계산했는지** 밝힌다.
-    나중에 청구서와 어긋났을 때 무엇을 의심할지 알 수 있어야 한다.
+    ★ **proto로 나가는 것은 측정값뿐이다**(BE 협의 2026-08-18): `layout_type` ·
+    모델별 토큰 · `gpu_time_ms`. 단가표·환율·카드 수수료·크레딧 배율은 BE의 관리
+    변수라 거기서 곱한다 — 관리자 페이지에서 수시로 바뀌는 값이라 AI에 두면
+    재배포해야 바뀐다.
+
+    아래 금액 항목은 **우리 관측용**으로 메트릭 JSONL에만 남는다. 청구서 정본은
+    BE 계산이고 이 값이 그와 어긋나도 BE가 맞다. `fx_rate`·`pricing_version`을
+    함께 실어 어느 환율·어느 단가표로 추정했는지 밝힌다.
     """
     t = _totals()
     st = _cur()
@@ -284,15 +290,18 @@ def cost_report() -> dict:
         m["output_tokens"] += e.output_tokens
     total = t["cost"] + t["gpu_cost"]
     return {
+        # ── proto로 나가는 측정값 ──
+        "models": sorted(by_model.values(), key=lambda m: -m["input_tokens"]),
+        # GPU 원가 = 이 값 × BE 시간당 단가. ms로 보내는 건 BE가 곱셈만 하면 되게 하려는 것.
+        "gpu_time_ms": round(t["gpu_seconds"] * 1000),
+        # layout_type은 요소 유형을 아는 pipeline이 채운다(여기선 모른다).
+        # ── 아래는 로그·메트릭 편의값(proto에는 없다) ──
         # 금액 단위: USD는 나노(1e-9), 원은 밀리(×1000). 쪽당 ₩21~94이라
         # 원 단위로 반올림하면 수만 쪽에서 눈에 띄게 어긋난다.
         "llm_cost_usd_nanos": _nanos(t["cost"]),
         "gpu_cost_usd_nanos": _nanos(t["gpu_cost"]),
         "cost_krw_milli": round(total * fx * 1000),
         "pricing_version": pricing.pricing_version(),
-        "models": sorted(by_model.values(), key=lambda m: -m["input_tokens"]),
-        # layout_type은 요소 유형을 아는 pipeline이 채운다(여기선 모른다).
-        # ── 아래는 로그·메트릭 편의값(proto에는 없다) ──
         "cost_usd": round(total, 9),
         "cost_krw": round(total * fx, 4),
         "fx_rate": fx,

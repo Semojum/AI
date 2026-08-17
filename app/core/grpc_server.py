@@ -166,8 +166,8 @@ def _build_proto_response(result: dict):
     for te in result.get("braille_text_list", []):
         resp.braille_text_list.append(_dict_to_text_element(te))
 
-    # [추가 08-15] 원가. BLOCKED에도 싣는다 — 막혔어도 돈은 나갔다.
-    resp.cost_report.CopyFrom(_dict_to_cost_report(result.get("cost") or {}))
+    # 사용량. BLOCKED에도 싣는다 — 막혔어도 자원은 썼다.
+    resp.usage_report.CopyFrom(_dict_to_usage_report(result.get("usage") or {}))
 
     return resp
 
@@ -177,21 +177,20 @@ _LAYOUT = {"text": _PB.PAGE_LAYOUT_TEXT, "formula": _PB.PAGE_LAYOUT_FORMULA,
            "table": _PB.PAGE_LAYOUT_TABLE, "visual": _PB.PAGE_LAYOUT_VISUAL}
 
 
-def _dict_to_cost_report(c: dict):
-    """`req_log.cost_report()` dict → proto. 원가는 관측값이라 무슨 일이 있어도
+def _dict_to_usage_report(c: dict):
+    """`req_log.usage_report()` dict → proto. 사용량은 관측값이라 무슨 일이 있어도
     응답을 막지 않는다 — 빈 dict가 오면 0으로 채운 메시지를 돌려준다.
 
-    proto로 나가는 건 대시보드가 실제로 쓰는 것 + 재계산 보관용뿐이다. 파트별 내역·
-    환율 근거는 메트릭 JSONL에만 남긴다(BE가 안 쓴다).
+    ★ **금액은 나가지 않는다**(BE 협의 2026-08-18). AI는 측정값(토큰·GPU 시간·쪽 유형)만
+    싣고, 단가표·환율·카드 수수료·크레딧 배율은 BE의 관리 변수다. 관리자 페이지에서
+    수시로 바뀌는 값을 AI가 재컴파일해야 바뀌는 자리에 두지 않기 위해서다.
+    AI 쪽 원가 추정치는 메트릭 JSONL에만 남는다(우리 관측용, 정본 아님).
     """
-    r = _PB.CostReport()
+    r = _PB.UsageReport()
     if not c:
         return r
     r.layout_type = _LAYOUT.get(c.get("layout_type", ""), _PB.PAGE_LAYOUT_UNSPECIFIED)
-    r.llm_cost_usd_nanos = int(c.get("llm_cost_usd_nanos", 0))
-    r.gpu_cost_usd_nanos = int(c.get("gpu_cost_usd_nanos", 0))
-    r.cost_krw_milli = int(c.get("cost_krw_milli", 0))
-    r.pricing_version = str(c.get("pricing_version", ""))
+    r.gpu_time_ms = int(c.get("gpu_time_ms", 0))
     for m in c.get("models", []):
         pm = r.models.add()
         pm.model = str(m.get("model", ""))

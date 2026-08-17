@@ -6,202 +6,144 @@ option java_outer_classname = "BrailleServiceProto";
 option java_multiple_files = true;
 
 service BrailleService {
-  rpc ProcessPage   (BrailleRequest)       returns (BrailleResponse);
-  rpc TranslateText (TranslateTextRequest) returns (TranslateTextReply);  // 꼬리말용 짧은 묵자 → 점자. rule-based 직행, 200자 초과는 거절
+  rpc ProcessPage   (BrailleRequest)       returns (BrailleResponse);       // 원본 1쪽 점역
+  rpc TranslateText (TranslateTextRequest) returns (TranslateTextReply);    // 꼬리말 점역. 200자 초과 거절
 }
-
 
 // ── 요청 (BE → AI) ──────────────────────────────────────────────
 message BrailleRequest {
-  string job_id      = 1;
-  int32  page_no     = 2;
+  string job_id      = 1;   // 작업 식별자
+  int32  page_no     = 2;   // 원본 쪽 번호 (1-based)
   int32  total_pages = 3;   // 헤더·푸터 cross-page 감지용
   bytes  pdf_data    = 4;   // 단일 페이지 PDF (~100–500 KB)
   string mode        = 5;   // "a" | "b" | "c"
   string source_text = 6;   // mode b 전용
 }
 
-message TranslateTextRequest {   // 꼬리말 점역
-  string text = 1;      // 묵자 (예: "수특 사회문화 2")
+message TranslateTextRequest {
+  string text = 1;          // 묵자 (예: "수특 사회문화 2")
 }
 
 // ── 서브메시지 ───────────────────────────────────────────────────
-// 요소 위치. 좌표계는 image_width·image_height와 같은 픽셀 공간이다.
-// FE는 x/image_width · y/image_height로 그대로 비율 매핑한다 — 별도 보정이 필요 없다.
-// (좌표계가 적혀 있지 않던 동안 MinerU 경로가 0~1000 정규화 값을 그대로 내보내
-//  하이라이트가 실제 위치의 77%·65% 자리에 찍히는 사고가 있었다 — issue #75)
 message BoundingBox {
-  string          id            = 1;
+  string          id            = 1;   // 요소 식별자. TextElement.id와 동일
   int32           x             = 2;   // 좌상단 x (픽셀)
   int32           y             = 3;   // 좌상단 y (픽셀)
   int32           x2            = 4;   // 우하단 x (픽셀)
   int32           y2            = 5;   // 우하단 y (픽셀)
-  string          type          = 6;   // 요소 유형. 분류 후 13종(cartoon·chart_graph 포함)
-  int32           heading_level = 7;   // 0 = null
-  string          caption_ref   = 8;   // "" = null (참조하는 element_id)
-  repeated string flags         = 9;
+  string          type          = 6;   // 요소 유형 13종
+  int32           heading_level = 7;   // 제목 단계. 0 = null
+  string          caption_ref   = 8;   // 참조 element_id. "" = null
+  repeated string flags         = 9;   // 요소 단위 경고
 }
 
 message RuleTrail {
-  string rule_id   = 1;
-  string source    = 2;
-  string section   = 3;
-  string title     = 4;
-  string excerpt   = 5;
-  string priority  = 6;   // "primary" | "secondary"
-  int32  line_no   = 7;   // 통 문자열이라 0 고정. -1 = 요소 전체
-  int32  col_start = 8;   // contents[0] 안의 시작 문자 오프셋(\n도 1문자)
-  int32  col_end   = 9;   // 끝 오프셋(미포함)
-  string tag       = 10;  // 변환 종류 (number_sign / contraction / symbol ...)
+  string rule_id   = 1;     // 규정 식별자 (예: "KBR-6.13.56")
+  string source    = 2;     // 출처 문서명
+  string section   = 3;     // 조·항 위치
+  string title     = 4;     // 조항 제목
+  string excerpt   = 5;     // 조항 원문 발췌
+  string priority  = 6;     // "primary" | "secondary"
+  int32  line_no   = 7;     // 통 문자열이라 0 고정. -1 = 요소 전체
+  int32  col_start = 8;     // contents[0] 안의 시작 오프셋
+  int32  col_end   = 9;     // 끝 오프셋 (미포함)
+  string tag       = 10;    // 변환 종류 (number_sign / contraction / symbol ...)
 }
 
-message TactileGraphic {           // 미사용 — 2차 PoC(8/24) 이후 쓸 자리라 남겨 둔다
+message TactileGraphic {           // 미사용. 2차 PoC 이후
   string ascii_braille = 1;
   string svg_path      = 2;
   string target_tool   = 3;
 }
 
 message CriticalError {
-  string type       = 1;  // C1~C9
-  string element_id = 2;
-  string message    = 3;
+  string type       = 1;    // 현재 발생: C1·C5·C7. 나머지는 예약 — 오기 전까지 분기 만들지 말 것
+  string element_id = 2;    // 원인 요소. 쪽 전체면 ""
+  string message    = 3;    // 한국어 사유 문구
 }
 
 message ReviewFlag {
-  string type       = 1;  // R1~R14
-  string element_id = 2;
-  string message    = 3;
+  string type       = 1;    // 현재 발생: R1·R10~R14. R13은 경고가 아니라 등급(요소 40%에 붙음)
+  string element_id = 2;    // 대상 요소
+  string message    = 3;    // 한국어 사유 문구
 }
 
 message QualityReport {
-  float                   ocr_confidence_avg = 1;
-  repeated CriticalError  critical_errors    = 2; // 치명 오류 목록. 비어 있으면 정상
-  repeated ReviewFlag     review_flags       = 3; // 검토 권고 목록
+  float                   ocr_confidence_avg = 1;   // 쪽 평균 OCR 신뢰도
+  repeated CriticalError  critical_errors    = 2;   // 치명 오류. 비면 정상
+  repeated ReviewFlag     review_flags       = 3;   // 검토 권고
 }
 
 message ProcessingMeta {
-  int32  processing_time_ms   = 1;
-  float  pdf_layer_confidence = 2;
+  int32  processing_time_ms   = 1;   // 처리 시간
+  float  pdf_layer_confidence = 2;   // PDF 텍스트 레이어 신뢰도
   string routing_tier_used    = 3;   // ZERO|STANDARD|QUALITY|FALLBACK
-  bool   scan_only            = 4;
+  bool   scan_only            = 4;   // 텍스트 레이어 없는 스캔본
 }
 
-message Draft {                     // 시각 요소의 대체 점역 초안 1개 — 점역사가 에디터에서 고른다
-  string          text     = 1;     // 초안 묵자(한글). 내부 태그는 제거해 보낸다 — 사람이 읽는 값이다
-  repeated string contents = 2;     // 점자 통 문자열 1항목. **mode a는 빈 배열**(점역 안 함)
-  string          label    = 3;     // 피커 표시명 ("격자형" / "행↔열 전치" / "요약" ...)
+message Draft {                     // 시각 6안(기본 selected_idx=2 개조식)·표 4안. 개수 하드코딩 금지
+  string          text     = 1;     // 초안 묵자. 내부 태그 제거됨
+  repeated string contents = 2;     // 초안 점자. mode a는 빈 배열
+  string          label    = 3;     // 피커 표시명 ("생략" / "개조식 설명" / "행↔열 전치" ...)
 }
 
 message TextElement {
-  string          id                 = 1;
-  string          type               = 2;
-  int32           order              = 3;
-  int32           heading_level      = 4;
-  float           ocr_confidence     = 5;
-  string          tn_text            = 6;
-  bool            is_blocked         = 7;
-  string          render_mode        = 8;
-  string          visual_subtype     = 9;
-  float           subtype_confidence = 10;
-  string          latex_string       = 11;  // formula 전용
-  TactileGraphic  tactile            = 12;  // 미사용 — 2차 PoC 이후
-
-  // 점역 결과. 항목이 **딱 하나**인 통 문자열이다(줄 배열 아님).
-  //   · 줄바꿈은 `\n`. 조판 규칙은 이미 문자열 안에 들어 있다:
-  //       - 구조적 빈 줄  1단계 제목 앞 2줄·뒤 1줄, 2·3단계 앞뒤 1줄, 표·그림 위아래 1줄
-  //       - 들여쓰기      문단·목록 2칸, 3·4단계 제목 4칸, 2단계 제목 6칸
-  //   · ⚠ 공백이 두 종류다. **둘 다 공백으로 처리할 것.**
-  //       들여쓰기·가운데 정렬·페이지행 = ASCII 공백 U+0020
-  //       점역 산출물 안의 어절 사이   = 점자 공백 U+2800 (⠀)
-  //       - 가운데 정렬   1단계 제목 (32칸 기준 좌우 여백)
-  //   · 들여쓰기·가운데 정렬도 이 문자열 안에 들어 있다 — 점자 조판 규칙은 AI가 소유한다.
-  //   · 그래서 BE·FE가 할 일은 넷뿐이다: n줄 n칸으로 자르기, 면 나누기, 페이지행, 페이지
-  //     변경선. 넷 다 `braille-assist`(Semojum/braille-assist)가 python·ts·java로 준다.
-  //   · 요소를 order 순으로 **그냥 이어 붙이면** 지침대로 배치된다. 각 항목은 개행으로 끝난다.
-  //   · 빈 요소는 빈 배열(항목 0개)이다 — 빈 문자열 1개짜리 배열이 아니다.
-  repeated string    contents   = 13;
-
-  repeated RuleTrail rule_trail = 14;  // 적용된 규정 목록. 근거 표시는 2차 PoC부터 FE가 쓴다
-  repeated Draft     drafts     = 15;  // 시각 요소 대체 초안. 텍스트·수식은 빈 배열
-  int32              selected_idx = 16;  // 기본 초안 번호(0-based)
+  string          id                 = 1;    // 요소 식별자
+  string          type               = 2;    // 요소 유형 13종
+  int32           order              = 3;    // 읽기 순서. mode b는 원본 줄 번호
+  int32           heading_level      = 4;    // 제목 단계. 0 = null
+  float           ocr_confidence     = 5;    // 요소 OCR 신뢰도
+  string          tn_text            = 6;    // 점역자 주. 없으면 ""
+  bool            is_blocked         = 7;    // 이 요소만 처리 실패
+  string          render_mode        = 8;    // 조판 방식 (table_grid / linear / narrative ...)
+  string          visual_subtype     = 9;    // 도표 세분류 (개념도 / 흐름도 ...)
+  float           subtype_confidence = 10;   // 세분류 신뢰도
+  string          latex_string       = 11;   // formula 전용 원본 LaTeX
+  TactileGraphic  tactile            = 12;   // 미사용. 2차 PoC 이후
+  repeated string    contents        = 13;   // 본문. 통 문자열 1항목, 조판 규칙 포함
+  repeated RuleTrail rule_trail      = 14;   // 적용된 규정 목록
+  repeated Draft     drafts          = 15;   // 시각 요소 대체 초안. 텍스트·수식은 빈 배열
+  int32              selected_idx    = 16;   // 기본 초안 번호 (0-based)
 }
 
-// ── 원가 ────────────────────────────────────────────────────────
-// 관리자 대시보드 T1-2(유형별 평균 원가)·T1-4(쪽별 결과 표)가 쓴다.
-//
-// 기획서가 못 박은 두 가지를 그대로 따른다:
-//   · "쪽마다 대표 유형과 원가를 함께 보내야 합니다"      → layout_type + 금액
-//   · "백엔드는 저장하고 더하기만 합니다"                  → BE는 계산하지 않는다
-//
-// `models`만 예외다. 금액은 단가표를 곱한 **해석**이라 바뀌지만(도입가 만료·단가 오기)
-// 토큰은 사실이라 안 바뀐다. BE DB에 사실이 남아 있으면 단가가 틀렸을 때 과거를 통째로
-// 고칠 수 있다. 실제로 Claude를 부르며 gpt-4o 단가를 곱하던 버그가 있었다(issue #176).
-// **BE가 평상시 이 값으로 계산하지는 않는다** — 보관용이다.
-// 축이 모델인 이유는 청구서가 모델별로 나오기 때문이다.
-//
-// ⚠ 금액 단위:  USD = cost_usd_nanos / 1e9   ·   원 = cost_krw_milli / 1000
-//   쪽당 원가가 ₩21~94이라 원 단위로 반올림해 보내면 수만 쪽에서 눈에 띄게 어긋난다.
-//
-// ⚠ **원화는 참고값이고 USD가 정본이다.** Anthropic·OpenAI는 USD로 청구하고, 원화
-//   환산은 카드사가 **매입일**(결제일이 아니라 며칠 뒤) 환율로 한다. 청구서 대조는 USD로.
-
-// 쪽 대표 유형. 대시보드 T1-2가 이 축으로 평균 원가를 낸다.
-// 한 쪽에 여러 유형이 섞이면 **비싼 쪽이 이긴다** — 실측 원가가 그림 94 > 표 58 >
-// 수식 46 > 본문 21원/쪽이라 그 순서다. 개수로 세면 비싼 요소가 본문에 묻혀
-// 유형별 평균이 흐려진다. 코퍼스 4,000쪽 분포: 본문 55.4 · 그림 29.0 · 표 14.6 · 수식 0.9%.
-enum PageLayoutType {
-  PAGE_LAYOUT_UNSPECIFIED = 0;     // 판정 불가 — 요소가 하나도 없는 쪽(BLOCKED 등)
-  PAGE_LAYOUT_TEXT        = 1;     // 본문 위주 — 아래 셋에 하나도 안 걸리는 쪽
-  PAGE_LAYOUT_FORMULA     = 2;     // 수식 포함 — formula 요소가 있고 표·그림은 없는 쪽
-  PAGE_LAYOUT_TABLE       = 3;     // 표 포함 — table 요소가 있고 그림은 없는 쪽
-  PAGE_LAYOUT_VISUAL      = 4;     // 그림·시각 — image·cartoon·chart_graph·diagram 중 하나라도 있는 쪽
+// ── 사용량 ──────────────────────────────────────────────────────
+// [변경 0817] AI는 측정값(토큰·시간·유형)만 보냄. 금액·크레딧은 BE가 관리 변수로 계산
+enum PageLayoutType {               // 쪽 대표 유형. 원가 통계와 크레딧 배율의 축
+  PAGE_LAYOUT_UNSPECIFIED = 0;      // 판정 불가. 요소 없는 쪽 (크레딧 0 — 차감 0도 로그에 남길 것)
+  PAGE_LAYOUT_TEXT        = 1;      // 본문 위주
+  PAGE_LAYOUT_FORMULA     = 2;      // 수식 포함
+  PAGE_LAYOUT_TABLE       = 3;      // 표 포함
+  PAGE_LAYOUT_VISUAL      = 4;      // 그림·만화·차트·도표 포함
 }
 
-// 이 쪽에서 부른 외부 LLM을 **모델별로** 합친 사용량. 축이 모델인 이유는 청구서가
-// 모델별로 나오기 때문이다. 단가가 틀렸을 때 BE가 이 토큰으로 과거를 다시 계산한다
-// — **평상시 계산에 쓰는 값이 아니라 보관용**이다.
-message ModelUsage {
-  string model         = 1;        // 모델 ID. "claude-sonnet-5" · "claude-opus-4-8" · "gpt-4o"
-  int32  calls         = 2;        // 이 모델을 부른 횟수(파트 구분 없이 합계)
-  int64  input_tokens  = 3;        // 입력 토큰 합계 (응답 usage 실값. 근사치 아님)
-  int64  output_tokens = 4;        // 출력 토큰 합계 (응답 usage 실값)
+message ModelUsage {                // 모델별 LLM 사용량. BE 원가 계산의 원본
+  string model         = 1;         // 모델 ID ("claude-sonnet-5" / "gpt-4o" ...). 단가표에 없으면 0원 아닌 "미확인 모델" 표시
+  int32  calls         = 2;         // 호출 횟수
+  int64  input_tokens  = 3;         // 입력 토큰 합계 (응답 usage 실값)
+  int64  output_tokens = 4;         // 출력 토큰 합계 (응답 usage 실값)
 }
 
-// 이 호출 1회(= 원본 1쪽)의 원가.
-message CostReport {
-  PageLayoutType layout_type = 1;  // 이 쪽의 대표 유형. 대시보드가 이 축으로 묶어 평균을 낸다
-
-  int64 llm_cost_usd_nanos = 2;    // 외부 LLM 비용(USD ×1e9). **청구서와 대조되는 값**
-  int64 gpu_cost_usd_nanos = 3;    // 로컬 GPU 점유 시간을 안분한 값(USD ×1e9). 인스턴스는 놀아도
-                                   //   24시간 과금되므로 가동률만큼 청구서와 벌어진다 — 그래서 분리
-  int64 cost_krw_milli     = 4;    // 화면 표시용 원화 총액(원 ×1000, LLM+GPU). 카드 수수료 반영,
-                                   //   매입일 환율을 모르므로 **참고값**이다
-
-  string pricing_version   = 5;    // 계산에 쓴 단가표 판("2026-08-13"). 나중에 대조할 때 식별자
-
-  repeated ModelUsage models = 6;  // 재계산용 원본. 이 쪽이 쓴 모델별 토큰. LLM 미사용 쪽은 빈 배열
+message UsageReport {               // [변경 0817] 구 CostReport. 이 호출 1회의 사용량 — 전부 측정값이라 안 바뀜
+  PageLayoutType layout_type = 1;   // 쪽 대표 유형. 섞이면 비싼 쪽이 이김 (그림>표>수식>본문)
+  repeated ModelUsage models = 2;   // 모델별 토큰. LLM 미사용 시 빈 배열
+  int64 gpu_time_ms          = 3;   // 로컬 GPU 점유 시간 합계(ms). GPU 원가 = 이 값 × BE 시간당 단가
 }
 
 // ── 응답 (AI → BE) ──────────────────────────────────────────────
 message BrailleResponse {
-  string job_id      = 1;
+  string job_id      = 1;   // 요청 job_id 반환
   string status      = 2;   // COMPLETED | NEEDS_REVIEW | BLOCKED
-  int32  page_number = 3;
-
-  ProcessingMeta processing_meta = 4;
-
-  int32                   image_width         = 5;   // 원본 쪽 가로 픽셀. bbox와 같은 좌표계. mode a, c
+  int32  page_number = 3;   // 원본 쪽 번호
+  ProcessingMeta          processing_meta     = 4;   // 처리 시간·라우팅 정보
+  int32                   image_width         = 5;   // 원본 쪽 가로 픽셀. mode a, c
   int32                   image_height        = 6;   // 원본 쪽 세로 픽셀. mode a, c
-  repeated BoundingBox    bounding_box_list   = 7;   // 요소 좌표 목록. mode a, c
-  repeated TextElement    text_list           = 8;   // mode a, b, c 전부. 원문(묵자). 시각 요소는 drafts에 묵자 초안(contents 빈 배열)
-  repeated TextElement    braille_text_list   = 9;   // 점역 결과. mode b, c. 시각 요소 drafts는 묵자+점자 둘 다
+  repeated BoundingBox    bounding_box_list   = 7;   // 요소 좌표. mode a, c
+  repeated TextElement    text_list           = 8;   // 원문(묵자). mode a, b, c
+  repeated TextElement    braille_text_list   = 9;   // 점역 결과. mode b, c
   QualityReport           quality_report      = 10;  // 품질 검사 결과
-  // 이 호출의 원가. **BLOCKED에도 실린다** — 막혔어도 돈은 나갔다.
-  // LLM을 한 번도 안 부른 쪽(mode b 등)도 0으로 채운 메시지를 보낸다. 안 보내는 것과
-  // 0원인 것은 다르고, BE가 그 둘을 구분하려 애쓰게 만들 이유가 없다.
-  CostReport              cost_report         = 11;
+  UsageReport             usage_report        = 11;  // 사용량 관련 정보
 }
 
-message TranslateTextReply {     // 꼬리말 점역
-  string braille = 1;   // 유니코드 점자 (예: "⠠⠍⠓⠪⠁⠀⠇⠚⠽⠑⠛⠚⠧⠀⠼⠃")
+message TranslateTextReply {
+  string braille = 1;       // 유니코드 점자
 }

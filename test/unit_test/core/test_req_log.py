@@ -29,10 +29,10 @@ class TestObservabilityNeverRaises:
         self._boom(monkeypatch)
         assert rl.breakdown_lines() == []
 
-    def test_cost_report(self, monkeypatch):
+    def test_usage_report(self, monkeypatch):
         rl.start_request(); rl.record_llm("a", "claude-sonnet-5", 10, 1)
         self._boom(monkeypatch)
-        assert rl.cost_report() == {}
+        assert rl.usage_report() == {}
 
 
 class TestUsageCoercion:
@@ -44,9 +44,9 @@ class TestUsageCoercion:
         rl.record_anthropic("캡셔닝", "claude-sonnet-5", MagicMock())
         e = rl._cur().entry("캡셔닝", "claude-sonnet-5")
         # 핵심은 **형이 숫자로 남는 것**이다. 목이 섞여 누계가 MagicMock이 되면
-        # 이후 cost_report()가 정렬에서 TypeError로 죽고, 그 요청 원가가 통째로 날아간다.
+        # 이후 usage_report()가 정렬에서 TypeError로 죽고, 그 요청 사용량이 통째로 날아간다.
         assert isinstance(e.input_tokens, int) and isinstance(e.cost, float)
-        assert isinstance(rl.cost_report()["cost_usd"], float)
+        assert isinstance(rl.usage_report()["cost_usd"], float)
 
     def test_usage가_None이어도_호출수는_센다(self):
         rl.start_request()
@@ -167,10 +167,10 @@ class TestCost:
         rl.record_hcxt("텍스트", 3600.0)
         assert rl._totals()["gpu_cost"] > 0  # 구 버전은 0원이었다
 
-    def test_cost_report에_환율과_단가판이_실린다(self):
+    def test_usage_report에_환율과_단가판이_실린다(self):
         rl.start_request()
         rl.record_llm("캡셔닝", "claude-sonnet-5", 100, 10)
-        r = rl.cost_report()
+        r = rl.usage_report()
         assert r["fx_rate"] > 0 and r["pricing_version"]
         assert [m["model"] for m in r["models"]] == ["claude-sonnet-5"]
         assert r["unpriced_calls"] == 0
@@ -178,7 +178,7 @@ class TestCost:
     def test_단가표에_없는_모델은_드러난다(self):
         rl.start_request()
         rl.record_llm("a", "claude-지어낸-9", 100, 10)
-        assert rl.cost_report()["unpriced_calls"] == 1
+        assert rl.usage_report()["unpriced_calls"] == 1
 
 
 class TestStage:
