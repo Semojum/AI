@@ -897,6 +897,14 @@ _GEOM_CMD_SYMBOL = {"\\angle": "∠", "\\triangle": "△"}
 # 0a 단계가 명령을 점형 문자로 바꾸고 공백만 남겨서 `⠠⠨⠙⠀⠭`가 나갔다.
 # 실측 전 코퍼스 412건(`\Delta ` 357 · `\cdot ` 23 · `\pi ` 17 · `\mu ` 13).
 # ★ 관계·연산 기호(∩ ⊕ ⊖ …)는 넣지 않는다 — 제15항이 앞뒤 한 칸을 요구한다.
+# 규정이 **붙여 적으라고 하는** 연산자인데 원문 공백이 남는 자리.
+#   제2항 붙임 곱셈점 `#f"#i` · 제4항 1호 같지않다 `y.33#j` · 제43항 합동 `_+,,ABC77_+,,DEF`
+# 셋 다 예시에 공백이 없다. 반대로 제15항 일반연산(⊕⊖⊗∗∘)과 제29~32항 물결 계열은
+# 규정이 "앞뒤를 한 칸씩 띄어 쓴다"고 하므로 **넣지 않는다**.
+# ⚠ 한글 가운뎃점(사회·문화)은 건드리면 안 된다 — 실측 14,031건이다. 그래서 양옆이
+#   영숫자·괄호일 때만 붙인다. 실측 공백 낀 붙임 대상 540건(cdot 282·neq 225·equiv 33).
+_ATTACHED_OP_SP_RE = re.compile(
+    r"(?<=[A-Za-z0-9)\]])[ \t]*(\\cdot|\\neq|\\equiv|·|≠|≡)[ \t]*(?=[A-Za-z0-9(\[\\])")
 _GREEK_TIGHT_RE = re.compile(r"([α-ωΑ-Ω·])[ \t]+(?=[A-Za-z])")
 # 명령 꼴(`\Delta x`)은 0c 시점에 아직 점형 문자가 아니다. 공백만 지우면 `\Deltax`가 되어
 # 미지 명령으로 사라지므로 유니코드 문자로 바꾸면서 같이 지운다(`\anglePO`와 같은 함정).
@@ -951,6 +959,7 @@ def _stage0c_bare_args(latex: str) -> str:
     latex = _GREEK_CMD_TIGHT_RE.sub(
         lambda m: _GREEK_CMD_MAP.get(m.group(1), m.group(1)), latex)
     latex = _GREEK_TIGHT_RE.sub(r"\1", latex)
+    latex = _ATTACHED_OP_SP_RE.sub(r"\1", latex)
     latex = _BARE_FRAC_RE.sub(r"\\frac{\1}{\2}", latex)
     latex = _BARE_SQRT_RE.sub(r"\\sqrt{\1}", latex)
     return _GEOM_CMD_SPACE_RE.sub(
