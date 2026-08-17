@@ -330,6 +330,15 @@ _SPACED_DIGITS_RE = re.compile(r"\d(?: \d)+")
 _CODE_FENCE_RE = re.compile(r"```[a-zA-Z]*\n?|```")        # ```latex … ``` 펜스
 _MATH_DELIM_RE = re.compile(r"\${1,2}")                    # $$ … $$ / $ … $
 _CMD_BRACE_SP_RE = re.compile(r"(\\[a-zA-Z]+)\s+(?=[{[(])")  # \frac { → \frac{
+# MinerU는 LaTeX를 토큰마다 띄어 내보낸다(`\frac {3}{2} a ^ {2}`·`{2 a b}`). 그 공백은
+# 조판이 아니라 토큰 구분이라 붙여야 하는데, 남으면 뒤 판정이 통째로 빗나간다 —
+# 숫자 뒤 로마자 구분점(제12항)이 안 들어가고 곱 묶음 판정(제7항 3호)이 '영숫자 덩어리'로
+# 안 본다. 실측 닫는 중괄호 뒤 1,803건 · 영숫자만 든 중괄호 안 953건.
+# ★ 명령은 절대 건드리지 않는다 — `\sin x`를 붙이면 `\sinx`가 되어 미지 명령으로
+#   통째로 사라진다(`\anglePO`와 같은 함정). 그래서 왼쪽이 **닫는 중괄호**이거나
+#   **역슬래시가 하나도 없는 영숫자 그룹 안**일 때만 붙인다.
+_TOKEN_SP_AFTER_BRACE_RE = re.compile(r"\}[ \t]+(?=[A-Za-z0-9])")
+_TOKEN_SP_IN_GROUP_RE = re.compile(r"\{[A-Za-z0-9]+(?:[ \t]+[A-Za-z0-9]+)+\}")
 # 첨자 _ ^ 양쪽 공백 제거: a _ {i} → a_{i}, } ^{∞} → }^{∞} (첨자가 본체에 붙도록)
 _SUBSUP_SP_RE = re.compile(r"\s*([_^])\s*")
 _MULTISPACE_RE = re.compile(r" {2,}")                       # 다중 공백 → 단일
@@ -937,6 +946,8 @@ def _collapse_redundant_braces(latex: str) -> str:
 def _stage0c_bare_args(latex: str) -> str:
     """중괄호 없는 한 글자 인자·기호 뒤 공백·겹중괄호를 정규화한다."""
     latex = _collapse_redundant_braces(latex)
+    latex = _TOKEN_SP_AFTER_BRACE_RE.sub("}", latex)
+    latex = _TOKEN_SP_IN_GROUP_RE.sub(lambda m: re.sub(r"[ \t]+", "", m.group(0)), latex)
     latex = _GREEK_CMD_TIGHT_RE.sub(
         lambda m: _GREEK_CMD_MAP.get(m.group(1), m.group(1)), latex)
     latex = _GREEK_TIGHT_RE.sub(r"\1", latex)
