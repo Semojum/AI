@@ -860,6 +860,36 @@ def _tighten_operator_spacing(result: str) -> str:
 # 다를 수 있다** — 11e가 11d보다 먼저 돈다. 파이프라인 나열 순서가 진실이다.
 
 
+# 중괄호 없는 한 글자 인자(`\sqrt3`·`\frac 1 2`) — LaTeX에서 허용되는 표기인데
+# 우리 단계들은 `{}`만 본다. 그대로 두면 **조용히 망가진다**:
+#   \sqrt3   → ⠼⠉      (제곱근 기호가 사라진다)
+#   \sqrt x  → ''       (통째로 없어진다)
+#   \frac 1 2 → ⠀⠼⠁⠃   (분수가 사라지고 숫자가 12로 붙는다)
+# 실측 전 코퍼스 23건(`\sqrt3` 11 · `\frac 1 2` 12)으로 드물지만, 틀린 수가 나가는
+# 자리라 값이 다르다. `\sqrt[n]{}`는 대괄호라 안 걸린다.
+_BARE_FRAC_RE = re.compile(r"\\frac\s*([A-Za-z0-9])\s*([A-Za-z0-9])")
+_BARE_SQRT_RE = re.compile(r"\\sqrt\s*([A-Za-z0-9])")
+
+
+# 기하 기호 명령과 꼭짓점 사이의 공백(`\angle PO`·`\triangle ABC`). 규정 제39·40항
+# 예시는 붙여 적는다(`?,a`·`_+,,ABC`). 유니코드 꼴(∠PO)은 이미 맞게 나가므로 그리로
+# 맞춘다 — 공백만 지우면 `\anglePO`가 되어 미지 명령으로 **통째로 사라진다**.
+# 실측 전 코퍼스 251건. `\triangleq`·`\triangledown`은 뒤에 공백이 없어 안 걸린다.
+# `\angle`는 0a 단계가 이미 `∠ `로 바꾸므로(공백은 남는다) 점형과 명령 둘 다 본다.
+# 대문자 꼭짓점 앞에서만 지운다 — 일반연산 기호(x ⊕ y, 제15항 "앞뒤 한 칸")는 소문자
+# 변수를 쓰므로 안 걸린다. 실측: 공백을 두는 다른 기하 기호는 코퍼스에 없다.
+_GEOM_CMD_SPACE_RE = re.compile(r"(?:\\(?:angle|triangle)|[∠△])\s+(?=[A-Z])")
+_GEOM_CMD_SYMBOL = {"\\angle": "∠", "\\triangle": "△"}
+
+
+def _stage0c_bare_args(latex: str) -> str:
+    """중괄호 없는 한 글자 인자·기하 기호 뒤 공백을 정규화한다."""
+    latex = _BARE_FRAC_RE.sub(r"\\frac{\1}{\2}", latex)
+    latex = _BARE_SQRT_RE.sub(r"\\sqrt{\1}", latex)
+    return _GEOM_CMD_SPACE_RE.sub(
+        lambda m: _GEOM_CMD_SYMBOL.get(m.group(0).rstrip(), m.group(0).rstrip()), latex)
+
+
 def _stage0b_nth_root(result: str) -> str:
     r"""0b. n제곱근 \sqrt[n]{내용} → n⠻내용 (수학 제22항 [붙임1]).
 
@@ -1070,7 +1100,7 @@ def _stage3_limit(result: str) -> str:
     def _lim_replace(m: re.Match) -> str:
         var = convert_latex(m.group(1).strip())
         val = convert_latex(m.group(2).strip())
-        # 도서 관행(2026-07-19 실측): gold의 lim 420건 **전부** 화살표 없이
+        # 원장 M-07. 도서 관행(2026-07-19 실측): gold의 lim 420건 **전부** 화살표 없이
         # `lim⠰변수 점근값 본식`으로 적는다(0%). 규정 제51항은 화살표를 명시하므로
         # regulation 모드는 규정형을 유지하고 book 모드만 생략한다.
         if _IS_BOOK_STYLE:
@@ -1218,7 +1248,7 @@ def _stage8_superscript(result: str) -> str:
         if raw_exp in ("2", "3") and _is_unit_square(base, m.string[:m.start()]):
             return base + ("⠣" if raw_exp == "2" else "⠩")
         exp  = convert_latex(raw_exp)
-        exp_w = _wrap_ins(exp) if _needs_wrap(raw_exp) else exp
+        exp_w = _wrap_ins(exp) if _needs_wrap_out(raw_exp, exp) else exp
         return f"{base}{_SUPERSCRIPT_IND}{exp_w}"
 
     return _SUP_RE.sub(_sup_replace, result)
@@ -1259,7 +1289,7 @@ def _stage9_subscript(result: str) -> str:
         #   규정 제19항 1호와 같은 형식이고 수학·화학 양쪽에서 일관된다 → 규정형으로 낸다.
         #   (내린 숫자 `_DROPPED_DIGIT`는 로그 밑 제46항 전용으로 남는다.)
         sub  = convert_latex(sub_raw)
-        sub_w = _wrap_ins(sub) if _needs_wrap(sub_raw) else sub
+        sub_w = _wrap_ins(sub) if _needs_wrap_out(sub_raw, sub) else sub
         return f"{base}{_SUBSCRIPT_IND}{sub_w}"
 
     return _SUB_RE.sub(_sub_replace, result)
@@ -1614,6 +1644,7 @@ def convert_latex(latex: str) -> str:
     latex, _text_store = _protect_text(latex)   # 0.  P2: \text{한글} → 한글 점자 sentinel
     result = _normalize_latex_input(latex)      # 0a. MinerU/마크다운 입력 정규화
 
+    result = _stage0c_bare_args(result)             # 0c. 중괄호 없는 한 글자 인자
     result = _stage0b_nth_root(result)              # 0b. \sqrt[n]{} — 대괄호 치환보다 먼저
     result = _stage1_math_brackets(result)          # 1·1a. 수학 괄호 + 병치 닫음표 생략
     result = _stage1b_accents(result)               # 1b. 문자 위 기호
@@ -1890,6 +1921,56 @@ def _extract_brace_content(s: str, start: int) -> tuple[str, int]:
     return s[start + 1:], len(s)
 
 
+# 분수 분모·분자가 **순수 영숫자 단항의 곱**인가(ab·2a·2R). 규정 제6항 2호는 "단항의 곱,
+# 다항 등"을 묶음 괄호로 묶으라 하고 예시가 `(ab)/#a`다.
+# ⚠ 2026-07-22에 곱 묶음을 되살렸다가 기각된 적이 있다(요소 win 4 : lose 42). 그때 깨진
+#   것은 `\sqrt{3}`·`f(x)`를 2인수로 세어 과잉으로 묶은 자리였다. 그래서 여기서는
+#   **역슬래시·괄호·공백이 하나도 없는 영숫자 덩어리**만 본다 — 함수 적용은 애초에 안 걸린다.
+_MONOMIAL_PRODUCT_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*|[0-9]+[A-Za-z][A-Za-z0-9]*")
+
+
+# 미분소(dx·dy·dz·du·dv·dt)는 곱이 아니라 한 덩어리다. 규정 제53항 예시가
+# `dx/dy`(= ⠙⠭⠌⠙⠽)로 **묶음 괄호 없이** 적는다. `_needs_wrap`도 같은 이유로 뺀다.
+_DIFFERENTIAL_RE = re.compile(r"d[a-z]")
+
+
+def _is_monomial_product(raw: str) -> bool:
+    """`ab`·`2a`·`2R`처럼 문자가 든 두 자 이상 영숫자 덩어리인가."""
+    raw = raw.strip()
+    if _DIFFERENTIAL_RE.fullmatch(raw):
+        return False
+    return (len(raw) >= 2 and raw.isalnum() and not raw.isdigit()
+            and _MONOMIAL_PRODUCT_RE.fullmatch(raw) is not None)
+
+
+
+def _already_wrapped(braille: str) -> bool:
+    """이미 묶음 괄호 하나로 통째로 싸여 있는가 — 이중 묶음 방지."""
+    if not (braille.startswith(_WRAP_S) and braille.endswith(_WRAP_E)):
+        return False
+    depth = 0
+    for i, ch in enumerate(braille):
+        if ch == _WRAP_S:
+            depth += 1
+        elif ch == _WRAP_E:
+            depth -= 1
+            if depth == 0:
+                return i == len(braille) - 1
+    return False
+
+
+def _needs_wrap_out(raw: str, braille: str) -> bool:
+    """묶음 괄호가 필요한가 — 원문(raw)과 **변환된 점형**을 함께 본다.
+
+    `_needs_wrap`은 원문만 보는데, 분수는 `_apply_fracs`가 첨자 단계보다 **먼저** 돌아서
+    첨자에 닿을 때는 이미 점형이다(`⠼⠉⠌⠷⠭⠢⠼⠁⠾`). 그래서 원문만 보면 "지수가 분수일
+    때 묶음 괄호로 묶는다"(제7항 붙임)가 안 걸렸다. 점형의 분수표 ⠌로도 판정한다.
+    """
+    if _already_wrapped(braille):
+        return False
+    return (_needs_wrap(raw) or _is_monomial_product(raw)
+            or _FRACTION_MID in braille)
+
 def _apply_fracs(latex: str) -> str:
     """\\frac{...}{...} 변환 — 중괄호 중첩 대응 (\\sqrt{...} 안의 \\frac 포함)."""
     result = []
@@ -1901,8 +1982,12 @@ def _apply_fracs(latex: str) -> str:
                 den_raw, after_den = _extract_brace_content(latex, after_num)
                 num = convert_latex(num_raw)
                 den = convert_latex(den_raw)
-                den_wrapped = _wrap_ins(den) if _needs_wrap(den_raw) else den
-                num_wrapped = _wrap_ins(num) if _needs_wrap(num_raw) else num
+                den_wrapped = (_wrap_ins(den)
+                               if _needs_wrap(den_raw) or _is_monomial_product(den_raw)
+                               else den)
+                num_wrapped = (_wrap_ins(num)
+                               if _needs_wrap(num_raw) or _is_monomial_product(num_raw)
+                               else num)
                 result.append(f"{den_wrapped}{_FRACTION_MID}{num_wrapped}")
                 i = after_den
                 continue
