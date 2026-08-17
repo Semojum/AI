@@ -64,6 +64,9 @@ def test_n제곱근은_대괄호라_안_걸린다():
     ("\\frac{2π}{b}", "⠃⠌⠷⠼⠃⠨⠏⠾"),
 ])
 def test_명령_꼴_그리스도_곱으로_본다(latex, expected):
+    assert convert_latex(latex) == expected
+
+
 # ── 기호 명령 뒤 종료 공백 (LaTeX 문법이지 내용이 아니다) ──────────────────────
 # 규정 제52항 변화율 예시가 `,.dx/,.dy`(= ⠠⠨⠙⠭⠌⠠⠨⠙⠽)로 붙여 적는다.
 # 실측 전 코퍼스 412건(`\Delta ` 357 · `\cdot ` 23 · `\pi ` 17 · `\mu ` 13).
@@ -87,6 +90,10 @@ def test_그리스_위첨자가_깨지지_않는다(latex, expected):
     한 번 깨뜨렸다 — 위첨자표 ⠘가 사라지고 ⠈⠢⠦⠂ 잔재가 나갔다(eval 실측
     001 p0012·p0047). 그래서 판정 입력만 정규화하고 문자열은 안 건드린다.
     """
+    assert convert_latex(latex) == expected
+
+
+@pytest.mark.parametrize("latex,expected", [
     ("x \\oplus y", "⠭⠀⠸⠢⠀⠽"),      # 제15항 "기호의 앞뒤를 한 칸씩 띄어 쓴다"
     ("A \\cap B", "⠠⠁⠀⠩⠀⠠⠃"),
 ])
