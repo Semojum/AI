@@ -1179,9 +1179,60 @@ class FlatElement(NamedTuple):
     draft_texts: tuple[str, ...] = ()
 
 
-def _pad_join(lines: list[str], pads: list[int]) -> str:
-    """줄별 들여쓰기를 점자 공백 셀로 박아 한 문자열로 잇는다."""
-    return "\n".join(" " * p + ln for ln, p in zip(lines, pads))
+# 통 문자열에서 접을 줄의 폭 임계. 이만큼 찬 줄 뒤 개행은 **칸수에 밀린 것**이라
+# 내용이 아니다(2026-08-16 대표 기준: "칸수 초과 때문이면 한 줄로, 의도된 것이면 살린다").
+# 32칸에서 4칸 여유를 둔 것은 어절 하나가 못 들어가 접힌 자리까지 잡기 위해서다.
+_FULL_LINE_MIN = _COLS - 4
+
+
+# 접기를 적용할 요소 유형. 표·시각자료·글상자는 32칸 줄이 **조판 결과가 아니라 구조**다
+# (테두리 ⠿⠛…⠿가 정확히 32칸이라 접기 조건에 걸린다 — 한 번 밟았다).
+_FOLDABLE_TYPES = {"text", "list_item", "caption", "footnote", "sidebar", "title"}
+
+
+def _fold_full_lines(lines: list[str], pads: list[int],
+                     etype: str = "text") -> tuple[list[int], list[str]]:
+    """꽉 찬 줄 뒤 개행을 점자 공백으로 바꾼다 — 줄은 그대로 두고 **구분자만** 고른다.
+
+    `contents`는 조판하지 않은 통 문자열이 계약인데(proto §TextElement.contents) 32칸에
+    밀려 끊긴 줄이 개행으로 남아 있었다. 실측 점자 요소의 25%가 안쪽 개행을 물고 나갔고,
+    그중 32%가 이 얼굴이다(eval 2026-08-17).
+
+    ★ 개행과 점자 공백은 **둘 다 1문자**라 이 치환은 오프셋을 안 바꾼다 — `_flat_trail`이
+      쓰는 `starts` 계산(`+1`)이 그대로 맞는다. 그래서 줄 문자열에는 손대지 않는다
+      (표식을 줄에 붙이면 `len(ln)`이 1 늘어 오프셋이 밀린다 — 한 번 밟았다).
+      이어 붙는 줄의 들여쓰기만 0으로 돌리고, 그 pads를 두 함수가 같이 쓴다.
+
+    ⚠ 짧은 줄 뒤 개행은 안 건드린다 — 시행·대사·목록처럼 줄바꿈이 내용인 자리다.
+
+    반환: (조정된 pads, 줄 사이 구분자 목록 — 길이 len(lines)-1)
+    """
+    seps = ["\n"] * max(0, len(lines) - 1)
+    if len(lines) < 2 or etype not in _FOLDABLE_TYPES:
+        return list(pads), seps
+    out_pads = list(pads)
+    for i in range(len(lines) - 1):
+        width = (pads[i] if i < len(pads) else 0) + len(lines[i])
+        if width >= _FULL_LINE_MIN and lines[i + 1].strip():
+            seps[i] = "⠀"
+            out_pads[i + 1] = 0
+    return out_pads, seps
+
+
+def _pad_join(lines: list[str], pads: list[int],
+              seps: Optional[list[str]] = None) -> str:
+    """줄별 들여쓰기를 점자 공백 셀로 박아 한 문자열로 잇는다.
+
+    `seps`를 주면 줄 사이 구분자를 자리마다 고른다(`_fold_full_lines` 참조).
+    구분자는 전부 1문자라 오프셋 계산이 그대로 맞는다.
+    """
+    parts = [" " * p + ln for ln, p in zip(lines, pads)]
+    if not seps:
+        return "\n".join(parts)
+    out = parts[0] if parts else ""
+    for i, part in enumerate(parts[1:]):
+        out += (seps[i] if i < len(seps) else "\n") + part
+    return out
 
 
 def _flat_trail(
@@ -1255,6 +1306,7 @@ def flatten_elements(
             continue        # 빈 요소는 빈 줄도 만들지 않는다
         etype, _order, hlevel = meta.get(bo.element_id, _DEFAULT_META)
         lines, pads = lb._indent_lines(bo, etype, hlevel)
+        pads, seps = _fold_full_lines(lines, pads, etype)
         before, after = _HEADING_BLANK.get(hlevel, (0, 0))
         if etype in _BLANK_AROUND_TYPES:      # 표·시각자료 위아래(BBPG 2장2절2 2)(2)④)
             before, after = max(before, 1), max(after, 1)
@@ -1279,7 +1331,7 @@ def flatten_elements(
 
         prefix = "\n" * before
         suffix = "\n" * (after + 1)           # +1 = 본문 마지막 줄 끝내기
-        text_body = _pad_join(lines, pads)
+        text_body = _pad_join(lines, pads, seps)
         drafts = []
         for d in getattr(bo, "drafts", []) or []:
             d_lines, d_pads = lb._indent_lines(bo, etype, hlevel, list(d.braille_lines))
