@@ -283,6 +283,69 @@
       "brf_ascii": "\\#bx5#g\\9#h",
       "braille_unicode": "⠳⠼⠃⠭⠢⠼⠛⠳⠔⠼⠓",
       "item": "제21항 예시"
+    },
+    {
+      "rule_id": "KBR-수학-6.53",
+      "latex": "y'=\\frac{dy}{dx}",
+      "brf_ascii": "y-33dx/dy",
+      "braille_unicode": "⠽⠤⠒⠒⠙⠭⠌⠙⠽",
+      "item": "제53항 1호 일계도함수"
+    },
+    {
+      "rule_id": "KBR-수학-6.53",
+      "latex": "f'(x)",
+      "brf_ascii": "f-8x0",
+      "braille_unicode": "⠋⠤⠦⠭⠴",
+      "item": "제53항 1호"
+    },
+    {
+      "rule_id": "KBR-수학-6.53",
+      "latex": "y''=\\frac{d^{2}y}{dx^{2}}",
+      "brf_ascii": "y--33dx^#b/d^#by",
+      "braille_unicode": "⠽⠤⠤⠒⠒⠙⠭⠘⠼⠃⠌⠙⠘⠼⠃⠽",
+      "item": "제53항 2호 이계도함수"
+    },
+    {
+      "rule_id": "KBR-수학-6.56",
+      "latex": "\\int f(x)dx=F(x)+C",
+      "brf_ascii": "!F8X0DX33,F8X05,c",
+      "braille_unicode": "⠮⠋⠦⠭⠴⠙⠭⠒⠒⠠⠋⠦⠭⠴⠢⠠⠉",
+      "item": "제56항 부정적분"
+    },
+    {
+      "rule_id": "KBR-수학-6.57",
+      "latex": "\\int_{a}^{b}f(x)dx",
+      "brf_ascii": "!;A`B`F8X0DX",
+      "braille_unicode": "⠮⠰⠁⠀⠃⠀⠋⠦⠭⠴⠙⠭",
+      "item": "제57항 정적분"
+    },
+    {
+      "rule_id": "KBR-수학-6.58",
+      "latex": "\\iint_{A}f(x, y)dxdy",
+      "brf_ascii": "!!;,A`F8X\"`Y0DXDY",
+      "braille_unicode": "⠮⠮⠰⠠⠁⠀⠋⠦⠭⠐⠀⠽⠴⠙⠭⠙⠽",
+      "item": "제58항 이중적분"
+    },
+    {
+      "rule_id": "KBR-수학-2.15",
+      "latex": "x ⊗ y",
+      "brf_ascii": "x`_*`y",
+      "braille_unicode": "⠭⠀⠸⠡⠀⠽",
+      "item": "제15항 3호 동그라미 곱셈표"
+    },
+    {
+      "rule_id": "KBR-수학-4.42",
+      "latex": "\\triangle ABC∽\\triangle DEF",
+      "brf_ascii": "_+,,ABC,'_+,,DEF",
+      "braille_unicode": "⠸⠬⠠⠠⠁⠃⠉⠠⠄⠸⠬⠠⠠⠙⠑⠋",
+      "item": "제42항 닮음"
+    },
+    {
+      "rule_id": "KBR-수학-4.43",
+      "latex": "\\triangle ABC≡\\triangle DEF",
+      "brf_ascii": "_+,,ABC77_+,,DEF",
+      "braille_unicode": "⠸⠬⠠⠠⠁⠃⠉⠶⠶⠸⠬⠠⠠⠙⠑⠋",
+      "item": "제43항 합동"
     }
   ],
   "backtick": "space"
