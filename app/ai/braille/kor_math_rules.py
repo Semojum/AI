@@ -1967,9 +1967,22 @@ _MONOMIAL_PRODUCT_RE = re.compile(rf"[A-Za-zα-ωΑ-Ω][{_MONO_CH}]*|[0-9]+[A-Za
 _DIFFERENTIAL_RE = re.compile(r"d[a-zα-ω]")
 
 
+# 그리스 명령을 **판정할 때만** 한 글자로 본다. 문자열 자체를 미리 바꾸면 뒤 단계의
+# 위첨자 파싱이 깨진다 — `\chi^{…}`에서 위첨자표 ⠘가 사라지고 ⠈⠢⠦⠂ 잔재가 나갔다
+# (eval 실측 001 p0012·p0047, 2026-08-17). 판정 입력만 정규화한다.
+_GREEK_NAMES_FOR_JUDGE = (
+    "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi "
+    "omicron pi rho sigma tau upsilon phi chi psi omega"
+).split()
+_GREEK_CMD_FOR_JUDGE_RE = re.compile(
+    r"\\(?:" + "|".join(sorted(
+        _GREEK_NAMES_FOR_JUDGE + [n.capitalize() for n in _GREEK_NAMES_FOR_JUDGE],
+        key=len, reverse=True)) + r")(?![a-zA-Z])")
+
+
 def _is_monomial_product(raw: str) -> bool:
-    """`ab`·`2a`·`2R`처럼 문자가 든 두 자 이상 영숫자 덩어리인가."""
-    raw = raw.strip()
+    """`ab`·`2a`·`2R`·`2\pi`처럼 문자가 든 두 자 이상 덩어리인가."""
+    raw = _GREEK_CMD_FOR_JUDGE_RE.sub("π", raw).strip()
     if _DIFFERENTIAL_RE.fullmatch(raw):
         return False
     return (len(raw) >= 2 and raw.isalnum() and not raw.isdigit()
