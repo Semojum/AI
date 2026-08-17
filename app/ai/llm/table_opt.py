@@ -490,7 +490,11 @@ class TableOpt(BaseOpt):
 
         response, used_fb = await generate_with_retry(
             prompt, timeout=timeout, element_id=ext.element_id, kind="표",
-            max_new_tokens=512, fallback_max_tokens=1024,
+            # 폴백 상한만 올린다(HCXT 512는 그대로). 프롬프트가 **두 방식**을 요구하는데
+            # 표 opt 산출이 p95 560자라 두 벌이면 1,120자 ≈ 1,150토큰으로 1024를 넘는다.
+            # 실측 상위 5% 표가 여기 걸렸고, 잘리면 행이 통째로 사라지는데 응답만 봐서는
+            # 멀쩡해 보인다. max_tokens는 천장이라 안 잘리던 호출의 비용은 안 오른다.
+            max_new_tokens=512, fallback_max_tokens=1536,
         )
         if used_fb:
             tier = "FALLBACK"
