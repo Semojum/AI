@@ -1138,12 +1138,21 @@ def _stage2c_sqrt(result: str) -> str:
     [입력] \sqrt{…}가 남아 있음. 분수(2단계)는 이미 풀려 있어 근호 안 분수도 완성 점자.
     [출력] 근호가 완성 점자. 내용은 재귀 변환 + 필요 시 묶음.
     """
-    def _sqrt_replace(m: re.Match) -> str:
-        inner = convert_latex(m.group(1))
-        inner_w = _wrap_ins(inner) if _needs_wrap(m.group(1)) else inner
-        return f"{_SQRT_IND}{inner_w}"
-
-    return _SQRT_RE.sub(_sqrt_replace, result)
+    # 정규식으로는 중첩 중괄호를 못 읽는다 — `\sqrt{x^{2}}`가 안 잡혀 **근호가 통째로
+    # 사라졌다**(코퍼스 2,413건 중 188건, 8%). 분수(_apply_fracs)와 같은 방식으로
+    # 괄호를 세어 인자를 떼어 낸다.
+    out: list[str] = []
+    i = 0
+    while i < len(result):
+        if result[i:i + 5] == "\\sqrt" and result[i + 5:i + 6] == "{":
+            raw, after = _extract_brace_content(result, i + 5)
+            inner = convert_latex(raw)
+            out.append(_SQRT_IND + (_wrap_ins(inner) if _needs_wrap(raw) else inner))
+            i = after
+            continue
+        out.append(result[i])
+        i += 1
+    return "".join(out)
 
 
 def _stage3_limit(result: str) -> str:
@@ -1724,6 +1733,13 @@ def convert_latex(latex: str) -> str:
     result = _stage11c_math_context_symbols(result)  # 11c. 문맥 overload 분기
     result = _tighten_operator_spacing(result)      # 11e. 연산·비교 기호 앞뒤 붙임
     result = _stage11d_strip_unknown_commands(result)  # 11d. 미처리 \cmd 제거
+    # ★ 12 **앞에서** 잔여 중괄호를 걷는다. 기호표가 `{`를 한글 문장부호 ⠦⠂로 바꾸는데,
+    #   여기까지 온 중괄호는 문장부호가 아니라 **구조 단계가 안 먹은 LaTeX 묶음**이다.
+    #   13이 걷도록 돼 있었지만 12가 먼저 점형으로 바꿔 버려 손댈 수 없었다 —
+    #   `\cos{(x)}`가 ⠖⠉⠦⠂⠦⠭⠴⠐⠴로, `\sqrt {1-\sin^{2}γ}`는 근호 ⠜까지 먹혔다
+    #   (eval 실측 array 실패 35건 중 9건 + 비array 3건).
+    #   중괄호 없는 인자(`\sqrt3`)·겹중괄호(`{{X}}`)에 이은 **세 번째 변형**이다.
+    result = re.sub(r"[{}]", "", result)            # 11f. 잔여 묶음 중괄호
     result = substitute_symbols(result)             # 12. 남은 유니코드 기호
     result = _stage13_cleanup(result)               # 13. 잔여 \cmd·중괄호 제거
     result = _stage14_letters(result)               # 14. 남은 로마자
