@@ -13,6 +13,7 @@ from app.core.config import config
 from app.core import pipeline
 from app.schemas.task import PageTask
 from app.utils import job_id as job_id_util
+from app.utils import req_log
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -138,6 +139,10 @@ def _build_error_response(job_id: str, page_no: int, message: str):
     err.type = "C1"
     err.element_id = "page"
     err.message = message
+    # 막혀도 자원은 썼다 — proto가 "BLOCKED에도 실림"이라고 약속한 자리다. 파이프라인이
+    # 터지기 전에 이미 부른 LLM 호출이 여기서 사라지면 BE 원가 집계에 구멍이 난다.
+    # layout_type은 요소를 못 봤으니 UNSPECIFIED로 둔다(지어내지 않는다).
+    resp.usage_report.CopyFrom(_dict_to_usage_report(req_log.usage_report()))
     return resp
 
 

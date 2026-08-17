@@ -144,3 +144,23 @@ class TestContract:
         rl.record_hcxt("텍스트", 5.0)
         n = len(_resp(text_list=[{"type": "image"}]).SerializeToString())
         assert n < 200, f"{n} bytes — 계약이 다시 부풀었다"
+
+
+class TestBlockedPath:
+    """하드 오류 경로(`_build_error_response`)도 사용량을 싣는다.
+
+    파이프라인이 자체 예외 처리(C1·C7)를 못 하고 통째로 터진 자리다. 드물지만 그때도
+    LLM은 이미 불렸을 수 있고, proto가 "BLOCKED에도 실림"이라고 약속한다.
+    """
+
+    def test_파이프라인이_터져도_쓴_토큰은_실린다(self):
+        from app.core.grpc_server import _build_error_response
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 3131, 121)
+        rl.record_hcxt("텍스트", 2.0)
+        r = _build_error_response("j", 1, "파이프라인 오류: RuntimeError: 폭발")
+        assert r.status == "BLOCKED"
+        assert r.usage_report.models[0].input_tokens == 3131
+        assert r.usage_report.gpu_time_ms == 2000
+        # 요소를 못 봤으니 유형은 지어내지 않는다
+        assert r.usage_report.layout_type == pb.PAGE_LAYOUT_UNSPECIFIED
