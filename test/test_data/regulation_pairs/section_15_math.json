@@ -346,6 +346,13 @@
       "brf_ascii": "_+,,ABC77_+,,DEF",
       "braille_unicode": "⠸⠬⠠⠠⠁⠃⠉⠶⠶⠸⠬⠠⠠⠙⠑⠋",
       "item": "제43항 합동"
+    },
+    {
+      "rule_id": "KBR-수학-6.52",
+      "latex": "\\frac{\\Delta y}{\\Delta x}",
+      "brf_ascii": ",.dx/,.dy",
+      "braille_unicode": "⠠⠨⠙⠭⠌⠠⠨⠙⠽",
+      "item": "제52항 변화율 — 묶음 괄호 없이"
     }
   ],
   "backtick": "space"
