@@ -1929,9 +1929,16 @@ def _extract_brace_content(s: str, start: int) -> tuple[str, int]:
 _MONOMIAL_PRODUCT_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*|[0-9]+[A-Za-z][A-Za-z0-9]*")
 
 
+# 미분소(dx·dy·dz·du·dv·dt)는 곱이 아니라 한 덩어리다. 규정 제53항 예시가
+# `dx/dy`(= ⠙⠭⠌⠙⠽)로 **묶음 괄호 없이** 적는다. `_needs_wrap`도 같은 이유로 뺀다.
+_DIFFERENTIAL_RE = re.compile(r"d[a-z]")
+
+
 def _is_monomial_product(raw: str) -> bool:
     """`ab`·`2a`·`2R`처럼 문자가 든 두 자 이상 영숫자 덩어리인가."""
     raw = raw.strip()
+    if _DIFFERENTIAL_RE.fullmatch(raw):
+        return False
     return (len(raw) >= 2 and raw.isalnum() and not raw.isdigit()
             and _MONOMIAL_PRODUCT_RE.fullmatch(raw) is not None)
 
