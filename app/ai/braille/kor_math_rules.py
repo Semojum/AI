@@ -882,6 +882,29 @@ _GEOM_CMD_SPACE_RE = re.compile(r"(?:\\(?:angle|triangle)|[∠△])\s+(?=[A-Z])"
 _GEOM_CMD_SYMBOL = {"\\angle": "∠", "\\triangle": "△"}
 
 
+# 그리스 문자·곱셈점과 뒤따르는 변수 사이의 공백(`\Delta x`·`a \cdot b`). LaTeX에서
+# 그 공백은 명령이 끝났다는 표시지 내용이 아니고, 규정은 붙여 적는다 —
+# 제52항 변화율 예시가 `,.dx/,.dy`(= ⠠⠨⠙⠭⠌⠠⠨⠙⠽), 제2항 붙임 곱셈점이 `#f"#i`다.
+# 0a 단계가 명령을 점형 문자로 바꾸고 공백만 남겨서 `⠠⠨⠙⠀⠭`가 나갔다.
+# 실측 전 코퍼스 412건(`\Delta ` 357 · `\cdot ` 23 · `\pi ` 17 · `\mu ` 13).
+# ★ 관계·연산 기호(∩ ⊕ ⊖ …)는 넣지 않는다 — 제15항이 앞뒤 한 칸을 요구한다.
+_GREEK_TIGHT_RE = re.compile(r"([α-ωΑ-Ω·])[ \t]+(?=[A-Za-z])")
+# 명령 꼴(`\Delta x`)은 0c 시점에 아직 점형 문자가 아니다. 공백만 지우면 `\Deltax`가 되어
+# 미지 명령으로 사라지므로 유니코드 문자로 바꾸면서 같이 지운다(`\anglePO`와 같은 함정).
+_GREEK_NAMES = (
+    "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi "
+    "omicron pi rho sigma tau upsilon phi chi psi omega"
+).split()
+_GREEK_CHARS = "αβγδεζηθικλμνξοπρστυφχψω"
+_GREEK_CMD_MAP = {f"\\{n}": c for n, c in zip(_GREEK_NAMES, _GREEK_CHARS)}
+_GREEK_CMD_MAP.update({f"\\{n.capitalize()}": c
+                       for n, c in zip(_GREEK_NAMES, "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ")})
+_GREEK_CMD_TIGHT_RE = re.compile(
+    r"(\\(?:" + "|".join(sorted(
+        [n for n in _GREEK_NAMES] + [n.capitalize() for n in _GREEK_NAMES],
+        key=len, reverse=True)) + r"))[ \t]+(?=[A-Za-z])")
+
+
 def _collapse_redundant_braces(latex: str) -> str:
     """`{{X}}` → `{X}`. LaTeX에서 동치인데 우리 단계들이 바깥 겹을 괄호 셀로 흘린다.
 
@@ -912,8 +935,11 @@ def _collapse_redundant_braces(latex: str) -> str:
 
 
 def _stage0c_bare_args(latex: str) -> str:
-    """중괄호 없는 한 글자 인자·기하 기호 뒤 공백·겹중괄호를 정규화한다."""
+    """중괄호 없는 한 글자 인자·기호 뒤 공백·겹중괄호를 정규화한다."""
     latex = _collapse_redundant_braces(latex)
+    latex = _GREEK_CMD_TIGHT_RE.sub(
+        lambda m: _GREEK_CMD_MAP.get(m.group(1), m.group(1)), latex)
+    latex = _GREEK_TIGHT_RE.sub(r"\1", latex)
     latex = _BARE_FRAC_RE.sub(r"\\frac{\1}{\2}", latex)
     latex = _BARE_SQRT_RE.sub(r"\\sqrt{\1}", latex)
     return _GEOM_CMD_SPACE_RE.sub(
@@ -1964,12 +1990,27 @@ _MONOMIAL_PRODUCT_RE = re.compile(rf"[A-Za-zα-ωΑ-Ω][{_MONO_CH}]*|[0-9]+[A-Za
 # 미분소(dx·dy·dz·du·dv·dt)는 곱이 아니라 한 덩어리다. 규정 제53항 예시가
 # `dx/dy`(= ⠙⠭⠌⠙⠽)로 **묶음 괄호 없이** 적는다. `_needs_wrap`도 같은 이유로 뺀다.
 # 미분소는 그리스 변수도 온다(dθ·dφ — 제58항 예시 `drd.?`). 영문만 보면 새 판정이 묶는다.
-_DIFFERENTIAL_RE = re.compile(r"d[a-zα-ω]")
+# 변화량 Δx도 미분소와 같은 한 덩어리다. 규정 제52항 `,.dx/,.dy`가 묶음 없이 적는다.
+# 공백을 지우자마자 `Δ x`가 `Δx`가 되어 곱 판정에 걸렸다 — 이 커밋이 그 문을 연다.
+_DIFFERENTIAL_RE = re.compile(r"[dΔ∂][a-zA-Zα-ω]")
+
+
+# 그리스 명령을 **판정할 때만** 한 글자로 본다. 문자열 자체를 미리 바꾸면 뒤 단계의
+# 위첨자 파싱이 깨진다 — `\chi^{…}`에서 위첨자표 ⠘가 사라지고 ⠈⠢⠦⠂ 잔재가 나갔다
+# (eval 실측 001 p0012·p0047, 2026-08-17). 판정 입력만 정규화한다.
+_GREEK_NAMES_FOR_JUDGE = (
+    "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi "
+    "omicron pi rho sigma tau upsilon phi chi psi omega"
+).split()
+_GREEK_CMD_FOR_JUDGE_RE = re.compile(
+    r"\\(?:" + "|".join(sorted(
+        _GREEK_NAMES_FOR_JUDGE + [n.capitalize() for n in _GREEK_NAMES_FOR_JUDGE],
+        key=len, reverse=True)) + r")(?![a-zA-Z])")
 
 
 def _is_monomial_product(raw: str) -> bool:
-    """`ab`·`2a`·`2R`처럼 문자가 든 두 자 이상 영숫자 덩어리인가."""
-    raw = raw.strip()
+    """`ab`·`2a`·`2R`·`2\pi`처럼 문자가 든 두 자 이상 덩어리인가."""
+    raw = _GREEK_CMD_FOR_JUDGE_RE.sub("π", raw).strip()
     if _DIFFERENTIAL_RE.fullmatch(raw):
         return False
     return (len(raw) >= 2 and raw.isalnum() and not raw.isdigit()
