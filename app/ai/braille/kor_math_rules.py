@@ -882,6 +882,29 @@ _GEOM_CMD_SPACE_RE = re.compile(r"(?:\\(?:angle|triangle)|[∠△])\s+(?=[A-Z])"
 _GEOM_CMD_SYMBOL = {"\\angle": "∠", "\\triangle": "△"}
 
 
+# 그리스 문자·곱셈점과 뒤따르는 변수 사이의 공백(`\Delta x`·`a \cdot b`). LaTeX에서
+# 그 공백은 명령이 끝났다는 표시지 내용이 아니고, 규정은 붙여 적는다 —
+# 제52항 변화율 예시가 `,.dx/,.dy`(= ⠠⠨⠙⠭⠌⠠⠨⠙⠽), 제2항 붙임 곱셈점이 `#f"#i`다.
+# 0a 단계가 명령을 점형 문자로 바꾸고 공백만 남겨서 `⠠⠨⠙⠀⠭`가 나갔다.
+# 실측 전 코퍼스 412건(`\Delta ` 357 · `\cdot ` 23 · `\pi ` 17 · `\mu ` 13).
+# ★ 관계·연산 기호(∩ ⊕ ⊖ …)는 넣지 않는다 — 제15항이 앞뒤 한 칸을 요구한다.
+_GREEK_TIGHT_RE = re.compile(r"([α-ωΑ-Ω·])[ \t]+(?=[A-Za-z])")
+# 명령 꼴(`\Delta x`)은 0c 시점에 아직 점형 문자가 아니다. 공백만 지우면 `\Deltax`가 되어
+# 미지 명령으로 사라지므로 유니코드 문자로 바꾸면서 같이 지운다(`\anglePO`와 같은 함정).
+_GREEK_NAMES = (
+    "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi "
+    "omicron pi rho sigma tau upsilon phi chi psi omega"
+).split()
+_GREEK_CHARS = "αβγδεζηθικλμνξοπρστυφχψω"
+_GREEK_CMD_MAP = {f"\\{n}": c for n, c in zip(_GREEK_NAMES, _GREEK_CHARS)}
+_GREEK_CMD_MAP.update({f"\\{n.capitalize()}": c
+                       for n, c in zip(_GREEK_NAMES, "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ")})
+_GREEK_CMD_TIGHT_RE = re.compile(
+    r"(\\(?:" + "|".join(sorted(
+        [n for n in _GREEK_NAMES] + [n.capitalize() for n in _GREEK_NAMES],
+        key=len, reverse=True)) + r"))[ \t]+(?=[A-Za-z])")
+
+
 def _collapse_redundant_braces(latex: str) -> str:
     """`{{X}}` → `{X}`. LaTeX에서 동치인데 우리 단계들이 바깥 겹을 괄호 셀로 흘린다.
 
@@ -912,8 +935,11 @@ def _collapse_redundant_braces(latex: str) -> str:
 
 
 def _stage0c_bare_args(latex: str) -> str:
-    """중괄호 없는 한 글자 인자·기하 기호 뒤 공백·겹중괄호를 정규화한다."""
+    """중괄호 없는 한 글자 인자·기호 뒤 공백·겹중괄호를 정규화한다."""
     latex = _collapse_redundant_braces(latex)
+    latex = _GREEK_CMD_TIGHT_RE.sub(
+        lambda m: _GREEK_CMD_MAP.get(m.group(1), m.group(1)), latex)
+    latex = _GREEK_TIGHT_RE.sub(r"\1", latex)
     latex = _BARE_FRAC_RE.sub(r"\\frac{\1}{\2}", latex)
     latex = _BARE_SQRT_RE.sub(r"\\sqrt{\1}", latex)
     return _GEOM_CMD_SPACE_RE.sub(
