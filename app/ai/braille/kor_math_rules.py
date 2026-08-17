@@ -882,8 +882,38 @@ _GEOM_CMD_SPACE_RE = re.compile(r"(?:\\(?:angle|triangle)|[∠△])\s+(?=[A-Z])"
 _GEOM_CMD_SYMBOL = {"\\angle": "∠", "\\triangle": "△"}
 
 
+def _collapse_redundant_braces(latex: str) -> str:
+    """`{{X}}` → `{X}`. LaTeX에서 동치인데 우리 단계들이 바깥 겹을 괄호 셀로 흘린다.
+
+    MinerU가 `\\overline{{\\mathrm{OD}}}`처럼 중괄호를 두 겹으로 낸다. 한 겹이면
+    `⠈⠉⠠⠠⠕⠙`(제23항 가로바)로 맞게 나가는데 두 겹이면 바깥이 안 벗겨져
+    `⠦⠂⠦⠂⠠⠠⠕⠙⠐⠴⠐⠴`가 나갔다(eval 실측 실패 17건).
+
+    중괄호 없는 한 글자 인자(`\\sqrt3`)와 대칭인 자리다 — 그건 없어서, 이건 두 겹이라 깨진다.
+    `\\sqrt[n]{}`의 대괄호와 `\\begin{array}{l}`의 인자는 내용이 단일 그룹이 아니라 안 걸린다.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(latex):
+        if latex[i] != "{":
+            out.append(latex[i])
+            i += 1
+            continue
+        inner, after = _extract_brace_content(latex, i)
+        core = inner.strip()
+        while core.startswith("{") and core.endswith("}"):
+            deeper, end = _extract_brace_content(core, 0)
+            if end != len(core):          # `{a}{b}`처럼 나란한 그룹은 벗기지 않는다
+                break
+            core = deeper.strip()
+        out.append("{" + _collapse_redundant_braces(core) + "}")
+        i = after
+    return "".join(out)
+
+
 def _stage0c_bare_args(latex: str) -> str:
-    """중괄호 없는 한 글자 인자·기하 기호 뒤 공백을 정규화한다."""
+    """중괄호 없는 한 글자 인자·기하 기호 뒤 공백·겹중괄호를 정규화한다."""
+    latex = _collapse_redundant_braces(latex)
     latex = _BARE_FRAC_RE.sub(r"\\frac{\1}{\2}", latex)
     latex = _BARE_SQRT_RE.sub(r"\\sqrt{\1}", latex)
     return _GEOM_CMD_SPACE_RE.sub(
@@ -1926,12 +1956,15 @@ def _extract_brace_content(s: str, start: int) -> tuple[str, int]:
 # ⚠ 2026-07-22에 곱 묶음을 되살렸다가 기각된 적이 있다(요소 win 4 : lose 42). 그때 깨진
 #   것은 `\sqrt{3}`·`f(x)`를 2인수로 세어 과잉으로 묶은 자리였다. 그래서 여기서는
 #   **역슬래시·괄호·공백이 하나도 없는 영숫자 덩어리**만 본다 — 함수 적용은 애초에 안 걸린다.
-_MONOMIAL_PRODUCT_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*|[0-9]+[A-Za-z][A-Za-z0-9]*")
+# 그리스 문자도 변수다 — gold는 `2π`를 묶는다(⠃⠌⠷⠼⠃⠨⠏⠾). 영숫자만 보면 안 걸렸다.
+_MONO_CH = "A-Za-z0-9α-ωΑ-Ω"
+_MONOMIAL_PRODUCT_RE = re.compile(rf"[A-Za-zα-ωΑ-Ω][{_MONO_CH}]*|[0-9]+[A-Za-zα-ωΑ-Ω][{_MONO_CH}]*")
 
 
 # 미분소(dx·dy·dz·du·dv·dt)는 곱이 아니라 한 덩어리다. 규정 제53항 예시가
 # `dx/dy`(= ⠙⠭⠌⠙⠽)로 **묶음 괄호 없이** 적는다. `_needs_wrap`도 같은 이유로 뺀다.
-_DIFFERENTIAL_RE = re.compile(r"d[a-z]")
+# 미분소는 그리스 변수도 온다(dθ·dφ — 제58항 예시 `drd.?`). 영문만 보면 새 판정이 묶는다.
+_DIFFERENTIAL_RE = re.compile(r"d[a-zα-ω]")
 
 
 def _is_monomial_product(raw: str) -> bool:
