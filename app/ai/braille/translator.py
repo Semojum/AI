@@ -1067,6 +1067,11 @@ _INLINE_SUB_TOKEN_RE = re.compile(r"^(?:[A-Za-z]+_\{?\d+\}?)+[A-Za-z]*$")
 #   ⠔**로 내보내고 있었다(생물 p087 실측 `⠔⠠⠕⠆⠔`, gold `⠤⠕⠆⠤`). 두 형태 모두 받는다.
 _INLINE_SUB_PAREN_RE = re.compile(r"^\((?:[A-Za-z]+_\{?\d+\}?)+[A-Za-z]*\)$")
 _INLINE_SUB_HYPHEN_RE = re.compile(r"^-(?:[A-Za-z]+_\{?\d+\}?)+[A-Za-z]*-$")
+# 이온 표기(H⁺·Ca²⁺·HCO₃⁻)는 **제11항 두 칸의 예외**다.
+#   과학점자 제2항 [붙임] "이온 표시 뒤에는 로마자 종료표 없이 **한 칸** 띄어 쓴다".
+#   규정 예시도 한 칸이다 — `수소가 전자를 잃으면 H+가 된다` = …0[e*`0,h^5`$`iy3i4
+#   (백틱이 한 칸이고 이온 0,h^5 앞뒤가 각각 한 칸).
+_ION_TOKEN_RE = re.compile(r"^(?:[A-Z][a-z]?(?:_\{\d+\})?)+\^\{\d*[+-]\}$")
 _BOOK_HYPHEN = "⠤"
 
 
@@ -1131,6 +1136,8 @@ def _translate_with_braillify(text: str) -> str:
                 inner = _inline_sub_braille(convert_latex(core[1:-1]))
                 chunks.append(("i", _BOOK_HYPHEN + inner + _BOOK_HYPHEN,
                                False, False))
+            elif _ION_TOKEN_RE.match(core):
+                chunks.append(("n", convert_latex(core), False, False))
             else:
                 chunks.append(("f", convert_latex(part), False, False))
 
@@ -1143,8 +1150,16 @@ def _translate_with_braillify(text: str) -> str:
         if not braille:
             pending_ws = pending_ws or lead_ws or trail_ws
             continue
+        if kind == "n" and prev_kind == "t":
+            # 제69항 로마자표. 여는 ⠴만 붙이고 종료표는 안 붙인다(제2항 붙임).
+            # gold 실측 195자리 중 161(83%)이 ⠴를 앞세우고, 나머지 34는 수식 안에서
+            # 이온이 잇따르는 자리다. 규정도 홀로 쓴 H+는 ,h^5(⠴ 없음)이고 문장 속
+            # H+만 0,h^5다 — 그래서 **앞이 한글 텍스트일 때만** 붙인다.
+            braille = "⠴" + braille
         if prev_kind is not None:
-            if kind == "i" or prev_kind == "i":
+            if kind == "n" or prev_kind == "n":
+                result_parts.append("⠀")      # 이온은 한 칸(제2항 붙임)
+            elif kind == "i" or prev_kind == "i":
                 if pending_ws or lead_ws:
                     result_parts.append("⠀")
             else:
@@ -1251,6 +1266,32 @@ def _restore_broken_subscripts(s: str) -> str:
         return letter + "".join(_BROKEN_SUBSCRIPT_MAP[g] for g in run)
 
     return _BROKEN_SUBSCRIPT_RE.sub(_rep, s)
+
+
+# ── 이온 전하 부호 복원 (2026-08-17) ─────────────────────────────────────────
+# 한컴 수식 폰트가 **위첨자 +/−** 를 ±(U+00B1)·—(em dash)로 매핑해 깨뜨린다.
+# H±·Na±·K±·Rh±·HCO₃— 처럼 나오는데 ±는 '플러스마이너스', —는 '줄표'로 점역돼
+# 위첨자표가 통째로 사라진다(H⁺ = ⠠⠓⠘⠢인데 우리는 ⠠⠓⠢⠔를 냈다).
+#   근거: 「한국 점자 규정」 과학점자 제2항 — "이온은 위 첨자 기호 뒤에 + 기호는 5,
+#         - 기호는 9를 적는다"(H+ = ,h^5 · HCO3^9 = ,,hco;#c^9).
+#   실측: dev+val ± 100건이 **전부** 위첨자 플러스이고 진짜 ±는 0건이다
+#         (생물 93 = Na⁺·K⁺·H⁺·Rh⁺·Ca²⁺ / 수학2 7 = 지수 (-1)ⁿ⁺¹·e^{-x²+1}).
+#         — 는 41건이고 Rh⁻·HCO₃⁻ 꼴이다.
+# ★ 복원만 하면 규칙은 손댈 게 없다 — 뒤 경로가 이미 규정형 ⠘⠢/⠘⠔를 낸다.
+# 가드: **원소기호·변수 글자 뒤**로만 한정하고, 그 사이에 위·아래 첨자 숫자와 좁은
+#   공백(백틱·U+2009)까지만 허용한다. 넓게 잡으면 안 되는 이유가 둘이다.
+#   ⚠ ±는 책마다 뜻이 다르다 — 다른 교재에서는 **도(°)** 로 쓰인다(`∠A=75±`).
+#      숫자 뒤는 걸리지 않으므로 그쪽은 안 건드린다.
+#   ⚠ —는 본문 줄표로도 쓴다. 양옆이 빈칸인 줄표는 글자-뒤 가드에 안 걸린다.
+#   수학2 7건(`(-1)ⁿ ±⁄`)은 앞이 글자가 아니라 제외된다 — ⁄의 정체가 미확정이라
+#   (전 코퍼스 496/523이 화살표 →) 같이 손대면 그 496건을 오염시킨다.
+_ION_SIGN_MAP = {"±": "⁺", "—": "⁻"}
+_ION_SIGN_RE = re.compile(r"(?<=[A-Za-z])([²³⁴₀-₉]?)[` ]?([±—])")
+
+
+def _restore_ion_signs(s: str) -> str:
+    """깨진 이온 전하 부호를 위첨자 +/− 로. 수식 라우팅보다 먼저."""
+    return _ION_SIGN_RE.sub(lambda m: m.group(1) + _ION_SIGN_MAP[m.group(2)], s)
 
 
 # ── 아래아 ㆍ(U+318D)를 가운뎃점으로 쓰는 조판 관행 정규화 ────────────────────
@@ -1617,6 +1658,7 @@ def translate_tagged_text(text: str) -> str:
     # 수식으로 안 잡혀 위첨자표(⠘⠼⠃)로 나가는데, 정답 도서는 제곱을 ⠣로 적는다.
     text = _restore_legacy_glyphs(text)     # 오디코딩 5자(⇂¤‹˘⇨)
     text = _restore_broken_subscripts(text)  # 깨진 아래첨자 ¡™£¢§ → ₁₂₃₄₆ (수식 라우팅 전, r16)
+    text = _restore_ion_signs(text)         # 이온 전하 ±— → ⁺⁻ (과학점자 제2항, 아래첨자 복원 뒤)
     text = _restore_circled_black(text)     # 검은 원문자 ❶-❻ (선지머리 정규화보다 먼저)
     text = _normalize_araea_middot(text)    # 아래아 ㆍ → 가운뎃점 ·(제50항, 수표 혼입 차단)
     text = _CHOICE_HEAD_RE.sub(r"\1 ", text)
