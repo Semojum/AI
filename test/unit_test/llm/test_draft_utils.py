@@ -113,3 +113,37 @@ class TestAutoWrapRule:
     def test_항목이_하나뿐이면_서술로_본다(self) -> None:
         """한 항목은 나열이 아니다 — 오검출을 막는 하한."""
         assert self.d.ensure_tn_prefix("그림: ① 자유만 표시됨").startswith("<!주>")
+
+
+# ── 짧은 제목 잘림 (2026-08-19) ────────────────────────────────────────────
+# 문장 경계가 없으면 limit자에서 기계적으로 잘리고 말줄임표가 붙었다. 캡셔너가 개조식으로
+# 쓴 설명(`- 터번 형태의 두건 착용 - 긴 수염`)은 마침표가 없어 전부 걸렸다.
+# 실측 캡션 13,393개 중 7,241개(54.1%)가 말줄임표로 끝났다.
+class TestShortenNoEllipsis:
+    def test_문장_경계가_없어도_말줄임표를_안_남긴다(self):
+        from app.ai.llm.visual_drafts import _shorten
+        out = _shorten("그림: 고대 철학자 또는 현자의 초상화(판화) - 터번 형태의 두건 착용 "
+                       "- 긴 수염 - 망토 형태의 옷 착용")
+        assert not out.endswith("…"), out
+        assert out.endswith("두건 착용") or "-" not in out[-3:], out
+
+    def test_항목_경계에서_온전히_끊는다(self):
+        from app.ai.llm.visual_drafts import _shorten
+        out = _shorten("만화: 중세 십자군 기사 - 전체: 사슬갑옷 두건, 십자무늬 튜닉, "
+                       "큰 방패, 장검을 들고 서 있다")
+        assert not out.endswith("…") and not out.endswith("-"), out
+
+    def test_첫_문장_경계가_있으면_그쪽이_우선이다(self):
+        from app.ai.llm.visual_drafts import _shorten
+        out = _shorten("첫 문장은 여기서 끝난다. 둘째 문장은 아주 길게 이어진다 "
+                       "어쩌고 저쩌고 그리고 또 계속 이어진다 한참 더.")
+        assert out == "첫 문장은 여기서 끝난다.", out
+
+    def test_첫_줄이_제목이면_그대로_쓴다(self):
+        from app.ai.llm.visual_drafts import _shorten
+        out = _shorten("첫 줄이 제목이다\n둘째 줄은 데이터 전체: 7.6% 1~2세: 6.8% 3~4세: 5.1%")
+        assert out == "첫 줄이 제목이다", out
+
+    def test_짧은_인쇄_캡션은_그대로_둔다(self):
+        from app.ai.llm.visual_drafts import _shorten
+        assert _shorten("짧은 인쇄 캡션") == "짧은 인쇄 캡션"

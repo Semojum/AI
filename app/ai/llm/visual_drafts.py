@@ -165,7 +165,16 @@ def _shorten(text: str, limit: int = 45) -> str:
     m = re.search(r"[.。!?]\s|[.。!?]$", t)          # 첫 문장 경계
     if m and m.start() + 1 <= int(limit * 1.6):
         return t[: m.start() + 1]
-    return t[:limit].rsplit(" ", 1)[0] + "…"
+    # ★ 문장 경계가 없으면 **항목 경계**에서 끊는다(2026-08-19). 캡셔너가 개조식으로 쓴
+    #   설명(`- 터번 형태의 두건 착용 - 긴 수염`)은 마침표가 없어 종전에는 limit자에서
+    #   기계적으로 잘리고 말줄임표가 붙었다. 실측 그래프 30.3%·도표 7.1%가 그 얼굴이었다.
+    #   점역사에게 문장 중간이 잘린 초안이 나가는 것이라 말줄임표째로 지워야 했다.
+    #   항목 경계(글머리·쉼표·가운뎃점)를 뒤에서 찾아 **온전한 조각**만 남긴다.
+    for sep in (" - ", " · ", ", ", " "):
+        cut = t.rfind(sep, 0, limit + 1)
+        if cut >= int(limit * 0.4):              # 너무 앞에서 끊기면 제목 구실을 못 한다
+            return t[:cut].rstrip(" -·,")
+    return t[:limit].rstrip(" -·,")
 
 
 def _outline_text_indents(
