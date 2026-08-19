@@ -144,7 +144,7 @@ async def fallback_optimize(prompt: str, *, max_tokens: int = 300, kind: str = "
     """LLM 폴백 — Anthropic(claude-sonnet-5) 우선, 없으면 GPT-4o, 둘 다 없으면 "".
 
     태민 지시(2026-07-17): openai 대신 anthropic을 쓴다. OpenAI 경로는 무료 티어(RPM 3)
-    호환용으로만 남긴다. usage는 파트별 req_log에 기록(카운터 이름은 record_gpt4o지만 공용).
+    호환용으로만 남긴다. usage는 파트별 req_log에 기록(카운터는 record_ext_llm(모델 무관 공용)).
 
     ★ 오프라인 차단 스위치(2026-07-19): `DISABLE_LLM_FALLBACK=1`이면 호출하지 않는다.
       측정·재추출 같은 오프라인 배치는 HCXT가 없어 요소마다 이 폴백을 타는데, 키가 환경에

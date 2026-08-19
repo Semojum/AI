@@ -199,7 +199,7 @@ def record_openai(kind: str, model: str, usage) -> None:
                getattr(usage, "completion_tokens", 0) or 0, cached, 0)
 
 
-def record_gpt4o(kind: str, prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
+def record_ext_llm(kind: str, prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
     """하위호환 — 모델을 안 밝힌 구 호출부. gpt-4o 단가로 계산한다."""
     record_llm(kind, "gpt-4o", prompt_tokens, completion_tokens)
 
@@ -227,8 +227,8 @@ def inc_hcxt() -> None:
     record_hcxt("기타")
 
 
-def inc_gpt4o() -> None:
-    record_gpt4o("기타")
+def inc_ext_llm() -> None:
+    record_ext_llm("기타")
 
 
 # ── 집계 조회 ───────────────────────────────────────────────────────────────
@@ -236,14 +236,19 @@ def inc_gpt4o() -> None:
 def _totals() -> dict:
     st = _cur()
     if st is None:
-        return {"hcxt": 0, "gpt4o": 0, "prompt_tokens": 0, "completion_tokens": 0,
+        return {"hcxt": 0, "llm": 0, "prompt_tokens": 0, "completion_tokens": 0,
                 "cache_read_tokens": 0, "cache_write_tokens": 0, "cost": 0.0,
                 "gpu_cost": 0.0, "gpu_seconds": 0.0, "unpriced_calls": 0, "models": []}
     add = lambda f: sum(f(p) for p in st.parts.values())      # noqa: E731 — 로컬 GPU
     addl = lambda f: sum(f(e) for e in st.llm.values())       # noqa: E731 — 외부 LLM
     return {
         "hcxt": add(lambda p: p.hcxt_calls),
-        "gpt4o": addl(lambda e: e.calls),      # 키 이름은 하위호환(metrics·api_counts)
+        # ★ 외부 LLM 호출 **전부**를 센다(2026-08-20 개명). 종전 키 이름이 "gpt4o"였는데
+        #   실제로는 모델과 무관하게 다 셌다. 우리 라우팅은 쉬운 건 싼 모델, 어려운 건 비싼
+        #   모델로 보내므로 앞으로 모델이 여럿이다 — 이름이 하나를 가리키면 로그를 읽는
+        #   사람이 오해한다. 실제로 캡셔닝이 claude로 도는데 gpt4o_calls=84로 찍혔다.
+        #   모델별 내역은 usage_report의 `models`에서 본다.
+        "llm": addl(lambda e: e.calls),
         "prompt_tokens": addl(lambda e: e.input_tokens),
         "completion_tokens": addl(lambda e: e.output_tokens),
         "cache_read_tokens": addl(lambda e: e.cache_read_tokens),
@@ -288,7 +293,11 @@ def usage_report() -> dict:
         m["calls"] += e.calls
         m["input_tokens"] += e.input_tokens
         m["output_tokens"] += e.output_tokens
-    total = t["cost"] + t["gpu_cost"]
+    # ★ GPU는 쪽당 원가에 넣지 않는다(대표 지시 2026-08-20). AWS 서버 비용은 인스턴스
+    #   시간으로 따로 매기므로 쪽마다 안분하면 이중 계상이 된다. 점유 시간(gpu_seconds)은
+    #   관측값으로 계속 남기되 금액 합계에는 더하지 않는다.
+    #   ※ 실측으로도 HCXT가 off라 gpu_seconds가 늘 0이었다(2026-08-20 검증 30/30쪽).
+    total = t["cost"]
     return {
         # ── proto로 나가는 측정값 ──
         "models": sorted(by_model.values(), key=lambda m: -m["input_tokens"]),
@@ -321,22 +330,22 @@ def usage_report() -> dict:
 
 
 def api_counts() -> dict:
-    """하위호환: {'hcxt': n, 'gpt4o': n}."""
+    """호출 수 요약: {'hcxt': n, 'llm': n}. llm은 **외부 LLM 전부**(모델 무관)."""
     t = _totals()
-    return {"hcxt": t["hcxt"], "gpt4o": t["gpt4o"]}
+    return {"hcxt": t["hcxt"], "llm": t["llm"]}
 
 
 @_never_raises("")
 def api_summary() -> str:
     """한 줄 요약(요청 총계)."""
     t = _totals()
-    s = f"HCXT {t['hcxt']}회 · 외부LLM {t['gpt4o']}회"
-    if t["gpt4o"]:
+    s = f"HCXT {t['hcxt']}회 · 외부LLM {t['llm']}회"
+    if t["llm"]:
         tok = t["prompt_tokens"] + t["completion_tokens"]
         s += f"({tok:,}토큰 ${t['cost']:.4f})"
     if t["gpu_cost"]:
         s += f" · GPU {t['gpu_seconds']:.0f}s ${t['gpu_cost']:.4f}"
-    total = t["cost"] + t["gpu_cost"]
+    total = t["cost"]          # GPU 제외 — 아래 주석 참조
     if total:
         s += f" = ${total:.4f}(₩{pricing.to_krw(total):,})"
     return s
@@ -377,7 +386,7 @@ def breakdown_lines() -> list[str]:
             note += f"⏱{p.hcxt_timeouts}"
         lines.append(f"  {kind:<10} {'HCXT(로컬GPU)':<18} {note:>21} ${p.gpu_cost:>8.4f}")
     t = _totals()
-    total = t["cost"] + t["gpu_cost"]
+    total = t["cost"]          # GPU 제외 — 아래 주석 참조
     lines.append(f"  합계 LLM ${t['cost']:.4f} + GPU ${t['gpu_cost']:.4f} = ${total:.4f} "
                  f"(₩{pricing.to_krw(total):,} @ {pricing.fx_rate():g})")
     if t["unpriced_calls"]:
