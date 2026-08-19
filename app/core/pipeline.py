@@ -982,7 +982,18 @@ def _parse_txt_result(
     # ★ 좌표계는 meta.bbox_space를 **읽는다**(생산자가 적어 준다). 옛 파일·주입 핸드오프엔
     #   그 키가 없어 종전 유추(TEXT_NATIVE=픽셀)로 폴백한다.
     iw, ih = meta.get("image_width") or 0, meta.get("image_height") or 0
-    space = meta.get("bbox_space") or ("pixel" if method == "TEXT_NATIVE" else "norm1000")
+    space = meta.get("bbox_space")
+    if not space:
+        # ★ 키가 없으면 **값으로 판정한다**(2026-08-19). 종전에는 추출 방식으로 유추해서
+        #   OCR이면 무조건 norm1000으로 봤는데, 픽셀 좌표를 담은 옛 경계 파일이 그 길로
+        #   들어와 좌표가 통째로 부풀었다(EBS-E26-013 p191: 경계 파일 y 75~1422가
+        #   응답에서 111~2096. 배율이 정확히 image_height/1000 = 1.474였다).
+        #   정규화 좌표는 정의상 0~1000을 못 넘으므로, 1000을 넘는 값이 하나라도 있으면
+        #   픽셀이 확실하다. 추출 방식보다 값이 믿을 만한 근거다.
+        vals = [v for el in extraction.get("elements", [])
+                for v in (el.get("bbox") or []) if isinstance(v, (int, float))]
+        space = "pixel" if (vals and max(vals) > 1000) else (
+            "pixel" if method == "TEXT_NATIVE" else "norm1000")
     scale_bbox = ((iw / 1000, ih / 1000, iw / 1000, ih / 1000)
                   if space == "norm1000" and iw and ih else None)
 
