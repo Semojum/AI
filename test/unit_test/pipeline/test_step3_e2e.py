@@ -452,3 +452,39 @@ class TestResponseContract:
         llms = [LLMOutput(element_id=tid, corrected_text="제목", routing_tier="ZERO")]
         resp = self._build(elements, llms)
         assert resp["braille_text_list"][0]["heading_level"] == 1
+
+
+# ── 읽기 순서: 완전 분리 역전 (2026-08-19) ──────────────────────────────────
+# 앞 요소가 키가 크면 위끝 차이가 밴드에 못 미쳐 종전 판정(`viol`)이 못 잡았다.
+# 실물: 테스트_1.pdf 에서 만화(y 115~273)가 1번, 제목(y 87~105)이 2번으로 나왔다.
+class TestReadingOrderHardInversion:
+    def _items(self, boxes):
+        from app.schemas.layout import BBoxItem
+        return [BBoxItem(type=t, bbox=b, reading_order=i + 1)
+                for i, (t, b) in enumerate(boxes)]
+
+    def test_통째로_위에_있는_요소가_앞으로_온다(self):
+        """같은 단에서 세로로 안 겹치는데 뒤에 온 요소는 무조건 역전이다."""
+        from app.core.pipeline import _reorder_columns
+        items = self._items([
+            ("image", (100, 115, 500, 273)),   # 만화가 먼저 방출됨
+            ("title", (100, 87, 500, 105)),    # 제목이 더 위인데 뒤
+            ("text", (100, 289, 500, 326)),
+            ("text", (100, 425, 500, 445)),
+        ])
+        _reorder_columns(items, 0)
+        order = {b.type: b.reading_order for b in items}
+        assert order["title"] < order["image"], order
+
+    def test_2단_본문은_흔들지_않는다(self):
+        """열 점프는 가로가 안 겹치므로 역전으로 세면 안 된다."""
+        from app.core.pipeline import _reorder_columns
+        items = self._items([
+            ("text", (50, 100, 290, 200)),     # 왼쪽 단 위
+            ("text", (50, 210, 290, 300)),     # 왼쪽 단 아래
+            ("text", (310, 100, 550, 200)),    # 오른쪽 단 위 — y는 되돌아가지만 다른 단
+            ("text", (310, 210, 550, 300)),
+        ])
+        before = [b.reading_order for b in items]
+        _reorder_columns(items, 0)
+        assert [b.reading_order for b in items] == before
