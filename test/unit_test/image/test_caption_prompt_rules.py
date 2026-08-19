@@ -34,7 +34,7 @@ class TestThinkingDisabled:
         with patch("anthropic.Anthropic", return_value=client), \
              patch("app.ai.captioning.captioner.llm_limiter", create=True), \
              patch("app.core.limits.llm_limiter"), \
-             patch("app.utils.req_log.inc_gpt4o"):
+             patch("app.utils.req_log.inc_ext_llm"):
             captioner._caption_anthropic("Zm9v", "image/png", "설명하세요")
         kwargs = client.messages.create.call_args.kwargs
         assert kwargs["thinking"] == {"type": "disabled"}, (

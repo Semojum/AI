@@ -52,7 +52,7 @@ class TestUsageCoercion:
         rl.start_request()
         rl.record_anthropic("캡셔닝", "claude-sonnet-5", None)
         rl.record_openai("분류", "gpt-4o", None)
-        assert rl._totals()["gpt4o"] == 2 and rl._totals()["cost"] == 0.0
+        assert rl._totals()["llm"] == 2 and rl._totals()["cost"] == 0.0
 
     def test_음수_토큰은_0으로(self):
         rl.start_request()
@@ -129,13 +129,13 @@ class TestCardMarkup:
 class TestApiCounts:
     def test_초기화_후_0(self):
         rl.start_request()
-        assert rl.api_counts() == {"hcxt": 0, "gpt4o": 0}
+        assert rl.api_counts() == {"hcxt": 0, "llm": 0}
 
     def test_증가(self):
         rl.start_request()
-        rl.inc_hcxt(); rl.inc_hcxt(); rl.inc_gpt4o()
+        rl.inc_hcxt(); rl.inc_hcxt(); rl.inc_ext_llm()
         c = rl.api_counts()
-        assert c["hcxt"] == 2 and c["gpt4o"] == 1
+        assert c["hcxt"] == 2 and c["llm"] == 1
 
     def test_summary_포맷(self):
         rl.start_request()
@@ -146,9 +146,9 @@ class TestApiCounts:
     def test_토큰_모르면_비용_0(self):
         """usage 없는 호출은 **비용을 지어내지 않는다**(구 근사치 1500/500 제거, 2026-08-13)."""
         rl.start_request()
-        rl.inc_gpt4o()
+        rl.inc_ext_llm()
         assert rl._totals()["cost"] == 0.0        # 구 버전은 1500/500을 채워 $0.0088로 잡았다
-        assert rl._totals()["gpt4o"] == 1         # 호출 수는 센다
+        assert rl._totals()["llm"] == 1         # 호출 수는 센다
 
 
 class TestCost:
@@ -186,3 +186,32 @@ class TestStage:
         with rl.stage("테스트단계") as st:
             st.note = "5요소"
         assert st.note == "5요소"
+
+
+# ── 쪽당 원가에서 GPU 제외 (2026-08-20 대표 지시) ─────────────────────────
+# AWS 서버 비용은 인스턴스 시간으로 따로 매긴다. 쪽마다 안분하면 이중 계상이 된다.
+class TestGpuExcludedFromPageCost:
+    def test_cost_usd에_GPU가_안_섞인다(self):
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 3000, 500)
+        rl.record_hcxt("텍스트", 5.0)
+        u = rl.usage_report()
+        assert u["cost_usd"] == round(u["llm_cost_usd_nanos"] / 1e9, 9), u["cost_usd"]
+        assert u["gpu_cost_usd_nanos"] > 0, "GPU 관측값 자체는 남아야 한다"
+
+    def test_GPU_점유_시간은_계속_기록된다(self):
+        """금액에서만 뺀다. 측정값은 BE가 따로 쓸 수 있게 남긴다."""
+        rl.start_request()
+        rl.record_hcxt("텍스트", 2.0)
+        u = rl.usage_report()
+        assert u["gpu_time_ms"] == 2000 and u["gpu_seconds"] == 2.0
+
+
+class TestExtLlmCounter:
+    """카운터 이름이 모델 하나를 가리키면 안 된다 — 라우팅이 여러 모델을 쓴다."""
+
+    def test_모델과_무관하게_외부_LLM을_센다(self):
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 100, 10)
+        rl.record_llm("분류", "gpt-4o", 100, 10)
+        assert rl.api_counts() == {"hcxt": 0, "llm": 2}
