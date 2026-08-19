@@ -291,6 +291,39 @@ _PAR_COL_OVERLAP = 0.6     # 같은 단으로 볼 x 겹침 비율
 _PAR_FULL_RIGHT = 0.04     # 단 오른쪽에서 이 비율 안쪽까지 오면 '끝까지 찬 줄'
 _PAR_GAP_MAX = 1.0         # 줄 간격이 줄높이의 이 배 이하일 때만 이음
 _PAR_INDENT_MIN = 0.6      # 단 왼쪽에서 줄높이의 이 배 넘게 들어가면 새 문단 첫 줄
+_PAR_RIGHT_Q = 0.95        # 단 오른쪽 끝을 잡을 분위수(max는 꼬리말 한 줄에 흔들린다)
+
+# 이어 붙이면 안 되는 자리 두 가지(2026-08-20 실물 확인).
+#   ① 뒤 조각이 **항목 표지**로 시작 — 선택지 ②와 ③, 표의 두 행을 한 덩어리로 붙였다
+#      (사회문화 p0041 '② …태도' + '③ 자신의 주장과…', 언어와매체 p0107 표 두 행).
+#   ② 앞 조각이 **문장부호로 끝남** — 수학은 식 번호(yy㉠)를 오른쪽 정렬해서 그 줄이
+#      늘 '단 끝까지 찼다'가 되고, 끝난 문장 뒤에 다음 식을 붙였다(수학 I p0050).
+# ⚠ 표지 목록을 좁게 잡는다(2026-08-20 2차 실물). 처음에 ⓐ-ⓩ·㉠-㉭까지 넣었더니
+#   본문 속 기호를 문두로 오인해 한 문단을 끊었다('…여자이고,' + 'ⓑ는 남자이다').
+#   실제로 새 항목을 여는 것은 선택지 번호와 보기 표지뿐이다.
+_PAR_ITEM_HEAD = re.compile(
+    r"^\s*(?:[①-⑳]|[⑴-⒇]|[ㄱ-ㅎ]\.|\d{1,2}\s*[.)]|[(（]\s*\d{1,2}\s*[)）])")
+
+
+_HANGUL_RE = re.compile(r"[가-힣]")
+_TAG_RE = re.compile(r"<!/?[^>]*>")
+
+
+def _par_blocked(prev: str, nxt: str) -> bool:
+    """문단으로 이으면 안 되는 자리인가.
+
+    뒤 조각이 수식 줄이면 잇지 않는다 — 묵자가 일부러 나눈 자리라 쪼개진 게 아니다.
+    문단 병합은 PyMuPDF가 한 줄씩 끊어 놓은 것을 되돌리는 일이지, 원본이 나눈 줄을
+    합치는 일이 아니다(수학 I p0032·p0037에서 'BCÓ=DCÓ'가 앞 문장에 붙었다).
+    """
+    # 태그를 벗기고 본다 — 표 행이 <!강조>①<!/강조>로 시작하면 그냥 매칭이 못 잡는다
+    # (언어와매체 p0107에서 표 머리행에 첫 행이 붙었다).
+    if _PAR_ITEM_HEAD.match(_TAG_RE.sub("", nxt).lstrip()):
+        return True
+    # 뒤 조각에 한글이 **하나도 없으면** 수식·기호 줄이다.
+    #   비율(30%)로 걸렀더니 수식이 섞인 본문까지 끊겼다('…유전자형은' + 'AAXõXºDd이다.').
+    body = _TAG_RE.sub("", nxt).strip()
+    return bool(body) and not _HANGUL_RE.search(body)
 
 # 이을 때 공백을 넣을지 — 한국어 줄바꿈은 어절 경계에서도, 어절 가운데서도 일어난다.
 # 실측(job_260807103532 p1): '있을까'+'하고'는 띄어야 하고('있을까 하고'),
@@ -418,10 +451,20 @@ def _merge_paragraph_blocks(blocks: list[dict]) -> list[dict]:
         a = out[-1]
         ax0, ay0, ax1, ay1 = a["bbox"]
         col = [x["bbox"] for x in items if ovl(x["bbox"], b["bbox"]) >= _PAR_COL_OVERLAP] or [b["bbox"]]
-        col_left, col_right = min(c[0] for c in col), max(c[2] for c in col)
+        col_left = min(c[0] for c in col)
+        # ★ 단의 오른쪽 끝은 **max가 아니라 분위수**다(2026-08-20). 꼬리말 한 줄이 단을
+        #   부풀려 그 단의 본문이 통째로 과분절됐다 — 사회문화 p0008 좌측 문단은 줄이
+        #   x 132에서 끝나는데 꼬리말 '8  2027학년도 EBS 수능특강 사회·문화'가 160까지
+        #   가서 col_right가 160이 됐고, 네 줄 전부 '단 끝까지 안 찼다'로 탈락했다.
+        #   꼬리말은 왼쪽 정렬도 폭도 본문과 비슷해 겹침 기준으로는 안 걸러진다.
+        #   ⚠ 90분위 이하로 내리면 짧게 끝난 문단 마지막 줄까지 '끝까지 찼다'가 되어
+        #     다른 문단을 붙인다(실측 p0008에서 80분위는 요소가 하나 더 준다).
+        xs = sorted(c[2] for c in col)
+        col_right = xs[-1] if len(xs) < 4 else xs[min(int(len(xs) * _PAR_RIGHT_Q), len(xs) - 1)]
         width = max(1.0, col_right - col_left)
         joinable = (
-            ovl(a["bbox"], b["bbox"]) >= _PAR_COL_OVERLAP
+            not _par_blocked(a["content"], b["content"])
+            and ovl(a["bbox"], b["bbox"]) >= _PAR_COL_OVERLAP
             and -0.3 * lh <= by0 - ay1 <= _PAR_GAP_MAX * lh
             and last_x1[-1] >= col_right - _PAR_FULL_RIGHT * width  # 직전 줄이 단 끝까지 참
             and bx0 - col_left <= _PAR_INDENT_MIN * lh              # 뒤 줄이 들여쓰기로 시작 안 함
