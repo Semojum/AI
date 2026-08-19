@@ -68,7 +68,7 @@ _CLASSIFY_TYPE_MAP = {
     "chart": "chart_graph",
     "image": "image",
     # 'diagram'은 pipeline._TYPE_ALIAS에 이미 있고 _run_diagram_chain이 받는다(§6.6 도표 골격).
-    # 하위유형(개념도/흐름도/…)을 모르면 diagram_opt가 공통 4안으로 안전 폴백한다.
+    # 하위유형(개념도/흐름도/…)을 모르면 diagram_opt가 공통 3안으로 안전 폴백한다.
     "diagram": "diagram",
 }
 

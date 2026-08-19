@@ -54,14 +54,12 @@ from app.ai.llm.diagram_structure import structure_from_caption, subtype_from_ca
 from app.ai.braille import tag_names as _TN
 from app.ai.braille import tn_notices as _TN_NOTICES
 from app.ai.llm.visual_drafts import (
-    OUTLINE_IDX,
+    DESC_IDX,
     LABELS,
     _dedupe,
     build_visual_drafts,
     extra_drafts,
     omission_draft,
-    prose_draft,
-    title_draft,
 )
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import Draft, ExtractedContent, LLMOutput, RuleApplication
@@ -115,7 +113,7 @@ def _min_trail(subtype: str, how: str) -> list[RuleApplication]:
     subtype 판정은 앞단 신호가 없을 때 캡션 첫 줄에서 우리가 **추측한 것**이고
     (`diagram_structure.subtype_from_caption`), 들여쓰기(개념도 5/3·조직도 1칸+2칸/단계)는
     그 판정에 딸려 결정된다. 판정이 틀리면 골격 전체가 틀리므로 점역사가 제일 먼저 볼 자리다.
-    how = "골격 조립"(structure에서 결정적 전사) | "캡션 4안"(구조 없어 캡션으로 폴백).
+    how = "골격 조립"(structure에서 결정적 전사) | "캡션 3안"(구조 없어 캡션으로 폴백).
     """
     rule_id = _SUBTYPE_RULE.get(subtype, _RULE_ID)
     label = _TYPE_LABEL.get(subtype, "도표")
@@ -134,7 +132,7 @@ def _structure(ext: ExtractedContent, subtype: str) -> dict:
 
     앞단(MinerU·분류기)은 도표 내부 구조를 내지 않아 `_ASSEMBLERS`가 한 번도 돈 적이 없었다
     (경계 JSON 실측 2026-08-08: structure 0건). 캡션은 이미 위계 줄을 갖고 있으므로
-    거기서 만든다 — `diagram_structure` 참조. 못 만들면 {} → 캡션 4안 폴백(종전 동작).
+    거기서 만든다 — `diagram_structure` 참조. 못 만들면 {} → 캡션 3안 폴백(종전 동작).
     """
     if ext.structure:
         return ext.structure
@@ -419,11 +417,11 @@ def _skeleton_prose(text: str) -> str:
 
 
 class DiagramOpt(BaseOpt):
-    """ExtractedContent 목록 → LLMOutput 목록 (개념도·흐름도 등 도표). 대체텍스트 4안.
+    """ExtractedContent 목록 → LLMOutput 목록 (개념도·흐름도 등 도표). 대체텍스트 3안.
 
     도표는 구조가 §6.6 골격(개조식)으로 결정적 전사되므로 개조식 초안은 그 골격을 그대로 쓰고,
-    생략·짧은 제목·줄글을 더해 4안을 만든다(모두 rule-based — 구조가 있으면 LLM 미사용).
-    구조가 없으면 캡션으로 공통 4안 빌더에 위임(제목·개조식·줄글을 LLM이 채움).
+    생략·참조를 더해 3안을 만든다(모두 rule-based — 구조가 있으면 LLM 미사용).
+    구조가 없으면 캡션으로 공통 3안 빌더에 위임(설명을 LLM이 채움).
     """
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
@@ -439,17 +437,16 @@ class DiagramOpt(BaseOpt):
 
         if assembled is not None:
             skeleton_text, skeleton_indents = assembled
-            # 개조식 = §6.6 골격 그대로(글상자 테두리·정밀 들여쓰기 보존). 나머지 3안은 파생.
+            # 설명 = §6.6 골격 그대로(글상자 테두리·정밀 들여쓰기 보존).
+            # ★ 2026-08-20 — 짧은 제목·줄글·유형만을 뺐다. 규정은 "설명" 하나이고
+            #   gold 실측에서 '유형만'이 0건이다(visual_drafts.LABELS 주석 참조).
             drafts = [
                 omission_draft(label),
-                title_draft(label, title),
-                Draft(option=3, text=skeleton_text, render_mode="narrative", label=LABELS[OUTLINE_IDX]),
-                prose_draft(label, _skeleton_prose(skeleton_text)),
+                Draft(option=2, text=skeleton_text, render_mode="narrative", label=LABELS[DESC_IDX]),
                 *extra_drafts(label),
             ]
             # 골격 경로는 build_visual_drafts를 안 타므로 접기를 여기서 직접 부른다.
-            # (실측: 제목 없는 개념도에서 짧은 제목과 유형만이 둘 다 "개념도"였다)
-            drafts, sel_idx = _dedupe(drafts, OUTLINE_IDX)
+            drafts, sel_idx = _dedupe(drafts, DESC_IDX)
             return LLMOutput(
                 element_id=ext.element_id,
                 corrected_text=skeleton_text,
@@ -460,11 +457,15 @@ class DiagramOpt(BaseOpt):
                 rule_trail=_min_trail(subtype, "골격 조립"),
                 drafts=drafts,
                 selected_idx=sel_idx,
-                line_indents=skeleton_indents if sel_idx == drafts.index(
-                    next(d for d in drafts if d.option == 3)) else None,
+                # 설명 안이 선택됐을 때만 골격 들여쓰기를 넘긴다.
+                # ★ option 번호가 아니라 **라벨**로 찾는다(2026-08-20). 6안→3안으로 줄이며
+                #   설명 안의 option이 3에서 2로 바뀌었는데 여기가 3을 찾고 있어 터졌다.
+                line_indents=skeleton_indents if (
+                    0 <= sel_idx < len(drafts)
+                    and drafts[sel_idx].label == LABELS[DESC_IDX]) else None,
             )
 
-        # 폴백: 구조 없음 → 캡션으로 공통 4안 빌더(제목·개조식·줄글 LLM)
+        # 폴백: 구조 없음 → 캡션으로 공통 3안 빌더(설명 LLM)
         cap = (ext.corrected_text or "").strip()
         if not cap:
             return LLMOutput(
@@ -491,7 +492,7 @@ class DiagramOpt(BaseOpt):
             tn_text=drafts[selected_idx].text,
             routing_tier=tier,
             processing_time_ms=0,
-            rule_trail=_min_trail(subtype, f"캡션 4안 · {cap_src}"),
+            rule_trail=_min_trail(subtype, f"캡션 3안 · {cap_src}"),
             drafts=drafts,
             selected_idx=selected_idx,
             line_indents=line_indents,

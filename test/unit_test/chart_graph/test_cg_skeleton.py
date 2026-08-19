@@ -31,15 +31,15 @@ class TestLabel:
 
 
 class TestFourDrafts:
-    def test_4안_라벨(self):
+    def test_안_라벨(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(ChartGraphOpt().optimize([ext], "ZERO"))[0]
         assert [d.label for d in opt.drafts] == list(LABELS)
-        assert opt.selected_idx == 2                                   # 기본=개조식(표 변환)
+        assert opt.selected_idx == 1                                   # 기본=설명(gold 79.6%)(표 변환)
 
     def test_개조식_데이터_전사(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
-        outline = asyncio.run(ChartGraphOpt().optimize([ext], "ZERO"))[0].drafts[2].text
+        outline = asyncio.run(ChartGraphOpt().optimize([ext], "ZERO"))[0].drafts[1].text
         assert "2020: 980권" in outline and "2021: 1100권" in outline   # 수치+단위 전사
         assert "가로축 연도" in outline                                # 축 머리 항목
 
