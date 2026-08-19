@@ -488,3 +488,38 @@ class TestReadingOrderHardInversion:
         before = [b.reading_order for b in items]
         _reorder_columns(items, 0)
         assert [b.reading_order for b in items] == before
+
+
+# ── bbox 좌표계 판정 (2026-08-19) ──────────────────────────────────────────
+# 종전에는 추출 방식으로 유추해 OCR이면 무조건 0~1000 정규화로 봤다. 픽셀 좌표를 담은
+# 옛 경계 파일이 그 길로 들어와 좌표가 image_height/1000 배만큼 부풀었다
+# (EBS-E26-013 p191: 경계 파일 y 75~1422 → 응답 111~2096).
+class TestBboxSpaceInference:
+    def _ext(self, method, boxes):
+        return {"meta": {"job_id": "j", "page_no": 1, "extraction_method": method,
+                         "image_width": 1168, "image_height": 1474},
+                "elements": [{"id": f"{i:08d}-0000-4000-8000-000000000000",
+                              "order": i + 1, "type": "text", "content": "가나다",
+                              "bbox": b} for i, b in enumerate(boxes)]}
+
+    def test_1000을_넘는_좌표는_픽셀로_본다(self):
+        """정규화 좌표는 정의상 0~1000을 못 넘는다. 넘으면 픽셀이 확실하다."""
+        from app.core.pipeline import _parse_txt_result
+        lr, _, _ = _parse_txt_result(self._ext("OCR", [[75, 75, 1077, 1422]]), "p1")
+        items = lr.elements
+        assert items[0].bbox == (75, 75, 1077, 1422), items[0].bbox
+
+    def test_1000_이하_OCR_좌표는_정규화로_되돌린다(self):
+        """MinerU 기본 산출은 0~1000이라 종전 동작을 지켜야 한다."""
+        from app.core.pipeline import _parse_txt_result
+        lr, _, _ = _parse_txt_result(self._ext("OCR", [[100, 200, 500, 600]]), "p1")
+        items = lr.elements
+        x, y, x2, y2 = items[0].bbox
+        assert abs(x - 100 * 1.168) < 1 and abs(y2 - 600 * 1.474) < 1, items[0].bbox
+
+    def test_bbox_space가_있으면_그것을_따른다(self):
+        from app.core.pipeline import _parse_txt_result
+        ext = self._ext("OCR", [[100, 200, 500, 600]])
+        ext["meta"]["bbox_space"] = "pixel"
+        lr, _, _ = _parse_txt_result(ext, "p1")
+        assert lr.elements[0].bbox == (100, 200, 500, 600)
