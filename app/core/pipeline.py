@@ -762,7 +762,18 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
         1 for a, c in zip(by_mineru, by_mineru[1:])
         if c.bbox[1] < a.bbox[1] - 2 * band and c.bbox[0] < a.bbox[0] + 0.3 * (hull1 - hull0)
     )
-    main = sorted(main, key=_ykey) if viol > 1 else by_mineru
+    # ★ 완전 분리 역전은 한 번만 나와도 명백한 오류다(2026-08-19).
+    #   위 `viol`은 **위끝(y1)끼리만** 재기 때문에, 뒤 요소가 앞 요소보다 통째로 위에 있어도
+    #   앞 요소가 키가 크면 위끝 차이가 밴드에 못 미쳐 안 잡힌다. 실제 사고가 그 얼굴이었다
+    #   (테스트_1.pdf: 만화 y 115~273이 1번, 제목 y 87~105가 2번. 위끝 차 28 < 2밴드 37).
+    #   여기서는 **세로로 전혀 안 겹치고 가로로는 겹치는**(= 같은 단) 쌍만 센다. 2단 본문의
+    #   열 점프는 가로가 안 겹치므로 걸리지 않는다 — 그래서 임계를 1로 둬도 안전하다.
+    hard = sum(
+        1 for a, c in zip(by_mineru, by_mineru[1:])
+        if c.bbox[3] <= a.bbox[1]
+        and min(a.bbox[2], c.bbox[2]) - max(a.bbox[0], c.bbox[0]) > 0
+    )
+    main = sorted(main, key=_ykey) if (viol > 1 or hard) else by_mineru
 
     # 5) 새 본문 순서 = main → 이동 열(x0 순, 각 y-정렬). 비본문은 원 슬롯 유지.
     deferred.sort(key=lambda cl: min(b.bbox[0] for b in cl))
