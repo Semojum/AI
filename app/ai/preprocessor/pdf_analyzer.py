@@ -359,12 +359,37 @@ def _join_words(prev_line: str, next_line: str) -> str:
     if kiwi is None:
         return sep
     try:
-        joined = kiwi.analyze(wa + wb, top_n=1)
-        apart = kiwi.analyze(f"{wa} {wb}", top_n=1)
-        if joined and apart:
-            return "" if joined[0][1] > apart[0][1] else " "
+        # ★ `analyze` 점수 비교는 못 쓴다 — kiwi가 띄어쓰기를 정규화해서 붙인 것과 띄운 것에
+        #   **같은 점수**를 준다(실측 12쌍 중 9쌍 동점). 동점이면 종전 코드가 늘 띄움으로
+        #   떨어져 `촉구 하였다`·`발표 하였다`가 나갔다(OCR 이음 2,691건 중 66건).
+        #   띄어쓰기 교정기 `space()`가 같은 12쌍을 12/12 맞춘다.
+        if wa[-1] in _PAR_CLOSE_MARK:
+            # 닫는 부호 뒤는 space()가 절대 안 가른다(`(가)국가가`도 붙여 놓는다).
+            # 그 자리는 **뒤 어절이 조사로 시작하는가**로 가른다 — 조사면 붙고
+            # (「곤여만국전도」를), 아니면 띄운다((가) 국가가).
+            # 어절 하나만 떼어 보면 못 읽는다(`를` → 르/NNG + ᆯ/JKO). 붙여서 분석하고
+            # **부호 뒤 첫 형태소**를 본다.
+            morphs = kiwi.analyze(wa + wb, top_n=1)[0][0]
+            after = [m for m in morphs if m.start >= len(wa)]
+            return "" if after and after[0].tag.startswith("J") else " "
+        # 어절 하나만 넘기면 문맥이 없어 못 가른다(`줄`+`그`). 앞뒤 두 어절씩 붙여 준다.
+        a_ctx = " ".join(prev_line.rstrip().split()[-2:])
+        b_ctx = " ".join(next_line.lstrip().split()[:2])
+        spaced = kiwi.space(a_ctx + b_ctx)
+        if spaced:
+            n = len(a_ctx.replace(" ", ""))       # 이음매의 글자 기준 위치
+            seen = 0
+            for ch in spaced:
+                if ch == " ":
+                    if seen == n:
+                        return " "
+                    continue
+                seen += 1
+                if seen > n:
+                    break
+            return ""
     except Exception as exc:  # noqa: BLE001 — 분석 실패는 규칙으로 격리
-        logger.debug("줄 잇기 형태소 분석 실패(규칙으로): %s", exc)
+        logger.debug("줄 잇기 띄어쓰기 판정 실패(규칙으로): %s", exc)
     return sep
 
 

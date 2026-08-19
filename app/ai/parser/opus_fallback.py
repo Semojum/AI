@@ -53,7 +53,7 @@ def extract(image_path: str) -> list[dict] | None:
     try:
         import anthropic
         from app.core.limits import estimate_tokens, llm_limiter
-        from app.utils.req_log import record_gpt4o
+        from app.utils.req_log import record_anthropic
         client = anthropic.Anthropic()
         b64 = base64.b64encode(open(image_path, "rb").read()).decode()
         # 계정 분당 상한. 쪽 전체 이미지라 입력이 크고 출력도 8,000토큰까지 잡는다.
@@ -66,9 +66,8 @@ def extract(image_path: str) -> list[dict] | None:
                 {"type": "text", "text": _PROMPT},
             ]}],
         )
-        record_gpt4o("opus추출",
-                     getattr(resp.usage, "input_tokens", 0) or 0,
-                     getattr(resp.usage, "output_tokens", 0) or 0)
+        # Opus는 Sonnet보다 입력 2.5배·출력 2.5배다 — 모델을 밝혀야 원가가 맞는다.
+        record_anthropic("opus추출", MODEL, getattr(resp, "usage", None))
         txt = "".join(b.text for b in resp.content if b.type == "text").strip()
         if txt.startswith("```"):
             txt = txt.split("\n", 1)[1].rsplit("```", 1)[0]

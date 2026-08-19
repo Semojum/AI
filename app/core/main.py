@@ -79,6 +79,13 @@ async def main() -> None:
         config.app_env,
     )
 
+    # 환율을 기동 때 미리 받아 둔다(주 1회 갱신). 요청 경로에서 처음 받으면 그 한 쪽만
+    # 네트워크 지연을 문다. 실패해도 직전 값·최후값으로 계산은 이어진다.
+    from app.core import pricing
+    await asyncio.to_thread(pricing.fx_rate)
+    logger.info("환율 USD 1 = %.2f KRW (%.1f일 전 갱신)",
+                pricing.fx_rate(), pricing.fx_age_days() or 0.0)
+
     # GPU 0/1 모델 상시 로드 (서버 기동 시 1회)
     from app.core.model_manager import model_manager
     logger.info("GPU 0/1 모델 로드 시작...")

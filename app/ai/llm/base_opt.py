@@ -153,7 +153,6 @@ async def fallback_optimize(prompt: str, *, max_tokens: int = 300, kind: str = "
       빠뜨려도 뚫리므로, 호출 길목에서 한 번에 막는다.
     """
     from app.core.limits import estimate_tokens, llm_limiter, llm_slot
-    from app.utils.req_log import record_gpt4o
 
     if os.environ.get("DISABLE_LLM_FALLBACK") == "1":
         logger.warning("LLM 폴백 차단됨(DISABLE_LLM_FALLBACK=1) — %s", kind)
@@ -165,30 +164,48 @@ async def fallback_optimize(prompt: str, *, max_tokens: int = 300, kind: str = "
     #   줄이 길 때 정상 호출이 '느린 호출'로 오인돼 끊긴다(limits.py 규약).
     async with llm_slot():
         await llm_limiter().acquire(estimate_tokens(prompt), max_tokens)
-        return await _fallback_call(prompt, max_tokens=max_tokens, kind=kind,
-                                    record_gpt4o=record_gpt4o)
+        return await _fallback_call(prompt, max_tokens=max_tokens, kind=kind)
 
 
-async def _fallback_call(prompt: str, *, max_tokens: int, kind: str, record_gpt4o) -> str:
-    """`fallback_optimize`의 실제 호출부. 슬롯·상한을 잡은 뒤 불린다."""
+async def _fallback_call(prompt: str, *, max_tokens: int, kind: str) -> str:
+    """`fallback_optimize`의 실제 호출부. 슬롯·상한을 잡은 뒤 불린다.
+
+    비용은 **부른 모델의 단가**로 기록한다(`req_log.record_*` → `core/pricing.py`).
+    2026-08-13 전까지 여기서 Claude를 부르고도 gpt-4o 단가를 곱하고 있었다.
+    """
+    from app.utils.req_log import record_anthropic, record_llm, record_openai
+
     if config.anthropic_api_key:
         import anthropic
+        model = os.environ.get("FALLBACK_MODEL", "claude-sonnet-5")
         client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
         try:
             resp = await asyncio.wait_for(
                 client.messages.create(
-                    model=os.environ.get("FALLBACK_MODEL", "claude-sonnet-5"),
+                    model=model,
                     max_tokens=max_tokens,
+                    # ★ 사고를 꺼야 한다(2026-08-15 실측). claude-sonnet-5는 `thinking`을
+                    #   안 주면 **적응형 사고가 기본**이고, max_tokens는 사고+본문 합계
+                    #   상한이다. 같은 표 프롬프트로 재어 보니:
+                    #     사고 켬 → out 1024, stop_reason=max_tokens, 본문 238자 (잘림)
+                    #     사고 끔 → out  512, stop_reason=end_turn,   본문 553자
+                    #   비용이 2배인 데다 **본문이 잘린다.** opt는 원문을 다듬는 과제라
+                    #   사고가 품질을 올리지 않는다. 캡셔너는 2026-08-08 QA 16번에서 이미
+                    #   막았는데 이 경로만 남아 있었다(원가 계측을 붙이고서야 드러났다).
+                    thinking={"type": "disabled"},
                     messages=[{"role": "user", "content": prompt}],
                 ),
                 timeout=FALLBACK_TIMEOUT,
             )
-            u = getattr(resp, "usage", None)
-            record_gpt4o(kind, getattr(u, "input_tokens", 0) or 0,
-                         getattr(u, "output_tokens", 0) or 0)
+            record_anthropic(kind, model, getattr(resp, "usage", None))
+            # 상한에 걸리면 **출력이 잘린 것**이다. 표는 잘리면 행이 통째로 사라지는데
+            # 응답만 봐서는 멀쩡해 보인다(닫는 태그가 없을 뿐). 조용히 지나가지 않게 남긴다.
+            if getattr(resp, "stop_reason", None) == "max_tokens":
+                logger.warning("FALLBACK %s 출력이 max_tokens(%d)에서 잘렸다 — "
+                               "상한을 올리거나 프롬프트를 줄여야 한다", kind, max_tokens)
             return "".join(b.text for b in resp.content if b.type == "text").strip()
         except Exception as exc:  # noqa: BLE001 — 폴백 실패는 원문 폴백으로 격리
-            record_gpt4o(kind)
+            record_llm(kind, model)   # 호출 수만. 얼마 나갔는지 모르는 걸 지어내지 않는다
             logger.error("FALLBACK(anthropic) %s 최적화 실패: %s", kind, exc)
             return ""
 
@@ -207,12 +224,10 @@ async def _fallback_call(prompt: str, *, max_tokens: int, kind: str, record_gpt4
             ),
             timeout=FALLBACK_TIMEOUT,
         )
-        usage = getattr(resp, "usage", None)
-        record_gpt4o(kind, getattr(usage, "prompt_tokens", 0) or 0,
-                     getattr(usage, "completion_tokens", 0) or 0)
+        record_openai(kind, "gpt-4o", getattr(resp, "usage", None))
         return resp.choices[0].message.content.strip()
     except Exception as exc:  # noqa: BLE001
-        record_gpt4o(kind)
+        record_llm(kind, "gpt-4o")
         logger.error("FALLBACK %s 최적화 실패: %s", kind, exc)
         return ""
 

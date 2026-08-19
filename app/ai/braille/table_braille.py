@@ -71,6 +71,10 @@ _SEP     = "⠒"  # 행·셀 구분선
 _TBL_OPEN, _TBL_CLOSE = "<!표>", "<!/표>"
 _TBL_ROW_OPEN, _TBL_ROW_CLOSE = "<!행>", "<!/행>"
 _TBL_CELL = "<!칸>"
+# build_table_tags는 여는 `<!칸>`만 찍지만(구분자 하나면 족하다), 손으로 쓴 입력과
+# BE가 보내는 txt는 다른 태그처럼 **쌍으로** 적는다. 닫는 쪽을 먼저 지우고 여는 쪽으로
+# 가른다 — 여닫이를 한꺼번에 구분자로 쓰면 빈 조각이 생겨 빈 셀과 구분되지 않는다.
+_TBL_CELL_CLOSE = "<!/칸>"
 _TBL_ROW_RE = re.compile(r"<!행>(.*?)<!/행>", re.DOTALL)
 
 
@@ -89,7 +93,7 @@ def parse_table_tags(text: str):
         return None
     rows: list[list[str]] = []
     for m in _TBL_ROW_RE.finditer(text):
-        cells = m.group(1).split(_TBL_CELL)
+        cells = m.group(1).replace(_TBL_CELL_CLOSE, "").split(_TBL_CELL)
         if cells and cells[0] == "":
             cells = cells[1:]   # 첫 <!칸> 앞 빈 셀 제거
         rows.append([c.strip() for c in cells])

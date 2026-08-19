@@ -16,7 +16,7 @@ from typing import Optional
 
 from app.ai.braille.nested_block import box_narrative
 from app.ai.braille.regulations import make_rule
-from app.ai.braille.table_braille import build_table_tags, print_layout
+from app.ai.braille.table_braille import build_table_tags, parse_table_tags, print_layout
 from app.ai.llm.base_opt import BaseOpt, decide_tier_timeout, generate_with_retry
 from app.ai.llm.draft_utils import ensure_tn_prefix
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
@@ -355,6 +355,12 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
             # 내용 배치와 **동일**하다(EBS-E26-013 p8 실물 대조). 풀어쓰기는 행을 쪼개
             # 배치가 통째로 다르다. 기본이 비선택 초안이면 contents에 안 실린다.
             return "table_grid"
+    # `<!표>` 구조 태그로 직접 들어오는 경로(mode b — BE가 txt에 태그를 실어 보낸다).
+    # 열 수 세는 규칙은 아래 HTML·파이프 갈래와 같다. 이게 없으면 태그가 HTML도 파이프도
+    # 아니라 narrative로 떨어져, 격자로 나가야 할 표가 풀어쓰기로 나갔다.
+    if (tag_rows := parse_table_tags(text or "")):
+        max_col = max(len(r) for r in tag_rows)
+        return "linear" if max_col == 2 else "table_grid"
     # table_structure 없음/빈 셀: HTML 표(MinerU) 또는 '|' 격자로 추론(narrative 오분류 방지).
     if _is_html_table(text):
         grid = _html_to_grid(text)      # 여기만 expand=True — 진짜 열 수를 세야 한다
@@ -484,7 +490,11 @@ class TableOpt(BaseOpt):
 
         response, used_fb = await generate_with_retry(
             prompt, timeout=timeout, element_id=ext.element_id, kind="표",
-            max_new_tokens=512, fallback_max_tokens=1024,
+            # 폴백 상한만 올린다(HCXT 512는 그대로). 프롬프트가 **두 방식**을 요구하는데
+            # 표 opt 산출이 p95 560자라 두 벌이면 1,120자 ≈ 1,150토큰으로 1024를 넘는다.
+            # 실측 상위 5% 표가 여기 걸렸고, 잘리면 행이 통째로 사라지는데 응답만 봐서는
+            # 멀쩡해 보인다. max_tokens는 천장이라 안 잘리던 호출의 비용은 안 오른다.
+            max_new_tokens=512, fallback_max_tokens=1536,
         )
         if used_fb:
             tier = "FALLBACK"

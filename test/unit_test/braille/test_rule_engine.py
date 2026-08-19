@@ -195,10 +195,11 @@ class TestMathOperators:
         assert "⠲⠲" in convert_latex("x \\geq 5")        # ≥ ⠲⠲(폰트 44)
 
     def test_neq(self) -> None:
-        # ≠ 규정(수학 제4항 1호)은 .33(⠨⠒⠒)이나 도서 관행은 .3(⠨⠒) —
-        # gold 수학2 .3 91회 vs .33 0회(2026-07-20 실측, F4). book 모드 기본.
-        assert "⠨⠒" in convert_latex("x \\neq y")
-        assert "⠨⠒⠒" not in convert_latex("x \\neq y")
+        # ≠ 규정(수학 제4항 1호)은 .33(⠨⠒⠒).
+        # ⚠ A/B 판정 대기(2026-08-15, exp-neq). 종전 기대값은 도서 관행 .3(⠨⠒)이었고
+        #   근거는 구판 수학2 한 권의 '91회 vs 0회'다. 앞서 같은 뿌리 셋이 뒤집혔다
+        #   (원장 R-13·R-14·R-15). 기각되면 ⠨⠒로 되돌린다.
+        assert "⠨⠒⠒" in convert_latex("x \\neq y")
 
     def test_times(self) -> None:
         assert "⠡" in convert_latex("3 \\times 4")       # × ⠡(폰트 *)
@@ -309,8 +310,11 @@ class TestWrapPromotionBookStyle:
 
     def test_partial_paren_still_wraps_and_promotes(self) -> None:
         # 분자 g(x)+1 은 괄호가 전체를 감싸지 않으므로 묶고, 내용에 ⠦가 있어 ⠶ 승격
-        assert self._cv("\\frac{g(x)+1}{x+2}") == "⠦⠭⠢⠼⠃⠴⠌⠶⠛⠦⠭⠴⠢⠼⠁⠶"
+        # ⚠ A/B 판정 대기(2026-08-15, exp/wrap-paren-no-promote). 묶음을 규정형 ⠷⠾로
+        #   두면 내용의 ⠦⠴와 겹칠 일이 없어 승격(⠶)도 일어나지 않는다 — 승격을 묶음
+        #   점형에 연동한 실험군이다. 기각되면 묶음 ⠦⠴ + 승격 ⠶로 되돌린다.
+        assert self._cv("\\frac{g(x)+1}{x+2}") == "⠷⠭⠢⠼⠃⠾⠌⠷⠛⠦⠭⠴⠢⠼⠁⠾"
 
     def test_two_adjacent_groups_still_wrap(self) -> None:
         # (a+b)(c+d)는 한 쌍이 전체를 감싸지 않는다 → 묶음 유지 + ⠶ 승격
-        assert self._cv("x^{(a+b)(c+d)}") == "⠭⠘⠶⠦⠁⠢⠃⠴⠦⠉⠢⠙⠴⠶"
+        assert self._cv("x^{(a+b)(c+d)}") == "⠭⠘⠷⠦⠁⠢⠃⠴⠦⠉⠢⠙⠴⠾"

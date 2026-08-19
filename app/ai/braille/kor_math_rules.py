@@ -82,12 +82,28 @@ _MATH_PAREN_E = "⠴"  # ) 닫는 소괄호
 # 재점역 A/B로 해야 한다. **인쇄 소괄호도 ⠦⠴** — 도서는 둘을 같은 점형으로 쓴다.
 # → book 모드는 ⠦⠴, regulation 모드는 규정 원형 ⠷⠾.
 _BOOK_STYLE_ENV = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
-# ∴ 관행: 규정 제65항 2호는 ,*(⠠⠡)이나 정답 도서는 ⠌⠄만 쓴다(gold 86회 vs 규정형 0회,
-# 2026-07-19 실측). ∵(⠈⠌)은 gold 용례가 없어 규정형 유지.
+# ∴ 관행: 규정 제65항 2호는 ,*(⠠⠡)이나 도서는 ⠌⠄를 쓴다고 보고 관행형을 기본에 뒀다.
+# ⚠ **근거 재현 실패(2026-08-15)**: 주석의 'gold 86회 vs 규정형 0회'가 안 나온다.
+#   2027 실측은 dev 12:48 · val 32:18로, 규정형이 0회가 아니라 66회이고 dev에서는
+#   오히려 규정형이 4배 많다. ⠌⠄의 ⠌가 분수선·한글 자모와 겹치니 앵커 없이 센
+#   오염으로 보인다. 이 수치를 근거로 쓰지 말 것.
+#   A/B로도 못 잰다 — 우리가 이 기호를 사실상 안 낸다(원장 M-05). 레버는 추출이다.
+# ∵(⠈⠌)은 gold 용례가 없어 규정형 유지.
 _THEREFORE = "⠌⠄" if _BOOK_STYLE_ENV else "⠠⠡"
-_WRAP_S = "⠦" if _BOOK_STYLE_ENV else "⠷"
-_WRAP_E = "⠴" if _BOOK_STYLE_ENV else "⠾"
-# ⇔ 관행: 규정 제61항 ⠪⠒⠒⠕ 대신 정답 도서는 ↔형 ⠪⠒⠕(gold 17 vs 0, 2026-07-22).
+# ★ 2026-08-15 — 규정형 ⠷⠾로 고정(A/B 실험군). 종전 book 게이팅을 푼다.
+#   위 주석의 재점역 A/B는 `⠦⠴` vs **`⠶⠶`(중괄호)** 비교였다 — `⠷⠾`는 후보로 오른
+#   적이 없다. 규정 제6항 2호가 점역자 삽입 묶음을 ⠷⠾로 정하고(위 주석도 인정),
+#   2027 gold 정렬 대응에서도 우리 ⠦ → gold ⠷ 10건 · ⠴ → ⠾ 10건이 나온다.
+#   ⚠ 인쇄 소괄호(_MATH_PAREN_S/E)는 그대로 ⠦⠴다 — 그건 gold와 이미 맞다.
+#   ⚠ 빈도로 정하지 않았다: `⠷`·`⠾`는 한글 자모·로마자표와 겹쳐 셀만 세면 본문이
+#     통계에 섞인다(4회 시도 4회 오염). 근거는 **같은 요소에서 정렬한 대응**뿐이고
+#     표본이 10건이라 얇다. 판정은 재점역 A/B로 한다(2026-07-19 교훈).
+_WRAP_S = "⠷"
+_WRAP_E = "⠾"
+# ⇔ 관행: 규정 제61항 ⠪⠒⠒⠕ 대신 ↔형 ⠪⠒⠕를 기본에 뒀다.
+# ⚠ **근거 재현 실패(2026-08-15)**: 'gold 17 vs 0'이 안 나온다. 2027 실측은
+#   dev 17:18 · val 5:0으로 dev에서는 규정형이 더 많다. ∴와 같은 오염으로 보인다.
+#   A/B로도 못 잰다(용례 0, 원장 M-05).
 _IFF_CELLS = "⠪⠒⠕" if _BOOK_STYLE_ENV else "⠪⠒⠒⠕"
 
 # 병치 닫음표 생략(T2, 2026-07-20 실측): 묶음이 끝나자마자 빈칸 없이 다른 함수 호출
@@ -314,6 +330,15 @@ _SPACED_DIGITS_RE = re.compile(r"\d(?: \d)+")
 _CODE_FENCE_RE = re.compile(r"```[a-zA-Z]*\n?|```")        # ```latex … ``` 펜스
 _MATH_DELIM_RE = re.compile(r"\${1,2}")                    # $$ … $$ / $ … $
 _CMD_BRACE_SP_RE = re.compile(r"(\\[a-zA-Z]+)\s+(?=[{[(])")  # \frac { → \frac{
+# MinerU는 LaTeX를 토큰마다 띄어 내보낸다(`\frac {3}{2} a ^ {2}`·`{2 a b}`). 그 공백은
+# 조판이 아니라 토큰 구분이라 붙여야 하는데, 남으면 뒤 판정이 통째로 빗나간다 —
+# 숫자 뒤 로마자 구분점(제12항)이 안 들어가고 곱 묶음 판정(제7항 3호)이 '영숫자 덩어리'로
+# 안 본다. 실측 닫는 중괄호 뒤 1,803건 · 영숫자만 든 중괄호 안 953건.
+# ★ 명령은 절대 건드리지 않는다 — `\sin x`를 붙이면 `\sinx`가 되어 미지 명령으로
+#   통째로 사라진다(`\anglePO`와 같은 함정). 그래서 왼쪽이 **닫는 중괄호**이거나
+#   **역슬래시가 하나도 없는 영숫자 그룹 안**일 때만 붙인다.
+_TOKEN_SP_AFTER_BRACE_RE = re.compile(r"\}[ \t]+(?=[A-Za-z0-9])")
+_TOKEN_SP_IN_GROUP_RE = re.compile(r"\{[A-Za-z0-9]+(?:[ \t]+[A-Za-z0-9]+)+\}")
 # 첨자 _ ^ 양쪽 공백 제거: a _ {i} → a_{i}, } ^{∞} → }^{∞} (첨자가 본체에 붙도록)
 _SUBSUP_SP_RE = re.compile(r"\s*([_^])\s*")
 _MULTISPACE_RE = re.compile(r" {2,}")                       # 다중 공백 → 단일
@@ -408,10 +433,17 @@ _ENV_RE = re.compile(r"\\(?:begin|end)\s*\{[^{}]*\}(?:\s*\[[^\]]*\])?(?:\s*\{[^{
 _SYS_OPEN, _SYS_CLOSE = "⠶⠄", "⠠⠶"
 # 관행 스위치 — translator._BOOK_STYLE과 같은 판정을 env에서 직접 읽는다(순환 import 회피).
 _IS_BOOK_STYLE = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
-# 대문자 그리스 접두(F3, 2026-07-20 실측): 규정 제30항·수학 제25항은 ,.(⠠⠨)이나
-# 도서 관행은 대문자표 ⠠를 생략 — gold 수학2에서 ⠨⠎ 426·⠨⠙ 142회 vs ⠠⠨ 계열 3회
-# (Σ=.S·Δx=.DX, output_수학2_page091.brl 원문 실측). regulation 모드는 규정형 유지.
-_CAP_GREEK = "⠨" if _IS_BOOK_STYLE else "⠠⠨"
+# 대문자 그리스 접두: 규정 제30항·수학 제25항대로 ,.(⠠⠨). 소문자(_LC_GREEK)와 같이
+# BRAILLE_STYLE과 무관하게 고정한다 — 이 항목은 더 이상 모드에 따라 갈리지 않는다.
+# 종전엔 book 모드에서 대문자표 ⠠를 생략했다(F3, 2026-07-20). 근거는 구판 수학2의
+# `⠨⠎ 426·⠨⠙ 142` 실측이었는데, 소문자 그리스가 2026-07-29 대표 결정으로 이미 밟은
+# 함정과 같다 — 판본 하나의 관행을 전체 관행으로 읽었다. 규정이 명확하므로 규정을 따른다.
+# 2027 코퍼스 실측도 같은 쪽이다: 아래첨자 범위를 동반한 진짜 Σ가 dev-2027 규정형
+# ⠠⠨⠎ **351건 : book형 0건**, val-2027은 용례 0(중립). Σ 외 대문자 그리스(Δ·Π·Ω)는
+# 채점 코퍼스에 용례가 없어 이 변경의 실질 영향은 Σ뿐이다.
+# ⚠ 실측 시 문맥 없이 세지 말 것 — 맨 `⠨⠎`는 한글 음절과 겹쳐 dev 31·val 4건이 전부
+#   본문 오탐이었다(아래첨자표 ⠰ + 등호 ⠒⠒를 앵커로 걸러야 진짜 시그마가 남는다).
+_CAP_GREEK = "⠠⠨"
 # 소문자 그리스 접두(2026-07-21 실측): 규정 제30항·수학 제13항은 `.x`(⠨)이나 도서는
 # `@x`(⠈)를 쓴다 — gold 판정가능 265건 중 ⠈ 263 vs ⠨ 2(val)·24 vs 0(dev), 전부 수학2.
 # output_수학2_page028.brl 원시 BRF에서 θ=`@?`와 ≠=`.3`이 같은 줄에 공존 → 도서가 두
@@ -426,7 +458,11 @@ _LC_GREEK = "⠨"
 _SUM_BASE = _CAP_GREEK + "⠎"   # 총합 Σ (수학 제25항 ,.S / 도서 관행 .S)
 # ≠(F4, 2026-07-20 실측): 규정 수학 제4항 1호는 .33(⠨⠒⠒)이나 도서 관행은 .3(⠨⠒)
 # — gold 수학2에서 .3 91회 vs .33 0회(x≠1=`X.3#A`·f(x)≠0=`F8X0.3#J` 원문 실측).
-_NEQ = "⠨⠒" if _IS_BOOK_STYLE else "⠨⠒⠒"
+# ★ 2026-08-15 A/B 실험군 — 규정형으로 바꿔 본다. 채택 여부는 재점역 A/B가 정한다.
+#   종전 근거는 구판 수학2 한 권의 '.3 91회 vs .33 0회' 실측. 앞서 같은 뿌리 셋이 뒤집혔다(원장 R-13·R-14·R-15,
+#   합계 dev −3,344셀). ⚠ 빈도로 검증할 수 없는 항목이다 — 이 셀들은 한글 자모와
+#   겹쳐 앵커 없이 세면 본문이 통계에 섞인다. 기각되면 이 브랜치를 버린다.
+_NEQ = "⠨⠒⠒"
 # 연립식을 담을 수 있는 LaTeX 다행 환경(2026-07-21 코퍼스 전수 실측).
 # 실제 출현: array(val 71·dev 29) · aligned(val 17·dev 4) · cases(val 5·dev 5) 셋뿐이고
 # align·gather·split·eqnarray는 **0회**다. 그래도 여기 넣는 건 비용이 0이기 때문 —
@@ -708,16 +744,15 @@ def _normalize_latex_input(latex: str) -> str:
         rows = [" ".join(r.replace("&", " ").split())
                 for r in raw.split("\\\\") if r.strip()]
         body = f" {_W2R_ROW_SEP} ".join(rows)
-        # 관행(book): 연립식 각 행의 조건 괄호는 붙임표 ⠤…⠤ (정답 p070 실측 '-x≥1-').
-        # 일반 수식 괄호는 관행에서도 ⠦⠴ 그대로(p009 '40⠦x+30⠴')라 연립식 body만 바꾼다.
-        # ⚠ 알려진 결함(2026-07-21 실측, 이번 라운드 미채택): 이 blanket 치환은 조건이
-        #   아닌 괄호까지 ⠤로 바꾼다 — gold p017 'f(x)>0'은 ⠋⠦⠭⠴인데 우리는 ⠋⠤⠭⠤,
-        #   gold p068 L4 '⠛⠦⠭⠴⠀⠤⠭⠨⠒⠁⠤'는 한 행에 ⠦⠴와 ⠤⠤가 공존함을 보인다.
-        #   '괄호 안 관계연산자면 조건' 규칙으로 고치면 val −14셀이나 dev는 편집 0·
-        #   수식 평균유사 −0.1p라 채택 기준(양쪽 net-positive) 미달로 되돌렸다.
-        #   재시도 시 분수 묶음괄호 선택 로직과의 상호작용부터 규명할 것(dev p070).
-        if _IS_BOOK_STYLE:
-            body = body.replace("(", "⠤").replace(")", "⠤")
+        # 연립식 조건 괄호도 소괄호 ⠦⠴ 그대로 둔다 — 여기서 ⠤로 바꾸지 않는다.
+        # 종전엔 `body.replace("(", "⠤")` blanket 치환이 있었다(2026-07-21). 근거는
+        # 구판 수능특강 **수학2 한 권**의 '-x≥1-' 실측이었는데, 원장 R-06이 표시 문자
+        # 괄호에서 밟은 것과 같은 함정이다 — 한 책의 관행을 전체 관행으로 읽었다.
+        # 2027 코퍼스 실측(연립식 스팬 874개): 조건 괄호에 ⠤를 쓰는 책 **0권**,
+        # ⠦⠴ 238건. 채점 대상만 보면 dev-2027 ⠦⠴ 33쌍 : ⠤ 0건, val-2027은 연립식
+        # 자체가 0건. 구판에서 ⠤를 쓴 책도 수학2 1권뿐이었다(31건). 규정 제6항은
+        # 바깥 괄호 ⠶⠄/⠠⠶만 정하고 안쪽 조건 괄호는 조항이 없다 → 관행 우선 → gold.
+        # 원장 R-06 후속 항목(R-13)으로 등재.
         return f" {_SYS_OPEN}{body}{_SYS_CLOSE} "
 
     s = _SYS_ENV_RE.sub(_sys_repl, s)
@@ -834,6 +869,103 @@ def _tighten_operator_spacing(result: str) -> str:
 # 다를 수 있다** — 11e가 11d보다 먼저 돈다. 파이프라인 나열 순서가 진실이다.
 
 
+# 중괄호 없는 한 글자 인자(`\sqrt3`·`\frac 1 2`) — LaTeX에서 허용되는 표기인데
+# 우리 단계들은 `{}`만 본다. 그대로 두면 **조용히 망가진다**:
+#   \sqrt3   → ⠼⠉      (제곱근 기호가 사라진다)
+#   \sqrt x  → ''       (통째로 없어진다)
+#   \frac 1 2 → ⠀⠼⠁⠃   (분수가 사라지고 숫자가 12로 붙는다)
+# 실측 전 코퍼스 23건(`\sqrt3` 11 · `\frac 1 2` 12)으로 드물지만, 틀린 수가 나가는
+# 자리라 값이 다르다. `\sqrt[n]{}`는 대괄호라 안 걸린다.
+_BARE_FRAC_RE = re.compile(r"\\frac\s*([A-Za-z0-9])\s*([A-Za-z0-9])")
+_BARE_SQRT_RE = re.compile(r"\\sqrt\s*([A-Za-z0-9])")
+
+
+# 기하 기호 명령과 꼭짓점 사이의 공백(`\angle PO`·`\triangle ABC`). 규정 제39·40항
+# 예시는 붙여 적는다(`?,a`·`_+,,ABC`). 유니코드 꼴(∠PO)은 이미 맞게 나가므로 그리로
+# 맞춘다 — 공백만 지우면 `\anglePO`가 되어 미지 명령으로 **통째로 사라진다**.
+# 실측 전 코퍼스 251건. `\triangleq`·`\triangledown`은 뒤에 공백이 없어 안 걸린다.
+# `\angle`는 0a 단계가 이미 `∠ `로 바꾸므로(공백은 남는다) 점형과 명령 둘 다 본다.
+# 대문자 꼭짓점 앞에서만 지운다 — 일반연산 기호(x ⊕ y, 제15항 "앞뒤 한 칸")는 소문자
+# 변수를 쓰므로 안 걸린다. 실측: 공백을 두는 다른 기하 기호는 코퍼스에 없다.
+_GEOM_CMD_SPACE_RE = re.compile(r"(?:\\(?:angle|triangle)|[∠△])\s+(?=[A-Z])")
+_GEOM_CMD_SYMBOL = {"\\angle": "∠", "\\triangle": "△"}
+
+
+# 그리스 문자·곱셈점과 뒤따르는 변수 사이의 공백(`\Delta x`·`a \cdot b`). LaTeX에서
+# 그 공백은 명령이 끝났다는 표시지 내용이 아니고, 규정은 붙여 적는다 —
+# 제52항 변화율 예시가 `,.dx/,.dy`(= ⠠⠨⠙⠭⠌⠠⠨⠙⠽), 제2항 붙임 곱셈점이 `#f"#i`다.
+# 0a 단계가 명령을 점형 문자로 바꾸고 공백만 남겨서 `⠠⠨⠙⠀⠭`가 나갔다.
+# 실측 전 코퍼스 412건(`\Delta ` 357 · `\cdot ` 23 · `\pi ` 17 · `\mu ` 13).
+# ★ 관계·연산 기호(∩ ⊕ ⊖ …)는 넣지 않는다 — 제15항이 앞뒤 한 칸을 요구한다.
+# 규정이 **붙여 적으라고 하는** 연산자인데 원문 공백이 남는 자리.
+#   제2항 붙임 곱셈점 `#f"#i` · 제4항 1호 같지않다 `y.33#j` · 제43항 합동 `_+,,ABC77_+,,DEF`
+# 셋 다 예시에 공백이 없다. 반대로 제15항 일반연산(⊕⊖⊗∗∘)과 제29~32항 물결 계열은
+# 규정이 "앞뒤를 한 칸씩 띄어 쓴다"고 하므로 **넣지 않는다**.
+# ⚠ 한글 가운뎃점(사회·문화)은 건드리면 안 된다 — 실측 14,031건이다. 그래서 양옆이
+#   영숫자·괄호일 때만 붙인다. 실측 공백 낀 붙임 대상 540건(cdot 282·neq 225·equiv 33).
+_ATTACHED_OP_SP_RE = re.compile(
+    r"(?<=[A-Za-z0-9)\]])[ \t]*(\\cdot|\\neq|\\equiv|·|≠|≡)[ \t]*(?=[A-Za-z0-9(\[\\])")
+_GREEK_TIGHT_RE = re.compile(r"([α-ωΑ-Ω·])[ \t]+(?=[A-Za-z])")
+# 명령 꼴(`\Delta x`)은 0c 시점에 아직 점형 문자가 아니다. 공백만 지우면 `\Deltax`가 되어
+# 미지 명령으로 사라지므로 유니코드 문자로 바꾸면서 같이 지운다(`\anglePO`와 같은 함정).
+_GREEK_NAMES = (
+    "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi "
+    "omicron pi rho sigma tau upsilon phi chi psi omega"
+).split()
+_GREEK_CHARS = "αβγδεζηθικλμνξοπρστυφχψω"
+_GREEK_CMD_MAP = {f"\\{n}": c for n, c in zip(_GREEK_NAMES, _GREEK_CHARS)}
+_GREEK_CMD_MAP.update({f"\\{n.capitalize()}": c
+                       for n, c in zip(_GREEK_NAMES, "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ")})
+_GREEK_CMD_TIGHT_RE = re.compile(
+    r"(\\(?:" + "|".join(sorted(
+        [n for n in _GREEK_NAMES] + [n.capitalize() for n in _GREEK_NAMES],
+        key=len, reverse=True)) + r"))[ \t]+(?=[A-Za-z])")
+
+
+def _collapse_redundant_braces(latex: str) -> str:
+    """`{{X}}` → `{X}`. LaTeX에서 동치인데 우리 단계들이 바깥 겹을 괄호 셀로 흘린다.
+
+    MinerU가 `\\overline{{\\mathrm{OD}}}`처럼 중괄호를 두 겹으로 낸다. 한 겹이면
+    `⠈⠉⠠⠠⠕⠙`(제23항 가로바)로 맞게 나가는데 두 겹이면 바깥이 안 벗겨져
+    `⠦⠂⠦⠂⠠⠠⠕⠙⠐⠴⠐⠴`가 나갔다(eval 실측 실패 17건).
+
+    중괄호 없는 한 글자 인자(`\\sqrt3`)와 대칭인 자리다 — 그건 없어서, 이건 두 겹이라 깨진다.
+    `\\sqrt[n]{}`의 대괄호와 `\\begin{array}{l}`의 인자는 내용이 단일 그룹이 아니라 안 걸린다.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(latex):
+        if latex[i] != "{":
+            out.append(latex[i])
+            i += 1
+            continue
+        inner, after = _extract_brace_content(latex, i)
+        core = inner.strip()
+        while core.startswith("{") and core.endswith("}"):
+            deeper, end = _extract_brace_content(core, 0)
+            if end != len(core):          # `{a}{b}`처럼 나란한 그룹은 벗기지 않는다
+                break
+            core = deeper.strip()
+        out.append("{" + _collapse_redundant_braces(core) + "}")
+        i = after
+    return "".join(out)
+
+
+def _stage0c_bare_args(latex: str) -> str:
+    """중괄호 없는 한 글자 인자·기호 뒤 공백·겹중괄호를 정규화한다."""
+    latex = _collapse_redundant_braces(latex)
+    latex = _TOKEN_SP_AFTER_BRACE_RE.sub("}", latex)
+    latex = _TOKEN_SP_IN_GROUP_RE.sub(lambda m: re.sub(r"[ \t]+", "", m.group(0)), latex)
+    latex = _GREEK_CMD_TIGHT_RE.sub(
+        lambda m: _GREEK_CMD_MAP.get(m.group(1), m.group(1)), latex)
+    latex = _GREEK_TIGHT_RE.sub(r"\1", latex)
+    latex = _ATTACHED_OP_SP_RE.sub(r"\1", latex)
+    latex = _BARE_FRAC_RE.sub(r"\\frac{\1}{\2}", latex)
+    latex = _BARE_SQRT_RE.sub(r"\\sqrt{\1}", latex)
+    return _GEOM_CMD_SPACE_RE.sub(
+        lambda m: _GEOM_CMD_SYMBOL.get(m.group(0).rstrip(), m.group(0).rstrip()), latex)
+
+
 def _stage0b_nth_root(result: str) -> str:
     r"""0b. n제곱근 \sqrt[n]{내용} → n⠻내용 (수학 제22항 [붙임1]).
 
@@ -883,7 +1015,10 @@ def _stage1_math_brackets(result: str) -> str:
     # 1a. 병치 닫음표 생략(T2 관행) — 위 공백 정리로 병치가 확정된 뒤에 적용한다.
     # 대문자 함수명(F(x)G(x))은 제외: 닫음을 지우면 앞 인수와 붙어 연속 대문자가 되어
     # 14단계의 대문자 단어표 ⠠⠠가 잘못 붙는다(P(A)P(B) → "AP"). gold 실측 모수도 소문자다.
-    if _BOOK_STYLE_ENV:
+    # ★ 2026-08-15 A/B 실험군 — 생략을 끈다. 규정 제6항에 생략 근거가 없고(예시도
+    #   f8x0로 닫는다) 종전 근거는 구판 수학2 127p의 '생략 50 vs 유지 2'다.
+    #   앞서 같은 뿌리 셋이 뒤집혔다(원장 R-13·R-14·R-15). 기각되면 되돌린다.
+    if False:  # noqa: SIM223 — A/B 실험군 스위치
         result = _JUXT_CLOSE_RE.sub("", result)
     return result
 
@@ -1023,12 +1158,21 @@ def _stage2c_sqrt(result: str) -> str:
     [입력] \sqrt{…}가 남아 있음. 분수(2단계)는 이미 풀려 있어 근호 안 분수도 완성 점자.
     [출력] 근호가 완성 점자. 내용은 재귀 변환 + 필요 시 묶음.
     """
-    def _sqrt_replace(m: re.Match) -> str:
-        inner = convert_latex(m.group(1))
-        inner_w = _wrap_ins(inner) if _needs_wrap(m.group(1)) else inner
-        return f"{_SQRT_IND}{inner_w}"
-
-    return _SQRT_RE.sub(_sqrt_replace, result)
+    # 정규식으로는 중첩 중괄호를 못 읽는다 — `\sqrt{x^{2}}`가 안 잡혀 **근호가 통째로
+    # 사라졌다**(코퍼스 2,413건 중 188건, 8%). 분수(_apply_fracs)와 같은 방식으로
+    # 괄호를 세어 인자를 떼어 낸다.
+    out: list[str] = []
+    i = 0
+    while i < len(result):
+        if result[i:i + 5] == "\\sqrt" and result[i + 5:i + 6] == "{":
+            raw, after = _extract_brace_content(result, i + 5)
+            inner = convert_latex(raw)
+            out.append(_SQRT_IND + (_wrap_ins(inner) if _needs_wrap(raw) else inner))
+            i = after
+            continue
+        out.append(result[i])
+        i += 1
+    return "".join(out)
 
 
 def _stage3_limit(result: str) -> str:
@@ -1041,7 +1185,7 @@ def _stage3_limit(result: str) -> str:
     def _lim_replace(m: re.Match) -> str:
         var = convert_latex(m.group(1).strip())
         val = convert_latex(m.group(2).strip())
-        # 도서 관행(2026-07-19 실측): gold의 lim 420건 **전부** 화살표 없이
+        # 원장 M-07. 도서 관행(2026-07-19 실측): gold의 lim 420건 **전부** 화살표 없이
         # `lim⠰변수 점근값 본식`으로 적는다(0%). 규정 제51항은 화살표를 명시하므로
         # regulation 모드는 규정형을 유지하고 book 모드만 생략한다.
         if _IS_BOOK_STYLE:
@@ -1189,7 +1333,7 @@ def _stage8_superscript(result: str) -> str:
         if raw_exp in ("2", "3") and _is_unit_square(base, m.string[:m.start()]):
             return base + ("⠣" if raw_exp == "2" else "⠩")
         exp  = convert_latex(raw_exp)
-        exp_w = _wrap_ins(exp) if _needs_wrap(raw_exp) else exp
+        exp_w = _wrap_ins(exp) if _needs_wrap_out(raw_exp, exp) else exp
         return f"{base}{_SUPERSCRIPT_IND}{exp_w}"
 
     return _SUP_RE.sub(_sup_replace, result)
@@ -1230,7 +1374,7 @@ def _stage9_subscript(result: str) -> str:
         #   규정 제19항 1호와 같은 형식이고 수학·화학 양쪽에서 일관된다 → 규정형으로 낸다.
         #   (내린 숫자 `_DROPPED_DIGIT`는 로그 밑 제46항 전용으로 남는다.)
         sub  = convert_latex(sub_raw)
-        sub_w = _wrap_ins(sub) if _needs_wrap(sub_raw) else sub
+        sub_w = _wrap_ins(sub) if _needs_wrap_out(sub_raw, sub) else sub
         return f"{base}{_SUBSCRIPT_IND}{sub_w}"
 
     return _SUB_RE.sub(_sub_replace, result)
@@ -1440,8 +1584,22 @@ def _stage11d_strip_unknown_commands(result: str) -> str:
     [입력] 지원 명령은 전부 소비됐고 남은 \\cmd는 미지원 명령뿐.
     [출력] 백슬래시 명령 소멸. 12단계 substitute_symbols가 백슬래시를 ⠸⠡로
       음역하기 전에 정리해야 하므로 이 위치다.
+
+    ⚠ **함수 이름은 예외다**(_BARE_FUNC_RE) — 이름 자체가 읽을 내용이라 지우면 기호가
+      흔적도 없이 사라진다. 규정 제51항이 "극한 기호 lim는 **lim으로 적은** 다음
+      범위의 시작…"이라고 이름을 그대로 적게 한다.
     """
+    result = _BARE_FUNC_RE.sub(r"\1", result)
     return re.sub(r"\\[a-zA-Z]+\*?", "", result)
+
+
+# 인자를 잃고 홀로 남은 **함수 이름** 명령. 이름 자체가 읽을 내용이라 지우면 안 된다 —
+# 규정 제51항은 "극한 기호 lim는 **lim으로 적은** 다음 범위의 시작…"이라고 이름을 그대로
+# 적게 하고, `\lim_{x \to a}` 정상 경로도 ⠇⠊⠍를 낸다. 아래 stage14가 로마자를 점형으로
+# 바꿔 주므로 여기서는 백슬래시만 떼면 된다.
+# ⚠ 구조 명령(\begin·\left·\frac·\quad…)은 계속 지운다 — 그건 이름이 읽을 내용이 아니라
+#   조판 지시라, 이름을 남기면 본문에 쓰레기 글자가 찍힌다.
+_BARE_FUNC_RE = re.compile(r"\\(lim|max|min|ln|exp|det|gcd|lcm|arg|deg)(?![a-zA-Z])")
 
 
 def _stage13_cleanup(result: str) -> str:
@@ -1449,7 +1607,14 @@ def _stage13_cleanup(result: str) -> str:
 
     [입력] substitute_symbols(12)를 지난 뒤. 그 과정에서 새로 드러난 잔여물이 있을 수 있다.
     [출력] \\cmd·{ } 완전 소멸. 이후 단계는 순수 점형 + 로마자 + 공백만 본다.
+
+    ⚠ 인자 없는 함수 이름은 **먼저 이름으로 되돌린다**. 종전에는 `\\lim` 단독이 통째로
+      사라져 극한 기호가 흔적도 없이 없어졌다(실측: lim 든 요소 30개 중 2개). 추출이
+      수식을 텍스트로 흘려 `lim`만 한 줄에 남으면 `inline_math.wrap`이 `\\lim`으로
+      감싸는데, 인자가 없어 이 정규식에 그대로 먹혔다. mode b가 줄 단위로 쪼개는 탓에
+      거기서 특히 잘 드러난다(`[처리 불가: 점역 불가 문자 lim]`).
     """
+    result = _BARE_FUNC_RE.sub(r"\1", result)
     result = re.sub(r"\\[a-zA-Z]+\*?", "", result)
     return re.sub(r"[{}]", "", result)
 
@@ -1564,6 +1729,7 @@ def convert_latex(latex: str) -> str:
     latex, _text_store = _protect_text(latex)   # 0.  P2: \text{한글} → 한글 점자 sentinel
     result = _normalize_latex_input(latex)      # 0a. MinerU/마크다운 입력 정규화
 
+    result = _stage0c_bare_args(result)             # 0c. 중괄호 없는 한 글자 인자
     result = _stage0b_nth_root(result)              # 0b. \sqrt[n]{} — 대괄호 치환보다 먼저
     result = _stage1_math_brackets(result)          # 1·1a. 수학 괄호 + 병치 닫음표 생략
     result = _stage1b_accents(result)               # 1b. 문자 위 기호
@@ -1587,6 +1753,13 @@ def convert_latex(latex: str) -> str:
     result = _stage11c_math_context_symbols(result)  # 11c. 문맥 overload 분기
     result = _tighten_operator_spacing(result)      # 11e. 연산·비교 기호 앞뒤 붙임
     result = _stage11d_strip_unknown_commands(result)  # 11d. 미처리 \cmd 제거
+    # ★ 12 **앞에서** 잔여 중괄호를 걷는다. 기호표가 `{`를 한글 문장부호 ⠦⠂로 바꾸는데,
+    #   여기까지 온 중괄호는 문장부호가 아니라 **구조 단계가 안 먹은 LaTeX 묶음**이다.
+    #   13이 걷도록 돼 있었지만 12가 먼저 점형으로 바꿔 버려 손댈 수 없었다 —
+    #   `\cos{(x)}`가 ⠖⠉⠦⠂⠦⠭⠴⠐⠴로, `\sqrt {1-\sin^{2}γ}`는 근호 ⠜까지 먹혔다
+    #   (eval 실측 array 실패 35건 중 9건 + 비array 3건).
+    #   중괄호 없는 인자(`\sqrt3`)·겹중괄호(`{{X}}`)에 이은 **세 번째 변형**이다.
+    result = re.sub(r"[{}]", "", result)            # 11f. 잔여 묶음 중괄호
     result = substitute_symbols(result)             # 12. 남은 유니코드 기호
     result = _stage13_cleanup(result)               # 13. 잔여 \cmd·중괄호 제거
     result = _stage14_letters(result)               # 14. 남은 로마자
@@ -1738,7 +1911,13 @@ def _wrap_ins(inner_braille: str) -> str:
     ⚠ 리터럴 중첩 괄호 f(g(x))는 이 함수와 무관 — gold도 ⠦⠦…⠴⠴ 그대로 겹친다
     (수학2 p056·p091 ⠋⠦⠛⠦⠭⠴⠴ 실측). regulation 모드는 항상 규정 원형 ⠷…⠾(제6항 2호).
     """
-    if _IS_BOOK_STYLE and ("⠦" in inner_braille or "⠴" in inner_braille):
+    # ★ 2026-08-15 — 승격을 묶음 점형에 **연동**한다(A/B 실험군 2).
+    #   승격의 존재 이유는 "⠦⠴ 묶음이 내용의 실제 괄호와 겹쳐 읽히는 것"을 피하는 데
+    #   있다. 묶음이 ⠷⠾면 그 겹침이 애초에 없으므로 승격할 까닭도 없다. 종전에는
+    #   승격이 _IS_BOOK_STYLE로 따로 게이팅돼 있어, 묶음만 규정형으로 바꾸면 같은
+    #   수식 안에 ⠷…⠾와 ⠶…⠶ 두 종류가 섞였다. 위 docstring이 "regulation 모드는
+    #   항상 규정 원형 ⠷…⠾"라고 적은 설계 의도가 이것이다.
+    if _WRAP_S == "⠦" and ("⠦" in inner_braille or "⠴" in inner_braille):
         return f"⠶{inner_braille}⠶"
     return f"{_WRAP_S}{inner_braille}{_WRAP_E}"
 
@@ -1834,6 +2013,74 @@ def _extract_brace_content(s: str, start: int) -> tuple[str, int]:
     return s[start + 1:], len(s)
 
 
+# 분수 분모·분자가 **순수 영숫자 단항의 곱**인가(ab·2a·2R). 규정 제6항 2호는 "단항의 곱,
+# 다항 등"을 묶음 괄호로 묶으라 하고 예시가 `(ab)/#a`다.
+# ⚠ 2026-07-22에 곱 묶음을 되살렸다가 기각된 적이 있다(요소 win 4 : lose 42). 그때 깨진
+#   것은 `\sqrt{3}`·`f(x)`를 2인수로 세어 과잉으로 묶은 자리였다. 그래서 여기서는
+#   **역슬래시·괄호·공백이 하나도 없는 영숫자 덩어리**만 본다 — 함수 적용은 애초에 안 걸린다.
+# 그리스 문자도 변수다 — gold는 `2π`를 묶는다(⠃⠌⠷⠼⠃⠨⠏⠾). 영숫자만 보면 안 걸렸다.
+_MONO_CH = "A-Za-z0-9α-ωΑ-Ω"
+_MONOMIAL_PRODUCT_RE = re.compile(rf"[A-Za-zα-ωΑ-Ω][{_MONO_CH}]*|[0-9]+[A-Za-zα-ωΑ-Ω][{_MONO_CH}]*")
+
+
+# 미분소(dx·dy·dz·du·dv·dt)는 곱이 아니라 한 덩어리다. 규정 제53항 예시가
+# `dx/dy`(= ⠙⠭⠌⠙⠽)로 **묶음 괄호 없이** 적는다. `_needs_wrap`도 같은 이유로 뺀다.
+# 미분소는 그리스 변수도 온다(dθ·dφ — 제58항 예시 `drd.?`). 영문만 보면 새 판정이 묶는다.
+# 변화량 Δx도 미분소와 같은 한 덩어리다. 규정 제52항 `,.dx/,.dy`가 묶음 없이 적는다.
+# 공백을 지우자마자 `Δ x`가 `Δx`가 되어 곱 판정에 걸렸다 — 이 커밋이 그 문을 연다.
+_DIFFERENTIAL_RE = re.compile(r"[dΔ∂][a-zA-Zα-ω]")
+
+
+# 그리스 명령을 **판정할 때만** 한 글자로 본다. 문자열 자체를 미리 바꾸면 뒤 단계의
+# 위첨자 파싱이 깨진다 — `\chi^{…}`에서 위첨자표 ⠘가 사라지고 ⠈⠢⠦⠂ 잔재가 나갔다
+# (eval 실측 001 p0012·p0047, 2026-08-17). 판정 입력만 정규화한다.
+_GREEK_NAMES_FOR_JUDGE = (
+    "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi "
+    "omicron pi rho sigma tau upsilon phi chi psi omega"
+).split()
+_GREEK_CMD_FOR_JUDGE_RE = re.compile(
+    r"\\(?:" + "|".join(sorted(
+        _GREEK_NAMES_FOR_JUDGE + [n.capitalize() for n in _GREEK_NAMES_FOR_JUDGE],
+        key=len, reverse=True)) + r")(?![a-zA-Z])")
+
+
+def _is_monomial_product(raw: str) -> bool:
+    """`ab`·`2a`·`2R`·`2\pi`처럼 문자가 든 두 자 이상 덩어리인가."""
+    raw = _GREEK_CMD_FOR_JUDGE_RE.sub("π", raw).strip()
+    if _DIFFERENTIAL_RE.fullmatch(raw):
+        return False
+    return (len(raw) >= 2 and raw.isalnum() and not raw.isdigit()
+            and _MONOMIAL_PRODUCT_RE.fullmatch(raw) is not None)
+
+
+
+def _already_wrapped(braille: str) -> bool:
+    """이미 묶음 괄호 하나로 통째로 싸여 있는가 — 이중 묶음 방지."""
+    if not (braille.startswith(_WRAP_S) and braille.endswith(_WRAP_E)):
+        return False
+    depth = 0
+    for i, ch in enumerate(braille):
+        if ch == _WRAP_S:
+            depth += 1
+        elif ch == _WRAP_E:
+            depth -= 1
+            if depth == 0:
+                return i == len(braille) - 1
+    return False
+
+
+def _needs_wrap_out(raw: str, braille: str) -> bool:
+    """묶음 괄호가 필요한가 — 원문(raw)과 **변환된 점형**을 함께 본다.
+
+    `_needs_wrap`은 원문만 보는데, 분수는 `_apply_fracs`가 첨자 단계보다 **먼저** 돌아서
+    첨자에 닿을 때는 이미 점형이다(`⠼⠉⠌⠷⠭⠢⠼⠁⠾`). 그래서 원문만 보면 "지수가 분수일
+    때 묶음 괄호로 묶는다"(제7항 붙임)가 안 걸렸다. 점형의 분수표 ⠌로도 판정한다.
+    """
+    if _already_wrapped(braille):
+        return False
+    return (_needs_wrap(raw) or _is_monomial_product(raw)
+            or _FRACTION_MID in braille)
+
 def _apply_fracs(latex: str) -> str:
     """\\frac{...}{...} 변환 — 중괄호 중첩 대응 (\\sqrt{...} 안의 \\frac 포함)."""
     result = []
@@ -1845,8 +2092,12 @@ def _apply_fracs(latex: str) -> str:
                 den_raw, after_den = _extract_brace_content(latex, after_num)
                 num = convert_latex(num_raw)
                 den = convert_latex(den_raw)
-                den_wrapped = _wrap_ins(den) if _needs_wrap(den_raw) else den
-                num_wrapped = _wrap_ins(num) if _needs_wrap(num_raw) else num
+                den_wrapped = (_wrap_ins(den)
+                               if _needs_wrap(den_raw) or _is_monomial_product(den_raw)
+                               else den)
+                num_wrapped = (_wrap_ins(num)
+                               if _needs_wrap(num_raw) or _is_monomial_product(num_raw)
+                               else num)
                 result.append(f"{den_wrapped}{_FRACTION_MID}{num_wrapped}")
                 i = after_den
                 continue

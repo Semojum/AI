@@ -41,6 +41,7 @@ from app.utils.req_log import (
     set_hcxt_budget,
     stage,
     start_request,
+    usage_report,
 )
 
 logger = get_logger(__name__)
@@ -186,6 +187,27 @@ def _is_extraction_refusal(content: str) -> bool:
 
 
 # ── 응답 빌더 ─────────────────────────────────────────────────────────────
+
+# 쪽 대표 레이아웃 유형(대시보드 T1-2 집계 축) — **비싼 쪽이 이긴다.**
+# 실측 원가가 그림 94 > 표 58 > 수식 46 > 본문 21원/쪽이라 이 순서다. 그림 하나만
+# 섞여도 그 쪽은 그림 쪽이다 — 개수로 세면 비싼 요소가 본문에 묻혀 유형별 평균이 흐려진다.
+_LAYOUT_RANK = (
+    ("visual",  {"image", "cartoon", "chart_graph", "diagram"}),
+    ("table",   {"table"}),
+    ("formula", {"formula"}),
+)
+
+
+def _page_layout_type(result: dict) -> str:
+    """응답의 요소 유형들 → 쪽 대표 유형. 요소가 없으면 "" (BLOCKED 쪽 등)."""
+    types = {(t.get("type") or "") for t in (result.get("text_list") or [])}
+    if not types:
+        return ""
+    for name, members in _LAYOUT_RANK:
+        if types & members:
+            return name
+    return "text"
+
 
 def _build_timeout_response(task: PageTask, elapsed_ms: int) -> dict:
     return {
@@ -740,7 +762,18 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
         1 for a, c in zip(by_mineru, by_mineru[1:])
         if c.bbox[1] < a.bbox[1] - 2 * band and c.bbox[0] < a.bbox[0] + 0.3 * (hull1 - hull0)
     )
-    main = sorted(main, key=_ykey) if viol > 1 else by_mineru
+    # ★ 완전 분리 역전은 한 번만 나와도 명백한 오류다(2026-08-19).
+    #   위 `viol`은 **위끝(y1)끼리만** 재기 때문에, 뒤 요소가 앞 요소보다 통째로 위에 있어도
+    #   앞 요소가 키가 크면 위끝 차이가 밴드에 못 미쳐 안 잡힌다. 실제 사고가 그 얼굴이었다
+    #   (테스트_1.pdf: 만화 y 115~273이 1번, 제목 y 87~105가 2번. 위끝 차 28 < 2밴드 37).
+    #   여기서는 **세로로 전혀 안 겹치고 가로로는 겹치는**(= 같은 단) 쌍만 센다. 2단 본문의
+    #   열 점프는 가로가 안 겹치므로 걸리지 않는다 — 그래서 임계를 1로 둬도 안전하다.
+    hard = sum(
+        1 for a, c in zip(by_mineru, by_mineru[1:])
+        if c.bbox[3] <= a.bbox[1]
+        and min(a.bbox[2], c.bbox[2]) - max(a.bbox[0], c.bbox[0]) > 0
+    )
+    main = sorted(main, key=_ykey) if (viol > 1 or hard) else by_mineru
 
     # 5) 새 본문 순서 = main → 이동 열(x0 순, 각 y-정렬). 비본문은 원 슬롯 유지.
     deferred.sort(key=lambda cl: min(b.bbox[0] for b in cl))
@@ -865,6 +898,59 @@ _BOX_BLOCK_RE = re.compile(
     r"(<!상자(\d?)>)(.*?)(<!/상자\2>)(.*?)(?=<!상자끝)", re.S)
 
 
+# 인쇄면 줄바꿈을 잇는 요소 유형. list_item은 한 줄이 한 항목이라 제외한다.
+_PARA_JOIN_TYPES = {"text", "caption", "footnote", "sidebar"}
+# 인쇄면 한 단으로 볼 최소 폭. 이보다 좁고 들쭉날쭉하면 시·대사처럼 줄바꿈 자체가
+# 내용인 블록이라 잇지 않는다.
+_PARA_MIN_COL = 15
+_LIST_HEAD_RE = re.compile(r"^\s*(?:[①-⑮㉠-㉪]|[0-9]{1,2}\s*[.)]|[가-핳]\s*[.)]|[-•·])\s")
+
+
+def _join_wrapped_lines(text: str) -> str:
+    """인쇄면에서 끊긴 한 문단을 한 줄로 잇는다.
+
+    MinerU/OCR 추출은 **인쇄면 한 줄이 한 줄**이라 문단 가운데 줄바꿈이 그대로 남는다.
+    그대로 점역하면 어절이 인쇄면 줄 끝에서 갈린다 — `총 5개` / `의 문항이`가 두 어절로
+    나가고, 32칸을 못 채운 짧은 줄이 남는다. 점자는 **어절 단위로** 접는 것이 규정이라
+    (BBPG §1.2.1 "어절단위 줄바꿈"), 인쇄면 줄바꿈은 점역 전에 지워야 한다.
+    실측 OCR 텍스트 요소 5,621개 중 1,988개(35.4%)가 이 상태다.
+
+    어느 줄바꿈이 인쇄면 줄바꿈인지는 **다음 줄 첫 어절이 이 줄에 들어갔겠는가**로 가른다.
+    안 들어갔으면 단 폭에 밀린 것이니 잇고, 들어갔는데도 줄을 바꿨으면 그 줄바꿈은
+    내용이다(시행·대사). 임계 상수가 없고 단 폭이 스스로 판정한다.
+
+    붙일지 띄울지는 `pdf_analyzer._join_words`(형태소 분석)가 정한다 — TEXT_NATIVE
+    경로가 이미 쓰는 것과 같은 판정기다. 빈 줄은 문단 경계라 그대로 둔다.
+    """
+    if "\n" not in text:
+        return text
+    from app.ai.preprocessor.pdf_analyzer import _join_words
+
+    out: list[str] = []
+    for block in text.split("\n\n"):
+        lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
+        if len(lines) < 2:
+            out.append(block)
+            continue
+        col = max(len(ln) for ln in lines)
+        if col < _PARA_MIN_COL:
+            out.append(block)
+            continue
+        merged = [lines[0]]
+        for nxt in lines[1:]:
+            sep = _join_words(merged[-1], nxt)
+            head = nxt.split()[0]
+            fits = len(merged[-1]) + 1 + len(head) < col
+            # sep가 빈 문자열이면 어절 가운데서 갈린 것이라 무조건 잇는다 — 그 줄바꿈은
+            # 어떤 조판에서도 내용일 수 없다(`총 5개` / `의 문항이`).
+            if sep and (fits or _LIST_HEAD_RE.match(nxt)):
+                merged.append(nxt)               # 들어갔는데 바꾼 줄 = 내용상 줄바꿈
+            else:
+                merged[-1] += sep + nxt
+        out.append("\n".join(merged))
+    return "\n\n".join(out)
+
+
 def _promote_box_title(text: str) -> str:
     """제목 없는 글상자의 본문 첫/끝 줄이 정답에서 관측된 제목 낱말이면 위 테두리로 올린다."""
     if "<!상자" not in text:
@@ -896,7 +982,18 @@ def _parse_txt_result(
     # ★ 좌표계는 meta.bbox_space를 **읽는다**(생산자가 적어 준다). 옛 파일·주입 핸드오프엔
     #   그 키가 없어 종전 유추(TEXT_NATIVE=픽셀)로 폴백한다.
     iw, ih = meta.get("image_width") or 0, meta.get("image_height") or 0
-    space = meta.get("bbox_space") or ("pixel" if method == "TEXT_NATIVE" else "norm1000")
+    space = meta.get("bbox_space")
+    if not space:
+        # ★ 키가 없으면 **값으로 판정한다**(2026-08-19). 종전에는 추출 방식으로 유추해서
+        #   OCR이면 무조건 norm1000으로 봤는데, 픽셀 좌표를 담은 옛 경계 파일이 그 길로
+        #   들어와 좌표가 통째로 부풀었다(EBS-E26-013 p191: 경계 파일 y 75~1422가
+        #   응답에서 111~2096. 배율이 정확히 image_height/1000 = 1.474였다).
+        #   정규화 좌표는 정의상 0~1000을 못 넘으므로, 1000을 넘는 값이 하나라도 있으면
+        #   픽셀이 확실하다. 추출 방식보다 값이 믿을 만한 근거다.
+        vals = [v for el in extraction.get("elements", [])
+                for v in (el.get("bbox") or []) if isinstance(v, (int, float))]
+        space = "pixel" if (vals and max(vals) > 1000) else (
+            "pixel" if method == "TEXT_NATIVE" else "norm1000")
     scale_bbox = ((iw / 1000, ih / 1000, iw / 1000, ih / 1000)
                   if space == "norm1000" and iw and ih else None)
 
@@ -913,6 +1010,8 @@ def _parse_txt_result(
         vsub = el.get("visual_subtype") or _SUBTYPE_FROM_TYPE.get(orig_type)
         order = int(el.get("order", idx))
         content = el.get("content", "") or ""
+        if etype in _PARA_JOIN_TYPES:
+            content = _join_wrapped_lines(content)
         content = _promote_box_title(_split_inline_choices(content))
         if etype in _TEXT_TYPES and _is_boilerplate(content):
             logger.info("보일러플레이트 드롭(%s): %.60s", etype, content)
@@ -1209,6 +1308,32 @@ async def _run_chain_logged(label: str, elems: list, factory, idx: int, total: i
     return result
 
 
+# mode b 표 블록. table_opt/table_braille가 쓰는 것과 같은 태그다(tag_names 미등재 —
+# `표`·`행`·`칸`은 translator의 인라인 마커가 아니라 **표 체인 전용 구조 태그**다).
+_MODE_B_TABLE_RE = re.compile(r"<!표>.*?<!/표>", re.DOTALL)
+
+
+def _mode_b_segments(src: str) -> list[tuple[int, str, str]]:
+    """mode b source_text → [(원본 줄 번호, 요소 유형, 텍스트)].
+
+    `<!표>…<!/표>`는 여러 줄에 걸쳐도 **요소 하나**로 묶어 표 체인에 보낸다. 줄 단위로
+    쪼개면 `<!행>`만 든 조각이 생겨 표 구조가 복원 불가능해진다. 나머지는 종전대로
+    줄 하나 = 요소 하나(빈 줄은 요소를 만들지 않고 번호만 건너뛴다 — 2026-08-06).
+    """
+    def _lines(a: int, b: int) -> list[tuple[int, str, str]]:
+        base = src.count("\n", 0, a) + 1
+        return [(base + i, "text", ln)
+                for i, ln in enumerate(src[a:b].split("\n")) if ln.strip()]
+
+    segs: list[tuple[int, str, str]] = []
+    pos = 0
+    for m in _MODE_B_TABLE_RE.finditer(src):
+        segs += _lines(pos, m.start())
+        segs.append((src.count("\n", 0, m.start()) + 1, "table", m.group(0)))
+        pos = m.end()
+    return segs + _lines(pos, len(src))
+
+
 async def _run_pipeline(task: PageTask) -> dict:
     page_id = f"p_{task.page_no:03d}"
 
@@ -1226,25 +1351,39 @@ async def _run_pipeline(task: PageTask) -> dict:
         #     (BBPG 2장2절2 "3칸에서 시작"). 대신 `order`에 **원본 줄 번호**를 그대로 실어
         #     BE가 빈 줄이 어디였는지 알 수 있게 한다(번호가 건너뛴다).
         #   · id는 `text_list`와 `braille_text_list`가 같다 — 그게 짝짓기의 열쇠다.
-        src_lines = [(i, ln) for i, ln in enumerate((task.source_text or "").split("\n"), 1)
-                     if ln.strip()]
+        src_lines = _mode_b_segments(task.source_text or "")
         if not src_lines:                       # 내용이 없으면 빈 응답(빈 결과 금지 규칙은
-            src_lines = [(1, task.source_text or "")]   # 플레이스홀더가 담당)
+            src_lines = [(1, "text", task.source_text or "")]   # 플레이스홀더가 담당)
         line_ids = [uuid4() for _ in src_lines]
         layout_result = LayoutResult(
             page_id=page_id,
-            elements=[BBoxItem(element_id=eid, type="text", bbox=(0, 0, 0, 0),
+            elements=[BBoxItem(element_id=eid, type=typ, bbox=(0, 0, 0, 0),
                                reading_order=no)
-                      for eid, (no, _) in zip(line_ids, src_lines)],
+                      for eid, (no, typ, _) in zip(line_ids, src_lines)],
         )
         extracted_texts = [ExtractedContent(
             element_id=eid,
             corrected_text=ln,
             ocr_confidence=1.0,
-        ) for eid, (_, ln) in zip(line_ids, src_lines)]
-        ext, llm_outputs, braille_outputs = await _run_text_chain(
-            extracted_texts, layout_result, "ZERO", task, include_braille=True,
-        )
+        ) for eid, (_, _, ln) in zip(line_ids, src_lines)]
+        # 표 세그먼트는 표 체인으로 보낸다 — <!표>/<!행>/<!칸>을 아는 것은 table_braille뿐이라
+        # 텍스트 체인에 넣으면 translator가 미지 태그로 지우고 셀이 한 줄로 붙어 버린다.
+        _by_type = {"table": [], "text": []}
+        for e, (_, typ, _t) in zip(extracted_texts, src_lines):
+            _by_type[typ].append(e)
+        _chains = [_run_text_chain(_by_type["text"], layout_result, "ZERO", task,
+                                   include_braille=True)]
+        if _by_type["table"]:
+            _chains.append(_run_table_chain(_by_type["table"], layout_result, "ZERO", task,
+                                            include_braille=True))
+        # 요소 격리(불변 규칙 3) — 표 하나가 깨져도 본문은 나가야 한다.
+        ext, llm_outputs, braille_outputs = [], [], []
+        for _r in await asyncio.gather(*_chains, return_exceptions=True):
+            if isinstance(_r, Exception):
+                logger.error("mode b 체인 실패 (계속 진행): %s", _r)
+                continue
+            for _dst, _src in zip((ext, llm_outputs, braille_outputs), _r):
+                _dst.extend(_src)
         flat: dict = {}
         if braille_outputs:
             from app.ai.braille.layout_braille import LayoutBraille, flatten_elements
@@ -1658,6 +1797,8 @@ async def run(task: PageTask) -> dict:
         )
         for _line in breakdown_lines():   # 파트별 LLM 사용 내역(디버깅·비용 추적)
             logger.info(_line)
+        # 원가는 성공·타임아웃·예외 **셋 다** 싣는다 — 막혔어도 돈은 나갔다.
+        result["usage"] = {**usage_report(), "layout_type": _page_layout_type(result)}
         _record_metrics(result, elapsed_ms)
         return result
 
@@ -1666,6 +1807,8 @@ async def run(task: PageTask) -> dict:
         logger.warning("⛔ BLOCKED(타임아웃) %.1fs · API %s  (job=%s page=%d)",
                        elapsed_ms / 1000, api_summary(), task.job_id, task.page_no)
         result = _build_timeout_response(task, elapsed_ms)
+        # 원가는 성공·타임아웃·예외 **셋 다** 싣는다 — 막혔어도 돈은 나갔다.
+        result["usage"] = {**usage_report(), "layout_type": _page_layout_type(result)}
         _record_metrics(result, elapsed_ms)
         return result
 
@@ -1674,6 +1817,8 @@ async def run(task: PageTask) -> dict:
         logger.exception("⛔ BLOCKED(예외) %.1fs job=%s page=%d: %s",
                          elapsed_ms / 1000, task.job_id, task.page_no, exc)
         result = _build_exception_response(task, elapsed_ms, exc)
+        # 원가는 성공·타임아웃·예외 **셋 다** 싣는다 — 막혔어도 돈은 나갔다.
+        result["usage"] = {**usage_report(), "layout_type": _page_layout_type(result)}
         _record_metrics(result, elapsed_ms)
         return result
 

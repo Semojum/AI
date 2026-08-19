@@ -165,7 +165,16 @@ def _shorten(text: str, limit: int = 45) -> str:
     m = re.search(r"[.。!?]\s|[.。!?]$", t)          # 첫 문장 경계
     if m and m.start() + 1 <= int(limit * 1.6):
         return t[: m.start() + 1]
-    return t[:limit].rsplit(" ", 1)[0] + "…"
+    # ★ 문장 경계가 없으면 **항목 경계**에서 끊는다(2026-08-19). 캡셔너가 개조식으로 쓴
+    #   설명(`- 터번 형태의 두건 착용 - 긴 수염`)은 마침표가 없어 종전에는 limit자에서
+    #   기계적으로 잘리고 말줄임표가 붙었다. 실측 그래프 30.3%·도표 7.1%가 그 얼굴이었다.
+    #   점역사에게 문장 중간이 잘린 초안이 나가는 것이라 말줄임표째로 지워야 했다.
+    #   항목 경계(글머리·쉼표·가운뎃점)를 뒤에서 찾아 **온전한 조각**만 남긴다.
+    for sep in (" - ", " · ", ", ", " "):
+        cut = t.rfind(sep, 0, limit + 1)
+        if cut >= int(limit * 0.4):              # 너무 앞에서 끊기면 제목 구실을 못 한다
+            return t[:cut].rstrip(" -·,")
+    return t[:limit].rstrip(" -·,")
 
 
 def _outline_text_indents(
@@ -410,6 +419,18 @@ async def build_visual_drafts(
         # 고려해 캡션의 ~1.6배로 잡고 상한을 320으로 올린다(vLLM 46tok/s면 ~7s, QUALITY 상한 내).
         src = caption or title
         mnt = min(320, max(140, int(len(src) * 1.6)))
+        # 폴백(Claude)만 예산을 따로 잡는다. HCXT 쪽 mnt는 A/B로 맞춘 값인 데다
+        # vLLM 46tok/s × QUALITY 상한 14초에 묶여 있어 올리면 타임아웃이 늘고
+        # **폴백이 더 자주 도는** 역효과가 난다. 폴백은 그 제약이 없다.
+        #   실측(2026-08-17): LLM이 개조식·줄글을 실제로 다르게 쓴 요소 683건에서
+        #   산출/캡션 비가 중앙 2.46 · p90 4.65다. 계수 1.6은 그보다 작아
+        #   **66.5%가 예산을 넘었다.** 넘으면 절이 문장 중간에 잘리고, 잘린 응답은
+        #   파싱에 실패해 캡션 폴백으로 떨어진다(4안이 서로 같아지는 얼굴).
+        #   한국어 산문은 0.97 문자/토큰이라(count_tokens 실측) 토큰≈문자로 잡는다.
+        #   p90 산출 507자를 덮도록 계수 2.6 · 상한 640 · 바닥 240으로 둔다.
+        # ★ max_tokens는 **천장이지 예약이 아니다** — 과금은 실제 생성분이라
+        #   올려도 안 잘리던 호출의 비용은 그대로다. 늘어나는 건 잘리던 꼬리뿐이다.
+        fb_mnt = min(640, max(240, int(len(src) * 2.6)))
         # ★ 4안 보장(D-02)은 **예외까지** 막아야 한다. generate_with_retry는 자체 재시도·폴백을
         #   갖지만 그게 모두 실패하면 예외를 올린다. 종전에는 그 예외가 여기서 안 잡혀 위로
         #   전파됐고, isolation이 요소를 통째로 플레이스홀더로 만들어 **drafts가 0개**가 됐다
@@ -420,7 +441,7 @@ async def build_visual_drafts(
             response, used_fb = await generate_with_retry(
                 _PROMPT.format(label=label, caption=src),
                 timeout=timeout, element_id=ext.element_id, kind=kind,
-                prefill=_PREFILL, max_new_tokens=mnt, fallback_max_tokens=mnt,
+                prefill=_PREFILL, max_new_tokens=mnt, fallback_max_tokens=fb_mnt,
             )
             tier = "FALLBACK" if used_fb else t2
             sec = _parse_sections(response)

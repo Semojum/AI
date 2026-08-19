@@ -452,3 +452,74 @@ class TestResponseContract:
         llms = [LLMOutput(element_id=tid, corrected_text="제목", routing_tier="ZERO")]
         resp = self._build(elements, llms)
         assert resp["braille_text_list"][0]["heading_level"] == 1
+
+
+# ── 읽기 순서: 완전 분리 역전 (2026-08-19) ──────────────────────────────────
+# 앞 요소가 키가 크면 위끝 차이가 밴드에 못 미쳐 종전 판정(`viol`)이 못 잡았다.
+# 실물: 테스트_1.pdf 에서 만화(y 115~273)가 1번, 제목(y 87~105)이 2번으로 나왔다.
+class TestReadingOrderHardInversion:
+    def _items(self, boxes):
+        from app.schemas.layout import BBoxItem
+        return [BBoxItem(type=t, bbox=b, reading_order=i + 1)
+                for i, (t, b) in enumerate(boxes)]
+
+    def test_통째로_위에_있는_요소가_앞으로_온다(self):
+        """같은 단에서 세로로 안 겹치는데 뒤에 온 요소는 무조건 역전이다."""
+        from app.core.pipeline import _reorder_columns
+        items = self._items([
+            ("image", (100, 115, 500, 273)),   # 만화가 먼저 방출됨
+            ("title", (100, 87, 500, 105)),    # 제목이 더 위인데 뒤
+            ("text", (100, 289, 500, 326)),
+            ("text", (100, 425, 500, 445)),
+        ])
+        _reorder_columns(items, 0)
+        order = {b.type: b.reading_order for b in items}
+        assert order["title"] < order["image"], order
+
+    def test_2단_본문은_흔들지_않는다(self):
+        """열 점프는 가로가 안 겹치므로 역전으로 세면 안 된다."""
+        from app.core.pipeline import _reorder_columns
+        items = self._items([
+            ("text", (50, 100, 290, 200)),     # 왼쪽 단 위
+            ("text", (50, 210, 290, 300)),     # 왼쪽 단 아래
+            ("text", (310, 100, 550, 200)),    # 오른쪽 단 위 — y는 되돌아가지만 다른 단
+            ("text", (310, 210, 550, 300)),
+        ])
+        before = [b.reading_order for b in items]
+        _reorder_columns(items, 0)
+        assert [b.reading_order for b in items] == before
+
+
+# ── bbox 좌표계 판정 (2026-08-19) ──────────────────────────────────────────
+# 종전에는 추출 방식으로 유추해 OCR이면 무조건 0~1000 정규화로 봤다. 픽셀 좌표를 담은
+# 옛 경계 파일이 그 길로 들어와 좌표가 image_height/1000 배만큼 부풀었다
+# (EBS-E26-013 p191: 경계 파일 y 75~1422 → 응답 111~2096).
+class TestBboxSpaceInference:
+    def _ext(self, method, boxes):
+        return {"meta": {"job_id": "j", "page_no": 1, "extraction_method": method,
+                         "image_width": 1168, "image_height": 1474},
+                "elements": [{"id": f"{i:08d}-0000-4000-8000-000000000000",
+                              "order": i + 1, "type": "text", "content": "가나다",
+                              "bbox": b} for i, b in enumerate(boxes)]}
+
+    def test_1000을_넘는_좌표는_픽셀로_본다(self):
+        """정규화 좌표는 정의상 0~1000을 못 넘는다. 넘으면 픽셀이 확실하다."""
+        from app.core.pipeline import _parse_txt_result
+        lr, _, _ = _parse_txt_result(self._ext("OCR", [[75, 75, 1077, 1422]]), "p1")
+        items = lr.elements
+        assert items[0].bbox == (75, 75, 1077, 1422), items[0].bbox
+
+    def test_1000_이하_OCR_좌표는_정규화로_되돌린다(self):
+        """MinerU 기본 산출은 0~1000이라 종전 동작을 지켜야 한다."""
+        from app.core.pipeline import _parse_txt_result
+        lr, _, _ = _parse_txt_result(self._ext("OCR", [[100, 200, 500, 600]]), "p1")
+        items = lr.elements
+        x, y, x2, y2 = items[0].bbox
+        assert abs(x - 100 * 1.168) < 1 and abs(y2 - 600 * 1.474) < 1, items[0].bbox
+
+    def test_bbox_space가_있으면_그것을_따른다(self):
+        from app.core.pipeline import _parse_txt_result
+        ext = self._ext("OCR", [[100, 200, 500, 600]])
+        ext["meta"]["bbox_space"] = "pixel"
+        lr, _, _ = _parse_txt_result(ext, "p1")
+        assert lr.elements[0].bbox == (100, 200, 500, 600)

@@ -42,6 +42,17 @@ class TestBuildRecord:
         assert rec["fallback_ratio"] == 0.0
 
 
+class TestUsageNeverBreaksPage:
+    """사용량 집계가 터져도 메트릭은 나와야 한다 — 관측값이 페이지 처리를 깨면 안 된다."""
+
+    def test_usage_report_예외를_삼킨다(self, monkeypatch):
+        import app.ai.quality.metrics_collector as mc
+        monkeypatch.setattr(mc, "usage_report",
+                            lambda: (_ for _ in ()).throw(TypeError("깨진 집계")))
+        rec = mc.MetricsCollector().build_record(_result(), elapsed_ms=1)
+        assert rec["usage"] == {} and rec["status"]   # 나머지 필드는 그대로
+
+
 class TestRecord:
     def test_appends_jsonl(self, tmp_path):
         sink = tmp_path / "m.jsonl"

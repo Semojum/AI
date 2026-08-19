@@ -13,6 +13,7 @@ from app.core.config import config
 from app.core import pipeline
 from app.schemas.task import PageTask
 from app.utils import job_id as job_id_util
+from app.utils import req_log
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -138,6 +139,10 @@ def _build_error_response(job_id: str, page_no: int, message: str):
     err.type = "C1"
     err.element_id = "page"
     err.message = message
+    # 막혀도 자원은 썼다 — proto가 "BLOCKED에도 실림"이라고 약속한 자리다. 파이프라인이
+    # 터지기 전에 이미 부른 LLM 호출이 여기서 사라지면 BE 원가 집계에 구멍이 난다.
+    # layout_type은 요소를 못 봤으니 UNSPECIFIED로 둔다(지어내지 않는다).
+    resp.usage_report.CopyFrom(_dict_to_usage_report(req_log.usage_report()))
     return resp
 
 
@@ -166,7 +171,38 @@ def _build_proto_response(result: dict):
     for te in result.get("braille_text_list", []):
         resp.braille_text_list.append(_dict_to_text_element(te))
 
+    # 사용량. BLOCKED에도 싣는다 — 막혔어도 자원은 썼다.
+    resp.usage_report.CopyFrom(_dict_to_usage_report(result.get("usage") or {}))
+
     return resp
+
+
+_PB = braille_service_pb2
+_LAYOUT = {"text": _PB.PAGE_LAYOUT_TEXT, "formula": _PB.PAGE_LAYOUT_FORMULA,
+           "table": _PB.PAGE_LAYOUT_TABLE, "visual": _PB.PAGE_LAYOUT_VISUAL}
+
+
+def _dict_to_usage_report(c: dict):
+    """`req_log.usage_report()` dict → proto. 사용량은 관측값이라 무슨 일이 있어도
+    응답을 막지 않는다 — 빈 dict가 오면 0으로 채운 메시지를 돌려준다.
+
+    ★ **금액은 나가지 않는다**(BE 협의 2026-08-18). AI는 측정값(토큰·GPU 시간·쪽 유형)만
+    싣고, 단가표·환율·카드 수수료·크레딧 배율은 BE의 관리 변수다. 관리자 페이지에서
+    수시로 바뀌는 값을 AI가 재컴파일해야 바뀌는 자리에 두지 않기 위해서다.
+    AI 쪽 원가 추정치는 메트릭 JSONL에만 남는다(우리 관측용, 정본 아님).
+    """
+    r = _PB.UsageReport()
+    if not c:
+        return r
+    r.layout_type = _LAYOUT.get(c.get("layout_type", ""), _PB.PAGE_LAYOUT_UNSPECIFIED)
+    r.gpu_time_ms = int(c.get("gpu_time_ms", 0))
+    for m in c.get("models", []):
+        pm = r.models.add()
+        pm.model = str(m.get("model", ""))
+        pm.calls = int(m.get("calls", 0))
+        pm.input_tokens = int(m.get("input_tokens", 0))
+        pm.output_tokens = int(m.get("output_tokens", 0))
+    return r
 
 
 # 배압(M2, 2026-08-02) — admission 카운터. asyncio 단일 스레드 협조 스케줄링이라

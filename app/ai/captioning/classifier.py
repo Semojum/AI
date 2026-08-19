@@ -66,8 +66,7 @@ def classify_with_confidence(image_path: str) -> tuple[str, float | None]:
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
         return _classify_anthropic(b64, mime)
 
-    from app.utils.req_log import inc_gpt4o
-    inc_gpt4o()
+    from app.utils.req_log import record_openai
     resp = _get_client().chat.completions.create(
         model="gpt-4o",
         messages=[
@@ -84,6 +83,7 @@ def classify_with_confidence(image_path: str) -> tuple[str, float | None]:
         temperature=0,
         logprobs=True,
     )
+    record_openai("분류", "gpt-4o", getattr(resp, "usage", None))
     choice = resp.choices[0]
     label = choice.message.content.strip().lower()
     if label not in LABELS:
@@ -106,18 +106,19 @@ def _classify_anthropic(b64: str, mime: str):
     quality_checker는 confidence None이면 R2를 띄우지 않는다(설계된 경로)."""
     import anthropic
     from app.core.limits import estimate_tokens, llm_limiter
-    from app.utils.req_log import inc_gpt4o
+    from app.utils.req_log import record_anthropic
     llm_limiter().acquire_sync(estimate_tokens(SYSTEM_PROMPT, len(b64) * 3 // 4), 10)
-    inc_gpt4o()
+    model = os.getenv("CAPTION_MODEL", "claude-sonnet-5")
     client = anthropic.Anthropic(api_key=config.anthropic_api_key or None)
     resp = client.messages.create(
-        model=os.getenv("CAPTION_MODEL", "claude-sonnet-5"),
+        model=model,
         max_tokens=10,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
         ]}],
     )
+    record_anthropic("분류", model, getattr(resp, "usage", None))
     label = "".join(b.text for b in resp.content if b.type == "text").strip().lower()
     if label not in LABELS:
         return "image", 0.0        # 형식 이탈 = 불확실 신호(R2 대상)

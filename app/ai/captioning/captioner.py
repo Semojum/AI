@@ -319,11 +319,11 @@ def _maybe_upscale(raw: bytes) -> bytes:
 def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
     import anthropic
     from app.core.limits import estimate_tokens, llm_limiter
-    from app.utils.req_log import inc_gpt4o
+    from app.utils.req_log import record_anthropic
     # 계정 분당 상한(요청·토큰). 동시 연결은 이미 caption_slot이 조인다.
     # b64는 원본의 4/3배라 실제 바이트로 환산해 넘긴다.
     llm_limiter().acquire_sync(estimate_tokens(prompt, len(b64) * 3 // 4), 500)
-    inc_gpt4o()                       # 호출 수 집계는 공용
+    model = os.getenv("CAPTION_MODEL", "claude-sonnet-5")
     client = anthropic.Anthropic(api_key=config.anthropic_api_key or None, timeout=60.0, max_retries=1)  # 행 방지(2026-07-19 스톨 실측)
     # ★ thinking을 꺼야 한다(2026-08-08 QA 16번 실측). claude-sonnet-5는 `thinking`을 안 주면
     #   **적응형 사고가 기본**이고, max_tokens는 사고+본문 합계 상한이라 복잡한 그림에서
@@ -332,7 +332,7 @@ def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
     #   규정 정답 22건 중 3건(14%)이 이 경로로 빈 캡션이었다. 캡셔닝은 묘사 과제라
     #   사고가 품질을 올리지 않는다 — 끄는 쪽이 정확하고 싸다.
     resp = client.messages.create(
-        model=os.getenv("CAPTION_MODEL", "claude-sonnet-5"),
+        model=model,
         max_tokens=500,
         thinking={"type": "disabled"},
         messages=[{
@@ -344,7 +344,9 @@ def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
             ],
         }],
     )
-    _record_usage(resp)
+    # 실토큰을 요청 집계로 흘린다 — 근사치 1500/500을 곱하던 자리(2026-08-13).
+    record_anthropic("캡셔닝", model, getattr(resp, "usage", None))
+    _record_usage(resp)               # 프로세스 전역 누계(오프라인 배치 비용 보고용)
     return "".join(b.text for b in resp.content if b.type == "text").strip()
 
 
@@ -422,16 +424,33 @@ def _ensure_type_word(text: str, image_type: str) -> str:
 #   dev 371건 대조: 적중 5/5, 오탐 0('제공/없/첨부'가 든 정상 캡션 20건은 통과).
 # 2026-08-10 보강 — 요청 문구가 없는 **맨 거부**("이미지를 볼 수 없습니다")가 위 패턴을
 #   빠져나갔다. dev 실제 캡션 371건에 넓힌 식을 걸어 **적중은 그대로 5건, 오탐 0**을 확인했다.
+# 2026-08-15 보강(eval 세션 이관 건) — **판독 불능 표명**이 위 식을 빠져나갔다.
+#   실제 미검출 응답: "이미지의 해상도가 낮아 점자 패턴을 정확히 **판독할** 수 없습니다.
+#                    임의로 점자 내용을 추정하여 옮기지 **않겠습니다**."
+#   두 군데서 새고 있었다 — 동사가 볼/확인할/읽을에 없고(판독할), 목적어도 이미지·그림·
+#   사진이 아니었다(점자 패턴). 그래서 목적어를 안 따지고 두 신호만 본다.
+#     · 판독 불능 동사 — "…할 수 없"
+#     · **1인칭 거부 종결** — 캡션은 묘사라 "…하지 않겠습니다"를 쓸 일이 없다
+#   실제 캡션 15,508건 대조: 두 식 모두 **오탐 0건**, 문제 응답 검출.
+#   조건은 좁다 — 점자·촉각 이미지가 캡셔너에 들어갈 때만 난다(index.json 기준 15장).
+#   ⚠ '해상도가 낮아'는 넣지 않았다. 앞에 실제 묘사를 쓰고 뒤에 덧붙인 정상 캡션이 있어
+#     통째로 버리면 손해다(코퍼스 1건 확인).
 _META_RE = re.compile(
     r"(첨부|제공|업로드)(되지|해|하지)\s*않|이미지가\s*(없|첨부|제공)|"
     r"주시면|드리겠습니다|드릴게요|알려\s*주세요|보내\s*주세요|"
     r"(이미지|그림|사진)(을|를)?\s*(볼|확인할|읽을)\s*수\s*없|"
+    r"(판독|식별|해독|분간|알아볼)할?\s*수\s*없|"
+    r"(않|못하)겠습니다|"
     r"^죄송|도와\s*드릴|무엇을\s*도와")
 
 
 def _reject_meta(text: str) -> str:
-    """그림 대신 사용자에게 말을 거는 응답이면 실패로 돌린다."""
-    return "" if _META_RE.search(text or "") else text
+    """그림 대신 사용자에게 말을 거는 응답이면 실패로 돌린다(= 빈 문자열).
+
+    **항상 문자열을 돌려준다.** 종전에는 입력이 None이면 None을 그대로 흘려, 방어하려고
+    둔 함수가 도리어 None을 하류로 넘겼다.
+    """
+    return "" if (not text or _META_RE.search(text)) else text
 
 
 
@@ -567,8 +586,7 @@ def caption(image_path: str, image_type: str = "image") -> str:
             cache.write_text(text, encoding="utf-8")
         return text
 
-    from app.utils.req_log import inc_gpt4o
-    inc_gpt4o()
+    from app.utils.req_log import record_openai
     resp = _get_client().chat.completions.create(
         model="gpt-4o",
         messages=[
@@ -583,6 +601,7 @@ def caption(image_path: str, image_type: str = "image") -> str:
         max_tokens=500,
         temperature=0.3,
     )
+    record_openai("캡셔닝", "gpt-4o", getattr(resp, "usage", None))
     text = _ensure_type_word(_reject_meta(resp.choices[0].message.content.strip()), image_type)
     if cache is not None and text.strip():
         cache.write_text(text, encoding="utf-8")

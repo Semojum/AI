@@ -60,6 +60,10 @@ _SPAN_RE = re.compile(rf"{_ATOM}{{2,}}")
 # 본문에 안 나오고(코퍼스 실측 0건, r15) 깨진 글리프 정화 후에만 생기므로 오탐이 없다.
 # 없으면 짧은 O₂·t₂가 라우팅을 못 타 규정형 ⠰⠼(gold 0회)로 나가 되레 어긋난다(r16 생물 p073).
 _SUB_CHARS = re.compile(f"[{''.join(UNI_SUB)}]")
+# 이온 전하를 지닌 2자 토큰(H⁺·K⁺)도 같은 이유로 예외다. 라우팅을 못 타면 텍스트
+# 경로가 로마자 종료표를 끼워 ⠠⠓⠲⠘⠢를 내는데, 과학점자 제2항 붙임은 '이온 표시
+# 뒤에는 로마자 종료표 없이 한 칸 띄어 쓴다'이다(H+ = ,h^5).
+_ION_CHARS = re.compile("[⁺⁻]")
 
 # 강한 수식 신호 — 이게 없으면 수식으로 보지 않는다.
 _STRONG = re.compile(
@@ -125,8 +129,8 @@ def _wrap_segment(seg: str) -> str:
             head, core = em.group(), core[em.end():]
         if not _has_strong(core):
             return span
-        # 2자 토큰은 아래첨자를 지닌 것만 허용(원소·변수 O₂·t₂). 그 밖은 3자 임계 유지.
-        if len(core) < 3 and not _SUB_CHARS.search(core):
+        # 2자 토큰은 아래첨자·이온 전하를 지닌 것만 허용(O₂·t₂·H⁺). 그 밖은 3자 임계 유지.
+        if len(core) < 3 and not (_SUB_CHARS.search(core) or _ION_CHARS.search(core)):
             return span
         lead = span[:len(span) - len(span.lstrip())]
         trail = span[len(span.rstrip()):]
