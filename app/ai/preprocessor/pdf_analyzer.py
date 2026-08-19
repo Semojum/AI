@@ -454,9 +454,19 @@ def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int,
             page_idx = max(0, min(page_no - 1, doc.page_count - 1))
             page = doc[page_idx]
             w, h = page.rect.width, page.rect.height
+            # ★ 회전 지면 보정(2026-08-20). PyMuPDF의 텍스트 블록 좌표는 **회전 전**
+            #   좌표계(mediabox)로 나오는데 page.rect는 회전 후 크기다. 그대로 쓰면
+            #   270° 쪽에서 x가 쪽 폭을 넘고 종횡비가 뒤집힌다 — 영문 한 줄이 13x442로
+            #   세로로 길게 잡혔다(외국어 코퍼스 실측, 응답 '쪽 밖' 169건 전량이 이 얼굴).
+            #   rotation_matrix를 곱하면 표시 좌표가 된다(실측 21/21 전부 정상 범위).
+            rot = page.rotation_matrix if page.rotation else None
             blocks: list[dict] = []
             for b in _merge_paragraph_blocks(_page_text_blocks_spaced(page)):
                 x0, y0, x1, y1 = b["bbox"]
+                if rot is not None:
+                    r = fitz.Rect(x0, y0, x1, y1) * rot
+                    r.normalize()
+                    x0, y0, x1, y1 = r.x0, r.y0, r.x1, r.y1
                 blocks.append({
                     "content": b["content"],
                     "bbox": [round(x0 * 2), round(y0 * 2), round(x1 * 2), round(y1 * 2)],
