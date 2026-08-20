@@ -8,7 +8,7 @@
 - `generate_with_retry`                 : 3회 재시도 후 폴백 (모든 opt 동일 루프).
 - `decide_tier_timeout`                 : ocr_confidence → (tier, timeout).
 - `BaseOpt`                             : optimize() = 요소별 _optimize_one gather.
-  (시각자료 대체텍스트 4안 공통 흐름은 `visual_drafts.build_visual_drafts`로 분리됨.)
+  (시각자료 대체텍스트 3안 공통 흐름은 `visual_drafts.build_visual_drafts`로 분리됨.)
 """
 
 from __future__ import annotations

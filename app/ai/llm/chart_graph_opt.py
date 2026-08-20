@@ -11,7 +11,7 @@ from __future__ import annotations
 from app.ai.llm.base_opt import BaseOpt
 from app.ai.llm.base_opt import numbers_grounded as _verify_numbers  # noqa: F401 (테스트가 import)
 from app.ai.llm.visual_drafts import (
-    PROSE_IDX,
+    DESC_IDX,
     build_visual_drafts,
     resolve_label,
     visual_trail,
@@ -94,7 +94,7 @@ class ChartGraphOpt(BaseOpt):
         # 수치 그라운딩 — LLM이 생성한 줄글에서 원본 수치가 누락/변조됐는지(누락 시 R5).
         # ZERO/rule-based 줄글은 전사라 검사 불필요(생성 환각 위험 없음).
         ref = ", ".join(t for _, t in data_items) or caption
-        if tier not in ("ZERO",) and struct_prose is None and ref and not _verify_numbers(ref, drafts[PROSE_IDX].text):
+        if tier not in ("ZERO",) and struct_prose is None and ref and not _verify_numbers(ref, drafts[DESC_IDX].text):
             ext.flags = list(getattr(ext, "flags", None) or []) + ["R5"]
 
         return LLMOutput(

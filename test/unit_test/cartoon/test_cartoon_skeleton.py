@@ -26,7 +26,7 @@ _STRUCT = {
 
 
 class TestFourDrafts:
-    def test_4안_라벨(self):
+    def test_안_라벨(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
         labels = [d.label for d in opt.drafts]
@@ -34,7 +34,7 @@ class TestFourDrafts:
         # LABELS의 **부분 수열**이고 서로 달라야 한다.
         assert labels == [x for x in LABELS if x in labels], labels
         assert len(set(labels)) == len(labels), labels
-        assert opt.selected_idx == 2                                   # 기본=개조식
+        assert opt.selected_idx == 1                                   # 기본=설명(gold 79.6%)
 
     def test_생략안(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
@@ -43,7 +43,7 @@ class TestFourDrafts:
 
     def test_개조식_장면_대사_전사(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
-        outline = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0].drafts[2].text
+        outline = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0].drafts[1].text
         assert "장면 1" in outline                                     # §5.3.3(1)
         assert "학생: 안녕?" in outline                                 # §5.3.3(2)(3) 대사 전사
         assert "말풍선: 반가워" in outline                              # §6.3.4(3) 화자 불명

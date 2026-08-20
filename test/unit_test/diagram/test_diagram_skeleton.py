@@ -168,19 +168,19 @@ class TestStep17CaptionSource:
     """Step17 — 대체텍스트의 출처(인쇄 캡션 전사 / AI 생성 / 구조 전사)를 근거에 남긴다."""
 
     def test_출처_구분(self):
-        from app.ai.llm.visual_drafts import OMIT_IDX, OUTLINE_IDX, caption_source
+        from app.ai.llm.visual_drafts import OMIT_IDX, DESC_IDX, caption_source
 
         f = caption_source
-        assert f(OUTLINE_IDX, used_llm=True, has_print_caption=True, has_struct=False) == "AI 생성"
-        assert f(OUTLINE_IDX, used_llm=False, has_print_caption=True, has_struct=False) == "인쇄 캡션 전사"
-        assert f(OUTLINE_IDX, used_llm=True, has_print_caption=True, has_struct=True) == "구조 전사(무-LLM)"
+        assert f(DESC_IDX, used_llm=True, has_print_caption=True, has_struct=False) == "AI 생성"
+        assert f(DESC_IDX, used_llm=False, has_print_caption=True, has_struct=False) == "인쇄 캡션 전사"
+        assert f(DESC_IDX, used_llm=True, has_print_caption=True, has_struct=True) == "구조 전사(무-LLM)"
         assert f(OMIT_IDX, used_llm=False, has_print_caption=False, has_struct=False).startswith("생략")
 
     def test_근거_tag는_선택안과_출처(self):
-        from app.ai.llm.visual_drafts import OUTLINE_IDX, LABELS, visual_trail
+        from app.ai.llm.visual_drafts import DESC_IDX, LABELS, visual_trail
         from app.schemas.content import Draft
 
         drafts = [Draft(option=i + 1, text="x", render_mode="narrative", label=lb)
                   for i, lb in enumerate(LABELS)]
-        r = visual_trail("JAJAK-6.3.4", drafts, OUTLINE_IDX, "AI 생성")[0]
-        assert r.tag == "개조식 설명·AI 생성"
+        r = visual_trail("JAJAK-6.3.4", drafts, DESC_IDX, "AI 생성")[0]
+        assert r.tag == "설명·AI 생성"

@@ -64,7 +64,7 @@ def _match_indents(line_indents, lines):
 
 
 class DiagramBraille:
-    """LLMOutput 목록 → BrailleOutput 목록 (개념도·흐름도 등 도표). 대체텍스트 4안별 점역."""
+    """LLMOutput 목록 → BrailleOutput 목록 (개념도·흐름도 등 도표). 대체텍스트 3안별 점역."""
 
     def translate(self, optimized: list[LLMOutput]) -> list[BrailleOutput]:
         # 요소별 격리: 한 도표 점역 실패가 다른 요소를 막지 않는다.

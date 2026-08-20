@@ -1,4 +1,4 @@
-"""시각자료 대체텍스트 6안 생성 (이미지·만화·차트·도표 공통).
+"""시각자료 대체텍스트 3안 생성 (이미지·만화·차트·도표 공통).
 
 점역사가 고를 6가지 대체텍스트. 각 안은 그 자체로 완결된 대체텍스트다:
   0) 생략     : 점자 규정(§6.3.4(2)②)에 맞춘 생략 표기 — 결정적, LLM 미사용.
@@ -13,7 +13,7 @@
 
 성능·안정성: 0·1·4·5안은 무-LLM(또는 캡션 전사)이라 **항상** 나온다. 2·3안 중 LLM이 필요한
 부분만 **1회 호출**로 함께 생성한다(방식별 N회 호출 → 1회로 축소, 페이지 타임아웃 완화).
-LLM 파싱이 실패해도 캡션 폴백으로 6안이 보장된다(구 3안 포맷 미준수 문제 해소).
+LLM 파싱이 실패해도 캡션 폴백으로 3안이 보장된다(구 포맷 미준수 문제 해소).
 
 기본 선택(selected_idx): 장식용이면 0(생략), 그 외엔 2(개조식)를 기본 초안으로 둔다.
 """
@@ -40,7 +40,7 @@ logger = get_logger(__name__)
 #   → 기본 tn 유지. 스위치는 후속 실험 대비용으로만 남김.
 _WRAP_STYLE = os.environ.get("VISUAL_WRAP_STYLE", "tn")
 
-# 6안 라벨(FE 피커 표시) — 순서 = option 1..6
+# 3안 라벨(FE 피커 표시) — 규정 §6.1.1이 인정하는 처리 셋
 #
 # ★ 4→6 (2026-08-10, 원장 C-28). 정답 도서 2,917쪽의 점역자주 1,297건을 세니 시각 자료
 #   처리가 다섯 갈래였다: 설명 45.1% · 유형만 13.6% · 생략 고지 11.5% · 별책 참조 9.3% ·
@@ -48,8 +48,26 @@ _WRAP_STYLE = os.environ.get("VISUAL_WRAP_STYLE", "tn")
 #   (009 본책 별책참조 100% / 004 본책 생략고지 74% / 001 본책 설명 82%).
 #   그림만 보고는 못 고르니 우리가 정하지 않는다 — 안으로 내주고 점역사가 고른다.
 #   기존 0~3의 순번은 그대로 둔다(BE·FE 계약 유지). 새 안은 뒤에 붙인다.
-LABELS = ("생략", "짧은 제목", "개조식 설명", "줄글 설명", "유형만", "별책 참조")
-OMIT_IDX, TITLE_IDX, OUTLINE_IDX, PROSE_IDX, TYPEONLY_IDX, VOLREF_IDX = 0, 1, 2, 3, 4, 5
+# ★ 2026-08-20 — 6안을 **3안으로 줄였다**(대표 기준: 규정 명시 + 도서 실측만, 유사한 것은 묶기).
+#   근거는 규정과 gold 실측 둘뿐이고, 상상해서 만든 안은 두지 않는다.
+#
+#   규정 「점자 자료 제작 지침」 §6.1.1 첫 줄: "시각 자료 제시 방법은 **점자 그래픽 제작,
+#   핵심 정보 설명 및 생략**으로 나눌 수 있다." 여기에 §1.3.4(3) 별책 참조가 더해진다.
+#
+#   gold 실측(2027 코퍼스 900쪽 표본 · 점역자 주 411건):
+#     설명 327(79.6%) · 생략 고지 50(12.2%) · 별책/참조 33(8.0%) · **유형만 0건**
+#
+#   버린 것과 이유
+#     · '유형만'   — 규정에 없고 gold **0건**. 근거가 없다.
+#     · '짧은 제목'·'개조식 설명'·'줄글 설명' → **'설명' 하나로 묶었다.** 규정이 "설명"
+#       하나이고, gold도 형식이 안 갈린다(시각 설명 220건 실측: 여러 줄 94.5% ·
+#       글머리 18.6%로 한 설명 안에 섞여 있다). 넷으로 쪼개면 점역사가 같은 글을
+#       네 번 읽고서야 고를 게 없다는 걸 안다.
+#     · '점자 그래픽 제작' — 규정 명시 형식이지만 **우리가 미배선**이다(proto의
+#       TactileGraphic도 "미사용, 2차 PoC 이후"). 고를 수 없는 안을 피커에 띄우지 않는다.
+#       배선하면 여기 넣는다.
+LABELS = ("생략", "설명", "참조")
+OMIT_IDX, DESC_IDX, VOLREF_IDX = 0, 1, 2
 
 # 개조식 들여쓰기(칸): 제목 5칸(§6.3.3(1)), 유형/설명 점역자주 0칸, 전사 항목 level0=3칸(+2/단계).
 # ⚠ 원장 C-15 — 정답 도서에는 3칸 줄이 **0.0%**다(dev+val 2027 각 200쪽 줄머리 실측:
@@ -203,7 +221,7 @@ def _outline_text_indents(
     #   매번 알릴 일이 아니다. 알릴수록 32칸 지면만 먹고 정작 봐야 할 고지가 묻힌다.
     #   (정본 예6-22가 조직도에 그 말을 쓰는 것은 조직도가 도형을 잃기 때문이다 —
     #    그 자리는 `diagram_opt`가 따로 낸다.)
-    for level, text in items:
+    for level, text in items or []:
         text = (text or "").strip()
         if not text:
             continue
@@ -243,45 +261,20 @@ def omission_draft(label: str) -> Draft:
     return Draft(option=1, text=_tn(f"{label} 생략"), render_mode="narrative", label=LABELS[OMIT_IDX])
 
 
-def title_draft(label: str, title: str) -> Draft:
-    """1안: 짧은 제목(캡션 그대로 또는 생성).
 
-    ★ 재료가 없을 때 `f"{label} 생략"`으로 떨어뜨리지 않는다(2026-08-12 대표 지시).
-      '생략'은 **0안의 몫**이다. 여기서 같은 문구를 내면 점역사 피커에 같은 선택지가
-      두 번 뜨고, 6안을 둔 목적(설명 방식을 **고르게** 한다)이 무너진다.
-      실측: 캡션이 없는 조건의 코퍼스 job에서 2안의 41.3%가 "…생략"이었고,
-      4안 중 서로 다른 것이 4개인 요소는 10%뿐이었다.
-      재료가 없으면 유형만 남긴다 — 그리고 그렇게 겹친 안은 `_dedupe`가 접는다.
-    """
-    title = _strip_dup_type(title, label)      # "그래프: 그래프: …" 중복 방지
-    body = f"{label}: {title}".strip().rstrip(":") if title else label
-    return Draft(option=2, text=_tn(body), render_mode="narrative", label=LABELS[TITLE_IDX])
-
-
-def outline_draft(
+def desc_draft(
     label: str, title: str, desc: str, items: list[tuple[int, str]], kind: str = ""
 ) -> tuple[Draft, list[int]]:
-    """2안: 위계 개조식(제목 5칸 + 유형/설명 점역자주 + 전사 항목). 반환 (Draft, line_indents)."""
-    text, indents = _outline_text_indents(label, title, desc, items, kind)
-    return Draft(option=3, text=text, render_mode="narrative", label=LABELS[OUTLINE_IDX]), indents
+    """1안: 설명(규정 §6.1.1(2) "점역자의 설명으로 대체"). 반환 (Draft, line_indents).
 
-
-def prose_draft(label: str, prose: str) -> Draft:
-    """3안: 줄글 자세한 설명. 재료 없으면 유형만(‘생략’은 0안 몫 — `title_draft` 주석)."""
-    body = (prose or "").strip()
-    body = _strip_dup_type(body, label)
-    return Draft(option=4, text=_tn(f"{label}: {body}" if body else label),
-                 render_mode="narrative", label=LABELS[PROSE_IDX])
-
-
-def typeonly_draft(label: str) -> Draft:
-    """4안: 유형만(`,'그림,'`) — 설명 없이 거기 무엇이 있었는지만 알린다.
-
-    「점자 도서 제작 지침」 [예 3-30] '내용을 설명하기 어려운 시각 자료'가 이 형식이다.
-    정답 실측 176건(13.6%)이고 014·015 본책은 이게 최빈(51~54%)이다.
+    제목 5칸 + 유형/설명 점역자주 + 전사 항목. gold 실측이 여러 줄 94.5%·글머리 18.6%라
+    이 배치가 정답에 가장 가깝다. 종전에는 이것을 '개조식'이라 부르고 '줄글'·'짧은 제목'을
+    따로 냈는데, 규정은 "설명" 하나이고 gold도 형식이 안 갈려 2026-08-20에 묶었다.
     """
-    return Draft(option=5, text=_tn(label), render_mode="narrative",
-                 label=LABELS[TYPEONLY_IDX], type_label=label)
+    text, indents = _outline_text_indents(label, title, desc, items, kind)
+    return Draft(option=2, text=text, render_mode="narrative", label=LABELS[DESC_IDX]), indents
+
+
 
 
 def _dedupe(drafts: list[Draft], selected_idx: int) -> tuple[list[Draft], int]:
@@ -316,8 +309,11 @@ def _no_material(*parts: str) -> bool:
 
 
 def extra_drafts(label: str, ref: str = "") -> list[Draft]:
-    """4·5안(유형만·별책 참조). 공통 빌더와 도표 골격 경로가 같이 쓴다."""
-    return [typeonly_draft(label), volume_ref_draft(label, ref)]
+    """2안(참조). 공통 빌더와 도표 골격 경로가 같이 쓴다.
+
+    ★ 2026-08-20 — '유형만'을 뺐다. 규정에 없고 gold 실측 **0건**이라 근거가 없다.
+    """
+    return [volume_ref_draft(label, ref)]
 
 
 def volume_ref_draft(label: str, ref: str = "") -> Draft:
@@ -456,8 +452,6 @@ async def build_visual_drafts(
     # (실측 안별 붕괴율: 개조식 0.0% vs 짧은 제목·줄글 각 41.3%). 같은 재료를 셋이 나눠 쓴다.
     struct_text = " ".join(t for _lv, t in (struct_outline or []) if t).strip()
 
-    # 짧은 제목: 인쇄 캡션 우선(요건 — "캡션 있으면 그대로"), 단 장문 AI 캡션은 짧게 축약. 없으면 제목/LLM.
-    short_title = _shorten(caption) or title or llm_title or _shorten(struct_text) or ""
     # 개조식: 5칸 제목줄 = 구조적 표제(title), 점역자주 설명 = 캡션/생성 설명.
     outline_items = struct_outline if struct_outline is not None else llm_outline
     # ※ 항목이 비면 캡션 여러 줄이 `_tn()`의 `_oneline`에 접혀 한 줄 점역자주가 된다
@@ -478,12 +472,12 @@ async def build_visual_drafts(
              else (llm_prose or caption or title or struct_text))
 
     d_omit = omission_draft(label)
-    d_title = title_draft(label, short_title)
-    d_outline, indents = outline_draft(label, title, outline_desc, outline_items, kind)
-    d_prose = prose_draft(label, prose)
-    drafts = [d_omit, d_title, d_outline, d_prose, *extra_drafts(label)]
+    d_desc, indents = desc_draft(label, title, outline_desc, outline_items, kind)
+    drafts = [d_omit, d_desc, *extra_drafts(label)]
 
-    selected_idx = OMIT_IDX if decorative else OUTLINE_IDX
+    # 기본은 설명이다. gold 실측에서 설명이 79.6%로 압도한다(생략 12.2% · 참조 8.0%).
+    # 장식용이면 생략이 기본이다(§6.1.1(3)② "시각적 장식 용도로 삽입된 시각 자료").
+    selected_idx = OMIT_IDX if decorative else DESC_IDX
 
     # ★ 재료가 하나도 없으면 **생략 한 안만** 낸다 (2026-08-12 대표 지시).
     #   캡션·제목·원본 글자가 다 없으면 짧은 제목·개조식·줄글은 낼 게 없어 전부
@@ -498,7 +492,7 @@ async def build_visual_drafts(
 
     # 재료가 조금이라도 있으면 6안을 내되, 문구가 똑같아진 안은 접는다.
     drafts, selected_idx = _dedupe(drafts, selected_idx)
-    line_indents = indents if drafts[selected_idx] is d_outline else None
+    line_indents = indents if drafts[selected_idx] is d_desc else None
     logger.info("    4안 %s %s: %.1fs (tier=%s%s)", kind, str(ext.element_id)[:8],
                 time.monotonic() - _t0, tier, ", LLM" if use_llm else "")
     return drafts, selected_idx, line_indents, tier, caption_source(

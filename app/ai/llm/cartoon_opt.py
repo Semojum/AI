@@ -1,6 +1,6 @@
-"""PART 8-2 — 만화 점역 최적화 (§5.3 규정 + 대체텍스트 4안).
+"""PART 8-2 — 만화 점역 최적화 (§5.3 규정 + 대체텍스트 3안).
 
-시각자료 대체텍스트 4안(QA 2026-07-05) — 생략 / 짧은 제목 / 개조식 / 줄글.
+시각자료 대체텍스트 3안(2026-08-20) — 생략 / 설명 / 참조.
 만화는 구조(structure.panels)가 있으면 개조식이 곧 §5.3 골격(장면·대사 전사)이고, 줄글은
 이야기 흐름 설명이다. 대사(§5.3.3(2)(3))는 rule-based 전사, 캡션만 있으면 LLM이 채운다.
 """
@@ -113,7 +113,7 @@ def _caption_items(caption: str) -> tuple[str, list[tuple[int, str]]]:
 
 
 class CartoonOpt(BaseOpt):
-    """ExtractedContent 목록 → LLMOutput 목록 (만화). 대체텍스트 4안."""
+    """ExtractedContent 목록 → LLMOutput 목록 (만화). 대체텍스트 3안."""
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
         st = ext.structure or {}
