@@ -243,3 +243,19 @@ class TestGpuSpan:
         u = R.usage_report()
         assert u["gpu_time_ms"] > 0
         assert u["cost_usd"] == 0, u["cost_usd"]          # GPU는 금액 합계에 안 더한다
+
+    def test_gpu_시간은_HCXT_예산을_안_먹는다(self) -> None:
+        """예산이 소진되면 요소가 외부 API 폴백으로 넘어간다 — 즉 출력이 바뀐다.
+
+        MinerU 시간을 예산에 섞으면 추출이 느린 쪽에서만 폴백이 걸려 같은 입력에
+        다른 결과가 난다. 2026-08-21에 gpu_span을 배선하면서 한 번 섞였던 자리다.
+        """
+        import time
+        from app.utils import req_log as R
+        R.start_request()
+        R.set_hcxt_budget(1.0) if hasattr(R, "set_hcxt_budget") else None
+        with R.gpu_span("추출"):
+            time.sleep(0.05)
+        st = R._cur()
+        assert st.hcxt_used() == 0.0, st.hcxt_used()
+        assert R.usage_report()["gpu_time_ms"] >= 45      # 관측값은 그대로 남는다

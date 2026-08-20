@@ -99,7 +99,14 @@ class _ReqStats:
         return self.llm.setdefault((kind or "기타", model or "unknown"), _LlmEntry())
 
     def hcxt_used(self) -> float:
-        return sum(p.hcxt_time_s + p.gpu_time_s for p in self.parts.values())
+        """HCXT **예산** 계산용 — HCXT에 쓴 시간만 센다.
+
+        ⚠ 여기에 `gpu_time_s`(MinerU 등)를 더하면 안 된다. 이 값은 `hcxt_budget_remaining`이
+        쓰고, 예산이 소진되면 요소가 외부 API 폴백으로 넘어간다 — 즉 **출력이 바뀐다.**
+        MinerU 시간을 섞으면 추출이 느린 쪽에서만 폴백이 걸려 같은 입력에 다른 결과가 난다.
+        관측용 합계는 `_totals()['gpu_seconds']`가 따로 낸다(2026-08-21).
+        """
+        return sum(p.hcxt_time_s for p in self.parts.values())
 
 
 # 요청 단위 통계(async-safe, contextvar).
