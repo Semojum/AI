@@ -215,3 +215,31 @@ class TestExtLlmCounter:
         rl.record_llm("캡셔닝", "claude-sonnet-5", 100, 10)
         rl.record_llm("분류", "gpt-4o", 100, 10)
         assert rl.api_counts() == {"hcxt": 0, "llm": 2}
+
+
+class TestGpuSpan:
+    """GPU 점유 시간 (2026-08-20 대표 지시).
+
+    종전에는 `gpu_seconds`가 HCXT 시간만 세어 30/30쪽 전부 0이었다. HCXT가 비활성이고
+    실제 GPU를 쓰는 것은 MinerU 서브프로세스인데 그 구간을 재는 자리가 없었다.
+    """
+
+    def test_gpu_span이_시간을_남긴다(self) -> None:
+        import time
+        from app.utils import req_log as R
+        R.start_request()
+        with R.gpu_span("추출"):
+            time.sleep(0.05)
+        u = R.usage_report()
+        assert u["gpu_time_ms"] >= 45, u["gpu_time_ms"]
+
+    def test_gpu는_쪽당_원가에_안_들어간다(self) -> None:
+        """AWS 인스턴스 시간으로 따로 매기므로 쪽마다 안분하면 이중 계상이다."""
+        import time
+        from app.utils import req_log as R
+        R.start_request()
+        with R.gpu_span("추출"):
+            time.sleep(0.02)
+        u = R.usage_report()
+        assert u["gpu_time_ms"] > 0
+        assert u["cost_usd"] == 0, u["cost_usd"]          # GPU는 금액 합계에 안 더한다

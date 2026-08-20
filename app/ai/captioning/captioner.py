@@ -1,5 +1,8 @@
 """
-GPT-4o로 크롭 이미지를 한국어 텍스트로 묘사.
+외부 VLM으로 크롭 이미지를 한국어 텍스트로 묘사.
+
+백엔드·모델은 환경변수로 고른다(CAPTION_BACKEND·CAPTION_MODEL). 기본은 anthropic이다.
+특정 모델에 매이지 않는다 — 라우팅이 쉬운 건 싼 모델, 어려운 건 비싼 모델로 보낸다.
 image/cartoon/chart 각각 다른 프롬프트 사용.
 """
 import re
@@ -314,8 +317,8 @@ def _maybe_upscale(raw: bytes) -> bytes:
         return raw
 
 
-# 백엔드 전환 — 모델 비교 실험용. 기본은 기존 GPT-4o 경로 그대로.
-#   CAPTION_BACKEND=anthropic CAPTION_MODEL=claude-sonnet-5
+# 백엔드 전환 — CAPTION_BACKEND로 고른다(기본 anthropic). 모델은 CAPTION_MODEL.
+#   예: CAPTION_BACKEND=openai CAPTION_MODEL=gpt-4o
 def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
     import anthropic
     from app.core.limits import estimate_tokens, llm_limiter

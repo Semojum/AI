@@ -355,11 +355,14 @@ async def _extract_via_models(
             #   '느린 페이지'로 오인돼 끊긴다. 상한은 비정상 탐지기이므로 그러면
             #   탐지기가 망가진다. 대기는 페이지 예산(180초) 쪽에서만 계산한다.
             from app.core.limits import mineru_slot
+            from app.utils.req_log import gpu_span
             async with mineru_slot():
-                merged = await asyncio.to_thread(
-                    mineru_run, tmp_path, task.page_no, task.job_id, "OCR",
-                    timeout=config.mineru_timeout_resolved,
-                )
+                # 슬롯을 잡은 뒤부터 잰다 — 큐 대기는 GPU 점유가 아니다.
+                with gpu_span("추출"):
+                    merged = await asyncio.to_thread(
+                        mineru_run, tmp_path, task.page_no, task.job_id, "OCR",
+                        timeout=config.mineru_timeout_resolved,
+                    )
             result = await asyncio.to_thread(
                 build_result, merged, task.job_id, task.page_no, "OCR",
             )

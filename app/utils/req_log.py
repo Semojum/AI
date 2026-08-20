@@ -19,6 +19,7 @@
 """
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import functools
 import time
@@ -72,6 +73,7 @@ class _PartApi:
     """한 파트(kind)의 **로컬 GPU** 사용 누계. 외부 LLM은 `_LlmEntry`가 맡는다."""
     hcxt_calls: int = 0
     hcxt_time_s: float = 0.0
+    gpu_time_s: float = 0.0        # HCXT 밖 GPU 경로 점유(벽시계)
     hcxt_timeouts: int = 0
     hcxt_fails: int = 0
     gpu_cost: float = 0.0         # HCXT 점유 시간 안분(USD)
@@ -97,7 +99,7 @@ class _ReqStats:
         return self.llm.setdefault((kind or "기타", model or "unknown"), _LlmEntry())
 
     def hcxt_used(self) -> float:
-        return sum(p.hcxt_time_s for p in self.parts.values())
+        return sum(p.hcxt_time_s + p.gpu_time_s for p in self.parts.values())
 
 
 # 요청 단위 통계(async-safe, contextvar).
@@ -221,6 +223,33 @@ def record_hcxt(kind: str, elapsed_s: float = 0.0, *, timed_out: bool = False, f
         p.hcxt_fails += 1
 
 
+def record_gpu(kind: str, elapsed_s: float) -> None:
+    """GPU 경로에 머문 시간 1건 기록(HCXT 밖 — MinerU 서브프로세스·로컬 모델 추론).
+
+    ★ 이 값은 **벽시계**다(2026-08-20 대표 지시). 순수 연산 시간이 아니라 상한이다 —
+      모델 로드와 파일 입출력이 섞인다. MinerU는 별도 프로세스라 우리 프로세스 안에서
+      GPU 점유를 직접 볼 수 없고, nvidia-smi를 폴링하면 여러 쪽이 동시에 돌 때 어느 쪽
+      몫인지 못 가른다. 쓰임이 '얼마나 머물렀는지 보는 것'이라 벽시계로 충분하다.
+      쪽당 원가에는 안 들어간다(AWS 인스턴스 시간으로 따로 매긴다 — `usage_report` 주석).
+
+    종전에는 `gpu_seconds`가 HCXT 시간만 셌다. HCXT가 비활성이라 30/30쪽 전부 0이었다.
+    """
+    st = _cur()
+    if st is None:
+        return
+    st.part(kind).gpu_time_s += max(0.0, elapsed_s)
+
+
+@contextlib.contextmanager
+def gpu_span(kind: str):
+    """`with gpu_span("추출"):` — 블록에 머문 시간을 GPU 점유로 기록한다."""
+    t0 = time.monotonic()
+    try:
+        yield
+    finally:
+        record_gpu(kind, time.monotonic() - t0)
+
+
 # ── 하위호환 shim(구 호출부) ────────────────────────────────────────────────
 
 def inc_hcxt() -> None:
@@ -255,7 +284,7 @@ def _totals() -> dict:
         "cache_write_tokens": addl(lambda e: e.cache_write_tokens),
         "cost": addl(lambda e: e.cost),
         "gpu_cost": add(lambda p: p.gpu_cost),
-        "gpu_seconds": add(lambda p: p.hcxt_time_s),
+        "gpu_seconds": add(lambda p: p.hcxt_time_s + p.gpu_time_s),
         "unpriced_calls": sum(e.calls for e in st.llm.values() if e.unpriced),
         "models": sorted({m for _k, m in st.llm}),
     }
@@ -296,7 +325,8 @@ def usage_report() -> dict:
     # ★ GPU는 쪽당 원가에 넣지 않는다(대표 지시 2026-08-20). AWS 서버 비용은 인스턴스
     #   시간으로 따로 매기므로 쪽마다 안분하면 이중 계상이 된다. 점유 시간(gpu_seconds)은
     #   관측값으로 계속 남기되 금액 합계에는 더하지 않는다.
-    #   ※ 실측으로도 HCXT가 off라 gpu_seconds가 늘 0이었다(2026-08-20 검증 30/30쪽).
+    #   ※ gpu_seconds는 HCXT 시간만 세어 30/30쪽 전부 0이었다. 2026-08-20에 MinerU
+    #     서브프로세스와 로컬 모델 추론 구간을 `gpu_span`으로 같이 재게 배선했다.
     total = t["cost"]
     return {
         # ── proto로 나가는 측정값 ──

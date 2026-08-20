@@ -122,7 +122,7 @@ app/
 3. **요소 단위 격리**: 6-체인은 반드시 `asyncio.gather(return_exceptions=True)`. 한 요소 실패가 페이지를 막지 않음.
 4. **C5 배포 블로커**: 아라비아 숫자는 수표(⠼) 없이 점형 시작 불가. 로직은 `kor_math_rules.digits_to_braille`/`_num_replace`(`_NUMBER_INDICATOR="⠼"`). `test/unit_test/braille/test_rule_engine.py` 전수 통과(1차 방어선, 미통과=배포 차단) + `quality_checker`의 런타임 C5 스캐너(2차, 2026-07-13: opt 텍스트에 숫자가 있는데 요소 점자에 ⠼ 0개면 C5 — rule-based 요소만, 시각자료는 R5 소관이라 제외).
 5. **2-GPU 정적 배치**: VRAM Swap 코드 금지. `model_manager.load_all` 1회 로드 후 상주. GPU0=Qwen3-VL+YOLO+TableFormer, GPU1=HyperCLOVA X.
-6. **이미지 캡셔닝=GPT-4o**: image/cartoon/chart_graph 캡셔닝(7/8/9-1)은 GPT-4o. Qwen3-VL로 캡셔닝 금지(레이아웃·OCR 전담).
+6. **이미지 캡셔닝=외부 VLM**: image/cartoon/chart_graph 캡셔닝(7/8/9-1)은 외부 VLM API. 백엔드·모델은 `CAPTION_BACKEND`·`CAPTION_MODEL`로 고른다(현재 기본 `anthropic`). **특정 모델로 못박지 말 것**(2026-08-20 대표 지시) — 라우팅이 쉬운 건 싼 모델, 어려운 건 비싼 모델로 보내므로 앞으로 여럿이다. 불변인 것은 **Qwen3-VL로 캡셔닝 금지**(레이아웃·OCR 전담)뿐이다.
 7. **Pydantic v2**: `.model_dump()`/`.model_validate()` 사용. `.dict()` 금지.
 8. **braillify 주의**: `substitute_symbols()` 결과의 점자 Unicode(U+2800–U+28FF)를 braillify에 직접 넘기면 이중 변환. `_emit_mixed`로 세그먼트 분리 필수. braillify 2.0.0은 `\x00`·PUA·em dash(—) 거부 → 플레이스홀더 방식 금지.
 9. **입력 태깅 규약**(정본 plan §3-5): 점역 직전 텍스트의 인라인 태그는 **`<!이름>`**(여는)·**`<!/이름>`**(닫는, `/`는 `!` 바로 뒤) 단일 형식. 유일 인식 앵커 `<!`, 정규식 `<!(/?)([^>]+)>`. `translator.py`가 `태그명→점자 글리프`(다대일) 치환 — 점역자 주 = 양끝 `⠠⠄`, 글상자=표 테두리 `⠿⠛…/⠿⠶…`. **`[점역사주]` 리터럴 + `strip_tn_marker()` 방식 금지**(그대로 점자화하면 한글 음절이 찍힘). 줄 배치·32칸은 `layout_braille.py` 담당.
