@@ -81,3 +81,20 @@ def test_점역은_두_번_돌려도_같다() -> None:
     src = "<!주>그림: 연도별 인구 5,200만 명<!/주> 사회·문화 현상 A와 B"
     outs = {translate_tagged_text(src) for _ in range(5)}
     assert len(outs) == 1, outs
+
+
+def test_CHAIN_SEQUENTIAL이_같은_결과를_낸다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """진단 스위치가 산출을 바꾸면 안 된다 — 순서만 바꾸는 것이지 내용이 아니다."""
+    from app.core import pipeline as P
+
+    async def _ok(v):
+        return v
+
+    async def _boom():
+        raise RuntimeError("체인 실패")
+
+    for seq in ("0", "1"):
+        monkeypatch.setenv("CHAIN_SEQUENTIAL", seq)
+        got = asyncio.run(P._gather_chains([_ok("a"), _boom(), _ok("c")]))
+        assert got[0] == "a" and got[2] == "c", got
+        assert isinstance(got[1], Exception), got      # 요소 격리 계약(불변 규칙 3)
