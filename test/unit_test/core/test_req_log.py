@@ -259,3 +259,31 @@ class TestGpuSpan:
         st = R._cur()
         assert st.hcxt_used() == 0.0, st.hcxt_used()
         assert R.usage_report()["gpu_time_ms"] >= 45      # 관측값은 그대로 남는다
+
+
+class TestMineruLogRotation:
+    """MinerU 로그가 무한정 자라지 않는다 (2026-08-21 QA).
+
+    이어붙이기만 하다 16MB까지 자랐다. MinerU가 쪽마다 INFO를 쏟는데, 그러면 정작
+    이 로그를 남긴 목적(기동 실패 원인)이 묻힌다.
+    """
+
+    def test_상한을_넘으면_직전_한_벌로_밀린다(self, tmp_path, monkeypatch) -> None:
+        import subprocess
+        from app.ai.parser import mineru_service as MS
+
+        log = tmp_path / "mineru_api.log"
+        log.write_bytes(b"x" * 2048)
+        monkeypatch.setenv("MINERU_API_LOG", str(log))
+        monkeypatch.setenv("MINERU_API_LOG_MAX_MB", "0")     # 0MB = 항상 회전
+        # 이미 떠 있는 서비스를 재사용하면 회전 코드까지 안 간다 — 없는 것으로 만든다
+        monkeypatch.delenv("MINERU_API_URL", raising=False)
+        monkeypatch.setattr(MS, "_health", lambda *a, **k: False)
+        monkeypatch.setattr(MS.subprocess, "Popen", lambda *a, **k: (_ for _ in ()).throw(
+            RuntimeError("기동은 하지 않는다")))
+        try:
+            MS.ensure_started()
+        except Exception:                                     # noqa: BLE001 — 기동 실패는 무관
+            pass
+        assert log.with_suffix(".log.1").exists(), "직전 한 벌이 안 남았다"
+        assert log.with_suffix(".log.1").read_bytes() == b"x" * 2048

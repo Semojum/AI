@@ -990,6 +990,6 @@ def run(
         with open(base / "merged_layout.json", "w", encoding="utf-8") as f:
             json.dump(layout_json, f, ensure_ascii=False, indent=2)
 
-    print(f"[mineru_runner] page {page_no}: {len(merged_layout)}개 요소, "
-          f"이미지 {sum(1 for e in merged_layout if e.get('image_path'))}개")
+    logger.info("page %d: %d개 요소, 이미지 %d개", page_no, len(merged_layout),
+                sum(1 for e in merged_layout if e.get("image_path")))
     return merged_layout

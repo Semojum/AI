@@ -439,5 +439,5 @@ def build(
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
 
-    print(f"[result_builder] {out_path} 저장 ({len(elements)}개 요소)")
+    logger.info("경계 파일 저장: %s (%d개 요소)", out_path, len(elements))
     return result

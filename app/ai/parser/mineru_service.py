@@ -171,6 +171,14 @@ def ensure_started(wait: float = 240.0) -> str | None:
         "MINERU_API_LOG", str(Path.cwd() / "storage" / "logs" / "mineru_api.log")))
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        # ★ 회전(2026-08-21). 이어붙이기만 하다 보니 16MB까지 자랐다. MinerU가 쪽마다
+        #   INFO를 쏟아 기동 실패 원인이 오히려 묻힌다 — 로그를 남기는 목적이 그거였는데.
+        #   기동 시점에 한 번만 본다(도는 중에는 안 자른다 — 파일 핸들이 열려 있다).
+        cap = int(os.environ.get("MINERU_API_LOG_MAX_MB", "32")) * 1024 * 1024
+        if log_path.exists() and log_path.stat().st_size > cap:
+            prev = log_path.with_suffix(".log.1")
+            prev.unlink(missing_ok=True)
+            log_path.rename(prev)          # 직전 한 벌만 남긴다
         sink = open(log_path, "ab")
     except Exception:  # noqa: BLE001
         sink = subprocess.DEVNULL
