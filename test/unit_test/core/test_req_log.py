@@ -215,3 +215,75 @@ class TestExtLlmCounter:
         rl.record_llm("캡셔닝", "claude-sonnet-5", 100, 10)
         rl.record_llm("분류", "gpt-4o", 100, 10)
         assert rl.api_counts() == {"hcxt": 0, "llm": 2}
+
+
+class TestGpuSpan:
+    """GPU 점유 시간 (2026-08-20 대표 지시).
+
+    종전에는 `gpu_seconds`가 HCXT 시간만 세어 30/30쪽 전부 0이었다. HCXT가 비활성이고
+    실제 GPU를 쓰는 것은 MinerU 서브프로세스인데 그 구간을 재는 자리가 없었다.
+    """
+
+    def test_gpu_span이_시간을_남긴다(self) -> None:
+        import time
+        from app.utils import req_log as R
+        R.start_request()
+        with R.gpu_span("추출"):
+            time.sleep(0.05)
+        u = R.usage_report()
+        assert u["gpu_time_ms"] >= 45, u["gpu_time_ms"]
+
+    def test_gpu는_쪽당_원가에_안_들어간다(self) -> None:
+        """AWS 인스턴스 시간으로 따로 매기므로 쪽마다 안분하면 이중 계상이다."""
+        import time
+        from app.utils import req_log as R
+        R.start_request()
+        with R.gpu_span("추출"):
+            time.sleep(0.02)
+        u = R.usage_report()
+        assert u["gpu_time_ms"] > 0
+        assert u["cost_usd"] == 0, u["cost_usd"]          # GPU는 금액 합계에 안 더한다
+
+    def test_gpu_시간은_HCXT_예산을_안_먹는다(self) -> None:
+        """예산이 소진되면 요소가 외부 API 폴백으로 넘어간다 — 즉 출력이 바뀐다.
+
+        MinerU 시간을 예산에 섞으면 추출이 느린 쪽에서만 폴백이 걸려 같은 입력에
+        다른 결과가 난다. 2026-08-21에 gpu_span을 배선하면서 한 번 섞였던 자리다.
+        """
+        import time
+        from app.utils import req_log as R
+        R.start_request()
+        R.set_hcxt_budget(1.0) if hasattr(R, "set_hcxt_budget") else None
+        with R.gpu_span("추출"):
+            time.sleep(0.05)
+        st = R._cur()
+        assert st.hcxt_used() == 0.0, st.hcxt_used()
+        assert R.usage_report()["gpu_time_ms"] >= 45      # 관측값은 그대로 남는다
+
+
+class TestMineruLogRotation:
+    """MinerU 로그가 무한정 자라지 않는다 (2026-08-21 QA).
+
+    이어붙이기만 하다 16MB까지 자랐다. MinerU가 쪽마다 INFO를 쏟는데, 그러면 정작
+    이 로그를 남긴 목적(기동 실패 원인)이 묻힌다.
+    """
+
+    def test_상한을_넘으면_직전_한_벌로_밀린다(self, tmp_path, monkeypatch) -> None:
+        import subprocess
+        from app.ai.parser import mineru_service as MS
+
+        log = tmp_path / "mineru_api.log"
+        log.write_bytes(b"x" * 2048)
+        monkeypatch.setenv("MINERU_API_LOG", str(log))
+        monkeypatch.setenv("MINERU_API_LOG_MAX_MB", "0")     # 0MB = 항상 회전
+        # 이미 떠 있는 서비스를 재사용하면 회전 코드까지 안 간다 — 없는 것으로 만든다
+        monkeypatch.delenv("MINERU_API_URL", raising=False)
+        monkeypatch.setattr(MS, "_health", lambda *a, **k: False)
+        monkeypatch.setattr(MS.subprocess, "Popen", lambda *a, **k: (_ for _ in ()).throw(
+            RuntimeError("기동은 하지 않는다")))
+        try:
+            MS.ensure_started()
+        except Exception:                                     # noqa: BLE001 — 기동 실패는 무관
+            pass
+        assert log.with_suffix(".log.1").exists(), "직전 한 벌이 안 남았다"
+        assert log.with_suffix(".log.1").read_bytes() == b"x" * 2048

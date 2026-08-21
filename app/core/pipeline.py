@@ -297,6 +297,26 @@ def _write_stage(task: PageTask, dir_name: str, filename: str, objs: list) -> No
 
 # ── 현주 추출 (Phase 1) — data/NNN_txt_result.json 생성 ────────────────────
 
+async def _gather_chains(coros):
+    """체인들을 모아 실행. 요소 격리(불변 규칙 3)를 위해 예외를 값으로 돌려준다.
+
+    ★ `CHAIN_SEQUENTIAL=1`이면 gather 대신 **순차 await**로 돈다(2026-08-21).
+      진단 전용 스위치다 — 같은 입력에 산출이 갈리는 쪽이 있는데(NULL 두 벌 1/709,
+      실험 두 벌 34/709), 그 원인이 체인 동시 실행의 공유 상태인지 가리려면 순차 조건이
+      필요하다. 순차에서도 갈리면 동시성이 아니고, 안 갈리면 동시성이 원인이다.
+      기본은 꺼져 있고, 켜면 느려지므로 운영에서는 쓰지 않는다.
+    """
+    if os.environ.get("CHAIN_SEQUENTIAL") == "1":
+        out = []
+        for c in coros:
+            try:
+                out.append(await c)
+            except Exception as exc:      # noqa: BLE001 — gather(return_exceptions=True)와 같은 계약
+                out.append(exc)
+        return out
+    return await asyncio.gather(*coros, return_exceptions=True)
+
+
 def _blocks_from_text(pdf_text: Optional[str]) -> list[dict]:
     """ZERO 폴백: 블록 추출이 비면 텍스트를 줄 단위 요소로(좌표 없음)."""
     elements: list[dict] = []
@@ -355,11 +375,14 @@ async def _extract_via_models(
             #   '느린 페이지'로 오인돼 끊긴다. 상한은 비정상 탐지기이므로 그러면
             #   탐지기가 망가진다. 대기는 페이지 예산(180초) 쪽에서만 계산한다.
             from app.core.limits import mineru_slot
+            from app.utils.req_log import gpu_span
             async with mineru_slot():
-                merged = await asyncio.to_thread(
-                    mineru_run, tmp_path, task.page_no, task.job_id, "OCR",
-                    timeout=config.mineru_timeout_resolved,
-                )
+                # 슬롯을 잡은 뒤부터 잰다 — 큐 대기는 GPU 점유가 아니다.
+                with gpu_span("추출"):
+                    merged = await asyncio.to_thread(
+                        mineru_run, tmp_path, task.page_no, task.job_id, "OCR",
+                        timeout=config.mineru_timeout_resolved,
+                    )
             result = await asyncio.to_thread(
                 build_result, merged, task.job_id, task.page_no, "OCR",
             )
@@ -1378,7 +1401,7 @@ async def _run_pipeline(task: PageTask) -> dict:
                                             include_braille=True))
         # 요소 격리(불변 규칙 3) — 표 하나가 깨져도 본문은 나가야 한다.
         ext, llm_outputs, braille_outputs = [], [], []
-        for _r in await asyncio.gather(*_chains, return_exceptions=True):
+        for _r in await _gather_chains(_chains):
             if isinstance(_r, Exception):
                 logger.error("mode b 체인 실패 (계속 진행): %s", _r)
                 continue
@@ -1449,11 +1472,9 @@ async def _run_pipeline(task: PageTask) -> dict:
 
     with stage("점역", gpu=True) as st:
         st.note = _type_breakdown(layout_result)
-        chain_results = await asyncio.gather(
-            *(_run_chain_logged(label, elems, fn, i, len(active))
-              for i, (label, elems, fn) in enumerate(active)),
-            return_exceptions=True,
-        )
+        chain_results = await _gather_chains(
+            [_run_chain_logged(label, elems, fn, i, len(active))
+             for i, (label, elems, fn) in enumerate(active)])
 
     all_extracted: list[ExtractedContent] = []
     all_llm: list[LLMOutput] = []

@@ -1,5 +1,5 @@
 """
-GPT-4o로 크롭 이미지를 image / cartoon / chart 중 하나로 분류.
+외부 VLM으로 크롭 이미지를 image / cartoon / chart 중 하나로 분류(모델은 설정으로 고른다).
 """
 import base64
 import math

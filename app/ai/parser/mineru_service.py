@@ -148,6 +148,13 @@ def ensure_started(wait: float = 240.0) -> str | None:
         env["LD_LIBRARY_PATH"] = f"{ld}{os.pathsep}{prev}" if prev else ld
     if config.mineru_batch_invariant:
         # 같은 입력 → 같은 출력. 끄면 같은 조건 재실행이 80.0%만 일치해 A/B가 불가능하다.
+        # ★ 켜도 100%는 아니다(2026-08-21 실측). 같은 커밋·같은 조건 두 벌에서 최종 산출이
+        #   갈린 쪽이 **1/709(0.14%)** 있었다 — MinerU vlm 추론이 표 요소에서 새는 자리가
+        #   남는다(EBS-E26-014 p0079, table_body가 갈려 점자 2줄 차이).
+        #   레버는 이것뿐이다: mineru CLI·mineru-api 어느 쪽에도 seed·temperature 옵션이
+        #   없고(--host/--port/--reload/--allow-public-http-client/--enable-vlm-preload가 전부),
+        #   vLLM 엔진 인자는 MinerU 내부에서 만들어 우리가 못 준다.
+        #   → 추출 계열 A/B의 **총편집 잡음 바닥 ±10셀은 구조적 하한**이다. 없앨 수 없다.
         env.setdefault("VLLM_BATCH_INVARIANT", "1")
 
     # vLLM이 선점할 VRAM 비율. MinerU 기본 0.5는 HCXT와 GPU 한 장을 나눠 쓰는
@@ -164,6 +171,14 @@ def ensure_started(wait: float = 240.0) -> str | None:
         "MINERU_API_LOG", str(Path.cwd() / "storage" / "logs" / "mineru_api.log")))
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        # ★ 회전(2026-08-21). 이어붙이기만 하다 보니 16MB까지 자랐다. MinerU가 쪽마다
+        #   INFO를 쏟아 기동 실패 원인이 오히려 묻힌다 — 로그를 남기는 목적이 그거였는데.
+        #   기동 시점에 한 번만 본다(도는 중에는 안 자른다 — 파일 핸들이 열려 있다).
+        cap = int(os.environ.get("MINERU_API_LOG_MAX_MB", "32")) * 1024 * 1024
+        if log_path.exists() and log_path.stat().st_size > cap:
+            prev = log_path.with_suffix(".log.1")
+            prev.unlink(missing_ok=True)
+            log_path.rename(prev)          # 직전 한 벌만 남긴다
         sink = open(log_path, "ab")
     except Exception:  # noqa: BLE001
         sink = subprocess.DEVNULL
