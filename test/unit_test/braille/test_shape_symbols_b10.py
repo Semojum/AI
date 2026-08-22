@@ -125,3 +125,17 @@ def test_arrow_after_explain_label_becomes_colon():
     assert "⠐⠂" in tr("정답 해설 ▶ 자료에서")
     assert "⠐⠂" in tr("오답 피하기 ▶ 첫째")
     assert "⠐⠂" not in tr("2배 성장했다. ▶ 관련 기사")   # 본문 중은 그대로 둔다
+
+
+def test_math_hangul_gets_hangul_marker():
+    """수식 안 한글은 한글표 ⠸⠷ … ⠸⠾ 로 묶고, 그 사이 연산자·등호는 붙여 적는다.
+
+    「수학 점자」[붙임]: "한글이 포함된 수식은 … 수식의 일부를 묶어야 할 경우 한글을
+    한글표와 한글 종료표로 묶어 적는다. 괄호 또는 한글표로 묶인 수식 사이의 사칙연산
+    기호·등호 등은 앞뒤를 붙여 적는다."
+    실물 001 body p0165 gold: ⠸⠷개체군 밀도⠸⠾⠒⠒⠸⠷…⠸⠾⠌⠸⠷…⠸⠾ (gold dev 372 · 우리 0회였다).
+    """
+    out = tr("<!수식>\\text {개체군 밀도} = \\frac {\\text {개체군을 구성}}{\\text {개체 수}}<!/수식>")
+    assert out.count("⠸⠷") == out.count("⠸⠾") == 3      # 덩어리마다 한 쌍, 여닫이 균형
+    assert out.startswith("⠸⠷")
+    assert "⠸⠾⠒⠒⠸⠷" in out                             # 등호가 붙는다(공백 없음)
