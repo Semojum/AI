@@ -8,6 +8,7 @@ import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import copy_context
 from pathlib import Path
 
 import fitz
@@ -312,7 +313,20 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
             out[id(el)] = _do_caption_logged(el)
     else:
         with ThreadPoolExecutor(max_workers=min(workers, len(vis))) as pool:
-            futs = {pool.submit(_do_caption_logged, el): el for el in vis}
+            # ★ **컨텍스트를 복사해 넘긴다**(2026-08-23 실측으로 잡은 계정 구멍).
+            #   `req_log`는 요청 통계를 `contextvars`에 담는데 `ThreadPoolExecutor.submit`은
+            #   컨텍스트를 **전파하지 않는다**. 그래서 풀로 간 캡셔닝·분류 호출은
+            #   `record_anthropic`이 통째로 무시했다 — 시각 요소가 하나뿐인 쪽(위 분기,
+            #   부르는 스레드에서 그대로 돈다)만 집계되고 나머지는 사라졌다.
+            #   실측(dev 100쪽 재추출 2026-08-23): 크롭 72장 → 기대 호출 144건인데
+            #   `usage`에 잡힌 것은 **32건뿐**이었고, 캐시 파일은 142개가 쌓였다.
+            #   그만큼 우리 원가 보고가 과소였다(캡셔닝 몫 약 4.5배).
+            #   ⚠ 작업마다 **새 복사본**을 준다 — 같은 `Context`를 두 스레드가 동시에
+            #     들어가면 "cannot enter context" 로 터진다.
+            #   ※ 누계 객체(`_ReqStats`)는 복사본들이 **같은 것을 가리킨다**(맵만 복사된다).
+            #     그래서 합계가 제대로 쌓인다. 카운터 증가는 원자적이지 않으나 관측값이라
+            #     그 정도 경합은 감수한다.
+            futs = {pool.submit(copy_context().run, _do_caption_logged, el): el for el in vis}
             for fut in as_completed(futs):
                 el = futs[fut]
                 try:
