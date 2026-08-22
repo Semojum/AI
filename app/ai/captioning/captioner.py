@@ -334,16 +334,23 @@ def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
     #   (예3-50 순서도: stop_reason=max_tokens, thinking_tokens=499, text 블록 0개).
     #   규정 정답 22건 중 3건(14%)이 이 경로로 빈 캡션이었다. 캡셔닝은 묘사 과제라
     #   사고가 품질을 올리지 않는다 — 끄는 쪽이 정확하고 싸다.
+    # ★ 프롬프트는 `system`에 둔다 — 프롬프트 캐싱(2026-08-23, 대표 지시 API비용 2번).
+    #   캐시는 **접두 일치**이고 요청은 `tools → system → messages` 순으로 렌더된다.
+    #   프롬프트가 사용자 턴에서 이미지 **뒤**에 있으면 접두에 매번 다른 이미지가 끼어
+    #   적중률이 구조적으로 0이다. 캡션 프롬프트는 유형별로 고정이고 1,784~3,041자
+    #   (= 최소 캐시 길이 1,024토큰을 넘는다)라, system으로 올리면 4종 모두 캐시에 얹힌다.
+    #   적중은 `usage.cache_read_input_tokens`로 확인한다 — req_log가 집계해 보고한다.
     resp = client.messages.create(
         model=model,
         max_tokens=500,
         thinking={"type": "disabled"},
+        system=[{"type": "text", "text": prompt,
+                 "cache_control": {"type": "ephemeral"}}],
         messages=[{
             "role": "user",
             "content": [
                 {"type": "image",
                  "source": {"type": "base64", "media_type": mime, "data": b64}},
-                {"type": "text", "text": prompt},
             ],
         }],
     )
