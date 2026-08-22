@@ -74,3 +74,16 @@ def test_black_square_run_is_a_mask_not_bullets():
     assert "⠸⠶⠶⠇" in tr("■■ 대학교는")
     assert "⠸⠶⠶⠇" in tr("앞의 ■■ 회사")
     assert tr("■ 도입: 디지털").startswith(BULLET)     # 홑 ■는 그대로 글머리
+
+
+def test_double_corner_brackets_use_regulation_cells():
+    """겹낫표 『』 = ⠰⠦ … ⠴⠆ (규정 문장부호표). 종전에는 작은따옴표로 바뀌었다.
+
+    gold 실측: 묵자 『 val 412 · dev 11 대 gold ⠰⠦ val 422 · dev 11(1:1).
+    우리는 val 1 · dev 2뿐이었다 — 책 제목이 통째로 다른 부호로 나갔다.
+    ⚠ 홑낫표 「」는 아직 관행(작은따옴표)을 쓴다. gold ⠐⠦에 다른 용도가 섞여 있어
+      실물을 짚기 전까지 건드리지 않는다.
+    """
+    out = tr("『세종실록지리지』")
+    assert out.startswith("⠰⠦") and out.endswith("⠴⠆")
+    assert tr("「홑낫표」 자리").startswith("⠠⠦")     # 홑낫표는 종전 그대로
