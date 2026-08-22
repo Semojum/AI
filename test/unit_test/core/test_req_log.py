@@ -331,3 +331,39 @@ class TestPromptCacheHitRate:
         assert rep["cache_read_tokens"] == 1800
         assert rep["cache_hit_rate"] == pytest.approx(1800 / 2100, abs=1e-4)
         assert rep["models"][0]["cache_read_tokens"] == 1800
+
+
+class TestEffectiveInputTokens:
+    """BE 로 나가는 `input_tokens` 는 「유효 입력」이다 (2026-08-23 대표 결재).
+
+    proto `ModelUsage` 에 캐시 칸이 없고 BE 는 이 값에 입력 단가를 곱한다. 그런데
+    Anthropic `usage.input_tokens` 에는 캐시 토큰이 안 들어 있어서, 실값을 그대로
+    보내면 BE 가 캐시분을 0원으로 친다. 단가 비율로 환산해 더해야 금액이 맞는다.
+    """
+
+    def test_캐시분을_단가_비율로_더한다(self) -> None:
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 300, 50,
+                      cache_read_tokens=2000, cache_write_tokens=400)
+        m = rl.usage_report()["models"][0]
+        assert m["input_tokens"] == round(300 + 400 * 1.25 + 2000 * 0.1)   # 1,000
+        assert m["input_tokens_raw"] == 300, "실값도 같이 남아야 대조가 된다"
+
+    def test_캐시를_안_쓰면_실값_그대로다(self) -> None:
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 300, 50)
+        assert rl.usage_report()["models"][0]["input_tokens"] == 300
+
+    def test_parts_는_실값을_지킨다(self) -> None:
+        # parts[] 는 메트릭 JSONL 전용이라 환산하지 않는다 — 원자료가 한 군데는 남아야 한다.
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 300, 50, cache_read_tokens=2000)
+        part = rl.usage_report()["parts"][0]
+        assert part["input_tokens"] == 300 and part["cache_read_tokens"] == 2000
+
+    def test_proto_매퍼가_유효_입력을_싣는다(self) -> None:
+        from app.core.grpc_server import _dict_to_usage_report
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 300, 50, cache_read_tokens=2000)
+        pb = _dict_to_usage_report(rl.usage_report())
+        assert pb.models[0].input_tokens == 500      # 300 + 2000×0.1
