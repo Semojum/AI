@@ -128,3 +128,30 @@ def test_arrow_after_explain_label_becomes_colon():
     assert "⠐⠂" in tr("정답 해설 ▶ 자료에서")
     assert "⠐⠂" in tr("오답 피하기 ▶ 첫째")
     assert "⠐⠂" not in tr("2배 성장했다. ▶ 관련 기사")   # 본문 중은 그대로 둔다
+
+
+class TestDoubleCircleMask:
+    """◎ 갈래(2026-08-23) — 이름을 가리는 ◎◎ 는 제57항 숨김표다.
+
+    ◎ 는 문자표에 **제72항 붙임의 글머리 셀 ⠸⠴⠴**로 실려 있어서, 가림 자리에서도 그 셀이
+    글자마다 나갔다(`⠸⠴⠴⠸⠴⠴`). 닫음 ⠇ 이 없으니 제57항 숨김표도 아니고 줄머리가 아니니
+    제72항 글머리도 아닌 잡종이다 — dev 실측 우리 28회 대 **gold 0회**.
+    gold 실물 넷이 ○ 의 숨김표 틀을 적는다(004 body p0009·p0128 · 005 body p0149·p0150).
+    """
+
+    def test_문중_런은_숨김표다(self) -> None:
+        # 004 body p0128 실물: 묵자 "표시 ◎◎ 만화 박물관" → gold ⠸⠴⠴⠇ + 만화 박물관.
+        assert MASK_2 in tr("표시 ◎◎ 만화 박물관")
+        assert "⠸⠴⠴⠸⠴⠴" not in tr("표시 ◎◎ 만화 박물관")
+
+    def test_메일_주소_안에서도_잡는다(self) -> None:
+        # 004 body p0009 실물: "news***@◎◎.kr" → gold `⠈⠁⠸⠴⠴⠇⠲⠅⠗`.
+        assert "⠈⠁" + MASK_2 in tr("news***@◎◎.kr")
+
+    def test_줄머리_홑은_글머리로_남는다(self) -> None:
+        # 014 body p0069·p0077 실물: 줄머리 "◎ 문제:" → gold ⠸⠴ (제72항 동그라미 글머리).
+        assert tr("◎ 학생 답안").startswith("⠸⠴⠀")
+
+    def test_문중_홑은_안_건드린다(self) -> None:
+        # 001 body p0040 표 칸 "I (◎)" 는 값 자리다. 근거를 못 짚어 그대로 둔다.
+        assert MASK_2 not in tr("I (◎)")
