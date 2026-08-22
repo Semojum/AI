@@ -64,3 +64,38 @@ class TestGoldDerivedBans:
         # 오늘 §5.3.3(3)로 고친 것 — 이번 변경이 되돌리지 않았는지 확인.
         p = captioner._PROMPTS["cartoon"]
         assert "장면 1" in p and "인물명: 대사" in p and "§5.3.3(2)" in p
+
+
+class TestPromptCaching:
+    """프롬프트를 `system`에 두어 캐시가 얹히는가 (2026-08-23, API비용 2번).
+
+    캐시는 접두 일치이고 렌더 순서가 `tools → system → messages`다. 프롬프트가
+    사용자 턴에서 이미지 **뒤**에 있으면 접두에 매번 다른 이미지가 끼어 적중률이
+    구조적으로 0이 된다 — 캐시를 켰다고 믿는데 한 푼도 안 아끼는 상태다.
+    """
+
+    def _call(self):
+        resp = MagicMock(content=[_Block()], usage=MagicMock(input_tokens=1, output_tokens=1))
+        client = MagicMock()
+        client.messages.create.return_value = resp
+        with patch("anthropic.Anthropic", return_value=client), \
+             patch("app.core.limits.llm_limiter"), \
+             patch("app.utils.req_log.record_anthropic"):
+            captioner._caption_anthropic("Zm9v", "image/png", "설명하세요")
+        return client.messages.create.call_args.kwargs
+
+    def test_프롬프트가_system에_캐시_표시와_함께_간다(self) -> None:
+        kwargs = self._call()
+        assert kwargs["system"] == [{"type": "text", "text": "설명하세요",
+                                     "cache_control": {"type": "ephemeral"}}]
+
+    def test_사용자_턴에는_이미지만_남는다(self) -> None:
+        # 이미지 뒤에 텍스트가 남아 있으면 접두가 매번 달라져 캐시가 안 붙는다.
+        content = self._call()["messages"][0]["content"]
+        assert [b["type"] for b in content] == ["image"]
+
+    @pytest.mark.parametrize("kind", ["image", "cartoon", "diagram", "chart"])
+    def test_네_프롬프트_모두_최소_캐시_길이를_넘는다(self, kind: str) -> None:
+        # 1,024토큰 미만은 표시를 달아도 조용히 캐시되지 않는다. 한국어는 글자당
+        # 약 1토큰이라 글자 수로 하한을 잡아 둔다(실측 1,784~3,041자).
+        assert len(captioner._PROMPTS[kind]) > 1200

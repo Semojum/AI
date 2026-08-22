@@ -297,6 +297,19 @@ def _totals() -> dict:
     }
 
 
+def cache_hit_rate() -> float:
+    """이번 요청의 프롬프트 캐시 적중률 — **입력 토큰 중 캐시에서 읽은 몫**.
+
+    분모가 `input + cache_read + cache_write`인 이유: Anthropic `usage`의
+    `input_tokens`에는 캐시 토큰이 **안 들어 있다**. 읽기만 분자로 두고 분모를
+    `input_tokens`로 잡으면 캐시가 잘 맞을수록 분모가 줄어 100%를 넘는다.
+    쓰기(1.25배 과금)도 분모에 넣어야 "첫 호출은 손해"가 수치에 보인다.
+    """
+    t = _totals()
+    denom = t["prompt_tokens"] + t["cache_read_tokens"] + t["cache_write_tokens"]
+    return (t["cache_read_tokens"] / denom) if denom else 0.0
+
+
 def _nanos(usd: float) -> int:
     """USD → 나노(1e-9) 정수. proto가 정수로 받는 이유는 부동소수 누적 오차 때문이다."""
     return round(usd * 1_000_000_000)
@@ -325,10 +338,13 @@ def usage_report() -> dict:
     by_model: dict[str, dict] = {}
     for (_kind, model), e in (st.llm if st else {}).items():
         m = by_model.setdefault(model, {"model": model, "calls": 0,
-                                        "input_tokens": 0, "output_tokens": 0})
+                                        "input_tokens": 0, "output_tokens": 0,
+                                        "cache_read_tokens": 0, "cache_write_tokens": 0})
         m["calls"] += e.calls
         m["input_tokens"] += e.input_tokens
         m["output_tokens"] += e.output_tokens
+        m["cache_read_tokens"] += e.cache_read_tokens
+        m["cache_write_tokens"] += e.cache_write_tokens
     # ★ GPU는 쪽당 원가에 넣지 않는다(대표 지시 2026-08-20). AWS 서버 비용은 인스턴스
     #   시간으로 따로 매기므로 쪽마다 안분하면 이중 계상이 된다. 점유 시간(gpu_seconds)은
     #   관측값으로 계속 남기되 금액 합계에는 더하지 않는다.
@@ -356,9 +372,20 @@ def usage_report() -> dict:
         "fx_fetched_at_ms": pricing.fx_fetched_at_ms(),
         "gpu_seconds": round(t["gpu_seconds"], 2),
         "unpriced_calls": t["unpriced_calls"],
+        # ⚠ **BE 원가 계산의 구멍**(2026-08-23): proto `ModelUsage`에는 캐시 토큰 칸이
+        #   없다. 캡셔닝에 캐시를 켠 뒤로 `input_tokens`는 캐시분을 빼고 오므로(그게
+        #   Anthropic 규약이다) BE가 그 값만 곱하면 프롬프트 몫(호출당 약 2,000토큰)을
+        #   통째로 0원으로 친다. 우리 원가 집계는 `pricing`이 배수로 처리해 맞지만
+        #   BE 청구는 그만큼 과소다. 계약에 칸을 내는 건 api 세션 소관이라 값만 먼저
+        #   싣는다 — 매퍼는 모르는 키를 무시하므로 proto가 따라오면 그때 배선한다.
+        "cache_read_tokens": t["cache_read_tokens"],
+        "cache_write_tokens": t["cache_write_tokens"],
+        "cache_hit_rate": round(cache_hit_rate(), 4),
         "parts": [           # 파트별 내역은 메트릭 JSONL에만 남긴다(소급 분석용)
             {"part": kind, "model": model, "calls": e.calls,
              "input_tokens": e.input_tokens, "output_tokens": e.output_tokens,
+             "cache_read_tokens": e.cache_read_tokens,
+             "cache_write_tokens": e.cache_write_tokens,
              "cost_usd": round(e.cost, 9), "unpriced": e.unpriced}
             for (kind, model), e in sorted((st.llm if st else {}).items(),
                                            key=lambda kv: -kv[1].cost)
@@ -380,6 +407,8 @@ def api_summary() -> str:
     if t["llm"]:
         tok = t["prompt_tokens"] + t["completion_tokens"]
         s += f"({tok:,}토큰 ${t['cost']:.4f})"
+    if t["cache_read_tokens"] or t["cache_write_tokens"]:
+        s += f" · 캐시적중 {cache_hit_rate() * 100:.1f}%"
     if t["gpu_cost"]:
         s += f" · GPU {t['gpu_seconds']:.0f}s ${t['gpu_cost']:.4f}"
     total = t["cost"]          # GPU 제외 — 아래 주석 참조
@@ -423,6 +452,20 @@ def breakdown_lines() -> list[str]:
             note += f"⏱{p.hcxt_timeouts}"
         lines.append(f"  {kind:<10} {'HCXT(로컬GPU)':<18} {note:>21} ${p.gpu_cost:>8.4f}")
     t = _totals()
+    if t["cache_read_tokens"] or t["cache_write_tokens"]:
+        # 파트별로 따로 찍는다 — 캡셔닝은 프롬프트가 길어 캐시가 얹히고 분류는
+        # 시스템이 324토큰이라 최소 캐시 길이(1,024)에 못 미쳐 영원히 0이다.
+        # 뭉뚱그리면 "적중률이 낮다"가 어느 쪽 얘긴지 못 가른다.
+        for (kind, _model), e in sorted(st.llm.items()):
+            d = e.input_tokens + e.cache_read_tokens + e.cache_write_tokens
+            if not d:
+                continue
+            lines.append(f"  캐시 {kind:<8} 읽기 {e.cache_read_tokens:>9,} · "
+                         f"쓰기 {e.cache_write_tokens:>9,} · 적중률 "
+                         f"{e.cache_read_tokens / d * 100:5.1f}%")
+        lines.append(f"  캐시 합계     읽기 {t['cache_read_tokens']:>9,} · "
+                     f"쓰기 {t['cache_write_tokens']:>9,} · 적중률 "
+                     f"{cache_hit_rate() * 100:5.1f}%")
     total = t["cost"]          # GPU 제외 — 아래 주석 참조
     lines.append(f"  합계 LLM ${t['cost']:.4f} + GPU ${t['gpu_cost']:.4f} = ${total:.4f} "
                  f"(₩{pricing.to_krw(total):,} @ {pricing.fx_rate():g})")
