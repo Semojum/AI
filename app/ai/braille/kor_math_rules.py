@@ -512,9 +512,6 @@ _BARE_KOR_RE = re.compile(r"[가-힣ㄱ-ㅎㅏ-ㅣ]+(?: [가-힣ㄱ-ㅎㅏ-ㅣ]+
 _W2C_JAMO_ITEM_RE = re.compile(r"(?<![가-힣A-Za-z0-9])([ㄱ-ㅎ])\s*\.(?=\s|$)")
 
 
-_KOR_MARK_OPEN, _KOR_MARK_CLOSE = "⠸⠷", "⠸⠾"   # 수학 점자 [붙임] 한글표·한글 종료표
-
-
 def _protect_text(latex: str) -> tuple[str, list[str]]:
     r"""수식 속 자연어(\text{한글}·맨 한글)를 점자로 변환해 PUA sentinel로 치환.
 
@@ -532,15 +529,6 @@ def _protect_text(latex: str) -> tuple[str, list[str]]:
                 brailled = _text_hook(content)
             except Exception:  # noqa: BLE001 — 훅 실패 시 원문 보존(빈 결과 금지)
                 brailled = content
-        # ★ B-15(원장) 한글표 — 「수학 점자」 [붙임]: "한글이 포함된 수식은 …
-        #   수식의 일부를 묶어야 할 경우 한글을 한글표 ⠸⠷과 한글 종료표 ⠸⠾으로 묶어
-        #   적는다. 괄호 또는 한글표로 묶인 수식 사이의 사칙연산 기호·등호는 앞뒤를 붙여
-        #   적는다."(규정_텍스트.txt 3135~3139 + 분수 예시)
-        #   실물 001 body p0165: 추출 `\text{개체군 밀도} = \frac{\text{…}}{\text{…}}` →
-        #   gold `⠸⠷개체군 밀도⠸⠾⠒⠒⠸⠷…⠸⠾⠌⠸⠷…⠸⠾`. 즉 **덩어리 하나에 한 쌍**이다.
-        #   gold 여는 표 dev 372 · val 0인데 우리는 dev·val 0회였다(eval 2026-08-22).
-        if brailled.strip():
-            brailled = _KOR_MARK_OPEN + brailled + _KOR_MARK_CLOSE
         store.append(brailled)
         return chr(0xE000 + len(store) - 1)   # BMP PUA sentinel(이후 단계에 불활성)
 
@@ -851,15 +839,8 @@ def _w2c_sweep_residue(result: str) -> str:
 
 
 def _hangul_or_sentinel(ch: str) -> bool:
-    """한글 음절/자모 — 제46항 '한글 사이' 판정.
-
-    ★ B-15(2026-08-22) — **보호 sentinel(PUA)은 더는 '한글'로 안 본다.**
-      sentinel 안쪽이 한글표 ⠸⠷…⠸⠾로 묶이면서 수학 점자 [붙임]의 다른 조항이 적용된다:
-      "괄호 또는 **한글표로 묶인** 수식 사이의 사칙연산 기호·등호 등은 **앞뒤를 붙여** 적는다."
-      실물 001 body p0165 gold가 `⠸⠷개체군 밀도⠸⠾⠒⠒⠸⠷…`로 등호를 붙여 적는다.
-      종전처럼 한글로 보면 그 자리에 공백이 들어가 gold와 두 칸씩 어긋난다.
-    """
-    return ("가" <= ch <= "힣") or ("ㄱ" <= ch <= "ㅣ")
+    """한글 음절/자모 또는 \\text 보호 sentinel(PUA) — 제46항 '한글 사이' 판정."""
+    return ("가" <= ch <= "힣") or ("ㄱ" <= ch <= "ㅣ") or (0xE000 <= ord(ch) <= 0xF8FF)
 
 
 def _tighten_operator_spacing(result: str) -> str:
