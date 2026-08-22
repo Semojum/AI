@@ -87,3 +87,41 @@ def test_double_corner_brackets_use_regulation_cells():
     out = tr("『세종실록지리지』")
     assert out.startswith("⠰⠦") and out.endswith("⠴⠆")
     assert tr("「홑낫표」 자리").startswith("⠠⠦")     # 홑낫표는 종전 그대로
+
+
+def test_line_start_hyphen_bullet_is_one_cell():
+    """줄머리 붙임표 글머리 = ⠤ 한 칸 + 한 칸 띄움(규정 제72항 글머리 기호표).
+
+    종전에는 ⠤⠤(두 칸)에 뒤 공백도 없이 붙였고 근거가 구판 실측이었다. 신규 gold는
+    한 칸+공백을 dev 312·val 208회 쓰고 우리는 0회였다(실물 val 005 body p0009).
+    """
+    assert tr("- 존대 표현과").startswith("⠤⠀")
+    assert not tr("- 존대 표현과").startswith("⠤⠤")
+
+
+def test_wave_dash_is_not_dropped():
+    """U+301C 물결 대시 〜도 물결표다. 표에 없어 조용히 사라졌다(코퍼스 0회라 예방용)."""
+    for ch in ("~", "∼", "〜"):
+        assert "⠈⠔" in tr(f"01{ch}02"), ch
+
+
+def test_unlisted_shape_runs_become_first_definition_mask():
+    """규정 표에 없는 도형이 겹치면 이름 가림 — 제1 정의 ⠸⠔ⁿ⠇로 내고 개수를 보존한다.
+
+    제57항 [붙임]이 ○ × △ 이외를 제1~제3 점역자 정의로 위임하므로 어느 정의든 규정
+    준수이고, 조용히 지우는 것만 위반이다(plan 실물 8종 34회).
+    """
+    assert tr("♧♧대 언론학과").startswith("⠸⠔⠔⠇")
+    assert tr("▽▽ 자연사 박물관").startswith("⠸⠔⠔⠇")
+    assert "⠸⠔" not in tr("▼ 소회의실 1")     # 홑 글자는 가림이 아니다
+
+
+def test_arrow_after_explain_label_becomes_colon():
+    """해설 라벨 뒤 ▶ = 구분 표시. gold는 쌍점으로 적는다(012 body p0014).
+
+    앞말 실측 129회 중 '정답 해설' 63 · '오답 피하기' 63. 나머지 3회는 gold 자신이
+    갈려(본문 중 화살표 · 따옴표 안 생략) 규칙으로 만들 근거가 없어 건드리지 않는다.
+    """
+    assert "⠐⠂" in tr("정답 해설 ▶ 자료에서")
+    assert "⠐⠂" in tr("오답 피하기 ▶ 첫째")
+    assert "⠐⠂" not in tr("2배 성장했다. ▶ 관련 기사")   # 본문 중은 그대로 둔다
