@@ -1396,8 +1396,15 @@ def _normalize_big_circle(s: str) -> str:
       바뀌어 "숨김표 한 개"라는 없는 뜻이 된다.
     """
     def repl(m: re.Match) -> str:
+        run = m.group()
         at_line_start = m.start() == 0 or s[m.start() - 1] == "\n"
-        return m.group() if at_line_start else "○" * len(m.group())
+        # ★ 홑 ◯은 안 바꾼다. gold 실측(dev+val 전수)에서 숨김표 틀은 거의 다 **두 칸 이상**이다
+        #   — gold 한 칸 dev 18 · val 0 대 두 칸 dev 181 · val 277. 홑 ◯을 같이 태웠더니
+        #   dev 한 칸 틀이 116 → 313으로 뛰었다(gold 18). 그 자리는 가림이 아니라
+        #   표 범례·값이다. 가림은 이름을 가리는 것이라 두 칸 이상으로 나온다.
+        if at_line_start or len(run) < 2:
+            return run
+        return "○" * len(run)
     return _BIG_CIRCLE_RUN_RE.sub(repl, s)
 
 

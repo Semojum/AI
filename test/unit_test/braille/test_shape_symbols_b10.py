@@ -30,6 +30,15 @@ def test_big_circle_at_line_start_is_left_alone():
     assert MASK_1 not in tr("◯는 있음")
 
 
+def test_single_big_circle_is_left_alone():
+    """홑 ◯ 은 가림이 아니다 — 표 범례·값 자리다.
+
+    gold 실측(dev+val 전수): 숨김표 틀 한 칸이 dev 18 · val 0인데 두 칸은 dev 181 · val 277.
+    홑 ◯ 까지 태웠더니 우리 한 칸 틀이 dev 116 → 313으로 뛰었다(gold 18). 되돌린 근거다.
+    """
+    assert "⠸" not in tr("표에서 ◯는 있음")
+
+
 def test_big_circle_run_is_judged_as_a_whole():
     """런 단위 판정 — 글자 단위로 하면 줄머리 ◯◯의 둘째만 바뀌어 없는 뜻이 된다."""
     assert tr("◯◯ 신문").count("⠸") == 0
