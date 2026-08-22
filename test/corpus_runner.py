@@ -282,7 +282,7 @@ async def run_subject(subject: str, sel_rows: list[dict], tag: str, *,
         render_page(pdf, input_dir, li)
         # ★ 2026-08-22 — 파일명에 권을 넣는다. 종전에는 두 권이 같은 이름으로 덮어썼다.
         shutil.copy(pdf, input_dir / (f"original_{vol}_p{pg}.pdf" if vol else f"original_p{pg}.pdf"))
-        task = PageTask(job_id=job_id, page_no=li, total_pages=len(pages),
+        task = PageTask(job_id=job_id, page_no=li, total_pages=len(sel_rows),
                         pdf_data=pdf.read_bytes(), mode="c", source_text="")
         t0 = time.time()
         # ★ 2026-08-22 — run_state에 권을 **명시로** 적는다(eval 제안). 채점기·분석 스크립트가
