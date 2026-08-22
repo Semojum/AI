@@ -1650,6 +1650,8 @@ def _build_response(
             "pdf_layer_confidence": doc_meta.pdf_confidence if doc_meta else 0.0,
             "routing_tier_used": routing_tier,
             "scan_only": doc_meta.scan_only if doc_meta else False,
+            # 캡셔닝을 끄고 돈 산출물이면 박아 둔다 — 이걸로 시각 축을 재면 안 된다.
+            "caption_disabled": os.getenv("SEMOJUM_NO_CAPTION") == "1",
         },
         "quality_report": quality_report.model_dump(),
     }

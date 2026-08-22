@@ -161,6 +161,16 @@ def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
         logger.warning("캡셔닝 불가 — 이미지 경로 없음 id=%s path=%r", eid, img_path)
         return "", original_type, False, None
 
+    # ★ 캡셔닝 끄기 스위치(2026-08-22 대표 지시 — API 크레딧 절약).
+    #   기호 층 A/B는 캡션이 결과에 영향이 없는데도 재추출 한 번에 20~30달러가 나갔다.
+    #   끄면 **캡셔닝 실패와 같은 길**을 탄다 — 빈 캡션 + 성공여부 False라 하위 opt가
+    #   규정상 '생략' 표기를 내고 품질검사가 R11로 띄운다(요소는 살아 있다).
+    #   ⚠ 이 산출물로 **시각 축을 재면 안 된다.** 그래서 응답 메타에 표시를 박는다
+    #      (pipeline의 processing_meta.caption_disabled).
+    if os.getenv("SEMOJUM_NO_CAPTION") == "1":
+        logger.info("캡셔닝 꺼짐(SEMOJUM_NO_CAPTION=1) — 생략 처리 id=%s", eid)
+        return "", original_type, False, None
+
     last: Exception | None = None
     for attempt in range(_CAPTION_RETRIES + 1):
         try:

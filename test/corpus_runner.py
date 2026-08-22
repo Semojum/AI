@@ -346,6 +346,8 @@ def _save_state(job_dir: Path, job_id: str, subject: str, tag: str, pages: list[
     (job_dir).mkdir(parents=True, exist_ok=True)
     (job_dir / "run_state.json").write_text(json.dumps({
         "job_id": job_id, "subject": subject, "tag": tag,
+        # 캡셔닝을 끄고 돈 런이면 남긴다 — 나중에 이 산출물로 시각 축을 재는 사고를 막는다.
+        "caption_disabled": os.environ.get("SEMOJUM_NO_CAPTION") == "1",
         "updated": time.strftime("%Y-%m-%d %H:%M:%S"),
         "pages": pages,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -406,7 +408,13 @@ def main():
     ap.add_argument("--tag", default=None, help="job 태그(기본 split 또는 custom)")
     ap.add_argument("--reuse", action="store_true", help="추출 캐시 보존, opt→braille만 재실행")
     ap.add_argument("--force", action="store_true", help="완료 페이지도 재실행")
+    ap.add_argument("--no-caption", action="store_true",
+                    help="시각자료 캡셔닝을 끄고 돈다(생략 처리). 기호 층 A/B용 — "
+                         "이 산출물로 시각 축을 재면 안 된다. run_state와 응답 메타에 표시된다")
     args = ap.parse_args()
+    if getattr(args, "no_caption", False):
+        os.environ["SEMOJUM_NO_CAPTION"] = "1"      # result_builder가 이걸 본다
+        print("⚠ 캡셔닝 끔 — 시각 요소는 생략 처리로 나간다. 이 산출물로 시각 축을 재지 말 것.")
 
     if not os.environ.get("MINERU_BIN"):
         print("⚠ MINERU_BIN 미설정 — STANDARD 라우팅 페이지는 빈 추출이 될 수 있음.")

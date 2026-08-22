@@ -48,3 +48,29 @@ def test_box_run_is_fill_not_x():
     """□ 는 빠짐표(제58항)다. ×의 숨김표 점형(제57항)이 아니다."""
     assert FILL_3 in tr("아음은 □□□의 석 자다")
     assert "⠸⠭⠭⠭⠇" in tr("이 ×××야")     # × 경로는 그대로
+
+
+def test_line_start_double_circle_is_a_bullet():
+    """◎ 줄머리 단독 = 제72항 동그라미 글머리 ⠸⠴.
+
+    실물 014 body p69·p77·p143·p147(서술형 평가 지면 "◎ 문제:" · "◎ 학생 답안")에서
+    gold 줄머리 ⠸⠴ 개수가 묵자 ◎ 개수와 2:2 · 2:2 · 1:1 · 2:2로 맞는다.
+    """
+    assert tr("◎ 문제: 갑과 을").startswith("⠸⠴")
+    assert tr("◎ 학생 답안").startswith("⠸⠴")
+
+
+def test_line_start_triangle_is_a_caption_bullet():
+    """▲ 줄머리 = 그림 캡션 머리. gold가 ⠸⠲로 적는다(012 body p9 대조)."""
+    assert tr("▲ 다원커우 토기").startswith(BULLET)
+
+
+def test_black_square_run_is_a_mask_not_bullets():
+    """■런 두 개 이상 = 이름 가림. gold 013 ans p0024 "■■ 대학교는" → ⠸⠶⠶⠇.
+
+    개수로 가른다 — 글머리는 겹치지 않고 가림은 겹친다. 위치로 가르면 추출이 요소를
+    잘라 온 자리에서 문중이 줄머리처럼 보여 헛나간다.
+    """
+    assert "⠸⠶⠶⠇" in tr("■■ 대학교는")
+    assert "⠸⠶⠶⠇" in tr("앞의 ■■ 회사")
+    assert tr("■ 도입: 디지털").startswith(BULLET)     # 홑 ■는 그대로 글머리
