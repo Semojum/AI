@@ -250,14 +250,30 @@ async def run_subject(subject: str, sel_rows: list[dict], tag: str, *,
 
     state_path = job_dir / "run_state.json"
     # ★ 2026-08-22 — 재개용 키에도 권을 넣는다. 쪽번호만으로는 두 권 중 하나만 완료로 보고
-    #   나머지 하나를 영영 건너뛴다. 옛 run_state에는 vol이 없으니 ""로 읽혀 body와 짝이 된다
-    #   (그 경우 ans가 한 번 더 도는데, 덮어쓰기가 아니라 제 번호로 가므로 안전하다).
+    #   나머지 하나를 영영 건너뛴다.
+    #
+    #   ⚠ **옛 run_state 호환이 여기서 한 번 어긋났다(실측 사고).** 수정 전에 쓰인 기록에는
+    #     `vol`이 없다. 그걸 `""`로 읽으면 새 행의 `"body"`·`"ans"`와 **한 건도 안 맞아
+    #     900쪽을 통째로 다시 돌린다**(208쪽만 새로 돌면 되는 자리에서 GPU 2.5시간 낭비).
+    #     옛 기록이 가리키는 실체는 **그 쪽에서 실제로 돌았던 행 = 정렬 목록의 마지막 행**이다
+    #     (구 코드가 마지막 위치를 썼기 때문). 그래서 그 행의 권으로 채워 넣는다.
+    last_vol_of: dict[str, str] = {}
+    for r in sel_rows:
+        last_vol_of[r["page"]] = r.get("vol", "")     # 정렬 순 → 마지막이 남는다
     done: dict[tuple[str, str], dict] = {}
     if state_path.exists() and not force:
         try:
-            done = {(p.get("vol", ""), p["page"]): p
-                    for p in json.loads(state_path.read_text())["pages"]
-                    if p.get("status") == "COMPLETED"}
+            # ★ 2026-08-22 — 재개 조건에 NEEDS_REVIEW를 포함한다(기존 버그).
+            #   NEEDS_REVIEW는 **정상 산출**이다 — 점자를 다 만들고 검토 플래그만 붙은 상태다
+            #   (아래 prog 집계 주석의 2026-07-17 사고와 같은 오해). 그런데 재개 사전이
+            #   COMPLETED만 담아서, 실측상 dev 900쪽 중 **625쪽이 NEEDS_REVIEW라 매번 다시
+            #   돌았다.** 202쪽만 건너뛰던 것이 이 한 줄로 692쪽이 된다.
+            #   BLOCKED·TIMEOUT·ERROR는 그대로 다시 돈다 — 그건 진짜 실패다.
+            for p in json.loads(state_path.read_text())["pages"]:
+                if p.get("status") not in ("COMPLETED", "NEEDS_REVIEW"):
+                    continue
+                vol = p.get("vol") or last_vol_of.get(p["page"], "")
+                done[(vol, p["page"])] = p
         except Exception:
             done = {}
 
