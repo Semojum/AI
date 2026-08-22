@@ -462,8 +462,10 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     from app.ai.preprocessor.pdf_analyzer import (
         analyze_pdf,
         box_rects_norm,
+        char_box_glyphs_norm,
         extract_text_blocks,
         mark_glyphs_norm,
+        tag_char_boxes,
         regroup_boxed,
         tag_answer_marks,
         tag_boxed_elements,
@@ -511,6 +513,16 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                      for k, r in marks]
         if n := tag_answer_marks(elements, marks):
             logger.info("정오 표시 %d개 태깅 (page=%d)", n, task.page_no)
+
+        # 네모 문자(규정 제64항 · 원장 C-16-2) — 지문 빈칸 ▯(가)▯ 의 네모는 벡터 드로잉이라
+        # 텍스트 추출에 안 잡힌다. 추출물에는 `(가)`만 남아 문두 지시와 구분이 사라진다.
+        cboxes = await asyncio.to_thread(char_box_glyphs_norm, task.pdf_data, task.page_no)
+        if bbox_space == "pixel" and image_width and image_height:
+            cboxes = [(t, [r[0] / 1000 * image_width, r[1] / 1000 * image_height,
+                           r[2] / 1000 * image_width, r[3] / 1000 * image_height])
+                      for t, r in cboxes]
+        if n := tag_char_boxes(elements, cboxes):
+            logger.info("네모 문자 %d개 태깅 (page=%d)", n, task.page_no)
 
         # 놓친 그림 회수 — 앞단이 시각 요소를 **0개** 낸 쪽만 비전 모델로 다시 본다.
         # 평가 실측: 시각 요소가 0인 26쪽에서 우리가 gold의 1%만 쓴다(프롬프트로는 안 움직인다).
