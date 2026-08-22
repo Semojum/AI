@@ -618,13 +618,15 @@ _LINE_BULLET_RE = re.compile(r"(?m)^([◎▲])(?=[ \t]|$)")
 # ★ 위치가 아니라 **개수로 가른다.** 글머리는 겹치지 않고 가림은 겹친다(◯에서 쓴 그 판정).
 #   추출이 요소를 잘라 오면 문중이 줄머리처럼 보여서 위치 판정이 헛나간다.
 # (홑 ■는 문자표가 글머리 ⠸⠲로 낸다 — gold 566:580으로 확인됐다.)
-# 규정 표에 없는 도형이 겹쳐 나오면 이름 가림이다 — 제57항 [붙임]이 ○ × △ 이외를
-# **제1~제3 점역자 정의 숨김표**로 위임하므로, 어느 정의를 쓰든 규정 준수이고 **조용히
-# 지우는 것만 위반**이다(plan 실물 확인 2026-08-22, 여덟 종 34회: ♧♧대 · ♤♤동 ·
-# ▽▽ 자연사 박물관 · ▵▵고 · ▷▷▷ · ◁◁ 중앙 박물관). 제1 정의 ⠸⠔ⁿ⠇로 내고 개수를 보존한다.
-# ☆로 바꿔 두면 문자표의 제1 정의 경로가 그대로 태운다 — 새 분기를 안 만든다.
-# ⚠ 홑 글자는 제외한다. ▼ 2회는 화면 접기 표시, ◀ 1회는 그림 캡션 머리라 가림이 아니다.
-_UNLISTED_SHAPE_RUN_RE = re.compile(r"([♧♤▽▵▷◁▼◀])\1+")
+# 세모 변종이 겹쳐 나오면 이름 가림이다 — **gold는 규정 표의 기본형 셀로 적는다.**
+# 실물 004 body p0115: 묵자 "아름다운 ▵▵인" → gold **⠸⠬⠬⠇**(△의 제57항 숨김표 셀)이다.
+# ★ 2026-08-22 1차 배선은 여덟 종을 전부 제1 정의 ⠸⠔ⁿ⠇로 몰았다가 **기각됐다**(eval).
+#   기각 사유가 정확했다 — 우리 ⠔ 틀이 gold(dev 22·val 7)를 넘어섰고, 늘어난 6쪽 중
+#   4쪽은 gold ⠔가 0개였다. 검출은 맞았지만 **어느 셀로 낼지가 틀렸다.**
+#   그래서 gold 실물이 있는 세모류만 남기고 나머지 여섯(♧ ♤ ▷ ◁ ▼ ◀)은 뺀다 —
+#   그쪽은 gold 표본이 1건 이하이거나 프레임 자체가 없다(004 body p0122 ♧♧는 gold 0개).
+# ⚠ 홑 글자는 제외한다(글머리·화면 표시 자리다).
+_UNLISTED_SHAPE_RUN_RE = re.compile(r"([▽▵])\1+")
 
 # 해설 라벨 뒤 ▶는 구분 표시다 — gold는 그 자리를 쌍점으로 적는다(012 body p0014 실물:
 # 묵자 "정답 해설 ▶ 자료에서" → gold "정답 해설:자료에서"). 앞말 실측 dev+val 129회 중
@@ -837,7 +839,7 @@ def _apply_book_style(text: str) -> str:
     text = _AMP_RE.sub("⠯", text)
     text = _LINE_BULLET_RE.sub(_line_bullet_repl, text)
     text = _BLACK_SQUARE_RUN_RE.sub(lambda m: '□' * len(m.group()), text)
-    text = _UNLISTED_SHAPE_RUN_RE.sub(lambda m: '☆' * len(m.group()), text)
+    text = _UNLISTED_SHAPE_RUN_RE.sub(lambda m: '△' * len(m.group()), text)
     text = _ARROW_LABEL_RE.sub(r'\1:', text)
     text = _BOX_BLANK_RE.sub(_box_blank_repl, text)
     # ★ B-11(원장) — 물결표를 줄표로 바꾸던 줄을 뺐다(2026-08-22).

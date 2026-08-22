@@ -105,15 +105,18 @@ def test_wave_dash_is_not_dropped():
         assert "⠈⠔" in tr(f"01{ch}02"), ch
 
 
-def test_unlisted_shape_runs_become_first_definition_mask():
-    """규정 표에 없는 도형이 겹치면 이름 가림 — 제1 정의 ⠸⠔ⁿ⠇로 내고 개수를 보존한다.
+def test_triangle_variant_run_uses_the_base_shape_cell():
+    """세모 변종이 겹치면 이름 가림 — gold는 **기본형 △의 셀**로 적는다.
 
-    제57항 [붙임]이 ○ × △ 이외를 제1~제3 점역자 정의로 위임하므로 어느 정의든 규정
-    준수이고, 조용히 지우는 것만 위반이다(plan 실물 8종 34회).
+    실물 004 body p0115: 묵자 "아름다운 ▵▵인" → gold ⠸⠬⠬⠇.
+    ★ 1차 배선은 여덟 종을 제1 정의 ⠸⠔ⁿ⠇로 몰았다가 기각됐다 — 검출은 맞았지만
+      셀이 틀렸고, 우리 ⠔ 틀이 gold(dev 22·val 7)를 넘어섰다. gold 실물이 있는
+      세모류만 남긴다. ♧ ♤ ▷ ◁ ▼ ◀는 gold 표본이 1건 이하다(p0122 ♧♧는 gold 0개).
     """
-    assert tr("♧♧대 언론학과").startswith("⠸⠔⠔⠇")
-    assert tr("▽▽ 자연사 박물관").startswith("⠸⠔⠔⠇")
-    assert "⠸⠔" not in tr("▼ 소회의실 1")     # 홑 글자는 가림이 아니다
+    assert "⠸⠬⠬⠇" in tr("아름다운 ▵▵인 그림")
+    assert tr("▽▽ 자연사 박물관").startswith("⠸⠬⠬⠇")
+    assert "⠸" not in tr("♧♧ 막국수")          # 근거 없는 기호는 안 건드린다
+    assert "⠸⠬" not in tr("▼ 소회의실 1")       # 홑 글자는 가림이 아니다
 
 
 def test_arrow_after_explain_label_becomes_colon():
