@@ -93,22 +93,37 @@ def load_manifest(corpus: str = "frozen") -> list[dict]:
     return rows
 
 
-# (subject, page) → manifest 행. 경로가 코퍼스마다 달라 이름 규약으로 만들 수 없다.
-_ROW_BY_KEY: dict[tuple[str, str], dict] = {}
+# (subject, vol, page) → manifest 행. 경로가 코퍼스마다 달라 이름 규약으로 만들 수 없다.
+#
+# ★ 2026-08-22 — 키에 **권(vol)**을 넣었다. 대표 승인.
+#   신규 코퍼스는 같은 (book_id, page)가 **본책(body)과 정답해설(ans)에 둘 다** 있다.
+#   종전 키가 (subject, page)뿐이라 뒤엣것(ans)이 앞엣것(body)을 덮었다. 규모:
+#       dev-2027   900행 중 208 충돌(23.1%) · val 846 중 137(16.2%) · holdout 1,171 중 334(28.5%)
+#   결과가 셋이었다 — ① 같은 page_NNN에 두 번 써서 **body 계산을 하고 버렸다**(GPU 낭비)
+#   ② `original_p{쪽}.pdf`도 덮였다 ③ 재개용 done 사전이 둘 중 하나만 완료로 봤다.
+#   채점 쪽 영향은 dev 총편집의 22.5%가 이중 계상이고 본책 208쪽이 한 번도 안 채점됐다.
+#   빠지는 쪽이 늘 **어려운 본책**이라 지표가 낙관으로 약 3.8p 기울었다(eval 실측).
+#   ⚠ A/B 상대 비교는 양쪽이 같은 버그를 타서 안 뒤집힌다. 정정 대상은 절대 수치다.
+_ROW_BY_KEY: dict[tuple[str, str, str], dict] = {}
+
+
+def row_key(r: dict) -> tuple[str, str, str]:
+    """(과목, 권, 묵자쪽). 구 코퍼스(frozen)는 권이 없어 빈 문자열이 된다."""
+    return (r["subject"], r.get("vol", ""), r["page"])
 
 
 def index_rows(rows: list[dict]) -> None:
     _ROW_BY_KEY.clear()
     for r in rows:
-        _ROW_BY_KEY[(r["subject"], r["page"])] = r
+        _ROW_BY_KEY[row_key(r)] = r
 
 
-def _path_of(subject: str, page: str) -> Path:
-    return _ROW_BY_KEY[(subject, page)]["_pdf"]
+def _path_of(r: dict) -> Path:
+    return r["_pdf"]
 
 
-def _gold_of(subject: str, page: str) -> Path:
-    return _ROW_BY_KEY[(subject, page)]["_gold"]
+def _gold_of(r: dict) -> Path:
+    return r["_gold"]
 
 
 def visual_score(pdf: Path) -> int:
@@ -124,33 +139,39 @@ def visual_score(pdf: Path) -> int:
 
 
 def select(rows: list[dict], split: str | None, subjects: set[str] | None,
-           limit: int | None, purposive: bool) -> dict[str, list[str]]:
-    """과목 → [page,...] 선택.
+           limit: int | None, purposive: bool) -> dict[str, list[dict]]:
+    """과목 → [manifest 행, ...] 선택.
 
     ⚠ 여기서 고른 순번을 local_no로 쓰면 안 된다 — page_index()를 쓸 것.
       이유는 그 함수 주석 참조(2026-07-29 실측 사고).
+
+    ★ 2026-08-22 — 쪽번호 목록에서 **행 목록**으로 바꿨다. 같은 쪽번호가 두 권에 있어
+      문자열로는 두 행을 못 가른다. 그 탓에 두 자리가 조용히 틀리고 있었다:
+      · `--limit`(균등 간격) — 중복이 같이 뽑혀 limit개를 채워도 유니크는 적다.
+        실측 `--limit 225`: dev 816 뽑아 유니크 639(손실 177) · val 846→709(137).
+        (우리 A/B 대부분인 `--limit 50`은 200/200으로 손실 0이었다.)
+      · `--purposive` — 랭킹 키가 `_path_of`라 **해설 지면 점수로 본책을 매겼다.**
+        충돌 208쪽 중 63%에서 본책 시각 점수가 더 높다. 그리고 같은 점수라 정렬에서
+        반드시 인접해 **둘 다 뽑힌다**: dev 384 뽑아 유니크 313(손실 71·18.5%) · val 384→326.
+        시각 A/B(`visual_run.sh`)가 이 두 겹에 물려 있었다.
     """
-    by_sub: dict[str, list[str]] = {}
+    by_sub: dict[str, list[dict]] = {}
     for r in rows:
         if split and r["split"] != split:
             continue
         if subjects and r["subject"] not in subjects:
             continue
-        by_sub.setdefault(r["subject"], []).append(r["page"])
-    for sub, pages in by_sub.items():
-        pages.sort()
-        if limit and len(pages) > limit:
+        by_sub.setdefault(r["subject"], []).append(r)
+    for sub, rs in by_sub.items():
+        rs.sort(key=lambda r: r["page"])          # 안정 정렬 — 같은 쪽은 매니페스트 순(body→ans)
+        if limit and len(rs) > limit:
             if purposive:
-                ranked = sorted(
-                    pages,
-                    key=lambda pg: visual_score(_path_of(sub, pg)),
-                    reverse=True,
-                )
-                by_sub[sub] = sorted(ranked[:limit])
+                ranked = sorted(rs, key=lambda r: visual_score(_path_of(r)), reverse=True)
+                by_sub[sub] = sorted(ranked[:limit], key=lambda r: r["page"])
             else:
                 # 균등 간격
-                idx = sorted({round(i * (len(pages) - 1) / (limit - 1)) for i in range(limit)})
-                by_sub[sub] = [pages[i] for i in idx]
+                idx = sorted({round(i * (len(rs) - 1) / (limit - 1)) for i in range(limit)})
+                by_sub[sub] = [rs[i] for i in idx]
     return by_sub
 
 
@@ -164,19 +185,29 @@ def select(rows: list[dict], split: str | None, subjects: set[str] | None,
 # → local_no는 **그 과목·split의 전체 페이지 목록에서의 위치**로 고정한다.
 #   부분집합으로 돌리든 전량으로 돌리든 같은 묵자 페이지는 항상 같은 번호를 쓴다.
 def build_page_index(rows: list[dict], split: str | None,
-                     subjects: set[str] | None) -> dict[tuple[str, str], int]:
-    """(과목, 묵자쪽) → local_no. 선택 범위와 무관하게 안정적."""
-    by_sub: dict[str, list[str]] = {}
+                     subjects: set[str] | None) -> dict[tuple[str, str, str], int]:
+    """(과목, 권, 묵자쪽) → local_no. 선택 범위와 무관하게 안정적.
+
+    ★ 2026-08-22 — **행 위치**로 번호를 준다(유니크 기준으로 다시 매기지 않는다).
+      종전에도 중복을 포함한 채 enumerate했고 `out[(sub,pg)]`에 **마지막 위치**가 남았다.
+      즉 승자인 ans가 이미 `i+1`을 쓰고 있고 `i`는 비어 있었다. 행마다 자기 위치를 주면
+      **ans는 번호가 그대로고 body가 빈 `i`를 가져간다.**
+      실측(2026-08-22): dev 900행 중 692 유지·208 이동, val 709/137, holdout 837/334이고
+      **셋 다 기존 번호와 충돌 0**이다. 기존 산출물이 통째로 살아남고 새로 돌 쪽만 679다
+      (전면 재추출 2,917쪽 대비 23%). 유니크 재번호로 갔으면 004는 245쪽 중 239쪽이
+      바뀌어 전면 재추출이었다.
+    """
+    by_sub: dict[str, list[dict]] = {}
     for r in rows:
         if split and r["split"] != split:
             continue
         if subjects and r["subject"] not in subjects:
             continue
-        by_sub.setdefault(r["subject"], []).append(r["page"])
-    out: dict[tuple[str, str], int] = {}
-    for sub, pages in by_sub.items():
-        for i, pg in enumerate(sorted(pages), start=1):
-            out[(sub, pg)] = i
+        by_sub.setdefault(r["subject"], []).append(r)
+    out: dict[tuple[str, str, str], int] = {}
+    for sub, rs in by_sub.items():
+        for i, r in enumerate(sorted(rs, key=lambda x: x["page"]), start=1):
+            out[row_key(r)] = i
     return out
 
 
@@ -209,7 +240,7 @@ def bar(cur: int, total: int, *, ok: int, review: int, blocked: int, fail: int, 
 
 
 # ── job 실행 ─────────────────────────────────────────────────────────────
-async def run_subject(subject: str, pages: list[str], tag: str, *,
+async def run_subject(subject: str, sel_rows: list[dict], tag: str, *,
                       reuse: bool, force: bool, prog: dict,
                       page_index: dict | None = None) -> dict:
     job_id = f"corpus-{tag}-{subject}"
@@ -218,37 +249,45 @@ async def run_subject(subject: str, pages: list[str], tag: str, *,
     input_dir.mkdir(parents=True, exist_ok=True)
 
     state_path = job_dir / "run_state.json"
-    done: dict[str, dict] = {}
+    # ★ 2026-08-22 — 재개용 키에도 권을 넣는다. 쪽번호만으로는 두 권 중 하나만 완료로 보고
+    #   나머지 하나를 영영 건너뛴다. 옛 run_state에는 vol이 없으니 ""로 읽혀 body와 짝이 된다
+    #   (그 경우 ans가 한 번 더 도는데, 덮어쓰기가 아니라 제 번호로 가므로 안전하다).
+    done: dict[tuple[str, str], dict] = {}
     if state_path.exists() and not force:
         try:
-            done = {p["page"]: p for p in json.loads(state_path.read_text())["pages"]
+            done = {(p.get("vol", ""), p["page"]): p
+                    for p in json.loads(state_path.read_text())["pages"]
                     if p.get("status") == "COMPLETED"}
         except Exception:
             done = {}
 
     page_states: list[dict] = []
-    for pos, pg in enumerate(pages, start=1):
+    for pos, r in enumerate(sel_rows, start=1):
+        pg, vol = r["page"], r.get("vol", "")
         # local_no는 선택 범위와 무관하게 고정한다(위 build_page_index 주석의 사고 참조).
-        li = (page_index or {}).get((subject, pg), pos)
-        pdf = _path_of(subject, pg)
-        gold = _gold_of(subject, pg)
+        li = (page_index or {}).get(row_key(r), pos)
+        pdf = _path_of(r)
+        gold = _gold_of(r)
         prog["cur"] += 1
         elapsed = time.time() - prog["t0"]
         eta = (elapsed / prog["cur"]) * (prog["total"] - prog["cur"]) if prog["cur"] else 0
         bar(prog["cur"], prog["total"], ok=prog["ok"], review=prog["review"], blocked=prog["blocked"],
             fail=prog["fail"], to=prog["to"], eta=eta, label=f"{subject} p{pg}")
 
-        if pg in done:  # 재개: 이미 완료
-            page_states.append(done[pg])
+        if (vol, pg) in done:  # 재개: 이미 완료
+            page_states.append(done[(vol, pg)])
             prog["ok"] += 1
             continue
 
         render_page(pdf, input_dir, li)
-        shutil.copy(pdf, input_dir / f"original_p{pg}.pdf")
+        # ★ 2026-08-22 — 파일명에 권을 넣는다. 종전에는 두 권이 같은 이름으로 덮어썼다.
+        shutil.copy(pdf, input_dir / (f"original_{vol}_p{pg}.pdf" if vol else f"original_p{pg}.pdf"))
         task = PageTask(job_id=job_id, page_no=li, total_pages=len(pages),
                         pdf_data=pdf.read_bytes(), mode="c", source_text="")
         t0 = time.time()
-        rec = {"page": pg, "local_no": li, "gold": str(gold),
+        # ★ 2026-08-22 — run_state에 권을 **명시로** 적는다(eval 제안). 채점기·분석 스크립트가
+        #   권을 읽을 수 있어야 한다. 오늘 사고가 커진 이유가 권이 어디에도 안 적혀 있어서였다.
+        rec = {"page": pg, "vol": vol, "local_no": li, "gold": str(gold),
                "gold_exists": gold.exists()}
         try:
             res = await asyncio.wait_for(pipeline.run(task), timeout=PAGE_TIMEOUT)
@@ -389,8 +428,12 @@ def main():
 
     total = sum(len(v) for v in sel.values())
     print(f"=== 코퍼스 러너 tag={tag} mode=c | 과목 {len(sel)} · 페이지 {total} ===")
-    for sub, pgs in sorted(sel.items()):
-        print(f"  {sub:<8} {len(pgs)}p: {' '.join(pgs)}")
+    for sub, rs in sorted(sel.items()):
+        # ★ 라벨 규칙 10 — 뽑은 수와 **유니크 수**를 함께 찍는다. 갈리면 키가 모자란 것이다.
+        uniq = len({row_key(r) for r in rs})
+        upg = len({r["page"] for r in rs})
+        print(f"  {sub:<8} {len(rs)}p (유니크 {uniq} · 쪽번호 {upg}): "
+              f"{' '.join(r['page'] for r in rs)}")
     print("-" * 60)
 
     prog = {"cur": 0, "total": total, "ok": 0, "review": 0, "blocked": 0, "fail": 0, "to": 0, "t0": time.time()}
