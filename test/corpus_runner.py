@@ -32,6 +32,13 @@ from pathlib import Path
 # (운영 .env 는 그대로 180s 유지 — 여기서만 env 미설정 시 600s 로 올린다.)
 os.environ.setdefault("PAGE_TIMEOUT_SECONDS", "600")
 
+# 캡션 캐시는 **운영 기본 켬**이다(2026-08-23 대표 결재). 키가 이미지 해시 + 백엔드 +
+# 모델 + 프롬프트라 하나라도 바뀌면 자동 무효고, 같은 모델·같은 프롬프트로 뽑은 결과를
+# 그대로 쓰는 것이라 품질이 안 바뀐다. 오히려 같은 그림에 같은 캡션이 나와 **재현성이
+# 생긴다**(캡셔닝은 temperature를 못 준다 — 실측 12/12 상이). 직접 준 값은 존중한다.
+os.environ.setdefault("CAPTION_CACHE_DIR",
+                      str(Path(__file__).parent.parent / "storage" / "caption_cache"))
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import fitz  # noqa: E402

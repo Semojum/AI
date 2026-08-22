@@ -338,13 +338,26 @@ def usage_report() -> dict:
     by_model: dict[str, dict] = {}
     for (_kind, model), e in (st.llm if st else {}).items():
         m = by_model.setdefault(model, {"model": model, "calls": 0,
-                                        "input_tokens": 0, "output_tokens": 0,
+                                        "input_tokens": 0, "input_tokens_raw": 0,
+                                        "output_tokens": 0,
                                         "cache_read_tokens": 0, "cache_write_tokens": 0})
         m["calls"] += e.calls
-        m["input_tokens"] += e.input_tokens
+        m["input_tokens_raw"] += e.input_tokens
         m["output_tokens"] += e.output_tokens
         m["cache_read_tokens"] += e.cache_read_tokens
         m["cache_write_tokens"] += e.cache_write_tokens
+    # ★ **`input_tokens`는 「유효 입력」이다**(2026-08-23 대표 결재). proto `ModelUsage`에
+    #   캐시 칸이 없고 BE는 이 값에 입력 단가를 곱한다. 그런데 Anthropic `usage.input_tokens`
+    #   에는 캐시 토큰이 안 들어 있어서, 실값을 그대로 보내면 BE가 캐시분을 **0원**으로 친다
+    #   (캡션 호출당 프롬프트 약 2,200토큰이 통째로 빠진다). 캐시 읽기는 입력의 0.1배,
+    #   5분 TTL 쓰기는 1.25배라 **그냥 더해도 틀린다.** 단가 비율로 환산해 더한다:
+    #       유효 입력 = 실입력 + 캐시쓰기 × 1.25 + 캐시읽기 × 0.1
+    #   이러면 BE가 지금 코드 그대로 곱해도 금액이 맞는다 — proto 변경도 BE 작업도 없다.
+    #   실값은 `input_tokens_raw`와 아래 `parts[]`에 갈라져 남는다(메트릭 JSONL 전용).
+    for m in by_model.values():
+        m["input_tokens"] = round(m["input_tokens_raw"]
+                                  + m["cache_write_tokens"] * 1.25
+                                  + m["cache_read_tokens"] * 0.1)
     # ★ GPU는 쪽당 원가에 넣지 않는다(대표 지시 2026-08-20). AWS 서버 비용은 인스턴스
     #   시간으로 따로 매기므로 쪽마다 안분하면 이중 계상이 된다. 점유 시간(gpu_seconds)은
     #   관측값으로 계속 남기되 금액 합계에는 더하지 않는다.
