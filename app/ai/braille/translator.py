@@ -1377,6 +1377,30 @@ def _normalize_araea_middot(s: str) -> str:
     return _ARAEA_MIDDOT_RE.sub("·", s)
 
 
+# ── B-10(원장) 큰 동그라미 ◯ — 위치로 갈라야 한다 ────────────────────────────
+# ◯(U+25EF)는 문자표에 없어 조용히 사라진다(추출층 dev 278 · val 111). 그런데 **한 글자가
+# 세 자리에서 다르게 쓰인다** — 이걸 한 규칙으로 묶은 것이 Q12가 기각된 이유다.
+#   ① 문중 이름 가림  "◯◯ 부족"  → gold ⠸⠴⠴⠇ (제57항 숨김표)   ← 여기만 고친다
+#   ② 표 셀 값        "◯는 있음"  → gold는 로마자 O·X로 적는다      ← 건드리면 안 된다
+#   ③ 줄머리          용례를 아직 못 찾았다                          ← 보류
+# 추출이 표 셀을 한 줄에 하나씩 뱉어서 ②가 **줄머리처럼 보인다**(plan 실물 확인,
+# EBS-E26-001 body p125·p145). 그래서 "줄머리가 아닌 ◯만" 정규화한다 —
+# ○로 바꿔 두면 기존 숨김표 경로(제57항)가 개수까지 알아서 처리한다. 새 분기를 안 만든다.
+_BIG_CIRCLE_RUN_RE = re.compile(r"◯+")
+
+
+def _normalize_big_circle(s: str) -> str:
+    """줄머리에서 시작하지 않는 ◯런 → ○런. 줄머리(표 셀 값 자리)는 그대로 둔다.
+
+    ⚠ **런 단위로 판정한다.** 글자 단위로 하면 줄머리에서 시작한 ◯◯의 둘째 글자만
+      바뀌어 "숨김표 한 개"라는 없는 뜻이 된다.
+    """
+    def repl(m: re.Match) -> str:
+        at_line_start = m.start() == 0 or s[m.start() - 1] == "\n"
+        return m.group() if at_line_start else "○" * len(m.group())
+    return _BIG_CIRCLE_RUN_RE.sub(repl, s)
+
+
 def _normalize_special(s: str) -> str:
     out = []
     for ch in s:
@@ -1487,7 +1511,7 @@ def sanitize_for_braille(text: str) -> str:
     for _pua, _word in _PUA_TO_TEXT.items():
         text = text.replace(_pua, _word)      # B-09 ① 아는 글리프만 말로
     text = _BRAILLIFY_HOSTILE_RE.sub(_sanitize_repl, text)
-    return _normalize_special(text)
+    return _normalize_special(_normalize_big_circle(text))
 
 
 _ENG_RUN_RE = re.compile(r"[A-Za-z][A-Za-z'\- ]*[A-Za-z]|[A-Za-z]")
