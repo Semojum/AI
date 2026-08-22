@@ -155,3 +155,13 @@ class TestDoubleCircleMask:
     def test_문중_홑은_안_건드린다(self) -> None:
         # 001 body p0040 표 칸 "I (◎)" 는 값 자리다. 근거를 못 짚어 그대로 둔다.
         assert MASK_2 not in tr("I (◎)")
+
+    def test_한자_영도_같은_틀이다(self) -> None:
+        """`〇`(U+3007)도 문자표에 없어 통째로 사라지던 자리다(2026-08-23).
+
+        013 body p0034 `갑은〇〇 학생 연구소` → gold `⠫⠃⠵ ⠸⠴⠴⠇ ⠚⠁⠠⠗⠶` ·
+        p0117 `〇〇국이`·`〇〇국에서`·`〇〇국과` → gold `⠸⠴⠴⠇⠈⠍⠁…` 세 자리.
+        """
+        assert MASK_2 in tr("갑은〇〇 학생 연구소에서")
+        # 홑 〇 은 그대로 둔다 — val 두 자리가 OCR 쓰레기 줄의 홑 글자다.
+        assert MASK_2 not in tr("표에서 〇 자리")
