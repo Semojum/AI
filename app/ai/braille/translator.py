@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+import collections
 import re
 from functools import lru_cache
 
@@ -1378,6 +1379,44 @@ def _normalize_special(s: str) -> str:
     return "".join(out)
 
 
+# ── B-09(원장) PUA 아이콘 — 2026-08-22 pm 결재 ──────────────────────────────
+# 폰트 사설영역(PUA) 글리프는 _sanitize_repl에서 **공백으로 조용히 사라진다.** 점역사는
+# 그 자리에 무언가 있었다는 것조차 알 수 없다.
+#
+# 결재는 세 갈래다.
+#  ① 아래 표에 있는 글리프만 말로 옮긴다. 지금은 U+E3C4 하나다. 근거 셋이 맞물린다:
+#     묵자 body 177회 대 gold `(예)` 183회로 수가 가깝고, EBS-E26-004 body p0013에서
+#     묵자 8회 대 gold 8회로 쪽이 맞고, 원본에서 표 안 예문 앞 작은 아이콘임을 눈으로 봤다.
+#  ② 표에 없는 PUA는 **지우되 센다**(dropped_pua). 어느 아이콘이 어느 말인지 모르는 채
+#     추측해 옮기지 않는다. 대신 페이지에 R15를 세워 드러낸다 — 조용한 삭제가 문제였지
+#     삭제 자체가 문제가 아니다.
+#  ③ 나머지 매핑(U+E355·U+F0FC·U+E34C·익명화 U+E287 계열)은 자문 항목으로 넘어갔다.
+# ⚠ 같은 뜻인데 코드가 다른 것이 코퍼스 안에 이미 있다(언매 U+E3C4 대 생명 U+E355).
+#   그래서 표를 **책 단위 대응표로 키우는 것**이 다음 단계이고, 여기에 추측으로 더하지 않는다.
+_PUA_TO_TEXT = {
+    "\ue3c4": "(예)",     # 언매 예문 아이콘 — gold `(예)`
+}
+
+
+def _pua_droppable(ch: str) -> bool:
+    """표에 없고 braillify도 못 받는 PUA인가(= 지금 조용히 사라지는 글자)."""
+    o = ord(ch)
+    if not (0xE000 <= o <= 0xF8FF or 0xF0000 <= o <= 0x10FFFD):
+        return False
+    if ch in _PUA_TO_TEXT:
+        return False
+    try:
+        _braillify_lib.translate_to_unicode(ch)
+        return False
+    except Exception:      # noqa: BLE001
+        return True
+
+
+def dropped_pua(text: str) -> collections.Counter:
+    """지워질 PUA를 글리프별로 센다. 페이지 플래그(R15)의 근거 수치다."""
+    return collections.Counter(ch for ch in text if _pua_droppable(ch))
+
+
 def _sanitize_repl(m: re.Match) -> str:
     """hostile 런을 문자별로: braillify가 처리 가능하면 보존(옛한글 PUA 등),
     못 하는 것(수식 글리프·제어문자)만 공백. 규정 08절 옛한글 PUA 소실 버그 수정(2026-07-18)."""
@@ -1436,6 +1475,8 @@ def sanitize_for_braille(text: str) -> str:
     주변 한글·영문·숫자는 보존하고, 이중 공백은 이후 _collapse_spaces가 정리한다.
     """
     text = strip_leader_dots(text)
+    for _pua, _word in _PUA_TO_TEXT.items():
+        text = text.replace(_pua, _word)      # B-09 ① 아는 글리프만 말로
     text = _BRAILLIFY_HOSTILE_RE.sub(_sanitize_repl, text)
     return _normalize_special(text)
 

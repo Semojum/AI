@@ -1772,6 +1772,21 @@ def _build_response(
         if _risk and "quality_report" in response:
             response["quality_report"].setdefault("review_flags", []).append(
                 {"type": "R11", "element_id": "page", "message": _risk})
+        # B-09(원장) — 폰트 사설영역(PUA) 글리프가 점역에서 공백으로 사라진다. 어느 아이콘이
+        # 어느 말인지 모르는 것은 추측해 옮기지 않되(pm 결재 2026-08-22), **조용히 지우지도
+        # 않는다**: 글리프 코드와 횟수를 남기고 그 쪽을 NEEDS_REVIEW로 세워 점역사가 원본을
+        # 보게 한다. 실측 근거 — print 3,182쪽 중 339쪽(10.7%)에 PUA가 있고 1,967회다.
+        from app.ai.braille.translator import dropped_pua as _dropped_pua
+        _pua = _dropped_pua("\n".join(
+            c for e in (response.get("text_list") or []) for c in (e.get("contents") or [])))
+        if _pua and "quality_report" in response:
+            _codes = ", ".join(f"U+{ord(ch):04X}×{n}" for ch, n in _pua.most_common())
+            response["quality_report"].setdefault("review_flags", []).append(
+                {"type": "R15", "element_id": "page",
+                 "message": f"글꼴 사설영역 글리프 {sum(_pua.values())}자가 점역에서 빠졌다 — 원본 확인 필요 ({_codes})"})
+            if response.get("status") == "COMPLETED":
+                response["status"] = "NEEDS_REVIEW"
+                response["quality_report"]["status"] = "NEEDS_REVIEW"
     except Exception as exc:  # noqa: BLE001 — 등급 실패가 점역 결과를 막지 않는다
         logger.warning("검수 등급 산출 실패(무시): %s", exc)
 
