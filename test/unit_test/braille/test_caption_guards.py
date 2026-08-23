@@ -8,7 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from app.ai.captioning.captioner import _is_blank_crop, _reject_read_text
+# `captioner` 는 외부 LLM SDK 를 문다. CI 의 test-fast 는 requirements.txt 만 깔아
+# 그것이 없으므로 수집 단계에서 이 파일 하나 때문에 점역 게이트 전체가 죽는다
+# (2026-08-24 PR #233 에서 같은 일이 test_table_tn_guard.py 로 났다).
+# 없으면 이 파일만 건너뛴다 — test-full 이 그대로 돌려 준다.
+try:
+    from app.ai.captioning.captioner import _is_blank_crop, _reject_read_text
+except Exception:  # noqa: BLE001 — 무엇이 없든 건너뛴다
+    pytest.skip("test-fast 환경에는 캡셔닝 의존성이 없다 (test-full 이 돌린다)",
+                allow_module_level=True)
 
 # 실측으로 나온 '글자를 읽은' 캡션 둘
 READ_TEXT_1 = ("그림: 본문: 28번 문제\n\n$\\overline{AB}=\\overline{CD}=4$, "
