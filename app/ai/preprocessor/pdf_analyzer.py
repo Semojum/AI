@@ -11,6 +11,8 @@ import fitz
 from app.schemas.layout import DocumentMeta
 from app.utils.logger import get_logger
 
+from app.ai.braille.tag_names import BOX_CHAR as TAG_BOX_CHAR
+
 logger = get_logger(__name__)
 
 MIN_TEXT_LENGTH = 10
@@ -687,6 +689,113 @@ def tag_answer_marks(elements: list[dict], marks: list) -> int:
         if best is not None:
             best["content"] = f"({kind}){best['content']}"
             n += 1
+    return n
+
+
+# ── 네모 문자(규정 제64항 · 원장 C-16-2) ─────────────────────────────────────
+# 규정 제64항: "…네모 문자는 `⠸⠦ ⠴⠇`으로 묶어 나타낸다." 규정 예시 넷이 전부 한 글자다.
+#
+# ★ 왜 검출이 필요한가 — **그 네모는 글자가 아니라 그림이다.** 지문 빈칸 "전쟁 중에
+#   ▯(가)▯ 이/가 남긴"의 네모는 벡터 드로잉이라 텍스트 추출에 안 잡히고, 추출물에는
+#   `(가)`만 남아 문두 지시 `(가)`와 구분이 사라진다. 쪽 맞춘 전수 대조에서 우리 414 대
+#   gold 867(−453)이었고 미달의 대부분이 이 자리다(원장 C-16-2).
+#
+# 문턱은 실측으로 정했다(gold 쪽 단위 개수 대조, 2026-08-23):
+#   · 사각형 W<60·H<20pt — 이보다 크면 표 칸·도형 노드다. 실측 `EBS-E26-014` 오검출이
+#     64×38(표 칸)·83×29였고, 문턱을 120×40에서 60×20으로 좁히니 015 정확일치 94→98%,
+#     012 92→94%, 014 87→88%로 셋 다 올랐다.
+#   · 토큰은 `(가)` 꼴과 한글 낱글자만. 숫자·로마자·원문자까지 넓히면 015가 94→83%로
+#     무너진다(표 안 낱자·수식 변수를 줍는다).
+#   · 획 사각형(`type`에 `s`)만 본다. 채움 배지는 두 갈래가 섞여 있다 — `EBS-E26-009`
+#     절 번호 배지(11×11 채움)는 gold가 적지만, `EBS-E26-014` 답지 제목 `정`·`답` 배지는
+#     **장식이라 gold가 안 적는다**(원장 C-16-3). 가르는 기준이 아직 없어 이번 판은 뺐다.
+_CHAR_BOX_MAX_W = 60.0
+_CHAR_BOX_MAX_H = 20.0
+_CHAR_BOX_TOKEN_RE = re.compile(r"\([가-힣A-Za-z0-9]\)|[가-힣]")
+
+
+def char_box_glyphs(page) -> list[tuple[str, list]]:
+    """네모 문자 후보 `(토큰, 표시좌표 Rect)`. 실패하면 빈 목록."""
+    try:
+        rects = [fitz.Rect(g["rect"]) for g in page.get_drawings()
+                 if "s" in g["type"]
+                 and g["rect"].width < _CHAR_BOX_MAX_W and g["rect"].height < _CHAR_BOX_MAX_H]
+        words = page.get_text("words")
+    except Exception:  # noqa: BLE001 — 손상 페이지는 네모 문자 없이 진행
+        return []
+    out: list[tuple[str, list]] = []
+    for w in words:
+        token = w[4]
+        if not _CHAR_BOX_TOKEN_RE.fullmatch(token):
+            continue
+        r = fitz.Rect(w[:4])
+        if any(box.contains(r) for box in rects):
+            out.append((token, r))
+    return out
+
+
+def char_box_glyphs_norm(pdf_data: bytes, page_no: int) -> list[tuple[str, list[float]]]:
+    """네모 문자 후보를 0~1000 정규화 좌표로. 실패하면 빈 목록(본문은 나가야 한다)."""
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(_coerce_pdf_bytes(pdf_data))
+            tmp_path = f.name
+        doc = fitz.open(tmp_path)
+        try:
+            page = doc[max(0, min(page_no - 1, doc.page_count - 1))]
+            w, h = page.rect.width or 1, page.rect.height or 1
+            return [(t, [r.x0 / w * 1000, r.y0 / h * 1000, r.x1 / w * 1000, r.y1 / h * 1000])
+                    for t, r in char_box_glyphs(page)]
+        finally:
+            doc.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("네모 문자 검출 실패(없이 진행): %s", exc)
+        return []
+    finally:
+        if tmp_path:
+            os.unlink(tmp_path)
+
+
+def tag_char_boxes(elements: list[dict], boxes: list) -> int:
+    """네모 문자를 품은 토큰을 `<!네모글>…<!/네모글>`로 감싼다(in-place). 감싼 개수 반환.
+
+    같은 토큰이 한 요소에 여러 번 나오면 **앞에서부터 하나씩** 감싼다 — 한 요소 안
+    `(가)`가 지시문과 빈칸 두 자리에 나오는 쪽이 흔한데, 감싸는 자리는 상자가 있는 수만큼이다.
+    (자리까지 맞추려면 글자별 좌표가 필요한데 추출물에는 요소 bbox밖에 없다. 개수는 맞는다.)
+    """
+    if not boxes or not elements:
+        return 0
+    open_tag, close_tag = f"<!{TAG_BOX_CHAR}>", f"<!/{TAG_BOX_CHAR}>"
+    n = 0
+    cursor: dict[int, int] = {}
+    for token, (bx0, by0, bx1, by1) in boxes:
+        cx, cy = (bx0 + bx1) / 2, (by0 + by1) / 2
+        target = None
+        for el in elements:
+            bb = el.get("bbox")
+            if not bb or len(bb) != 4 or el.get("type") not in ("text", "list_item", "title"):
+                continue
+            if not (bb[0] <= cx <= bb[2] and bb[1] <= cy <= bb[3]):
+                continue
+            if token not in (el.get("content") or ""):
+                continue
+            target = el
+            break
+        if target is None:
+            continue
+        key = id(target)
+        start = cursor.get(key, 0)
+        pos = (target["content"] or "").find(token, start)
+        if pos < 0:
+            pos = (target["content"] or "").find(token)
+            if pos < 0:
+                continue
+        content = target["content"]
+        target["content"] = (content[:pos] + open_tag + token + close_tag
+                             + content[pos + len(token):])
+        cursor[key] = pos + len(open_tag) + len(token) + len(close_tag)
+        n += 1
     return n
 
 

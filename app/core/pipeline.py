@@ -462,8 +462,10 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     from app.ai.preprocessor.pdf_analyzer import (
         analyze_pdf,
         box_rects_norm,
+        char_box_glyphs_norm,
         extract_text_blocks,
         mark_glyphs_norm,
+        tag_char_boxes,
         regroup_boxed,
         tag_answer_marks,
         tag_boxed_elements,
@@ -511,6 +513,16 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                      for k, r in marks]
         if n := tag_answer_marks(elements, marks):
             logger.info("정오 표시 %d개 태깅 (page=%d)", n, task.page_no)
+
+        # 네모 문자(규정 제64항 · 원장 C-16-2) — 지문 빈칸 ▯(가)▯ 의 네모는 벡터 드로잉이라
+        # 텍스트 추출에 안 잡힌다. 추출물에는 `(가)`만 남아 문두 지시와 구분이 사라진다.
+        cboxes = await asyncio.to_thread(char_box_glyphs_norm, task.pdf_data, task.page_no)
+        if bbox_space == "pixel" and image_width and image_height:
+            cboxes = [(t, [r[0] / 1000 * image_width, r[1] / 1000 * image_height,
+                           r[2] / 1000 * image_width, r[3] / 1000 * image_height])
+                      for t, r in cboxes]
+        if n := tag_char_boxes(elements, cboxes):
+            logger.info("네모 문자 %d개 태깅 (page=%d)", n, task.page_no)
 
         # 놓친 그림 회수 — 앞단이 시각 요소를 **0개** 낸 쪽만 비전 모델로 다시 본다.
         # 평가 실측: 시각 요소가 0인 26쪽에서 우리가 gold의 1%만 쓴다(프롬프트로는 안 움직인다).
@@ -1650,6 +1662,8 @@ def _build_response(
             "pdf_layer_confidence": doc_meta.pdf_confidence if doc_meta else 0.0,
             "routing_tier_used": routing_tier,
             "scan_only": doc_meta.scan_only if doc_meta else False,
+            # 캡셔닝을 끄고 돈 산출물이면 박아 둔다 — 이걸로 시각 축을 재면 안 된다.
+            "caption_disabled": os.getenv("SEMOJUM_NO_CAPTION") == "1",
         },
         "quality_report": quality_report.model_dump(),
     }
@@ -1772,6 +1786,21 @@ def _build_response(
         if _risk and "quality_report" in response:
             response["quality_report"].setdefault("review_flags", []).append(
                 {"type": "R11", "element_id": "page", "message": _risk})
+        # B-09(원장) — 폰트 사설영역(PUA) 글리프가 점역에서 공백으로 사라진다. 어느 아이콘이
+        # 어느 말인지 모르는 것은 추측해 옮기지 않되(pm 결재 2026-08-22), **조용히 지우지도
+        # 않는다**: 글리프 코드와 횟수를 남기고 그 쪽을 NEEDS_REVIEW로 세워 점역사가 원본을
+        # 보게 한다. 실측 근거 — print 3,182쪽 중 339쪽(10.7%)에 PUA가 있고 1,967회다.
+        from app.ai.braille.translator import dropped_pua as _dropped_pua
+        _pua = _dropped_pua("\n".join(
+            c for e in (response.get("text_list") or []) for c in (e.get("contents") or [])))
+        if _pua and "quality_report" in response:
+            _codes = ", ".join(f"U+{ord(ch):04X}×{n}" for ch, n in _pua.most_common())
+            response["quality_report"].setdefault("review_flags", []).append(
+                {"type": "R15", "element_id": "page",
+                 "message": f"글꼴 사설영역 글리프 {sum(_pua.values())}자가 점역에서 빠졌다 — 원본 확인 필요 ({_codes})"})
+            if response.get("status") == "COMPLETED":
+                response["status"] = "NEEDS_REVIEW"
+                response["quality_report"]["status"] = "NEEDS_REVIEW"
     except Exception as exc:  # noqa: BLE001 — 등급 실패가 점역 결과를 막지 않는다
         logger.warning("검수 등급 산출 실패(무시): %s", exc)
 

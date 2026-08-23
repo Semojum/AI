@@ -374,8 +374,25 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
     return "linear" if max_col == 2 else "table_grid"
 
 
+# 모델이 변환 대신 **상의를 답할 때** 나오는 말들. 이게 점자로 인쇄되면 점역사는 표 자리에서
+# 회의록을 읽는다(eval 실측 2026-08-22: 7쪽 11,993셀, 한 쪽은 2,507셀).
+_TN_META_RE = re.compile(
+    r"점역\s*방식|방식을?\s*제안|제안합니다|일반적이므로|다음 두 가지|어떻게 (?:점역|표현)"
+)
+_TN_FAIL = "[처리 불가: 표 점역사주 생성 실패]"
+
+
 def _parse_tn_from_response(response: str) -> str:
-    """LLM 응답에서 [점역사주] 텍스트 추출. 선택된 방식 우선."""
+    """LLM 응답에서 [점역사주] 텍스트 추출. 선택된 방식 우선.
+
+    ★ 2026-08-22 — 종전에는 초안 줄을 못 찾으면 **응답 전체를 그대로 돌려줬다**
+      ("응답 전체가 TN인 경우"라는 낙관). 모델이 변환 대신 "이렇게 점역하면 어떨까요"를
+      답하면 그 상의가 통째로 점자가 됐다. 실측 7쪽 11,993셀.
+      → ① 여는 대괄호만 맞으면 살린다(`[점역사주:` 처럼 콜론을 붙이는 변형이 실제 원인이었다)
+        ② 그래도 없으면 **원문을 흘리지 않고** 실패 표시를 낸다
+        ③ 살린 줄에 상의 말투가 남아 있으면 실패로 본다.
+      실패 표시는 짧고 눈에 띄어 점역사가 그 자리를 바로 찾는다.
+    """
     lines = [ln.strip() for ln in response.splitlines() if ln.strip()]
     selected_idx = None
     for ln in lines:
@@ -385,14 +402,24 @@ def _parse_tn_from_response(response: str) -> str:
             except (ValueError, IndexError):
                 pass
 
-    drafts = [ln for ln in lines if "[점역사주]" in ln]
+    drafts = [ln for ln in lines if "[점역사주" in ln and not _TN_META_RE.search(ln)]
     if not drafts:
-        # 응답 전체가 TN인 경우
-        return response.strip() if response.strip() else "[처리 불가: 표 점역사주 생성 실패]"
+        return _TN_FAIL
 
-    if selected_idx is not None and 0 <= selected_idx < len(drafts):
-        return drafts[selected_idx]
-    return drafts[0]
+    picked = drafts[selected_idx] if (selected_idx is not None and 0 <= selected_idx < len(drafts)) else drafts[0]
+    return _strip_tn_labels(picked)
+
+
+# 골라낸 줄에 남는 포장 — 방식 번호와 [점역사주] 표지는 **점역사에게 줄 내용이 아니다.**
+# 종전에는 이것까지 점자로 찍혀 나갔다(실물 "※※[방식1]※※ [점역사주: …]").
+_TN_LABEL_RE = re.compile(r"^[\s*※#\-]*\[?\s*방식\s*[0-9]+\s*\]?[\s*※:.)]*")
+_TN_MARK_RE = re.compile(r"\[\s*점역사주\s*[:\]]\s*")
+
+
+def _strip_tn_labels(line: str) -> str:
+    s = _TN_LABEL_RE.sub("", line).strip()
+    s = _TN_MARK_RE.sub("", s, count=1).strip()
+    return s.rstrip("]").strip() or _TN_FAIL
 
 
 

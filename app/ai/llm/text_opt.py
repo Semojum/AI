@@ -42,7 +42,10 @@ _TAG_CANDIDATE_RE = re.compile(
 # 이름은 한 벌뿐이다(`braille/tag_names.py`). 구 이름은 미지 태그로 걸러 낸다 —
 # LLM이 옛 이름을 내면 그 출력은 버리고 원문을 쓴다(태깅 없음 > 갈린 이름).
 _KNOWN_TAGS = {_TAGS.BOX_TOP, _TAGS.BOX_BOTTOM, _TAGS.TN,
-               _TAGS.BLANK_SQUARE, _TAGS.BLANK_TABLE, _TAGS.BLANK_RULE}
+               _TAGS.BLANK_SQUARE, _TAGS.BLANK_TABLE, _TAGS.BLANK_RULE,
+               # 네모 문자(제64항)는 LLM이 만들지 않는다 — 벡터 검출이 앞단에서 넣는다.
+               # 여기 없으면 그 태그를 단 요소에서 LLM 태깅 결과가 통째로 버려진다.
+               _TAGS.BOX_CHAR}
 _TAG_TOKEN_RE = re.compile(r"<!(/?)([^>]+)>")
 _FENCE_RE = re.compile(r"```[a-zA-Z]*\n?|```")
 
