@@ -5,7 +5,21 @@
 원인은 초안 줄을 못 찾으면 **응답 전체를 그대로 돌려주던 것**이고, 못 찾은 이유는
 모델이 `[점역사주:` 처럼 콜론을 붙였기 때문이다.
 """
-from app.ai.llm.table_opt import _parse_tn_from_response as parse
+import pytest
+
+# `table_opt` 는 `model_manager` 를 거쳐 torch 를 문다(단위 테스트가 그 네임스페이스를
+# patch 해야 해서 지연 임포트로 못 바꾼다). CI 의 test-fast 는 requirements.txt 만 깔아
+# torch 가 없으므로 **수집 단계에서 이 파일 하나 때문에 점역 게이트 1,057건이 통째로
+# 죽는다**(2026-08-24 PR #233 실패). 무거운 의존성이 없으면 이 파일만 건너뛴다 —
+# test-full 이 그대로 돌려 주므로 검사에서 빠지는 것은 아니다.
+# ★ importorskip 을 쓰지 않는 것은 pytest 판에 따라 ImportError 를 안 잡기 때문이다.
+try:
+    import torch  # noqa: F401
+except Exception:  # noqa: BLE001 — 무엇이 없든 건너뛴다
+    pytest.skip("test-fast 환경에는 torch 가 없다 (test-full 이 돌린다)",
+                allow_module_level=True)
+
+from app.ai.llm.table_opt import _parse_tn_from_response as parse  # noqa: E402
 
 FAIL = "[처리 불가: 표 점역사주 생성 실패]"
 
