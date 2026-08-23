@@ -169,6 +169,16 @@ class TestKnownLimits:
 
         assert decode(convert_latex("a √ b"), math=True) == "a √ b"
 
+    def test_글상자_테두리를_표시로_읽는다(self) -> None:
+        """테두리는 글자가 아니라 도형이다 — 음절로 읽으면 `옹운운운…옹`이 나온다."""
+        assert _rt("<!상자><!/상자>") == "【글상자】"
+        assert _rt("<!상자>과학 돋보기<!/상자>") == "【글상자 과학 돋보기】"
+
+    @pytest.mark.parametrize("text", ["옹기와 옹달샘", "가운데 옹 하나"])
+    def test_약자_옹은_그대로_읽는다(self, text: str) -> None:
+        """⠿는 테두리 셀이자 약자 '옹'이다 — 줄 전체가 테두리 꼴일 때만 표시로 바꾼다."""
+        assert _rt(text) == text
+
     def test_공백_넘는_구간을_읽는다(self) -> None:
         """제32항 `MP4 Player` — 2026-08-24까지는 못 읽던 한계였다.
 
