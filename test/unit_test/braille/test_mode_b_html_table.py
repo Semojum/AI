@@ -3,7 +3,21 @@
 종전에는 `<!표>` 형식만 표로 봤고 hwp·docx 에서 온 HTML `<table>` 은 평범한 글줄로
 떨어져 **마크업이 그대로 점자화**됐다(`<table>` → ⠠⠦⠞⠁⠼⠴⠄ …).
 """
-from app.core.pipeline import _mode_b_html_tables_to_tags, _mode_b_segments
+import pytest
+
+# `pipeline` 은 `model_manager` 를 거쳐 torch 를 문다(지연 임포트라 수집은 통과하고
+# **실행에서** 죽는다 — 2026-08-24 PR #241 test-fast 실패). CI 의 test-fast 는
+# requirements.txt 만 깔아 torch 가 없으므로 이 파일만 건너뛴다.
+# test-full 이 무거운 의존성까지 설치해 그대로 돌리므로 검사에서 빠지지 않는다.
+try:
+    # ★ pipeline 임포트 자체는 통과한다. model_manager 를 함수 안에서 늦게 물기
+    #   때문이다. 그래서 torch 를 직접 확인해야 한다 — 안 그러면 수집은 되고
+    #   실행에서 죽는다.
+    import torch  # noqa: F401
+    from app.core.pipeline import _mode_b_html_tables_to_tags, _mode_b_segments
+except Exception:  # noqa: BLE001 — 무엇이 없든 건너뛴다
+    pytest.skip("test-fast 환경에는 torch 가 없다 (test-full 이 돌린다)",
+                allow_module_level=True)
 
 HTML = "<table><tr><td>구분</td><td>1학기</td></tr><tr><td>국어</td><td>90</td></tr></table>"
 
