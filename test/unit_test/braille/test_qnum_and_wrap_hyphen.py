@@ -28,11 +28,21 @@ class TestQuestionNumberPeriod:
         lines, _ = translate_with_breaks("2\n다음은 수업 시간에 나눈 대화이다")
         assert lines[0].endswith(_PERIOD), f"문항 번호 마침표 없음: {lines[0]}"
 
-    def test_한_줄에_이어진_번호도_종전대로(self):
-        # ⠼⠚⠃ = 수표+02, 그 뒤 온점 1개(⠲⠲가 아니다)
+    def test_한_자리_번호는_마침표를_찍는다(self):
+        # ⠼⠃ = 수표+2, 그 뒤 온점 1개(⠲⠲가 아니다)
+        lines, _ = translate_with_breaks("2 자연수를 모두 더하면")
+        assert lines[0].startswith("⠼⠃" + _PERIOD), f"문항 번호 마침표: {lines[0]}"
+        assert not lines[0].startswith("⠼⠃" + _PERIOD * 2), f"마침표 중복: {lines[0]}"
+
+    def test_두_자리_번호는_마침표를_안_찍는다(self):
+        """M006(2026-08-23) — 정답은 두 자리·영패딩 번호 뒤에 마침표를 **안 찍는다**.
+        줄머리 제약을 푼 전수 대조에서 dev 1,031 · val 405 건에 **반례 0**이다.
+        (구판 테스트는 `02 자연수` → `02.` 를 '종전대로'로 박아 뒀는데 그건 우리 관행이었다.)
+        규정 근거는 「점자 도서 제작 지침」 4194행 — 번호 체계는 원본 자료를 따른다.
+        """
         lines, _ = translate_with_breaks("02 자연수를 모두 더하면")
-        assert lines[0].startswith("⠼⠚⠃" + _PERIOD), f"문항 번호 마침표: {lines[0]}"
-        assert not lines[0].startswith("⠼⠚⠃" + _PERIOD * 2), f"마침표 중복: {lines[0]}"
+        assert lines[0].startswith("⠼⠚⠃"), f"번호 자체가 어긋난다: {lines[0]}"
+        assert not lines[0].startswith("⠼⠚⠃" + _PERIOD), f"두 자리에 마침표가 붙었다: {lines[0]}"
 
     def test_멱등_이중적용_없음(self):
         """요소 단위 선적용 뒤 _apply_book_style이 같은 규칙을 다시 걸어도
@@ -41,8 +51,10 @@ class TestQuestionNumberPeriod:
         twice = _QNUM_RE.sub(r"\1.", once)
         assert once == twice == "2.\n다음은 수업"
 
-        once1 = _QNUM_RE.sub(r"\1.", "02 자연수")
-        assert _QNUM_RE.sub(r"\1.", once1) == once1 == "02. 자연수"
+        # 두 자리는 애초에 발동하지 않는다(M006) — 멱등성은 한 자리로 본다.
+        once1 = _QNUM_RE.sub(r"\1.", "7 자연수")
+        assert _QNUM_RE.sub(r"\1.", once1) == once1 == "7. 자연수"
+        assert _QNUM_RE.sub(r"\1.", "02 자연수") == "02 자연수"
 
         lines, _ = translate_with_breaks("2\n다음은 수업 시간에 나눈 대화이다")
         assert lines[0].count(_PERIOD) == 1, f"마침표 중복: {lines[0]}"
