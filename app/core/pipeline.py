@@ -933,12 +933,19 @@ _BOX_BLOCK_RE = re.compile(
     r"(<!상자(\d?)>)(.*?)(<!/상자\2>)(.*?)(?=<!상자끝)", re.S)
 
 
-# 인쇄면 줄바꿈을 잇는 요소 유형. list_item은 한 줄이 한 항목이라 제외한다.
-_PARA_JOIN_TYPES = {"text", "caption", "footnote", "sidebar"}
+# 인쇄면 줄바꿈을 잇는 요소 유형.
+# list_item 도 넣는다(2026-08-24). "한 줄이 한 항목"이라 빼 뒀는데 실측이 반대다 —
+# devall·valall 추출의 list_item 866건 중 **774건(89%)** 이 단 폭에 밀린 wrap 이고
+# `사회 전체와의 연관 속에서 / 폭넓게 탐구하려는`처럼 어절이, 때로는 낱말이
+# (`그 / 러다 보니`) 줄 끝에서 갈린다. 새 항목은 아래 `_LIST_HEAD_RE`가 지킨다.
+_PARA_JOIN_TYPES = {"text", "caption", "footnote", "sidebar", "list_item"}
 # 인쇄면 한 단으로 볼 최소 폭. 이보다 좁고 들쭉날쭉하면 시·대사처럼 줄바꿈 자체가
 # 내용인 블록이라 잇지 않는다.
 _PARA_MIN_COL = 15
-_LIST_HEAD_RE = re.compile(r"^\s*(?:[①-⑮㉠-㉪]|[0-9]{1,2}\s*[.)]|[가-핳]\s*[.)]|[-•·])\s")
+# 괄호 꼴 항목 번호도 새 항목이다 — `(가)`·`(1)`. 이게 없으면 항목끼리 이어 붙는다.
+_LIST_HEAD_RE = re.compile(
+    r"^\s*(?:[①-⑮㉠-㉪]|\(\s*(?:[가-힣]|[0-9]{1,2})\s*\)"
+    r"|[0-9]{1,2}\s*[.)]|[가-핳]\s*[.)]|[-•·])\s*")
 
 
 def _join_wrapped_lines(text: str) -> str:
