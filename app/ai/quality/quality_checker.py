@@ -209,6 +209,7 @@ class QualityChecker:
         llm_outputs: Iterable[LLMOutput] = (),
         braille_outputs: Iterable[BrailleOutput] = (),
         line_overflow_rate: float = 0.0,
+        blank_page: bool = False,
     ) -> QualityReport:
         extracted = list(extracted)
         llm_outputs = list(llm_outputs)
@@ -356,7 +357,10 @@ class QualityChecker:
         # 짧은 쪽과 구별되지 않는다(단위 테스트 12건이 그 자리에서 깨졌다). pipeline.py 배선 사안.
         n_elements = len(layout_result.elements) if layout_result else 0
         c1_message = ""
-        if n_elements == 0 and not llm_outputs:
+        if n_elements == 0 and not llm_outputs and not blank_page:
+            # ★ 빈 페이지는 실패가 아니다(T702). 묵자에 글·그림·획이 하나도 없으면
+            #   요소가 0인 것이 정상이고, 그걸 C1으로 올리면 앱이 "변환 차단"을 띄운다.
+            #   빈 지면을 끼워 넣는 것은 점역 조판에서 정상 동작이다.
             c1_message = "전체 추출 실패 — 페이지에서 요소를 하나도 얻지 못함"
         elif n_elements > 0 and not llm_outputs:
             c1_message = "전체 처리 실패 — 모든 체인이 출력 없이 종료"
