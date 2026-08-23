@@ -1644,6 +1644,11 @@ def _build_response(
 
     # PART 11: 품질 판정 — C/R 감지 후 status 결정 (COMPLETED|NEEDS_REVIEW|BLOCKED)
     from app.ai.quality.quality_checker import QualityChecker
+    # 요소가 하나도 없을 때만 묵자를 다시 본다 — 빈 지면이면 C1(BLOCKED)이 아니다(T702).
+    blank_page = False
+    if not extracted and not llm_outputs and task.pdf_data:
+        from app.ai.preprocessor.pdf_analyzer import page_is_blank
+        blank_page = page_is_blank(task.pdf_data, task.page_no)
     quality_report = QualityChecker().check(
         page_id,
         layout_result=layout_result,
@@ -1651,6 +1656,7 @@ def _build_response(
         llm_outputs=llm_outputs,
         braille_outputs=braille_outputs,
         line_overflow_rate=line_overflow_rate,
+        blank_page=blank_page,
     )
 
     response: dict = {
