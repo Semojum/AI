@@ -123,11 +123,14 @@ class TestKnownLimits:
     def test_대문자_약어는_단독이어도_읽힌다(self) -> None:
         assert _rt("ATP") == "ATP"
 
-    def test_공백_넘는_구간은_못_읽는다(self) -> None:
-        """제32항 `MP4 Player`. decode가 공백 단위로 쪼개고 구간 경계를 못 믿는다."""
-        got = _rt("MP4 Player를 샀다")
-        assert got.startswith("MP4 ")
-        assert "Player" not in got
+    def test_공백_넘는_구간을_읽는다(self) -> None:
+        """제32항 `MP4 Player` — 2026-08-24까지는 못 읽던 한계였다.
+
+        decode가 줄을 공백으로 쪼개 둘째 낱말이 문맥을 잃었다. 이제 `_merge_roman_tokens`가
+        **종료표 ⠲가 실제로 앞에 있을 때만** 토큰을 합친다. 낱말 앞의 ⠴만 로마자표로 보므로
+        (제29항) 닫는 낫표 `』`=⠴⠆를 구간 시작으로 오인하지 않는다.
+        """
+        assert _rt("MP4 Player를 샀다") == "MP4 Player를 샀다"
 
 
 class TestPieupFinalAndWrapParens:

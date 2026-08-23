@@ -247,6 +247,27 @@ def _build_eng_reverse() -> tuple[dict[str, str], dict[str, str], dict[str, str]
     return anywhere, initial, final
 
 
+def _build_eng_words() -> dict[str, str]:
+    """낱말 **전체**가 일치할 때만 쓰는 셀→낱말 표(단어기호 + 단축형).
+
+    이게 없으면 `the`(⠮)가 한글 '을', `such`(⠎⠡)가 'sch'로 떨어진다 — 낱자 폴백이
+    약자를 모르기 때문이다. 낱말 경계(로마자표 직후·공백·종료표)에서만 맞춰 본다.
+    한 점형에 두 낱말이 걸리면(⠴=was/by) 정방향 표 순서대로 먼저 것을 쓴다.
+    """
+    from app.ai.braille import eng_braille as _E
+
+    # ★ 한 칸짜리는 넣지 않는다. `WORDSIGNS`가 그렇다(x=⠭ it · k=⠅ knowledge ·
+    #   f=⠋ from · y=⠽ you). 수식 변수와 점형이 같아서 넣으면 수식이 통째로 깨진다 —
+    #   실측 32,036요소에서 개선 5 · 악화 962였다. 여러 칸 단축형만 쓴다.
+    words: dict[str, str] = {}
+    for word, cell in _E.SHORT_FORMS.items():
+        if len(cell) >= 2:
+            words.setdefault(cell, word)
+    return words
+
+
+_ENG_WORD = _build_eng_words()
+_ENG_WORD_MAX = max((len(k) for k in _ENG_WORD), default=1)
 _ENG_ANY, _ENG_INIT, _ENG_FINAL = _build_eng_reverse()
 _ENG_MAX = max((len(k) for k in list(_ENG_ANY) + list(_ENG_INIT) + list(_ENG_FINAL)),
                default=1)
@@ -322,7 +343,17 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
     caps_word = False
     while j < n:
         c = s[j]
-        if c in (_SPACE_CELL, " "):                # 공백 → 런 종료(소비 안 함)
+        if c in (_SPACE_CELL, " "):                # 공백 → 원칙은 런 종료
+            # 제32항은 로마자표~종료표 **사이**를 한 구간으로 본다(`such tactics`).
+            # 그래서 종료표가 실제로 앞에 있으면 공백을 넘어 이어 간다 —
+            # `_roman_span_ahead`가 그 증거를 요구하므로 한글을 삼키지 않는다.
+            # 증거가 없으면 종전대로 끊는다(⠴는 닫는 따옴표, ⠲는 마침표와 같은 셀이라
+            # 구간처럼 보이는 한글 오탐이 정답 도서에 절반이다).
+            if s[i] == _ROMAN_START and _roman_span_ahead(s, j + 1):
+                out.append(" ")
+                caps_word = False          # 대문자 단어표는 낱말 하나까지다
+                j += 1
+                continue
             # ⚠ 제32항은 로마자표~종료표 **사이**를 한 구간으로 보므로 원칙적으로는
             #   공백을 넘어 이어져야 한다(`MP4 Player`). 하지만 그렇게 못 한다:
             #   ① `decode`가 줄을 **공백 단위로 쪼개** 토큰마다 따로 디코드한다.
@@ -362,6 +393,18 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
         # 영어 약자(er=⠻ · in=⠔ · the=⠮ …)를 낱자보다 먼저 본다. 낱자로 읽으면
         # 여기서 런이 깨져 뒤 낱말이 통째로 한글로 오독된다.
         _word_start = j == i + 1 or s[j - 1] in (_SPACE_CELL, " ", _CAPITAL)
+        # 단축형은 **로마자표가 낱말 앞에 온 런에서만** 본다(제29항). 낱말 중간의 ⠴는
+        # 로마자표가 아니라 닫는 낫표·따옴표다(』=⠴⠆) — 거기서 단축형을 대면
+        # `『대의각미록』에`가 `『대의각미록beneath`가 된다(실측 악화 10건 전부 이것).
+        if _word_start and not caps_word and (i == 0 or s[i - 1] in (_SPACE_CELL, " ")):
+            _end = j
+            while _end < n and s[_end] not in (_SPACE_CELL, " ", _ROMAN_END):
+                _end += 1
+            _w = _ENG_WORD.get(s[j:_end]) if _end - j <= _ENG_WORD_MAX else None
+            if _w is not None:
+                out.append(_w.upper() if caps_word else _w)
+                j = _end
+                continue
         _g = _eng_group_at(s, j, _word_start)
         if _g is not None:
             txt, ln = _g
@@ -604,14 +647,40 @@ def _mark_paren_pairs(line: str) -> str:
         lambda m: _PAREN_OPEN_MARK + m.group(1) + _PAREN_CLOSE_MARK, line)
 
 
+def _merge_roman_tokens(tokens: list[str], seps: list[str]) -> tuple[list[str], list[str]]:
+    """로마자표로 열린 구간이 공백에서 끊기지 않게 토큰을 합친다(제32항).
+
+    라우터가 줄을 공백으로 쪼개므로 `⠴such tactics⠲`의 둘째 낱말이 문맥을 잃고
+    한글로 오독됐다(`such 얽널다너`). 합치는 조건은 **종료표 ⠲가 실제로 앞에 있을 때**
+    뿐이다 — `_roman_span_ahead`가 그 증거를 요구한다. 증거가 없으면 합치지 않는다.
+    """
+    out_t: list[str] = []
+    out_s: list[str] = []
+    i = 0
+    while i < len(tokens):
+        merged = tokens[i]
+        # 로마자표는 **낱말 앞**에 온다(제29항). 낱말 중간의 ⠴는 닫는 낫표·따옴표다
+        # (』=⠴⠆, ’=⠴⠄) — 그걸 구간 시작으로 보면 한글 문단을 통째로 삼킨다.
+        # 실측: 이 조건이 없을 때 32,036요소에서 악화 988건이었다.
+        st = 0 if merged.startswith(_ROMAN_START) else -1
+        while (st >= 0 and _ROMAN_END not in merged[st:] and i < len(seps)
+               and _roman_span_ahead("⠀".join(tokens[i + 1:]), 0)):
+            merged += seps[i] + tokens[i + 1]
+            i += 1
+        out_t.append(merged)
+        if i < len(seps):
+            out_s.append(seps[i])
+        i += 1
+    return out_t, out_s
+
+
 def _decode_line_router(line: str, math: bool) -> str:
     """줄을 공백 단위로 나눠 수식 토큰은 수학 디코더로, 나머지는 한글 디코더로 라우팅."""
     if not line:
         return ""
     line = _mark_paren_pairs(line)
     parts = re.split(r"([⠀ ]+)", line)              # 공백 런을 분리자로 보존
-    tokens = parts[0::2]
-    seps = parts[1::2]
+    tokens, seps = _merge_roman_tokens(parts[0::2], parts[1::2])
     if math:
         is_math = [True] * len(tokens)
     else:
