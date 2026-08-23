@@ -67,10 +67,25 @@ def _file_handlers() -> tuple[logging.Handler, ...]:
             _LOG_DIR / _TEXT_FILE, maxBytes=_LOG_MAX_BYTES,
             backupCount=_LOG_BACKUPS, encoding="utf-8")
         text.setFormatter(_build_formatter())
+        text.setLevel(logging.INFO)
         js = logging.handlers.RotatingFileHandler(
             _LOG_DIR / _JSON_FILE, maxBytes=_LOG_MAX_BYTES,
             backupCount=_LOG_BACKUPS, encoding="utf-8")
         js.setFormatter(_JsonFormatter())
+        js.setLevel(logging.INFO)
+        # ★ 루트에도 붙인다(T2, 2026-08-24). `get_logger` 를 안 거치고
+        #   `logging.getLogger(__name__)` 를 직접 쓰는 모듈이 있다(translator·layout_braille·
+        #   isolation·opus_fallback). 그 로거들은 전파로만 나가므로 루트에 핸들러가 없으면
+        #   **파일에 한 줄도 안 남는다** — 서버는 `main.py` 가 `setup_root_logging` 을 부르니
+        #   가려졌고, 러너로 검증하자 드러났다.
+        #   ⚠ 중복 기록은 없다 — `get_logger` 가 만든 로거는 `propagate=False` 라 루트로 안 간다.
+        root = logging.getLogger()
+        if not any(getattr(h, "_semojum_file", False) for h in root.handlers):
+            for h in (text, js):
+                h._semojum_file = True          # 재부착 방지 표시
+                root.addHandler(h)
+            if root.level == logging.NOTSET or root.level > logging.INFO:
+                root.setLevel(logging.INFO)     # 핸들러가 INFO 를 받게. 화면은 각 핸들러 레벨이 가른다
         return (text, js)
     except Exception as exc:  # noqa: BLE001 — 로그가 서버를 죽이면 안 된다
         print(f"[logger] 파일 기록 비활성(stdout 만 씁니다): {exc}", file=sys.stderr)
@@ -83,14 +98,22 @@ def get_logger(name: str) -> logging.Logger:
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(_build_formatter())
+        # 화면은 종전대로 — 루트 레벨을 따른다(러너에서는 WARNING 위만 뜬다).
+        handler.setLevel(logging.getLogger().level or logging.WARNING)
         logger.addHandler(handler)
         for h in _file_handlers():
             logger.addHandler(h)
     # 자체 핸들러로 출력하므로 루트로 전파하지 않는다(전파 시 루트 핸들러가 한 번 더
     # 찍어 모든 로그가 2번 출력되던 문제 방지).
     logger.propagate = False
-    # NOTSET → 루트 로거 레벨을 상속 (setup_root_logging이 DEBUG로 설정하면 DEBUG 출력됨)
-    logger.setLevel(logging.NOTSET)
+    # ★ 파일에는 INFO 부터 남긴다(T2, 2026-08-24).
+    #   종전에는 NOTSET 이라 실효 레벨을 루트에서 물려받았고, 파이썬 루트 기본이 WARNING 이다.
+    #   `setup_root_logging(INFO)` 를 부르는 곳은 `app/core/main.py` 하나뿐이라 **서버로 뜰 때만**
+    #   INFO 가 켜졌다. 코퍼스 러너처럼 그걸 안 부르는 진입점에서는 단계·요청 로그(전부 INFO)가
+    #   **로거 단계에서 통째로 버려졌다** — 실측: 2쪽 실행에 남은 4줄이 전부 WARNING 이었다.
+    #   그래서 **로거 레벨을 INFO 로 내리고**, 화면이 시끄러워지지 않게 **stdout 핸들러만**
+    #   종전 동작(루트 레벨을 따름)을 유지한다. 파일은 조용히 다 받는다 — 저장이 목적이다.
+    logger.setLevel(logging.INFO)
     return logger
 
 

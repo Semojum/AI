@@ -394,9 +394,14 @@ class QualityChecker:
             review_flags=reviews,
         )
         if status != "COMPLETED":
+            # ★ 상태와 **사유를 같은 레코드에** 싣는다(T2). 원인을 찾으려고 위아래를
+            #   훑지 않아도 되게 한다. `code` 는 첫 Critical 의 종류다.
             logger.info(
                 "품질 판정 %s (page=%s · C %d건 · R %d건)",
                 status, page_id, len(criticals), len(reviews),
+                extra={"page": page_id, "status": status,
+                       "code": criticals[0].type if criticals else None,
+                       "stage": "품질검사"},
             )
         return report
 
