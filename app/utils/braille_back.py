@@ -61,6 +61,16 @@ _DIGIT_REV = {
     "⠋": "6", "⠛": "7", "⠓": "8", "⠊": "9", "⠚": "0",
     "⠂": ",", "⠄": ".",   # 자릿점/소수점(근사)
 }
+# ── 하단 숫자 (R2, 2026-08-24) ──────────────────────────────────────────────
+# 정방향 `kor_math_rules._DROPPED_DIGIT` 의 역. 수표 뒤 항목 번호·로그 밑에 쓰인다.
+# 이게 없어 `⠼⠆`(=2) 가 `⟨⠼⟩;` 로 샜다 — 정답 도서에도 같은 꼴이 92줄에 나온다
+# (`⠼⠂ … ⠼⠆ … ⠼⠒` = 1·2·3 연번이 결정적 근거였다).
+# ⚠ 위 `_DIGIT_REV` 와 겹치는 키가 없다(⠂ 만 겹치고 자릿점 쪽이 먼저다 — 숫자 런 안에서만
+#   쓰이므로 항목 번호 자리에는 안 걸린다).
+_DROPPED_DIGIT_REV = {
+    "⠂": "1", "⠆": "2", "⠒": "3", "⠲": "4", "⠢": "5",
+    "⠖": "6", "⠶": "7", "⠦": "8", "⠔": "9", "⠴": "0",
+}
 
 # 단어 약어(braillify) — 음절 분해 불가, 직접 등록. (한글 점자 제3장 단어약어)
 _WORD_ABBR = {
@@ -94,7 +104,33 @@ _MATH_REV_SINGLE = {
 }
 # 대괄호(제6항 ('…,))·도 단위는 다중 셀에서 우선 매칭
 _MATH_REV_MULTI.update({"⠷⠄": "[", "⠠⠾": "]", "⠴⠙": "°"})
-_MATH_MAX = max(len(k) for k in _MATH_REV_MULTI)        # = 3
+
+# ── 새던 여덟 종 (R2, 2026-08-24) ────────────────────────────────────────────
+# 대표가 실물 검수에서 지적한 `속⟨2808⟩난⟨2812⟩` 꼴이 이것이다. 정방향은 내는데 역맵에
+# 없어 코드포인트가 그대로 샜다. formula 요소 267건 중 **100건(37.5%)** 이 샜고 348회다.
+# 무엇이 몇 번 샜는지: ⠠ 132 · ⠸ 83 · ⠶ 72 · ⠈ 19 · ⠒ 18 · ⠆ 12 · ⠼ 10 · ⠂ 2.
+#
+# 정방향 정의(`kor_math_rules`)를 그대로 뒤집는다.
+_MATH_REV_MULTI.update({
+    # log — `_LOG_IND="⠸"` + `_LOG_NUM_SEP="⠠"`(밑이 숫자) / ⠰(밑이 변수)
+    "⠸⠠": "log_", "⠸⠰": "log_",
+    # 연립·조건분기 묶음 — `_SYS_OPEN/_SYS_CLOSE = "⠶⠄", "⠠⠶"`
+    "⠶⠄": "{", "⠠⠶": "}",
+    # 대문자 구절표 열기·닫기 — `_CAPS_OPEN="⠠⠠⠠"`, `_CAPS_CLOSE="⠠⠄"`
+    "⠠⠠⠠": "", "⠠⠄": "",
+    # 윗줄(bar)·모자(hat) — `_ACC_POSTFIX_MARK`
+    "⠈⠉": "̅", "⠈⠈⠢": "̂",
+})
+_MATH_REV_SINGLE.update({
+    "⠸": "log",     # 밑이 안 붙는 홑 log 지시자
+    "⠶": "{",       # 중괄호(정방향 `\{`·`\}` 가 둘 다 ⠶) — 짝을 못 가르므로 여는 쪽으로 편다
+    "⠠": "",        # 대문자표: 다음 글자를 크게 만드는 표시라 글자로는 안 남는다
+    "⠈": "'",       # 프라임(제17항)
+    "⠒": "=",       # 홑 ⠒ 는 등호 계열 잔재
+    "⠆": ";",       # 구분자
+    "⠂": ",",       # 쉼표
+})
+_MATH_MAX = max(len(k) for k in _MATH_REV_MULTI)
 # 토큰이 수식인지 판정 — 첨자·근호·분수 셀(⠘⠰⠜⠻⠌)이 **수식 피연산자**(수표 ⠼ 또는
 # 수식 여는괄호 ⠷)에 바로 이어질 때만 수식으로 본다. 한글 약자(바=⠘⠣·예=⠌⠣ 등)는
 # 뒤에 모음 셀이 와서 이 패턴에 안 걸리므로 '3반'·'1/2개' 같은 숫자+한글이 오판되지 않는다.
@@ -363,7 +399,15 @@ def _decode_number(s: str, i: int) -> tuple[str, int]:
             j += 1
         else:
             break
-    if not out:                    # 수표 뒤 숫자 없음 → 기호로 둠
+    if not out:                    # 수표 뒤 일반 숫자 없음
+        # 하단 숫자일 수 있다(항목 번호·로그 밑). `⠼⠆` = 2 (R2)
+        if i + 1 < len(s) and s[i + 1] in _DROPPED_DIGIT_REV:
+            k = i + 1
+            got = []
+            while k < len(s) and s[k] in _DROPPED_DIGIT_REV:
+                got.append(_DROPPED_DIGIT_REV[s[k]])
+                k += 1
+            return "".join(got), k
         return "⟨⠼⟩", i + 1
     return "".join(out), j
 
@@ -487,12 +531,33 @@ def _resolve_math_context(classes: list[str]) -> list[bool]:
     return res
 
 
+# 수식 구역 판정 문턱 (R2, 2026-08-24). `math=True` 로 부른 요소라도 **한글이 이만큼 섞였으면**
+# 자동 판별(토큰별)로 읽는다. 수식 요소에 설명 문장이 섞이면 그 한글이 수학 셀로 오독돼
+# `개체군 밀도` 가 `ρ_nγ eo,iu` 로 깨지기 때문이다.
+# ★ 문턱은 전수로 골랐다(formula 218건, 원문 대비 difflib 유사도):
+#     math=True 단독 0.684 · math=False 단독 0.494 · 문턱 0.40 **0.699**
+#   0.15~0.30 은 오히려 나빴다(0.592~0.671) — 순수 수식까지 자동 판별로 보내 깎인다.
+#   ⚠ 눈으로 세 건만 보면 False 가 나아 보인다. 그 셋이 전부 한글 섞인 소수 계열이었다.
+_MATH_KOR_RATIO = 0.40
+# 이보다 짧은 수식은 통째로 수식으로 읽는다 — 설명 문장이 섞일 길이가 아니다.
+_MATH_KOR_MIN_CELLS = 24
+
+
 def decode(braille: str, *, math: bool = False) -> str:
     """점자 BRF 문자열 → 한국어 텍스트(근사). 줄바꿈은 보존.
 
     math=True면 전체를 수식 구역으로 보고 디코드한다(요소 type이 formula일 때 호출자가 지정).
     기본(False)은 공백 단위 토큰별로 수식/한글을 자동 판별한다(인라인 수식).
     """
+    if math and len(braille) >= _MATH_KOR_MIN_CELLS:
+        # 한글이 많이 섞인 수식 요소는 전체를 수식으로 보면 깨진다(R2). 자동 판별로 읽는다.
+        # ⚠ **짧은 순수 수식은 제외한다.** `π`(⠨⠏)·`θ`(⠨⠹) 같은 두 셀짜리는 자동 판별이
+        #   한글 음절로 읽어 비율이 100%가 되고, 그러면 `줘`·`적` 으로 깨진다
+        #   (회귀 테스트 `test_역점역_정확도_floor[build-math]` 가 잡았다).
+        loose = "\n".join(_decode_line_router(ln, False) for ln in braille.split("\n"))
+        body = "".join(loose.split())
+        if body and sum(1 for c in body if "가" <= c <= "힣") / len(body) >= _MATH_KOR_RATIO:
+            return loose
     out_lines = []
     for line in braille.split("\n"):
         out_lines.append(_decode_line_router(line, math))
