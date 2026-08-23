@@ -146,6 +146,14 @@ class TestKnownLimits:
         """
         assert _rt(text) == text
 
+    @pytest.mark.parametrize("text", ["a<b", "a>b", "(x<t)"])
+    def test_부등호를_읽는다(self, text: str) -> None:
+        """「수학 점자」 제4항 — <는 ⠔⠔, >는 ⠢⠢. 역표에 ≤·≥·≠만 있어 빠져 있었다."""
+        from app.ai.braille.kor_math_rules import convert_latex
+        from app.utils.braille_back import decode
+
+        assert decode(convert_latex(text), math=True) == text
+
     def test_공백_넘는_구간을_읽는다(self) -> None:
         """제32항 `MP4 Player` — 2026-08-24까지는 못 읽던 한계였다.
 
