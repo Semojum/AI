@@ -484,7 +484,8 @@ def _reject_read_text(text: str) -> str:
     """그림 설명이 아니라 지면의 글자를 읽어 온 것이면 실패로 돌린다(= 빈 문자열)."""
     if text and _READ_TEXT_RE.search(text):
         # 발동을 남긴다(원장 C-40). 내용은 남기지 않는다 — 어느 신호에 걸렸는지만.
-        logger.info("가드2 캡션 버림(글자를 읽은 캡션) 길이=%d", len(text))
+        logger.info("가드2 캡션 버림(글자를 읽은 캡션) 길이=%d", len(text),
+                    extra={"guard": 2, "stage": "캡셔닝", "status": "REJECTED"})
         return ""
     return text or ""
 
@@ -641,7 +642,9 @@ def caption(image_path: str, image_type: str = "image") -> str:
     if blank is not None and blank < _BLANK_CROP_STD:
         # 발동을 남긴다 — 실사용에서 얼마나 도는지 세어야 코퍼스 세계와 앱 세계의 차이를
         # 확인할 수 있다(원장 C-40). 파일 내용은 남기지 않는다.
-        logger.info("가드1 캡션 생략(빈 크롭) crop=%s std=%.2f", Path(image_path).name, blank)
+        logger.info("가드1 캡션 생략(빈 크롭) crop=%s std=%.2f", Path(image_path).name, blank,
+                    extra={"guard": 1, "std": round(blank, 2),
+                           "stage": "캡셔닝", "status": "SKIPPED"})
         return ""
 
     with open(image_path, "rb") as f:
