@@ -757,18 +757,29 @@ def _join_num_hangul(text: str) -> str:
 # ⠿는 약자 '옹'이기도 해서 줄 일부만 보고 판단하면 정상 한글을 깬다.
 # 제목이 테두리 안에 들어가는 꼴도 있다(BBPG — 위 테두리 중간에 제목). 제목은 실제
 # 내용이므로 살려서 【글상자 제목】으로 낸다.
+# ⚠ 줄 **전체**가 테두리일 때만 잡으면 실물을 놓친다. 실제 데이터는 테두리 뒤에 줄바꿈
+#   없이 본문이 같은 문자열로 이어진다(`⠿⠛…⠿⠀⠿⠁⠲⠀⠦⠄⠫…`). 그래서 **테두리 구간만**
+#   찾아 바꾸고 나머지는 그대로 읽는다. 채움 셀을 4칸 이상 요구하므로 약자 '옹'(⠿ 한 칸)과
+#   `⠿⠁⠲`(ㄱ.) 같은 한글은 안 걸린다.
 _BOX_BORDER_RE = re.compile(
-    r"^[⠀ ]*[⠿⠖⠓](⠛|⠶|⠒|⠐)\1*(?:[⠀ ](.+?)[⠀ ])?\1*[⠿⠲⠚][⠀ ]*$")
+    r"[⠿⠖⠓](⠛|⠶|⠒|⠐)\1{3,}(?:[⠀ ](.+?)[⠀ ]\1{3,})?[⠿⠲⠚]")
 
 
 def _decode_line_router(line: str, math: bool) -> str:
     """줄을 공백 단위로 나눠 수식 토큰은 수학 디코더로, 나머지는 한글 디코더로 라우팅."""
     if not line:
         return ""
-    _box = _BOX_BORDER_RE.match(line)   # 글상자 테두리 — 글자가 아니라 도형이다
-    if _box:
-        title = _box.group(2)
-        return f"【글상자 {_decode_line(title)}】" if title else "【글상자】"
+    if _BOX_BORDER_RE.search(line):     # 글상자 테두리 — 글자가 아니라 도형이다
+        out, last = [], 0
+        for m in _BOX_BORDER_RE.finditer(line):
+            if m.start() > last:
+                out.append(_decode_line_router(line[last:m.start()], math))
+            title = m.group(2)
+            out.append(f"【글상자 {_decode_line(title)}】" if title else "【글상자】")
+            last = m.end()
+        if last < len(line):
+            out.append(_decode_line_router(line[last:], math))
+        return "".join(out)
     if not math:                     # 수식 줄에 영어 판정을 대면 안 된다 — `a √ b`가
         eng = _english_line(line)    # `a ar b`로 뒤집힌다(⠜=√ ↔ 영어 약자 ar)
         if eng is not None:          # 로마자표 없는 순수 영어 줄 (제29항 [다만])
@@ -892,6 +903,22 @@ def _decode_line(s: str) -> str:
         # 단일 셀 매칭(따옴표·쉼표 등)
         if best_ln == 1:
             out.append(_COMBINED[ch])
+            i += 1
+            continue
+        # 한글 표에 없으면 **수학 역표를 한 번 더 본다**. 인라인 수식으로 분류되지 못한
+        # 자리에서 연산기호가 그대로 샜다(실측 13,121건: ⠢=+ 가 `8⟨2822⟩13` 꼴).
+        # 긴 것부터 맞추고, 그래도 없으면 코드포인트로 정직하게 남긴다.
+        _m = 0
+        for _ln in range(min(_MATH_MAX, n - i), 1, -1):
+            if s[i:i + _ln] in _MATH_REV_MULTI:
+                _m = _ln
+                break
+        if _m:
+            out.append(_MATH_REV_MULTI[s[i:i + _m]])
+            i += _m
+            continue
+        if ch in _MATH_REV_SINGLE:
+            out.append(_MATH_REV_SINGLE[ch])
             i += 1
             continue
         # 못 푸는 셀 → 코드포인트 표시(정직)
