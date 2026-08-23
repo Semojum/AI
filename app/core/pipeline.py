@@ -1346,6 +1346,29 @@ async def _run_chain_logged(label: str, elems: list, factory, idx: int, total: i
 # mode b 표 블록. table_opt/table_braille가 쓰는 것과 같은 태그다(tag_names 미등재 —
 # `표`·`행`·`칸`은 translator의 인라인 마커가 아니라 **표 체인 전용 구조 태그**다).
 _MODE_B_TABLE_RE = re.compile(r"<!표>.*?<!/표>", re.DOTALL)
+# hwp·docx 에서 뽑은 표는 BE 가 **HTML `<table>`** 로 실어 보낸다(노션 Review T705·T706).
+# 종전에는 `<!표>` 형식만 표로 봤고, HTML 은 평범한 글줄로 떨어져 **마크업이 그대로
+# 점자화**됐다(`<table>` → ⠠⠦⠞⠁⠼⠴⠄ …). 같은 격자 파서(`table_opt._html_to_grid`)로
+# 태그 형식으로 옮겨 표 체인에 태운다 — 병합 셀 처리도 그쪽 규약을 그대로 따른다.
+_MODE_B_HTML_TABLE_RE = re.compile(r"<table[^>]*>.*?</table>", re.DOTALL | re.IGNORECASE)
+
+
+def _mode_b_html_tables_to_tags(src: str) -> str:
+    """mode b 원문의 HTML 표를 `<!표>` 태그 형식으로 바꾼다. 표가 없으면 그대로."""
+    if not src or "<table" not in src.lower():
+        return src
+    from app.ai.braille.table_braille import build_table_tags
+    from app.ai.llm.table_opt import _html_to_grid
+
+    def _sub(m: re.Match) -> str:
+        try:
+            rows = _html_to_grid(m.group(0), expand=False)
+        except Exception:  # noqa: BLE001 — 못 읽으면 원문 그대로(종전 동작)
+            logger.warning("mode b HTML 표 파싱 실패 — 원문 유지")
+            return m.group(0)
+        return build_table_tags(rows) if rows else m.group(0)
+
+    return _MODE_B_HTML_TABLE_RE.sub(_sub, src)
 
 
 def _mode_b_segments(src: str) -> list[tuple[int, str, str]]:
@@ -1386,7 +1409,7 @@ async def _run_pipeline(task: PageTask) -> dict:
         #     (BBPG 2장2절2 "3칸에서 시작"). 대신 `order`에 **원본 줄 번호**를 그대로 실어
         #     BE가 빈 줄이 어디였는지 알 수 있게 한다(번호가 건너뛴다).
         #   · id는 `text_list`와 `braille_text_list`가 같다 — 그게 짝짓기의 열쇠다.
-        src_lines = _mode_b_segments(task.source_text or "")
+        src_lines = _mode_b_segments(_mode_b_html_tables_to_tags(task.source_text or ""))
         if not src_lines:                       # 내용이 없으면 빈 응답(빈 결과 금지 규칙은
             src_lines = [(1, "text", task.source_text or "")]   # 플레이스홀더가 담당)
         line_ids = [uuid4() for _ in src_lines]
