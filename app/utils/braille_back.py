@@ -647,6 +647,52 @@ def _mark_paren_pairs(line: str) -> str:
         lambda m: _PAREN_OPEN_MARK + m.group(1) + _PAREN_CLOSE_MARK, line)
 
 
+def _build_eng_function() -> frozenset[str]:
+    """영어 기능어 집합 — 로마자표 없는 영어 줄을 가려낼 때 마지막 증거로 쓴다."""
+    from app.ai.braille import eng_braille as _E
+
+    return frozenset(w.lower() for w in (*_E.WORDSIGNS, *_E.SHORT_FORMS)) | {"a", "i", "of", "and", "the", "is", "are", "was", "for", "on", "at", "with"}
+
+
+_ENG_FUNCTION = _build_eng_function()
+
+
+def _english_line(line: str) -> str | None:
+    """줄 전체가 로마자표 없는 영어면 그 텍스트, 아니면 None (제29항 [다만]).
+
+    제29항 [다만]은 **문단 전체가 로마자일 때 로마자표와 종료표를 생략할 수 있다**고
+    한다. 우리 정방향도 그 관행을 따르므로 순수 영어 문단에는 단서 셀이 하나도 없다.
+    단서가 없으면 한글로 읽혀 통째로 깨진다(`such tactics` → `어연 얽널다너`).
+
+    ★ 가르는 방법은 **정방향으로 되짚는 것**이다. 영어로 읽어 본 뒤 그 텍스트를
+      `eng_braille`로 다시 점자로 만들어 원래 셀과 **똑같을 때만** 영어로 본다.
+      한글은 이 왕복을 통과하지 못하므로 오탐이 구조적으로 막힌다.
+      실측(외국어 10쪽에서 뽑은 영문 261구절): 일치 145건 55.6%, 한글 오탐 0.
+      나머지 44%는 약자가 여러 낱말에 겹쳐 되짚기가 안 맞는 것이라 종전대로 둔다.
+    """
+    from app.ai.braille import eng_braille as _E
+
+    words = line.split(_SPACE_CELL)
+    if len(words) < 2:               # 한 낱말은 단서가 너무 약하다(⠎=so ↔ 한글)
+        return None
+    out: list[str] = []
+    for w in words:
+        if not w:
+            out.append("")
+            continue
+        got = _decode_roman_run(_ROMAN_START + w, 0)
+        if got is None or got[1] != len(w) + 1:     # 낱말을 끝까지 못 읽으면 영어가 아니다
+            return None
+        out.append(got[0])
+    text = " ".join(out)
+    if _E.translate(text).replace(" ", _SPACE_CELL) != line:
+        return None
+    # 왕복만으로는 모자란다 — 한글 두 낱말이 뜻 없는 알파벳으로 되짚기까지 통과한다
+    # (실측 오탐: `우주 그물로` → `dujya Oiu`, 글상자 테두리 → `forggg…`).
+    # 영어 문장이라면 기능어가 적어도 하나는 있다(the·to·do·in·so…). 그걸 요구한다.
+    return text if any(w.lower() in _ENG_FUNCTION for w in text.split()) else None
+
+
 def _merge_roman_tokens(tokens: list[str], seps: list[str]) -> tuple[list[str], list[str]]:
     """로마자표로 열린 구간이 공백에서 끊기지 않게 토큰을 합친다(제32항).
 
@@ -678,6 +724,9 @@ def _decode_line_router(line: str, math: bool) -> str:
     """줄을 공백 단위로 나눠 수식 토큰은 수학 디코더로, 나머지는 한글 디코더로 라우팅."""
     if not line:
         return ""
+    eng = _english_line(line)
+    if eng is not None:              # 로마자표 없는 순수 영어 줄 (제29항 [다만])
+        return eng
     line = _mark_paren_pairs(line)
     parts = re.split(r"([⠀ ]+)", line)              # 공백 런을 분리자로 보존
     tokens, seps = _merge_roman_tokens(parts[0::2], parts[1::2])

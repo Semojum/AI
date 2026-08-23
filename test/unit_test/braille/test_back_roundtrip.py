@@ -123,6 +123,20 @@ class TestKnownLimits:
     def test_대문자_약어는_단독이어도_읽힌다(self) -> None:
         assert _rt("ATP") == "ATP"
 
+    @pytest.mark.parametrize("text", ["such tactics", "the main reason", "the rough Atlantic Ocean"])
+    def test_로마자표_없는_영어줄을_읽는다(self, text: str) -> None:
+        """제29항 [다만] — 문단 전체가 로마자면 로마자표를 생략할 수 있다.
+
+        단서 셀이 없으므로 정방향으로 되짚어(`eng_braille.translate`) 원래 셀과
+        같을 때만 영어로 본다. 기능어를 하나 요구해 뜻 없는 알파벳을 걸러 낸다.
+        """
+        assert _rt(text) == text
+
+    @pytest.mark.parametrize("text", ["우주 그물로 감동 유도", "독자의 공감과 감동 유도"])
+    def test_한글줄을_영어로_뒤집지_않는다(self, text: str) -> None:
+        """실측 오탐 — 되짚기만으로는 `우주 그물로`가 `dujya Oiu`로 통과했다."""
+        assert _rt(text) == text
+
     def test_공백_넘는_구간을_읽는다(self) -> None:
         """제32항 `MP4 Player` — 2026-08-24까지는 못 읽던 한계였다.
 
