@@ -541,6 +541,39 @@ _BOX_MAX_AREA = 0.85     # 페이지 면적의 이 비율을 넘으면 페이지
 _BOX_X_TOL = 2.0         # 좌우가 이만큼 안에서 같으면 같은 상자의 위·아래 조각(pt)
 
 
+def page_is_blank(pdf_data: bytes, page_no: int) -> bool:
+    """그 지면이 **정말 비었는가** — 글자도 그림도 획도 없는가 (T702).
+
+    추출이 요소를 0개 냈을 때 그것이 **실패**인지 **빈 지면**인지 가른다. 빈 지면을 실패로
+    올리면 앱이 "서버에서 변환이 차단된 페이지입니다"를 띄운다(노션 Review 3c243813…b40c).
+    빈 지면을 끼워 넣는 것은 점역 조판에서 정상 동작이다.
+    """
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(_coerce_pdf_bytes(pdf_data))
+            tmp_path = f.name
+        doc = fitz.open(tmp_path)
+        try:
+            page = doc[max(0, min(page_no - 1, doc.page_count - 1))]
+            if page.get_text("text").strip():
+                return False
+            if page.get_images(full=True):
+                return False
+            return not page.get_drawings()
+        finally:
+            doc.close()
+    except Exception as exc:  # noqa: BLE001 — 못 읽으면 '비었다'고 단정하지 않는다
+        logger.warning("빈 지면 판정 실패(비지 않은 것으로 본다): %s", exc)
+        return False
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
 def box_rects(page) -> list:
     """페이지의 글상자 후보 사각형(표시 좌표 Rect). 겹치는 후보는 큰 것 하나로 묶는다."""
     pr = page.rect
