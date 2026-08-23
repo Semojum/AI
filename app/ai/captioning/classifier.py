@@ -103,10 +103,24 @@ def classify_with_confidence(image_path: str) -> tuple[str, float | None]:
 
 def _classify_anthropic(b64: str, mime: str):
     """Anthropic 백엔드 분류. logprobs API가 없어 confidence=None을 준다.
-    quality_checker는 confidence None이면 R2를 띄우지 않는다(설계된 경로)."""
+    quality_checker는 confidence None이면 R2를 띄우지 않는다(설계된 경로).
+
+    ★ 캡션과 **같은 이미지 해시 캐시**를 쓴다(2026-08-23 대표 결재 ㉯). 시각 요소 하나에
+      API가 두 번 나가는데(분류 + 캡션) 종전에는 캡션만 캐시가 막았다. 분류 응답은 라벨
+      한 단어라 캐시가 특히 싸다 — 전 코퍼스 1회 추출 기준 도입가 1.67달러가 빠진다.
+      키에 `image_type="__classify__"`를 줘 캡션 항목과 섞이지 않게 한다.
+    ⚠ 프롬프트 캐싱은 여기 못 건다 — `SYSTEM_PROMPT`가 **319토큰**이라 최소 캐시 길이
+      1,024에 못 미친다. 표시를 달아도 조용히 캐시되지 않는다.
+    """
     import anthropic
     from app.core.limits import estimate_tokens, llm_limiter
     from app.utils.req_log import record_anthropic
+    from app.ai.captioning.captioner import _cache_file
+    raw = base64.b64decode(b64)
+    cache = _cache_file(raw, "__classify__", SYSTEM_PROMPT)
+    if cache is not None and cache.exists():
+        label = cache.read_text(encoding="utf-8").strip()
+        return (label, None) if label in LABELS else ("image", 0.0)
     llm_limiter().acquire_sync(estimate_tokens(SYSTEM_PROMPT, len(b64) * 3 // 4), 10)
     model = os.getenv("CAPTION_MODEL", "claude-sonnet-5")
     client = anthropic.Anthropic(api_key=config.anthropic_api_key or None)
@@ -122,4 +136,8 @@ def _classify_anthropic(b64: str, mime: str):
     label = "".join(b.text for b in resp.content if b.type == "text").strip().lower()
     if label not in LABELS:
         return "image", 0.0        # 형식 이탈 = 불확실 신호(R2 대상)
+    # 형식 이탈은 캐시하지 않는다 — 한 번 어긋난 응답이 영구히 굳으면 그 그림은
+    # 다시는 제 라벨을 못 받는다(빈 캡션을 안 굽는 것과 같은 이유).
+    if cache is not None:
+        cache.write_text(label, encoding="utf-8")
     return label, None

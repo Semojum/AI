@@ -287,3 +287,83 @@ class TestMineruLogRotation:
             pass
         assert log.with_suffix(".log.1").exists(), "직전 한 벌이 안 남았다"
         assert log.with_suffix(".log.1").read_bytes() == b"x" * 2048
+
+
+class TestPromptCacheHitRate:
+    """프롬프트 캐시 적중률 집계 (2026-08-23, 대표 지시 API비용 2번).
+
+    조건이 "적중 여부를 req_log에 남기고 적중률을 보고할 것"이었다. 분모를 잘못 잡으면
+    캐시가 잘 맞을수록 100%를 넘는다 — Anthropic `usage.input_tokens`에 캐시 토큰이
+    **안 들어 있어서** 적중할수록 분모가 줄기 때문이다.
+    """
+
+    def test_분모는_비캐시_입력과_읽기_쓰기의_합이다(self) -> None:
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 300, 50,
+                      cache_read_tokens=1800, cache_write_tokens=0)
+        assert rl.cache_hit_rate() == pytest.approx(1800 / 2100)
+
+    def test_첫_호출은_쓰기라_적중률이_0이다(self) -> None:
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 300, 50, cache_write_tokens=1800)
+        assert rl.cache_hit_rate() == 0.0
+
+    def test_캐시를_안_쓰면_0이고_줄도_안_나온다(self) -> None:
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 300, 50)
+        assert rl.cache_hit_rate() == 0.0
+        assert not [ln for ln in rl.breakdown_lines() if "캐시" in ln]
+
+    def test_파트별로_따로_찍는다(self) -> None:
+        # 분류는 시스템이 324토큰이라 최소 캐시 길이(1,024)에 못 미쳐 영원히 0이다.
+        # 합계로만 보면 그게 캡셔닝 문제인지 분류 문제인지 못 가른다.
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 300, 50, cache_read_tokens=1800)
+        rl.record_llm("분류", "claude-sonnet-5", 700, 5)
+        lines = [ln for ln in rl.breakdown_lines() if "캐시" in ln]
+        assert any("캡셔닝" in ln for ln in lines) and any("분류" in ln for ln in lines)
+        assert rl.cache_hit_rate() == pytest.approx(1800 / 2800)
+
+    def test_usage_report에_적중률이_실린다(self) -> None:
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 300, 50, cache_read_tokens=1800)
+        rep = rl.usage_report()
+        assert rep["cache_read_tokens"] == 1800
+        assert rep["cache_hit_rate"] == pytest.approx(1800 / 2100, abs=1e-4)
+        assert rep["models"][0]["cache_read_tokens"] == 1800
+
+
+class TestEffectiveInputTokens:
+    """BE 로 나가는 `input_tokens` 는 「유효 입력」이다 (2026-08-23 대표 결재).
+
+    proto `ModelUsage` 에 캐시 칸이 없고 BE 는 이 값에 입력 단가를 곱한다. 그런데
+    Anthropic `usage.input_tokens` 에는 캐시 토큰이 안 들어 있어서, 실값을 그대로
+    보내면 BE 가 캐시분을 0원으로 친다. 단가 비율로 환산해 더해야 금액이 맞는다.
+    """
+
+    def test_캐시분을_단가_비율로_더한다(self) -> None:
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 300, 50,
+                      cache_read_tokens=2000, cache_write_tokens=400)
+        m = rl.usage_report()["models"][0]
+        assert m["input_tokens"] == round(300 + 400 * 1.25 + 2000 * 0.1)   # 1,000
+        assert m["input_tokens_raw"] == 300, "실값도 같이 남아야 대조가 된다"
+
+    def test_캐시를_안_쓰면_실값_그대로다(self) -> None:
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 300, 50)
+        assert rl.usage_report()["models"][0]["input_tokens"] == 300
+
+    def test_parts_는_실값을_지킨다(self) -> None:
+        # parts[] 는 메트릭 JSONL 전용이라 환산하지 않는다 — 원자료가 한 군데는 남아야 한다.
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 300, 50, cache_read_tokens=2000)
+        part = rl.usage_report()["parts"][0]
+        assert part["input_tokens"] == 300 and part["cache_read_tokens"] == 2000
+
+    def test_proto_매퍼가_유효_입력을_싣는다(self) -> None:
+        from app.core.grpc_server import _dict_to_usage_report
+        rl.start_request()
+        rl.record_llm("캡셔닝", "claude-sonnet-5", 300, 50, cache_read_tokens=2000)
+        pb = _dict_to_usage_report(rl.usage_report())
+        assert pb.models[0].input_tokens == 500      # 300 + 2000×0.1
