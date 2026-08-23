@@ -720,6 +720,26 @@ def _merge_roman_tokens(tokens: list[str], seps: list[str]) -> tuple[list[str], 
     return out_t, out_s
 
 
+# 제17항 [다만] — 숫자와 혼동되는 'ㄴ ㄷ ㅁ ㅋ ㅌ ㅍ ㅎ'의 첫소리 글자와 '운'의 약자는
+# 숫자 뒤에 **붙어 나오더라도 띄어 쓴다**(규정 예시 `1년` = ⠼⠁ ⠉⠡). 그래서 점자의 그 한 칸은
+# 원문에 없던 것이다 — 되돌리지 않으면 `1년`이 `1 년`으로 나온다.
+# 코퍼스 실측: 이 자리 4,995건 중 붙여 쓴 원문이 3,786건(75.8%)이라 붙이는 쪽을 택한다.
+_NUM_CHO = frozenset((2, 3, 6, 15, 16, 17, 18))     # ㄴ ㄷ ㅁ ㅋ ㅌ ㅍ ㅎ
+
+
+def _join_num_hangul(text: str) -> str:
+    """숫자와 한글 사이의 **한 칸**을 되붙인다 (제17항 [다만])."""
+    def _repl(m: "re.Match[str]") -> str:
+        c = m.group(2)
+        if c == "운" or (ord(c) - 0xAC00) // 588 in _NUM_CHO:
+            return m.group(1) + c
+        return m.group(0)
+
+    # 앞이 로마자면 안 붙인다 — `MP3 파일`·`V1 단계`는 로마자+숫자가 한 덩이고
+    # 그 뒤 한 칸은 [다만]의 구분 칸이 아니라 진짜 낱말 사이 공백이다.
+    return re.sub(r"(?<![A-Za-z])(\d) ([가-힣])", _repl, text)
+
+
 def _decode_line_router(line: str, math: bool) -> str:
     """줄을 공백 단위로 나눠 수식 토큰은 수학 디코더로, 나머지는 한글 디코더로 라우팅."""
     if not line:
@@ -740,7 +760,7 @@ def _decode_line_router(line: str, math: bool) -> str:
             pieces.append(_decode_math_token(tok) if is_math[idx] else _decode_line(tok))
         if idx < len(seps):
             pieces.append(" " * len(seps[idx]))
-    return _restore_wrap_parens("".join(pieces))
+    return _join_num_hangul(_restore_wrap_parens("".join(pieces)))
 
 
 def _decode_line(s: str) -> str:

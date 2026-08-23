@@ -137,6 +137,15 @@ class TestKnownLimits:
         """실측 오탐 — 되짚기만으로는 `우주 그물로`가 `dujya Oiu`로 통과했다."""
         assert _rt(text) == text
 
+    @pytest.mark.parametrize("text", ["1년 동안", "비만 3단계인 사람", "2도 올랐다"])
+    def test_숫자_뒤_한글을_되붙인다(self, text: str) -> None:
+        """제17항 [다만] — 숫자와 혼동되는 ㄴㄷㅁㅋㅌㅍㅎ 첫소리는 붙어 나와도 띄어 쓴다.
+
+        그래서 점자의 그 한 칸은 원문에 없던 것이다. 되돌리지 않으면 `1년`이 `1 년`이 된다.
+        코퍼스 실측 4,995건 중 붙여 쓴 원문이 3,786건(75.8%)이라 붙이는 쪽을 택했다.
+        """
+        assert _rt(text) == text
+
     def test_공백_넘는_구간을_읽는다(self) -> None:
         """제32항 `MP4 Player` — 2026-08-24까지는 못 읽던 한계였다.
 
