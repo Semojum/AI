@@ -948,6 +948,47 @@ _LIST_HEAD_RE = re.compile(
     r"|[0-9]{1,2}\s*[.)]|[가-핳]\s*[.)]|[-•·])\s*")
 
 
+# 낱말 갈림을 볼 때 양쪽 끝이 진짜 글자인지 확인한다 — 태그·기호 줄을 거른다.
+_WORD_EDGE_RE = re.compile(r"[0-9A-Za-z가-힣]$")
+_WORD_HEAD_RE = re.compile(r"^[0-9A-Za-z가-힣]")
+
+
+def _join_split_words(text: str) -> str:
+    """**낱말 가운데서** 갈린 줄만 잇는다 — `유전 물` / `질인`, `그` / `러다 보니`.
+
+    이 갈림은 어떤 조판에서도 내용일 수 없다. 시·대사처럼 줄바꿈이 내용인 블록에서도
+    낱말은 안 쪼갠다. 그래서 단 폭·유형을 따지지 않고 잇는다(BBPG §1.2.1 어절단위 줄바꿈).
+    붙일지 띄울지는 `_join_wrapped_lines`와 같은 판정기(`_join_words`)가 정한다.
+    """
+    if "\n" not in text:
+        return text
+    from app.ai.preprocessor.pdf_analyzer import _join_words
+
+    out: list[str] = []
+    touched = False
+    for block in text.split("\n\n"):
+        lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
+        if len(lines) < 2:
+            out.append(block)
+            continue
+        merged = [lines[0]]
+        for nxt in lines[1:]:
+            # ★ **양쪽이 진짜 글자일 때만** 본다. `_join_words` 는 태그·기호 줄에도 빈
+            #   구분자를 돌려주므로 그대로 믿으면 글상자 태그와 글머리가 붙는다
+            #   (실측: `<!상자><!/상자>` + `•강아지는…` → 한 줄, A/B 에서 CER 악화로 잡혔다).
+            if (_WORD_EDGE_RE.search(merged[-1]) and _WORD_HEAD_RE.match(nxt)
+                    and not _LIST_HEAD_RE.match(nxt)
+                    and _join_words(merged[-1], nxt) == ""):
+                merged[-1] += nxt
+                touched = True
+            else:
+                merged.append(nxt)
+        out.append("\n".join(merged))
+    # ★ 이을 것이 없으면 **원문을 그대로** 돌려준다. 재조립만 해도 줄 앞뒤 공백과 빈 줄이
+    #   사라져 손댈 이유가 없는 요소까지 달라진다(실측: 갈림 없는 95쪽이 바뀌었다).
+    return "\n\n".join(out) if touched else text
+
+
 def _join_wrapped_lines(text: str) -> str:
     """인쇄면에서 끊긴 한 문단을 한 줄로 잇는다.
 
@@ -976,7 +1017,10 @@ def _join_wrapped_lines(text: str) -> str:
             continue
         col = max(len(ln) for ln in lines)
         if col < _PARA_MIN_COL:
-            out.append(block)
+            # 좁은 단이라 문단 잇기는 안 한다. 다만 **낱말 가운데 갈림**은 잇는다 —
+            # 그건 조판이 아니라 오류다. 이 게이트가 막고 있어서 b16exp 추출의 text
+            # 요소 105건이 `유전 물` / `질인` 꼴로 남아 있었다(2026-08-24 실측).
+            out.append(_join_split_words(block))
             continue
         merged = [lines[0]]
         for nxt in lines[1:]:
@@ -1054,6 +1098,8 @@ def _parse_txt_result(
         content = el.get("content", "") or ""
         if etype in _PARA_JOIN_TYPES:
             content = _join_wrapped_lines(content)
+        else:
+            content = _join_split_words(content)      # 낱말 갈림은 유형을 안 가린다
         content = _promote_box_title(_split_inline_choices(content))
         if etype in _TEXT_TYPES and _is_boilerplate(content):
             logger.info("보일러플레이트 드롭(%s): %.60s", etype, content)
