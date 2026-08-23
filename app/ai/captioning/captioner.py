@@ -461,6 +461,30 @@ _META_RE = re.compile(
     r"^죄송|도와\s*드릴|무엇을\s*도와")
 
 
+# ── 그림이 아니라 **글자를 읽은** 캡션은 버린다 (노션 Review, 2026-08-23) ──────────
+# 그림이 없는 텍스트 영역이 시각 요소로 잡히면 캡셔너는 **그 글자를 읽어** 설명으로 낸다.
+# 그리고 `_ensure_type_word`가 앞에 "그림:"을 붙여 그림처럼 보이게 만든다. 실측(1_a4.pdf,
+# 문제 본문 영역을 그대로 크롭):
+#     "그림: 본문: 28번 문제  $\overline{AB}=\overline{CD}=4$ … 인 사면체 ABCD가 있다."
+# 신고된 문구가 이렇게 만들어진다. **없는 그림의 설명**은 점역사가 알아채기 제일 어려운
+# 오류라 내보내면 안 된다.
+#
+# ★ 신호를 무엇으로 잡을지는 **손해를 전수로 재서** 정했다(정상 캡션 코퍼스 319 + 캐시 91건):
+#     · LaTeX 흔적으로 거르면 정상 캡션의 **21.9%가 함께 죽는다** — 수학 그림 캡션에는
+#       수식이 흔하다(ATP 개념도 `$+H_2O$` 등). 쓰지 않는다.
+#     · '본문:' 머리와 문항 번호 머리는 정상 캡션 **0건**이 걸리고 위 실측 둘을 다 잡는다.
+#   그래서 **머리 신호만** 본다.
+_READ_TEXT_RE = re.compile(
+    r"(?:^|[:：\s])본문\s*[:：]"                          # "본문:" 말머리
+    r"|(?:^|그림\s*[:：]\s*)(?:\d{1,2}\s*[.．]\s|\d{1,2}번\s*문제)"  # "그림: 28." · "28번 문제"
+)
+
+
+def _reject_read_text(text: str) -> str:
+    """그림 설명이 아니라 지면의 글자를 읽어 온 것이면 실패로 돌린다(= 빈 문자열)."""
+    return "" if (text and _READ_TEXT_RE.search(text)) else (text or "")
+
+
 def _reject_meta(text: str) -> str:
     """그림 대신 사용자에게 말을 거는 응답이면 실패로 돌린다(= 빈 문자열).
 
@@ -577,12 +601,36 @@ def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
     return p / f"{key}.txt"
 
 
+# 크롭이 사실상 **빈 자리**이면 캡션을 부르지 않는다 (노션 Review, 2026-08-23).
+# 시각 요소 검출이 지면의 빈 공간을 집으면 캡셔너는 그 자리에 무언가를 써 준다.
+# 정상 그림이 단색일 리 없으므로 손해 볼 자리가 없고, LLM 호출 전이라 비용도 준다.
+# ★ 임계값은 보수적으로 둔다 — 놓치는 것보다 헛되이 막는 쪽이 더 나쁘다.
+#   표준편차 2.0은 거의 완전한 단색만 걸린다(연한 배경·옅은 선이 있으면 넘어간다).
+_BLANK_CROP_STD = 2.0
+
+
+def _is_blank_crop(path: str) -> bool:
+    """크롭이 거의 단색인가. 판단이 안 서면 **False**(= 캡션을 단다)."""
+    try:
+        from PIL import Image, ImageStat
+        with Image.open(path) as im:
+            st = ImageStat.Stat(im.convert("L").resize((64, 64)))
+        return st.stddev[0] < _BLANK_CROP_STD
+    except Exception as exc:  # noqa: BLE001 — 못 읽으면 막지 않는다
+        logger.debug("빈 크롭 판정 실패(캡션 진행): %s", exc)
+        return False
+
+
 def caption(image_path: str, image_type: str = "image") -> str:
     """
     image_type: 'image' | 'cartoon' | 'chart'
     Returns Korean description string.
     """
     prompt = _PROMPTS.get(image_type, _PROMPTS["image"])
+
+    if _is_blank_crop(image_path):
+        logger.info("빈 크롭 — 캡션을 달지 않는다 (%s)", Path(image_path).name)
+        return ""
 
     with open(image_path, "rb") as f:
         raw = _maybe_upscale(f.read())   # 캐시 키도 확대본 기준 — 배율이 다르면 캐시가 갈린다
@@ -597,7 +645,8 @@ def caption(image_path: str, image_type: str = "image") -> str:
 
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
         text = _split_enumerations(_drop_per_speech_narration(_strip_situation_head(
-            _ensure_type_word(_reject_meta(_caption_anthropic(b64, mime, prompt)), image_type))))
+            _reject_read_text(
+                _ensure_type_word(_reject_meta(_caption_anthropic(b64, mime, prompt)), image_type)))))
         # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
         if cache is not None and text.strip():
             cache.write_text(text, encoding="utf-8")
@@ -619,7 +668,8 @@ def caption(image_path: str, image_type: str = "image") -> str:
         temperature=0.3,
     )
     record_openai("캡셔닝", "gpt-4o", getattr(resp, "usage", None))
-    text = _ensure_type_word(_reject_meta(resp.choices[0].message.content.strip()), image_type)
+    text = _reject_read_text(
+        _ensure_type_word(_reject_meta(resp.choices[0].message.content.strip()), image_type))
     if cache is not None and text.strip():
         cache.write_text(text, encoding="utf-8")
     return text
