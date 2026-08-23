@@ -135,9 +135,9 @@ class TestE2E:
         assert "생물" in dec and "포유류" in dec                       # 셀 값 전사
         # 최상위 7칸(빈칸6)·하위 3칸(빈칸2) 들여쓰기가 result.txt에 반영
         top = next(l for l in content if "생물" in decode(l))
-        assert top.startswith(" " * 6) and not top.startswith(" " * 7)
+        assert top.startswith("⠀" * 6) and not top.startswith("⠀" * 7)
         leaf = next(l for l in content if "포유류" in decode(l))
-        assert leaf.startswith(" " * 2) and not leaf.startswith(" " * 3)
+        assert leaf.startswith("⠀" * 2) and not leaf.startswith("⠀" * 3)
 
 
 class TestStep17DiagramTrail:

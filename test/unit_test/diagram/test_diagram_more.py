@@ -192,9 +192,9 @@ class TestE2E:
         content = [l for l in result if l.strip()]
         # 최상위 1칸(빈칸0)·최하위(프론트) 5칸(빈칸4) 들여쓰기가 result.txt에 반영
         top = next(l for l in content if "대표" in decode(l))
-        assert not top.startswith(" ")
+        assert not top.startswith("⠀")
         leaf = next(l for l in content if "프론트" in decode(l))
-        assert leaf.startswith(" " * 4) and not leaf.startswith(" " * 5)
+        assert leaf.startswith("⠀" * 4) and not leaf.startswith("⠀" * 5)
 
     def test_화면이미지_글상자_재렌더(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)

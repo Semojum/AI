@@ -143,6 +143,12 @@ _BOX_BORDER_END = "⠿"   # 양 끝 (=)
 _BOX_TOP_FILL = "⠛"     # 위 테두리 중간 (g)
 _BOX_BOTTOM_FILL = "⠶"  # 아래 테두리 중간 (7)
 _BORDER_BLANK = "⠀"     # 점자 빈칸(U+2800) — 제목 앞뒤 띔
+# ★ 점자 지면의 빈칸은 전부 U+2800 이다(대표 지적 R1, 2026-08-24). 종전에는 낱말 사이만
+#   U+2800 이고 **줄머리 들여쓰기는 ASCII 공백**이었다(실측 한 쪽: U+0020 1,215 · U+2800 302).
+#   점수에는 영향이 없다(`kpi_v2.cells_only` 가 공백을 버린다). 표시·역점역·내보내기가 흔들린다.
+#   ⚠ `.brf`(BRF-ASCII) 내보내기는 `unicode_to_ascii` 가 담당하고 그쪽 빈칸은 U+0020 이 맞다.
+#     여기서 바꾸는 것은 **유니코드 점자 층**뿐이다.
+_PAD = "⠀"              # 들여쓰기·정렬에 쓰는 점자 빈칸
 _BORDER_LEFT_FILL = 4   # 캡1+채움4+빈칸1 → 제목 7칸째 시작 (BBPG-1.2.5(4)②)
 # 위계별 테두리 (start_cap, fill, end_cap). 표준 Braille ASCII: =⠿ g⠛ 7⠶ 6⠖ 3⠒ 4⠲ h⠓ j⠚ "⠐
 # 현재 1단계만 발생(태그에 위계 없음). 2·3단계는 §3-5 태그 규약 확정 후 사용.
@@ -202,18 +208,18 @@ def format_underline_blank(text: str) -> str:
 
 def format_citation(text: str) -> str:
     """출전 정보를 다음 줄 3칸에 배치 (BBPG 2장2절6)."""
-    return " " * _CITATION_INDENT + text
+    return _PAD * _CITATION_INDENT + text
 
 
 def format_paragraph_start(text: str) -> str:
     """새 문단을 3칸에서 시작 (BBPG 2장2절2 문단 형식)."""
-    return " " * _PARAGRAPH_INDENT + text
+    return _PAD * _PARAGRAPH_INDENT + text
 
 
 def format_bullet_item(text: str, tier: int) -> str:
     """글머리 기호: 3칸 표기, tier 1→⠸⠴(동그라미) 2→⠤(붙임표), 기호 뒤 1칸 (BBPG 2장3절5)."""
     marker = _BULLET_MARKERS.get(min(max(tier, 1), 2), _BULLET_MARKERS[2])
-    return " " * _BULLET_INDENT + f"{marker} {text}"
+    return _PAD * _BULLET_INDENT + f"{marker}{_PAD}{text}"
 
 
 def format_page_change_line(orig_page_braille: str) -> str:
@@ -248,7 +254,7 @@ def _page_number_braille(n: int) -> str:
 
 def _right_align(text: str, width: int) -> str:
     pad = max(0, width - len(text))
-    return " " * pad + text
+    return _PAD * pad + text
 
 
 def _cell_count(text: str) -> int:
@@ -261,7 +267,7 @@ def _center(text: str, width: int = _COLS) -> str:
     t = text.strip()
     if _cell_count(t) >= width:
         return t
-    return " " * ((width - _cell_count(t)) // 2) + t
+    return _PAD * ((width - _cell_count(t)) // 2) + t
 
 
 # 가운데에 빈칸을 품어서 어절 분리(`[^ ⠀]+`)로 갈리면 안 되는 기호들 (원장 C-16).
@@ -607,7 +613,7 @@ class LayoutBraille:
             broken, forced = _wrap_line(orig, br, _COLS, first_width=fw,
                                         keep_indent=keep_indent)
             if indent and broken:               # 표시용 들여쓰기
-                broken[0] = " " * indent + broken[0]
+                broken[0] = _PAD * indent + broken[0]
             if is_heading and hlevel == 1:       # 1단계 제목 가운데 정렬
                 broken = [_center(b) for b in broken]
             start = len(out)
@@ -673,7 +679,7 @@ class LayoutBraille:
         # 케이스①: 제목을 윗줄 5칸에 적고(넘치면 다음 줄도 5칸), 테두리는 제목 없이
         avail = _COLS - _BOX_TITLE_INDENT
         chunks = [title[i:i + avail] for i in range(0, len(title), avail)] or [""]
-        title_lines = [" " * _BOX_TITLE_INDENT + c for c in chunks]
+        title_lines = [_PAD * _BOX_TITLE_INDENT + c for c in chunks]
         return title_lines + [start + fill * inner + end]
 
     def _render_box_bottom(self, level: int) -> str:
@@ -1235,7 +1241,7 @@ def _pad_join(lines: list[str], pads: list[int],
     `seps`를 주면 줄 사이 구분자를 자리마다 고른다(`_fold_full_lines` 참조).
     구분자는 전부 1문자라 오프셋 계산이 그대로 맞는다.
     """
-    parts = [" " * p + ln for ln, p in zip(lines, pads)]
+    parts = [_PAD * p + ln for ln, p in zip(lines, pads)]
     if not seps:
         return "\n".join(parts)
     out = parts[0] if parts else ""

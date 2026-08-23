@@ -167,7 +167,7 @@ def _title_line(title: str) -> str:
 
     layout이 폭을 건드리지 않도록 공백을 직접 적는다.
     """
-    return " " * _TITLE_INDENT + _translate(title)
+    return "⠀" * _TITLE_INDENT + _translate(title)   # 점자 빈칸(R1)
 
 
 def _border_line() -> str:

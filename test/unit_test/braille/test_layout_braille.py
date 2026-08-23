@@ -126,7 +126,7 @@ class TestLayoutRulesSpec:
         result = _right_align(text, _COLS)
         assert len(result) == _COLS
         assert result.endswith(text)
-        assert result.startswith(" " * (_COLS - len(text)))
+        assert result.startswith("⠀" * (_COLS - len(text)))
 
     def test_page_number_right_aligned_in_page(self, lb, tmp_path) -> None:
         """BBPG 1장2절2 — 점자 페이지 번호는 32칸 우측 정렬."""
@@ -184,16 +184,16 @@ class TestLayoutRulesSpec:
         monkeypatch.setattr("app.ai.braille.layout_braille.DOUBLE_SIDED", True)
         content = [f"⠁{i % 10}" for i in range(60)]      # 2페이지 초과 분량
         pages = lb._paginate(content, 1, "", "")
-        assert pages[0][-1].rstrip().endswith("⠼⠁")       # 1페이지(홀수): 페이지행 ⠼1
+        assert pages[0][-1].rstrip(" ⠀").endswith("⠼⠁")       # 1페이지(홀수): 페이지행 ⠼1
         assert len(pages[1]) == _ROWS                       # 2페이지(짝수): 26줄 전부 본문
-        assert not pages[1][-1].rstrip().endswith("⠼⠃")    # 2페이지: 페이지행(⠼2) 없음
+        assert not pages[1][-1].rstrip(" ⠀").endswith("⠼⠃")    # 2페이지: 페이지행(⠼2) 없음
 
     def test_single_sided_페이지행_매페이지(self, lb) -> None:
         """단면(기본): 모든 페이지에 페이지행 (DOUBLE_SIDED=False)."""
         content = [f"⠁{i % 10}" for i in range(60)]
         pages = lb._paginate(content, 1, "", "")
-        assert pages[0][-1].rstrip().endswith("⠼⠁")        # 1페이지 페이지행
-        assert pages[1][-1].rstrip().endswith("⠼⠃")        # 2페이지도 페이지행 ⠼2
+        assert pages[0][-1].rstrip(" ⠀").endswith("⠼⠁")        # 1페이지 페이지행
+        assert pages[1][-1].rstrip(" ⠀").endswith("⠼⠃")        # 2페이지도 페이지행 ⠼2
 
     # ── BBPG 마커/헬퍼 검증 ───────────────────────────────────────────────────
 
@@ -216,13 +216,13 @@ class TestLayoutRulesSpec:
         assert rule["params"]["tier2_marker"] == _BULLET_MARKERS[2] == "⠤"
         assert rule["params"]["indent_cols"] == 3
         # 3칸 표기(2칸 들여 후 마커) + 기호 뒤 1칸
-        assert format_bullet_item("실험학습", 1) == "  ⠸⠴ 실험학습"
-        assert format_bullet_item("주의점", 2) == "  ⠤ 주의점"
+        assert format_bullet_item("실험학습", 1) == "⠀⠀⠸⠴⠀실험학습"   # 글머리 뒤 빈칸도 U+2800(R1)
+        assert format_bullet_item("주의점", 2) == "⠀⠀⠤⠀주의점"
         # 위계 범위 밖은 2단계로 클램프
-        assert format_bullet_item("항목", 3) == "  ⠤ 항목"
-        assert format_bullet_item("항목", 0) == "  ⠸⠴ 항목"
+        assert format_bullet_item("항목", 3) == "⠀⠀⠤⠀항목"
+        assert format_bullet_item("항목", 0) == "⠀⠀⠸⠴⠀항목"
         # 마커 뒤 정확히 1칸
-        assert format_bullet_item("항목", 1) == "  ⠸⠴ 항목"
+        assert format_bullet_item("항목", 1) == "⠀⠀⠸⠴⠀항목"
 
     def test_page_change_line(self) -> None:
         """BBPG 2장2절2-3) — 변경선은 첫 칸부터 ⠤로 채운 선 + 우측정렬 원본 페이지번호."""
@@ -249,14 +249,14 @@ class TestLayoutRulesSpec:
         rule = _rule("BBPG-2.2.6-citation-below")
         assert rule["params"]["indent_cols"] == 3
         result = format_citation("정호승, 슬픔이 기쁨에게")
-        assert result == "  정호승, 슬픔이 기쁨에게"
+        assert result == "⠀⠀정호승, 슬픔이 기쁨에게"
 
     def test_paragraph_start_indent(self) -> None:
         """BBPG 2장2절2 — 새 문단은 3칸에서 시작."""
         rule = _rule("BBPG-2.2.2-paragraph")
         assert rule["params"]["first_line_indent"] == 3
         assert rule["params"]["continuation_indent"] == 0
-        assert format_paragraph_start("본문 내용") == "  본문 내용"
+        assert format_paragraph_start("본문 내용") == "⠀⠀본문 내용"
 
     def test_box_borders(self) -> None:
         """BBPG 1장2절5 — 글상자 위 ⠿…⠛…⠿ / 아래 ⠿…⠶…⠿ (32칸)."""
@@ -334,7 +334,7 @@ class TestLayoutBody:
         lb.layout([_out(["둘째"], e1), _out(["첫째"], e2)],
                   page_no=1, job_id="ord", layout_result=lr)
         lines = _read_lines(tmp_path, "ord")
-        assert lines[0].strip() == "첫째" and lines[1].strip() == "둘째"
+        assert lines[0].strip(" ⠀") == "첫째" and lines[1].strip(" ⠀") == "둘째"
 
     def test_32_cell_line_breaking(self, lb, tmp_path) -> None:
         eid = uuid4()
@@ -350,8 +350,8 @@ class TestLayoutBody:
         lb.layout([_out(["본문"], e1), _out(["제목"], e2)],
                   page_no=1, job_id="hd", layout_result=lr)
         lines = _read_lines(tmp_path, "hd")
-        assert lines[0].strip() == "본문"           # text 첫줄 3칸 들여
-        assert lines[1].strip() == "제목"           # 1단계 제목(가운데 정렬) — 위는 안 띈다
+        assert lines[0].strip(" ⠀") == "본문"           # text 첫줄 3칸 들여
+        assert lines[1].strip(" ⠀") == "제목"           # 1단계 제목(가운데 정렬) — 위는 안 띈다
         assert lines[2] == ""                        # 아래 1줄
 
     def test_3단계_제목만_위아래_빈_줄(self, lb, tmp_path) -> None:
@@ -361,7 +361,7 @@ class TestLayoutBody:
         lb.layout([_out(["본문"], e1), _out(["소제목"], e2), _out(["뒷글"], e3)],
                   page_no=1, job_id="hd3", layout_result=lr)
         lines = _read_lines(tmp_path, "hd3")
-        assert [ln.strip() for ln in lines[:5]] == ["본문", "", "소제목", "", "뒷글"]
+        assert [ln.strip(" ⠀") for ln in lines[:5]] == ["본문", "", "소제목", "", "뒷글"]
 
     def test_heading_blank_not_in_rule_trail(self, lb) -> None:
         # 조판 정책(태민 2026-06-01): heading 빈 줄은 적용하되 rule_trail에 기록하지 않는다.
@@ -377,7 +377,7 @@ class TestLayoutBody:
         lr = _layout((eid, "sidebar", 1, 0))
         bo = _out(["가" * 40], eid)
         lb.layout([bo], page_no=1, job_id="lw", layout_result=lr)
-        lines = [ln for ln in _read_lines(tmp_path, "lw") if ln.strip()]
+        lines = [ln for ln in _read_lines(tmp_path, "lw") if ln.strip(" ⠀")]
         assert len(lines) >= 2  # 40칸 → 32+8 분리 (조판 동작 유지)
         assert not any(r.tag == "line_wrap" for r in bo.rule_trail)
 
@@ -409,7 +409,7 @@ class TestLayoutBody:
         lb.layout([_out(["본문"], e1), _out(["꼬리"], e2)],
                   page_no=1, job_id="hf", layout_result=lr)
         lines = _read_lines(tmp_path, "hf")
-        assert lines[0].strip() == "본문"
+        assert lines[0].strip(" ⠀") == "본문"
         assert "꼬리" in "\n".join(lines[:-1])       # 본문에 실림
         assert "꼬리" not in lines[-1]                # 페이지행엔 없음
 
@@ -449,7 +449,7 @@ class TestLayoutBody:
                   page_no=1, job_id="ftblank", layout_result=lr)
         page_line = _read_lines(tmp_path, "ftblank")[_ROWS - 1]
         assert "匙" not in page_line
-        assert page_line.strip() == _page_number_braille(1)   # 점자 쪽번호만 남는다
+        assert page_line.strip(" ⠀") == _page_number_braille(1)   # 점자 쪽번호만 남는다
 
     def test_no_layout_result_still_works(self, lb, tmp_path) -> None:
         """layout_result 없이도 조판은 동작(메타 기본값=text)."""
@@ -465,8 +465,8 @@ class TestLayoutBody:
         bo = _out(["가" * 50], eid)  # 50 → 첫줄 29(3칸+29) 후 줄바꿈
         lb.layout([bo], page_no=1, job_id="pind", layout_result=lr)
         lines = _read_lines(tmp_path, "pind")
-        assert lines[0].startswith("  ") and not lines[0].startswith("   ")  # 3칸에서 시작 = 앞 빈칸 2
-        assert not lines[1].startswith("  ")        # 이어지는 줄 첫칸
+        assert lines[0].startswith("⠀⠀") and not lines[0].startswith("⠀⠀⠀")  # 3칸에서 시작 = 앞 빈칸 2
+        assert not lines[1].startswith("⠀⠀")        # 이어지는 줄 첫칸
         # 들여쓰기는 조판 서식이므로 rule_trail에 기록하지 않는다(태민 정책)
         assert not any(r.tag == "indent" for r in bo.rule_trail)
 
@@ -477,7 +477,7 @@ class TestLayoutBody:
         bo = _out(["1. 환경 설치"], eid)
         lb.layout([bo], page_no=1, job_id="li", layout_result=lr)
         lines = _read_lines(tmp_path, "li")
-        assert lines[0] == "  1. 환경 설치"          # 번호 원본 유지 + 3칸 (조판 동작 유지)
+        assert lines[0] == "⠀⠀1. 환경 설치"          # 번호 원본 유지 + 3칸 (조판 동작 유지)
         # 글머리 들여쓰기도 조판 서식 → rule_trail 미기록(태민 정책)
         assert not any(r.tag == "indent" for r in bo.rule_trail)
 
@@ -486,8 +486,8 @@ class TestLayoutBody:
         eid = uuid4()
         lr = _layout((eid, "title", 1, 1))
         lb.layout([_out(["제목"], eid)], page_no=1, job_id="ctr", layout_result=lr)
-        first = next(l for l in _read_lines(tmp_path, "ctr") if l.strip())
-        assert first.startswith(" ") and first.strip() == "제목"  # 좌측 패딩 = 가운데
+        first = next(l for l in _read_lines(tmp_path, "ctr") if l.strip(" ⠀"))
+        assert first.startswith("⠀") and first.strip(" ⠀") == "제목"  # 좌측 패딩 = 가운데
 
     def test_page_boundary_natural_split(self, lb, tmp_path) -> None:
         """Q14(점역사 QnA): 문장이 페이지를 넘어가면 자연 분할 — 흐름 보존, 손실·중복·재들여쓰기 없음."""
@@ -500,8 +500,8 @@ class TestLayoutBody:
         assert len(result) == _ROWS * 2                    # 25×2 = 2페이지로 자연 분할
         markers = [m.group(0) for ln in result for m in [re.search(r"L\d\d", ln)] if m]
         assert markers == [f"L{n:02d}" for n in range(30)]  # 순서·무손실·무중복(흐름 보존)
-        first = next(ln for ln in result if ln.strip())
-        assert first.startswith("  L00")                   # 문단 "3칸에서 시작" = 앞 빈칸 2
+        first = next(ln for ln in result if ln.strip(" ⠀"))
+        assert first.startswith("⠀⠀L00")                   # 문단 "3칸에서 시작" = 앞 빈칸 2
         l24 = next(ln for ln in result if "L24" in ln)
         assert l24.startswith("L24")                       # 페이지 넘어간 연속 줄은 재들여쓰기 없음
 
@@ -510,9 +510,9 @@ class TestLayoutBody:
         eid = uuid4()
         lr = _layout((eid, "title", 1, 2))
         lb.layout([_out(["중제목"], eid)], page_no=1, job_id="h2", layout_result=lr)
-        first = next(l for l in _read_lines(tmp_path, "h2") if l.strip())
-        assert first.startswith(" " * 6) and not first.startswith(" " * 7)  # 7칸에서 시작 = 앞 빈칸 6
-        assert first.strip() == "중제목"
+        first = next(l for l in _read_lines(tmp_path, "h2") if l.strip(" ⠀"))
+        assert first.startswith("⠀" * 6) and not first.startswith("⠀" * 7)  # 7칸에서 시작 = 앞 빈칸 6
+        assert first.strip(" ⠀") == "중제목"
 
     def test_heading_blank_lines_규정(self) -> None:
         """BBPG 2장2절2 2)①: 3단계=위아래 빈 줄, 4단계=위에만."""
@@ -552,8 +552,8 @@ class TestLayoutBody:
         eid = uuid4()
         lr = _layout((eid, "title", 1, 3))
         lb.layout([_out(["소제목"], eid)], page_no=1, job_id="h3", layout_result=lr)
-        first = next(l for l in _read_lines(tmp_path, "h3") if l.strip())
-        assert first.startswith("    ") and first.strip() == "소제목"
+        first = next(l for l in _read_lines(tmp_path, "h3") if l.strip(" ⠀"))
+        assert first.startswith("⠀⠀⠀⠀") and first.strip(" ⠀") == "소제목"
 
     def test_empty_element_no_tagging(self, lb, tmp_path) -> None:
         """내용 없는 요소(빈 줄뿐)는 rule_trail·빈 줄을 만들지 않는다."""
@@ -563,7 +563,7 @@ class TestLayoutBody:
         real = _out(["내용"], e2)
         lb.layout([empty, real], page_no=1, job_id="empty", layout_result=lr)
         assert empty.rule_trail == []           # 빈 요소 태깅 없음
-        assert _read_lines(tmp_path, "empty")[0].strip() == "내용"  # 선두 빈 줄 없음
+        assert _read_lines(tmp_path, "empty")[0].strip(" ⠀") == "내용"  # 선두 빈 줄 없음
 
     def test_orig_page_continuation_prefix(self, lb, tmp_path) -> None:
         """한 원본 페이지가 여러 점자 페이지에 걸치면 2번째부터 알파벳 접두(a39…) (BBPG 1장2절2)."""
@@ -584,7 +584,7 @@ class TestLayoutBody:
                   page_no=1, job_id="pgn", layout_result=lr)
         page_line = _read_lines(tmp_path, "pgn")[-1]
         assert page_line.startswith("⠼⠉⠊")     # 좌측 원본 번호
-        assert page_line.rstrip().endswith("⠼⠁")  # 우측 점자 페이지번호(⠼1, 마침표 없음)
+        assert page_line.rstrip(" ⠀").endswith("⠼⠁")  # 우측 점자 페이지번호(⠼1, 마침표 없음)
         assert "⠼⠉⠊" not in "\n".join(_read_lines(tmp_path, "pgn")[:-1])  # 본문 아님
 
 
@@ -604,7 +604,7 @@ class TestBorderIndentB2:
         lr = _layout((eid, "text", 1, 0))
         lb.layout([_out([format_box_top()], eid)],
                   page_no=1, job_id="b2t", layout_result=lr)
-        first = next(l for l in _read_lines(tmp_path, "b2t") if l.strip())
+        first = next(l for l in _read_lines(tmp_path, "b2t") if l.strip(" ⠀"))
         assert first == format_box_top()           # 32칸 그대로, 들여·분리 없음
         assert _cell_count(first) == _COLS
 
@@ -613,7 +613,7 @@ class TestBorderIndentB2:
         lr = _layout((eid, "list_item", 1, 0))
         lb.layout([_out([format_box_bottom()], eid)],
                   page_no=1, job_id="b2l", layout_result=lr)
-        first = next(l for l in _read_lines(tmp_path, "b2l") if l.strip())
+        first = next(l for l in _read_lines(tmp_path, "b2l") if l.strip(" ⠀"))
         assert first == format_box_bottom()
         assert _cell_count(first) == _COLS
 
@@ -625,7 +625,7 @@ class TestBorderIndentB2:
         assert _cell_count(border) == _COLS
         lr = _layout((eid, "text", 1, 0))
         lb.layout([_out([border], eid)], page_no=1, job_id="b2tt", layout_result=lr)
-        first = next(l for l in _read_lines(tmp_path, "b2tt") if l.strip())
+        first = next(l for l in _read_lines(tmp_path, "b2tt") if l.strip(" ⠀"))
         assert first == border                      # 분리 없이 보존
 
     def test_normal_text_still_indented(self, lb, tmp_path) -> None:
@@ -633,8 +633,8 @@ class TestBorderIndentB2:
         eid = uuid4()
         lr = _layout((eid, "text", 1, 0))
         lb.layout([_out(["일반 문단"], eid)], page_no=1, job_id="b2n", layout_result=lr)
-        first = next(l for l in _read_lines(tmp_path, "b2n") if l.strip())
-        assert first.startswith("  ")
+        first = next(l for l in _read_lines(tmp_path, "b2n") if l.strip(" ⠀"))
+        assert first.startswith("⠀⠀")
 
 
 class TestBulletMarkerKBR72:
@@ -675,7 +675,7 @@ class TestBulletMarkerKBR72:
             rule_trail=[make_rule("KBR-6.13.49", line_no=0, col_start=0, col_end=3, tag="symbol")],
         )
         lines, _ = LayoutBraille()._format_element(bo, "list_item", 0)
-        assert lines[0] == "  ⠸⠴⠁⠃"            # 3칸 들여 + 글머리형
+        assert lines[0] == "⠀⠀⠸⠴⠁⠃"            # 3칸 들여 + 글머리형
         assert any(r.rule_id == "KBR-6.14.72" for r in bo.rule_trail)
 
 
@@ -708,7 +708,7 @@ class TestBoxBorderBBPG125:
         title = "⠁" * 30                            # 24칸 초과
         out = LayoutBraille()._render_box_top(1, title)
         assert len(out) >= 2                         # 윗줄 제목(들) + 테두리
-        assert out[0].startswith(" " * 4) and not out[0].startswith(" " * 5)
+        assert out[0].startswith("⠀" * 4) and not out[0].startswith("⠀" * 5)
         assert out[-1] == "⠿" + "⠛" * 30 + "⠿"        # 테두리는 제목 없이
         assert all(len(ln) <= _COLS for ln in out)
 
@@ -822,7 +822,7 @@ class TestBoxBorderBBPG125:
                          BoxBorder(kind="bottom", level=2, title="")],
         )
         LayoutBraille()._expand_box_borders(bo)
-        borders = [l for l in bo.braille_lines if l.strip()]
+        borders = [l for l in bo.braille_lines if l.strip(" ⠀")]
         assert borders[0] == "⠖" + "⠒" * 30 + "⠲"   # 2단계 위
         assert borders[-1] == "⠓" + "⠒" * 30 + "⠚"   # 2단계 아래
 
@@ -855,7 +855,7 @@ class TestPostLayoutCoords:
         lr = _layout((eid, "text", 1, 0))           # text → 문단 3칸 들여
         lb.layout([bo], page_no=1, job_id="tnc", layout_result=lr)
 
-        assert bo.braille_lines[0].startswith("  ")  # write-back: 문단 들여 반영
+        assert bo.braille_lines[0].startswith("⠀⠀")  # write-back: 문단 들여 반영
         # 파일 첫 내용줄 == contents 첫 줄 (둘이 같은 조판본)
         assert _read_lines(tmp_path, "tnc")[0] == bo.braille_lines[0]
         marks = [r for r in bo.rule_trail if r.tag in ("tn_open", "tn_close")]

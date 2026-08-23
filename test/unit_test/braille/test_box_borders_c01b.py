@@ -120,7 +120,7 @@ class TestLayout:
         상자 안 문단이 0칸에서 시작해 gold와 어긋난다(gold는 문단 3칸에서 시작)."""
         lines = boxed.braille_lines
         first_content = next(i for i, ln in enumerate(lines)
-                             if ln.strip() and not _is_border_line(ln))
-        assert lines[first_content].startswith("  ")
+                             if ln.strip(" ⠀") and not _is_border_line(ln))
+        assert lines[first_content].startswith("⠀⠀")
         assert not lines[first_content][2].isspace()
-        assert all(not ln.startswith(" ") for ln in lines if _is_border_line(ln))
+        assert all(not ln.startswith("⠀") for ln in lines if _is_border_line(ln))
