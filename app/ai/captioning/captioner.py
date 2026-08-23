@@ -482,7 +482,11 @@ _READ_TEXT_RE = re.compile(
 
 def _reject_read_text(text: str) -> str:
     """그림 설명이 아니라 지면의 글자를 읽어 온 것이면 실패로 돌린다(= 빈 문자열)."""
-    return "" if (text and _READ_TEXT_RE.search(text)) else (text or "")
+    if text and _READ_TEXT_RE.search(text):
+        # 발동을 남긴다(원장 C-40). 내용은 남기지 않는다 — 어느 신호에 걸렸는지만.
+        logger.info("가드2 캡션 버림(글자를 읽은 캡션) 길이=%d", len(text))
+        return ""
+    return text or ""
 
 
 def _reject_meta(text: str) -> str:
@@ -609,16 +613,21 @@ def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
 _BLANK_CROP_STD = 2.0
 
 
-def _is_blank_crop(path: str) -> bool:
-    """크롭이 거의 단색인가. 판단이 안 서면 **False**(= 캡션을 단다)."""
+def _blank_crop_std(path: str) -> float | None:
+    """크롭의 밝기 표준편차. 못 읽으면 None(= 막지 않는다)."""
     try:
         from PIL import Image, ImageStat
         with Image.open(path) as im:
-            st = ImageStat.Stat(im.convert("L").resize((64, 64)))
-        return st.stddev[0] < _BLANK_CROP_STD
+            return ImageStat.Stat(im.convert("L").resize((64, 64))).stddev[0]
     except Exception as exc:  # noqa: BLE001 — 못 읽으면 막지 않는다
         logger.debug("빈 크롭 판정 실패(캡션 진행): %s", exc)
-        return False
+        return None
+
+
+def _is_blank_crop(path: str) -> bool:
+    """크롭이 거의 단색인가. 판단이 안 서면 **False**(= 캡션을 단다)."""
+    std = _blank_crop_std(path)
+    return std is not None and std < _BLANK_CROP_STD
 
 
 def caption(image_path: str, image_type: str = "image") -> str:
@@ -628,8 +637,11 @@ def caption(image_path: str, image_type: str = "image") -> str:
     """
     prompt = _PROMPTS.get(image_type, _PROMPTS["image"])
 
-    if _is_blank_crop(image_path):
-        logger.info("빈 크롭 — 캡션을 달지 않는다 (%s)", Path(image_path).name)
+    blank = _blank_crop_std(image_path)
+    if blank is not None and blank < _BLANK_CROP_STD:
+        # 발동을 남긴다 — 실사용에서 얼마나 도는지 세어야 코퍼스 세계와 앱 세계의 차이를
+        # 확인할 수 있다(원장 C-40). 파일 내용은 남기지 않는다.
+        logger.info("가드1 캡션 생략(빈 크롭) crop=%s std=%.2f", Path(image_path).name, blank)
         return ""
 
     with open(image_path, "rb") as f:

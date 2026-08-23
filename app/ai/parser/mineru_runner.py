@@ -254,6 +254,62 @@ def _recrop_hidpi(fitz_page: fitz.Page, bbox: list[float], dst: str,
     return True
 
 
+
+# ── 글자를 그림으로 잡은 것을 표시한다 (원장 C-40 부록, 2026-08-23) ──────────────
+# 그림이 없는 텍스트 영역이 시각 요소로 잡히면 캡셔너가 **그 글자를 읽어** 설명으로 낸다
+# (실측: "그림: 본문: 28번 문제 … 인 사면체 ABCD가 있다"). 없는 그림의 설명은 점역사가
+# 알아채기 제일 어려운 오류다.
+#
+# 가르는 신호는 **같은 자리를 두 번 잡았는가**다. 레이아웃이 텍스트와 그림을 갈라 놓으므로
+# 정상이면 겹칠 이유가 없고, 글자를 그림으로 잡으면 그 텍스트 요소와 bbox가 거의 같다.
+#
+# ★ 손해를 전수로 재서 골랐다(dev 정상 시각 요소 830건):
+#     · '텍스트에 덮인 비율'은 꼬리가 길어 임계 0.9에서 정상 25건(3.0%)이 죽는다 —
+#       진짜 그림인데 축 라벨·캡션이 텍스트 요소로 겹쳐 잡힌 것들이다.
+#     · **IoU는 0.8 이상이 0건**이다(0.7 이상도 1건, 0.1%). 그래서 IoU를 쓴다.
+#   임계 0.8은 여유를 둔 값이다. 딱 붙이면 스캔본에서 값이 조금만 흔들려도 놓친다.
+#
+# ⚠ 한계: 이 분리가 잘 되는 이유가 교과서 코퍼스에서 레이아웃이 애초에 겹치게 안 잡기
+#   때문일 수 있다. 스캔본에서도 그런지는 표본이 없어 확인하지 못했다(원장 C-40).
+#   그래서 발동을 로그로 남긴다 — 실사용에서 세어 보는 것이 그 물음에 답하는 유일한 길이다.
+_TEXT_LOOKALIKE_IOU = 0.8
+_LOOKALIKE_TEXT_TYPES = frozenset({
+    "text", "title", "caption", "list_item", "footnote", "sidebar",
+    "header_footer", "page_number", "formula", "table",
+})
+
+
+def _bbox_iou(a: list[float], b: list[float]) -> float:
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _mark_text_lookalikes(elements: list[dict], page_no: int) -> int:
+    """텍스트 요소와 자리가 거의 같은 시각 요소에 표시를 남긴다. 표시한 개수 반환."""
+    texts = [e["bbox"] for e in elements
+             if e.get("type") in _LOOKALIKE_TEXT_TYPES
+             and isinstance(e.get("bbox"), list) and len(e["bbox"]) == 4]
+    if not texts:
+        return 0
+    n = 0
+    for el in elements:
+        bb = el.get("bbox")
+        if el.get("type") not in ("image", "chart_graph", "cartoon", "diagram"):
+            continue
+        if not isinstance(bb, list) or len(bb) != 4:
+            continue
+        best = max((_bbox_iou(bb, t) for t in texts), default=0.0)
+        if best >= _TEXT_LOOKALIKE_IOU:
+            el["text_lookalike_iou"] = round(best, 3)
+            n += 1
+            logger.info("가드3 글자를 그림으로 잡음 — page=%d id=%s iou=%.3f",
+                        page_no, str(el.get("element_id", ""))[:8], best)
+    return n
+
+
 def _extract_text_native(fitz_page: fitz.Page, bbox: list[float]) -> str:
     w, h = fitz_page.rect.width, fitz_page.rect.height
     rect = fitz.Rect(
@@ -990,6 +1046,7 @@ def run(
         with open(base / "merged_layout.json", "w", encoding="utf-8") as f:
             json.dump(layout_json, f, ensure_ascii=False, indent=2)
 
+    _mark_text_lookalikes(merged_layout, page_no)
     logger.info("page %d: %d개 요소, 이미지 %d개", page_no, len(merged_layout),
                 sum(1 for e in merged_layout if e.get("image_path")))
     return merged_layout

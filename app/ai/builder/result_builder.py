@@ -158,6 +158,14 @@ def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
     if _caption_fatal:
         return "", original_type, False, None
 
+    # 가드3 — 텍스트 요소와 자리가 거의 같은 시각 요소는 **글자를 그림으로 잡은 것**이다
+    # (원장 C-40 부록). 캡션을 부르지 않는다. 판정은 `mineru_runner._mark_text_lookalikes`.
+    iou = el.get("text_lookalike_iou")
+    if iou is not None:
+        logger.info("가드3 캡션 생략(글자를 그림으로 잡음) job=%s page=%s id=%s iou=%s",
+                    el.get("job_id", "?"), el.get("page_no", "?"), eid, iou)
+        return "", original_type, False, None
+
     if not img_path or not Path(img_path).exists():
         logger.warning("캡셔닝 불가 — 이미지 경로 없음 id=%s path=%r", eid, img_path)
         return "", original_type, False, None
