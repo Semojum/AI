@@ -154,6 +154,21 @@ class TestKnownLimits:
 
         assert decode(convert_latex(text), math=True) == text
 
+    @pytest.mark.parametrize("text", ["a≡b", "a±b", "a⊃b", "a∉b", "a⊥b", "a√b", "a∞b"])
+    def test_수학기호를_읽는다(self, text: str) -> None:
+        """수식 모드 전용 역표 — 한 칸짜리는 한글과 겹쳐 안 넣는다(∫=⠮는 '을')."""
+        from app.ai.braille.kor_math_rules import convert_latex
+        from app.utils.braille_back import decode
+
+        assert text[1] in decode(convert_latex(text), math=True)
+
+    def test_수식줄에_영어판정을_대지_않는다(self) -> None:
+        """`a √ b`가 `a ar b`로 뒤집히던 회귀 — ⠜는 √이자 영어 약자 ar이다."""
+        from app.ai.braille.kor_math_rules import convert_latex
+        from app.utils.braille_back import decode
+
+        assert decode(convert_latex("a √ b"), math=True) == "a √ b"
+
     def test_공백_넘는_구간을_읽는다(self) -> None:
         """제32항 `MP4 Player` — 2026-08-24까지는 못 읽던 한계였다.
 
