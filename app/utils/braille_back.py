@@ -476,6 +476,10 @@ def _decode_math_token(tok: str) -> str:
     i, n = 0, len(tok)
     while i < n:
         c = tok[i]
+        if c in (_SPACE_CELL, " "):                 # 빈칸 — 로마자 구간 병합으로 토큰
+            out.append(" ")                         # 안에 들어올 수 있다(⟨2800⟩로 샜다)
+            i += 1
+            continue
         if c == _NUMBER_SIGN:                       # 수표 → 숫자
             txt, j = _decode_number(tok, i)
             out.append(txt)
@@ -761,6 +765,11 @@ def _join_num_hangul(text: str) -> str:
 #   없이 본문이 같은 문자열로 이어진다(`⠿⠛…⠿⠀⠿⠁⠲⠀⠦⠄⠫…`). 그래서 **테두리 구간만**
 #   찾아 바꾸고 나머지는 그대로 읽는다. 채움 셀을 4칸 이상 요구하므로 약자 '옹'(⠿ 한 칸)과
 #   `⠿⠁⠲`(ㄱ.) 같은 한글은 안 걸린다.
+# 표 칸 구분선 — 같은 셀만 길게 반복한다(BBPG 표 조판). 글자가 아니라 도형이라 음절로
+# 읽으면 `,,,,,,,,,,,,`가 본문 사이에 섞인다(재점역 5차 69쪽에서 65요소). ⠂ 단독은 쉼표라
+# **6칸 이상 연속**일 때만 본다.
+_TABLE_RULE_RE = re.compile(r"^[⠀ ]*([⠐⠂⠤⠒⠶])\1{5,}[⠀ ]*$")
+
 _BOX_BORDER_RE = re.compile(
     r"[⠿⠖⠓](⠛|⠶|⠒|⠐)\1{3,}(?:[⠀ ](.+?)[⠀ ]\1{3,})?[⠿⠲⠚]")
 
@@ -769,6 +778,8 @@ def _decode_line_router(line: str, math: bool) -> str:
     """줄을 공백 단위로 나눠 수식 토큰은 수학 디코더로, 나머지는 한글 디코더로 라우팅."""
     if not line:
         return ""
+    if _TABLE_RULE_RE.match(line):      # 표 칸 구분선 — 글자가 아니라 도형이다
+        return "【표 구분선】"
     if _BOX_BORDER_RE.search(line):     # 글상자 테두리 — 글자가 아니라 도형이다
         out, last = [], 0
         for m in _BOX_BORDER_RE.finditer(line):
