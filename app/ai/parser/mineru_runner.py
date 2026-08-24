@@ -306,7 +306,9 @@ def _mark_text_lookalikes(elements: list[dict], page_no: int) -> int:
             el["text_lookalike_iou"] = round(best, 3)
             n += 1
             logger.info("가드3 글자를 그림으로 잡음 — page=%d id=%s iou=%.3f",
-                        page_no, str(el.get("element_id", ""))[:8], best)
+                        page_no, str(el.get("element_id", ""))[:8], best,
+                        extra={"page": page_no, "guard": 3, "iou": round(best, 3),
+                               "stage": "캡셔닝", "status": "SKIPPED"})
     return n
 
 

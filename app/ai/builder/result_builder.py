@@ -163,7 +163,9 @@ def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
     iou = el.get("text_lookalike_iou")
     if iou is not None:
         logger.info("가드3 캡션 생략(글자를 그림으로 잡음) job=%s page=%s id=%s iou=%s",
-                    el.get("job_id", "?"), el.get("page_no", "?"), eid, iou)
+                    el.get("job_id", "?"), el.get("page_no", "?"), eid, iou,
+                    extra={"job_id": el.get("job_id"), "page": el.get("page_no"),
+                           "guard": 3, "iou": iou, "stage": "캡셔닝", "status": "SKIPPED"})
         return "", original_type, False, None
 
     if not img_path or not Path(img_path).exists():

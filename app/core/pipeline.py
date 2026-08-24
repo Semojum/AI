@@ -1335,7 +1335,9 @@ async def _run_chain_logged(label: str, elems: list, factory, idx: int, total: i
     except Exception as exc:
         _chain_done += 1
         logger.error("    [%d/%d] %s 실패(%.1fs): %s", _chain_done, total, label,
-                     time.monotonic() - t0, exc)
+                     time.monotonic() - t0, exc,
+                     extra={"job_id": task.job_id, "page": task.page_no,
+                            "stage": label, "status": "CHAIN_FAILED"})
         raise
     _chain_done += 1
     n_llm = len(result[1]) if isinstance(result, tuple) else 0
