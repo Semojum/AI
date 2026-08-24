@@ -490,6 +490,40 @@ def _reject_read_text(text: str) -> str:
     return text or ""
 
 
+# ── 가드4 — 배지·장식을 그림으로 잡은 캡션 (2026-08-24, 원장 C-70) ──────────────
+# fable VLM 전수 대조(코퍼스 1,511쪽·생물 제외)에서 확인: 추출기가 문항 번호 배지,
+# 정답 원문자, 출판사 로고, 공유·스크랩 아이콘, 순서도에서 떨어져 나온 화살표 낱개를
+# 시각자료로 등재하고, 캡셔너가 "그림: 숫자 04" 같은 캡션을 달아 점자까지 내보냈다.
+# gold 는 이런 장식을 점역하지 않는다.
+#
+# ★ 신호는 **면적이 아니라 캡션 패턴**이다. 면적 임계(0.0035)로 걸면 진짜 콘텐츠가
+#   같이 죽는다 — 유물 사진(동아시아사 p0013 금인·p0014 항아리)·문항 인물 삽화
+#   (사회문화 p0017)가 같은 크기 구간에 있다(전수 실측). 캡션 패턴은 발동 58건이
+#   전부 배지·아이콘·화살표류였고 콘텐츠 오격발 0건이었다.
+# 걸리면 캡션 실패와 같은 길(빈 캡션 → 생략 표기 + R11)을 탄다. 요소는 살아 있다.
+_DECOR_CAPTION_RE = re.compile(
+    r"^(?:그림|도표)\s*[:：]\s*(?:"
+    r"(?:원|육각형|사각형|원형\s*배지|배지)?\s*(?:안에\s*)?숫자\s*\d+"
+    r"|답\s*[①-⑮0-9]"
+    r"|\d{1,2}\s*(?:부|강|회)$"
+    r"|(?:알파벳|한글)\s*(?:낱자\s*)?.{1,14}$"
+    r"|.{0,20}로고(?:\s*\S{0,8})?$"
+    r"|QR\s*코드$"
+    r"|(?:오른쪽|왼쪽|위|아래)?\s*(?:을|를)?\s*가리키는\s*화살표$"
+    r"|화살표$"
+    r"|(?:좋아요|싫어요|공유|스크랩|검색)\s*아이콘$"
+    r")")
+
+
+def _reject_decoration(text: str) -> str:
+    """배지·장식을 읽은 캡션이면 실패로 돌린다(= 빈 문자열 → 생략 표기)."""
+    if text and _DECOR_CAPTION_RE.search(text.strip()):
+        logger.info("가드4 캡션 버림(배지·장식) 길이=%d", len(text),
+                    extra={"guard": 4, "stage": "캡셔닝", "status": "REJECTED"})
+        return ""
+    return text or ""
+
+
 def _reject_meta(text: str) -> str:
     """그림 대신 사용자에게 말을 거는 응답이면 실패로 돌린다(= 빈 문자열).
 
@@ -660,8 +694,8 @@ def caption(image_path: str, image_type: str = "image") -> str:
 
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
         text = _split_enumerations(_drop_per_speech_narration(_strip_situation_head(
-            _reject_read_text(
-                _ensure_type_word(_reject_meta(_caption_anthropic(b64, mime, prompt)), image_type)))))
+            _reject_decoration(_reject_read_text(
+                _ensure_type_word(_reject_meta(_caption_anthropic(b64, mime, prompt)), image_type))))))
         # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
         if cache is not None and text.strip():
             cache.write_text(text, encoding="utf-8")
@@ -683,8 +717,8 @@ def caption(image_path: str, image_type: str = "image") -> str:
         temperature=0.3,
     )
     record_openai("캡셔닝", "gpt-4o", getattr(resp, "usage", None))
-    text = _reject_read_text(
-        _ensure_type_word(_reject_meta(resp.choices[0].message.content.strip()), image_type))
+    text = _reject_decoration(_reject_read_text(
+        _ensure_type_word(_reject_meta(resp.choices[0].message.content.strip()), image_type)))
     if cache is not None and text.strip():
         cache.write_text(text, encoding="utf-8")
     return text
