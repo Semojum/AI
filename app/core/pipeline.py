@@ -117,6 +117,49 @@ _RUNNING_FOOT_RES = (
 )
 _HF_TAG_RE = re.compile(r"<!/?[^>]+>")      # 러닝풋 판정 전 <!강조> 등 인라인 태그 제거
 
+# ── 지면 가장자리 머리글·표지 억제 (2026-08-24) ─────────────────────────────
+# 러닝풋 억제(_is_running_foot)는 `header_footer` 타입에만 걸린다. 그런데 실측하니
+# 머리글의 대부분이 **`text` 타입으로 온다**(text 36 · header_footer 6 · title 1).
+# 그래서 `2027학년도 EBS 수능특강 문학`·`정답과 해설 21` 같은 배너가 본문에 실렸다.
+#
+# 판정은 **지면 가장자리 + 배너 문구** 둘 다일 때만 한다. 실측 100쪽 전수에서
+# **억제 65건 · 손해 0건**(gold 에 있는데 지우는 것)이다.
+# ⚠ 어제(C-59)는 손해가 더 크다고 봤는데 그건 검증 도구가 **공통 4셀만 맞아도 "gold 에
+#   있다"** 로 판정한 착시였다. 정렬점수 0.6 임계를 걸어 다시 재 결과가 위 수치다(C-61).
+_PAGE_EDGE_BAND = 0.07                      # 지면 위아래 7% 안
+# ⚠ `학년도`·`N회` 단독은 넣지 않는다. 정답본이 **출처 표기**로 살린다
+#   (`2025학년도 수능`·`2026학년도 6월 모의평가`·`1회`). 실측 손해 12건 중 셋이 이것이다.
+#   `수능특강`이 붙은 도서명 배너만 잡는다.
+_HEADER_BANNER_RE = re.compile(r"정답과\s*해설|수능특강|실전학습|주제·소재편")
+# 본문 상호참조는 머리글이 아니다 — `정답과 해설 125쪽`. 지면 가장자리에 와도 살린다.
+_XREF_RE = re.compile(r"\d+\s*쪽")
+# 머리글 뒤에 글상자가 붙은 요소는 통째로 지우면 테두리를 잃는다(`정답과 해설 21` + 글상자).
+_BOX_TAG_RE = re.compile(r"<!상자")
+
+
+def _page_edge_band(elements: list[dict]) -> tuple[float, float, float] | None:
+    """요소 bbox 로 지면 위·아래 끝과 높이를 낸다. bbox 가 없으면 None(억제 안 함)."""
+    ys = [(e["bbox"][1], e["bbox"][3]) for e in elements
+          if isinstance(e.get("bbox"), (list, tuple)) and len(e["bbox"]) >= 4]
+    if not ys:
+        return None
+    top = min(y for y, _ in ys)
+    bot = max(y2 for _, y2 in ys)
+    return (top, bot, bot - top) if bot > top else None
+
+
+def _is_edge_header(content: str, bbox, band: tuple[float, float, float] | None) -> bool:
+    """지면 가장자리에 놓인 머리글·표지 배너인가."""
+    if band is None or not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+        return False
+    top, bot, h = band
+    if (bbox[1] - top) / h > _PAGE_EDGE_BAND and (bot - bbox[3]) / h > _PAGE_EDGE_BAND:
+        return False                        # 지면 가장자리가 아니다
+    c = _HF_TAG_RE.sub("", content or "")
+    if not _HEADER_BANNER_RE.search(c) or _XREF_RE.search(c):
+        return False
+    return not _BOX_TAG_RE.search(content or "")
+
 
 def _is_running_foot(content: str) -> bool:
     """header_footer 요소가 인쇄 전용 러닝풋인가(실측 패턴 목록 기반)."""
@@ -1086,7 +1129,9 @@ def _parse_txt_result(
     bbox_items: list[BBoxItem] = []
     ext_map: dict[UUID, ExtractedContent] = {}
 
-    for idx, el in enumerate(_split_list_marker_items(extraction.get("elements", [])), start=1):
+    _els = _split_list_marker_items(extraction.get("elements", []))
+    _band = _page_edge_band(_els)
+    for idx, el in enumerate(_els, start=1):
         try:
             eid = UUID(str(el.get("id")))
         except (ValueError, TypeError):
@@ -1106,6 +1151,9 @@ def _parse_txt_result(
             continue
         if etype == "header_footer" and _is_running_foot(content):
             logger.info("러닝풋 억제(header_footer): %.60s", content)
+            continue
+        if _is_edge_header(content, el.get("bbox"), _band):
+            logger.info("지면 가장자리 머리글 억제(%s): %.60s", etype, content)
             continue
         # 추출 모델의 '못 읽었다' 해설문 → 내용 비우고 R11(원본 확인 요망)로 넘긴다.
         refused = _is_extraction_refusal(content)
