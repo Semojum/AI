@@ -115,10 +115,46 @@ def test_가계도_방향마다_들여쓰기가_다르다():
 def test_들여쓰기_태그_숫자는_앞_빈칸_수다():
     """★ 지침의 칸 번호가 아니다(대표가 못 박음). 지침 '3칸에서 적는다' = <!2칸>."""
     from app.ai.braille import tag_names as T
-    assert T.indent_tag(0) == "<!0칸>"     # 지침 "1칸에서 적는다"
     assert T.indent_tag(2) == "<!2칸>"     # 지침 "3칸에서 적는다"
     assert T.indent_tag(4) == "<!4칸>"     # 지침 "5칸에서 적는다"
     assert T.indent_tag(6) == "<!6칸>"     # 지침 "7칸에서 적는다"
+
+
+def test_들여쓰기_0에는_태그를_안_붙인다():
+    """★ 태그는 **묵자에서 점자로 갈 때 달라지는 것만** 표기한다(대표 지시).
+    0은 기본값이라 달라지는 게 없다 — 표기할 것이 없으면 태그도 없다."""
+    from app.ai.braille import tag_names as T
+    assert T.indent_tag(0) == ""
+    tagged = T.apply_indent_tags("해모수\n주몽\n유리", [0, 2, 4])
+    assert tagged == "해모수\n<!2칸>주몽\n<!4칸>유리"
+    assert T.strip_indent_tags(tagged) == ("해모수\n주몽\n유리", [0, 2, 4])
+
+
+def test_후보를_점수순_최대_셋까지_낸다():
+    """★ 신호는 코퍼스 실측으로만 정했다(471건) — 화살표·친족낱말·위계깊이 셋뿐이다."""
+    from uuid import uuid4
+    from app.schemas.content import ExtractedContent
+    from app.ai.llm.diagram_opt import _subtype_scores, _CAND_MAX
+    def sc(cap):
+        e = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, corrected_text=cap)
+        return [k for k, _v in _subtype_scores(e, cap)]
+    # 유형어는 개념도인데 화살표가 있다 → 흐름도가 둘째 후보로 선다(실측 최대 갈래 35건)
+    assert sc("개념도: 물질대사 A → B → C") == ["concept_map", "flowchart"]
+    # 8종 밖(지도)은 후보가 서지 않는다 — 억지 배정 금지
+    assert sc("동아시아 지역을 표시한 지도") == []
+    assert _CAND_MAX == 3
+
+
+def test_8종_밖은_설명_폴백이다():
+    """지도를 개념도로 보면 위계 없는 자료에 위계 개조식이 붙는다."""
+    import asyncio
+    from uuid import uuid4
+    from app.schemas.content import ExtractedContent
+    from app.ai.llm.diagram_opt import DiagramOpt
+    ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
+                           corrected_text="동아시아 지역을 표시한 지도")
+    opt = asyncio.run(DiagramOpt().optimize([ext], "ZERO"))[0]
+    assert opt.drafts[opt.selected_idx].label == "설명"
 
 
 def test_표_셀_태그와_안_섞인다():

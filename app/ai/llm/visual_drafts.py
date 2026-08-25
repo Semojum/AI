@@ -174,6 +174,19 @@ _PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가�
 
 설명: {caption}"""
 
+def _prompt_label(label: str, candidates: list[str] | None) -> str:
+    """프롬프트에 쓸 유형 표기. 후보가 여럿이면 그대로 알려 준다(대표 지시 2026-08-25).
+
+    ⚠ **출력에 찍히는 유형 낱말이 아니다.** 점역자주에는 유형이 하나로 나가야 한다.
+      우리가 유형을 하나로 못 박아 보내면 잘못 고른 유형이 프롬프트의 전제가 되어,
+      모델이 그 전제에 맞춰 없는 구조를 지어낸다.
+    """
+    names = [c for c in (candidates or []) if c]
+    if len(names) <= 1:
+        return label
+    return f"{label}(후보: {' · '.join(names)})"
+
+
 _PREFILL = "[개조식]\n"
 
 _SECTION_RE = re.compile(r"\[(제목|개조식|줄글)\]\s*(.*)")
@@ -487,6 +500,7 @@ async def build_visual_drafts(
     struct_outline: list[tuple[int, str]] | None = None,
     struct_prose: str | None = None,
     decorative: bool = False,
+    candidates: list[str] | None = None,
 ) -> tuple[list[Draft], int, list[int] | None, str]:
     """4안(생략·제목·개조식·줄글) 생성. 반환 (drafts, selected_idx, line_indents, tier).
 
@@ -537,7 +551,7 @@ async def build_visual_drafts(
         #   여기서 삼키면 llm_* 가 빈 채로 남고 아래 캡션·구조 폴백이 4안을 채운다.
         try:
             response, used_fb = await generate_with_retry(
-                _PROMPT.format(label=label, caption=src),
+                _PROMPT.format(label=_prompt_label(label, candidates), caption=src),
                 timeout=timeout, element_id=ext.element_id, kind=kind,
                 prefill=_PREFILL, max_new_tokens=mnt, fallback_max_tokens=fb_mnt,
             )
