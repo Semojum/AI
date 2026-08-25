@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+from app.ai.braille import tag_names as _TAGS
 from app.ai.braille.isolation import safe_translate
 from app.ai.braille.regulations import make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
@@ -74,12 +75,19 @@ class DiagramBraille:
         if opt.drafts:
             out_drafts = []
             draft_breaks: list[list[list[int]]] = []
+            draft_indents: list[list[int] | None] = []
             for d in opt.drafts:
-                d_lines, d_breaks = _to_braille(d.text)
+                # ★ 안마다 **자기 글에 박힌 태그**에서 들여쓰기를 뽑는다(2026-08-25).
+                #   종전에는 요소 한 곳의 값(선택 안 것)이 모든 안에 씌워졌다.
+                d_text, d_ind = _TAGS.strip_indent_tags(d.text)
+                d_lines, d_breaks = _to_braille(d_text)
                 draft_breaks.append(d_breaks)
+                draft_indents.append(d_ind)
                 out_drafts.append(d.model_copy(update={
                     "braille_lines": d_lines,
                     "break_points": d_breaks,
+                    # ★ 안마다 **자기** 들여쓰기를 싣는다(2026-08-25). 종전에는 선택 안의
+                    #   값만 BrailleOutput 에 실려 다른 안에도 그대로 씌워졌다.
                     "rule_trail": _base_trail(d_lines, d.text),
                 }))
             sel = opt.selected_idx if 0 <= opt.selected_idx < len(out_drafts) else 0
@@ -92,10 +100,11 @@ class DiagramBraille:
                 drafts=out_drafts,
                 selected_idx=sel,
                 box_borders=_box_borders(opt.drafts[sel].text),
-                line_indents=_match_indents(opt.line_indents, out_drafts[sel].braille_lines),
+                line_indents=_match_indents(draft_indents[sel],
+                                            out_drafts[sel].braille_lines),
             )
         # 단일(구조 없음·처리 불가 폴백)
-        src = opt.tn_text or opt.corrected_text
+        src, src_ind = _TAGS.strip_indent_tags(opt.tn_text or opt.corrected_text)
         lines, breaks = _to_braille(src)
         return BrailleOutput(
             element_id=opt.element_id,
@@ -103,5 +112,5 @@ class DiagramBraille:
             break_points=breaks,
             rule_trail=list(opt.rule_trail) + _base_trail(lines, src),
             box_borders=_box_borders(src),
-            line_indents=_match_indents(opt.line_indents, lines),
+            line_indents=_match_indents(src_ind or opt.line_indents, lines),
         )

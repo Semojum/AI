@@ -730,16 +730,16 @@ class TableBraille:
         # BBPG-1.2.6이 emit되게 한다(_base_trail은 원본에 태그가 있을 때만 emit).
         unfold_src = text + ("\n" + _TN_SRC if any(_TN_SRC_MARK in ln for ln in unfold_lines) else "")
         drafts = [
-            Draft(option=1, text=print_layout(text, "unfold"), render_mode="unfold", label="풀어쓰기(3칸·2칸)",
+            Draft(option=1, text=print_layout(text, "unfold"), render_mode="unfold", label="테두리 없음",
                   braille_lines=unfold_lines,
                   rule_trail=_base_trail(unfold_lines, unfold_src) + [make_rule("BBPG-3.1.2")]),
-            Draft(option=2, text=print_layout(text, "table_grid"), render_mode="table_grid", label="정렬 유지",
+            Draft(option=2, text=print_layout(text, "table_grid"), render_mode="table_grid", label="테두리+구분선",
                   braille_lines=grid_lines, rule_trail=_base_trail(grid_lines, text)),
             Draft(option=3, text=print_layout(text, "transposed"), render_mode="transposed", label="행열 바꿈",
                   braille_lines=transposed_lines,
                   rule_trail=_base_trail(transposed_lines, text + "\n" + _TN_SRC)
                              + [make_rule("BBPG-3.1.2")]),
-            Draft(option=4, text=print_layout(text, "linear"), render_mode="linear", label="키·값 풀어쓰기",
+            Draft(option=4, text=print_layout(text, "linear"), render_mode="linear", label="테두리만",
                   braille_lines=linear_lines, rule_trail=_base_trail(linear_lines, text)),
         ]
         # 기본 선택 = opt 추론 render_mode (없으면 풀어쓰기). 나머지는 대안 초안.

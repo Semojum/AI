@@ -36,6 +36,7 @@ import re
 import time
 
 from app.ai.llm.base_opt import decide_tier_timeout, generate_with_retry
+from app.ai.braille import tag_names as _TAGS
 from app.ai.braille import tn_notices as _TN_NOTICES
 from app.core.config import config
 from app.schemas.content import Draft
@@ -83,7 +84,9 @@ _WRAP_STYLE = os.environ.get("VISUAL_WRAP_STYLE", "tn")
 #     `<!점역자주>그림 생략<!점역자주>: 1)수소원자의 구조…` 뒤에 두 문단). 이름을 그대로
 #     두면 점역사가 "생략"을 골랐는데 설명이 통째로 사라져 되돌리는 일이 생긴다.
 #   · "참조"는 무엇을 참조하는지가 빠져 있었다 — 규정(§1.3.4(3))의 말은 **별책**이다.
-LABELS = ("설명 없이 생략 고지", "설명", "별책 참조")
+# ★ 2026-08-25 2단계 — 대표 지시로 **짧게** 되돌렸다. 1단계의 긴 이름은 피커에서 줄이 길어
+#   무엇을 고르는지 오히려 흐려졌다. 뜻은 옆 근거(rule_trail·점역자 주)가 진다.
+LABELS = ("생략", "설명", "참조")
 OMIT_IDX, DESC_IDX, VOLREF_IDX = 0, 1, 2
 
 # 유형별 '설명' 안 이름 — **제목만 보고 무엇인지 알게 한다**(계획서 §5·§6).
@@ -91,19 +94,24 @@ OMIT_IDX, DESC_IDX, VOLREF_IDX = 0, 1, 2
 # ⚠ 골격 조립은 이미 규정대로 돌고 있다(`diagram_opt._ASSEMBLERS`). 여기서 하는 것은
 #   **그 골격을 제 이름으로 내주는 것뿐**이다 — 조립부는 손대지 않는다.
 DESC_LABELS = {
-    "concept_map":  "위계 개조식",            # §6.6.1(1)
-    "flowchart":    "순서대로 풀기",          # §6.6.2(2)② (규정 말 "텍스트 점역 모드"는 더 모호하다)
-    "org_chart":    "위계 들여쓰기",          # §6.6.5(2)
-    "family_tree":  "하향식",                 # §6.6.4(1) — 상향식과 나란히 서야 뜻이 선다
-    "timeline":     "시간순 목록",            # §6.6.6(1)(2)
-    "form":         "글상자 항목",            # §6.6.3
-    "screen_image": "글상자 구획",            # §6.6.7
-    "slide":        "제목·들여쓰기 재구성",   # §6.6.8
-    "만화":         "장면별 대사",            # §5.3.2·§5.3.3
+    "concept_map":  "개념도",           # §6.6.1
+    "flowchart":    "흐름도",           # §6.6.2
+    "org_chart":    "조직도",           # §6.6.5
+    "family_tree":  "가계도(하향식)",   # §6.6.4(1) — 방식이 둘로 갈리는 유일한 유형
+    "timeline":     "연대표",           # §6.6.6
+    "form":         "양식",             # §6.6.3
+    "screen_image": "화면 이미지",      # §6.6.7
+    "slide":        "발표용 슬라이드",  # §6.6.8
+    "만화":         "만화",             # §5.3 — 한 장면이면 장면 설정, 여러 장면이면 대사.
+                                        #   재료가 가르니 이름은 하나다.
 }
-PROSE_LABEL = "줄글 설명"                     # §6.1.1(5) — 구조가 없는 그림·사진의 기본
-PROSE_LABELS = {"만화": "장면 설정 설명"}     # §5.3.2 (만화는 대사와 장면 설정이 갈린다)
-FAMILY_BOTTOMUP_LABEL = "상향식"              # §6.6.4(1)(3)
+PROSE_LABEL = "줄글 설명"                     # 도표: 골격과 갈리는 줄글(§6.1.1(5))
+# 그림·사진·그래프의 둘째 안. 점역사 실측 피드백(2026-08-25): 2차함수 그래프를 문제 풀이에서는
+# 수식만 적는 게 맞고, 개념이 처음 나오는 자리에서는 "위로 볼록"·"꼭짓점" 같은 성질을 더
+# 적어 주는 게 좋다. 어느 쪽이 맞는지는 **그 문제에 달렸는데 우리는 문제를 안 본다** —
+# 그래서 "문제 풀이용/개념 학습용"으로 이름 짓지 않는다(폐기, 2026-08-25). 분량만 밝힌다.
+DETAIL_LABEL = "설명(자세히)"
+FAMILY_BOTTOMUP_LABEL = "가계도(상향식)"      # §6.6.4(1)(3)
 
 # 새 안의 option 번호. ★ 기존 1(생략)·2(설명)·6(별책 참조)은 BE·FE 계약이라 그대로 두고
 #   **뒤에만 붙인다**(2026-08-10 방식). 3~5는 2026-08-20에 은퇴한 번호라 재사용하지 않는다.
@@ -112,25 +120,45 @@ FAMILY_BOTTOMUP_OPTION = 8
 
 
 def desc_label(type_key: str) -> str:
-    """그 유형의 '설명' 안 이름. 모르는 유형은 줄글 설명(§6.1.1(5) 기본)."""
-    return DESC_LABELS.get(type_key or "", PROSE_LABEL)
+    """그 유형의 '설명' 안 이름.
+
+    ★ 도표는 **유형명 자체가 방식**이다(대표 지시 2026-08-25). "개념도 - 위계 개조식"처럼
+      방식을 덧붙이면 같은 말을 두 번 하는 꼴이고, 규정에도 점역사 어휘에도 없는 조어가 붙는다.
+      방식이 둘로 뚜렷이 갈리는 가계도만 괄호로 가른다.
+      그림·사진·그래프·만화는 골격이 하나뿐이라 **설명** 하나다.
+    """
+    return DESC_LABELS.get(type_key or "", LABELS[DESC_IDX])
 
 
 def prose_label(type_key: str) -> str:
-    """그 유형의 '줄글' 안 이름."""
-    return PROSE_LABELS.get(type_key or "", PROSE_LABEL)
+    """그 유형의 **둘째 안** 이름.
 
-# 개조식 들여쓰기(칸): 제목 5칸(§6.3.3(1)), 유형/설명 점역자주 0칸, 전사 항목 level0=3칸(+2/단계).
-# ⚠ 원장 C-15 — 정답 도서에는 3칸 줄이 **0.0%**다(dev+val 2027 각 200쪽 줄머리 실측:
-#   0칸 66.4% · 2칸 32.0% · 4칸 1.3% · 3칸 0.0%). 규정(§6.3.4(2)①·§6.6.1(3))은 3칸·5칸을
-#   말한다 — 규정 우선 원칙으로 3을 유지하되 점역사 자문 대상이다.
-# ★ 2026-08-10 정정 — 5는 **칸 번호**였다. 이 값은 `" " * indent`로 쓰이니 **앞 빈칸 수**다.
-#   §6.3.3(1) "제목 5칸에서 시작" = 앞 빈칸 4. 같은 조항을 쓰는 `diagram_opt._TITLE_INDENT`는
-#   이미 4인데 여기만 5로 남아 축끼리 어긋나 있었다(도표는 4칸, 시각 3안은 5칸으로 나갔다).
+    도표는 골격(유형명)과 줄글이 형식으로 갈리고, 그림·사진·그래프는 형식이 아니라
+    **분량**으로 갈린다(설명 / 설명(자세히)). 만화는 재료가 갈라 주므로 안이 하나다.
+    """
+    if type_key == "만화":
+        return desc_label(type_key)          # 같은 이름 → 아래 게이트가 둘째 안을 안 만든다
+    return PROSE_LABEL if type_key in DESC_LABELS else DETAIL_LABEL
+
+# 개조식 들여쓰기 — **값은 전부 앞 빈칸 수다. 규정의 칸 번호가 아니다.**
+#   규정 "1칸에서 적는다" = 0 · "3칸에서 적는다" = 2 · "5칸에서 적는다" = 4 · "7칸" = 6
+#
+# ★ 2026-08-10 정정 — `_TITLE_INDENT` 가 5(칸 번호)로 남아 있어 §6.3.3(1) "제목 5칸"이
+#   앞 빈칸 5로 나갔다. 같은 조항을 쓰는 `diagram_opt._TITLE_INDENT` 는 이미 4였다.
 #   정답 258건 첫 줄 앞 빈칸 분포: 4가 68건 · 5는 4건(17배 차).
-_TITLE_INDENT = 4
-_OUTLINE_BASE = 3
-_OUTLINE_STEP = 2
+# ★ 2026-08-25 정정 — `_OUTLINE_BASE` 가 **3으로 남아 있었다**(같은 off-by-one 의 잔재).
+#   §6.3.4(2)① "3칸에서 적는다" = 앞 빈칸 **2**다. diagram_opt 는 08-10 에 전부 짝수로
+#   고쳤는데(_TITLE_INDENT 4 · _NOTE_INDENT 2 · _HIER_STEP 2) 여기만 안 고쳐졌다.
+#   이 한 줄로 만화(§5.3.3(1) 장면 5칸=4 · (2) 대사 3칸=2)와 그래프 개조식이 같이 맞는다.
+#
+# ★★ **원장 C-15 는 닫혔다(2026-08-25).** "정답 도서에 3칸 줄이 0.0%" 는 규정↔관행 충돌이
+#   아니라 **우리 해석 오류**였다. 실측 분포(0칸 66.4% · 2칸 32.0% · 4칸 1.3% · 3칸 0.0%)에서
+#   **2칸 32.0% 가 곧 규정의 "3칸에서 적는다"** 다. 홀수 칸이 0%인 것은 정답이 규정을 안 지킨
+#   것이 아니라 **우리가 칸 번호를 앞 빈칸 수로 잘못 읽고 있었다는 증거**였다.
+#   ⚠ 여기를 다시 "규정 우선이니 3을 유지"로 읽지 말 것 — 그 읽기가 이 버그를 열다섯 날 살렸다.
+_TITLE_INDENT = 4         # §6.3.3(1) 제목 "5칸에서 시작"
+_OUTLINE_BASE = 2         # §6.3.4(2)① 전사 항목 "3칸에서 시작"
+_OUTLINE_STEP = 2         # 하위 단계마다 +2칸
 _NOTE_INDENT = 2          # 형식 안내 점역자 주 3칸 (정본 예6-19·6-22·6-23·6-24)
 
 # 최적화 프롬프트 — GPT-4o가 만든 캡션(묘사)을 HCXT가 점자 초안용으로 '다듬는다'(재생성 금지).
@@ -153,6 +181,19 @@ _PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가�
 5. **한 면이 32칸 25줄입니다.** 설명이 길수록 학생이 읽을 본문이 줄어듭니다. 짧게 쓰세요.
 
 설명: {caption}"""
+
+def _prompt_label(label: str, candidates: list[str] | None) -> str:
+    """프롬프트에 쓸 유형 표기. 후보가 여럿이면 그대로 알려 준다(대표 지시 2026-08-25).
+
+    ⚠ **출력에 찍히는 유형 낱말이 아니다.** 점역자주에는 유형이 하나로 나가야 한다.
+      우리가 유형을 하나로 못 박아 보내면 잘못 고른 유형이 프롬프트의 전제가 되어,
+      모델이 그 전제에 맞춰 없는 구조를 지어낸다.
+    """
+    names = [c for c in (candidates or []) if c]
+    if len(names) <= 1:
+        return label
+    return f"{label}(후보: {' · '.join(names)})"
+
 
 _PREFILL = "[개조식]\n"
 
@@ -323,7 +364,10 @@ def desc_draft(
     따로 냈는데, 규정은 "설명" 하나이고 gold도 형식이 안 갈려 2026-08-20에 묶었다.
     """
     text, indents = _outline_text_indents(label, title, desc, items, kind)
-    return Draft(option=2, text=text, render_mode="narrative", label=desc_label(kind)), indents
+    # ★ 들여쓰기를 **글 안 태그**로 박는다(2026-08-25 대표 지시). 안마다 자기 글에 실리니
+    #   안을 바꿔도 어긋나지 않는다 — `tag_names` 의 들여쓰기 태그 주석 참조.
+    return Draft(option=2, text=_TAGS.apply_indent_tags(text, indents),
+                 render_mode="narrative", label=desc_label(kind)), indents
 
 
 def prose_draft(text: str, type_key: str = "") -> Draft | None:
@@ -367,6 +411,19 @@ def _dedupe(drafts: list[Draft], selected_idx: int) -> tuple[list[Draft], int]:
             new_idx = len(kept)
         kept.append(d)
     return kept, new_idx
+
+
+def _covered_by(inner: str, outer: str) -> bool:
+    """`inner` 의 알맹이가 `outer` 안에 이미 다 있는가 — 그러면 새 안을 낼 이유가 없다.
+
+    태그·공백을 걷어 낸 글자열로 견준다. 태그가 다르다고 다른 안이 되지는 않는다.
+    """
+    strip = lambda t: "".join(_TAG_STRIP_RE.sub("", t or "").split())
+    a, b = strip(inner), strip(outer)
+    return bool(a) and a in b
+
+
+_TAG_STRIP_RE = re.compile(r"<!/?[^>]*>")
 
 
 def _no_material(*parts: str) -> bool:
@@ -451,6 +508,7 @@ async def build_visual_drafts(
     struct_outline: list[tuple[int, str]] | None = None,
     struct_prose: str | None = None,
     decorative: bool = False,
+    candidates: list[str] | None = None,
 ) -> tuple[list[Draft], int, list[int] | None, str]:
     """4안(생략·제목·개조식·줄글) 생성. 반환 (drafts, selected_idx, line_indents, tier).
 
@@ -501,7 +559,7 @@ async def build_visual_drafts(
         #   여기서 삼키면 llm_* 가 빈 채로 남고 아래 캡션·구조 폴백이 4안을 채운다.
         try:
             response, used_fb = await generate_with_retry(
-                _PROMPT.format(label=label, caption=src),
+                _PROMPT.format(label=_prompt_label(label, candidates), caption=src),
                 timeout=timeout, element_id=ext.element_id, kind=kind,
                 prefill=_PREFILL, max_new_tokens=mnt, fallback_max_tokens=fb_mnt,
             )
@@ -549,9 +607,17 @@ async def build_visual_drafts(
     #   줄글이다(둘 다 "줄글 설명"). 같은 이름 두 칸을 세우면 피커에서 무엇이 다른지
     #   알 수 없다 — 계획서 §5가 없애려는 바로 그 얼굴이다. 만화(장면별 대사 ↔ 장면 설정
     #   설명)와 도표(골격 ↔ 줄글)처럼 형식이 실제로 갈리는 유형만 두 칸을 갖는다.
+    # ★ 둘째 안을 내는 조건 셋 — 하나라도 어긋나면 **안 만든다**(2026-08-25 대표 지시).
+    #   "나눠놓고 다 비슷해서 쓸모없는" 꼴을 막는 게 이 이름 규칙이 기대는 조건이다.
+    #   ① 이름이 갈린다        — 같은 이름 두 칸은 무엇이 다른지 알려 주지 못한다
+    #   ② 재료가 진짜 줄글이다  — 위 폴백 사슬(caption·title)은 설명 안이 이미 쓴 글이다
+    #   ③ **글이 실제로 다르다** — `_dedupe` 는 글자가 완전히 같을 때만 접는다. 그것만으로는
+    #      부족해서, 공백을 접어 견준 뒤 **설명 안이 이미 품고 있는 글**이면 안 낸다
+    #      (자세히에 더 들어갈 내용이 없다는 뜻이다).
     real_prose = struct_prose if struct_prose is not None else llm_prose
     if prose_label(kind) != desc_label(kind):
-        if (d_prose := prose_draft(real_prose, kind)) is not None:
+        d_prose = prose_draft(real_prose, kind)
+        if d_prose is not None and not _covered_by(d_prose.text, d_desc.text):
             drafts.append(d_prose)
 
     # 기본은 설명이다. gold 실측에서 설명이 79.6%로 압도한다(생략 12.2% · 참조 8.0%).

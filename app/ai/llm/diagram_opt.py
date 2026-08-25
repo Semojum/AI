@@ -50,7 +50,11 @@ from typing import Optional
 
 from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import BaseOpt
-from app.ai.llm.diagram_structure import structure_from_caption, subtype_from_caption
+from app.ai.llm.diagram_structure import (
+    caption_outline,
+    structure_from_caption,
+    subtype_from_caption,
+)
 from app.ai.braille import tag_names as _TN
 from app.ai.braille import tn_notices as _TN_NOTICES
 from app.ai.llm.visual_drafts import (
@@ -420,6 +424,76 @@ def _skeleton_prose(text: str) -> str:
     return ", ".join(parts)
 
 
+# ── 하위유형 후보 매김 (§6.6, 2026-08-25 대표 지시) ──────────────────────────
+#
+# 종전에는 `_subtype()` 이 **하나만** 골랐다. 그런데 그 판정은 대개 캡션 첫 줄의 유형어
+# 하나에 걸려 있고, 유형어가 다른 신호와 어긋나는 자리가 실제로 있다. 임계를 넘는 후보를
+# 점수순으로 최대 셋 내주고 점역사가 고르게 한다 — 이름 규칙(유형명 자체가 방식) 덕에
+# 피커에 `개념도`·`흐름도`가 나란히 서면 무엇으로 보고 적었는지가 제목만으로 드러난다.
+#
+# ★ **신호는 코퍼스 실측으로만 정했다**(도표 요소 471건 전수, 2026-08-25).
+#     화살표     110건   흐름도 신호
+#     친족낱말    68건   가계도 신호
+#     위계깊이≥2  35건   개념도·조직도 신호
+#     화면낱말     8건 · 슬라이드낱말 3건 · 빈칸 2건 · 날짜 1건
+#   ⚠ **뒤 넷은 신호를 안 만든다.** 실물이 8·3·2·1건이라 임계를 정할 근거가 없다 —
+#     근거 없이 정하면 지어내는 것이다(양식·화면이미지·발표용 슬라이드·연대표).
+#     그 넷은 캡션 유형어로만 판정한다(종전 동작 그대로).
+#
+# ★ 후보가 실제로 값을 하는 모수는 471 중 **48건(10%)** 이다. 작지만, 그 48건이
+#   **지금 틀린 골격을 받고 있다**(개념도로 보고 위계 개조식을 붙이는데 화살표 흐름도다).
+#     35  개념도로 봤는데 화살표 → 흐름도 후보
+#      5  흐름도인데 위계 깊음 → 개념도 후보
+#      5  개념도인데 친족낱말 → 가계도 후보
+#      3  가계도인데 화살표 → 흐름도 후보
+#
+# ⚠ 8종 밖 자료는 **억지로 배정하지 않는다.** 유형어가 없는 77건 중 59건이 지도(35)·
+#   벤다이어그램(12)·그래프(6)·핵형(4) 등 §6.6 에 조항이 없는 것이다. 지도를 개념도로
+#   보면 위계 없는 자료에 위계 개조식이 붙는다. 후보가 하나도 임계를 못 넘으면 설명 폴백.
+_ARROW_RE = re.compile(r"[→⇒➔➜▶]|-->|->|=>")
+# ⚠ 낱말을 넓게 잡으면 생물 교과에서 오검출한다 — 실측: `딸` 하나가 **딸세포·딸핵**을 물어
+#   감수분열 모식도를 가계도 후보로 세웠다(page_158). 세포 용어를 뒤에 두고 뺀다.
+#   `세대`·`왕` 도 뺐다 — 생물(세대 교번)·역사(왕조)에서 가계도와 무관하게 흔하다.
+_KIN_RE = re.compile(r"아버지|어머니|아들|할아버지|할머니|손자|손녀|자녀|배우자|형제|남매"
+                     r"|후손|선조|가계|가문|족보"
+                     r"|딸(?!세포|핵|염색|염색체)")
+_CAND_MAX = 3          # 대표 결정 — 피커에 셋까지
+_CAND_MIN_SCORE = 2    # 임계. 유형어(3)는 늘 넘고, 신호 하나(2)면 후보로 선다
+# 둘째·셋째 후보의 option 번호. 1·2·6·7·8 은 BE·FE 계약이라 **9부터** 쓴다.
+_CAND_OPTION_BASE = 9
+
+
+def _subtype_scores(ext: ExtractedContent, caption: str) -> list[tuple[str, int]]:
+    """[(subtype, 점수)] 높은 순. 임계 미만은 뺀다.
+
+    점수는 근거의 세기다 — 앞단이 준 값(4) > 캡션 유형어(3) > 글 안 신호(2).
+    같은 점수면 캡션 유형어가 앞선다(현행 기본 선택을 안 바꾸기 위해서다).
+    """
+    score: dict[str, int] = {}
+
+    def bump(sub: str, pts: int) -> None:
+        if sub:
+            score[sub] = max(score.get(sub, 0), pts)
+
+    st = ext.structure or {}
+    bump((st.get("subtype") or "").strip(), 4)
+    bump((ext.visual_subtype or "").strip(), 4)
+    head_sub = subtype_from_caption(caption)
+    bump(head_sub, 3)
+
+    # 글 안 신호 — 실측으로 근거가 선 셋만(위 주석)
+    if _ARROW_RE.search(caption):
+        bump("flowchart", 2)
+    if _KIN_RE.search(caption):
+        bump("family_tree", 2)
+    if max((lv for lv, _t in caption_outline(caption)), default=0) >= 2:
+        bump("concept_map", 2)
+
+    ranked = sorted(score.items(),
+                    key=lambda kv: (-kv[1], 0 if kv[0] == head_sub else 1, kv[0]))
+    return [(k, v) for k, v in ranked if v >= _CAND_MIN_SCORE][:_CAND_MAX]
+
+
 def _skeleton_label(subtype: str, structure: dict) -> str:
     """골격 안의 이름. 가계도만 **실제로 조립된 방향**을 이름에 싣는다(§6.6.4(1))."""
     if subtype == "family_tree":
@@ -445,10 +519,13 @@ def _family_alt(subtype: str, structure: dict) -> Optional[Draft]:
     alt_mode = "top_down" if cur == "bottom_up" else "bottom_up"
     if not (structure.get("nodes") if alt_mode == "top_down" else structure.get("items")):
         return None
-    text, _indents = assemble_family_tree({**structure, "mode": alt_mode})
+    text, indents = assemble_family_tree({**structure, "mode": alt_mode})
     label = (desc_label("family_tree") if alt_mode == "top_down"
              else FAMILY_BOTTOMUP_LABEL)
-    return Draft(option=FAMILY_BOTTOMUP_OPTION, text=text,
+    # ★ 자기 들여쓰기를 **글 안 태그**로 싣는다. 안 실으면 선택 안(하향식)의 값이 씌워져
+    #   세대 방향이 거꾸로 나간다 — 줄 수가 같아 길이 검사로도 안 걸린다(§6.6.4(2)②·(3)②).
+    return Draft(option=FAMILY_BOTTOMUP_OPTION,
+                 text=_TN.apply_indent_tags(text, indents),
                  render_mode="narrative", label=label)
 
 
@@ -461,7 +538,11 @@ class DiagramOpt(BaseOpt):
     """
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
-        subtype = _subtype(ext)
+        caption = (ext.corrected_text or "").strip()
+        # 임계 넘는 후보를 점수순 최대 셋(위 `_subtype_scores` 주석). 하나도 없으면
+        # 종전 단일 판정으로 물러난다 — 8종 밖 자료는 여기서 빈 목록이 되고 설명 폴백을 탄다.
+        cands = _subtype_scores(ext, caption)
+        subtype = cands[0][0] if cands else _subtype(ext)
         structure = _structure(ext, subtype)
         label = _TYPE_LABEL.get(subtype, "도표")
         title = (structure.get("title") or "").strip()
@@ -479,7 +560,9 @@ class DiagramOpt(BaseOpt):
             # ★ 2026-08-25 — 골격 안을 **유형 이름**으로 내준다(계획서 §5). 조립은 그대로다.
             drafts = [
                 omission_draft(label),
-                Draft(option=2, text=skeleton_text, render_mode="narrative",
+                Draft(option=2,
+                      text=_TN.apply_indent_tags(skeleton_text, skeleton_indents),
+                      render_mode="narrative",
                       label=_skeleton_label(subtype, structure)),
                 *extra_drafts(label),
             ]
@@ -488,6 +571,24 @@ class DiagramOpt(BaseOpt):
             # 내주고 점역사가 고른다. 데이터가 한 방향뿐이면 그 방향만 나간다.
             if (alt := _family_alt(subtype, structure)) is not None:
                 drafts.append(alt)
+            # ★ 둘째·셋째 후보의 골격도 같이 낸다(대표 결정 — 최대 셋).
+            #   조립되는 것만 낸다: 그 유형의 structure 를 못 만들면 안을 안 세운다.
+            #   피커에 `개념도`·`흐름도`가 나란히 서면 무엇으로 보고 적었는지가 이름으로 드러난다.
+            opt_no = _CAND_OPTION_BASE
+            for alt_sub, _score in cands[1:]:
+                alt_entry = _ASSEMBLERS.get(alt_sub)
+                if alt_entry is None:
+                    continue
+                alt_st = _structure(ext, alt_sub)
+                if not alt_entry[1](alt_st):
+                    continue
+                alt_text, alt_ind = alt_entry[0](alt_st)
+                drafts.append(Draft(
+                    option=opt_no,
+                    text=_TN.apply_indent_tags(alt_text, alt_ind),
+                    render_mode="narrative",
+                    label=_skeleton_label(alt_sub, alt_st)))
+                opt_no += 1
             # 줄글 설명(§6.1.1(5)) — 골격을 태그·테두리 없이 이은 것. rule-based다.
             if (d_prose := prose_draft(_skeleton_prose(skeleton_text), subtype)) is not None:
                 drafts.append(d_prose)
@@ -503,12 +604,12 @@ class DiagramOpt(BaseOpt):
                 rule_trail=_min_trail(subtype, "골격 조립"),
                 drafts=drafts,
                 selected_idx=sel_idx,
-                # 설명 안이 선택됐을 때만 골격 들여쓰기를 넘긴다.
-                # ★ option 번호가 아니라 **라벨**로 찾는다(2026-08-20). 6안→3안으로 줄이며
-                #   설명 안의 option이 3에서 2로 바뀌었는데 여기가 3을 찾고 있어 터졌다.
-                line_indents=skeleton_indents if (
-                    0 <= sel_idx < len(drafts)
-                    and drafts[sel_idx].label == _skeleton_label(subtype, structure)) else None,
+                # ★ 2026-08-25 — **선택된 안이 스스로 들고 있는 값**을 그대로 넘긴다.
+                #   라벨로 찾아 골격 값을 씌우던 종전 방식은 안이 늘자 깨졌다(가계도 상향식).
+                #   `LLMOutput.line_indents`는 호환용으로 남기고 값의 출처만 안으로 옮겼다.
+                # 호환 필드 — 선택된 안의 **글에 박힌 태그**에서 되읽는다.
+                line_indents=(_TN.strip_indent_tags(drafts[sel_idx].text)[1]
+                              if 0 <= sel_idx < len(drafts) else None),
             )
 
         # 폴백: 구조 없음 → 캡션으로 공통 3안 빌더(설명 LLM)
@@ -528,12 +629,20 @@ class DiagramOpt(BaseOpt):
                 drafts=[omission_draft(label)],
                 selected_idx=0,
             )
+        # ★ 외부 LLM 호출에 **후보 목록**을 넘긴다(대표 지시). 종전에는 유형을 하나로
+        #   못 박아 보내서, 우리가 잘못 고른 유형이 그대로 프롬프트의 전제가 됐다.
+        #   ⚠ 후보는 **프롬프트에만** 넘긴다. 점역자주에 찍히는 유형 낱말은 하나여야 한다 —
+        #     한때 label 에 실었더니 출력에 `개념도 또는 가계도:` 가 그대로 나갔다.
+        cand_names = [_TYPE_LABEL.get(k, "도표") for k, _v in cands]
         drafts, selected_idx, line_indents, tier, cap_src = await build_visual_drafts(
             ext, routing_tier, label=label, caption=cap, kind="도표",
+            candidates=cand_names,
         )
         return LLMOutput(
             element_id=ext.element_id,
-            corrected_text=drafts[selected_idx].text,
+            # 요소 본문은 **태그 없는 글**로 둔다 — `line_indents` 호환 필드와
+            # 줄 단위로 짝지어지는 자리라 줄머리에 태그가 붙으면 짝이 깨진다.
+            corrected_text=_TN.strip_indent_tags(drafts[selected_idx].text)[0],
             render_mode="narrative",
             tn_text=drafts[selected_idx].text,
             routing_tier=tier,
