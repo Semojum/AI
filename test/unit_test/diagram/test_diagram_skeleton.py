@@ -115,7 +115,8 @@ class TestOptimize:
         opt = asyncio.run(DiagramOpt().optimize([ext], "ZERO"))[0]
         assert "처리 불가" not in opt.corrected_text
         assert opt.corrected_text.endswith("생략<!/주>")
-        assert [d.label for d in opt.drafts] == ["생략"]
+        from app.ai.llm.visual_drafts import LABELS as _LB, OMIT_IDX as _OI
+        assert [d.label for d in opt.drafts] == [_LB[_OI]]
 
 
 class TestE2E:

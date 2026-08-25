@@ -733,13 +733,13 @@ class TableBraille:
             Draft(option=1, text=print_layout(text, "unfold"), render_mode="unfold", label="풀어쓰기(3칸·2칸)",
                   braille_lines=unfold_lines,
                   rule_trail=_base_trail(unfold_lines, unfold_src) + [make_rule("BBPG-3.1.2")]),
-            Draft(option=2, text=print_layout(text, "table_grid"), render_mode="table_grid", label="격자형",
+            Draft(option=2, text=print_layout(text, "table_grid"), render_mode="table_grid", label="정렬 유지",
                   braille_lines=grid_lines, rule_trail=_base_trail(grid_lines, text)),
-            Draft(option=3, text=print_layout(text, "transposed"), render_mode="transposed", label="행↔열 전치",
+            Draft(option=3, text=print_layout(text, "transposed"), render_mode="transposed", label="행열 바꿈",
                   braille_lines=transposed_lines,
                   rule_trail=_base_trail(transposed_lines, text + "\n" + _TN_SRC)
                              + [make_rule("BBPG-3.1.2")]),
-            Draft(option=4, text=print_layout(text, "linear"), render_mode="linear", label="선형(키:값)",
+            Draft(option=4, text=print_layout(text, "linear"), render_mode="linear", label="키·값 풀어쓰기",
                   braille_lines=linear_lines, rule_trail=_base_trail(linear_lines, text)),
         ]
         # 기본 선택 = opt 추론 render_mode (없으면 풀어쓰기). 나머지는 대안 초안.

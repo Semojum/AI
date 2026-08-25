@@ -55,11 +55,15 @@ from app.ai.braille import tag_names as _TN
 from app.ai.braille import tn_notices as _TN_NOTICES
 from app.ai.llm.visual_drafts import (
     DESC_IDX,
+    FAMILY_BOTTOMUP_LABEL,
+    FAMILY_BOTTOMUP_OPTION,
     LABELS,
     _dedupe,
     build_visual_drafts,
+    desc_label,
     extra_drafts,
     omission_draft,
+    prose_draft,
 )
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import Draft, ExtractedContent, LLMOutput, RuleApplication
@@ -416,6 +420,38 @@ def _skeleton_prose(text: str) -> str:
     return ", ".join(parts)
 
 
+def _skeleton_label(subtype: str, structure: dict) -> str:
+    """골격 안의 이름. 가계도만 **실제로 조립된 방향**을 이름에 싣는다(§6.6.4(1))."""
+    if subtype == "family_tree":
+        mode = (structure.get("mode") or "top_down").strip()
+        return FAMILY_BOTTOMUP_LABEL if mode == "bottom_up" else desc_label(subtype)
+    return desc_label(subtype)
+
+
+def _family_alt(subtype: str, structure: dict) -> Optional[Draft]:
+    """가계도의 **반대 방향** 안. 그 방향 데이터가 없으면 None.
+
+    §6.6.4(1)은 하향식·상향식 중 "교재 이해에 효과적인 것"을 고르라고 한다. 그건 사람이
+    하는 판단이라 기계가 못 고른다 — 조립은 이미 둘 다 되어 있으니(`assemble_family_tree`의
+    mode 분기) 둘 다 내주고 점역사가 고르게 한다. 이번 변경의 본보기다.
+
+    ⚠ 방향을 **지어내지 않는다.** 하향식은 `nodes`, 상향식은 `items`를 재료로 쓰는데
+      한쪽만 있는 구조가 흔하다. 없는 쪽을 뒤집어 만들면 §6.6.4(3)④ 부모 번호가 빠진
+      반쪽짜리가 나가므로, 재료가 있는 방향만 낸다.
+    """
+    if subtype != "family_tree":
+        return None
+    cur = (structure.get("mode") or "top_down").strip()
+    alt_mode = "top_down" if cur == "bottom_up" else "bottom_up"
+    if not (structure.get("nodes") if alt_mode == "top_down" else structure.get("items")):
+        return None
+    text, _indents = assemble_family_tree({**structure, "mode": alt_mode})
+    label = (desc_label("family_tree") if alt_mode == "top_down"
+             else FAMILY_BOTTOMUP_LABEL)
+    return Draft(option=FAMILY_BOTTOMUP_OPTION, text=text,
+                 render_mode="narrative", label=label)
+
+
 class DiagramOpt(BaseOpt):
     """ExtractedContent 목록 → LLMOutput 목록 (개념도·흐름도 등 도표). 대체텍스트 3안.
 
@@ -440,11 +476,21 @@ class DiagramOpt(BaseOpt):
             # 설명 = §6.6 골격 그대로(글상자 테두리·정밀 들여쓰기 보존).
             # ★ 2026-08-20 — 짧은 제목·줄글·유형만을 뺐다. 규정은 "설명" 하나이고
             #   gold 실측에서 '유형만'이 0건이다(visual_drafts.LABELS 주석 참조).
+            # ★ 2026-08-25 — 골격 안을 **유형 이름**으로 내준다(계획서 §5). 조립은 그대로다.
             drafts = [
                 omission_draft(label),
-                Draft(option=2, text=skeleton_text, render_mode="narrative", label=LABELS[DESC_IDX]),
+                Draft(option=2, text=skeleton_text, render_mode="narrative",
+                      label=_skeleton_label(subtype, structure)),
                 *extra_drafts(label),
             ]
+            # 가계도만 방향 둘을 **같이** 낸다 — §6.6.4(1)이 "교재 이해에 효과적인 쪽을
+            # 고르라"고 하는데 그건 기계가 못 고르는 판단이다. 둘 다 조립돼 있으니
+            # 내주고 점역사가 고른다. 데이터가 한 방향뿐이면 그 방향만 나간다.
+            if (alt := _family_alt(subtype, structure)) is not None:
+                drafts.append(alt)
+            # 줄글 설명(§6.1.1(5)) — 골격을 태그·테두리 없이 이은 것. rule-based다.
+            if (d_prose := prose_draft(_skeleton_prose(skeleton_text), subtype)) is not None:
+                drafts.append(d_prose)
             # 골격 경로는 build_visual_drafts를 안 타므로 접기를 여기서 직접 부른다.
             drafts, sel_idx = _dedupe(drafts, DESC_IDX)
             return LLMOutput(
@@ -462,7 +508,7 @@ class DiagramOpt(BaseOpt):
                 #   설명 안의 option이 3에서 2로 바뀌었는데 여기가 3을 찾고 있어 터졌다.
                 line_indents=skeleton_indents if (
                     0 <= sel_idx < len(drafts)
-                    and drafts[sel_idx].label == LABELS[DESC_IDX]) else None,
+                    and drafts[sel_idx].label == _skeleton_label(subtype, structure)) else None,
             )
 
         # 폴백: 구조 없음 → 캡션으로 공통 3안 빌더(설명 LLM)

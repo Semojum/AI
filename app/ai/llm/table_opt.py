@@ -38,8 +38,13 @@ def _nested_image_text(ext: ExtractedContent) -> Optional[str]:
     return None
 
 
-_RENDER_LABEL = {"table_grid": "격자형", "transposed": "행열 바꿈",
-                 "linear": "선형(풀어쓰기)", "text_only": "풀어쓰기"}
+# ★ 2026-08-25 — 이름을 규정 낱말로 맞췄다(계획서 §5, 동작 무수정).
+#   · "격자형" → **"정렬 유지"**: §3.2 절 제목이 "원본의 정렬 형태를 유지하는 표"다.
+#   · "행↔열 전치"(table_braille)와 "행열 바꿈"(여기)이 **같은 것의 두 이름**이었다 → 하나로.
+#   · "선형(키:값)" 조어는 지우되 unfold 와 구별되게 **"키·값 풀어쓰기"**로 둔다.
+#     초안에서 빼는 것은 실측이 막았다 — `_TABLE_DRAFT_MODES` 주석 참조.
+_RENDER_LABEL = {"table_grid": "정렬 유지", "transposed": "행열 바꿈",
+                 "linear": "키·값 풀어쓰기", "text_only": "풀어쓰기"}
 
 
 def _min_trail(render_mode: str = "") -> list[RuleApplication]:
@@ -426,11 +431,18 @@ def _strip_tn_labels(line: str) -> str:
 # 표 배치 4안의 **묵자** — 점역 전 산출물이라 opt 단계에서 만든다 (2026-08-06).
 # mode a는 점역을 하지 않으므로(include_braille=False) 여기서 안 만들면 대체 초안이 아예 없다.
 # mode b·c에서는 table_braille가 같은 배치에 점자를 붙여 덮어쓴다(값은 같다 — 같은 함수).
+# ★ 2026-08-25 — 이름만 고쳤다. '선형(키:값)'은 규정에도 점역사 어휘에도 없는 조어라
+#   **빼려고 했는데 실측이 막았다**: linear 와 unfold 는 점자 출력이 다르다
+#   (코퍼스 2열 표 106개 전수 대조 — 같은 것 0 · 다른 것 106. linear 는 테두리를 두르고
+#   행 배치도 다르다). 겹치는 것은 묵자 배치뿐이고 점자는 겹치지 않는다. 빼면 2열 표가
+#   전부 다시 흘러 **동작이 바뀐다** — 이 단계는 "라벨만, 동작 무수정"이라 이름만 고친다.
+#   조어를 지우되 unfold 와 구별되게 "키·값 풀어쓰기"로 둔다. 실제 제거는 A/B 대상이다.
+#   option 번호는 BE·FE 계약이라 1~4 그대로다.
 _TABLE_DRAFT_MODES = [
     (1, "unfold", "풀어쓰기(3칸·2칸)"),
-    (2, "table_grid", "격자형"),
-    (3, "transposed", "행↔열 전치"),
-    (4, "linear", "선형(키:값)"),
+    (2, "table_grid", "정렬 유지"),
+    (3, "transposed", "행열 바꿈"),
+    (4, "linear", "키·값 풀어쓰기"),
 ]
 
 
