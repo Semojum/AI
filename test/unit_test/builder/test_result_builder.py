@@ -115,7 +115,7 @@ def test_image_captioning_result(monkeypatch):
     """caption/classify를 mock하여 build()가 placeholder 없는 결과를 생성하는지 검증."""
     monkeypatch.setattr(
         "app.ai.builder.result_builder.caption",
-        lambda img_path, img_type: "테스트 캡셔닝: 두 학생이 실험 도구를 사용하는 장면입니다.",
+        lambda img_path, img_type, context="": "테스트 캡셔닝: 두 학생이 실험 도구를 사용하는 장면입니다.",
     )
     monkeypatch.setattr(
         "app.ai.builder.result_builder.classify_with_confidence",
@@ -203,7 +203,7 @@ class TestEmptyCaptionKeepsElement:
     def test_빈_캡션이어도_요소가_남는다(self, monkeypatch):
         import app.ai.builder.result_builder as rb
         monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("cartoon", 0.9))
-        monkeypatch.setattr(rb, "caption", lambda p, t: "   ")
+        monkeypatch.setattr(rb, "caption", lambda p, t, context="": "   ")
         monkeypatch.setattr(rb.Path, "exists", lambda self: True)
         res = _build([self._img()], "t_emptycap", 1, "OCR")
         assert len(res["elements"]) == 1
@@ -214,7 +214,7 @@ class TestEmptyCaptionKeepsElement:
     def test_정상_캡션은_그대로(self, monkeypatch):
         import app.ai.builder.result_builder as rb
         monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("cartoon", 0.9))
-        monkeypatch.setattr(rb, "caption", lambda p, t: "만화: 후보 토론회")
+        monkeypatch.setattr(rb, "caption", lambda p, t, context="": "만화: 후보 토론회")
         monkeypatch.setattr(rb.Path, "exists", lambda self: True)
         res = _build([self._img()], "t_okcap", 1, "OCR")
         assert res["elements"][0]["content"] == "만화: 후보 토론회"
@@ -239,7 +239,7 @@ class TestDiagramSubtypeOnBoundary:
     def _run(self, monkeypatch, cap, job):
         import app.ai.builder.result_builder as rb
         monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("diagram", 0.9))
-        monkeypatch.setattr(rb, "caption", lambda p, t: cap)
+        monkeypatch.setattr(rb, "caption", lambda p, t, context="": cap)
         monkeypatch.setattr(rb.Path, "exists", lambda self: True)
         return _build([self._img()], job, 1, "OCR")["elements"][0]
 

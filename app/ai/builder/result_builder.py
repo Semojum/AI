@@ -129,7 +129,7 @@ def reset_caption_fatal() -> None:
     _caption_fatal = None
 
 
-def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
+def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | None]:
     """(캡션, 확정 타입, 성공여부, 세분류 신뢰도).
 
     ★ 실패 문자열을 본문으로 흘리지 않는다. 예전에는 "[캡셔닝 실패]"를 content로 반환해
@@ -187,7 +187,7 @@ def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
         try:
             image_type, subconf = classify_with_confidence(img_path)
             mapped_type = _CLASSIFY_TYPE_MAP.get(image_type, "image")
-            text = caption(img_path, image_type)
+            text = caption(img_path, image_type, context=context)
             # ★ 예외 없이 **빈 캡션**이 오는 길이 있다(모델이 거부하거나 빈 응답을 줌).
             #   그걸 성공으로 넘기면 build()의 `not content.strip()` 가지에서 요소가
             #   통째로 사라진다 — 실측: job_260807160446 p1의 만화가 이렇게 없어졌고
@@ -296,6 +296,32 @@ def _link_captions(elements: list[dict]) -> None:
             cap["caption_ref"] = best["id"]
 
 
+# ── 주변 본문 문맥 (C003, 2026-08-25 대표 지시) ──────────────────────────────
+# 크롭만 보면 그 그림에서 **무엇이 중요한지** 알 수 없다. 대표 실사례 — 초등 블록쌓기
+# 문제에서 3D 로 쌓인 블록 개수를 묻는데 그림 설명만 내서 문제를 못 푸는 설명이 나갔다.
+# 쪽 요소 목록은 여기(`_caption_all`)가 이미 갖고 있으므로 새 배관을 파지 않는다.
+#
+# 고르는 법: **앞쪽 가장 가까운 텍스트계 요소**를 먼저 본다(발문이 그림 앞에 온다).
+# 없으면 뒤를 본다(캡션이 그림 뒤에 붙는 배치). 세 칸까지만 — 더 멀면 그 그림 얘기가 아니다.
+_CTX_TEXT_TYPES = {"text", "title", "list_item", "caption", "footnote", "sidebar"}
+_CTX_SPAN = 3
+
+
+def _neighbor_text(ordered: list[dict], idx: int) -> str:
+    """`ordered[idx]` 시각 요소 옆 본문. 없으면 빈 문자열."""
+    def _pick(rng) -> str:
+        for j in rng:
+            if not (0 <= j < len(ordered)):
+                continue
+            e = ordered[j]
+            if e.get("type") in _CTX_TEXT_TYPES:
+                t = (e.get("content") or "").strip()
+                if t:
+                    return t
+        return ""
+    return _pick(range(idx - 1, idx - 1 - _CTX_SPAN, -1)) or _pick(range(idx + 1, idx + 1 + _CTX_SPAN))
+
+
 def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
     """시각요소 캡셔닝을 **동시에** 수행한다. 키 = id(el).
 
@@ -309,6 +335,9 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
     vis = [el for el in ordered if el["type"] in _VISUAL_TYPES]
     if not vis:
         return {}
+    # 시각 요소마다 옆 본문을 한 번만 뽑아 둔다(스레드에 넘길 값이라 미리 만든다).
+    ctx = {id(el): _neighbor_text(ordered, i)
+           for i, el in enumerate(ordered) if el["type"] in _VISUAL_TYPES}
     # 백엔드·키 상태를 프로세스당 1회 남긴다 — 키가 없으면 여기서 error로 뜬다.
     # (종전엔 실패가 요소별 로그로만 흘러 실행이 끝나면 원인이 사라졌다.)
     global _backend_logged
@@ -320,7 +349,7 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
     out: dict[int, tuple] = {}
     if len(vis) == 1 or workers == 1:
         for el in vis:
-            out[id(el)] = _do_caption_logged(el)
+            out[id(el)] = _do_caption_logged(el, ctx.get(id(el), ""))
     else:
         with ThreadPoolExecutor(max_workers=min(workers, len(vis))) as pool:
             # ★ **컨텍스트를 복사해 넘긴다**(2026-08-23 실측으로 잡은 계정 구멍).
@@ -336,7 +365,8 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
             #   ※ 누계 객체(`_ReqStats`)는 복사본들이 **같은 것을 가리킨다**(맵만 복사된다).
             #     그래서 합계가 제대로 쌓인다. 카운터 증가는 원자적이지 않으나 관측값이라
             #     그 정도 경합은 감수한다.
-            futs = {pool.submit(copy_context().run, _do_caption_logged, el): el for el in vis}
+            futs = {pool.submit(copy_context().run, _do_caption_logged, el,
+                                ctx.get(id(el), "")): el for el in vis}
             for fut in as_completed(futs):
                 el = futs[fut]
                 try:
@@ -348,7 +378,7 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
     return out
 
 
-def _do_caption_logged(el: dict) -> tuple:
+def _do_caption_logged(el: dict, context: str = "") -> tuple:
     """`_do_caption` + 요소별 소요시간 로깅.
 
     프로세스 전역 슬롯을 잡고 호출한다 — 페이지 안 스레드풀(기본 4)만으로는 페이지가
@@ -359,7 +389,7 @@ def _do_caption_logged(el: dict) -> tuple:
 
     with caption_slot():
         t = time.monotonic()
-        content, el_type, ok, subconf = _do_caption(el)
+        content, el_type, ok, subconf = _do_caption(el, context)
         logger.info("    캡셔닝 %s(%s→%s) %.1fs%s", str(el.get("element_id", ""))[:8],
                     el["type"], el_type, time.monotonic() - t, "" if ok else " [실패]")
     return content, el_type, ok, subconf
