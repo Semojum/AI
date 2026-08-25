@@ -574,19 +574,31 @@ def page_is_blank(pdf_data: bytes, page_no: int) -> bool:
                 pass
 
 
+def _disp(bbox, rot) -> "fitz.Rect":
+    """회전 전(mediabox) 좌표 → 표시 좌표 Rect. 회전 없으면 그대로다."""
+    r = fitz.Rect(bbox) * rot
+    r.normalize()
+    return r
+
+
 def box_rects(page) -> list:
     """페이지의 글상자 후보 사각형(표시 좌표 Rect). 겹치는 후보는 큰 것 하나로 묶는다."""
     pr = page.rect
     W = pr.width
+    # ★ 회전 지면 보정(#228 후속, 2026-08-24). get_drawings·rawdict는 **회전 전**(mediabox)
+    #   좌표로 나오는데 page.rect는 회전 후 크기다. 그대로 쓰면 270° 지면에서 사각형이
+    #   엉뚱한 자리로 정규화된다(실측: 180°에서 쪽 높이의 0.18 어긋남, 90°는 딴 자리).
+    #   경계 요소 bbox는 이미 표시 좌표라(extract_text_blocks) 여기도 맞춰야 짝이 된다.
+    rot = page.rotation_matrix
     try:
-        tblocks = [fitz.Rect(b["bbox"]) for b in page.get_text("rawdict")["blocks"]
+        tblocks = [_disp(b["bbox"], rot) for b in page.get_text("rawdict")["blocks"]
                    if b.get("type") == 0]
         drawings = page.get_drawings()
     except Exception:  # noqa: BLE001 — 손상 페이지는 테두리 없이 진행
         return []
     out: list = []
     for g in drawings:
-        r = fitz.Rect(g["rect"])
+        r = _disp(g["rect"], rot)
         if not r.intersects(pr):
             continue
         r = r & pr
@@ -649,13 +661,14 @@ def mark_glyphs(page) -> list[tuple[str, "fitz.Rect"]]:
       이 가드가 없으면 수학1에서 곱셈 ×를 정오 표시로 오검출한다(실측 2쪽).
     """
     pr = page.rect
+    rot = page.rotation_matrix          # 회전 지면 보정 — box_rects의 _disp 주석 참조
     out: list[tuple[str, fitz.Rect]] = []
     try:
         drawings = page.get_drawings()
     except Exception:  # noqa: BLE001
         return []
     for g in drawings:
-        r = fitz.Rect(g["rect"])
+        r = _disp(g["rect"], rot)
         if r not in pr or g["type"] != "f" or g.get("color"):
             continue
         if not (_MARK_MIN <= r.width <= _MARK_MAX and _MARK_MIN <= r.height <= _MARK_MAX
@@ -749,10 +762,11 @@ _CHAR_BOX_TOKEN_RE = re.compile(r"\([가-힣A-Za-z0-9]\)|[가-힣]")
 
 def char_box_glyphs(page) -> list[tuple[str, list]]:
     """네모 문자 후보 `(토큰, 표시좌표 Rect)`. 실패하면 빈 목록."""
+    rot = page.rotation_matrix          # 회전 지면 보정 — box_rects의 _disp 주석 참조
     try:
-        rects = [fitz.Rect(g["rect"]) for g in page.get_drawings()
-                 if "s" in g["type"]
-                 and g["rect"].width < _CHAR_BOX_MAX_W and g["rect"].height < _CHAR_BOX_MAX_H]
+        rects = [d for d in (_disp(g["rect"], rot) for g in page.get_drawings()
+                             if "s" in g["type"])
+                 if d.width < _CHAR_BOX_MAX_W and d.height < _CHAR_BOX_MAX_H]
         words = page.get_text("words")
     except Exception:  # noqa: BLE001 — 손상 페이지는 네모 문자 없이 진행
         return []
@@ -761,7 +775,7 @@ def char_box_glyphs(page) -> list[tuple[str, list]]:
         token = w[4]
         if not _CHAR_BOX_TOKEN_RE.fullmatch(token):
             continue
-        r = fitz.Rect(w[:4])
+        r = _disp(w[:4], rot)
         if any(box.contains(r) for box in rects):
             out.append((token, r))
     return out
