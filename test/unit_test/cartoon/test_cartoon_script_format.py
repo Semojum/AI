@@ -70,14 +70,20 @@ class TestScriptFormat:
         assert all(line.strip() for line in out.splitlines())
 
     def test_들여쓰기가_규정_칸수이고_줄수와_맞는다(self):
-        """§5.3.3(1) 장면 5칸 · (2) 대화 3칸. 그리고 line_indents는 줄마다 하나씩."""
+        """§5.3.3(1) 장면 5칸 · (2) 대화 3칸. 그리고 line_indents는 줄마다 하나씩.
+
+        ★ **값은 앞 빈칸 수다. 규정의 칸 번호가 아니다.**(2026-08-25 정정)
+          "5칸에서 적는다" = 앞 빈칸 4 · "3칸에서 적는다" = 앞 빈칸 2.
+          이 테스트가 5·3 을 그대로 박고 있어서 `_OUTLINE_BASE` 의 off-by-one 을
+          열다섯 날 지켜 주고 있었다.
+        """
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, corrected_text=_SCRIPT)
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
         lines = opt.corrected_text.splitlines()
         assert len(opt.line_indents) == len(lines)          # 종전엔 어긋났다(head 안 줄바꿈)
         got = dict(zip(lines, opt.line_indents))
-        assert got["장면 1"] == 5
-        assert got["학생: 선생님, 농업의 사회적 역할이 무엇인가요?"] == 3
+        assert got["장면 1"] == 4        # §5.3.3(1) "5칸에서 적는다"
+        assert got["학생: 선생님, 농업의 사회적 역할이 무엇인가요?"] == 2   # (2) "3칸"
 
     def test_제목이_두_번_나오지_않는다(self):
         """§5.3(1) 제목은 점역자주 머리줄 한 곳. QA 13번 중복."""

@@ -55,11 +55,15 @@ def test_도표만_줄글이_골격과_갈린다():
     assert vd.prose_label("concept_map") == "줄글 설명"
 
 
-def test_표_이름이_규정_낱말이다():
+def test_표_이름이_점자_차이를_말한다():
+    """★ 셋이 **묵자로는 똑같이 보이고 차이가 점자에만 있다**(대표 승인 2026-08-25).
+    그래서 이름이 그 차이를 말한다 — 무엇이 다른지를 안 알려 주는 이름은 폐기다."""
     from app.ai.llm.table_opt import _RENDER_LABEL, _TABLE_DRAFT_MODES
-    assert _RENDER_LABEL["table_grid"] == "정렬 유지"      # §3.2 절 제목
-    assert _RENDER_LABEL["transposed"] == "행열 바꿈"
-    assert "선형" not in _RENDER_LABEL["linear"]           # 우리 조어를 지운다
+    assert _RENDER_LABEL["table_grid"] == "테두리+구분선"   # 테두리 + 구분선 + 쌍점
+    assert _RENDER_LABEL["linear"] == "테두리만"            # 테두리만, 구분선·쌍점 없음
+    assert _RENDER_LABEL["transposed"] == "행열 바꿈"       # 축이 다르다
+    assert dict(_TABLE_DRAFT_MODES and
+                {m: lb for _n, m, lb in _TABLE_DRAFT_MODES})["unfold"] == "테두리 없음"
     # 같은 것을 두 이름으로 부르지 않는다 — 묵자 초안과 점자 초안의 라벨이 같아야 한다
     from app.ai.braille import table_braille as tb
     src = open(tb.__file__, encoding="utf-8").read()
