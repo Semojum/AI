@@ -1719,8 +1719,29 @@ _DRAFT_TAG_RE = re.compile(r"<!/?[^>]*>")
 
 
 def _draft_print_text(text: str) -> str:
-    """초안 묵자 — 내부 태그 제거. 줄바꿈·공백은 배치이므로 보존한다."""
-    return _DRAFT_TAG_RE.sub("", text or "").strip()
+    """초안 묵자 — 내부 태그 제거. 줄바꿈·공백은 배치이므로 보존한다.
+
+    ★ F10(대표 지적) — "시각 요소 설명에는 `<!2칸>` 이 제대로 반영되는데 밑에 추천 텍스트나
+      default 로 보이던 텍스트들엔 다 그런 태깅이 없다."
+
+      `<!2칸>` 은 **지우면 안 되는 태그**다. 위 docstring 이 "줄바꿈·공백은 배치이므로
+      보존한다" 고 하는데 **들여쓰기가 바로 그 배치 정보**다. 2026-08-26 새벽에 줄별
+      들여쓰기를 `line_indents` 필드에서 글 안 태그로 옮기면서(#256) 이 정규식의 표적이
+      됐다. `tn_text` 는 값을 그대로 실어 태그가 남으니 시각 요소 설명에는 보이고 초안
+      묵자에는 안 보였다 — 대표가 본 그대로다.
+
+      그래서 **지우지 말고 실제 공백으로 바꾼다.** 칸 수는 `strip_indent_tags` 가 이미
+      돌려주므로 그걸 먼저 태워 환산한 뒤 나머지 태그를 지운다.
+    """
+    from app.ai.braille.tag_names import strip_indent_tags
+
+    body, indents = strip_indent_tags(text or "")
+    if indents:
+        body = "\n".join(" " * n + ln for n, ln in zip(indents, body.split("\n")))
+    # ⚠ .strip() 을 그대로 쓰면 **첫 줄 들여쓰기를 먹는다**(`<!2칸>가나다` → '가나다').
+    #   앞뒤 빈 줄만 떼고 각 줄의 오른쪽 공백만 다듬는다.
+    out = _DRAFT_TAG_RE.sub("", body).strip("\n")
+    return "\n".join(ln.rstrip() for ln in out.split("\n"))
 
 
 def _draft_contents(bo, d, di: int, flat: dict) -> list[str]:
