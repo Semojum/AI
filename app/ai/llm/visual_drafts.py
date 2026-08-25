@@ -83,7 +83,9 @@ _WRAP_STYLE = os.environ.get("VISUAL_WRAP_STYLE", "tn")
 #     `<!점역자주>그림 생략<!점역자주>: 1)수소원자의 구조…` 뒤에 두 문단). 이름을 그대로
 #     두면 점역사가 "생략"을 골랐는데 설명이 통째로 사라져 되돌리는 일이 생긴다.
 #   · "참조"는 무엇을 참조하는지가 빠져 있었다 — 규정(§1.3.4(3))의 말은 **별책**이다.
-LABELS = ("설명 없이 생략 고지", "설명", "별책 참조")
+# ★ 2026-08-25 2단계 — 대표 지시로 **짧게** 되돌렸다. 1단계의 긴 이름은 피커에서 줄이 길어
+#   무엇을 고르는지 오히려 흐려졌다. 뜻은 옆 근거(rule_trail·점역자 주)가 진다.
+LABELS = ("생략", "설명", "참조")
 OMIT_IDX, DESC_IDX, VOLREF_IDX = 0, 1, 2
 
 # 유형별 '설명' 안 이름 — **제목만 보고 무엇인지 알게 한다**(계획서 §5·§6).
@@ -91,19 +93,17 @@ OMIT_IDX, DESC_IDX, VOLREF_IDX = 0, 1, 2
 # ⚠ 골격 조립은 이미 규정대로 돌고 있다(`diagram_opt._ASSEMBLERS`). 여기서 하는 것은
 #   **그 골격을 제 이름으로 내주는 것뿐**이다 — 조립부는 손대지 않는다.
 DESC_LABELS = {
-    "concept_map":  "위계 개조식",            # §6.6.1(1)
-    "flowchart":    "순서대로 풀기",          # §6.6.2(2)② (규정 말 "텍스트 점역 모드"는 더 모호하다)
-    "org_chart":    "위계 들여쓰기",          # §6.6.5(2)
-    "family_tree":  "하향식",                 # §6.6.4(1) — 상향식과 나란히 서야 뜻이 선다
-    "timeline":     "시간순 목록",            # §6.6.6(1)(2)
-    "form":         "글상자 항목",            # §6.6.3
-    "screen_image": "글상자 구획",            # §6.6.7
-    "slide":        "제목·들여쓰기 재구성",   # §6.6.8
-    "만화":         "장면별 대사",            # §5.3.2·§5.3.3
+    "concept_map":  "개념도",           # §6.6.1
+    "flowchart":    "흐름도",           # §6.6.2
+    "org_chart":    "조직도",           # §6.6.5
+    "family_tree":  "가계도(하향식)",   # §6.6.4(1) — 방식이 둘로 갈리는 유일한 유형
+    "timeline":     "연대표",           # §6.6.6
+    "form":         "양식",             # §6.6.3
+    "screen_image": "화면 이미지",      # §6.6.7
+    "slide":        "발표용 슬라이드",  # §6.6.8
 }
-PROSE_LABEL = "줄글 설명"                     # §6.1.1(5) — 구조가 없는 그림·사진의 기본
-PROSE_LABELS = {"만화": "장면 설정 설명"}     # §5.3.2 (만화는 대사와 장면 설정이 갈린다)
-FAMILY_BOTTOMUP_LABEL = "상향식"              # §6.6.4(1)(3)
+PROSE_LABEL = "줄글 설명"                     # 도표에서만 골격과 갈린다(§6.1.1(5))
+FAMILY_BOTTOMUP_LABEL = "가계도(상향식)"      # §6.6.4(1)(3)
 
 # 새 안의 option 번호. ★ 기존 1(생략)·2(설명)·6(별책 참조)은 BE·FE 계약이라 그대로 두고
 #   **뒤에만 붙인다**(2026-08-10 방식). 3~5는 2026-08-20에 은퇴한 번호라 재사용하지 않는다.
@@ -112,13 +112,19 @@ FAMILY_BOTTOMUP_OPTION = 8
 
 
 def desc_label(type_key: str) -> str:
-    """그 유형의 '설명' 안 이름. 모르는 유형은 줄글 설명(§6.1.1(5) 기본)."""
-    return DESC_LABELS.get(type_key or "", PROSE_LABEL)
+    """그 유형의 '설명' 안 이름.
+
+    ★ 도표는 **유형명 자체가 방식**이다(대표 지시 2026-08-25). "개념도 - 위계 개조식"처럼
+      방식을 덧붙이면 같은 말을 두 번 하는 꼴이고, 규정에도 점역사 어휘에도 없는 조어가 붙는다.
+      방식이 둘로 뚜렷이 갈리는 가계도만 괄호로 가른다.
+      그림·사진·그래프·만화는 골격이 하나뿐이라 **설명** 하나다.
+    """
+    return DESC_LABELS.get(type_key or "", LABELS[DESC_IDX])
 
 
 def prose_label(type_key: str) -> str:
-    """그 유형의 '줄글' 안 이름."""
-    return PROSE_LABELS.get(type_key or "", PROSE_LABEL)
+    """그 유형의 '줄글' 안 이름. 골격이 따로 있는 도표에서만 설명과 갈린다."""
+    return PROSE_LABEL if type_key in DESC_LABELS else LABELS[DESC_IDX]
 
 # 개조식 들여쓰기(칸): 제목 5칸(§6.3.3(1)), 유형/설명 점역자주 0칸, 전사 항목 level0=3칸(+2/단계).
 # ⚠ 원장 C-15 — 정답 도서에는 3칸 줄이 **0.0%**다(dev+val 2027 각 200쪽 줄머리 실측:
@@ -323,7 +329,8 @@ def desc_draft(
     따로 냈는데, 규정은 "설명" 하나이고 gold도 형식이 안 갈려 2026-08-20에 묶었다.
     """
     text, indents = _outline_text_indents(label, title, desc, items, kind)
-    return Draft(option=2, text=text, render_mode="narrative", label=desc_label(kind)), indents
+    return Draft(option=2, text=text, render_mode="narrative", label=desc_label(kind),
+                 line_indents=indents), indents
 
 
 def prose_draft(text: str, type_key: str = "") -> Draft | None:

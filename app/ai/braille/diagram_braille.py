@@ -80,6 +80,9 @@ class DiagramBraille:
                 out_drafts.append(d.model_copy(update={
                     "braille_lines": d_lines,
                     "break_points": d_breaks,
+                    # ★ 안마다 **자기** 들여쓰기를 싣는다(2026-08-25). 종전에는 선택 안의
+                    #   값만 BrailleOutput 에 실려 다른 안에도 그대로 씌워졌다.
+                    "line_indents": _match_indents(d.line_indents, d_lines),
                     "rule_trail": _base_trail(d_lines, d.text),
                 }))
             sel = opt.selected_idx if 0 <= opt.selected_idx < len(out_drafts) else 0
@@ -92,7 +95,9 @@ class DiagramBraille:
                 drafts=out_drafts,
                 selected_idx=sel,
                 box_borders=_box_borders(opt.drafts[sel].text),
-                line_indents=_match_indents(opt.line_indents, out_drafts[sel].braille_lines),
+                line_indents=(out_drafts[sel].line_indents
+                              or _match_indents(opt.line_indents,
+                                                out_drafts[sel].braille_lines)),
             )
         # 단일(구조 없음·처리 불가 폴백)
         src = opt.tn_text or opt.corrected_text

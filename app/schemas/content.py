@@ -62,6 +62,11 @@ class Draft(BaseModel):
     # 채울 때 필요하다 — 그 시점에는 text가 이미 점역자주로 감싸여 있어 되파싱이 위험하다.
     type_label: str = ""
     braille_lines: list[str] = Field(default_factory=list)  # braille 단계에서 채움(조판 후 32칸)
+    # 줄별 들여쓰기(칸) — **이 안의 글**에 맞춘 값. 안마다 골격이 달라 값도 다르다.
+    # ★ 2026-08-25 — 종전에는 LLMOutput 한 곳에만 있어 **선택 안의 값이 모든 안에 씌워졌다.**
+    #   가계도 하향식 [4,4,2,0,2,4] 과 상향식 [4,4,2,2,2,2] 은 줄 수가 6으로 같아
+    #   길이 검사도 통과한다 — 상향식을 고르면 세대 방향이 거꾸로 나갔다(§6.6.4(2)②·(3)②).
+    line_indents: Optional[list[int]] = None
     break_points: list[list[int]] = Field(default_factory=list)  # 음절 줄바꿈 offset(layout 조판용)
     rule_trail: list[RuleApplication] = Field(default_factory=list)
 

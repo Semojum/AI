@@ -75,6 +75,9 @@ class ImageBraille:
                 out_drafts.append(d.model_copy(update={
                     "braille_lines": d_lines,
                     "break_points": d_breaks,
+                    # ★ 안마다 **자기** 들여쓰기를 싣는다(2026-08-25). 종전에는 선택 안의
+                    #   값만 BrailleOutput 에 실려 다른 안에도 그대로 씌워졌다.
+                    "line_indents": _match_indents(d.line_indents, d_lines),
                     "rule_trail": _base_trail(d_lines, d.text),
                 }))
             sel = opt.selected_idx if 0 <= opt.selected_idx < len(out_drafts) else 0
@@ -87,7 +90,9 @@ class ImageBraille:
                 drafts=out_drafts,
                 selected_idx=sel,
                 box_borders=_box_borders(opt.drafts[sel].text),
-                line_indents=_match_indents(opt.line_indents, out_drafts[sel].braille_lines),
+                line_indents=(out_drafts[sel].line_indents
+                              or _match_indents(opt.line_indents,
+                                                out_drafts[sel].braille_lines)),
             )
             append_nested(bo, opt.nested_text)   # 그림 안 그래프(Q11) 테두리 묶음 덧붙임
             return bo

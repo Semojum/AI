@@ -17,39 +17,36 @@ from app.schemas.content import Draft
 
 # ── 할 일 A: 이름 ──────────────────────────────────────────────────────────
 
-def test_생략_이름이_설명_없음을_밝힌다():
-    """정답의 '그림 생략'은 그래픽 미제작 고지이고 뒤에 설명이 붙는다. 우리 것과 다른 뜻이다."""
-    assert vd.LABELS[vd.OMIT_IDX] == "설명 없이 생략 고지"
-
-
-def test_참조는_별책_참조다():
-    assert vd.LABELS[vd.VOLREF_IDX] == "별책 참조"
+def test_이름은_짧다():
+    """★ 2026-08-25 2단계 — 대표 지시로 되돌렸다. 긴 이름은 피커에서 오히려 흐려졌다.
+    뜻은 옆 근거(rule_trail·점역자 주)가 진다."""
+    assert vd.LABELS == ("생략", "설명", "참조")
 
 
 @pytest.mark.parametrize("subtype,name", [
-    ("concept_map", "위계 개조식"),
-    ("flowchart", "순서대로 풀기"),
-    ("org_chart", "위계 들여쓰기"),
-    ("family_tree", "하향식"),
-    ("timeline", "시간순 목록"),
-    ("form", "글상자 항목"),
-    ("screen_image", "글상자 구획"),
-    ("slide", "제목·들여쓰기 재구성"),
-    ("만화", "장면별 대사"),
+    ("concept_map", "개념도"),
+    ("flowchart", "흐름도"),
+    ("org_chart", "조직도"),
+    ("family_tree", "가계도(하향식)"),
+    ("timeline", "연대표"),
+    ("form", "양식"),
+    ("screen_image", "화면 이미지"),
+    ("slide", "발표용 슬라이드"),
 ])
-def test_유형마다_제_이름으로_나온다(subtype, name):
+def test_도표는_유형명_자체가_방식이다(subtype, name):
+    """★ "개념도 - 위계 개조식"은 같은 말을 두 번 하는 꼴이고 조어가 붙는다(대표 지시)."""
     assert vd.desc_label(subtype) == name
 
 
-def test_모르는_유형은_줄글_설명이다():
-    """그림·사진은 §6.1.1(5) 그대로 — 골격이 없으니 줄글이다."""
-    assert vd.desc_label("이미지") == "줄글 설명"
-    assert vd.desc_label("") == "줄글 설명"
+def test_골격이_하나뿐인_유형은_설명_하나다():
+    """그림·사진·그래프·만화는 방식이 갈리지 않는다."""
+    for k in ("이미지", "차트", "만화", ""):
+        assert vd.desc_label(k) == "설명", k
+        assert vd.prose_label(k) == "설명", k
 
 
-def test_만화만_줄글_이름이_다르다():
-    assert vd.prose_label("만화") == "장면 설정 설명"
-    assert vd.prose_label("개념도") == "줄글 설명"
+def test_도표만_줄글이_골격과_갈린다():
+    assert vd.prose_label("concept_map") == "줄글 설명"
 
 
 def test_표_이름이_규정_낱말이다():
@@ -95,20 +92,69 @@ def test_줄글_안은_뒤에_붙는_새_번호다():
     assert d.label == "줄글 설명"
 
 
+# ── 2단계 B: 안마다 자기 들여쓰기 ─────────────────────────────────────────
+
+def test_가계도_방향마다_들여쓰기가_다르다():
+    """★ 줄 수가 6으로 같아 길이 검사로는 못 잡는다. 씌우면 세대 방향이 거꾸로 나간다."""
+    from app.ai.llm.diagram_opt import assemble_family_tree
+    st = {"title": "가계도", "nodes": [{"text": "해모수", "children": [
+              {"text": "주몽", "children": [{"text": "유리"}]}]}],
+          "items": [{"text": "유리"}, {"text": "주몽"}, {"text": "해모수"}]}
+    _t, td = assemble_family_tree({**st, "mode": "top_down"})
+    _t2, bu = assemble_family_tree({**st, "mode": "bottom_up"})
+    assert len(td) == len(bu)          # 길이 검사가 못 거른다는 것 자체를 고정한다
+    assert td != bu
+
+
+def test_안마다_자기_들여쓰기를_싣는다():
+    import asyncio
+    from uuid import uuid4
+    from app.schemas.content import ExtractedContent
+    from app.ai.llm.diagram_opt import DiagramOpt
+    st = {"subtype": "family_tree", "title": "가계도", "mode": "top_down",
+          "nodes": [{"text": "해모수", "children": [
+              {"text": "주몽", "children": [{"text": "유리"}]}]}],
+          "items": [{"text": "유리"}, {"text": "주몽"}, {"text": "해모수"}]}
+    ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=st)
+    opt = asyncio.run(DiagramOpt().optimize([ext], "ZERO"))[0]
+    by = {d.label: d.line_indents for d in opt.drafts}
+    assert by["가계도(하향식)"] is not None and by["가계도(상향식)"] is not None
+    assert by["가계도(하향식)"] != by["가계도(상향식)"], "안마다 값이 달라야 한다"
+    # 호환 필드는 **선택된 안**의 값을 그대로 든다
+    assert opt.line_indents == opt.drafts[opt.selected_idx].line_indents
+
+
+def test_점역_뒤에도_안별_들여쓰기가_남는다():
+    import asyncio
+    from uuid import uuid4
+    from app.schemas.content import ExtractedContent
+    from app.ai.llm.diagram_opt import DiagramOpt
+    from app.ai.braille.diagram_braille import DiagramBraille
+    st = {"subtype": "family_tree", "title": "가계도", "mode": "top_down",
+          "nodes": [{"text": "해모수", "children": [
+              {"text": "주몽", "children": [{"text": "유리"}]}]}],
+          "items": [{"text": "유리"}, {"text": "주몽"}, {"text": "해모수"}]}
+    ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=st)
+    bo = DiagramBraille().translate(asyncio.run(DiagramOpt().optimize([ext], "ZERO")))[0]
+    by = {d.label: d.line_indents for d in bo.drafts}
+    assert by["가계도(하향식)"] != by["가계도(상향식)"]
+    assert bo.line_indents == bo.drafts[bo.selected_idx].line_indents
+
+
 def test_가계도는_방향_둘을_같이_낸다():
     """§6.6.4(1) '효과적인 쪽을 고르라'는 기계가 못 하는 판단이다 — 둘 다 내고 사람이 고른다."""
     from app.ai.llm.diagram_opt import _family_alt, _skeleton_label
     st = {"mode": "top_down",
           "nodes": [{"text": "할아버지", "children": [{"text": "아버지"}]}],
           "items": [{"text": "나"}, {"text": "아버지"}]}
-    assert _skeleton_label("family_tree", st) == "하향식"
+    assert _skeleton_label("family_tree", st) == "가계도(하향식)"
     alt = _family_alt("family_tree", st)
-    assert alt is not None and alt.label == "상향식"
+    assert alt is not None and alt.label == "가계도(상향식)"
     assert alt.option == vd.FAMILY_BOTTOMUP_OPTION
     # 반대로 상향식으로 조립됐으면 이름도 뒤집힌다
     st2 = {**st, "mode": "bottom_up"}
-    assert _skeleton_label("family_tree", st2) == "상향식"
-    assert _family_alt("family_tree", st2).label == "하향식"
+    assert _skeleton_label("family_tree", st2) == "가계도(상향식)"
+    assert _family_alt("family_tree", st2).label == "가계도(하향식)"
 
 
 def test_가계도_아닌_유형은_방향_안이_없다():
