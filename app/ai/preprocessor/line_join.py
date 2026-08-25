@@ -164,6 +164,64 @@ def _can_join(lines: list[fitz.Rect], a: dict, ab: fitz.Rect, b: dict,
     return abs(right - ab.x1) <= _JOIN_RIGHT_SLACK * line
 
 
+def _page_lines(page: fitz.Page) -> list[tuple[fitz.Rect, str]]:
+    """지면의 텍스트 줄 (bbox, 글). 요소 **안쪽** 개행을 풀 때 쓴다."""
+    out = []
+    for blk in page.get_text("dict").get("blocks", []):
+        if blk.get("type") != 0:
+            continue
+        for ln in blk.get("lines", []):
+            t = "".join(sp["text"] for sp in ln.get("spans", []))
+            if t.strip():
+                out.append((fitz.Rect(ln["bbox"]), t))
+    return out
+
+
+def _resolve_inner_newlines(el: dict, rect: fitz.Rect, page_lines, col_lines) -> int:
+    """요소 **안쪽** 개행 중 '넘쳐서 밀린 줄' 자리를 붙임/띄움으로 바꾼다. 바꾼 개수 반환.
+
+    ★ 요소를 잇는 것만으로는 대표가 본 증상이 안 없어진다. 앞단이 이미 한 문단으로 묶어
+      준 요소도 **안쪽이 개행으로 잘려** 있고("…저 자신과 친구\n들을 발견하곤…"),
+      그 개행은 조판에서 한 칸 공백이 되어 **낱말을 쪼갠다**(F01·F02).
+      요소 사이든 안쪽이든 판정은 같다 — 줄이 단 끝까지 찼고, 원본 줄 끝 공백이
+      붙임/띄움을 정한다.
+    """
+    parts = (el.get("content") or "").split("\n")
+    if len(parts) < 2:
+        return 0
+    # 이 요소 자리에 걸치는 지면 줄만 추린다
+    mine = [(r, t) for r, t in page_lines
+            if r.get_area() > 0 and (r & rect).get_area() / r.get_area() > 0.6]
+    if not mine:
+        return 0
+    bykey = {}
+    for r, t in mine:
+        bykey.setdefault("".join(t.split()), []).append((r, t))
+    out, n = [parts[0]], 0
+    for cur, nxt in zip(parts, parts[1:]):
+        seam = "\n"
+        hit = bykey.get("".join(cur.split()))
+        if hit and len(hit) == 1 and cur.strip() and nxt.strip():
+            r, raw = hit[0]
+            line = r.y1 - r.y0
+            right, flush = _col_edge(col_lines, r)
+            same_col = flush >= _JOIN_FLUSH_MIN and abs(right - r.x1) <= _JOIN_RIGHT_SLACK * line
+            starts_new = bool(_ITEM_HEAD_RE.match(nxt.lstrip())) or not _CONT_HEAD_RE.match(nxt.lstrip())
+            if same_col and not starts_new and not _SENT_END_RE.search(cur.rstrip()):
+                if raw.count(" ") >= cur.count(" "):
+                    seam = " " if raw.rstrip("\n").endswith((" ", "\u00a0")) else ""
+                    n += 1
+        if seam == "\n":
+            out.append("\n" + nxt)
+        else:
+            # ⚠ 앞 줄이 이미 공백으로 끝나 있으면 이음매 공백이 두 칸이 된다
+            #   ("…서로 다르게  느끼기도" — 실측). 양쪽을 다듬고 한 칸만 넣는다.
+            out[-1] = out[-1].rstrip()
+            out.append(seam + nxt.lstrip())
+    el["content"] = out[0] + "".join(out[1:])
+    return n
+
+
 def join_wrapped_lines(elements: list[dict], page: fitz.Page, *,
                        bbox_space: str, image_width: float,
                        image_height: float) -> list[dict]:
@@ -213,6 +271,18 @@ def join_wrapped_lines(elements: list[dict], page: fitz.Page, *,
         tail = to_rect(bb) if bb else None
         tail_text = el.get("content") or ""
         left_ok = "\n" not in (el.get("content") or "").strip()
+    # 요소 **안쪽** 개행도 같은 판정으로 푼다(F01·F02) — 앞단이 한 문단으로 묶어 준
+    # 요소도 안쪽이 줄마다 개행이라 조판에서 낱말이 쪼개진다.
+    try:
+        page_lines = _page_lines(page)
+    except Exception:               # noqa: BLE001
+        page_lines = []
+    if page_lines:
+        col = [r for r, _ in page_lines]
+        for el in out:
+            if el.get("type") in _JOIN_TYPES and el.get("bbox"):
+                _resolve_inner_newlines(el, to_rect(el["bbox"]), page_lines, col)
+
     for i, el in enumerate(out):     # 두 경로가 쓰는 이름이 다르다
         if "order" in el:
             el["order"] = i + 1

@@ -176,3 +176,30 @@ def test_mineru_runner_no_longer_owns_the_join():
     """
     import app.ai.parser.mineru_runner as mr
     assert not hasattr(mr, "_join_wrapped_lines")
+
+
+def test_inner_newlines_are_resolved():
+    """요소 **안쪽** 개행도 푼다 (F01·F02).
+
+    앞단이 이미 한 문단으로 묶어 준 요소도 안쪽이 줄마다 개행이라, 조판에서 그 개행이
+    한 칸 공백이 되어 **낱말을 쪼갠다**("…저 자신과 친구\\n들을 발견하곤…" — 대표 지적).
+    한글은 기본 내장 글꼴로 렌더가 안 되므로 여기서는 로마자로 얼개만 태운다 —
+    실데이터 확인은 시연 문서로 따로 했다(문단 3개에서 개행 0 · 두 칸 공백 0).
+    """
+    doc = fitz.open()
+    page = doc.new_page(width=600, height=800)
+    rows = ["the quick brown fox jumps over the la",     # 낱말 한가운데서 끊긴다
+            "zy dog and then walks away slowly ",        # 어절 끝에서 끊긴다(끝 공백)
+            "because the sun was very bright now"]
+    for k, t in enumerate(rows):
+        page.insert_text((50, 100 + k * 18), t, fontsize=11)
+    el = {"id": "e1", "order": 1, "type": "text", "heading_level": 0,
+          "content": "\n".join(rows),
+          "bbox": [40 / 600 * 1000, 88 / 800 * 1000, 560 / 600 * 1000, 148 / 800 * 1000]}
+    out = join_wrapped_lines([el], page, bbox_space="norm1000",
+                             image_width=0, image_height=0)
+    got = out[0]["content"]
+    assert "the lazy dog" in got, got          # 낱말 한가운데 → 붙임
+    assert "slowly because" in got, got        # 어절 끝 → 한 칸
+    assert "  " not in got, got                # 두 칸 공백이 생기면 안 된다
+    doc.close()
