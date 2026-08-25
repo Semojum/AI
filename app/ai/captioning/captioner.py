@@ -257,6 +257,48 @@ _PROMPTS = {
 
 
 
+# ── 주변 본문 문맥 (C003, 2026-08-25 대표 지시) ──────────────────────────────
+#
+# 왜 넣나. 대표 실사례 — 초등 블록쌓기 문제에서 **3D 로 쌓인 블록 개수**를 묻는데 우리가
+# 그림 설명만 내서 **문제를 못 푸는 설명**이 나갔다. 크롭만 보면 무엇이 중요한지 알 수 없다.
+# 같은 그림이라도 "몇 개인가"를 묻는 자리에서는 개수가, "어느 것이 큰가"를 묻는 자리에서는
+# 크기 비교가 답을 내는 정보다.
+#
+# ⚠ **이 블록의 마지막 두 줄이 이 기능의 성패다.** 문맥을 그냥 붙이면 모델이 **주변 글을
+#   캡션에 베껴 쓴다** — 우리가 이미 `_reject_read_text` 로 막고 있는 실패 얼굴이고,
+#   베껴 쓰면 같은 글이 본문과 캡션에 두 번 나가 32칸 지면만 먹는다.
+#   문맥은 **무엇을 쓸지 고르는 근거**이지 **쓸 내용**이 아니다.
+#
+# ⚠⚠ **문맥을 넣으면 설명이 줄어드는 실패도 있다**(1차 실측 8건에서 2건). 문맥이 그림을
+#   '자료 1'처럼 부르면 모델이 **그 이름만 적고 끝냈다** — 실물: 절벽 돌 더미 그림이
+#   `그림: 협곡 바닥에 쌓인 돌 더미 / [자료 1]` 로 **내용이 통째로 사라졌다**.
+#   그래서 "줄이지 마라 · 더 챙기는 것이다"를 따로 못 박았다. 문맥은 **덧셈**이지 뺄셈이 아니다.
+#
+# 실측 분모(코퍼스 전수): 시각 요소 1,175개 중 주변 텍스트가 있는 것 1,134(97%),
+# 그중 문제 발문으로 보이는 것 114(10%) — 대표 사례와 같은 얼굴이다.
+_CONTEXT_LIMIT = 300      # 문맥 글자 상한. 길면 프롬프트가 그림보다 커져 배보다 배꼽이 된다.
+
+_CONTEXT_BLOCK = """
+
+[이 그림 옆 본문]
+{context}
+
+위 본문은 **무엇을 더 챙길지 고르는 근거로만** 쓰십시오.
+- ★ **본문이 있다고 해서 그림 설명을 줄이지 마십시오.** 그림에 있는 것은 원래대로 다 적고,
+  본문이 묻는 것(개수·크기·순서·위치 관계·이름표 등)을 **더** 챙기는 것입니다.
+  본문이 그 그림을 '자료 1'처럼 부르더라도 **그 이름만 적고 끝내면 안 됩니다.**
+  그 이름을 **첫 줄 제목으로도 쓰지 마십시오** — 제목은 그림이 무엇인지 말해야 합니다.
+  예) '그림: 자료 1'(X) / '그림: 절벽 아래 쌓인 돌 더미'(O)
+- ★ 본문의 문장을 캡션에 **옮겨 적지 마십시오.** 본문은 점자에 따로 나갑니다 —
+  같은 글이 두 번 나가면 지면만 먹습니다. 그림에 있는 것만 씁니다."""
+
+
+def _context_block(context: str) -> str:
+    """주변 본문을 프롬프트 꼬리에 붙인다. 없으면 빈 문자열(종전 프롬프트 그대로)."""
+    ctx = " ".join((context or "").split())[:_CONTEXT_LIMIT].strip()
+    return _CONTEXT_BLOCK.format(context=ctx) if ctx else ""
+
+
 def backend_status() -> dict:
     """캡셔닝 백엔드와 키 유무 (기동 점검·진단용).
 
@@ -665,12 +707,13 @@ def _is_blank_crop(path: str) -> bool:
     return std is not None and std < _BLANK_CROP_STD
 
 
-def caption(image_path: str, image_type: str = "image") -> str:
+def caption(image_path: str, image_type: str = "image", *, context: str = "") -> str:
     """
     image_type: 'image' | 'cartoon' | 'chart'
+    context: 그 그림 옆 본문(있으면). 무엇을 쓸지 고르는 근거로만 쓴다 — 위 `_CONTEXT_BLOCK` 참조.
     Returns Korean description string.
     """
-    prompt = _PROMPTS.get(image_type, _PROMPTS["image"])
+    prompt = _PROMPTS.get(image_type, _PROMPTS["image"]) + _context_block(context)
 
     blank = _blank_crop_std(image_path)
     if blank is not None and blank < _BLANK_CROP_STD:

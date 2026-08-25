@@ -15,7 +15,7 @@ import app.utils.req_log as rl
 from app.ai.builder import result_builder as RB
 
 
-def _fake_caption(el: dict):
+def _fake_caption(el: dict, context: str = ""):
     """실제 API 대신 사용량만 기록한다 — 이 테스트가 보는 것은 집계뿐이다."""
     rl.record_llm("캡셔닝", "claude-sonnet-5", 100, 10)
     return ("그림: 하나", el["type"], True, None)

@@ -14,6 +14,10 @@ from __future__ import annotations
 import time
 from unittest.mock import patch
 
+# ★ 2026-08-25(C003) — `_do_caption` 이 주변 본문 문맥을 두 번째 인자로 받는다.
+#   대역이 그 인자를 안 받으면 TypeError 가 요소 격리에 삼켜져 **빈 캡션**으로
+#   돌아온다(실패가 아니라 "캡션이 비었다"로 보인다). 대역도 같이 받게 둔다.
+
 import pytest
 
 from app.ai.builder import result_builder as rb
@@ -35,7 +39,7 @@ class TestCaptionMapping:
 
     def test_완료_순서가_뒤섞여도_요소별_캡션이_맞다(self) -> None:
         # 뒤쪽 요소일수록 빨리 끝나게 해서 완료 순서를 역전시킨다.
-        def fake(el):
+        def fake(el, context=""):
             idx = int(el["element_id"][1:])
             time.sleep((6 - idx) * 0.01)
             return f"CAP-{el['element_id']}", el["type"], True, None
@@ -48,7 +52,7 @@ class TestCaptionMapping:
 
     def test_읽기_순서가_보존된다(self) -> None:
         with patch.object(rb, "_do_caption",
-                          side_effect=lambda el: (f"C{el['element_id']}", el["type"], True, None)):
+                          side_effect=lambda el, context="": (f"C{el['element_id']}", el["type"], True, None)):
             out = _build([_el(i) for i in range(5)])
         orders = [e["order"] for e in out["elements"]]
         assert orders == sorted(orders), "order가 병렬 완료 순서에 오염되면 안 된다"
@@ -56,7 +60,7 @@ class TestCaptionMapping:
     def test_텍스트_요소는_캡셔닝하지_않는다(self) -> None:
         els = [_el(0, "image"), {**_el(1, "text"), "content": "본문"}]
         with patch.object(rb, "_do_caption",
-                          side_effect=lambda el: ("CAP", el["type"], True, None)) as m:
+                          side_effect=lambda el, context="": ("CAP", el["type"], True, None)) as m:
             out = _build(els)
         assert m.call_count == 1
         assert {e["content"] for e in out["elements"]} == {"CAP", "본문"}
@@ -66,7 +70,7 @@ class TestIsolation:
     """한 요소의 실패가 페이지를 죽이지 않는다 (불변규칙 3)."""
 
     def test_한_요소_예외가_나머지를_죽이지_않는다(self) -> None:
-        def fake(el):
+        def fake(el, context=""):
             if el["element_id"] == "e02":
                 raise RuntimeError("boom")
             return f"CAP-{el['element_id']}", el["type"], True, None
@@ -78,7 +82,7 @@ class TestIsolation:
 
     def test_예외_요소도_버리지_않고_실패표시로_남는다(self) -> None:
         """빈 결과 금지 — 요소가 사라지면 학생은 거기 그림이 있었다는 사실도 모른다."""
-        def fake(el):
+        def fake(el, context=""):
             if el["element_id"] == "e01":
                 raise RuntimeError("boom")
             return "CAP", el["type"], True, None
@@ -91,7 +95,7 @@ class TestIsolation:
     def test_캡셔닝_실패_요소도_남는다(self) -> None:
         """예외가 아니라 ok=False로 돌아온 경우."""
         with patch.object(rb, "_do_caption",
-                          side_effect=lambda el: ("", el["type"], False, None)):
+                          side_effect=lambda el, context="": ("", el["type"], False, None)):
             out = _build([_el(0)])
         assert len(out["elements"]) == 1
         assert "CAPTION_FAILED" in out["elements"][0]["flags"]
@@ -103,7 +107,7 @@ class TestCallCount:
     @pytest.mark.parametrize("n", [1, 2, 5, 11])
     def test_시각요소_수만큼만_호출한다(self, n: int) -> None:
         with patch.object(rb, "_do_caption",
-                          side_effect=lambda el: ("CAP", el["type"], True, None)) as m:
+                          side_effect=lambda el, context="": ("CAP", el["type"], True, None)) as m:
             _build([_el(i) for i in range(n)])
         assert m.call_count == n
 
@@ -116,7 +120,7 @@ class TestCallCount:
 
     def test_동시_1로_제한해도_결과가_같다(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """CAPTION_CONCURRENCY=1은 종전 직렬 동작 — 결과가 동일해야 한다."""
-        side = lambda el: (f"CAP-{el['element_id']}", el["type"], True, None)  # noqa: E731
+        side = lambda el, context="": (f"CAP-{el['element_id']}", el["type"], True, None)  # noqa: E731
         with patch.object(rb, "_do_caption", side_effect=side):
             par = _build([_el(i) for i in range(4)])
         monkeypatch.setenv("CAPTION_CONCURRENCY", "1")
