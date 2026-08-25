@@ -280,6 +280,7 @@ def _link_captions(elements: list[dict]) -> None:
     """
     visuals = [e for e in elements if e["type"] in _CAPTIONABLE and e.get("bbox")]
     if not visuals:
+        _notify_orphan_captions(elements)
         return
     for cap in elements:
         if cap["type"] != "caption" or not cap.get("bbox"):
@@ -294,6 +295,38 @@ def _link_captions(elements: list[dict]) -> None:
                 best, best_d = v, d
         if best:
             cap["caption_ref"] = best["id"]
+    _notify_orphan_captions(elements)
+
+
+# ── 짝 없는 캡션 = 놓친 그림 (F07, 대표 지적) ────────────────────────────────
+# 대표 지적(3쪽): "그림 자료가 있는데 클릭하면 **그 그림의 캡션 텍스트만** 나온다.
+# 시각자료를 아예 생략했다고도 안 적는 경우가 규정에 있나. 없다면 `▲ 참호전` 이 아니라
+# `<!점역자주>그림 생략: 참호전<!/점역자주>` 식으로 적어야 하지 않나."
+#
+# 실물이 그랬다 — 시연 p3 요소 33개에 caption 이 셋('▲ 참호전' 등)인데 **시각 요소가 0개**다.
+# MinerU 가 캡션만 텍스트로 잡고 그림은 못 잡았다(대표 추측이 맞았다). 그러면 캡션 글이
+# 그냥 본문으로 나가고, 거기 그림이 있었다는 사실이 **어디에도 안 남는다.**
+#
+# 규정 §6.1.1(4)·§6.3.4(2)② — 생략이 허용되는 것은 **장식 용도**이거나 **본문 이해에
+# 불필요**한 경우뿐이다. 캡션이 달린 자료는 그 둘이 아니다. 최소한 **생략했다는 사실은
+# 알려야** 한다. 설명을 못 붙이는 것(크롭이 없다)과 안 알리는 것은 다른 문제다.
+_CAP_LEAD_RE = re.compile(r"^\s*[▲▼◀▶△▽■□●○※*]\s*")
+
+
+def _notify_orphan_captions(elements: list[dict]) -> int:
+    """짝을 못 찾은 캡션을 '그림 생략' 점역자 주로 바꾼다. 바꾼 개수 반환."""
+    from app.ai.braille.tag_names import tn
+    n = 0
+    for cap in elements:
+        if cap.get("type") != "caption" or cap.get("caption_ref"):
+            continue
+        body = _CAP_LEAD_RE.sub("", (cap.get("content") or "").strip())
+        if not body or body.startswith("<!"):
+            continue
+        cap["content"] = tn(f"그림 생략: {body}")
+        cap.setdefault("flags", []).append("ORPHAN_CAPTION")
+        n += 1
+    return n
 
 
 # ── 주변 본문 문맥 (C003, 2026-08-25 대표 지시) ──────────────────────────────
