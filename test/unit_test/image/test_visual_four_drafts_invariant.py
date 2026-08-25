@@ -50,7 +50,7 @@ def _assert_distinct(drafts, *, expect: int | None = None) -> None:
 
 def _assert_omit_only(drafts) -> None:
     """재료가 없으면 생략 한 안만 (2026-08-12 대표 지시)."""
-    assert [d.label for d in drafts] == ["생략"], [d.label for d in drafts]
+    assert [d.label for d in drafts] == [vd.LABELS[0]], [d.label for d in drafts]
 _EXPECTED_TABLE = 4    # 표 렌더 4안(성격이 다르다)
 
 
@@ -143,7 +143,8 @@ def test_재료가_있으면_세_안이_다_다르다() -> None:
                 "2020년 5,200만 명에서 2021년 5,180만 명으로 줄었다.",
         struct_outline=[(0, "2020년 5,200만 명"), (0, "2021년 5,180만 명")])
     _assert_distinct(drafts, expect=_EXPECTED)
-    assert [d.label for d in drafts] == list(vd.LABELS)
+    assert [d.label for d in drafts] == [
+        vd.LABELS[0], vd.desc_label("이미지"), vd.LABELS[2]]
 
 
 def test_한_낱말_캡션도_세_안_그대로() -> None:
@@ -154,7 +155,8 @@ def test_한_낱말_캡션도_세_안_그대로() -> None:
     """
     drafts = _build(caption="설명")
     _assert_distinct(drafts, expect=_EXPECTED)
-    assert [d.label for d in drafts] == list(vd.LABELS)
+    assert [d.label for d in drafts] == [
+        vd.LABELS[0], vd.desc_label("이미지"), vd.LABELS[2]]
 
 
 def test_표는_렌더_4안_그대로() -> None:

@@ -59,8 +59,8 @@ class TestOptimize:
         opt = asyncio.run(TableOpt().optimize([ext], "ZERO"))
         bo = TableBraille().translate(opt)[0]
         labels = [d.label for d in bo.drafts]
-        assert labels == ["풀어쓰기(3칸·2칸)", "격자형", "행↔열 전치", "선형(키:값)"]
-        assert bo.selected_idx == 1, "3열 이상 표의 기본은 격자형(labels[1])"
+        assert labels == ["풀어쓰기(3칸·2칸)", "정렬 유지", "행열 바꿈", "키·값 풀어쓰기"]
+        assert bo.selected_idx == 1, "3열 이상 표의 기본은 정렬 유지(labels[1])"
         # ★ 2026-08-06 판정 번복(원장 C-01a). 2026-07-29에는 "코퍼스 14,382줄에 테두리형 0개"를
         #   근거로 뺐는데, 그 표본이 **구판 수능특강 한 종류**였다. 82권으로 재니 정반대다 —
         #   신판 2027 EBS 2.62% · 초등참고서 4.78% · 중등교과서 3.37% · 고등교과서 2.97%.

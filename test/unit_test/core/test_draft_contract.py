@@ -116,7 +116,7 @@ class TestDistinctLayouts:
 
     def test_전치안은_점역자_주를_밝힌다(self, mode_c: dict) -> None:
         t = [d for d in mode_c["braille_text_list"][0]["drafts"]
-             if d["label"] == "행↔열 전치"][0]["text"]
+             if d["label"] == "행열 바꿈"][0]["text"]
         assert "행과 열을 바꾸어" in t
 
 

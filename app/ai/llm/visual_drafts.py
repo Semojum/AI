@@ -77,8 +77,48 @@ _WRAP_STYLE = os.environ.get("VISUAL_WRAP_STYLE", "tn")
 #     · '점자 그래픽 제작' — 규정 명시 형식이지만 **우리가 미배선**이다(proto의
 #       TactileGraphic도 "미사용, 2차 PoC 이후"). 고를 수 없는 안을 피커에 띄우지 않는다.
 #       배선하면 여기 넣는다.
-LABELS = ("생략", "설명", "참조")
+# ★ 2026-08-25 — 이름만 고쳤다(동작 무수정). 계획서 §5.
+#   · "생략"이 두 뜻이라 제일 급했다. 우리 것은 "설명이 없다"인데, 정답의 "그림 생략"은
+#     **그래픽을 안 그렸다는 고지**이고 뒤에 설명이 따라붙는다(수작업 정답 실물:
+#     `<!점역자주>그림 생략<!점역자주>: 1)수소원자의 구조…` 뒤에 두 문단). 이름을 그대로
+#     두면 점역사가 "생략"을 골랐는데 설명이 통째로 사라져 되돌리는 일이 생긴다.
+#   · "참조"는 무엇을 참조하는지가 빠져 있었다 — 규정(§1.3.4(3))의 말은 **별책**이다.
+LABELS = ("설명 없이 생략 고지", "설명", "별책 참조")
 OMIT_IDX, DESC_IDX, VOLREF_IDX = 0, 1, 2
+
+# 유형별 '설명' 안 이름 — **제목만 보고 무엇인지 알게 한다**(계획서 §5·§6).
+# 값은 규정이 쓰는 낱말이고, 정답 데이터셋에서 점역사가 실제로 친 낱말과 맞춘 것이다.
+# ⚠ 골격 조립은 이미 규정대로 돌고 있다(`diagram_opt._ASSEMBLERS`). 여기서 하는 것은
+#   **그 골격을 제 이름으로 내주는 것뿐**이다 — 조립부는 손대지 않는다.
+DESC_LABELS = {
+    "concept_map":  "위계 개조식",            # §6.6.1(1)
+    "flowchart":    "순서대로 풀기",          # §6.6.2(2)② (규정 말 "텍스트 점역 모드"는 더 모호하다)
+    "org_chart":    "위계 들여쓰기",          # §6.6.5(2)
+    "family_tree":  "하향식",                 # §6.6.4(1) — 상향식과 나란히 서야 뜻이 선다
+    "timeline":     "시간순 목록",            # §6.6.6(1)(2)
+    "form":         "글상자 항목",            # §6.6.3
+    "screen_image": "글상자 구획",            # §6.6.7
+    "slide":        "제목·들여쓰기 재구성",   # §6.6.8
+    "만화":         "장면별 대사",            # §5.3.2·§5.3.3
+}
+PROSE_LABEL = "줄글 설명"                     # §6.1.1(5) — 구조가 없는 그림·사진의 기본
+PROSE_LABELS = {"만화": "장면 설정 설명"}     # §5.3.2 (만화는 대사와 장면 설정이 갈린다)
+FAMILY_BOTTOMUP_LABEL = "상향식"              # §6.6.4(1)(3)
+
+# 새 안의 option 번호. ★ 기존 1(생략)·2(설명)·6(별책 참조)은 BE·FE 계약이라 그대로 두고
+#   **뒤에만 붙인다**(2026-08-10 방식). 3~5는 2026-08-20에 은퇴한 번호라 재사용하지 않는다.
+PROSE_OPTION = 7
+FAMILY_BOTTOMUP_OPTION = 8
+
+
+def desc_label(type_key: str) -> str:
+    """그 유형의 '설명' 안 이름. 모르는 유형은 줄글 설명(§6.1.1(5) 기본)."""
+    return DESC_LABELS.get(type_key or "", PROSE_LABEL)
+
+
+def prose_label(type_key: str) -> str:
+    """그 유형의 '줄글' 안 이름."""
+    return PROSE_LABELS.get(type_key or "", PROSE_LABEL)
 
 # 개조식 들여쓰기(칸): 제목 5칸(§6.3.3(1)), 유형/설명 점역자주 0칸, 전사 항목 level0=3칸(+2/단계).
 # ⚠ 원장 C-15 — 정답 도서에는 3칸 줄이 **0.0%**다(dev+val 2027 각 200쪽 줄머리 실측:
@@ -283,7 +323,22 @@ def desc_draft(
     따로 냈는데, 규정은 "설명" 하나이고 gold도 형식이 안 갈려 2026-08-20에 묶었다.
     """
     text, indents = _outline_text_indents(label, title, desc, items, kind)
-    return Draft(option=2, text=text, render_mode="narrative", label=LABELS[DESC_IDX]), indents
+    return Draft(option=2, text=text, render_mode="narrative", label=desc_label(kind)), indents
+
+
+def prose_draft(text: str, type_key: str = "") -> Draft | None:
+    """줄글 설명 안(§6.1.1(5)). 낼 글이 없으면 None.
+
+    ★ 2026-08-25 — 종전에는 줄글 재료(`struct_prose`·LLM `[줄글]` 절)를 만들어 놓고
+      **아무 데도 안 썼다.** 2026-08-20에 6안을 3안으로 줄이며 '줄글' 칸이 사라졌는데
+      재료 계산만 남아 계속 돌고 있었다. 그 재료가 이 안의 내용이다.
+      `_dedupe`가 설명 안과 글이 같아지면 접으므로 같은 줄이 두 번 서지 않는다.
+    """
+    body = _oneline(text or "")
+    if not body:
+        return None
+    return Draft(option=PROSE_OPTION, text=_tn(body), render_mode="narrative",
+                 label=prose_label(type_key))
 
 
 
@@ -485,6 +540,19 @@ async def build_visual_drafts(
     d_omit = omission_draft(label)
     d_desc, indents = desc_draft(label, title, outline_desc, outline_items, kind)
     drafts = [d_omit, d_desc, *extra_drafts(label)]
+    # 줄글 안은 **뒤에** 붙인다 — 앞 셋의 option 번호·순번이 BE·FE 계약이다.
+    # ★ 재료가 **진짜 줄글일 때만** 붙인다. 위 `prose`의 폴백 사슬(caption·title·struct_text)은
+    #   설명 안이 쓰는 것과 같은 글이라, 그대로 넣으면 피커에 거의 같은 줄이 두 번 선다
+    #   (`_dedupe`는 글자가 완전히 같을 때만 접으므로 라벨 머리글 하나 차이로 안 접힌다).
+    #   줄글은 **형식이 다른 안**이지 같은 글의 재탕이 아니다.
+    # ★ 그리고 **이름이 갈릴 때만** 붙인다. 그림·사진·차트는 골격이 없어 설명 안이 곧
+    #   줄글이다(둘 다 "줄글 설명"). 같은 이름 두 칸을 세우면 피커에서 무엇이 다른지
+    #   알 수 없다 — 계획서 §5가 없애려는 바로 그 얼굴이다. 만화(장면별 대사 ↔ 장면 설정
+    #   설명)와 도표(골격 ↔ 줄글)처럼 형식이 실제로 갈리는 유형만 두 칸을 갖는다.
+    real_prose = struct_prose if struct_prose is not None else llm_prose
+    if prose_label(kind) != desc_label(kind):
+        if (d_prose := prose_draft(real_prose, kind)) is not None:
+            drafts.append(d_prose)
 
     # 기본은 설명이다. gold 실측에서 설명이 79.6%로 압도한다(생략 12.2% · 참조 8.0%).
     # ⚠ 아래 `decorative` 분기는 **지금 발화하지 않는다** — 모듈 docstring 참조.

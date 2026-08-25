@@ -15,6 +15,8 @@ from app.ai.braille.layout_braille import LayoutBraille
 from app.ai.llm.image_opt import ImageOpt
 from app.ai.llm.visual_drafts import (
     LABELS,
+    desc_label,
+    prose_label,
     desc_draft,
     omission_draft,
     volume_ref_draft,
@@ -37,7 +39,9 @@ class TestFourDrafts:
         labels = [d.label for d in opt.drafts]
         # 재료가 겹쳐 접힌 안이 있을 수 있다(`visual_drafts._dedupe`) — 남은 것은
         # LABELS의 **부분 수열**이고 서로 달라야 한다.
-        assert labels == [x for x in LABELS if x in labels], labels
+        expected = list(dict.fromkeys(
+            [LABELS[0], desc_label("이미지"), LABELS[2], prose_label("이미지")]))
+        assert labels == [x for x in expected if x in labels], labels
         assert len(set(labels)) == len(labels), labels
         assert opt.selected_idx == 1                           # 기본=설명(gold 79.6%)
 
@@ -76,7 +80,7 @@ class TestFourDrafts:
         assert "[처리 불가" not in opt.corrected_text
         assert "생략" in opt.corrected_text
         assert opt.selected_idx == 0          # 0안 = 생략
-        assert [d.label for d in opt.drafts] == ["생략"], \
+        assert [d.label for d in opt.drafts] == [LABELS[0]], \
             "캡셔닝 실패·캡션 없음이면 생략 한 안만 (2026-08-12 대표 지시)"   # 안 개수 유지 — 점역사가 다른 안 선택 가능
 
 
@@ -89,7 +93,7 @@ class TestEndToEnd:
             "ocr_texts": ["핵"], "caption_src": "둥근 세포 안에 핵이 있다"})
         opt = asyncio.run(ImageOpt().optimize([ext], "ZERO"))
         bo = ImageBraille().translate(opt)
-        assert 3 <= len(bo[0].drafts) <= len(LABELS)                # 모든 안이 점역됨
+        assert 3 <= len(bo[0].drafts) <= 4                # 모든 안이 점역됨
         lr = LayoutResult(page_id="p", elements=[
             BBoxItem(element_id=eid, type="image", bbox=(0, 0, 0, 0), reading_order=1)])
         LayoutBraille().layout(bo, page_no=1, job_id="img", layout_result=lr)
