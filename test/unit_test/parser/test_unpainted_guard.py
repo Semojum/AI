@@ -82,16 +82,17 @@ def test_degenerate_bbox_is_kept():
     doc.close()
 
 
-def test_rotated_page_is_left_alone():
-    """회전 지면은 손대지 않는다 — bbox 와 렌더가 다른 좌표계라 오검출이 남는다.
+def test_rotated_page_is_also_checked():
+    """회전 지면도 그대로 본다.
 
-    보정 네 가지를 회전 지면 텍스트 요소 160개에 재 봤는데 가장 나은 것도 93%였다.
-    이 가드의 기준은 오검출 0 이라 93%로는 못 켠다(코퍼스 270° 478쪽 실측).
+    한때 회전 지면을 통째로 건너뛰었는데, 그 근거(오검출 410건)가 **경계 파일을 재구성한
+    하네스**로 잰 값이라 틀렸다. 실제 입력(MinerU content_list bbox)으로 다시 재면 회전
+    지면 텍스트 요소 569개가 전부 제자리에 있고, 코퍼스 전수 오검출도 0 이다.
     """
     doc = fitz.open()
     page = doc.new_page(width=600, height=800)
     page.insert_text((50, 100), "visible text here", fontsize=20)
     page.set_rotation(270)
-    ghost = _el((100, 600, 900, 700), "회전 지면의 유령")
-    assert len(_drop_unpainted([ghost], page, 1)) == 1
+    ghost = _el((820, 820, 980, 900), "회전 지면의 유령")
+    assert _drop_unpainted([ghost], page, 1) == []
     doc.close()
