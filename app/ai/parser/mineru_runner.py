@@ -867,14 +867,14 @@ def _is_painted(pix: "fitz.Pixmap", bb: list[float]) -> bool:
 def _drop_unpainted(elements: list[dict], fitz_page: fitz.Page,
                     page_no: int) -> list[dict]:
     """지면에 실제로 그려지지 않은 글자 요소를 버린다. 위 주석의 판정을 쓴다."""
-    # ⚠ 회전된 지면은 손대지 않는다. 요소 bbox 와 렌더가 다른 좌표계라(bbox 는 회전 전,
-    #   get_pixmap 은 표시 방향) 판정이 어긋난다. 보정 네 가지를 회전 지면 텍스트 요소
-    #   160개에 재 봤는데 가장 나은 것(표시 dims + rotation_matrix)도 93%였다 —
-    #   나머지 7%는 멀쩡한 글을 유령으로 본다. 이 가드의 기준은 **오검출 0** 이므로
-    #   93%로는 못 켠다. 회전 지면 몫은 좌표 정합을 따로 푼 뒤에 연다.
-    #   실측: 0° 653쪽 오검출 0 · 270° 478쪽은 보정 없이 410건, 보정해도 남는다.
-    if fitz_page.rotation:
-        return elements
+    # ★ 회전 지면도 그대로 본다. 한때 여기서 회전 지면을 통째로 건너뛰었는데
+    #   (270° 478쪽에서 오검출 410건이 나온다고 봤다) 그건 **재는 쪽이 틀린 값**이었다 —
+    #   경계 파일(*_txt_result.json)을 재구성한 하네스로 쟀기 때문이다. 경계 파일은
+    #   파이프라인 **산출물**이고 bbox 좌표계가 파일마다 갈린다(result_builder.build 의
+    #   bbox_out 분기). 여기 들어오는 bbox 는 MinerU 원본 content_list 값이고, 그걸로
+    #   다시 재면 회전 지면 텍스트 요소 569개 중 **569개(100%)**가 제자리에 있다
+    #   (보정을 넣으면 오히려 69%로 떨어진다). 코퍼스 전수 재측정도 회전 지면 6,854요소
+    #   오검출 0 이다. **보정도 게이팅도 필요 없다.**
     try:
         pix = fitz_page.get_pixmap(dpi=_INK_DPI)
     except Exception as exc:               # 렌더가 안 되면 아무것도 안 버린다
