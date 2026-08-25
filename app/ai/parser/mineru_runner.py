@@ -825,6 +825,79 @@ def _flowchart_lines(md: str) -> str:
 
 
 
+# ── 안 그려지는 글자 버리기(C006) ────────────────────────────────────────────
+# 크롭으로 만든 PDF 는 **잘려 나간 바깥 글자를 텍스트 레이어에 그대로 갖고 있다.**
+# 화면에는 안 그려지는데 추출기는 읽는다. 그래서 3쪽 글이 4쪽 요소로 섞여 나온다.
+#
+# ★ 원인 실측(시연문서 p07): 같은 글이 **두 벌** 있다.
+#     '•매체 자료의 왜곡 여부 확인'  [263,741] 잉크 0.00 (안 그려짐)
+#                                    [269,709] 잉크 0.21 (그려짐)
+#   Form XObject 프레임 rect 로는 못 가른다 — 프레임 bbox 는 PDF 좌표(하단 원점)라
+#   위아래가 뒤집히고, 애초에 지면이 프레임 안에서 옮겨 앉으며 바깥 글자도 같이
+#   변환돼 프레임 **안쪽** 좌표로 들어온다. 그러니 프레임이 아니라
+#   **실제로 그려졌는지**로 판정한다.
+#
+# ⚠ 멀쩡한 글을 버리면 훨씬 나쁘다. 그래서 **흰색 아닌 화소가 하나도 없을 때만** 버린다.
+#   글자가 있으면 안티에일리어싱만으로도 회색 화소가 남고, 흰 글자면 바탕이 어둡다.
+#   음영 상자·테두리가 걸쳐도 화소가 남아 그냥 살린다(놓치는 쪽이 안전하다).
+_INK_DPI = 100                    # 쪽당 한 번만 렌더한다
+_INK_WHITE = 250                  # 이보다 밝으면 아무것도 안 그려진 화소로 본다
+# 글자 요소만 본다. 그림·표·시각자료는 안 건드린다 — 요소째 사라지면 학생은 거기
+# 무엇이 있었다는 사실조차 모른다(불변규칙 1 빈 결과 금지).
+_UNPAINTED_TYPES = {"text", "title", "list_item", "caption",
+                    "footnote", "sidebar", "header_footer", "page_number"}
+
+
+def _is_painted(pix: "fitz.Pixmap", bb: list[float]) -> bool:
+    """0~1000 bbox 자리에 흰색 아닌 화소가 하나라도 있나."""
+    x0 = max(0, int(bb[0] / 1000 * pix.width))
+    x1 = min(pix.width, int(round(bb[2] / 1000 * pix.width)))
+    y0 = max(0, int(bb[1] / 1000 * pix.height))
+    y1 = min(pix.height, int(round(bb[3] / 1000 * pix.height)))
+    if x1 <= x0 or y1 <= y0:
+        return True                        # 잴 수 없으면 살린다
+    s, n, stride = pix.samples, pix.n, pix.stride
+    for y in range(y0, y1):
+        row = s[y * stride + x0 * n: y * stride + x1 * n]
+        if row and min(row) < _INK_WHITE:  # 바이트 min 은 C 속도다
+            return True
+    return False
+
+
+def _drop_unpainted(elements: list[dict], fitz_page: fitz.Page,
+                    page_no: int) -> list[dict]:
+    """지면에 실제로 그려지지 않은 글자 요소를 버린다. 위 주석의 판정을 쓴다."""
+    # ⚠ 회전된 지면은 손대지 않는다. 요소 bbox 와 렌더가 다른 좌표계라(bbox 는 회전 전,
+    #   get_pixmap 은 표시 방향) 판정이 어긋난다. 보정 네 가지를 회전 지면 텍스트 요소
+    #   160개에 재 봤는데 가장 나은 것(표시 dims + rotation_matrix)도 93%였다 —
+    #   나머지 7%는 멀쩡한 글을 유령으로 본다. 이 가드의 기준은 **오검출 0** 이므로
+    #   93%로는 못 켠다. 회전 지면 몫은 좌표 정합을 따로 푼 뒤에 연다.
+    #   실측: 0° 653쪽 오검출 0 · 270° 478쪽은 보정 없이 410건, 보정해도 남는다.
+    if fitz_page.rotation:
+        return elements
+    try:
+        pix = fitz_page.get_pixmap(dpi=_INK_DPI)
+    except Exception as exc:               # 렌더가 안 되면 아무것도 안 버린다
+        logger.warning("page %d: 렌더 실패로 안 그려진 글자 판정을 건너뛴다 (%s)",
+                       page_no, exc)
+        return elements
+    kept, dropped = [], []
+    for el in elements:
+        bb = el.get("bbox")
+        if (el.get("type") in _UNPAINTED_TYPES and (el.get("content") or "").strip()
+                and isinstance(bb, list) and len(bb) == 4
+                and not _is_painted(pix, bb)):
+            dropped.append(el)
+            continue
+        kept.append(el)
+    if dropped:
+        logger.info("page %d: 안 그려진 글자 요소 %d개 버림 (예: %r)", page_no,
+                    len(dropped), (dropped[0].get("content") or "")[:30])
+        for i, el in enumerate(kept):
+            el["reading_order"] = i
+    return kept
+
+
 def run(
     pdf_path: str,
     page_no: int,
@@ -1033,6 +1106,9 @@ def run(
             "flags": [],
         })
         order += 1
+
+    # 지면에 안 그려진 글자 요소 버리기(C006) — fitz_page 를 닫기 전에 한다.
+    merged_layout = _drop_unpainted(merged_layout, fitz_page, page_no)
 
     doc.close()
 
