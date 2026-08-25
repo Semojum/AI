@@ -178,8 +178,41 @@ _UL_COVER = 0.5          # 글자 폭이 선과 이만큼 겹쳐야 밑줄로 �
 _UL_OPEN, _UL_CLOSE = "<!강조>", "<!/강조>"
 
 
+def _grid_rules(cands: list) -> set:
+    """표 구분선인 선들. **밑줄이 아니다.**
+
+    ★ F04(대표 지적) — 표 제목행에만 `<!강조>`가 붙는 것을 보고 "굵은 글씨라서 붙인 것
+      아닌가" 하셨는데, 실물은 그것도 아니었다. **표의 가로 구분선을 밑줄로 오검출**하고
+      있었다. 시연 p2 실측: 제목행 '구분'·'전통 사회'·'근대 이후의 사회'가 전부
+      `_is_underlined=True`. 그 아래 3.56pt 에 폭 54/154/154 짜리 선이 있는데 그게
+      표의 열 구분선이다. 본문 셀('이 매우 어려운 폐쇄적…')도 같은 이유로 물린다.
+
+    가르는 신호는 **같은 x-분할이 여러 y 에서 되풀이되는 것**이다(= 격자).
+      표 구분선   y=179.4 · 196.4 · 309.4 가 전부 [(74.6,128.4),(128.4,282.4),(282.4,436.5)]
+      진짜 밑줄   언어 p034 y=598.2 은 12조각, y=583.2 는 7조각 — 분할이 매번 다르다
+    선 폭이나 연속성으로는 안 갈린다(진짜 밑줄도 여러 조각이 틈 없이 이어진다).
+    """
+    from collections import defaultdict
+    byy = defaultdict(list)
+    for r in cands:
+        byy[round(r.y0, 1)].append(r)
+    sig_y = defaultdict(set)
+    for y, segs in byy.items():
+        if len(segs) < 2:                     # 한 조각짜리는 격자 판정을 안 한다
+            continue
+        segs = sorted(segs, key=lambda r: r.x0)
+        sig = tuple((round(r.x0, 1), round(r.x1, 1)) for r in segs)
+        sig_y[sig].add(y)
+    out = set()
+    for sig, ys in sig_y.items():
+        if len(ys) >= 2:                      # 같은 분할이 두 줄 이상 = 표 격자
+            for y in ys:
+                out.update(id(r) for r in byy[y])
+    return out
+
+
 def underline_rects(page) -> list:
-    """페이지의 밑줄 후보 선(표시 좌표계 Rect)."""
+    """페이지의 밑줄 후보 선(표시 좌표계 Rect). 표 구분선은 뺀다(위 `_grid_rules`)."""
     rot = page.rotation_matrix
     page_w = page.rect.width
     out = []
@@ -187,7 +220,8 @@ def underline_rects(page) -> list:
         r = fitz.Rect(g["rect"]) * rot
         if r.height <= _UL_MAX_H and _UL_MIN_W <= r.width <= page_w * _UL_PAGE_W_RATIO:
             out.append(r)
-    return out
+    grid = _grid_rules(out)
+    return [r for r in out if id(r) not in grid]
 
 
 def _is_underlined(cb, underlines) -> bool:
