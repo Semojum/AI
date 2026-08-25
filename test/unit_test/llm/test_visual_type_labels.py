@@ -38,11 +38,17 @@ def test_도표는_유형명_자체가_방식이다(subtype, name):
     assert vd.desc_label(subtype) == name
 
 
-def test_골격이_하나뿐인_유형은_설명_하나다():
-    """그림·사진·그래프·만화는 방식이 갈리지 않는다."""
-    for k in ("이미지", "차트", "만화", ""):
+def test_만화는_안이_하나다():
+    """한 장면이면 장면 설정, 여러 장면이면 대사 — **재료가 가르니** 이름은 하나다."""
+    assert vd.desc_label("만화") == "만화"
+    assert vd.prose_label("만화") == "만화"       # 같은 이름 → 둘째 안을 안 만든다
+
+
+def test_그림_사진_그래프는_분량으로_갈린다():
+    """형식이 아니라 분량이다. '문제 풀이용/개념 학습용'은 폐기됐다 — 우리는 문제를 안 본다."""
+    for k in ("이미지", "차트", ""):
         assert vd.desc_label(k) == "설명", k
-        assert vd.prose_label(k) == "설명", k
+        assert vd.prose_label(k) == "설명(자세히)", k
 
 
 def test_도표만_줄글이_골격과_갈린다():
@@ -106,6 +112,22 @@ def test_가계도_방향마다_들여쓰기가_다르다():
     assert td != bu
 
 
+def test_들여쓰기_태그_숫자는_앞_빈칸_수다():
+    """★ 지침의 칸 번호가 아니다(대표가 못 박음). 지침 '3칸에서 적는다' = <!2칸>."""
+    from app.ai.braille import tag_names as T
+    assert T.indent_tag(0) == "<!0칸>"     # 지침 "1칸에서 적는다"
+    assert T.indent_tag(2) == "<!2칸>"     # 지침 "3칸에서 적는다"
+    assert T.indent_tag(4) == "<!4칸>"     # 지침 "5칸에서 적는다"
+    assert T.indent_tag(6) == "<!6칸>"     # 지침 "7칸에서 적는다"
+
+
+def test_표_셀_태그와_안_섞인다():
+    """`<!칸>`(표 셀)에는 숫자가 없어 들여쓰기 태그로 안 읽힌다."""
+    from app.ai.braille import tag_names as T
+    assert T.split_indent("<!칸>값") == (None, "<!칸>값")
+    assert T.split_indent("<!2칸>값") == (2, "값")
+
+
 def test_안마다_자기_들여쓰기를_싣는다():
     import asyncio
     from uuid import uuid4
@@ -117,11 +139,14 @@ def test_안마다_자기_들여쓰기를_싣는다():
           "items": [{"text": "유리"}, {"text": "주몽"}, {"text": "해모수"}]}
     ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=st)
     opt = asyncio.run(DiagramOpt().optimize([ext], "ZERO"))[0]
-    by = {d.label: d.line_indents for d in opt.drafts}
-    assert by["가계도(하향식)"] is not None and by["가계도(상향식)"] is not None
-    assert by["가계도(하향식)"] != by["가계도(상향식)"], "안마다 값이 달라야 한다"
-    # 호환 필드는 **선택된 안**의 값을 그대로 든다
-    assert opt.line_indents == opt.drafts[opt.selected_idx].line_indents
+    from app.ai.braille import tag_names as T
+    by = {d.label: T.strip_indent_tags(d.text)[1] for d in opt.drafts}
+    assert by["가계도(하향식)"] == [4, 4, 2, 0, 2, 4]
+    assert by["가계도(상향식)"] == [4, 4, 2, 2, 2, 2]
+    # ★ 줄 수가 6으로 같아 길이 검사로는 못 걸렀다 — 그래서 태그로 옮겼다
+    assert len(by["가계도(하향식)"]) == len(by["가계도(상향식)"])
+    # 호환 필드는 **선택된 안의 글에 박힌 태그**에서 되읽는다
+    assert opt.line_indents == T.strip_indent_tags(opt.drafts[opt.selected_idx].text)[1]
 
 
 def test_점역_뒤에도_안별_들여쓰기가_남는다():
@@ -136,9 +161,11 @@ def test_점역_뒤에도_안별_들여쓰기가_남는다():
           "items": [{"text": "유리"}, {"text": "주몽"}, {"text": "해모수"}]}
     ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=st)
     bo = DiagramBraille().translate(asyncio.run(DiagramOpt().optimize([ext], "ZERO")))[0]
-    by = {d.label: d.line_indents for d in bo.drafts}
-    assert by["가계도(하향식)"] != by["가계도(상향식)"]
-    assert bo.line_indents == bo.drafts[bo.selected_idx].line_indents
+    from app.ai.braille import tag_names as T
+    assert bo.line_indents == [4, 4, 2, 0, 2, 4]          # 선택 안(하향식)의 값
+    # 점역 결과에 태그 잔재가 남으면 안 된다
+    assert not any("칸>" in ln for d in bo.drafts for ln in (d.braille_lines or []))
+    assert not any("칸>" in ln for ln in bo.braille_lines)
 
 
 def test_가계도는_방향_둘을_같이_낸다():

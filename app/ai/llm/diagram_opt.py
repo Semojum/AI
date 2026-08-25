@@ -448,10 +448,11 @@ def _family_alt(subtype: str, structure: dict) -> Optional[Draft]:
     text, indents = assemble_family_tree({**structure, "mode": alt_mode})
     label = (desc_label("family_tree") if alt_mode == "top_down"
              else FAMILY_BOTTOMUP_LABEL)
-    # ★ 자기 들여쓰기를 싣는다. 안 실으면 선택 안(하향식)의 값이 씌워져 세대 방향이
-    #   거꾸로 나간다 — 줄 수가 같아 길이 검사로도 안 걸린다(§6.6.4(2)②·(3)②).
-    return Draft(option=FAMILY_BOTTOMUP_OPTION, text=text,
-                 render_mode="narrative", label=label, line_indents=indents)
+    # ★ 자기 들여쓰기를 **글 안 태그**로 싣는다. 안 실으면 선택 안(하향식)의 값이 씌워져
+    #   세대 방향이 거꾸로 나간다 — 줄 수가 같아 길이 검사로도 안 걸린다(§6.6.4(2)②·(3)②).
+    return Draft(option=FAMILY_BOTTOMUP_OPTION,
+                 text=_TN.apply_indent_tags(text, indents),
+                 render_mode="narrative", label=label)
 
 
 class DiagramOpt(BaseOpt):
@@ -481,9 +482,10 @@ class DiagramOpt(BaseOpt):
             # ★ 2026-08-25 — 골격 안을 **유형 이름**으로 내준다(계획서 §5). 조립은 그대로다.
             drafts = [
                 omission_draft(label),
-                Draft(option=2, text=skeleton_text, render_mode="narrative",
-                      label=_skeleton_label(subtype, structure),
-                      line_indents=skeleton_indents),
+                Draft(option=2,
+                      text=_TN.apply_indent_tags(skeleton_text, skeleton_indents),
+                      render_mode="narrative",
+                      label=_skeleton_label(subtype, structure)),
                 *extra_drafts(label),
             ]
             # 가계도만 방향 둘을 **같이** 낸다 — §6.6.4(1)이 "교재 이해에 효과적인 쪽을
@@ -509,7 +511,8 @@ class DiagramOpt(BaseOpt):
                 # ★ 2026-08-25 — **선택된 안이 스스로 들고 있는 값**을 그대로 넘긴다.
                 #   라벨로 찾아 골격 값을 씌우던 종전 방식은 안이 늘자 깨졌다(가계도 상향식).
                 #   `LLMOutput.line_indents`는 호환용으로 남기고 값의 출처만 안으로 옮겼다.
-                line_indents=(drafts[sel_idx].line_indents
+                # 호환 필드 — 선택된 안의 **글에 박힌 태그**에서 되읽는다.
+                line_indents=(_TN.strip_indent_tags(drafts[sel_idx].text)[1]
                               if 0 <= sel_idx < len(drafts) else None),
             )
 
@@ -535,7 +538,9 @@ class DiagramOpt(BaseOpt):
         )
         return LLMOutput(
             element_id=ext.element_id,
-            corrected_text=drafts[selected_idx].text,
+            # 요소 본문은 **태그 없는 글**로 둔다 — `line_indents` 호환 필드와
+            # 줄 단위로 짝지어지는 자리라 줄머리에 태그가 붙으면 짝이 깨진다.
+            corrected_text=_TN.strip_indent_tags(drafts[selected_idx].text)[0],
             render_mode="narrative",
             tn_text=drafts[selected_idx].text,
             routing_tier=tier,

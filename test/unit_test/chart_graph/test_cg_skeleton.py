@@ -34,8 +34,9 @@ class TestFourDrafts:
     def test_안_라벨(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(ChartGraphOpt().optimize([ext], "ZERO"))[0]
+        from app.ai.llm.visual_drafts import prose_label
         assert [d.label for d in opt.drafts] == [
-            LABELS[0], desc_label("차트"), LABELS[2]]
+            LABELS[0], desc_label("차트"), LABELS[2], prose_label("차트")]
         assert opt.selected_idx == 1                                   # 기본=설명(gold 79.6%)(표 변환)
 
     def test_개조식_데이터_전사(self):
@@ -55,7 +56,7 @@ class TestFourDrafts:
         eid = uuid4()
         ext = ExtractedContent(element_id=eid, ocr_confidence=1.0, structure=_STRUCT)
         bo = ChartGraphBraille().translate(asyncio.run(ChartGraphOpt().optimize([ext], "ZERO")))
-        assert len(bo[0].drafts) == 3
+        assert len(bo[0].drafts) == 4
         lr = LayoutResult(page_id="p", elements=[
             BBoxItem(element_id=eid, type="chart_graph", bbox=(0, 0, 0, 0), reading_order=1)])
         LayoutBraille().layout(bo, page_no=1, job_id="cg", layout_result=lr)

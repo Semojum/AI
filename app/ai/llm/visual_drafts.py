@@ -36,6 +36,7 @@ import re
 import time
 
 from app.ai.llm.base_opt import decide_tier_timeout, generate_with_retry
+from app.ai.braille import tag_names as _TAGS
 from app.ai.braille import tn_notices as _TN_NOTICES
 from app.core.config import config
 from app.schemas.content import Draft
@@ -101,8 +102,15 @@ DESC_LABELS = {
     "form":         "양식",             # §6.6.3
     "screen_image": "화면 이미지",      # §6.6.7
     "slide":        "발표용 슬라이드",  # §6.6.8
+    "만화":         "만화",             # §5.3 — 한 장면이면 장면 설정, 여러 장면이면 대사.
+                                        #   재료가 가르니 이름은 하나다.
 }
-PROSE_LABEL = "줄글 설명"                     # 도표에서만 골격과 갈린다(§6.1.1(5))
+PROSE_LABEL = "줄글 설명"                     # 도표: 골격과 갈리는 줄글(§6.1.1(5))
+# 그림·사진·그래프의 둘째 안. 점역사 실측 피드백(2026-08-25): 2차함수 그래프를 문제 풀이에서는
+# 수식만 적는 게 맞고, 개념이 처음 나오는 자리에서는 "위로 볼록"·"꼭짓점" 같은 성질을 더
+# 적어 주는 게 좋다. 어느 쪽이 맞는지는 **그 문제에 달렸는데 우리는 문제를 안 본다** —
+# 그래서 "문제 풀이용/개념 학습용"으로 이름 짓지 않는다(폐기, 2026-08-25). 분량만 밝힌다.
+DETAIL_LABEL = "설명(자세히)"
 FAMILY_BOTTOMUP_LABEL = "가계도(상향식)"      # §6.6.4(1)(3)
 
 # 새 안의 option 번호. ★ 기존 1(생략)·2(설명)·6(별책 참조)은 BE·FE 계약이라 그대로 두고
@@ -123,8 +131,14 @@ def desc_label(type_key: str) -> str:
 
 
 def prose_label(type_key: str) -> str:
-    """그 유형의 '줄글' 안 이름. 골격이 따로 있는 도표에서만 설명과 갈린다."""
-    return PROSE_LABEL if type_key in DESC_LABELS else LABELS[DESC_IDX]
+    """그 유형의 **둘째 안** 이름.
+
+    도표는 골격(유형명)과 줄글이 형식으로 갈리고, 그림·사진·그래프는 형식이 아니라
+    **분량**으로 갈린다(설명 / 설명(자세히)). 만화는 재료가 갈라 주므로 안이 하나다.
+    """
+    if type_key == "만화":
+        return desc_label(type_key)          # 같은 이름 → 아래 게이트가 둘째 안을 안 만든다
+    return PROSE_LABEL if type_key in DESC_LABELS else DETAIL_LABEL
 
 # 개조식 들여쓰기(칸): 제목 5칸(§6.3.3(1)), 유형/설명 점역자주 0칸, 전사 항목 level0=3칸(+2/단계).
 # ⚠ 원장 C-15 — 정답 도서에는 3칸 줄이 **0.0%**다(dev+val 2027 각 200쪽 줄머리 실측:
@@ -329,8 +343,10 @@ def desc_draft(
     따로 냈는데, 규정은 "설명" 하나이고 gold도 형식이 안 갈려 2026-08-20에 묶었다.
     """
     text, indents = _outline_text_indents(label, title, desc, items, kind)
-    return Draft(option=2, text=text, render_mode="narrative", label=desc_label(kind),
-                 line_indents=indents), indents
+    # ★ 들여쓰기를 **글 안 태그**로 박는다(2026-08-25 대표 지시). 안마다 자기 글에 실리니
+    #   안을 바꿔도 어긋나지 않는다 — `tag_names` 의 들여쓰기 태그 주석 참조.
+    return Draft(option=2, text=_TAGS.apply_indent_tags(text, indents),
+                 render_mode="narrative", label=desc_label(kind)), indents
 
 
 def prose_draft(text: str, type_key: str = "") -> Draft | None:
@@ -374,6 +390,19 @@ def _dedupe(drafts: list[Draft], selected_idx: int) -> tuple[list[Draft], int]:
             new_idx = len(kept)
         kept.append(d)
     return kept, new_idx
+
+
+def _covered_by(inner: str, outer: str) -> bool:
+    """`inner` 의 알맹이가 `outer` 안에 이미 다 있는가 — 그러면 새 안을 낼 이유가 없다.
+
+    태그·공백을 걷어 낸 글자열로 견준다. 태그가 다르다고 다른 안이 되지는 않는다.
+    """
+    strip = lambda t: "".join(_TAG_STRIP_RE.sub("", t or "").split())
+    a, b = strip(inner), strip(outer)
+    return bool(a) and a in b
+
+
+_TAG_STRIP_RE = re.compile(r"<!/?[^>]*>")
 
 
 def _no_material(*parts: str) -> bool:
@@ -556,9 +585,17 @@ async def build_visual_drafts(
     #   줄글이다(둘 다 "줄글 설명"). 같은 이름 두 칸을 세우면 피커에서 무엇이 다른지
     #   알 수 없다 — 계획서 §5가 없애려는 바로 그 얼굴이다. 만화(장면별 대사 ↔ 장면 설정
     #   설명)와 도표(골격 ↔ 줄글)처럼 형식이 실제로 갈리는 유형만 두 칸을 갖는다.
+    # ★ 둘째 안을 내는 조건 셋 — 하나라도 어긋나면 **안 만든다**(2026-08-25 대표 지시).
+    #   "나눠놓고 다 비슷해서 쓸모없는" 꼴을 막는 게 이 이름 규칙이 기대는 조건이다.
+    #   ① 이름이 갈린다        — 같은 이름 두 칸은 무엇이 다른지 알려 주지 못한다
+    #   ② 재료가 진짜 줄글이다  — 위 폴백 사슬(caption·title)은 설명 안이 이미 쓴 글이다
+    #   ③ **글이 실제로 다르다** — `_dedupe` 는 글자가 완전히 같을 때만 접는다. 그것만으로는
+    #      부족해서, 공백을 접어 견준 뒤 **설명 안이 이미 품고 있는 글**이면 안 낸다
+    #      (자세히에 더 들어갈 내용이 없다는 뜻이다).
     real_prose = struct_prose if struct_prose is not None else llm_prose
     if prose_label(kind) != desc_label(kind):
-        if (d_prose := prose_draft(real_prose, kind)) is not None:
+        d_prose = prose_draft(real_prose, kind)
+        if d_prose is not None and not _covered_by(d_prose.text, d_desc.text):
             drafts.append(d_prose)
 
     # 기본은 설명이다. gold 실측에서 설명이 79.6%로 압도한다(생략 12.2% · 참조 8.0%).

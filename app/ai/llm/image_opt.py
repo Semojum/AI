@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from app.ai.braille.nested_block import box_narrative
 from app.ai.llm.base_opt import BaseOpt
+from app.ai.braille import tag_names as _TAGS
 from app.ai.llm.visual_drafts import build_visual_drafts, visual_trail
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
@@ -58,7 +59,9 @@ class ImageOpt(BaseOpt):
         )
         return LLMOutput(
             element_id=ext.element_id,
-            corrected_text=drafts[selected_idx].text,
+            # 요소 본문은 **태그 없는 글**로 둔다 — `line_indents` 호환 필드와
+            # 줄 단위로 짝지어지는 자리라 줄머리에 태그가 붙으면 짝이 깨진다.
+            corrected_text=_TAGS.strip_indent_tags(drafts[selected_idx].text)[0],
             render_mode="narrative",
             tn_text=drafts[selected_idx].text,
             routing_tier=tier,
