@@ -823,6 +823,7 @@ def _decode_line_router(line: str, math: bool) -> str:
 def _decode_line(s: str) -> str:
     out: list[str] = []
     i, n = 0, len(s)
+    _after_number = -1        # 수표 숫자가 방금 끝난 자리(아래 단위표 가드용)
     while i < n:
         ch = s[i]
         # 공백(점자/일반)
@@ -853,6 +854,7 @@ def _decode_line(s: str) -> str:
         if ch == _NUMBER_SIGN:
             txt, j = _decode_number(s, i)
             out.append(txt)
+            _after_number = j          # 이 자리 바로 뒤는 단위가 올 수 있다(아래 참조)
             i = j
             continue
         # 긴 셀 우선 매칭(단위·기호·약어·음절). 단위(℃=⠴⠙…)를 로마자보다 먼저
@@ -871,7 +873,17 @@ def _decode_line(s: str) -> str:
         #   **긴 쪽이 이긴다** — 로마자로 읽어서 더 많은 셀을 소비하면 그쪽이 맞다.
         #   길이가 같으면 기호가 이긴다: ℃(⠴⠙⠠⠉)·㎏(⠴⠅⠛⠲)은 로마자로 읽어도 같은
         #   4셀이므로 등록된 단위 기호로 남는다.
-        if ch == _ROMAN_START and best_ln >= 2:
+        # ★ **숫자 바로 뒤의 ⠴ 는 단위표다. 로마자표가 아니다.**(2026-08-25)
+        #   규정 [붙임2]가 비로마자 단위를 `숫자 + 단위표 0 + …` 로 적는다(50%=⠼⠑⠚⠴⠏).
+        #   로마자표는 반대로 **런 앞**에 온다(제35항 A4=⠴⠠⠁⠼⠙ · MP3) — 숫자 뒤에 붙는
+        #   ⠴ 를 로마자표로 읽을 자리가 규정에 없다.
+        #   이 가드가 없으면 종료표 ⠲ 가 마침표와 같은 셀이라 로마자 런이 **뒤 한글까지
+        #   통째로 삼킨다**. 실측(코퍼스 900쪽 표본): `%` 뒤가 한글인 줄 118건 중
+        #   **69건(58%)에서 `%` 가 사라지고 뒤 한글이 깨졌다**
+        #   (`25%이다.` → `25poi` · `5%이므로` → `5poeow로`).
+        if ch == _ROMAN_START and best_ln >= 2 and i == _after_number:
+            pass                       # 단위로 읽는다(아래 기호 분기로 떨어진다)
+        elif ch == _ROMAN_START and best_ln >= 2:
             _r = _decode_roman_run(s, i)
             if _r is not None and _r[1] - i > best_ln:
                 out.append(_r[0])
