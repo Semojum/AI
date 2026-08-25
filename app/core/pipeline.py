@@ -600,6 +600,27 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                                len(elements), len(better), task.page_no)
                 elements, method = better, "OPUS_VISION"
 
+    # 줄바꿈으로 쪼개진 텍스트 조각 잇기(#263) — **두 추출 경로가 만나는 자리다.**
+    # 한때 mineru_runner 안에 뒀는데 ZERO 티어(TEXT_NATIVE)가 그 경로를 안 타서 절반에
+    # 안 걸렸다(100쪽 표본 A/B 총 편집셀 차 0 · 대표가 지적한 시연 p01 이 ZERO 티어였다).
+    # 여기서 하면 두 경로가 다 걸린다. bbox 좌표계가 경로마다 다르므로 bbox_space 를 넘긴다.
+    if elements:
+        import fitz
+        from app.ai.preprocessor.line_join import join_wrapped_lines
+        from app.ai.preprocessor.pdf_analyzer import _coerce_pdf_bytes
+        try:
+            with fitz.open(stream=_coerce_pdf_bytes(task.pdf_data), filetype="pdf") as _d:
+                _pg = _d[max(0, min(task.page_no - 1, _d.page_count - 1))]
+                n0 = len(elements)
+                elements = join_wrapped_lines(
+                    elements, _pg, bbox_space=bbox_space,
+                    image_width=image_width, image_height=image_height)
+            if n0 != len(elements):
+                logger.info("줄바꿈 조각 %d개 이음 (page=%d · %s)",
+                            n0 - len(elements), task.page_no, method)
+        except Exception as exc:      # noqa: BLE001 — 잇기는 있으면 좋은 것, 실패는 격리
+            logger.warning("줄바꿈 조각 잇기 건너뜀 (page=%d): %s", task.page_no, exc)
+
     extraction = {
         "meta": {
             "job_id": task.job_id,

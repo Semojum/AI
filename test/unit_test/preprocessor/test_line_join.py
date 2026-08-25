@@ -3,9 +3,10 @@
 시연 문서 실측(2026-08-26)에서 나온 얼굴을 그대로 쓴다. 지면 폭 1000 기준 0~1000
 정규화 bbox 이고, 줄 높이 11 · 본문 단은 x 196~832 이다.
 """
+import fitz
 import pytest
 
-from app.ai.parser.mineru_runner import _ITEM_HEAD_RE, _SENT_END_RE, _join_wrapped_lines
+from app.ai.preprocessor.line_join import _ITEM_HEAD_RE, _SENT_END_RE, join_wrapped_lines
 
 LINE = 11.0
 LEFT, RIGHT = 196.0, 832.0
@@ -14,23 +15,21 @@ LEFT, RIGHT = 196.0, 832.0
 class _FakePage:
     """텍스트 레이어가 없는 지면 — _line_seam 이 개행으로 물러선다."""
 
-    class _Rect:
-        width = height = 1000.0
-
-    rect = _Rect()
+    rect = fitz.Rect(0, 0, 1000, 1000)
 
     def get_textbox(self, rect):        # noqa: ARG002 - 레이어 없음을 흉내낸다
         return ""
 
 
 def _line(y, text, x0=LEFT, x1=RIGHT, etype="text"):
-    return {"element_id": f"e{y}", "reading_order": int(y), "type": etype,
+    return {"id": f"e{y}", "order": int(y), "type": etype,
             "heading_level": 0, "content": text,
             "bbox": [x0, y, x1, y + LINE]}
 
 
-def _join(els, page=None):
-    return _join_wrapped_lines(els, page or _FakePage())
+def _join(els, page=None, space="norm1000", w=0, h=0):
+    return join_wrapped_lines(els, page or _FakePage(), bbox_space=space,
+                              image_width=w, image_height=h)
 
 
 def test_wrapped_sentence_is_joined():
@@ -141,3 +140,39 @@ def test_sentence_end_regex_ignores_bare_syllables():
     assert _SENT_END_RE.search("때문입니다.")
     # '다.'는 한글 글머리(가./나./다.)와 같은 얼굴이지만 글머리로 보면 안 된다.
     assert not _ITEM_HEAD_RE.match("다. 시각, 청각 등의")
+
+
+def test_both_bbox_spaces_give_the_same_join():
+    """두 추출 경로의 좌표계를 다 태운다.
+
+    ZERO 티어(TEXT_NATIVE)는 bbox 가 **2x 렌더 픽셀**이고 MinerU 경로는 **0~1000 정규화**다
+    (`pipeline` meta.bbox_space). 같은 지면이면 어느 쪽으로 들어와도 같은 결과가 나와야 한다.
+    한때 이 코드가 MinerU 경로에만 있어 ZERO 티어 지면이 통째로 안 걸렸다(#263 A/B 실측).
+    """
+    norm = [_line(100, "첫째, 후각은 대뇌의 감각 피질과 직접 연결되어 있습니"),
+            _line(115, "다. 시각, 청각 등의 다른 감각의 경우 정보가 들어오면")]
+    # 같은 지면을 2x 픽셀로 표현한 것 — 쪽은 1000x1000pt, 이미지가 2000x2000px
+    px = [dict(e, bbox=[v * 2 for v in e["bbox"]]) for e in norm]
+
+    a = _join([dict(e) for e in norm])
+    b = _join([dict(e) for e in px], space="pixel", w=2000, h=2000)
+    assert len(a) == 1 and len(b) == 1
+    assert a[0]["content"] == b[0]["content"]
+
+
+def test_order_is_renumbered_for_both_field_names():
+    """두 경로가 쓰는 순서 필드 이름이 다르다 — 남는 쪽만 다시 매긴다."""
+    els = [_line(100, "첫째, 후각은 대뇌의 감각 피질과 직접 연결되어 있습니"),
+           _line(115, "다. 시각, 청각 등의 다른 감각의 경우 정보가 들어오면"),
+           _line(200, "새 문단이 여기서 시작한다. 앞 줄과는 이어지지 않는다.", x1=LEFT + 200)]
+    out = _join(els)
+    assert [e["order"] for e in out] == list(range(1, len(out) + 1))
+
+
+def test_mineru_runner_no_longer_owns_the_join():
+    """다시 mineru_runner 로 돌아가지 않게 못 박는다.
+
+    거기 두면 ZERO 티어가 안 걸린다 — 그게 #263 이 A/B 에서 효과 0 이었던 이유다.
+    """
+    import app.ai.parser.mineru_runner as mr
+    assert not hasattr(mr, "_join_wrapped_lines")
