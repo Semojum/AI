@@ -44,15 +44,21 @@ _caption_lock = threading.Lock()
 
 
 def mineru_slot() -> asyncio.Semaphore:
-    """MinerU 추출 동시 실행 슬롯. 크기 = config.mineru_max_concurrent.
+    """MinerU 추출 동시 실행 슬롯. 크기 = `mineru_service.concurrency()`.
 
     GPU 추출 서버를 보호한다. 무릎(실측 2)을 넘겨 던지면 처리량은 안 늘고 꼬리만 길어져,
     상한에 걸리는 정상 페이지가 생긴다.
+
+    ★ 크기를 config에서 직접 읽지 않는다 — vLLM이 아닌 엔진에서는 동시 2가 MinerU를
+      스레드 레이스로 터뜨려 그 쪽이 표·그림을 잃는다(`mineru_service.concurrency()` 주석).
+      서버에 주는 상한과 우리가 던지는 수가 **같은 자리에서** 정해져야 한다.
     """
+    from app.ai.parser import mineru_service   # 지연 import — 파서가 core를 물지 않게
+
     loop = asyncio.get_running_loop()
     sem = _mineru_slots.get(loop)
     if sem is None:
-        sem = asyncio.Semaphore(max(1, config.mineru_max_concurrent))
+        sem = asyncio.Semaphore(mineru_service.concurrency())
         _mineru_slots[loop] = sem
     return sem
 

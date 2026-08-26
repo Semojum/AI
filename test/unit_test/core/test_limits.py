@@ -12,6 +12,7 @@ import asyncio
 
 import pytest
 
+from app.ai.parser import mineru_service
 from app.core import limits
 from app.core.config import config
 
@@ -24,12 +25,34 @@ def _reset():
 
 
 def test_mineru_슬롯_크기는_config를_따른다(monkeypatch):
+    """vLLM 엔진에서는 config 값이 그대로 슬롯 크기가 된다.
+
+    ★ 2026-08-26 — 크기를 `mineru_service.concurrency()`가 정한다. 그 함수는 엔진이
+      vLLM이 아니면 1로 조이므로(스레드 레이스), 이 테스트는 엔진을 vLLM으로 고정해야
+      '설정을 따른다'는 성질만 본다. 조이는 쪽은 아래 테스트가 본다.
+    """
     monkeypatch.setattr(config, "mineru_max_concurrent", 3)
+    monkeypatch.setattr(mineru_service, "_engine_is_vllm", lambda: True)
 
     async def run():
         return limits.mineru_slot()._value
 
     assert asyncio.run(run()) == 3
+
+
+def test_vLLM이_아니면_mineru_슬롯은_1이다(monkeypatch):
+    """transformers 엔진에서 동시 2를 던지면 MinerU가 rope_deltas 레이스로 터진다.
+
+    실측(2026-08-26, 로그 2,171쪽): 텍스트레이어 폴백 142쪽 중 102쪽이 그 에러였다.
+    폴백 쪽은 표·그림 구조를 잃으므로 설정값보다 안전이 먼저다.
+    """
+    monkeypatch.setattr(config, "mineru_max_concurrent", 4)
+    monkeypatch.setattr(mineru_service, "_engine_is_vllm", lambda: False)
+
+    async def run():
+        return limits.mineru_slot()._value
+
+    assert asyncio.run(run()) == 1
 
 
 def test_caption_슬롯_크기는_config를_따른다(monkeypatch):

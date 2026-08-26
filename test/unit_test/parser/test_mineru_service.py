@@ -46,3 +46,62 @@ class TestGetUrl:
         monkeypatch.setattr(ms, "_url", None)
         monkeypatch.setenv("MINERU_PERSISTENT", "0")      # 자동 기동 비활성 = 되살리지 않는다
         assert ms.get_url() is None
+
+
+class TestConcurrency:
+    """vLLM이 아닌 엔진에서 동시 2를 던지면 MinerU가 스레드 레이스로 터진다.
+
+    실측(2026-08-26, 로그 2,171쪽 전수): 텍스트레이어 폴백 142쪽(6.5%) 중 **102쪽(72%)**이
+      RuntimeError: The expanded size of the tensor (2) must match the existing size (0)
+    이었다. 폴백 쪽은 표·그림 구조를 잃는다 — 시연 지적 1번(표가 텍스트로 풀림)이 이것이다.
+    """
+
+    def test_vLLM이면_설정값_그대로(self, monkeypatch):
+        monkeypatch.setattr(ms.config, "mineru_max_concurrent", 4, raising=False)
+        monkeypatch.setattr(ms, "_engine_is_vllm", lambda: True)
+        assert ms.concurrency() == 4
+
+    def test_transformers면_1로_조인다(self, monkeypatch):
+        monkeypatch.setattr(ms.config, "mineru_max_concurrent", 4, raising=False)
+        monkeypatch.setattr(ms, "_engine_is_vllm", lambda: False)
+        assert ms.concurrency() == 1
+
+    def test_설정이_1이면_엔진과_무관하게_1(self, monkeypatch):
+        monkeypatch.setattr(ms.config, "mineru_max_concurrent", 1, raising=False)
+        monkeypatch.setattr(ms, "_engine_is_vllm", lambda: True)
+        assert ms.concurrency() == 1
+
+
+class TestEngineDetect:
+    def test_bin_옆에_vllm이_있으면_vLLM(self, tmp_path, monkeypatch):
+        (tmp_path / "mineru").write_text("")
+        (tmp_path / "vllm").write_text("")
+        monkeypatch.setenv("MINERU_BIN", str(tmp_path / "mineru"))
+        assert ms._engine_is_vllm() is True
+
+    def test_bin_옆에_vllm이_없으면_transformers(self, tmp_path, monkeypatch):
+        (tmp_path / "mineru").write_text("")
+        monkeypatch.setenv("MINERU_BIN", str(tmp_path / "mineru"))
+        assert ms._engine_is_vllm() is False
+
+    def test_transformers면_동시1이어도_경고를_남긴다(self, monkeypatch, caplog):
+        """엔진이 느린 쪽으로 떨어진 사실 자체를 크게 알린다(2026-08-26 pm 지시).
+
+        이게 조용해서 전수 재추출 한 벌이 잘못된 엔진 위에서 밤새 돌 뻔했다.
+        """
+        import logging
+        ms._clamped_logged = False
+        monkeypatch.setattr(ms.config, "mineru_max_concurrent", 1, raising=False)
+        monkeypatch.setattr(ms, "_engine_is_vllm", lambda: False)
+        with caplog.at_level(logging.WARNING):
+            assert ms.concurrency() == 1
+        assert "vLLM이 아니다" in caplog.text
+
+    def test_MINERU_ENGINE이_추정을_이긴다(self, tmp_path, monkeypatch):
+        """vLLM을 라이브러리로만 깐 배치에서 손으로 못 박을 수 있어야 한다."""
+        (tmp_path / "mineru").write_text("")          # 옆에 vllm 실행파일 없음
+        monkeypatch.setenv("MINERU_BIN", str(tmp_path / "mineru"))
+        monkeypatch.setenv("MINERU_ENGINE", "vllm-async-engine")
+        assert ms._engine_is_vllm() is True
+        monkeypatch.setenv("MINERU_ENGINE", "transformers")
+        assert ms._engine_is_vllm() is False
