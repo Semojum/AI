@@ -117,6 +117,9 @@ FAMILY_BOTTOMUP_LABEL = "가계도(상향식)"      # §6.6.4(1)(3)
 #   **뒤에만 붙인다**(2026-08-10 방식). 3~5는 2026-08-20에 은퇴한 번호라 재사용하지 않는다.
 PROSE_OPTION = 7
 FAMILY_BOTTOMUP_OPTION = 8
+# 흐름도 관행형(화살표 체인 한 줄) — 규정형과 **나란히** 낸다(대표 결재 2026-08-26).
+FLOW_CHAIN_OPTION = 10
+FLOW_CHAIN_LABEL = "흐름도(화살표)"
 
 
 def desc_label(type_key: str) -> str:

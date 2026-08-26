@@ -241,3 +241,35 @@ class TestOutputTypeWord:
         """골격 안 이름(점역사가 고르는 것)은 유형 그대로 남는다."""
         from app.ai.llm.diagram_opt import _skeleton_label
         assert "흐름도" in _skeleton_label("flowchart", {})
+
+
+class TestFlowChainAlt:
+    """흐름도는 규정형·관행형 **둘 다** 낸다 (대표 결재 2026-08-26).
+
+    어느 쪽이 맞는지 정하지 않는다 — 규정 §6.6.2(4)③④ 는 '상자 한 줄에 하나' 이고
+    gold 2027 은 화살표 체인 한 줄이다(desk D020). 둘을 피커에 나란히 띄우고
+    점역사가 고른다.
+    """
+
+    _ST = {"boxes": [{"no": "1", "text": "시상하부"},
+                     {"no": "2", "text": "뇌하수체전엽"},
+                     {"no": "3", "text": "갑상선",
+                      "branches": [{"label": "예", "to": "A"}]}]}
+
+    def test_관행형은_한_줄로_접는다(self):
+        from app.ai.llm.diagram_opt import assemble_flowchart_chain
+        text, _ = assemble_flowchart_chain(self._ST)
+        assert "①시상하부 → ②뇌하수체전엽 → ③갑상선" in text, text
+        assert "- 예 → A" in text, text          # 갈래는 붙임표로(gold 실물)
+
+    def test_규정형은_줄마다_하나다(self):
+        from app.ai.llm.diagram_opt import assemble_flowchart
+        text, _ = assemble_flowchart(self._ST)
+        assert "1 시상하부" in text and "2 뇌하수체전엽" in text, text
+        assert "→" not in text.split("\n")[1], text   # 첫 상자 줄에 화살표가 없다
+
+    def test_상자_하나면_체인을_안_낸다(self):
+        """체인이 성립하지 않는다 — 없는 안을 피커에 띄우지 않는다."""
+        from app.ai.llm.diagram_opt import _flow_chain_alt
+        assert _flow_chain_alt("flowchart", {"boxes": [{"no": "1", "text": "가"}]}) is None
+        assert _flow_chain_alt("concept_map", self._ST) is None

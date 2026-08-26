@@ -62,6 +62,8 @@ from app.ai.llm.visual_drafts import (
     DESC_IDX,
     FAMILY_BOTTOMUP_LABEL,
     FAMILY_BOTTOMUP_OPTION,
+    FLOW_CHAIN_LABEL,
+    FLOW_CHAIN_OPTION,
     LABELS,
     _dedupe,
     build_visual_drafts,
@@ -535,6 +537,73 @@ def _skeleton_label(subtype: str, structure: dict, caption: str = "") -> str:
     return _caption_type_word(subtype, caption) or desc_label(subtype)
 
 
+_CIRCLED_NO = tuple(chr(0x2460 + i) for i in range(20))      # ①~⑳
+
+
+def _circled(no, idx: int) -> str:
+    """상자 번호를 원문자로. 번호가 1~20의 숫자면 원문자, 아니면 있는 그대로.
+
+    ⚠ `no` 는 앞단이 정수로 줄 때가 있다(실측 — 단위 테스트가 잡았다). 문자열로 맞춘다.
+    """
+    raw = str(no if no is not None else "").strip().rstrip(".)")
+    if raw.isdigit() and 1 <= int(raw) <= 20:
+        return _CIRCLED_NO[int(raw) - 1]
+    return raw or (_CIRCLED_NO[idx] if idx < 20 else str(idx + 1))
+
+
+def assemble_flowchart_chain(structure: dict) -> tuple[str, list[int]]:
+    """흐름도 **관행형** 골격 — 원문자 번호 + 화살표를 한 문장으로 접는다.
+
+    규정형(`assemble_flowchart`, §6.6.2(4)③④ 상자 한 줄에 하나)과 **어느 쪽이 맞는지
+    정하지 않는다.** 대표가 "둘 다 내고 점역사가 고른다" 로 결재하셨다(2026-08-26).
+
+    gold 2027 실측(desk D020) —
+        【점역자주】그림: ①담배모자이크병에 걸린 식물로부터 추출액을 얻었다.
+                        → ②추출액을 세균여과기에 통과시켰다. → ③…
+        【점역자주】그림: X자극→시상하부→ - I→부신속질→(가)→물질대사촉진
+                        - II→골격근→…
+    두 번째 예처럼 **갈래는 붙임표로 나눈다** — 그것도 gold 실물이다.
+    """
+    title = (structure.get("title") or "").strip()
+    boxes = structure.get("boxes") or []
+    lines: list[str] = []
+    indents: list[int] = []
+    if title:
+        lines.append(title); indents.append(_TITLE_INDENT)
+        lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
+    else:
+        lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
+
+    chain: list[str] = []
+    branches: list[str] = []
+    for i, box in enumerate(boxes):
+        text = (box.get("text") or "").strip()
+        if not text:
+            continue
+        chain.append(f"{_circled(box.get('no', ''), i)}{text}")
+        for br in box.get("branches") or []:
+            label = (br.get("label") or "").strip()
+            to = str(br.get("to", "")).strip()
+            if label or to:
+                branches.append(" ".join(p for p in ("-", label, _FLOW_ARROW, to) if p))
+    if not chain:
+        return "\n".join(lines), indents
+    lines.append(f" {_FLOW_ARROW} ".join(chain)); indents.append(0)
+    for br in branches:                       # 갈래는 붙임표로 나눈다(gold 실물)
+        lines.append(br); indents.append(_BRANCH_INDENT)
+    return "\n".join(lines), indents
+
+
+def _flow_chain_alt(subtype: str, structure: dict) -> Optional[Draft]:
+    """흐름도 관행형 안. 상자가 둘 이상일 때만 낸다(하나면 체인이 아니다)."""
+    if subtype != "flowchart" or len(structure.get("boxes") or []) < 2:
+        return None
+    text, indents = assemble_flowchart_chain(structure)
+    return Draft(option=FLOW_CHAIN_OPTION,
+                 text=_TN.apply_indent_tags(text, indents),
+                 render_mode="narrative", label=FLOW_CHAIN_LABEL)
+
+
 def _family_alt(subtype: str, structure: dict) -> Optional[Draft]:
     """가계도의 **반대 방향** 안. 그 방향 데이터가 없으면 None.
 
@@ -605,6 +674,9 @@ class DiagramOpt(BaseOpt):
             # 내주고 점역사가 고른다. 데이터가 한 방향뿐이면 그 방향만 나간다.
             if (alt := _family_alt(subtype, structure)) is not None:
                 drafts.append(alt)
+            # 흐름도는 규정형·관행형 둘을 나란히 낸다(대표 결재 2026-08-26).
+            if (chain := _flow_chain_alt(subtype, structure)) is not None:
+                drafts.append(chain)
             # ★ 둘째·셋째 후보의 골격도 같이 낸다(대표 결정 — 최대 셋).
             #   조립되는 것만 낸다: 그 유형의 structure 를 못 만들면 안을 안 세운다.
             #   피커에 `개념도`·`흐름도`가 나란히 서면 무엇으로 보고 적었는지가 이름으로 드러난다.
