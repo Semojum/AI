@@ -107,6 +107,19 @@ def _heading_level(item: dict, mapped_type: str, content: str) -> int | None:
     return _HEAD_LEVEL_MAP.get(int(lvl), 4)
 
 
+class MineruTimeout(RuntimeError):
+    """추출이 페이지 예산을 다 태운 경우. **재시도하지 않는다** — 다시 부르면 예산이 두 배다."""
+
+
+# 재시도 횟수(총 시도 = 1 + 이 값). MinerU 는 같은 지면·같은 코드에서도 **비결정으로** 죽는다 —
+# `The expanded size of the tensor (2) must match the existing size (0)` 가 그 얼굴이다.
+# 실측(시연 12쪽, 2026-08-26): 07:26 판 폴백 0 · 12:27 판 2 · 13:15 판 1 · 13:14 재시도 성공.
+# 죽으면 텍스트레이어 폴백으로 가는데, 폴백은 **인쇄 줄 하나가 요소 하나**라 표·그림 구조가
+# 통째로 사라진다(대표 시연 지적 둘이 이것 하나 때문이었다 — 2쪽 표·3쪽 사진).
+# 한 번 더 부르면 사라지는 손해라 재시도를 넣는다. 다 실패하면 종전대로 폴백이다.
+_MINERU_RETRIES = int(os.environ.get("MINERU_RETRIES", "1"))
+
+
 def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | None = None) -> None:
     # MinerU는 별도 env에 설치(transformers 버전 충돌 회피). bare 'mineru'가 PATH에
     # 없을 수 있어 MINERU_BIN으로 실행 파일 경로를 덮어쓸 수 있게 한다(GCP는 심볼릭).
@@ -155,7 +168,7 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | N
         # 초과 시 subprocess가 프로세스를 kill하므로 고아 프로세스가 남지 않는다.
         result = subprocess.run(cmd, capture_output=False, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(
+        raise MineruTimeout(
             f"MinerU 추출 타임아웃 (>{exc.timeout:.0f}s, page_idx={page_idx}) — 텍스트레이어 폴백 대상"
         ) from exc
     if result.returncode != 0:
@@ -1011,7 +1024,21 @@ def run(
     raw_dir = Path(mineru_cache_dir) if mineru_cache_dir else base / "mineru_raw"
     if not list(raw_dir.rglob("*_content_list.json")):
         raw_dir.mkdir(parents=True, exist_ok=True)
-        _run_mineru(pdf_path, raw_dir, page_idx, timeout=timeout)
+        for _attempt in range(1 + _MINERU_RETRIES):
+            try:
+                _run_mineru(pdf_path, raw_dir, page_idx, timeout=timeout)
+                if _attempt:
+                    logger.warning("MinerU %d번째 시도에 성공 (page_idx=%d)", _attempt + 1, page_idx)
+                break
+            except MineruTimeout:
+                raise                       # 예산을 이미 다 썼다 — 다시 부르면 두 배다
+            except RuntimeError as exc:     # 비결정 실패 — 한 번 더 불러 본다
+                if _attempt >= _MINERU_RETRIES:
+                    raise
+                logger.warning("MinerU %d번째 시도 실패, 다시 부른다 (page_idx=%d): %s",
+                               _attempt + 1, page_idx, exc)
+                shutil.rmtree(raw_dir, ignore_errors=True)
+                raw_dir.mkdir(parents=True, exist_ok=True)
         _cleanup_mineru_output(raw_dir)
         _flatten_mineru_output(raw_dir)
 
