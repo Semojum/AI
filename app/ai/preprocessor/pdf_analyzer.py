@@ -573,6 +573,15 @@ _BOX_MIN_W = 0.20        # 페이지 폭 대비 최소 너비 — 이보다 좁�
 _BOX_MIN_H = 18.0        # 최소 높이(pt) — 밑줄·구분선 제외
 _BOX_MAX_AREA = 0.85     # 페이지 면적의 이 비율을 넘으면 페이지 테두리·배경
 _BOX_X_TOL = 2.0         # 좌우가 이만큼 안에서 같으면 같은 상자의 위·아래 조각(pt)
+# 곁단(사이드바) 상자 — 좁지만 길다. 폭 하한 하나로만 재면 통째로 떨어진다(F06 ⓐ 실측:
+# 사회문화 p194 "우리나라의 다문화 교육 정책" 곁단이 84.5pt/595pt = 0.142로 0.20에 걸려
+# 미검출). 아이콘·라벨은 가로세로가 **둘 다** 작으므로 높이로 가른다.
+_BOX_SIDE_MIN_W = 0.12   # 아래 높이 조건을 만족할 때의 폭 하한
+_BOX_SIDE_MIN_H = 60.0   # 이보다 높으면 '좁고 긴 상자'로 본다(pt)
+# 판면 밖으로 흘러나가는 도형은 **도련 장식**이다 — 글상자는 판면 안에 그려진다.
+# (F06 ⓑ 실측: p194 머리띠 배너가 x −166.9~386.4로 판면을 넘나드는 곡선 리본 22겹인데,
+#  클리핑만 하고 받아들이면 제목 "자료 탐구"를 감싼 빈 글상자가 두 겹으로 붙는다.)
+_BOX_IN_PAGE = 0.9       # 원래 넓이의 이 비율은 판면 안이어야 한다
 
 
 def page_is_blank(pdf_data: bytes, page_no: int) -> bool:
@@ -615,6 +624,35 @@ def _disp(bbox, rot) -> "fitz.Rect":
     return r
 
 
+# 획이 테두리에서 이만큼 안쪽으로 들어가면 사각형이 아니다(둥근 모서리 여유 포함)
+_BOX_HUG_TOL = 0.12      # 짧은 변 대비
+_BOX_HUG_MIN = 2.0       # 최소 허용폭(pt)
+
+
+def _hugs_border(g, r, rot) -> bool:
+    """그 도형이 **사각형 테두리**인가 — 모든 획이 bbox 변에 붙어 있는가.
+
+    종전에는 도형의 bbox만 보고 글상자로 삼았다. 그러면 **속을 가로지르는 그림**이
+    전부 상자가 된다 — 실측 EBS-E26-009 p0007의 삼각형 ABC 도형(98×65pt)이 꼭짓점
+    라벨을 품은 '글상자'로 잡혔다. 테두리는 변만 그리고 속은 비운다는 것이 가르는 신호다.
+    둥근 모서리 상자는 모서리 곡선이 변 근처라 그대로 통과한다.
+
+    ★ 재는 것은 **직선 토막의 가운데**다. 꼭짓점만 보면 삼각형을 못 거른다 — 꼭짓점은
+      어떤 도형이든 제 bbox 변에 닿기 때문이다. 빗변의 가운데는 속을 지난다.
+      곡선(둥근 모서리)·`re`는 재지 않는다. 모서리 곡선을 속으로 오인하면 진짜 상자가 떨어진다.
+    """
+    tol = max(_BOX_HUG_MIN, min(r.width, r.height) * _BOX_HUG_TOL)
+    for it in g["items"]:
+        if it[0] != "l":
+            continue
+        p1, p2 = fitz.Point(it[1]) * rot, fitz.Point(it[2]) * rot
+        x, y = (p1.x + p2.x) / 2, (p1.y + p2.y) / 2
+        if (min(abs(x - r.x0), abs(x - r.x1)) > tol
+                and min(abs(y - r.y0), abs(y - r.y1)) > tol):
+            return False
+    return True
+
+
 def box_rects(page) -> list:
     """페이지의 글상자 후보 사각형(표시 좌표 Rect). 겹치는 후보는 큰 것 하나로 묶는다."""
     pr = page.rect
@@ -632,15 +670,27 @@ def box_rects(page) -> list:
         return []
     out: list = []
     for g in drawings:
-        r = _disp(g["rect"], rot)
-        if not r.intersects(pr):
+        raw = _disp(g["rect"], rot)
+        if not raw.intersects(pr):
             continue
-        r = r & pr
-        if r.width < W * _BOX_MIN_W or r.height < _BOX_MIN_H:
+        r = raw & pr
+        # 판면 밖으로 크게 흘러나갔으면 도련 장식이다(위 _BOX_IN_PAGE 주석).
+        if raw.get_area() > 0 and r.get_area() < raw.get_area() * _BOX_IN_PAGE:
+            continue
+        if r.height < _BOX_MIN_H:
+            continue
+        min_w = _BOX_SIDE_MIN_W if r.height >= _BOX_SIDE_MIN_H else _BOX_MIN_W
+        if r.width < W * min_w:
             continue
         if r.get_area() > pr.get_area() * _BOX_MAX_AREA:
             continue
         if "s" not in g["type"]:              # 채움 전용 = 음영·배너(위 주석 참조)
+            continue
+        # 선색이 채움색과 같으면 **보이는 테두리가 없다** — 채움 전용과 다를 바 없는
+        # 음영·마스크다(p194 배너의 흰 리본: fill=(1,1,1) color=(1,1,1)).
+        if "f" in g["type"] and g.get("color") is not None and g.get("color") == g.get("fill"):
+            continue
+        if not _hugs_border(g, r, rot):       # 속을 가로지르는 획 = 그림이지 테두리가 아니다
             continue
         if not any(t in r for t in tblocks):  # 감싼 글이 없다
             continue
