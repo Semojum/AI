@@ -723,7 +723,39 @@ def box_rects(page) -> list:
         if any((r & m).get_area() > r.get_area() * 0.7 for m in merged):
             continue                                     # 어중간하게 겹친다 = 같은 상자
         merged.append(r)
-    return merged
+    return _drop_many_siblings(merged)
+
+
+# 한 상자가 이만큼 넘는 직계 자식을 품으면 그 자식들은 **상자가 아니라 내용**이다.
+# 말풍선·구획 목록이 그렇다(EBS-E26-004 p0116 메신저 지면: 화면 하나에 말풍선 12개).
+# 정답 도서는 그 지면을 상자 하나로 감싸고 말풍선에는 테두리를 치지 않는다.
+# 실측 dev-2027 900쪽, 자식을 가진 상자 82개의 직계 자식 수 분포가 쌍봉이다 —
+#   1개 50 · 2개 16 · 3개 7 · 4개 3 · 5개 1 · (6~9개 **0**) · 10개 2 · 12개 2 · 14개 1
+# 6~9가 통째로 비어 있어 자를 자리가 분명하다. val-2027 846쪽은 최대가 5개라 이 규칙에
+# 걸리는 상자가 아예 없다(무영향) — 근거는 dev 5쪽뿐이라는 뜻이기도 하다.
+_BOX_MANY_KIDS = 8
+
+
+def _drop_many_siblings(rects: list) -> list:
+    """자식이 너무 많은 상자의 **자식들**을 버린다(부모는 남긴다). 위 상수 주석 참조."""
+    if len(rects) <= _BOX_MANY_KIDS:
+        return rects
+    parent: dict[int, int | None] = {}
+    kids: dict[int, int] = {}
+    for i, a in enumerate(rects):
+        best, best_area = None, None
+        for j, b in enumerate(rects):
+            if i == j or not (a in b and a.get_area() < b.get_area() * _BOX_SAME_AREA):
+                continue
+            if best_area is None or b.get_area() < best_area:
+                best, best_area = j, b.get_area()
+        parent[i] = best
+        if best is not None:
+            kids[best] = kids.get(best, 0) + 1
+    crowded = {k for k, n in kids.items() if n >= _BOX_MANY_KIDS}
+    if not crowded:
+        return rects
+    return [r for i, r in enumerate(rects) if parent[i] not in crowded]
 
 
 # ── 정오 표시 ○·× (원장 M-04·C-14) ─────────────────────────────────────────
