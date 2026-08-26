@@ -366,13 +366,28 @@ def _table_tags(table_structure, table_text: str) -> str:
 _ANSWER_CELL_RE = re.compile(r"^(?:[0-9]{1,2}|[\u2460-\u2473])$")
 
 
-def _is_answer_summary(cells: list) -> bool:
-    """정답 요약표인가 — 셀이 전부 맨숫자/원문자 하나면 그렇다."""
-    texts = [str(c.get("text", "") or "").strip() for c in cells]
+def _is_answer_texts(texts: list) -> bool:
+    """셀 글 목록이 정답 요약인가 — 전부 맨숫자/원문자 하나면 그렇다."""
+    texts = [str(t or "").strip() for t in texts]
     texts = [t for t in texts if t]
     if len(texts) < 6:
         return False
     return all(_ANSWER_CELL_RE.match(t) for t in texts)
+
+
+def _is_answer_summary(cells: list) -> bool:
+    """정답 요약표인가(구조 dict 경로)."""
+    return _is_answer_texts([c.get("text", "") for c in cells])
+
+
+def _is_answer_grid(grid: list) -> bool:
+    """정답 요약표인가(HTML·파이프 격자 경로).
+
+    ★ **이 경로가 실제로 도는 자리다**(2026-08-26 실측). d024 경계 파일 60쪽에
+      `table_structure.cells` 가 든 표는 **0개**였다 — MinerU 표는 HTML 로 들어와서
+      `_html_to_grid` 를 탄다. 구조 dict 쪽에만 신호를 걸면 아무 데도 안 걸린다.
+    """
+    return _is_answer_texts([c for row in grid for c in row])
 
 
 def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
@@ -400,17 +415,23 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
     # 아니라 narrative로 떨어져, 격자로 나가야 할 표가 풀어쓰기로 나갔다.
     if (tag_rows := parse_table_tags(text or "")):
         max_col = max(len(r) for r in tag_rows)
+        if max_col >= 3 and _is_answer_grid(tag_rows):
+            return "linear"
         return "linear" if max_col == 2 else "table_grid"
     # table_structure 없음/빈 셀: HTML 표(MinerU) 또는 '|' 격자로 추론(narrative 오분류 방지).
     if _is_html_table(text):
         grid = _html_to_grid(text)      # 여기만 expand=True — 진짜 열 수를 세야 한다
         if grid:
             max_col = max(len(r) for r in grid)
+            if max_col >= 3 and _is_answer_grid(grid):
+                return "linear"
             return "linear" if max_col == 2 else "table_grid"
     rows = [ln for ln in (text or "").splitlines() if "|" in ln]
     if not rows:
         return "narrative"
     max_col = max(len(r.split("|")) for r in rows)
+    if max_col >= 3 and _is_answer_grid([r.split("|") for r in rows]):
+        return "linear"
     return "linear" if max_col == 2 else "table_grid"
 
 

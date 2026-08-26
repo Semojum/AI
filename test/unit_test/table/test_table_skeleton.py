@@ -167,6 +167,17 @@ class TestAnswerSummaryTable:
                           ["비율", "3", "5"]])
         assert _infer_render_mode(st) == "table_grid"
 
+    def test_HTML_표에도_걸린다(self):
+        """★ 실제로 도는 경로다. d024 경계 파일 60쪽에 `table_structure.cells` 가 든 표는
+        **0개**였다 — MinerU 표는 HTML 로 들어온다. 구조 dict 쪽에만 걸면 아무 데도 안 걸린다."""
+        from app.ai.llm.table_opt import _infer_render_mode
+        html = ("<table><tr><td>01</td><td>3</td><td>02</td></tr>"
+                "<tr><td>03</td><td>2</td><td>04</td></tr></table>")
+        assert _infer_render_mode(None, html) == "linear"
+        data = ("<table><tr><td>구분</td><td>1900</td><td>1950</td></tr>"
+                "<tr><td>인구</td><td>12</td><td>20</td></tr></table>")
+        assert _infer_render_mode(None, data) == "table_grid"
+
     def test_작은_표는_안_건드린다(self):
         """셀이 여섯 개도 안 되면 정답 요약표로 보지 않는다(좁게 잡는다)."""
         from app.ai.llm.table_opt import _infer_render_mode
