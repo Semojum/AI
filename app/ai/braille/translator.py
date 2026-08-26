@@ -1770,6 +1770,42 @@ def _decode_hancom_math(text: str) -> str:
     return text
 
 
+# ── 초안 묵자 정화 (대표 지시 2026-08-26) ──────────────────────────────────
+# **"점자에 깨진 묵자는 어떠한 경우에도 들어가면 안 된다."**
+#
+# 점자 경로는 `sanitize_for_braille` 가 PUA·제어문자를 닫는데, **초안 묵자는 그 길을
+# 안 탄다** — `pipeline._draft_print_text` 가 따로 만든다. 그래서 점자는 멀쩡한데
+# 점역사가 화면에서 보는 묵자에 `` 같은 글자가 그대로 떴다(desk d025 실측 9건).
+# 오늘 `_draft_print_text` 가 걸린 것이 두 번째다(F10 들여쓰기에 이어) — 이 함수는
+# "점자 경로에 있는 처리가 묵자 경로에 없다" 는 구조적 구멍 자리다.
+#
+# ⚠ `sanitize_for_braille` 를 통째로 부르지 않는다. 그건 전각 문장부호·점 이음선까지
+#   바꾸는데 초안 묵자는 **사람이 읽는 원문**이라 그 배치를 보존해야 한다.
+#   여기서는 **점자로 갈 수 없는 글자만** 손댄다.
+_MOJIBAKE_RE = re.compile(r"[ÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝ]")
+_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_PUA_LEFT_RE = re.compile(r"[\ue000-\uf8ff]")
+
+
+def normalize_print_draft(text: str, where: str = "") -> str:
+    """초안 묵자에서 **점자로 못 가는 글자**를 아는 만큼 되살리고, 남으면 로그로 드러낸다.
+
+    되살리는 것 — 아는 PUA 글리프(`_PUA_TO_TEXT`) · 한컴 수식 글꼴 흔적(`_decode_hancom_math`).
+    못 되살리는 것 — 그대로 두되 **무엇이 어디에 남았는지 로그로 남긴다.** 추정 치환은 안 한다.
+    """
+    if not text:
+        return text
+    for _pua, _word in _PUA_TO_TEXT.items():
+        text = text.replace(_pua, _word)
+    text = _decode_hancom_math(text)
+    text = _CTRL_RE.sub("", text)                      # 제어문자는 볼 것이 없다
+    left = sorted(set(_PUA_LEFT_RE.findall(text)) | set(_MOJIBAKE_RE.findall(text)))
+    if left:
+        logger.warning("초안 묵자에 점자로 못 가는 글자 %s 남음%s: %.60s",
+                       "".join(left), f" ({where})" if where else "", text)
+    return text
+
+
 def sanitize_for_braille(text: str) -> str:
     """braillify가 거부하는 문자를 안전화(요소 격리·빈 결과 금지).
 
