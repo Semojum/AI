@@ -1734,6 +1734,7 @@ def _draft_print_text(text: str) -> str:
       돌려주므로 그걸 먼저 태워 환산한 뒤 나머지 태그를 지운다.
     """
     from app.ai.braille.tag_names import strip_indent_tags
+    from app.ai.braille.translator import normalize_print_draft
 
     body, indents = strip_indent_tags(text or "")
     if indents:
@@ -1741,6 +1742,9 @@ def _draft_print_text(text: str) -> str:
     # ⚠ .strip() 을 그대로 쓰면 **첫 줄 들여쓰기를 먹는다**(`<!2칸>가나다` → '가나다').
     #   앞뒤 빈 줄만 떼고 각 줄의 오른쪽 공백만 다듬는다.
     out = _DRAFT_TAG_RE.sub("", body).strip("\n")
+    # ★ 점자에 깨진 묵자가 들어가면 안 된다(대표 지시 2026-08-26). 점자 경로만 정화하고
+    #   여기를 빼먹어서 초안 묵자에 PUA 글자가 그대로 떴다. 남는 것은 로그로 드러낸다.
+    out = normalize_print_draft(out, where="draft_print")
     return "\n".join(ln.rstrip() for ln in out.split("\n"))
 
 
