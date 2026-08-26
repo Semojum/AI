@@ -363,16 +363,33 @@ def _table_tags(table_structure, table_text: str) -> str:
 # 낱말(한글·로마자)이 있다. 그게 하나도 없고 두 자리 이하 숫자만 있으면 정답 요약표다.
 # ⚠ 좁게 잡는다. 열이 3 이상이고 셀이 6개 이상일 때만 본다 — 2열은 이미 linear 로 가고,
 #   작은 표를 잘못 뒤집으면 진짜 데이터 표가 테두리만 두른 평문이 된다.
-_ANSWER_CELL_RE = re.compile(r"^(?:[0-9]{1,2}|[\u2460-\u2473])$")
+# 셀 하나의 꼴 — "번호" 또는 "번호 답"(한 셀에 둘이 같이 들어온다). 실측 실물:
+#   ['언어', '01', '01 3', '02 3', '03 2', …]  ← EBS-E26-004 ans p0003
+_ANSWER_CELL_RE = re.compile(
+    r"^(?:[0-9]{1,2}|[\u2460-\u2473])(?:\s+(?:[0-9]{1,2}|[\u2460-\u2473]))?$")
+_ANSWER_MIN_RATIO = 0.8   # 이만큼이 '번호[ 답]' 이면 정답 요약표
+_ANSWER_LABEL_MAX = 4     # 나머지는 '언어'·'매체'·'1회' 같은 짧은 소제목이어야 한다
 
 
 def _is_answer_texts(texts: list) -> bool:
-    """셀 글 목록이 정답 요약인가 — 전부 맨숫자/원문자 하나면 그렇다."""
+    """셀 글 목록이 정답 요약인가.
+
+    ★ 첫 판은 "전부 맨숫자 하나" 로 봤다가 실물에서 안 걸렸다(2026-08-26 실측).
+      실제 셀은 **한 칸에 '번호 답' 이 같이** 들어오고(`'01 3'`), 사이사이에 소단원
+      소제목(`'언어'`·`'매체'`·`'1회'`)이 섞인다. 그래서 **비율**로 본다 —
+      80% 이상이 '번호[ 답]' 이고 나머지는 넉 자 이하 짧은 이름표일 때만 정답 요약표다.
+      진짜 데이터 표는 어딘가에 긴 머리글이 있어 여기 안 걸린다
+      (실측: 조음 위치·방법 표 0% · 자료 취합 표 0%).
+    """
     texts = [str(t or "").strip() for t in texts]
     texts = [t for t in texts if t]
     if len(texts) < 6:
         return False
-    return all(_ANSWER_CELL_RE.match(t) for t in texts)
+    ok = [t for t in texts if _ANSWER_CELL_RE.match(t)]
+    if len(ok) < _ANSWER_MIN_RATIO * len(texts):
+        return False
+    # 안 걸린 나머지는 짧은 이름표여야 한다 — 긴 글이 섞이면 데이터 표다.
+    return all(len(t) <= _ANSWER_LABEL_MAX for t in texts if not _ANSWER_CELL_RE.match(t))
 
 
 def _is_answer_summary(cells: list) -> bool:

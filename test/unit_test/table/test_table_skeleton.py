@@ -148,10 +148,19 @@ class TestAnswerSummaryTable:
                           for r, row in enumerate(rows) for c, t in enumerate(row)]}
 
     def test_정답표는_테두리만(self):
+        """실물 셀 꼴 — 한 칸에 '번호 답' 이 같이 들어오고 소단원 소제목이 섞인다
+        (EBS-E26-004 ans p0003 실측)."""
         from app.ai.llm.table_opt import _infer_render_mode
-        st = self._cells([["01", "3", "02", "4", "03", "3"],
-                          ["01", "4", "02", "4", "03", "4"]])
+        st = self._cells([["언어", "01", "01 3", "02 3", "03 2", "04 3"],
+                          ["언어", "02", "01 4", "02 4", "03 3", "04 4"]])
         assert _infer_render_mode(st) == "linear"
+
+    def test_긴_머리글이_섞이면_데이터표다(self):
+        """넉 자를 넘는 이름이 섞이면 정답 요약표가 아니다 — 실측 반례."""
+        from app.ai.llm.table_opt import _infer_render_mode
+        st = self._cells([["조음 위치조음 방법", "양순음(입술소리)", "치조음(있몸소리)"],
+                          ["파열음", "01 3", "02 3"]])
+        assert _infer_render_mode(st) == "table_grid"
 
     def test_원문자_정답도_같다(self):
         from app.ai.llm.table_opt import _infer_render_mode
@@ -171,8 +180,8 @@ class TestAnswerSummaryTable:
         """★ 실제로 도는 경로다. d024 경계 파일 60쪽에 `table_structure.cells` 가 든 표는
         **0개**였다 — MinerU 표는 HTML 로 들어온다. 구조 dict 쪽에만 걸면 아무 데도 안 걸린다."""
         from app.ai.llm.table_opt import _infer_render_mode
-        html = ("<table><tr><td>01</td><td>3</td><td>02</td></tr>"
-                "<tr><td>03</td><td>2</td><td>04</td></tr></table>")
+        html = ("<table><tr><td>언어</td><td>01</td><td>01 3</td></tr>"
+                "<tr><td>02 3</td><td>03 2</td><td>04 3</td></tr></table>")
         assert _infer_render_mode(None, html) == "linear"
         data = ("<table><tr><td>구분</td><td>1900</td><td>1950</td></tr>"
                 "<tr><td>인구</td><td>12</td><td>20</td></tr></table>")
