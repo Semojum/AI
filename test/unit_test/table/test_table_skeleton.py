@@ -132,3 +132,43 @@ def _is_border(line: str) -> bool:
     """지침형 테두리(⠿⠛…⠿·⠿⠶…⠿) 포함 판정."""
     t = line.strip()
     return bool(t) and t[0] == "⠿" and t[-1] == "⠿" and set(t) <= {"⠿", "⠛", "⠶"}
+
+
+class TestAnswerSummaryTable:
+    """정답 요약표는 격자가 아니다 (biz B019, dev-2027 실측).
+
+    답지의 "문항번호 정답번호" 요약은 §3.1 이 말하는 표가 아니라 **번호: 값 나열**이다.
+    gold 는 표 구분선을 **아예 안 쓰고** 테두리만 둘러 평문으로 적는다.
+    표 감사 296건 중 **203건(69%)이 이 한 유형**이고 그중 183건이 한 쪽에 몰려 있다.
+    """
+
+    @staticmethod
+    def _cells(rows):
+        return {"cells": [{"row": r, "col": c, "text": t}
+                          for r, row in enumerate(rows) for c, t in enumerate(row)]}
+
+    def test_정답표는_테두리만(self):
+        from app.ai.llm.table_opt import _infer_render_mode
+        st = self._cells([["01", "3", "02", "4", "03", "3"],
+                          ["01", "4", "02", "4", "03", "4"]])
+        assert _infer_render_mode(st) == "linear"
+
+    def test_원문자_정답도_같다(self):
+        from app.ai.llm.table_opt import _infer_render_mode
+        st = self._cells([["1", "④", "2", "④", "3", "②"],
+                          ["5", "⑤", "6", "①", "7", "⑤"]])
+        assert _infer_render_mode(st) == "linear"
+
+    def test_진짜_데이터표는_격자로_남는다(self):
+        """머리글 낱말이 하나라도 있으면 데이터 표다 — 뒤집으면 안 된다."""
+        from app.ai.llm.table_opt import _infer_render_mode
+        st = self._cells([["구분", "1900", "1950"],
+                          ["인구", "12", "20"],
+                          ["비율", "3", "5"]])
+        assert _infer_render_mode(st) == "table_grid"
+
+    def test_작은_표는_안_건드린다(self):
+        """셀이 여섯 개도 안 되면 정답 요약표로 보지 않는다(좁게 잡는다)."""
+        from app.ai.llm.table_opt import _infer_render_mode
+        st = self._cells([["1", "2", "3"], ["4"]])
+        assert _infer_render_mode(st) == "table_grid"

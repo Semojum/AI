@@ -348,6 +348,33 @@ def _table_tags(table_structure, table_text: str) -> str:
     return build_table_tags(_normalize_grid(grid)) if grid else table_text
 
 
+# ── 정답 요약표는 격자가 아니다 (biz B019, 2026-08-26) ──────────────────────
+# 답지의 "문항번호 정답번호" 요약은 §3.1 이 말하는 표가 아니다. 행·열 관계를 읽는
+# 자료가 아니라 **번호: 값 나열**이다. gold 는 여기에 표 구분선을 **아예 안 쓰고**
+# 테두리만 둘러 평문으로 적는다.
+#
+#   우리   【글상자】 → 【표 구분선】 → `01: 01 3  02 3  03 2 …`  (열 정렬용 2칸 공백)
+#   gold   【글상자】 → `(01)` 소제목 한 줄 → `01 ③  02 ③  03 ②` (한 칸)
+#
+# 실측(biz B019, dev-2027 d024): 표 감사 296건 중 **203건(69%)이 이 한 유형**이고,
+# 그중 183건이 한 쪽(EBS-E26-004 ans p0003)에 몰려 있다. 표 축 과잉 1.59배의 압도 원인이다.
+#
+# 신호 — **셀이 전부 맨숫자이거나 원문자 하나**다. 진짜 데이터 표는 어딘가에 머리글
+# 낱말(한글·로마자)이 있다. 그게 하나도 없고 두 자리 이하 숫자만 있으면 정답 요약표다.
+# ⚠ 좁게 잡는다. 열이 3 이상이고 셀이 6개 이상일 때만 본다 — 2열은 이미 linear 로 가고,
+#   작은 표를 잘못 뒤집으면 진짜 데이터 표가 테두리만 두른 평문이 된다.
+_ANSWER_CELL_RE = re.compile(r"^(?:[0-9]{1,2}|[\u2460-\u2473])$")
+
+
+def _is_answer_summary(cells: list) -> bool:
+    """정답 요약표인가 — 셀이 전부 맨숫자/원문자 하나면 그렇다."""
+    texts = [str(c.get("text", "") or "").strip() for c in cells]
+    texts = [t for t in texts if t]
+    if len(texts) < 6:
+        return False
+    return all(_ANSWER_CELL_RE.match(t) for t in texts)
+
+
 def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
     if table_structure:
         if rm := table_structure.get("render_mode"):
@@ -360,6 +387,8 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
                 return "linear"
             if max_row == 1:
                 return "transposed"
+            if max_col >= 3 and _is_answer_summary(cells):
+                return "linear"        # 정답 요약표 — 위 주석(biz B019)
             # 3열 이상 = **격자형**(2026-08-06 판정 번복 — 원장 C-01a).
             # 종전 기본은 풀어쓰기였다. gold 실측이 뒤집었다 — dev-2027의 테두리 표 445개 중
             # 383개(86%)가 격자형 '행제목: 값  값' 형식이고, 우리 격자형 렌더러가 내는
