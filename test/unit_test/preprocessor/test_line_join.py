@@ -224,3 +224,7 @@ def test_seam_no_space_splits_by_script():
     assert not _seam_no_space("‘용광로(melting", "pot) 정책’")
     assert not _seam_no_space("Not In My", "Back Yard)")
     assert _seam_no_space("inter-", "national")            # 하이픈 분철은 붙임
+    # ★ 앞줄 끝이 로마자인 것만으로 띄우면 조사가 떨어진다(dev-2027 실측)
+    assert _seam_no_space("어떤 병원체 X", "를 알아보기 위해")   # 'X를' 은 한 어절
+    assert _seam_no_space("제", "2난모 세포")                  # 숫자는 붙임
+    assert not _seam_no_space("건강한 식물이", "X에 감염된")     # 뒷줄이 로마자 낱자 → 띄움
