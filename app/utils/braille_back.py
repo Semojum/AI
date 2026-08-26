@@ -890,6 +890,18 @@ def _decode_line(s: str) -> str:
                 i = _r[1]
                 continue
 
+        # 닫는 홑화살괄호 ⠶⠂ — 규정 문장부호표(규정_텍스트.txt 2191~2192).
+        # ⠶ 는 **받침 ㅇ과 같은 셀**이라 탐욕 매칭이 앞 음절에 붙여 먹는다(보기〉 → 보깅,).
+        # 다만 `강,`(받침 ㅇ + 쉼표)와 셀이 겹치므로 **앞에 닫히지 않은 〈 가 있을 때만** 부호로 본다.
+        # 실측 dev-2027 900쪽: gold 가 〈보기〉를 702회 쓴다(작은따옴표꼴 0회).
+        if (best_ln >= 2 and s[i + best_ln:i + best_ln + 1] == "⠂"
+                and s[i + best_ln - 1] == "⠶" and s[i:i + best_ln - 1] in _COMBINED
+                and s.count("⠐⠶", 0, i) > "".join(out).count("〉")):
+            out.append(_COMBINED[s[i:i + best_ln - 1]])
+            out.append("〉")
+            i += best_ln + 1
+            continue
+
         # 닫는 작은따옴표 ⠴⠄ — 규정 문장부호표의 `0'`(규정_텍스트.txt 2147~2154).
         # ⠴는 **받침 ㅎ과 같은 셀**이라 탐욕 매칭이 앞 음절에 붙여 먹는다(기’ → 깋').
         # 뒤 셀이 ⠄면 부호가 맞다 — 홀로 선 ⠄는 한국어 음절에 없다.
