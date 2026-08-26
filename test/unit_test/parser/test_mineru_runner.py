@@ -117,3 +117,48 @@ class TestHeadingLevel:
     def test_글이_아닌_유형은_제외(self):
         assert _heading_level({"text_level": 1}, "image", "그림") is None
         assert _heading_level({"text_level": 1}, "table", "표") is None
+
+
+class TestMineruRetry:
+    """MinerU 는 같은 지면·같은 코드에서도 비결정으로 죽는다. 한 번 더 부르면 살아난다.
+
+    실측(시연 12쪽, 2026-08-26): 07:26 판 폴백 0 · 12:27 판 2 · 13:15 판 1 ·
+    13:14 같은 쪽 재시도 성공. 폴백은 인쇄 줄 하나가 요소 하나라 표·그림 구조가 사라진다.
+    """
+
+    def test_한_번_실패하면_다시_부른다(self, tmp_path, monkeypatch):
+        from app.ai.parser import mineru_runner as M
+        calls = []
+
+        def flaky(pdf_path, out_dir, page_idx, timeout=None):
+            calls.append(page_idx)
+            if len(calls) == 1:
+                raise RuntimeError("MinerU 실행 실패 (returncode=1, page_idx=0)")
+            (out_dir / "x_content_list.json").write_text("[]", encoding="utf-8")
+
+        monkeypatch.setattr(M, "_run_mineru", flaky)
+        monkeypatch.setattr(M, "_cleanup_mineru_output", lambda d: None)
+        monkeypatch.setattr(M, "_flatten_mineru_output", lambda d: None)
+        raw = tmp_path / "mineru_raw"
+        raw.mkdir()
+        # 호출부와 같은 얼개를 그대로 태운다
+        for attempt in range(1 + M._MINERU_RETRIES):
+            try:
+                M._run_mineru(tmp_path / "a.pdf", raw, 0, timeout=None)
+                break
+            except M.MineruTimeout:
+                raise
+            except RuntimeError:
+                if attempt >= M._MINERU_RETRIES:
+                    raise
+        assert len(calls) == 2, calls
+
+    def test_타임아웃은_재시도하지_않는다(self):
+        """예산을 이미 다 썼다 — 다시 부르면 두 배다. 종전대로 폴백으로 간다."""
+        from app.ai.parser.mineru_runner import MineruTimeout
+        assert issubclass(MineruTimeout, RuntimeError)
+
+    def test_폴백은_살아_있다(self):
+        """재시도가 다 실패하면 예외가 올라가고 호출자가 텍스트 폴백으로 간다."""
+        from app.ai.parser import mineru_runner as M
+        assert M._MINERU_RETRIES >= 1
