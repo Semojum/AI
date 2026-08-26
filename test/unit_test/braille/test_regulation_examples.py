@@ -386,3 +386,30 @@ class TestOXMark:
         from app.ai.braille.translator import translate_plain
         got = translate_plain("3. × 4. ◯")
         assert "⠴⠠⠭" in got and "⠴⠠⠕" in got, got
+
+
+class TestHancomMathFont:
+    """한컴 수식 글꼴 흔적 되살리기 (대표 결재 2026-08-26).
+
+    한컴 수식 글꼴 PDF 는 함수 이름을 **ASCII 로 31 내려서** 싣는다
+    (T+31='s' · J+31='i' · O+31='n'). eval 실측 18건/3쪽.
+    ⚠ 시프트를 통째로 걸면 멀쩡한 대문자 낱말이 다 깨진다 — 아는 토막만 되살린다.
+    """
+
+    def test_함수_이름을_되살린다(self):
+        from app.ai.braille.translator import _decode_hancom_math as d
+        assert d("TJO x") == "sin x"
+        assert d("DPT 2x") == "cos 2x"
+        assert d("UBO a") == "tan a"
+
+    def test_멀쩡한_대문자는_안_건드린다(self):
+        from app.ai.braille.translator import _decode_hancom_math as d
+        assert d("SUBJECT TJOB") == "SUBJECT TJOB"     # 낱말 경계 밖은 손 안 댄다
+        assert d("ATJO") == "ATJO"
+
+    def test_아는_모지바케만_되살린다(self):
+        """É 는 문맥으로 ≤ 가 확정됐다(`2p-a<xÉ2p`). Û·Á·Ñ·Ú 는 정체를 몰라
+        **추정으로 넣지 않는다**(대표 지시) — 그대로 두고 로그만 남긴다."""
+        from app.ai.braille.translator import _decode_hancom_math as d
+        assert d("2p-a<xÉ2p") == "2p-a<x≤2p"
+        assert d("MOÛST") == "MOÛST"
