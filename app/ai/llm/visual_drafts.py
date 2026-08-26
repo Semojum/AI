@@ -290,6 +290,28 @@ def _shorten(text: str, limit: int = 45) -> str:
     return t[:limit].rstrip(" -·,")
 
 
+# ── 같은 말 되풀이 막기 (2026-08-27) ─────────────────────────────────────────
+# 개조식 설명은 **제목 줄 · 유형+짧은 설명 줄 · 전사 항목**으로 선다. 캡셔너가 제목과
+# 같은 말을 항목으로 또 내면 점역사가 지워야 할 줄이 생긴다. 실측(시연 12쪽 개조식 12개):
+#   그래프: $y=g(x)$의 그래프      ← 유형 줄
+#   y=g(x)의 그래프                ← 같은 말. 지울 줄
+#   직선 y=-x 형태
+# `desc != title` 로만 걸러서는 못 잡는다 — 수식 구분자(`$`)·공백·문장부호만 달라도 통과한다.
+# 그래서 **가늠자를 씻어서** 비교한다. 시연 12쪽에서 2줄이 지워지고 오탐은 0이었다.
+# ⚠ 제목·유형 줄하고만 견준다. 앞선 항목 전부와 견주면 위계가 반복되는 정상 항목을 지운다.
+_GIST_STRIP = re.compile(r"[\s$·,.…‘’“”\"'()]")
+
+
+def _gist(s: str) -> str:
+    return _GIST_STRIP.sub("", s or "")
+
+
+def _same_gist(a: str, b: str) -> bool:
+    """두 줄이 사실상 같은 문구인가 — 구분자·공백·문장부호 차이는 무시한다."""
+    na, nb = _gist(a), _gist(b)
+    return bool(na) and bool(nb) and (na == nb or na in nb or nb in na)
+
+
 def _outline_text_indents(
     label: str, title: str, desc: str, items: list[tuple[int, str]], kind: str = ""
 ) -> tuple[str, list[int]]:
@@ -301,7 +323,7 @@ def _outline_text_indents(
     title = (title or "").strip()
     desc = (desc or "").strip()
     desc = _strip_dup_type(desc, label)
-    head = f"{label}: {desc}" if (desc and desc != title) else label
+    head = f"{label}: {desc}" if (desc and not _same_gist(desc, title)) else label
     if _WRAP_STYLE == "box":
         # box(A/B): 블록 전체를 글상자로 — 제목은 위 테두리 안(BBPG-1.2.5), 유형/설명은 첫 줄.
         lines.append(f"<!상자>{title}<!/상자>"); indents.append(0)
@@ -320,6 +342,8 @@ def _outline_text_indents(
         text = (text or "").strip()
         if not text:
             continue
+        if _same_gist(text, title) or _same_gist(text, head):
+            continue                      # 제목·유형 줄을 그대로 되풀이한 항목은 지운다
         lines.append(text); indents.append(_OUTLINE_BASE + _OUTLINE_STEP * max(0, level))  # 전사 §6.3.4(2)①
     if _WRAP_STYLE == "box":
         lines.append("<!상자끝><!/상자끝>"); indents.append(0)
