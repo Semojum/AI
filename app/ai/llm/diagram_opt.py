@@ -88,6 +88,23 @@ _RULE_ID = "JAJAK-6.6.1"   # 도표 골격 (점자 자료 제작 지침 §6.6)
 #   실물로 확정하려면 지침 p137~138 원문을 눈으로 봐야 한다.
 _TITLE_INDENT = 4         # §6.3.3(1) 제목 5칸      — 정답 예6-25[0]
 _TYPE_NOTE_INDENT = 4     # §2.1.8(3) 시각 자료 설명 점역자 주 5칸 — 정답 예6-1·6-7·6-8[0]
+
+# ── 점자로 나가는 유형 제시어 (대표 결재 2026-08-26) ─────────────────────────
+# **두 층을 나눈다.**
+#   피커에 뜨는 이름   흐름도 · 개념도 · 조직도 · 가계도 · 연대표 …   그대로 둔다
+#                      (점역사가 무엇을 고르는지 알아야 한다)
+#   점자로 나가는 글   【점역자주】**그림:** …                        규정 형식으로 적는다
+#
+# 근거 — 지침 §6.3.4(1) 원문: "원본 제목에 **'사진', '그림'** 등과 같은 시각 자료 유형
+#   제시어가 없더라도 점역자 주표를 사용하여 시각 자료 유형을 표기한다."
+#   규정이 드는 유형 제시어가 '사진'·'그림'이지 '흐름도'·'개념도'가 아니다.
+# gold 실측도 같다 —
+#   · 도형 그림 11건 **전부** `그림:` · 개념도·모식도 0건 (biz, dev-2027 900쪽)
+#   · 흐름도도 `【점역자주】그림: …` 이지 '흐름도'가 아니다 (desk D020)
+#   · 그래프 88건도 `그림: 가로축은 …` 로 시작한다 (biz F23)
+#   · TN 블록 755개 중 그림설명이 438(58%) (biz B012)
+# ★ 이 값을 바꾸려면 대표 결재가 필요하다. 피커 이름(`_TYPE_LABEL`)과 헷갈리지 말 것.
+_OUTPUT_TYPE_WORD = "그림"
 _NOTE_INDENT = 2          # 형식 안내 점역자 주 3칸 — 정답 예6-19·6-22·6-23·6-24·6-25
 _ITEM_INDENT = 2          # 규정이 칸을 안 정한 유형(양식·연대표·화면이미지·슬라이드)의 항목 3칸
 _BRANCH_INDENT = 2        # §6.6.2(4)⑥ 선택지 3칸   — 정답 예6-19
@@ -182,7 +199,7 @@ def assemble_concept_map(structure: dict) -> tuple[str, list[int]]:
 
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!주>개념도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)        # §6.3.4(1)
+    lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
 
     depth = _tree_depth(nodes)
     _flatten_concept(nodes, 0, depth, lines, indents)                        # §6.6.1(2)(3)
@@ -204,7 +221,7 @@ def assemble_flowchart(structure: dict) -> tuple[str, list[int]]:
 
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!주>흐름도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)        # §6.3.4(1)
+    lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
 
     for box in boxes:
         no = box.get("no", "")
@@ -245,7 +262,7 @@ def assemble_org_chart(structure: dict) -> tuple[str, list[int]]:
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
     # §6.3.4(1) 유형 + §6.6.5(3) 들여쓰기 방식 점역자 주
-    lines.append("<!주>조직도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
+    lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
     # ★ 2026-08-12 — 칸 수를 밝힌다. 정본(자료지침 예6-22)은 "하위에 속한 기구를 **2칸씩**
     #   들여 쓰기함"이라고 쓴다. 점자에는 선·상자가 없어 위계가 들여쓰기로만 남는데,
     #   몇 칸이 한 단계인지 말해 주지 않으면 독자는 빈칸을 세도 단계를 못 센다.
@@ -269,14 +286,14 @@ def assemble_family_tree(structure: dict) -> tuple[str, list[int]]:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
 
     if (structure.get("mode") or "top_down").strip() == "bottom_up":
-        lines.append("<!주>가계도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
+        lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
         lines.append("<!주>후손에서 선조 순(상향식)<!/주>"); indents.append(_NOTE_INDENT)
         for it in structure.get("items") or []:                             # §6.6.4(3)①
             t = (it.get("text") or "").strip()
             if t:
                 lines.append(t); indents.append(_BOTTOMUP_INDENT)           # §6.6.4(3)②
     else:
-        lines.append("<!주>가계도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
+        lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
         lines.append("<!주>선조에서 후손 순(하향식)<!/주>"); indents.append(_NOTE_INDENT)
         _flatten_hier(structure.get("nodes") or [], 0, lines, indents)      # §6.6.4(2)①②
     return "\n".join(lines), indents
@@ -304,7 +321,7 @@ def assemble_timeline(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!주>연대표<!/주>:"); indents.append(_TYPE_NOTE_INDENT)        # §6.3.4(1)
+    lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
 
     for date, texts in _group_timeline(structure.get("events") or []):
         texts = [t for t in texts if t]
@@ -332,7 +349,7 @@ def assemble_form(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!주>양식<!/주>:"); indents.append(_TYPE_NOTE_INDENT)          # §6.3.4(1)
+    lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)          # §6.3.4(1)
     lines.append(_BOX_TOP); indents.append(0)                               # §6.6.3(2) 글상자
     for it in structure.get("items") or []:
         t = (it.get("text") or it.get("label") or "").strip()
@@ -355,7 +372,7 @@ def assemble_screen_image(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!주>화면 이미지<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
+    lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
     lines.append(_BOX_TOP); indents.append(0)                               # §6.6.7(1) 글상자 테두리
     # §6.6.7(3)① 구획별 표기 — 구획은 **빈 줄**로 가르고 내용은 전부 3칸(정답 예6-24).
     # 종전에는 구획명 1칸·내용 3칸으로 층을 뒀는데 정답에는 그런 층이 없다.
@@ -385,7 +402,7 @@ def assemble_slide(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!주>발표용 슬라이드<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
+    lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
     for it in structure.get("items") or []:                                 # §6.6.8(2)
         t = (it.get("text") or "").strip()
         if t:

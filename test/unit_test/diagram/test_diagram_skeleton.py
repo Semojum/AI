@@ -60,7 +60,7 @@ class TestConceptAssemble:
     def test_3단계_개조식_전사(self):
         text, indents = assemble_concept_map(_CONCEPT_3)
         lines = text.split("\n")
-        assert lines[0] == "<!주>개념도<!/주>:" and indents[0] == 4   # §2.1.8(3) 5칸
+        assert lines[0] == "<!주>그림<!/주>:" and indents[0] == 4   # §2.1.8(3) 5칸
         # 중심개념부터 하위로(§6.6.1(2)), 7/5/3칸 = 빈칸 6/4/2
         assert lines[1:] == ["생물", "동물", "포유류", "조류", "식물", "속씨식물"]
         assert indents[1:] == [6, 4, 2, 2, 4, 2]
@@ -69,7 +69,7 @@ class TestConceptAssemble:
         text, indents = assemble_concept_map(_CONCEPT_2)
         lines = text.split("\n")
         assert lines[0] == "먹이 사슬" and indents[0] == 4                      # §6.3.3(1) 5칸
-        assert lines[1] == "<!주>개념도<!/주>:"
+        assert lines[1] == "<!주>그림<!/주>:"
         assert (lines[2], indents[2]) == ("생산자", 4) and (lines[3], indents[3]) == ("소비자", 2)
 
 
@@ -77,7 +77,7 @@ class TestFlowAssemble:
     def test_번호_한줄_분기3칸(self):
         text, indents = assemble_flowchart(_FLOW)
         lines = text.split("\n")
-        assert lines[0] == "<!주>흐름도<!/주>:"                      # §6.3.4(1)
+        assert lines[0] == "<!주>그림<!/주>:"                      # §6.3.4(1)
         # §6.6.2(4)⑥ "3o 선택사항 3o 목적지" — 정답 예6-19(⠒⠕ = →)
         assert lines[1:] == ["1 시작", "2 조건?", "→ 예 → 3", "→ 아니오 → 4", "3 처리", "4 종료"]
         # 상자 1칸(빈칸0), 분기 선택지 3칸(빈칸2)
@@ -211,3 +211,33 @@ class TestCaptionTypeWord:
     def test_유형어가_없으면_빈값(self):
         from app.ai.llm.diagram_opt import _caption_type_word
         assert _caption_type_word("concept_map", "삼각형 ABC 와 점 H") == ""
+
+
+class TestOutputTypeWord:
+    """점자로 나가는 유형 제시어는 `그림` 하나다 (대표 결재 2026-08-26).
+
+    두 층을 나눈다 — **피커에 뜨는 이름**(흐름도·개념도·조직도…)은 그대로 두고,
+    **점자로 나가는 글**만 규정 형식으로 적는다.
+
+    근거는 지침 §6.3.4(1) 원문이다 — "원본 제목에 **'사진', '그림'** 등과 같은 시각 자료
+    유형 제시어가 없더라도 …". 규정이 드는 제시어가 '사진'·'그림'이지 '흐름도'가 아니다.
+    gold 도 같다: 도형 그림 11/11 `그림:` · 흐름도도 `그림:` · 그래프 88건도 `그림:`.
+    """
+
+    def test_점자에는_그림만_나간다(self):
+        from app.ai.llm.diagram_opt import (
+            assemble_flowchart, assemble_org_chart, assemble_concept_map)
+        for asm, st in (
+            (assemble_flowchart, {"boxes": [{"no": "1", "text": "가"}]}),
+            (assemble_org_chart, {"nodes": [{"text": "가", "children": []}]}),
+            (assemble_concept_map, {"items": [(0, "가")]}),
+        ):
+            text, _ = asm(st)
+            assert "<!주>그림<!/주>:" in text, (asm.__name__, text)
+            for word in ("흐름도", "조직도", "개념도"):
+                assert f"<!주>{word}<!/주>" not in text, (asm.__name__, text)
+
+    def test_피커_이름은_그대로다(self):
+        """골격 안 이름(점역사가 고르는 것)은 유형 그대로 남는다."""
+        from app.ai.llm.diagram_opt import _skeleton_label
+        assert "흐름도" in _skeleton_label("flowchart", {})
