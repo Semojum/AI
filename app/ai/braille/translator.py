@@ -484,9 +484,17 @@ _UPPER_ONLY_RE = re.compile(r"^[A-Z0-9 ,.·]+$")
 #   (제40항 도형 △ = ⠸⠬ · `_UNLISTED_SHAPE_RUN_RE` 가 미등재 도형을 △로 모은다),
 #   맞고 틀림 문맥인지를 글만 보고 못 가른다. 실제로 넣어 봤더니 단위 테스트 28건이
 #   깨졌다. 실측(desk dev-2027 78조각)이 잡은 것도 `◯`(U+25EF)와 `×` 둘뿐이다.
-_OX_CELL = {"◯": "⠴⠠⠕", "×": "⠴⠠⠭", "✕": "⠴⠠⠭", "✗": "⠴⠠⠭"}
-_OX_MARK_RE = re.compile(r"([◯×✕✗])")
+# ★ 계열 코드포인트를 **한 자리에** 모은다(2026-08-26 2차). 1차에서 U+25EF 만 넣었더니
+#   `〇`(U+3007)·`⭕`(U+2B55)가 점형이 없어 **빈 문자열로 사라졌다**(eval 실측).
+#   코퍼스 실물은 U+25EF 다(d020 `001/body/0184` "3. × 4. ◯").
+_OX_CELL = {c: "⠴⠠⠕" for c in "◯〇⭕⭘"}
+_OX_CELL.update({c: "⠴⠠⠭" for c in "×✕✖✗"})
+# ⚠ **잇따라 나오면 숨김표다**(원장 B-10) — `◯◯`·`〇〇` 는 빈칸을 가린 것이라
+#   MASK 셀(⠸⠴⠴⠇)로 가야 한다. 맞고 틀림 표시는 늘 낱개로 선다.
+_OX_MARK_RE = re.compile(
+    "(?<![" + "".join(_OX_CELL) + "])([" + "".join(_OX_CELL) + "])(?![" + "".join(_OX_CELL) + "])")
 _OX_OPERAND_RE = re.compile(r"[0-9A-Za-z가-힣]")
+_ITEM_NO_RE = re.compile(r"^[0-9]{1,2}[.)]$")   # 답지 번호 '3.' '4)'
 
 
 def _ox_mark_repl(m: re.Match) -> str:
@@ -497,15 +505,21 @@ def _ox_mark_repl(m: re.Match) -> str:
     `※ ◯ 또는 ×`(끝) · `3. ◯  4. ×`(앞이 마침표) · `×에 표시해`(뒤가 조사라 안 띄운다).
     그래서 **띄어쓰기가 대칭이면서 양옆이 다 피연산자일 때만** 종전 경로에 맡긴다.
     """
+    ch = m.group(1)
+    if ch not in "×✕✖✗":
+        return _OX_CELL[ch]                    # 동그라미 계열은 연산 기호가 아니다
     src = m.string
     left, right = src[:m.start()], src[m.end():]
+    a = left.rstrip().rsplit(" ", 1)[-1]       # 앞 낱말
+    b = right.lstrip().split(" ", 1)[0]        # 뒤 낱말
+    if _ITEM_NO_RE.match(a) and _ITEM_NO_RE.match(b):
+        return _OX_CELL[ch]                    # '3. × 4.' — 답지 번호 사이다
     sp_before = (not left) or left[-1].isspace()
     sp_after = (not right) or right[0].isspace()
-    a, b = left.rstrip(), right.lstrip()
     if (sp_before == sp_after and a and b
-            and _OX_OPERAND_RE.match(a[-1]) and _OX_OPERAND_RE.match(b[0])):
-        return m.group(0)                      # 곱셈이다
-    return _OX_CELL[m.group(1)]
+            and _OX_OPERAND_RE.search(a) and _OX_OPERAND_RE.search(b)):
+        return m.group(0)                      # 곱셈이다 — 종전 경로에 맡긴다
+    return _OX_CELL[ch]
 
 
 # ── 감쌈 붙임표 자리표시자 (x2-a) ─────────────────────────────────────────────
@@ -923,7 +937,6 @@ def _apply_book_style(text: str) -> str:
     text = _BLACK_SQUARE_RUN_RE.sub(lambda m: '□' * len(m.group()), text)
     text = _UNLISTED_SHAPE_RUN_RE.sub(lambda m: '△' * len(m.group()), text)
     text = _ARROW_LABEL_RE.sub(r'\1:', text)
-    text = _OX_MARK_RE.sub(_ox_mark_repl, text)
     text = _BOX_BLANK_RE.sub(_box_blank_repl, text)
     # ★ B-11(원장) — 물결표를 줄표로 바꾸던 줄을 뺐다(2026-08-22).
     #   규정 문장부호표(규정_텍스트.txt 2196~2205)가 **줄표 = ⠤⠤ · 물결표 = ⠈⠔**로 갈라 싣고,
@@ -2009,6 +2022,11 @@ def translate_tagged_text(text: str) -> str:
     text = _normalize_inline_math(text)     # $…$/\(…\) → <!수식> (P1: 수식 라우팅)
     # 구분자 없는 평문 수식(cos 2α=1-2 sin² α)도 같은 경로로 보낸다 — 수학 본문의
     # 16%가 이 형태다(inline_math 모듈이 오탐 없이 구간만 골라 태그를 붙인다).
+    # ★ 맞고 틀림 표시는 **수식 라우팅보다 먼저** 고정한다(2026-08-26 2차).
+    #   `3. × 4. ◯` 를 inline_math 가 `<!수식>× 4.<!/수식>` 으로 삼켜서, 뒤에 도는
+    #   `_apply_book_style` 의 OX 규칙이 그 × 를 아예 못 봤다(곱셈 ⠡ 로 나갔다).
+    #   여기서 점형으로 바꿔 두면 수식 구간 판정에 안 걸린다(`_AMP_RE` 와 같은 수법).
+    text = _OX_MARK_RE.sub(_ox_mark_repl, text)
     text = inline_math.wrap(text)
     if _BOOK_STYLE:
         text = _book_roman_to_cells(text)   # 로마 숫자 섹션번호 → 낱자 점형(도서 관행, 수식 밖만)

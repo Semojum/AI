@@ -367,5 +367,22 @@ class TestOXMark:
     def test_곱셈은_안_건드린다(self):
         """곱셈 × 는 늘 피연산자 사이에 있다 — 여기 걸리면 수식이 깨진다."""
         from app.ai.braille.translator import translate_plain
-        assert "⠴⠠⠭" not in translate_plain("2 × 3")
-        assert "⠴⠠⠭" not in translate_plain("넓이는 3×4이다")
+        for s in ("2 × 3", "넓이는 3×4이다", "가로 × 세로", "2 × 3 = 6",
+                  "반지름×반지름", "넓이 = 3 × 4"):
+            assert "⠴⠠⠭" not in translate_plain(s), s
+
+    def test_계열_코드포인트를_다_잡는다(self):
+        """★ 2026-08-26 2차 — 1차는 U+25EF 만 넣어 `〇`(U+3007)·`⭕`(U+2B55)가
+        점형이 없어 **빈 문자열로 사라졌다**(eval 실측). 매핑 없는 글자가 조용히
+        없어지거나 원문자 그대로 실리면 안 된다."""
+        from app.ai.braille.translator import translate_plain
+        for c in "◯〇⭕":
+            assert translate_plain(c) == "⠴⠠⠕", (c, translate_plain(c))
+        for c in "×✕✖":
+            assert translate_plain(c) == "⠴⠠⠭", (c, translate_plain(c))
+
+    def test_답지_번호_사이는_정오표시다(self):
+        """`3. × 4. ◯` — 앞뒤가 다 답지 번호면 곱셈이 아니다(실물 d020 001/body/0184)."""
+        from app.ai.braille.translator import translate_plain
+        got = translate_plain("3. × 4. ◯")
+        assert "⠴⠠⠭" in got and "⠴⠠⠕" in got, got
