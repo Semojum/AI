@@ -42,6 +42,7 @@ _JOIN_RIGHT_SLACK = 1.2     # 오른쪽 끝에서 모자란 칸 — 한글은 �
                             # 마지막 글자 하나만큼은 늘 남는다
 _JOIN_HEIGHT_TOL = 0.6      # 글자 크기 어긋남(줄 높이 배수)
 _JOIN_NEAR_LINES = 25       # 단 오른쪽 끝을 재려고 볼 위아래 줄 수
+_JOIN_COL_OVERLAP = 0.5     # 같은 단으로 칠 가로 겹침 비율(좁은 쪽 폭 기준)
 _JOIN_MIN_WIDTH = 6.0       # 앞 조각 최소 너비 — 'EBS'·'방사관' 같은 라벨 배제
 _JOIN_FLUSH_MIN = 0.5       # 이웃 줄 중 오른쪽 끝에 닿는 비율의 하한
 
@@ -70,11 +71,25 @@ _ITEM_HEAD_RE = re.compile(
 _CONT_HEAD_RE = re.compile(r'^[가-힣ㄱ-ㅎA-Za-z0-9]')
 
 
+def _x_overlap(a: fitz.Rect, b: fitz.Rect) -> float:
+    """두 줄의 가로 겹침을 **좁은 쪽 폭** 기준 비율로. 0이면 안 겹친다."""
+    ov = min(a.x1, b.x1) - max(a.x0, b.x0)
+    w = min(a.x1 - a.x0, b.x1 - b.x0)
+    return ov / w if w > 0 else 0.0
+
+
 def _col_edge(lines: list[fitz.Rect], bb: fitz.Rect) -> tuple[float, float]:
     """같은 단 이웃 줄들의 (오른쪽 끝, 그 끝에 닿는 줄의 비율).
 
     비율이 잇기 판정의 핵심이다. **넘쳐서 접힌 문단은 거의 모든 줄이 오른쪽 끝에 닿고**,
     시행·목록·낱말 나열은 할 말이 끝나는 데서 줄이 끊겨 끝이 들쭉날쭉하다.
+
+    ★ '같은 단'은 **가로로 절반 이상 겹치는** 줄이다(2026-08-26). 종전에는 1pt 만 겹쳐도
+      같은 단으로 셌는데, 그러면 쪽을 가로지르는 제목 한 줄이 좁은 곁단의 '단 끝'을 통째로
+      끌어올린다 — 시연 p11 곁단은 제 끝이 132pt 인데 제목(100~330pt) 때문에 330pt 로 잡혀
+      flush 0.06 이 나왔고, 그래서 곁단 문단이 줄마다 갈린 채 남았다(F02).
+      같은 쪽 아래쪽 곁단(제목에서 멀어 창 밖)은 flush 0.71 로 제대로 풀렸다 — 같은 코드가
+      제목과의 거리로 갈린 것이다.
 
     ★ 단 끝은 **최댓값**으로 잡는다. '가장 많은 줄이 공유하는 끝'을 쓰면 문단 몇 개를
       더 잇지만 가사·시조가 딸려 온다 — 정형시는 율격이 고정이라 행 길이가 고르고,
@@ -84,7 +99,7 @@ def _col_edge(lines: list[fitz.Rect], bb: fitz.Rect) -> tuple[float, float]:
     line = bb.y1 - bb.y0
     xs = [b.x1 for b in lines
           if b != bb
-          and b.x1 > bb.x0 and b.x0 < bb.x1                    # 가로로 겹침
+          and _x_overlap(b, bb) >= _JOIN_COL_OVERLAP           # 같은 단인가
           and abs(b.y0 - bb.y0) < _JOIN_NEAR_LINES * line]     # 세로로 가까움
     if not xs:
         return 0.0, 1.0
@@ -93,7 +108,34 @@ def _col_edge(lines: list[fitz.Rect], bb: fitz.Rect) -> tuple[float, float]:
     return right, flush / len(xs)
 
 
-def _line_seam(page: fitz.Page, rect: fitz.Rect, text: str) -> str:
+_LATIN_ALPHA_RE = re.compile(r"[A-Za-z]")
+
+
+def _seam_no_space(cur: str, nxt: str) -> bool:
+    """이음매에 공백을 안 넣어도 되는가. 원본 줄 끝 공백이 없을 때만 물어본다.
+
+    한글은 줄이 넘치면 낱말 한가운데서 끊긴다("통신시"+"설") — 붙이는 게 맞다.
+    로마자는 그렇지 않다. 하이픈 없이 줄이 갈렸으면 그 자리는 **원래 띄어쓰기**다
+    ("melting"+"pot" · "My"+"Back" · "프로게스테론은"+"FSH"). 붙이면 낱말이 깨진다.
+    실측(frozen 60쪽): 이 규칙 전에는 그런 자리 3건이 전부 붙어서 나갔다.
+
+    ★ 판정은 **뒷줄 첫 글자**로만 한다. 앞줄 끝이 로마자인 것까지 세면 조사가 떨어진다 —
+      dev-2027 실측에서 '…병원체 X'+'를 알아보기' 가 나왔고 그건 'X를' 이 한 어절이다.
+      숫자도 뺀다('제'+'2난모'). 두 코퍼스 모두에서 확인했다.
+    """
+    a, b = cur.rstrip(), nxt.lstrip()
+    if not a or not b:
+        return True
+    if a.endswith("-"):                 # 하이픈 분철은 붙이는 게 맞다
+        return True
+    # ★ 보는 것은 **뒷줄 첫 글자가 로마자 낱자인가** 하나뿐이다(2026-08-26 dev-2027 실측).
+    #   앞줄 끝이 로마자인 것만으로 띄우면 **조사가 떨어져 나간다** —
+    #   '…병원체 X' + '를 알아보기' 는 'X를' 이 한 어절이라 붙이는 게 맞다.
+    #   숫자도 뺀다('제' + '2난모' 는 붙는다).
+    return not _LATIN_ALPHA_RE.match(b[0])
+
+
+def _line_seam(page: fitz.Page, rect: fitz.Rect, text: str, nxt: str = "") -> str:
     """이을 때 두 조각 사이에 넣을 것.
 
     한 줄이 낱말 한가운데서 잘렸으면 붙여야 하고("있습니"+"다."), 어절 끝에서 잘렸으면
@@ -120,7 +162,9 @@ def _line_seam(page: fitz.Page, rect: fitz.Rect, text: str) -> str:
         return "\n"
     if last.count(" ") < want.count(" "):                            # ②
         return "\n"
-    return " " if last.endswith((" ", " ")) else ""             # ③
+    if last.endswith((" ", "\u00a0")):
+        return " "
+    return "" if _seam_no_space(want, nxt) else " "
 
 
 def _can_join(lines: list[fitz.Rect], a: dict, ab: fitz.Rect, b: dict,
@@ -209,7 +253,8 @@ def _resolve_inner_newlines(el: dict, rect: fitz.Rect, page_lines, col_lines) ->
             starts_new = bool(_ITEM_HEAD_RE.match(nxt.lstrip())) or not _CONT_HEAD_RE.match(nxt.lstrip())
             if same_col and not starts_new and not _SENT_END_RE.search(cur.rstrip()):
                 if raw.count(" ") >= cur.count(" "):
-                    seam = " " if raw.rstrip("\n").endswith((" ", "\u00a0")) else ""
+                    seam = (" " if raw.rstrip("\n").endswith((" ", "\u00a0"))
+                            else ("" if _seam_no_space(cur, nxt) else " "))
                     n += 1
         if seam == "\n":
             out.append("\n" + nxt)
@@ -261,7 +306,7 @@ def join_wrapped_lines(elements: list[dict], page: fitz.Page, *,
             prev = out[-1]
             # ⚠ 이음매는 **마지막 줄의 글**로 판정한다. 이어붙인 prev["content"] 를 주면
             #   두 번째 이음부터 줄 대조가 어긋나 늘 개행으로 물러선다(한 번 밟았다).
-            seam = _line_seam(page, tail, tail_text)
+            seam = _line_seam(page, tail, tail_text, el.get("content") or "")
             prev["content"] = f"{prev['content']}{seam}{el['content']}"
             prev["bbox"] = [min(prev["bbox"][0], bb[0]), min(prev["bbox"][1], bb[1]),
                             max(prev["bbox"][2], bb[2]), max(prev["bbox"][3], bb[3])]

@@ -185,11 +185,17 @@ def test_inner_newlines_are_resolved():
     한 칸 공백이 되어 **낱말을 쪼갠다**("…저 자신과 친구\\n들을 발견하곤…" — 대표 지적).
     한글은 기본 내장 글꼴로 렌더가 안 되므로 여기서는 로마자로 얼개만 태운다 —
     실데이터 확인은 시연 문서로 따로 했다(문단 3개에서 개행 0 · 두 칸 공백 0).
+
+    ⚠ **로마자는 한글의 대역이 못 된다**(2026-08-26). 로마자 줄은 하이픈 없이 낱말
+    한가운데서 갈리지 않는다 — 60쪽 코퍼스의 로마자 경계 개행 223건이 **전부**
+    어절 경계였다(외국어 지문 실측: 'turbed by forces'+'acting on us'). 그래서
+    로마자 이음매는 붙임이 아니라 띄움이다. 한글 낱말 중간 붙임은 글꼴 없이 되는
+    `_seam_no_space` 로 따로 본다(아래 test_seam_no_space_splits_by_script).
     """
     doc = fitz.open()
     page = doc.new_page(width=600, height=800)
-    rows = ["the quick brown fox jumps over the la",     # 낱말 한가운데서 끊긴다
-            "zy dog and then walks away slowly ",        # 어절 끝에서 끊긴다(끝 공백)
+    rows = ["the quick brown fox jumps over the",       # 끝 공백 없이 어절에서 끊긴다
+            "lazy dog and then walks away slowly ",      # 어절 끝에서 끊긴다(끝 공백)
             "because the sun was very bright now"]
     for k, t in enumerate(rows):
         page.insert_text((50, 100 + k * 18), t, fontsize=11)
@@ -199,7 +205,26 @@ def test_inner_newlines_are_resolved():
     out = join_wrapped_lines([el], page, bbox_space="norm1000",
                              image_width=0, image_height=0)
     got = out[0]["content"]
-    assert "the lazy dog" in got, got          # 낱말 한가운데 → 붙임
+    assert "the lazy dog" in got, got          # 로마자 경계 → 한 칸(끝 공백이 없어도)
     assert "slowly because" in got, got        # 어절 끝 → 한 칸
     assert "  " not in got, got                # 두 칸 공백이 생기면 안 된다
     doc.close()
+
+
+def test_seam_no_space_splits_by_script():
+    """이음매 붙임/띄움은 **글자 종류**로 갈린다 — 렌더가 필요 없는 순수 판정.
+
+    한글은 줄이 넘치면 낱말 한가운데서 끊기므로 붙인다. 로마자는 하이픈 없이는
+    낱말이 안 갈리므로, 그 자리는 원래 띄어쓰기다(코퍼스 60쪽 로마자 경계 223건 전부).
+    """
+    from app.ai.preprocessor.line_join import _seam_no_space
+    assert _seam_no_space("통신시", "설, 항구나")          # 한글 낱말 중간 → 붙임
+    assert _seam_no_space("부유층", "은‘예술성’")
+    assert not _seam_no_space("프로게스테론은", "FSH와")   # 한글→로마자 → 띄움
+    assert not _seam_no_space("‘용광로(melting", "pot) 정책’")
+    assert not _seam_no_space("Not In My", "Back Yard)")
+    assert _seam_no_space("inter-", "national")            # 하이픈 분철은 붙임
+    # ★ 앞줄 끝이 로마자인 것만으로 띄우면 조사가 떨어진다(dev-2027 실측)
+    assert _seam_no_space("어떤 병원체 X", "를 알아보기 위해")   # 'X를' 은 한 어절
+    assert _seam_no_space("제", "2난모 세포")                  # 숫자는 붙임
+    assert not _seam_no_space("건강한 식물이", "X에 감염된")     # 뒷줄이 로마자 낱자 → 띄움
