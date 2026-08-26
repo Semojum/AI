@@ -582,6 +582,11 @@ _BOX_SIDE_MIN_H = 60.0   # 이보다 높으면 '좁고 긴 상자'로 본다(pt)
 # (F06 ⓑ 실측: p194 머리띠 배너가 x −166.9~386.4로 판면을 넘나드는 곡선 리본 22겹인데,
 #  클리핑만 하고 받아들이면 제목 "자료 탐구"를 감싼 빈 글상자가 두 겹으로 붙는다.)
 _BOX_IN_PAGE = 0.9       # 원래 넓이의 이 비율은 판면 안이어야 한다
+# 부모 넓이의 이 비율을 넘게 채우는 안쪽 사각형은 **중첩이 아니라 같은 상자를 두 겹으로
+# 그린 것**이다(기기 베젤+화면, 그림자, 채움+선 두 경로). 종전 0.98은 너무 빡빡해 그 겹이
+# 위계를 한 단 올렸다. 실측 dev-2027 900쪽 자식 사각형 206개의 부모 대비 넓이비는
+# 뚜렷한 쌍봉이다 — 0.9~1.0에 29개(두 겹) · 0.0~0.4에 156개(진짜 중첩) · 0.7~0.9에 5개뿐.
+_BOX_SAME_AREA = 0.85
 
 
 def page_is_blank(pdf_data: bytes, page_no: int) -> bool:
@@ -712,7 +717,7 @@ def box_rects(page) -> list:
             continue
         # 완전히 안에 들었다 = 중첩, 남긴다. 단 **거의 같은 크기**는 중첩이 아니라
         # 같은 테두리를 채움·선 두 경로로 그린 것이다 — 남기면 같은 상자를 두 번 감싼다.
-        if any(r in m and r.get_area() < m.get_area() * 0.98 for m in merged):
+        if any(r in m and r.get_area() < m.get_area() * _BOX_SAME_AREA for m in merged):
             merged.append(r)
             continue
         if any((r & m).get_area() > r.get_area() * 0.7 for m in merged):
@@ -1033,7 +1038,7 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
     def _inside(a, b) -> bool:
         """a가 b 안에 완전히 드는가(같은 사각형은 아니다)."""
         return (b[0] <= a[0] and b[1] <= a[1] and a[2] <= b[2] and a[3] <= b[3]
-                and (a[2] - a[0]) * (a[3] - a[1]) < (b[2] - b[0]) * (b[3] - b[1]) * 0.98)
+                and (a[2] - a[0]) * (a[3] - a[1]) < (b[2] - b[0]) * (b[3] - b[1]) * _BOX_SAME_AREA)
 
     ordered = sorted(rects, key=lambda r: -((r[2] - r[0]) * (r[3] - r[1])))
     depth = {id(r): sum(1 for q in ordered if _inside(r, q)) for r in ordered}
