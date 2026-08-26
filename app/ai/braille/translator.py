@@ -1092,6 +1092,37 @@ _BORDER_ANY_RE = re.compile(
 _BORDER_KIND = {_TAGS.BOX_TOP: "top", _TAGS.BOX_BOTTOM: "bottom"}
 
 
+def isolate_border_tags(text: str) -> str:
+    """글상자 테두리 태그 쌍을 **제 줄에 홀로** 세운다(빈 줄은 만들지 않는다).
+
+    4분류: ③ AI 오류 — 태깅은 상자 여는 줄을 제 줄에 놓지만 **닫는 줄은 본문 끝에 붙인다**
+    (opt가 줄바꿈을 공백으로 눕히는 것도 겹친다). 그러면 한 논리 줄이
+    `본문…⠿⠶×30⠿ ⠿⠶×30⠿`(168칸)이 되는데, layout의 `_is_border_line`은 **32칸 정확 일치**를
+    보므로 그 줄을 테두리로 못 알아본다 → `_expand_box_borders`가 위계(2·3단계)로 다시
+    그리지 못하고 1단계 모양이 그대로 나간다.
+      실측 dev-2027 900쪽: 2단계 아래 테두리 gold 363줄 : 우리 23줄 · 위 342 : 130.
+      "2단계 위만 있고 아래가 없는" 쪽이 73쪽이었다.
+    이미 제 줄에 있던 테두리는 이 함수가 건드리지 않는다 — 빈 줄이 새로 생기면 layout이
+    규정대로 넣는 상자 위아래 빈 줄(§2.1.6(5))과 겹쳐 두 줄이 된다.
+    """
+    if "<!" not in text:
+        return text
+    buf, last, hit = "", 0, False
+    for m in _BORDER_ANY_RE.finditer(text):
+        hit = True
+        buf += text[last:m.start()].rstrip(" \t")
+        if buf and not buf.endswith("\n"):
+            buf += "\n"
+        buf += m.group(0)
+        last = m.end()
+    if not hit:
+        return text
+    tail = text[last:].lstrip(" \t")
+    if tail and not tail.startswith("\n"):
+        tail = "\n" + tail
+    return (buf + tail).strip("\n")
+
+
 def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
     """원본의 글상자 테두리 태그를 문서 순서대로 (kind, level, 제목점자)로 수집(BBPG-1.2.5).
 
@@ -2263,6 +2294,9 @@ def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
     #   사라져 _apply_book_style 안의 같은 규칙이 영영 발동하지 못한다("2\n다음은…").
     #   _apply_book_style의 호출은 그대로 둔다 — 치환 뒤엔 '2.' 다음이 '.'이라
     #   룩어헤드가 실패하므로 이중 적용되지 않는다(멱등).
+    # ★ 테두리 태그는 제 줄에 홀로 세운다 — 아래 split("\n")이 논리 줄을 만들기 **전**이라야
+    #   한 줄에 본문과 테두리가 섞이지 않는다(위 `isolate_border_tags` 주석).
+    text = isolate_border_tags(text)
     text = _QNUM_RE.sub(r"\1.", text)
     # ★ '만을\n에서' 소실 구멍·개행 낀 괄호는 줄 단위 관행 정규화가 못 잡는다 —
     #   요소 전체 수준에서 선적용(이 개행은 원문 구조가 아니라 추출 산물).
