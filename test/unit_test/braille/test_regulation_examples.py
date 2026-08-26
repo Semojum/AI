@@ -325,3 +325,33 @@ class TestCircledJamoReg64:
 
     def test_동그라미_숫자는_수표_그대로(self) -> None:
         assert self._t("①").startswith("⠼")     # 규정=도서 일치라 건드리지 않는다
+
+
+class TestOXMark:
+    """맞고 틀림 기호 (「점자 자료 제작 지침」 2장 (4) · 예 2-31, 원장 C-14).
+
+    원문: "동그라미나 숫자 0은 로마자 O로, 도형 형태의 가위표(×)는 로마자 X로,
+    세모는 _+으로 적는다."  예 2-31 BRF 가 `0,o`(⠴⠠⠕) · `0,x`(⠴⠠⠭) 로 값을 확인해 준다.
+    실측(desk, dev-2027): 78조각·16쪽·4권 전부.
+
+    ⚠ 세모(△)와 `○`(U+25CB)는 **일부러 뺐다.** 둘은 숨김표·도형 기호로 이미 쓰여
+    (제40항 · `_UNLISTED_SHAPE_RUN_RE`) 맞고 틀림 문맥인지를 글만 보고 못 가른다.
+    넣어 봤더니 단위 테스트 28건이 깨졌다. 실측이 잡은 것도 `◯`(U+25EF)와 `×` 둘뿐이다.
+    """
+
+    def test_지침_예2_31(self):
+        from app.ai.braille.translator import translate_plain
+        got = translate_plain("일치하면 ◯, 일치하지 않으면 ×에 표시해 봅시다.")
+        assert "⠴⠠⠕" in got, got
+        assert "⠴⠠⠭" in got, got
+
+    def test_홀로_선_자리만_바꾼다(self):
+        from app.ai.braille.translator import translate_plain
+        assert "⠴⠠⠕" in translate_plain("※ ◯ 또는 ×")
+        assert "⠴⠠⠭" in translate_plain("3. ◯  4. ×")
+
+    def test_곱셈은_안_건드린다(self):
+        """곱셈 × 는 늘 피연산자 사이에 있다 — 여기 걸리면 수식이 깨진다."""
+        from app.ai.braille.translator import translate_plain
+        assert "⠴⠠⠭" not in translate_plain("2 × 3")
+        assert "⠴⠠⠭" not in translate_plain("넓이는 3×4이다")

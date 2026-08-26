@@ -469,6 +469,45 @@ def _circled_braille(ch: str) -> str:
 _MARK_PAREN_RE = re.compile(r"\(([^()]{1,60})\)")
 _UPPER_ONLY_RE = re.compile(r"^[A-Z0-9 ,.·]+$")
 
+# ── 맞고 틀림 표시 ◯ · × · △ (원장 C-14) ────────────────────────────────────
+# 「점자 자료 제작 지침」 2장 (4) 맞고 틀림을 나타내는 기호 — 원문 그대로:
+#   "동그라미나 숫자 0은 로마자 O로, 도형 형태의 가위표(×)는 로마자 X로, 세모는 _+으로 적는다."
+# 예 2-31 의 BRF 가 `0,o"`(= ⠴⠠⠕ = O) · `0,x4n`(= ⠴⠠⠭ = X)로 그 값을 확인해 준다.
+#
+# 왜 문맥으로 가르나 — `symbol_table` 의 `×`는 **도형 가위표(⠸⠭⠇)와 곱셈(⠡)** 두 자리를
+# 이미 쓰고 있고 `◯`(U+25EF)는 표에 아예 없어 통째로 사라진다. 그냥 치환하면 수식이 깨진다.
+# 실측(desk, dev-2027): 78조각·16쪽·4권 전부. `※ ◯ 또는 ×` · `3. ◯  4. ×` 꼴이다.
+#
+# 그래서 **낱말 하나로 홀로 선 자리만** 바꾼다. 곱셈은 늘 피연산자 사이에 있어(2 × 3)
+# 양옆이 숫자·문자라 여기 안 걸린다.
+# ⚠ **`○`(U+25CB)와 `△`는 여기 넣지 않는다.** 둘은 숨김표·도형 기호로 이미 쓰이고
+#   (제40항 도형 △ = ⠸⠬ · `_UNLISTED_SHAPE_RUN_RE` 가 미등재 도형을 △로 모은다),
+#   맞고 틀림 문맥인지를 글만 보고 못 가른다. 실제로 넣어 봤더니 단위 테스트 28건이
+#   깨졌다. 실측(desk dev-2027 78조각)이 잡은 것도 `◯`(U+25EF)와 `×` 둘뿐이다.
+_OX_CELL = {"◯": "⠴⠠⠕", "×": "⠴⠠⠭", "✕": "⠴⠠⠭", "✗": "⠴⠠⠭"}
+_OX_MARK_RE = re.compile(r"([◯×✕✗])")
+_OX_OPERAND_RE = re.compile(r"[0-9A-Za-z가-힣]")
+
+
+def _ox_mark_repl(m: re.Match) -> str:
+    """맞고 틀림 표시 ◯·× → 지침 (4) 점형. **곱셈 자리는 건드리지 않는다.**
+
+    곱셈은 피연산자 둘 사이에 **대칭으로** 놓인다 — `3×4` 도 `가로 × 세로` 도 양옆
+    띄어쓰기가 같고 양옆이 다 피연산자다. 맞고 틀림 표시는 그렇지 않다 —
+    `※ ◯ 또는 ×`(끝) · `3. ◯  4. ×`(앞이 마침표) · `×에 표시해`(뒤가 조사라 안 띄운다).
+    그래서 **띄어쓰기가 대칭이면서 양옆이 다 피연산자일 때만** 종전 경로에 맡긴다.
+    """
+    src = m.string
+    left, right = src[:m.start()], src[m.end():]
+    sp_before = (not left) or left[-1].isspace()
+    sp_after = (not right) or right[0].isspace()
+    a, b = left.rstrip(), right.lstrip()
+    if (sp_before == sp_after and a and b
+            and _OX_OPERAND_RE.match(a[-1]) and _OX_OPERAND_RE.match(b[0])):
+        return m.group(0)                      # 곱셈이다
+    return _OX_CELL[m.group(1)]
+
+
 # ── 감쌈 붙임표 자리표시자 (x2-a) ─────────────────────────────────────────────
 # _paren_repl이 내는 감쌈용 붙임표는 '원문 하이픈'이 아니라 조판 기호다. 그런데
 # translate_with_breaks가 요소 단위로 감쌈을 먼저 적용하므로, 그 결과 하이픈이
@@ -874,6 +913,7 @@ def _apply_book_style(text: str) -> str:
     text = _BLACK_SQUARE_RUN_RE.sub(lambda m: '□' * len(m.group()), text)
     text = _UNLISTED_SHAPE_RUN_RE.sub(lambda m: '△' * len(m.group()), text)
     text = _ARROW_LABEL_RE.sub(r'\1:', text)
+    text = _OX_MARK_RE.sub(_ox_mark_repl, text)
     text = _BOX_BLANK_RE.sub(_box_blank_repl, text)
     # ★ B-11(원장) — 물결표를 줄표로 바꾸던 줄을 뺐다(2026-08-22).
     #   규정 문장부호표(규정_텍스트.txt 2196~2205)가 **줄표 = ⠤⠤ · 물결표 = ⠈⠔**로 갈라 싣고,
