@@ -185,3 +185,29 @@ class TestStep17CaptionSource:
                   for i, lb in enumerate(LABELS)]
         r = visual_trail("JAJAK-6.3.4", drafts, DESC_IDX, "AI 생성")[0]
         assert r.tag == "설명·AI 생성"
+
+
+class TestCaptionTypeWord:
+    """캡션이 말한 유형어를 그대로 쓴다 (F16, 2026-08-26).
+
+    `_SUBTYPE_WORDS` 가 모식도·구조도·도식을 concept_map 으로 접는다. 골격은 §6.6.1 을
+    같이 쓰니 그 접기가 맞지만, **표시 이름까지 '개념도'로 바꾸면 캡션이 '구조도'라고
+    말한 자료를 우리가 고쳐 부른다.** dev-2027 60쪽에서 유형이 배정된 29건 중 20건이
+    이 자리였다.
+    """
+
+    def test_캡션_유형어를_쓴다(self):
+        from app.ai.llm.diagram_opt import _caption_type_word
+        assert _caption_type_word("concept_map", "도표: 구조도, 삼각형 ABC") == "구조도"
+        assert _caption_type_word("concept_map", "도표: 모식도, 적혈구의 용혈") == "모식도"
+        assert _caption_type_word("flowchart", "도표: 흐름도: 림프구의 성숙") == "흐름도"
+
+    def test_갈래가_어긋나면_안_쓴다(self):
+        """캡션은 가계도라는데 앞단이 개념도를 줬으면 이름을 캡션 쪽으로 끌지 않는다 —
+        골격(개념도 조항)과 이름이 따로 놀면 점역사에게 틀린 근거가 붙는다."""
+        from app.ai.llm.diagram_opt import _caption_type_word
+        assert _caption_type_word("concept_map", "가계도 설명") == ""
+
+    def test_유형어가_없으면_빈값(self):
+        from app.ai.llm.diagram_opt import _caption_type_word
+        assert _caption_type_word("concept_map", "삼각형 ABC 와 점 H") == ""

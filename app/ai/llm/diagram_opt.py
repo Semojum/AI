@@ -54,6 +54,7 @@ from app.ai.llm.diagram_structure import (
     caption_outline,
     structure_from_caption,
     subtype_from_caption,
+    type_word_from_caption,
 )
 from app.ai.braille import tag_names as _TN
 from app.ai.braille import tn_notices as _TN_NOTICES
@@ -494,12 +495,27 @@ def _subtype_scores(ext: ExtractedContent, caption: str) -> list[tuple[str, int]
     return [(k, v) for k, v in ranked if v >= _CAND_MIN_SCORE][:_CAND_MAX]
 
 
-def _skeleton_label(subtype: str, structure: dict) -> str:
-    """골격 안의 이름. 가계도만 **실제로 조립된 방향**을 이름에 싣는다(§6.6.4(1))."""
+def _caption_type_word(subtype: str, caption: str) -> str:
+    """캡션이 말한 유형어. **고른 subtype 과 같은 갈래일 때만** 쓴다. 아니면 "".
+
+    캡션이 '가계도'라 하는데 앞단이 concept_map 을 줬다면 둘이 어긋난 것이라
+    이름을 캡션 쪽으로 끌면 골격(개념도 조항)과 이름(가계도)이 따로 논다.
+    """
+    word = type_word_from_caption(caption)
+    return word if word and subtype_from_caption(caption) == subtype else ""
+
+
+def _skeleton_label(subtype: str, structure: dict, caption: str = "") -> str:
+    """골격 안의 이름. 가계도만 **실제로 조립된 방향**을 이름에 싣는다(§6.6.4(1)).
+
+    ★ 캡션이 유형어를 말했으면 **그 말을 쓴다**(2026-08-26, F16). `_SUBTYPE_WORDS`가
+      모식도·구조도·도식을 concept_map 으로 접기 때문에, 이름까지 대표 이름으로 바꾸면
+      '구조도'라고 적힌 자료가 피커에 '개념도'로 뜬다. 골격 접기와 표시 이름은 다른 문제다.
+    """
     if subtype == "family_tree":
         mode = (structure.get("mode") or "top_down").strip()
         return FAMILY_BOTTOMUP_LABEL if mode == "bottom_up" else desc_label(subtype)
-    return desc_label(subtype)
+    return _caption_type_word(subtype, caption) or desc_label(subtype)
 
 
 def _family_alt(subtype: str, structure: dict) -> Optional[Draft]:
@@ -544,7 +560,8 @@ class DiagramOpt(BaseOpt):
         cands = _subtype_scores(ext, caption)
         subtype = cands[0][0] if cands else _subtype(ext)
         structure = _structure(ext, subtype)
-        label = _TYPE_LABEL.get(subtype, "도표")
+        # 캡션이 말한 유형어가 먼저다 — 모식도·구조도를 '개념도'로 고쳐 부르지 않는다(F16).
+        label = _caption_type_word(subtype, caption) or _TYPE_LABEL.get(subtype, "도표")
         title = (structure.get("title") or "").strip()
 
         assembled: Optional[tuple[str, list[int]]] = None
@@ -563,7 +580,7 @@ class DiagramOpt(BaseOpt):
                 Draft(option=2,
                       text=_TN.apply_indent_tags(skeleton_text, skeleton_indents),
                       render_mode="narrative",
-                      label=_skeleton_label(subtype, structure)),
+                      label=_skeleton_label(subtype, structure, caption)),
                 *extra_drafts(label),
             ]
             # 가계도만 방향 둘을 **같이** 낸다 — §6.6.4(1)이 "교재 이해에 효과적인 쪽을

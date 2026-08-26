@@ -100,6 +100,29 @@ def subtype_from_caption(caption: str) -> str:
     return ""
 
 
+def type_word_from_caption(caption: str) -> str:
+    """캡션 첫 줄이 **말한 유형어 그대로**. 못 찾으면 "".
+
+    ★ 왜 필요한가(2026-08-26, F16) — `_SUBTYPE_WORDS`는 모식도·구조도·도식을 전부
+      `concept_map`으로 접는다. 골격은 §6.6.1을 같이 쓰니 그 접기가 맞다. 그런데 표시
+      이름까지 `_TYPE_LABEL[concept_map]`("개념도")로 바뀌면, **캡션이 '구조도'라고
+      말한 자료를 우리가 '개념도'라고 고쳐 부른다.**
+      dev-2027 60쪽 실측: 유형이 배정된 29건 중 **22건이 concept_map**인데 그중 다수가
+      캡션에 '모식도'·'구조도'라고 적혀 있다(`도표: 구조도, 삼각형 ABC…`).
+      대표 지적 F16("삼각형 그림을 개념도로 인식")이 이 자리다.
+      캡션이 유형어를 말했으면 그 말을 쓴다. 안 말했을 때만 대표 이름으로 물러난다.
+    """
+    head = ""
+    for ln in (caption or "").split("\n"):
+        if ln.strip():
+            head = ln
+            break
+    for word, _sub in _SUBTYPE_WORDS:
+        if word in head:
+            return word
+    return ""
+
+
 def _level_text(line: str) -> tuple[int, str]:
     """캡션 한 줄 → (위계 레벨, 표지 뗀 본문). 들여쓰기 2칸 = 한 단계."""
     body = line.rstrip()
