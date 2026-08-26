@@ -583,6 +583,87 @@ def _h_rules(fitz_page: fitz.Page, bbox: list[float]) -> int | None:
     return sum(1 for length in spans.values() if length >= need)
 
 
+# ── 테두리뿐인 '표'는 글상자다 (F15, 2026-08-26) ─────────────────────────────
+# 위 괘선 판정은 **가로선 2개**를 표의 조건으로 삼는데, 글상자는 제 위·아래 테두리만으로
+# 그 2개를 채운다. 그래서 "글상자 안 문항 + 그 아래 보기"가 표로 남았다(대표 시연 4쪽 지적).
+# 가르는 신호는 **속 구분선**이다 — 표는 속에 행이나 열을 가르는 선이 있고, 글상자는 없다.
+#   실측 2027 dev+val 1,746쪽·표 924개: 속 구분선이 하나도 없는 표 16개.
+#   그 16개 중 답 모음 표(‘Level 1 기초 연습’ 형식, 짧은 셀 여러 행)는 진짜 표라 살려야 한다.
+#   → 셀이 줄글이거나(가장 긴 셀 > _COL_CELL_LEN) 한 행뿐일 때만 강등한다.
+#   그러면 4개가 강등된다: 수학 (가)(나) 조건 상자·사료 인용 상자·조약 조문 상자·설문지 양식.
+#   (설문지는 「제작 지침」 §6.6.3 양식이라 어차피 글상자로 적는다.)
+_BOX_EDGE = 6.0          # bbox 변에서 이 안쪽 선은 테두리로 본다(pt)
+_BOX_COVER = 0.9         # 글상자 사각형이 표 자리를 이만큼 덮으면 '상자 안'
+
+
+def _inner_separators(fitz_page: fitz.Page, bbox: list[float]) -> tuple[int, int]:
+    """bbox **속**(테두리 제외) 가로·세로 구분선 수."""
+    w, h = fitz_page.rect.width, fitz_page.rect.height
+    r = fitz.Rect(bbox[0] / 1000 * w, bbox[1] / 1000 * h,
+                  bbox[2] / 1000 * w, bbox[3] / 1000 * h)
+    rot = fitz_page.rotation_matrix
+    segs: list[tuple[float, float, float, float]] = []
+    for g in fitz_page.get_drawings():
+        for it in g["items"]:
+            if it[0] == "l":
+                p1, p2 = it[1] * rot, it[2] * rot
+                segs.append((min(p1.x, p2.x), min(p1.y, p2.y),
+                             max(p1.x, p2.x), max(p1.y, p2.y)))
+            elif it[0] == "re":
+                q = fitz.Rect(it[1]) * rot
+                q.normalize()
+                segs += ([(q.x0, q.y0, q.x1, q.y1)] if min(q.width, q.height) <= _RULE_FLAT
+                         else [(q.x0, q.y0, q.x1, q.y0), (q.x0, q.y1, q.x1, q.y1)])
+    bx0, by0 = r.x0 - _RULE_PAD, r.y0 - _RULE_PAD
+    bx1, by1 = r.x1 + _RULE_PAD, r.y1 + _RULE_PAD
+    hs: dict[int, float] = {}
+    vs: dict[int, float] = {}
+    for x0, y0, x1, y1 in segs:
+        if x1 < bx0 or x0 > bx1 or y1 < by0 or y0 > by1:
+            continue
+        if y1 - y0 <= _RULE_FLAT:                       # 가로선
+            cut = min(x1, bx1) - max(x0, bx0)
+            if cut > 1:
+                k = round((y0 + y1) / 2)
+                hs[k] = hs.get(k, 0.0) + cut
+        elif x1 - x0 <= _RULE_FLAT:                     # 세로선
+            cut = min(y1, by1) - max(y0, by0)
+            if cut > 1:
+                k = round((x0 + x1) / 2)
+                vs[k] = vs.get(k, 0.0) + cut
+    n_h = sum(1 for y, ln in hs.items()
+              if ln >= max(r.width, 1.0) * _RULE_SPAN
+              and abs(y - r.y0) > _BOX_EDGE and abs(y - r.y1) > _BOX_EDGE)
+    n_v = sum(1 for x, ln in vs.items()
+              if ln >= max(r.height, 1.0) * _RULE_SPAN
+              and abs(x - r.x0) > _BOX_EDGE and abs(x - r.x1) > _BOX_EDGE)
+    return n_h, n_v
+
+
+def _prose_grid(html: str) -> bool:
+    """격자가 아니라 **줄글 덩이**인가 — 셀 하나가 길거나 행이 하나뿐인가."""
+    rows = len(_TR_RE.findall(html or ""))
+    cells = [re.sub(r"<[^>]+>", "", m[1]).strip() for m in _TD_RE.findall(html or "")]
+    if not cells:
+        return False
+    return rows <= 1 or max(len(c) for c in cells) > _COL_CELL_LEN
+
+
+def _is_boxed_prose(fitz_page: fitz.Page, bbox: list[float], html: str,
+                    box_rects_pt: list) -> bool:
+    """그 '표'가 실은 글상자에 든 줄글인가 (위 절 주석 참조)."""
+    if not box_rects_pt or not _prose_grid(html):
+        return False
+    w, h = fitz_page.rect.width, fitz_page.rect.height
+    r = fitz.Rect(bbox[0] / 1000 * w, bbox[1] / 1000 * h,
+                  bbox[2] / 1000 * w, bbox[3] / 1000 * h)
+    if r.get_area() <= 0:
+        return False
+    if not any((r & q).get_area() > r.get_area() * _BOX_COVER for q in box_rects_pt):
+        return False
+    return _inner_separators(fitz_page, bbox) == (0, 0)
+
+
 _TR_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S | re.I)
 _TD_RE = re.compile(r"<t[dh]([^>]*)>(.*?)</t[dh]>", re.S | re.I)
 _COLSPAN_RE = re.compile(r"colspan\s*=\s*[\"']?(\d+)", re.I)
@@ -958,6 +1039,18 @@ def run(
     merged_layout = []
     order = 1
 
+    # 글상자 사각형은 쪽당 한 번만 찾는다(표 판정에만 쓰이므로 표가 있을 때 처음 찾는다).
+    _box_cache: list = []
+
+    def _page_box_rects() -> list:
+        if not _box_cache:
+            try:
+                from app.ai.preprocessor.pdf_analyzer import box_rects
+                _box_cache.append(box_rects(fitz_page))
+            except Exception:  # noqa: BLE001 — 상자를 못 찾으면 종전대로 표로 둔다
+                _box_cache.append([])
+        return _box_cache[0]
+
     for item in content_list:
         item_type = item.get("type", "text")
         mapped_type = TYPE_MAP.get(item_type, "text")
@@ -1059,6 +1152,10 @@ def run(
             # 괘선 없는 '표'는 표가 아니다 — 위 _h_rules 주석 참조(QA 9번)
             n_rules = _h_rules(fitz_page, bb) if item_type == "table" else None
             if n_rules is not None and n_rules < _RULE_MIN_H:
+                mapped_type, content = "text", _table_to_text(content)
+            elif (n_rules is not None            # None = 벡터로 판단 불가, 손대지 않는다
+                    and _is_boxed_prose(fitz_page, bb, content, _page_box_rects())):
+                # 테두리뿐인 '표' = 글상자에 든 줄글 — 위 _is_boxed_prose 절 주석(F15)
                 mapped_type, content = "text", _table_to_text(content)
             else:
                 # 표는 구조 때문에 전면 대체를 못 하므로 글머리 기호(제72항)만 되돌리고,
