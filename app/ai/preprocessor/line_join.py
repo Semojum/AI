@@ -108,7 +108,7 @@ def _col_edge(lines: list[fitz.Rect], bb: fitz.Rect) -> tuple[float, float]:
     return right, flush / len(xs)
 
 
-_LATIN_RE = re.compile(r"[A-Za-z0-9]")
+_LATIN_ALPHA_RE = re.compile(r"[A-Za-z]")
 
 
 def _seam_no_space(cur: str, nxt: str) -> bool:
@@ -117,14 +117,22 @@ def _seam_no_space(cur: str, nxt: str) -> bool:
     한글은 줄이 넘치면 낱말 한가운데서 끊긴다("통신시"+"설") — 붙이는 게 맞다.
     로마자는 그렇지 않다. 하이픈 없이 줄이 갈렸으면 그 자리는 **원래 띄어쓰기**다
     ("melting"+"pot" · "My"+"Back" · "프로게스테론은"+"FSH"). 붙이면 낱말이 깨진다.
-    실측(60쪽 코퍼스): 이 규칙 전에는 그런 자리 3건이 전부 붙어서 나갔다.
+    실측(frozen 60쪽): 이 규칙 전에는 그런 자리 3건이 전부 붙어서 나갔다.
+
+    ★ 판정은 **뒷줄 첫 글자**로만 한다. 앞줄 끝이 로마자인 것까지 세면 조사가 떨어진다 —
+      dev-2027 실측에서 '…병원체 X'+'를 알아보기' 가 나왔고 그건 'X를' 이 한 어절이다.
+      숫자도 뺀다('제'+'2난모'). 두 코퍼스 모두에서 확인했다.
     """
     a, b = cur.rstrip(), nxt.lstrip()
     if not a or not b:
         return True
     if a.endswith("-"):                 # 하이픈 분철은 붙이는 게 맞다
         return True
-    return not (_LATIN_RE.match(a[-1]) or _LATIN_RE.match(b[0]))
+    # ★ 보는 것은 **뒷줄 첫 글자가 로마자 낱자인가** 하나뿐이다(2026-08-26 dev-2027 실측).
+    #   앞줄 끝이 로마자인 것만으로 띄우면 **조사가 떨어져 나간다** —
+    #   '…병원체 X' + '를 알아보기' 는 'X를' 이 한 어절이라 붙이는 게 맞다.
+    #   숫자도 뺀다('제' + '2난모' 는 붙는다).
+    return not _LATIN_ALPHA_RE.match(b[0])
 
 
 def _line_seam(page: fitz.Page, rect: fitz.Rect, text: str, nxt: str = "") -> str:
