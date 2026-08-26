@@ -63,7 +63,13 @@ def _engine_is_vllm() -> bool:
     우리 프로세스에서 import로는 못 본다 — 그 env의 bin/에 vllm 실행파일이 있는지로 본다.
     경로를 못 정하면(PATH의 bare mineru) PATH에서 찾고, 그래도 모르면 False다.
     모를 때 False로 두는 건 의도다 — 아래 concurrency()가 안전한 쪽(동시 1)으로 간다.
+
+    `MINERU_ENGINE`을 주면 그게 이긴다. vLLM을 라이브러리로만 깔아 콘솔 스크립트가 없는
+    배치에서 우리 추정이 틀릴 수 있는데, 그때 처리량이 조용히 반토막 나면 안 된다.
     """
+    forced = os.environ.get("MINERU_ENGINE", "").strip().lower()
+    if forced:                       # 운영 탈출구 — 우리 추정이 틀린 배치에서 손으로 못 박는다
+        return forced.startswith("vllm")
     mb = os.environ.get("MINERU_BIN") or config.mineru_bin
     if mb:
         return Path(mb).with_name("vllm").exists()

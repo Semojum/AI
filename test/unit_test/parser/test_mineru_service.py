@@ -96,3 +96,12 @@ class TestEngineDetect:
         with caplog.at_level(logging.WARNING):
             assert ms.concurrency() == 1
         assert "vLLM이 아니다" in caplog.text
+
+    def test_MINERU_ENGINE이_추정을_이긴다(self, tmp_path, monkeypatch):
+        """vLLM을 라이브러리로만 깐 배치에서 손으로 못 박을 수 있어야 한다."""
+        (tmp_path / "mineru").write_text("")          # 옆에 vllm 실행파일 없음
+        monkeypatch.setenv("MINERU_BIN", str(tmp_path / "mineru"))
+        monkeypatch.setenv("MINERU_ENGINE", "vllm-async-engine")
+        assert ms._engine_is_vllm() is True
+        monkeypatch.setenv("MINERU_ENGINE", "transformers")
+        assert ms._engine_is_vllm() is False
