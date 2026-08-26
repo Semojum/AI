@@ -348,6 +348,65 @@ def _table_tags(table_structure, table_text: str) -> str:
     return build_table_tags(_normalize_grid(grid)) if grid else table_text
 
 
+# ── 정답 요약표는 격자가 아니다 (biz B019, 2026-08-26) ──────────────────────
+# 답지의 "문항번호 정답번호" 요약은 §3.1 이 말하는 표가 아니다. 행·열 관계를 읽는
+# 자료가 아니라 **번호: 값 나열**이다. gold 는 여기에 표 구분선을 **아예 안 쓰고**
+# 테두리만 둘러 평문으로 적는다.
+#
+#   우리   【글상자】 → 【표 구분선】 → `01: 01 3  02 3  03 2 …`  (열 정렬용 2칸 공백)
+#   gold   【글상자】 → `(01)` 소제목 한 줄 → `01 ③  02 ③  03 ②` (한 칸)
+#
+# 실측(biz B019, dev-2027 d024): 표 감사 296건 중 **203건(69%)이 이 한 유형**이고,
+# 그중 183건이 한 쪽(EBS-E26-004 ans p0003)에 몰려 있다. 표 축 과잉 1.59배의 압도 원인이다.
+#
+# 신호 — **셀이 전부 맨숫자이거나 원문자 하나**다. 진짜 데이터 표는 어딘가에 머리글
+# 낱말(한글·로마자)이 있다. 그게 하나도 없고 두 자리 이하 숫자만 있으면 정답 요약표다.
+# ⚠ 좁게 잡는다. 열이 3 이상이고 셀이 6개 이상일 때만 본다 — 2열은 이미 linear 로 가고,
+#   작은 표를 잘못 뒤집으면 진짜 데이터 표가 테두리만 두른 평문이 된다.
+# 셀 하나의 꼴 — "번호" 또는 "번호 답"(한 셀에 둘이 같이 들어온다). 실측 실물:
+#   ['언어', '01', '01 3', '02 3', '03 2', …]  ← EBS-E26-004 ans p0003
+_ANSWER_CELL_RE = re.compile(
+    r"^(?:[0-9]{1,2}|[\u2460-\u2473])(?:\s+(?:[0-9]{1,2}|[\u2460-\u2473]))?$")
+_ANSWER_MIN_RATIO = 0.8   # 이만큼이 '번호[ 답]' 이면 정답 요약표
+_ANSWER_LABEL_MAX = 4     # 나머지는 '언어'·'매체'·'1회' 같은 짧은 소제목이어야 한다
+
+
+def _is_answer_texts(texts: list) -> bool:
+    """셀 글 목록이 정답 요약인가.
+
+    ★ 첫 판은 "전부 맨숫자 하나" 로 봤다가 실물에서 안 걸렸다(2026-08-26 실측).
+      실제 셀은 **한 칸에 '번호 답' 이 같이** 들어오고(`'01 3'`), 사이사이에 소단원
+      소제목(`'언어'`·`'매체'`·`'1회'`)이 섞인다. 그래서 **비율**로 본다 —
+      80% 이상이 '번호[ 답]' 이고 나머지는 넉 자 이하 짧은 이름표일 때만 정답 요약표다.
+      진짜 데이터 표는 어딘가에 긴 머리글이 있어 여기 안 걸린다
+      (실측: 조음 위치·방법 표 0% · 자료 취합 표 0%).
+    """
+    texts = [str(t or "").strip() for t in texts]
+    texts = [t for t in texts if t]
+    if len(texts) < 6:
+        return False
+    ok = [t for t in texts if _ANSWER_CELL_RE.match(t)]
+    if len(ok) < _ANSWER_MIN_RATIO * len(texts):
+        return False
+    # 안 걸린 나머지는 짧은 이름표여야 한다 — 긴 글이 섞이면 데이터 표다.
+    return all(len(t) <= _ANSWER_LABEL_MAX for t in texts if not _ANSWER_CELL_RE.match(t))
+
+
+def _is_answer_summary(cells: list) -> bool:
+    """정답 요약표인가(구조 dict 경로)."""
+    return _is_answer_texts([c.get("text", "") for c in cells])
+
+
+def _is_answer_grid(grid: list) -> bool:
+    """정답 요약표인가(HTML·파이프 격자 경로).
+
+    ★ **이 경로가 실제로 도는 자리다**(2026-08-26 실측). d024 경계 파일 60쪽에
+      `table_structure.cells` 가 든 표는 **0개**였다 — MinerU 표는 HTML 로 들어와서
+      `_html_to_grid` 를 탄다. 구조 dict 쪽에만 신호를 걸면 아무 데도 안 걸린다.
+    """
+    return _is_answer_texts([c for row in grid for c in row])
+
+
 def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
     if table_structure:
         if rm := table_structure.get("render_mode"):
@@ -360,6 +419,8 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
                 return "linear"
             if max_row == 1:
                 return "transposed"
+            if max_col >= 3 and _is_answer_summary(cells):
+                return "linear"        # 정답 요약표 — 위 주석(biz B019)
             # 3열 이상 = **격자형**(2026-08-06 판정 번복 — 원장 C-01a).
             # 종전 기본은 풀어쓰기였다. gold 실측이 뒤집었다 — dev-2027의 테두리 표 445개 중
             # 383개(86%)가 격자형 '행제목: 값  값' 형식이고, 우리 격자형 렌더러가 내는
@@ -371,17 +432,23 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
     # 아니라 narrative로 떨어져, 격자로 나가야 할 표가 풀어쓰기로 나갔다.
     if (tag_rows := parse_table_tags(text or "")):
         max_col = max(len(r) for r in tag_rows)
+        if max_col >= 3 and _is_answer_grid(tag_rows):
+            return "linear"
         return "linear" if max_col == 2 else "table_grid"
     # table_structure 없음/빈 셀: HTML 표(MinerU) 또는 '|' 격자로 추론(narrative 오분류 방지).
     if _is_html_table(text):
         grid = _html_to_grid(text)      # 여기만 expand=True — 진짜 열 수를 세야 한다
         if grid:
             max_col = max(len(r) for r in grid)
+            if max_col >= 3 and _is_answer_grid(grid):
+                return "linear"
             return "linear" if max_col == 2 else "table_grid"
     rows = [ln for ln in (text or "").splitlines() if "|" in ln]
     if not rows:
         return "narrative"
     max_col = max(len(r.split("|")) for r in rows)
+    if max_col >= 3 and _is_answer_grid([r.split("|") for r in rows]):
+        return "linear"
     return "linear" if max_col == 2 else "table_grid"
 
 
