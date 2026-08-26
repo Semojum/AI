@@ -99,16 +99,20 @@ def concurrency() -> int:
     """
     global _clamped_logged
     n = max(1, config.mineru_max_concurrent)
-    if n > 1 and not _engine_is_vllm():
-        if not _clamped_logged:
-            _clamped_logged = True
-            logger.warning(
-                "MinerU 엔진이 vLLM이 아니다 → 동시 요청 %d→1로 조인다. "
-                "transformers 클라이언트는 스레드 비안전이라 동시 2면 rope_deltas 레이스로 "
-                "추출이 터지고 그 쪽은 표·그림을 잃는다(폴백). vLLM env로 돌리면 원래 값을 쓴다.",
-                n)
-        return 1
-    return n
+    if _engine_is_vllm():
+        return n
+    # ★ 조이든 안 조이든 **엔진이 느린 쪽으로 떨어졌다는 사실 자체를 크게 알린다**
+    #   (2026-08-26 pm 지시). 이게 조용해서 밤새 전수 재추출 한 벌이 잘못된 엔진 위에서
+    #   돌 뻔했다. 종전에는 `mineru_runner._announce_engine`이 INFO 한 줄을 낼 뿐이었다.
+    if not _clamped_logged:
+        _clamped_logged = True
+        logger.warning(
+            "⚠ MinerU 엔진이 vLLM이 아니다(bin=%s). 느린 경로이고(RUNBOOK 기준 57.7s/p) "
+            "transformers 클라이언트가 스레드 비안전이라 동시 요청이 겹치면 rope_deltas "
+            "레이스로 추출이 터진다 — 그 쪽은 표·그림을 통째로 잃는다(텍스트레이어 폴백). "
+            "동시 요청을 %d→1로 조인다. vLLM env(RUNBOOK §1 mnr_vllm)로 띄우면 원래 값을 쓴다.",
+            os.environ.get("MINERU_BIN") or config.mineru_bin or "(PATH)", n)
+    return 1
 
 
 # 죽은 서비스를 되살릴 때 쓰는 자물쇠·한도.

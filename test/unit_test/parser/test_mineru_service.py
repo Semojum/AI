@@ -83,3 +83,16 @@ class TestEngineDetect:
         (tmp_path / "mineru").write_text("")
         monkeypatch.setenv("MINERU_BIN", str(tmp_path / "mineru"))
         assert ms._engine_is_vllm() is False
+
+    def test_transformers면_동시1이어도_경고를_남긴다(self, monkeypatch, caplog):
+        """엔진이 느린 쪽으로 떨어진 사실 자체를 크게 알린다(2026-08-26 pm 지시).
+
+        이게 조용해서 전수 재추출 한 벌이 잘못된 엔진 위에서 밤새 돌 뻔했다.
+        """
+        import logging
+        ms._clamped_logged = False
+        monkeypatch.setattr(ms.config, "mineru_max_concurrent", 1, raising=False)
+        monkeypatch.setattr(ms, "_engine_is_vllm", lambda: False)
+        with caplog.at_level(logging.WARNING):
+            assert ms.concurrency() == 1
+        assert "vLLM이 아니다" in caplog.text
