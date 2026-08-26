@@ -413,3 +413,35 @@ class TestHancomMathFont:
         from app.ai.braille.translator import _decode_hancom_math as d
         assert d("2p-a<xÉ2p") == "2p-a<x≤2p"
         assert d("MOÛST") == "MOÛST"
+
+
+class TestNonBraillableChars:
+    """점자로 못 가는 글자 (C033 전수, dev-2027 d025 60쪽).
+
+    초안 묵자에 실리는 비-한글/비-ASCII 1,646개 중 **점자 경로도 못 넘기는 것이 198개·54종**
+    이었다. 값이 확실한 셋만 손댄다 — 나머지(한자·아랍 숫자·도형)는 규정 판단이 필요하다.
+    """
+
+    def test_제로폭_조합문자는_지운다(self):
+        """눈에 안 보이는데 점역만 방해한다. ZWNJ 23건 · 조합 네모 14건 실측."""
+        from app.core.pipeline import _draft_print_text
+        assert "\u200c" not in _draft_print_text("\u200c공유한")
+        assert "\u20de" not in _draft_print_text("답\u20de ③")
+
+    def test_괄호숫자를_편다(self):
+        """유니코드 이름이 PARENTHESIZED DIGIT 다 — 추정이 아니라 정의다(19건)."""
+        from app.core.pipeline import _draft_print_text
+        from app.ai.braille.translator import translate_plain
+        assert _draft_print_text("⑴ 방정식").startswith("(1)")
+        assert "⑴" not in translate_plain("⑴ 방정식")
+
+    def test_C1_제어문자도_지운다(self):
+        """`_CTRL_RE` 가 C0 만 잡고 있었다 — `\x93` 실측 37건."""
+        from app.core.pipeline import _draft_print_text
+        assert "\x93" not in _draft_print_text("O.\x93= L")
+
+    def test_모르는_것은_안_건드린다(self):
+        """한자·아랍 숫자·도형은 규정 판단이 필요하다. 추정으로 바꾸지 않는다."""
+        from app.core.pipeline import _draft_print_text
+        assert "非" in _draft_print_text("비(非)수급자")
+        assert "▽" in _draft_print_text("▽▽연구소")

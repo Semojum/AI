@@ -1783,7 +1783,24 @@ def _decode_hancom_math(text: str) -> str:
 #   바꾸는데 초안 묵자는 **사람이 읽는 원문**이라 그 배치를 보존해야 한다.
 #   여기서는 **점자로 갈 수 없는 글자만** 손댄다.
 _MOJIBAKE_RE = re.compile(r"[ÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝ]")
-_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# ── 점자로 못 가는 글자 (C033 전수, dev-2027 d025 60쪽) ────────────────────────
+# 초안 묵자에 실리는 비-한글/비-ASCII 1,646개 중 **점자 경로도 못 넘기는 것이 198개·54종**이었다.
+# 그중 아래 셋만 손댄다 — 값이 확실하고 추정이 아니다. 나머지(한자·아랍 숫자·도형 기호)는
+# 규정 판단이 필요해 그대로 두고 로그로 드러낸다.
+#   ① 제로폭·조합 문자 — 눈에 안 보이는데 점역만 방해한다. 지운다.
+#      ZWNJ 23건(EBS-E26-004 p011) · 조합 네모 14건(009 p038 `답⃞ ③`)
+#   ② 괄호 숫자 ⑴⑵⑶ — 유니코드 이름이 PARENTHESIZED DIGIT 다. `(1)` 로 편다(19건).
+#   ③ C1 제어문자(U+0080~U+009F) — `_CTRL_RE` 가 C0 만 잡고 있었다(`\x93` 실측 37건).
+_ZEROWIDTH_RE = re.compile(r"[\u200b-\u200f\u2060\ufeff\u20d0-\u20f0]")
+_PAREN_DIGIT = {chr(0x2474 + i): f"({i + 1})" for i in range(20)}   # ⑴~⒇
+_PAREN_DIGIT_RE = re.compile("[" + "".join(_PAREN_DIGIT) + "]")
+
+
+def _strip_nonbraillable(text: str) -> str:
+    """점자로 못 가는 글자 중 **값이 확실한 것만** 손댄다. 추정 치환은 안 한다."""
+    text = _ZEROWIDTH_RE.sub("", text)
+    return _PAREN_DIGIT_RE.sub(lambda m: _PAREN_DIGIT[m.group()], text)
+_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 _PUA_LEFT_RE = re.compile(r"[\ue000-\uf8ff]")
 
 
@@ -1798,6 +1815,7 @@ def normalize_print_draft(text: str, where: str = "") -> str:
     for _pua, _word in _PUA_TO_TEXT.items():
         text = text.replace(_pua, _word)
     text = _decode_hancom_math(text)
+    text = _strip_nonbraillable(text)
     text = _CTRL_RE.sub("", text)                      # 제어문자는 볼 것이 없다
     left = sorted(set(_PUA_LEFT_RE.findall(text)) | set(_MOJIBAKE_RE.findall(text)))
     if left:
@@ -1819,6 +1837,7 @@ def sanitize_for_braille(text: str) -> str:
     for _pua, _word in _PUA_TO_TEXT.items():
         text = text.replace(_pua, _word)      # B-09 ① 아는 글리프만 말로
     text = _decode_hancom_math(text)          # 한컴 수식 글꼴 흔적(아는 것만)
+    text = _strip_nonbraillable(text)      # 제로폭·조합 문자·괄호 숫자(C033)
     text = _BRAILLIFY_HOSTILE_RE.sub(_sanitize_repl, text)
     return _normalize_special(_normalize_big_circle(text))
 
