@@ -1048,7 +1048,30 @@ def regroup_boxed(elements: list[dict], rects: list) -> int:
     return moved
 
 
-def tag_boxed_elements(elements: list[dict], rects: list) -> int:
+# ── 곁단 용어 상자를 주석으로 (지침 §2.4.7 · 원장 C-77) ────────────────────────
+# §2.4.7: "본문의 특정 영역에 대해서 유도선 등을 이용해 설명하거나 덧붙이는 글상자 등은
+#   주석 표기 방법을 적용할 수 있다." (1) 주석표는 별표(⠐⠔) (4) 주석표 뒤 한 칸 띄고
+#   주석과 설명을 쌍점으로 구분한다.
+# gold 실측(dev-2027 900쪽): 주석표 ⠐⠔ **110회**, 다른 표시자 1회. 우리는 0회였다.
+# ⚠ 기본은 끔이다. 곁단이 주석으로 빠지면 글상자 수가 줄어 원장 C-01b 축이 같이 움직인다 —
+#   A/B는 두 축을 **같이 놓고** 봐야 한다(pm 2026-08-27).
+_SIDEBAR_MAX_W = 0.35      # 지면 폭 대비 이보다 좁아야 곁단으로 본다
+_SIDEBAR_MAX_TEXTS = 2     # 감싼 글 요소가 이보다 많으면 본문 상자다
+
+
+def sidebar_as_note() -> bool:
+    """곁단 용어 상자를 §2.4.7 주석으로 적는 스위치(기본 끔)."""
+    return os.environ.get("SIDEBAR_AS_NOTE", "0") == "1"
+
+
+def _is_sidebar_note(rect, page_w: float, title: str, texts: list) -> bool:
+    """이 상자를 주석으로 적을 곁단 용어 상자로 볼까 (원장 C-77)."""
+    if not sidebar_as_note() or not title or len(texts) > _SIDEBAR_MAX_TEXTS:
+        return False
+    return (rect[2] - rect[0]) < _SIDEBAR_MAX_W * page_w
+
+
+def tag_boxed_elements(elements: list[dict], rects: list, page_w: float = 1000.0) -> int:
     """사각형이 감싼 텍스트 요소 앞뒤에 테두리 태그를 넣는다(in-place). 감싼 상자 수 반환.
 
     ★ **표·그림을 품은 사각형도 글상자다**(「제작 지침」 3장 지문 (4): 지문 속 글상자는
@@ -1119,6 +1142,14 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
             title = _tag_title(elements[title_i])
             promoted.add(title_i)
         first, last = texts[0], texts[-1]
+        # 곁단 용어 상자는 테두리 대신 주석으로 적는다(§2.4.7 · 원장 C-77, 기본 끔).
+        if _is_sidebar_note(rect, page_w, title, texts):
+            body = (elements[first].get("content") or "").lstrip()
+            elements[first]["content"] = f"※ {title}: {body}"
+            for i in texts:
+                claimed[i] = max(claimed.get(i, 0), level)
+            n += 1
+            continue
         sfx = "" if level == 1 else str(level)        # <!상자2> = 2단계(translator 규약)
         opens.setdefault(first, []).append((level, f"<!상자{sfx}>{title}<!/상자{sfx}>"))
         closes.setdefault(last, []).append((level, f"<!상자끝{sfx}><!/상자끝{sfx}>"))

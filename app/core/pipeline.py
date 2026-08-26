@@ -545,7 +545,9 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         # "읽기순서가 끊겼다"로 상자를 통째로 건너뛴다(원장 C-17 후속).
         if n := regroup_boxed(elements, rects):
             logger.info("글상자 %d개 순서 재정렬 (page=%d)", n, task.page_no)
-        if n := tag_boxed_elements(elements, rects):
+        # page_w — 곁단 판정(원장 C-77)이 상자 폭을 지면 폭과 견준다. 좌표계에 맞춘다.
+        _page_w = float(image_width) if (bbox_space == "pixel" and image_width) else 1000.0
+        if n := tag_boxed_elements(elements, rects, _page_w):
             logger.info("글상자 %d개 태깅 (page=%d)", n, task.page_no)
 
         # 정오 표시 ○·×(원장 M-04) — 채움 경로라 텍스트레이어에도 MinerU에도 안 잡힌다.
