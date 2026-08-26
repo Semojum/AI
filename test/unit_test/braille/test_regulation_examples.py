@@ -262,9 +262,23 @@ class TestBookStyleConventions:
         # 신규 코퍼스에 외국어 권이 없어 재확인 못 했으므로 종전 형을 유지한다.
         assert self._brf("(A)-(B)").startswith("7,a7")
 
-    def test_화살괄호는_작은따옴표(self):
-        assert self._brf("〈보기〉") == ",8~u@o0'"   # ‘보기’
-        assert self._brf("<보기>") == ",8~u@o0'"
+    def test_홑화살괄호는_그대로_나간다(self):
+        """★ 2026-08-26 뒤집힘 — 종전 기대값은 `‘보기’`(작은따옴표)였다.
+
+        그 근거("정답 코퍼스에 화살괄호 0회, 작은따옴표 3618회")가 **frozen(구판) 실측**이다.
+        dev-2027 60쪽 실측(eval E001): 〈 gold 100건/22쪽 대 우리 1건 · 〉 gold 65건 대 우리 0건.
+        규정도 화살괄호 쪽이다 — symbol_table 에 〈 = ⠐⠶ · 〉 = ⠶⠂ 가 이미 있다.
+
+        원인은 순서 충돌이었다 — `_ANGLE_LABEL_RE` 가 `<보기>` 를 `〈보기〉` 로 먼저 옳게
+        바꾸는데 `_ANGLE_RE` 가 그것까지 다시 잡아 작은따옴표로 되돌렸다. 결과가 두 겹으로
+        나빴다: **닫는 ⠴⠄ 가 앞 음절에 붙어 '보기'가 '보깋'이 됐다.**
+        """
+        assert self._brf("〈보기〉") == '"7~u@o71'      # ⠐⠶보기⠶⠂
+        assert self._brf("<보기>") == '"7~u@o71'       # ASCII 도 같은 자리로
+
+    def test_홑낫표는_그대로_둔다(self):
+        """「 」는 안 건드린다 — gold ⠐⠦ dev 70 대 묵자 「 47 로 셀이 겹친다(eval 08-22)."""
+        assert self._brf("「국어」") != '"7~u@o71'
 
 
 class TestRegulationSwitch:
@@ -325,3 +339,33 @@ class TestCircledJamoReg64:
 
     def test_동그라미_숫자는_수표_그대로(self) -> None:
         assert self._t("①").startswith("⠼")     # 규정=도서 일치라 건드리지 않는다
+
+
+class TestOXMark:
+    """맞고 틀림 기호 (「점자 자료 제작 지침」 2장 (4) · 예 2-31, 원장 C-14).
+
+    원문: "동그라미나 숫자 0은 로마자 O로, 도형 형태의 가위표(×)는 로마자 X로,
+    세모는 _+으로 적는다."  예 2-31 BRF 가 `0,o`(⠴⠠⠕) · `0,x`(⠴⠠⠭) 로 값을 확인해 준다.
+    실측(desk, dev-2027): 78조각·16쪽·4권 전부.
+
+    ⚠ 세모(△)와 `○`(U+25CB)는 **일부러 뺐다.** 둘은 숨김표·도형 기호로 이미 쓰여
+    (제40항 · `_UNLISTED_SHAPE_RUN_RE`) 맞고 틀림 문맥인지를 글만 보고 못 가른다.
+    넣어 봤더니 단위 테스트 28건이 깨졌다. 실측이 잡은 것도 `◯`(U+25EF)와 `×` 둘뿐이다.
+    """
+
+    def test_지침_예2_31(self):
+        from app.ai.braille.translator import translate_plain
+        got = translate_plain("일치하면 ◯, 일치하지 않으면 ×에 표시해 봅시다.")
+        assert "⠴⠠⠕" in got, got
+        assert "⠴⠠⠭" in got, got
+
+    def test_홀로_선_자리만_바꾼다(self):
+        from app.ai.braille.translator import translate_plain
+        assert "⠴⠠⠕" in translate_plain("※ ◯ 또는 ×")
+        assert "⠴⠠⠭" in translate_plain("3. ◯  4. ×")
+
+    def test_곱셈은_안_건드린다(self):
+        """곱셈 × 는 늘 피연산자 사이에 있다 — 여기 걸리면 수식이 깨진다."""
+        from app.ai.braille.translator import translate_plain
+        assert "⠴⠠⠭" not in translate_plain("2 × 3")
+        assert "⠴⠠⠭" not in translate_plain("넓이는 3×4이다")
