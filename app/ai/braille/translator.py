@@ -1640,7 +1640,21 @@ def _normalize_special(s: str) -> str:
 #   그래서 표를 **책 단위 대응표로 키우는 것**이 다음 단계이고, 여기에 추측으로 더하지 않는다.
 _PUA_TO_TEXT = {
     "\ue3c4": "(예)",     # 언매 예문 아이콘 — gold `(예)`
+    "\ue355": "(예)",     # 같은 아이콘의 다른 코드포인트(desk 실측 dev-2027 30조각·7쪽·3권)
 }
+
+# ── 한컴 수식 글꼴 흔적 되살리기 (대표 결재 2026-08-26 — 추출이 아니라 우리가 넣는다) ──
+# 한컴 수식 글꼴로 짜인 PDF 는 함수 이름을 **ASCII 로 31 내려서** 싣는다.
+#   TJO → sin · DPT → cos · UBO → tan   (T+31='s' · J+31='i' · O+31='n')
+# ⚠ 시프트를 통째로 걸면 멀쩡한 대문자 낱말이 다 깨진다. **아는 토막만** 되살린다
+#   (eval 실측 18건/3쪽 — 001/body 0038·0089 · 009/body 0038 계열).
+_HANCOM_FN = {"TJO": "sin", "DPT": "cos", "UBO": "tan"}
+_HANCOM_FN_RE = re.compile(r"(?<![A-Za-z])(" + "|".join(_HANCOM_FN) + r")(?![A-Za-z])")
+# Latin-1 모지바케 — 문맥으로 확정된 것만 되살린다.
+#   É 는 `2p-a<xÉ2p`(= 2π-α < x ≤ 2π) 로 ≤ 가 거의 확실하다(eval 24건).
+#   ⚠ Û·Á·Ñ·Ú 는 **정체를 모른다. 추정으로 넣지 않는다**(대표 지시). 로그만 남긴다.
+_HANCOM_LATIN1 = {"É": "≤"}
+_HANCOM_UNKNOWN_RE = re.compile(r"[ÛÁÑÚ]")
 
 
 def _pua_droppable(ch: str) -> bool:
@@ -1710,6 +1724,21 @@ def strip_leader_dots(text: str) -> str:
     return _LEADER_RE.sub(" ", text)
 
 
+def _decode_hancom_math(text: str) -> str:
+    """한컴 수식 글꼴이 남긴 흔적을 **아는 것만** 되살린다. 모르는 것은 로그로 남긴다."""
+    if _HANCOM_FN_RE.search(text):
+        text = _HANCOM_FN_RE.sub(lambda m: _HANCOM_FN[m.group(1)], text)
+    for _src, _dst in _HANCOM_LATIN1.items():
+        if _src in text:
+            text = text.replace(_src, _dst)
+    unknown = _HANCOM_UNKNOWN_RE.findall(text)
+    if unknown:
+        # 정체를 모르는 자리는 **그대로 두고** 어디였는지만 남긴다 — 추정 치환은 안 한다.
+        logger.warning("한컴 글꼴 미해독 문자 %s: %.60s",
+                       "".join(sorted(set(unknown))), text)
+    return text
+
+
 def sanitize_for_braille(text: str) -> str:
     """braillify가 거부하는 문자를 안전화(요소 격리·빈 결과 금지).
 
@@ -1722,6 +1751,7 @@ def sanitize_for_braille(text: str) -> str:
     text = strip_leader_dots(text)
     for _pua, _word in _PUA_TO_TEXT.items():
         text = text.replace(_pua, _word)      # B-09 ① 아는 글리프만 말로
+    text = _decode_hancom_math(text)          # 한컴 수식 글꼴 흔적(아는 것만)
     text = _BRAILLIFY_HOSTILE_RE.sub(_sanitize_repl, text)
     return _normalize_special(_normalize_big_circle(text))
 
