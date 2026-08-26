@@ -99,3 +99,43 @@ class TestPromptCaching:
         # 1,024토큰 미만은 표시를 달아도 조용히 캐시되지 않는다. 한국어는 글자당
         # 약 1토큰이라 글자 수로 하한을 잡아 둔다(실측 1,784~3,041자).
         assert len(captioner._PROMPTS[kind]) > 1200
+
+
+class TestUsableByTranslator:
+    """대표 기준(2026-08-26) — 그림을 이해시키는 것이 아니라 **그대로 쓸 수 있는 문장**.
+
+    "점역사가 읽으면 무슨 그림인지 아는 걸로 끝나면 안 된다. 우리가 제공하는 설명이,
+    점역사가 그 시각자료를 점역할 때 쓸 설명과 유사해야 한다."
+
+    이 테스트는 프롬프트가 그 기준을 실제로 담고 있는지만 본다(출력 품질은 눈검사 몫).
+    """
+
+    def test_존재_확인형_금지가_들어_있다(self):
+        from app.ai.captioning.captioner import _COMMON
+        assert "무엇이 있다/나타나 있다/작용한다" in _COMMON
+        assert "값" in _COMMON
+
+    def test_대립_방향어를_요구한다(self):
+        from app.ai.captioning.captioner import _COMMON
+        assert "대립·방향" in _COMMON
+
+    def test_한_사실은_한_번만(self):
+        from app.ai.captioning.captioner import _COMMON
+        assert "한 사실은 한 번만" in _COMMON
+
+    def test_자체_검증_질문이_있다(self):
+        """'그대로 옮겨 쓸 수 있는가' 를 모델이 스스로 묻게 한다."""
+        from app.ai.captioning.captioner import _COMMON
+        assert "그대로 옮겨 쓸 수" in _COMMON
+
+    def test_도표_템플릿_둘(self):
+        from app.ai.captioning.captioner import _PROMPTS as PROMPTS
+        d = PROMPTS["diagram"]
+        assert "같은 문장 틀로 나란히" in d      # 작용 비교형
+        assert "범례는 처음 한 번만" in d        # 가계도
+
+    def test_그래프는_값을_비우지_않는다(self):
+        from app.ai.captioning.captioner import _PROMPTS as PROMPTS
+        c = PROMPTS["chart"]
+        assert "값을 비우지 마세요" in c
+        assert "등간격 눈금을 처음부터 끝까지 나열하지는" in c
