@@ -262,9 +262,23 @@ class TestBookStyleConventions:
         # 신규 코퍼스에 외국어 권이 없어 재확인 못 했으므로 종전 형을 유지한다.
         assert self._brf("(A)-(B)").startswith("7,a7")
 
-    def test_화살괄호는_작은따옴표(self):
-        assert self._brf("〈보기〉") == ",8~u@o0'"   # ‘보기’
-        assert self._brf("<보기>") == ",8~u@o0'"
+    def test_홑화살괄호는_그대로_나간다(self):
+        """★ 2026-08-26 뒤집힘 — 종전 기대값은 `‘보기’`(작은따옴표)였다.
+
+        그 근거("정답 코퍼스에 화살괄호 0회, 작은따옴표 3618회")가 **frozen(구판) 실측**이다.
+        dev-2027 60쪽 실측(eval E001): 〈 gold 100건/22쪽 대 우리 1건 · 〉 gold 65건 대 우리 0건.
+        규정도 화살괄호 쪽이다 — symbol_table 에 〈 = ⠐⠶ · 〉 = ⠶⠂ 가 이미 있다.
+
+        원인은 순서 충돌이었다 — `_ANGLE_LABEL_RE` 가 `<보기>` 를 `〈보기〉` 로 먼저 옳게
+        바꾸는데 `_ANGLE_RE` 가 그것까지 다시 잡아 작은따옴표로 되돌렸다. 결과가 두 겹으로
+        나빴다: **닫는 ⠴⠄ 가 앞 음절에 붙어 '보기'가 '보깋'이 됐다.**
+        """
+        assert self._brf("〈보기〉") == '"7~u@o71'      # ⠐⠶보기⠶⠂
+        assert self._brf("<보기>") == '"7~u@o71'       # ASCII 도 같은 자리로
+
+    def test_홑낫표는_그대로_둔다(self):
+        """「 」는 안 건드린다 — gold ⠐⠦ dev 70 대 묵자 「 47 로 셀이 겹친다(eval 08-22)."""
+        assert self._brf("「국어」") != '"7~u@o71'
 
 
 class TestRegulationSwitch:
