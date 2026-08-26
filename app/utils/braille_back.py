@@ -890,6 +890,17 @@ def _decode_line(s: str) -> str:
                 i = _r[1]
                 continue
 
+        # 닫는 작은따옴표 ⠴⠄ — 규정 문장부호표의 `0'`(규정_텍스트.txt 2147~2154).
+        # ⠴는 **받침 ㅎ과 같은 셀**이라 탐욕 매칭이 앞 음절에 붙여 먹는다(기’ → 깋').
+        # 뒤 셀이 ⠄면 부호가 맞다 — 홀로 선 ⠄는 한국어 음절에 없다.
+        # 실측 dev-2027 900쪽: gold 1,933줄 · 우리 출력 2,305줄이 이 한 가지로 깨졌다.
+        if (best_ln >= 2 and s[i + best_ln:i + best_ln + 1] == "⠄"
+                and s[i + best_ln - 1] == "⠴" and s[i:i + best_ln - 1] in _COMBINED):
+            out.append(_COMBINED[s[i:i + best_ln - 1]])
+            out.append("’")
+            i += best_ln + 1
+            continue
+
         if best_ln >= 2:
             seg = s[i:i + best_ln]
             # 마침표가 음절 뒤에 붙어 다른 음절로 오인된 경우 분리(다.=닾 → 다 + .).
