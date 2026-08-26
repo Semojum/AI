@@ -70,6 +70,23 @@ _ITEM_HEAD_RE = re.compile(
 # 이어지는 조각이 시작할 수 있는 글자 — 한글 음절/자모, 로마자, 숫자.
 _CONT_HEAD_RE = re.compile(r'^[가-힣ㄱ-ㅎA-Za-z0-9]')
 
+# ★ 문장부호로 시작하는 이어짐(2026-08-27). 글자만 이어짐으로 보면 **여는 괄호·따옴표로
+#   이어지는 줄이 통째로 막힌다**:
+#     "…포르투갈어 ‘카스타" ⏎ "(casta)’에서 유래한 신분 제도로서…"   (시연 p02 실물)
+#     "…감수 1분열은 (" ⏎ ")회 일어난다."                            (빈칸이 줄에 걸친 것)
+#   전수 실측(코퍼스 경계 파일, 쪽 중복 제거): 요소 안쪽 개행 52,392개 중
+#     이어짐 후보 41,453 · 글머리로 걸림 8,630 · **막힘 2,309**(그중 608은 앞이 문장끝이라 옳다).
+#   막힌 것의 첫 글자 상위: `(` 639 · `…` 208 · `‘` 163 · `[` 157 · `,` 56 · `“` 43.
+#   이것들은 **새 항목을 열 수 없는 부호**다 — 글머리는 위 `_ITEM_HEAD_RE`가 이미 거른다.
+#   ⚠ `-`·`*`·`<`·`=`·PUA 글리프는 **넣지 않는다.** 글머리표거나 추출 잔재라
+#     이으면 서로 다른 항목이 붙는다(실측 "…-2 ⏎ -3…").
+_CONT_PUNCT_RE = re.compile(r'^[(\[‘“『「〈《…,)\]’”』」〉》]')
+
+
+def _is_continuation_head(t: str) -> bool:
+    """이 조각이 앞 줄의 **이어짐**으로 시작하는가."""
+    return bool(_CONT_HEAD_RE.match(t) or _CONT_PUNCT_RE.match(t))
+
 
 def _x_overlap(a: fitz.Rect, b: fitz.Rect) -> float:
     """두 줄의 가로 겹침을 **좁은 쪽 폭** 기준 비율로. 0이면 안 겹친다."""
@@ -186,7 +203,7 @@ def _can_join(lines: list[fitz.Rect], a: dict, ab: fitz.Rect, b: dict,
         return False
     # 줄이 넘쳐 이어지는 자리는 **글자로 이어진다** — 한글 음절이나 로마자·숫자로 시작한다.
     # 기호로 시작하면 새 항목이거나(䤎·□·⇂) 추출 잔재다. 막아 놓는 편이 싸다.
-    if not _CONT_HEAD_RE.match(bt):
+    if not _is_continuation_head(bt):
         return False
     if "<!" in at[-12:] or "<!" in bt[:12]:      # 우리 인라인 태그 경계는 구조다
         return False
@@ -250,7 +267,8 @@ def _resolve_inner_newlines(el: dict, rect: fitz.Rect, page_lines, col_lines) ->
             line = r.y1 - r.y0
             right, flush = _col_edge(col_lines, r)
             same_col = flush >= _JOIN_FLUSH_MIN and abs(right - r.x1) <= _JOIN_RIGHT_SLACK * line
-            starts_new = bool(_ITEM_HEAD_RE.match(nxt.lstrip())) or not _CONT_HEAD_RE.match(nxt.lstrip())
+            starts_new = (bool(_ITEM_HEAD_RE.match(nxt.lstrip()))
+                          or not _is_continuation_head(nxt.lstrip()))
             if same_col and not starts_new and not _SENT_END_RE.search(cur.rstrip()):
                 if raw.count(" ") >= cur.count(" "):
                     seam = (" " if raw.rstrip("\n").endswith((" ", "\u00a0"))
