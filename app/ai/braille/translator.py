@@ -172,11 +172,29 @@ _ROMAN_CELL = {**_ROMAN_CELL_UPPER, **_ROMAN_CELL_LOWER}
 _ROMAN_CELL_RE = re.compile("[" + "".join(_ROMAN_CELL) + "]")
 
 
+# ★ 2026-08-27 — **섹션번호 자리로 좁힌다.** 위 관행 근거는 섹션번호(Ⅱ. Ⅲ. …) 실측
+#   세 쪽뿐인데(frozen 사회문화 p046·154, 세계사 p016) 코드는 수식 밖 로마숫자 **전부**에
+#   먹였다. dev-2027 900쪽 추출 실측: 로마숫자 1,132건 중 **섹션번호는 19건(1.7%)**이고
+#   나머지는 본문 속 참조다("경로 Ⅰ~Ⅲ을", "생쥐 Ⅰ~Ⅲ").
+#   본문 속에서 낱자 점형을 쓰면 **로마자표 ⠴·종료표 ⠲ 가 빠져 그 셀이 한글로 읽힌다**:
+#       우리  ⠈⠻⠐⠥⠀⠠⠊⠈⠔⠠⠊⠊⠊⠮
+#       gold  ⠈⠻⠐⠥⠀⠴⠠⠊⠈⠔⠠⠠⠊⠊⠊⠲⠮      (EBS-E26-001 body p0089 49행)
+#   gold 실측(묵자에 로마숫자가 있는 쪽): 생명과학 **로마자표형 162쪽 : 낱자형 2쪽**.
+#   원인 4분류 = **규칙 충돌**(관행 규칙이 규정형을 밀어냈다).
+#   섹션번호 = **줄머리 + 바로 뒤 마침표**. 공백까지 신호로 치면 안 된다 —
+#   gold p0002 는 'IV 유전'(줄머리+공백)을 **로마자표형** ⠴⠠⠠⠊⠧⠲ 로 적는다.
+_ROMAN_SECTION_RE = re.compile(
+    r"(?m)^([ \t]*)([" + "".join(_ROMAN_CELL) + r"]+)(?=[.．])")
+
+
 def _book_roman_to_cells(text: str) -> str:
-    """도서 관행 로마 숫자 섹션번호 → 낱자 점형 직접 주입(book 모드). <!수식> 세그는 보존."""
+    """도서 관행 로마 숫자 **섹션번호** → 낱자 점형 직접 주입(book 모드). <!수식> 세그는 보존."""
+    def _sec(m):
+        return m.group(1) + "".join(_ROMAN_CELL[c] for c in m.group(2))
+
     parts = _FORMULA_RE.split(text)
     for i in range(0, len(parts), 2):   # 짝수 인덱스 = 수식 밖 일반 텍스트
-        parts[i] = _ROMAN_CELL_RE.sub(lambda m: _ROMAN_CELL[m.group()], parts[i])
+        parts[i] = _ROMAN_SECTION_RE.sub(_sec, parts[i])
     # split이 캡처그룹 때문에 [text, formula_inner, text, ...] 형태 → 재조립
     out = []
     for i, seg in enumerate(parts):
