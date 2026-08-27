@@ -14,7 +14,7 @@ from pathlib import Path
 import fitz
 from PIL import Image, ImageDraw, ImageFont
 
-from app.ai.captioning.captioner import caption, log_backend_status
+from app.ai.captioning.captioner import backend_status, caption, log_backend_status
 from app.ai.captioning.classifier import classify_with_confidence
 from app.ai.llm.diagram_structure import subtype_from_caption
 from app.utils.logger import get_logger
@@ -407,7 +407,19 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
                 except Exception as exc:  # noqa: BLE001 — 요소 격리(불변규칙 3)
                     logger.warning("    캡셔닝 예외 %s: %s", str(el.get("element_id", ""))[:8], exc)
                     out[id(el)] = ("", el["type"], False, None)
-    logger.info("  캡셔닝 %d개 동시 %d — %.1fs", len(vis), workers, time.monotonic() - t0)
+    ok_n = sum(1 for v in out.values() if v[2])
+    logger.info("  캡셔닝 %d개 중 %d개 성공 · 동시 %d — %.1fs",
+                len(vis), ok_n, workers, time.monotonic() - t0)
+    # ★ 한 개도 성공 못 하면 그 쪽의 시각자료는 전부 '생략'으로 나간다. 요소 플래그
+    #   (CAPTION_FAILED→R11)와 페이지 NEEDS_REVIEW 로 이미 알리지만, **로그에서
+    #   한 줄로 안 보이면 사람이 못 알아챈다** — 2026-08-26 시연 실행이 키 없이 돌아
+    #   시각자료 전부가 '그림 생략'으로 나갔는데 실행 로그만 봐서는 그게 안 보였다.
+    if vis and ok_n == 0:
+        st = backend_status()
+        logger.error("  ⚠ 이 쪽의 시각자료 %d개가 **하나도 설명되지 않았다** — 전부 '생략'으로 "
+                     "나간다(요소 CAPTION_FAILED · 페이지 NEEDS_REVIEW). 백엔드 %s(%s) 키 %s",
+                     len(vis), st["backend"], st["model"],
+                     "있음" if st["key_present"] else "**없음**")
     return out
 
 
