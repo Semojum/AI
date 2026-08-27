@@ -204,6 +204,41 @@ def _split_lines(text: str) -> list[str]:
     return lines or [""]
 
 
+# ── 칸이 길면 한 줄에 칸 하나 (지침 §3.1.1(1)③ · 원장 C-30b) ────────────────
+# §3.1.1(1): ②가로로 풀어 적었을 때 쉽게 이해할 수 있다면 열 항목을 두 칸씩 띄어 풀어 적는다.
+#            ③**열 항목이 여러 단어와 문장으로 되어 있어** 가로로 풀어 적을 경우 표를
+#              이해하기 어렵다면 번호 체계를 활용하여 풀어 적는다.
+# 즉 규정은 ②와 ③을 **칸 내용 길이**로 가른다. 우리는 열 수만 봤다.
+#
+# gold 실측(dev-2027 900쪽, 표 186개):
+#   행우선 127개 · 칸당 글자 중앙 25 (p75 36)
+#   열우선  59개 · 칸당 글자 중앙 82 (p25 48)
+# 사분위가 거의 안 겹친다 → 임계 40~45자. 기본 42.
+#
+# ★ **축은 바꾸지 않는다.** gold 가 어느 축을 레코드로 삼는지는 실측으로 안 갈렸다
+#   (글자 대조 머리행 11 : 첫열 13). 축을 잘못 바꾸면 지금보다 나빠지므로, 축은 그대로
+#   두고 **한 줄에 칸 하나만** 적는다. 대표가 지적한 증상(한 줄에 긴 칸 둘)은 이걸로 사라진다.
+# ⚠ 기본은 끔. 채택은 A/B 로 판정한다(원장 C-01b·C-77 과 같이 놓고 본다).
+# ⚠ CER 이 gold 배치와 어긋나 내려갈 수 있다 — 이 축은 배치라 CER 이 잘 못 잰다.
+_RECORD_MIN_CELL = float(os.environ.get("TABLE_RECORD_MIN_CELL", "42"))
+
+
+def record_rows_enabled() -> bool:
+    """칸이 길 때 한 줄에 칸 하나로 적는 스위치(기본 끔). 원장 C-30b."""
+    return os.environ.get("TABLE_RECORD_ROWS", "0") == "1"
+
+
+def _mean_cell_len(rows: list[list[str]]) -> float:
+    """머리행·행머리를 뺀 **값 칸**의 평균 글자수."""
+    vals = [c.strip() for r in rows[1:] for c in r[1:] if c.strip()]
+    return sum(len(c) for c in vals) / len(vals) if vals else 0.0
+
+
+def _use_record_rows(rows: list[list[str]]) -> bool:
+    return (record_rows_enabled() and len(rows) > 1 and len(rows[0]) > 2
+            and _mean_cell_len(rows) >= _RECORD_MIN_CELL)
+
+
 def _render_grid(corrected_text: str) -> list[str]:
     """지침 §3.1 표 표기(행 단위 전개, 예3-4·3-6 실측 형식, 2026-07-19 정정).
 
@@ -230,6 +265,9 @@ def _render_grid(corrected_text: str) -> list[str]:
     rowsep = "⠐" * _COLS
     if not rows:
         return [top, bot]
+    grid = [[c.strip() for c in r.split("|")] for r in rows]
+    if _use_record_rows(grid):
+        return [top] + _record_lines(grid) + [bot]
     lines: list[str] = [top]
     for k, row in enumerate(rows):
         cells = [c.strip() for c in row.split("|")]
@@ -241,6 +279,24 @@ def _render_grid(corrected_text: str) -> list[str]:
             lines.append(rowsep)          # 머리행과 본문 사이(실측 위치)
     lines.append(bot)
     return lines
+
+
+def _record_lines(grid: list[list[str]]) -> list[str]:
+    """행마다 '행머리' 한 줄 + 칸마다 '머리행이름: 값' 한 줄 (원장 C-30b).
+
+    축은 원본 그대로 둔다 — 머리행 이름을 이름표로 쓰므로 추측이 없다.
+    """
+    heads = grid[0]
+    out: list[str] = []
+    for row in grid[1:]:
+        rh = row[0].strip()
+        if rh:
+            out.append("⠀⠀" + _translate(rh))
+        for j, cell in enumerate(row[1:], start=1):
+            name = heads[j].strip() if j < len(heads) else ""
+            val = _translate(cell) if cell.strip() else "⠿⠿"
+            out.append("⠀⠀⠀⠀" + ((_translate(name) + "⠐⠂⠀") if name else "") + val)
+    return out
 
 
 def _render_linear(corrected_text: str) -> list[str]:
