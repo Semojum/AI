@@ -414,12 +414,19 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
     #   (CAPTION_FAILED→R11)와 페이지 NEEDS_REVIEW 로 이미 알리지만, **로그에서
     #   한 줄로 안 보이면 사람이 못 알아챈다** — 2026-08-26 시연 실행이 키 없이 돌아
     #   시각자료 전부가 '그림 생략'으로 나갔는데 실행 로그만 봐서는 그게 안 보였다.
+    # ⚠ 성공 0건이라고 다 사고는 아니다. 일부러 건너뛴 자리가 있다 —
+    #   가드3(글자를 그림으로 잡은 것)·DISABLE_LLM_FALLBACK 은 **의도된 생략**이라
+    #   여기서 ERROR 를 내면 정상 실행이 빨간 줄로 덮인다(2026-08-27 실측: 첫 쪽부터 났다).
+    #   설정이 통째로 어긋난 자리 — **키가 없거나 캡셔너가 잠긴 경우** — 만 ERROR 로 올린다.
     if vis and ok_n == 0:
         st = backend_status()
-        logger.error("  ⚠ 이 쪽의 시각자료 %d개가 **하나도 설명되지 않았다** — 전부 '생략'으로 "
-                     "나간다(요소 CAPTION_FAILED · 페이지 NEEDS_REVIEW). 백엔드 %s(%s) 키 %s",
-                     len(vis), st["backend"], st["model"],
-                     "있음" if st["key_present"] else "**없음**")
+        systemic = (not st["key_present"]) or bool(_caption_fatal)
+        (logger.error if systemic else logger.info)(
+            "  %s 이 쪽의 시각자료 %d개가 하나도 설명되지 않았다 — 전부 '생략'으로 "
+            "나간다(요소 CAPTION_FAILED · 페이지 NEEDS_REVIEW). 백엔드 %s(%s) 키 %s%s",
+            "⚠" if systemic else "·", len(vis), st["backend"], st["model"],
+            "있음" if st["key_present"] else "**없음**",
+            f" · 잠김({_caption_fatal})" if _caption_fatal else "")
     return out
 
 
