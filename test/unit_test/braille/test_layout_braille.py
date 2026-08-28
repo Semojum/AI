@@ -547,14 +547,6 @@ class TestLayoutBody:
         assert body[body.index("⠛⠛") + 1] == "⠉⠉"      # 시각 자료끼리 — 안 띈다
         assert body[body.index("⠉⠉") + 1] == ""         # 표 앞 — 띈다
 
-    def test_heading_level3_indent5(self, lb, tmp_path) -> None:
-        """3단계 제목 5칸 들여 (BBPG 2장2절1)."""
-        eid = uuid4()
-        lr = _layout((eid, "title", 1, 3))
-        lb.layout([_out(["소제목"], eid)], page_no=1, job_id="h3", layout_result=lr)
-        first = next(l for l in _read_lines(tmp_path, "h3") if l.strip(" ⠀"))
-        assert first.startswith("⠀⠀⠀⠀") and first.strip(" ⠀") == "소제목"
-
     def test_formula_block_indent3(self, lb, tmp_path) -> None:
         """수식도 문단과 같은 3칸에서 시작한다(앞 빈칸 2).
 
@@ -568,6 +560,14 @@ class TestLayoutBody:
         lb.layout([_out(["⠼⠉⠒⠒⠼⠁⠚⠚"], eid)], page_no=1, job_id="fml", layout_result=lr)
         first = next(l for l in _read_lines(tmp_path, "fml") if l.strip(" ⠀"))
         assert first.startswith("⠀⠀") and not first.startswith("⠀⠀⠀")
+
+    def test_heading_level3_indent5(self, lb, tmp_path) -> None:
+        """3단계 제목 5칸 들여 (BBPG 2장2절1)."""
+        eid = uuid4()
+        lr = _layout((eid, "title", 1, 3))
+        lb.layout([_out(["소제목"], eid)], page_no=1, job_id="h3", layout_result=lr)
+        first = next(l for l in _read_lines(tmp_path, "h3") if l.strip(" ⠀"))
+        assert first.startswith("⠀⠀⠀⠀") and first.strip(" ⠀") == "소제목"
 
     def test_empty_element_no_tagging(self, lb, tmp_path) -> None:
         """내용 없는 요소(빈 줄뿐)는 rule_trail·빈 줄을 만들지 않는다."""
