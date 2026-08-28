@@ -470,3 +470,41 @@ class TestTableRegulationSwitch:
         wide36 = ("자율 신경 | 침 분비 | 폐의 기관지 | 동공\n"
                   "A | 촉진 | 수축 | 축소\nB | 억제 | 이완 | 확대")
         assert self._unfold(wide36, "book") != self._unfold(wide36, "regulation")
+
+
+class TestNumberRunNotSplit:
+    """32칸 하드 컷이 숫자 한 개를 두 줄로 가르던 것 (2026-08-29, 원장 B-12).
+
+    수표를 잃은 뒷부분은 **자음으로 읽힌다** — `⠓` 는 8이자 ㅎ이라 1598 이 '159'+'타'가 된다.
+    셀 수는 맞고 뜻만 바뀌는 자리라 채점으로는 안 잡힌다.
+    gold 실측(정답 1,251쪽): 줄 끝이 수표+숫자로 공백 없이 끝나는 129건 중 갈린 것 **0건**.
+    """
+
+    def test_number_run_moves_to_next_line(self):
+        from app.ai.braille.table_braille import _render_linear
+        out = _render_linear("<!행><!칸>" + "가" * 9 + "프랑스<!칸>낭트 칙령(1598, 위그노에게<!/행>")
+        body = [ln for ln in out if not ln.startswith("⠿")]
+        joined = "".join(body)
+        assert "⠼⠁⠑⠊⠓" in joined, "수표+1598 이 한 줄에 온전히 있어야 한다"
+        for ln in body:                       # 어느 줄도 수표 없이 숫자로 시작하지 않는다
+            assert not (ln and ln[0] in "⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚"), ln
+
+    def test_roman_word_is_not_pulled(self):
+        """수표 없는 a~j 런(로마자)은 당기지 않는다 — 점형이 숫자와 같아 오인하기 쉽다."""
+        from app.ai.braille.table_braille import _num_run_start
+        s = "⠁⠃⠉⠙⠑"                          # 수표 없이 이어진 셀 = 로마자 abcde
+        assert _num_run_start(s, 3) == 3
+
+    def test_number_run_start_pulls_to_sign(self):
+        from app.ai.braille.table_braille import _num_run_start
+        s = "⠛⠼⠁⠑⠊⠓"                        # ⠼ 가 1번 자리, 숫자 런 2~5
+        assert _num_run_start(s, 4) == 1
+        assert _num_run_start(s, 0) == 0      # 숫자 셀이 아니면 그대로
+
+    def test_run_at_line_head_keeps_hard_cut(self):
+        """런이 줄 머리부터면 당길 자리가 없다 — 하드 컷을 유지해 무한 루프를 막는다."""
+        from app.ai.braille.table_braille import _split_lines
+        from app.ai.braille.constants import COLS
+        text = "⠼" + "⠁" * (COLS + 5)
+        out = _split_lines(text)
+        assert len(out) == 2 and len(out[0]) == COLS

@@ -199,16 +199,44 @@ def _split_cell(text: str, width: int) -> list[str]:
     return lines or [""]
 
 
+# ★ 32칸에서 하드 컷하면 **숫자 한 개가 두 줄로 갈린다**(2026-08-29, braille 최소 재현).
+#   `낭트 칙령(1598, …` 이 `…⠼⠁⠑⠊` / `⠓⠐…` 로 갈리면 뒤 줄 `⠓` 는 수표를 잃어 **자음 ㅎ**
+#   으로 읽힌다 — 1598 이 '159' + '타' 가 된다. 셀 수는 맞고 뜻만 바뀌는 자리다.
+#   gold 실측(정답 1,251쪽, BRF-ASCII): 줄 끝이 수표+숫자로 **공백 없이** 끝나는 줄 129건 중
+#   **숫자가 갈린 것 0건**. 24건이 후보로 잡혔으나 전부 다음 줄이 한글로 이어지는 것이었고,
+#   `#aifd`(1964) 다음 줄 `c*`(년) 은 묵자에서 `1964년` 임을 확인했다(사회문화 p090).
+#   ⚠ gold 는 유니코드가 아니라 **BRF-ASCII** 다. 유니코드로 찾으면 0건이 나온다.
+_DIGIT_CELLS = frozenset("⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚")   # 1~0 (kor_math_rules._DIGIT_MAP 과 같은 값)
+_NUMBER_SIGN = "⠼"
+
+
+def _num_run_start(s: str, i: int) -> int:
+    """`s[i]` 가 수표로 열린 숫자 런 안이면 그 수표 위치, 아니면 `i`.
+
+    숫자 셀은 로마자 a~j 와 점형이 같으므로 **수표로 열린 런만** 본다(number_sign.py 와 같은
+    불변량). 로마자 낱말을 숫자로 오인해 애먼 자리에서 줄을 당기지 않기 위해서다.
+    """
+    if i >= len(s) or s[i] not in _DIGIT_CELLS:
+        return i
+    j = i
+    while j > 0 and s[j - 1] in _DIGIT_CELLS:
+        j -= 1
+    return j - 1 if j > 0 and s[j - 1] == _NUMBER_SIGN else i
+
+
 def _split_lines(text: str) -> list[str]:
-    lines, buf = [], ""
-    for ch in text:
-        if len(buf) >= _COLS:
-            lines.append(buf)
-            buf = ch
-        else:
-            buf += ch
-    if buf:
-        lines.append(buf)
+    lines: list[str] = []
+    i = 0
+    while i < len(text):
+        end = min(i + _COLS, len(text))
+        if end < len(text):
+            cut = _num_run_start(text, end)
+            # 런이 줄 머리부터 시작하면 당길 자리가 없다 — 그때만 하드 컷을 유지한다
+            # (수표+숫자만으로 32칸을 넘는 경우라 실물에서는 안 나온다).
+            if i < cut < end:
+                end = cut
+        lines.append(text[i:end])
+        i = end
     return lines or [""]
 
 
