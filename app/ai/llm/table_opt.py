@@ -346,6 +346,17 @@ def _table_tags(table_structure, table_text: str) -> str:
         grid = _html_to_grid(table_text, expand=False)   # 병합은 원본대로 한 번만
     if not grid and "|" in table_text:
         grid = _pipe_to_grid(table_text)
+    if not grid and table_text.strip():
+        # ★ 1열 표(2026-08-29, 원장 C-30 · N031). 위에서 HTML→파이프로 바꿀 때
+        #   `" | ".join(["한 칸"])` 은 **파이프를 안 남긴다**. 그래서 `"|" in table_text` 가
+        #   거짓이 되고 원문이 그대로 나가, `table_braille` 가 격자로 못 읽고 점역자 주
+        #   narrative(`⠠⠄표. …`)로 떨어졌다. gold 는 그 자리를 **글상자**로 적는다.
+        #   실물 3건 전수 확인(생명과학 body p0115 · 언어와매체 body p0197 · body p0178):
+        #     gold  = 테두리 `⠿⠛…⠿` + 각 항목 **2칸**
+        #     종전  = 테두리 없음 + **0칸** + `⠠⠄표.` 접두(우리가 만든 말)
+        #   줄마다 한 칸인 격자로 세우면 `_render_grid` 가 그대로 그 모양을 낸다.
+        #   대상은 MinerU HTML 표 577개 중 **1열 13개**(dev 10 · val 3)다.
+        grid = [[ln.strip()] for ln in table_text.splitlines() if ln.strip()]
     return build_table_tags(_normalize_grid(grid)) if grid else table_text
 
 

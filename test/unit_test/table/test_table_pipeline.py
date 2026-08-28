@@ -282,6 +282,29 @@ class TestTableRenderModes:
         ]
         assert len(linear_outputs) >= 1, "3칸 시작 줄 없음"
 
+    def test_1열_표는_글상자로_나간다(self) -> None:
+        """1열 표는 격자가 아니라 글상자다 — 테두리 + 각 항목 3칸(원장 C-30 · N031).
+
+        `" | ".join(["한 칸"])` 이 파이프를 안 남겨서, 1열은 `_table_tags` 와
+        `_translate_one` 두 군데서 격자 경로를 빠져나가 점역자 주(`⠠⠄표. …`)로
+        떨어지고 있었다. gold 는 그 자리를 글상자로 적는다(생명과학 body p0115 ·
+        언어와매체 body p0197 실물 대조). 접두 `표.` 는 gold 에 없는 말이었다.
+        """
+        from app.ai.braille.table_braille import TableBraille, build_table_tags
+        from app.schemas.content import LLMOutput
+
+        tags = build_table_tags([["보기"], ["ㄱ. 첫째 항목이다."], ["ㄴ. 둘째 항목이다."]])
+        out = TableBraille().translate([LLMOutput(
+            element_id="11111111-1111-1111-1111-111111111111",
+            corrected_text=tags, render_mode="table_grid",
+            routing_tier="ZERO", processing_time_ms=0)])[0]
+        lines = out.braille_lines
+        assert lines[0].startswith("⠿⠛") and lines[-1].startswith("⠿⠶"), f"테두리 없음: {lines!r}"
+        body = [l for l in lines[1:-1] if l.strip(" ⠀")]
+        assert body and all(l.startswith("⠀⠀") for l in body), f"항목이 3칸이 아니다: {body!r}"
+        assert not any("⠠⠄" in l for l in lines), "점역자 주 접두가 남았다"
+        assert len(out.drafts) == 4, f"초안이 4개가 아니다: {len(out.drafts)}"
+
     def test_2열_구분선은_머리행이_있을_때만(self) -> None:
         """구분선은 "열 제목과 열 항목 사이"다 — 열 제목이 없으면 넣지 않는다(원장 C-30).
 

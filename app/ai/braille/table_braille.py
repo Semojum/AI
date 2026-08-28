@@ -273,6 +273,8 @@ def _has_col_headers(first_row: list[str]) -> bool:
     ⚠ 표본에는 앵커로 회수한 69개가 들어 있고 앵커 정확도는 95.0%다(5% 오염).
       linear 표 439개 중 31개는 아직 짝을 못 지었다.
     """
+    if len(first_row) < 2:
+        return False                      # 1열은 글상자다 — 열 제목이 없으니 구분선도 없다
     if len(first_row) > 2:
         return True                       # 3열 이상은 종전대로 — 열 제목이 실제로 있다
     return all(len(c.strip()) <= _HEAD_CELL_MAX for c in first_row if c.strip())
@@ -801,7 +803,11 @@ class TableBraille:
             """제목 줄을 표 위에 먼저 붙인다(§3 5)(2))."""
             return ([title_br] + lines) if title_br else lines
 
-        if "|" not in text:  # 비정형 → TN 단일안
+        if parsed_rows is None and "|" not in text:  # 비정형 → TN 단일안
+            # ★ `parsed_rows is None` 을 같이 본다(2026-08-29, N031). `<!표>` 태그가 있어도
+            #   **1열**이면 `" | ".join(["한 칸"])` 이 파이프를 안 남겨 여기서 TN 으로 새어
+            #   나갔다. gold 는 그 자리를 글상자로 적는다(테두리 + 각 항목 2칸).
+            #   태그가 파싱됐으면 열이 하나여도 격자 렌더러로 보낸다.
             tn = opt.tn_text or text
             lines, breaks = translate_with_breaks(tn)  # 음절 줄바꿈(BBPG-1.2.1)
             lines = _wt(lines)
