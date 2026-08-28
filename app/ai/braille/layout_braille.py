@@ -19,6 +19,7 @@ BBPG 2장3절5: 글머리 기호 — 3칸 표기, 위계 1단계 동그라미 �
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple, Optional
@@ -374,6 +375,29 @@ def _safe_forced_cut(line: str, limit: int) -> int:
     return max(1, b)
 
 
+def wordwrap_by_word() -> bool:
+    """어절 단위 줄바꿈 스위치(기본 끔 = 음절 단위). 원장 C-83.
+
+    지침 §2.1.1(2)·도서지침 1장1절1)은 **둘 다 규정**으로 둔다:
+      원칙 — "한글은 **음절 단위** 줄바꿈을 원칙으로 한다"        ← 우리 기본값
+      예외 — "다만 이용자의 요구, **시험 문제지**, 점자 초보 학습자용 도서 등과 같이
+              특별한 경우 가독성을 고려하여 **어절 단위**로 줄바꿈 할 수 있다"
+
+    ★ 조문이 예외 대상으로 "시험 문제지"를 콕 집는데 우리 코퍼스가 바로 수능특강이고,
+      **gold 는 어절 단위다.** 31칸 이상 줄이 gold dev 23.8% · val 24.9%뿐이다 —
+      음절 경계는 1~3셀마다 있어 음절 단위면 거의 모든 줄이 31~32칸에 차므로 그 값이
+      나올 수 없다. 우리는 dev 50.7% · val 59.1%다(2026-08-29 전수 실측).
+
+    둘 다 규정 준수라 **규정으로는 못 가른다.** 점역사 자문 항목이고(원장 C-83 ❓),
+    책 전체의 모든 줄 위치가 바뀌는 변경이며 **어절 단위는 줄 끝 여백이 늘어 점자
+    쪽수(=제작비)가 늘 수 있다.** 그래서 기본값을 바꾸지 않고 **측정용 스위치**로 둔다.
+
+    구현은 `break_points`(음절 경계)를 비우는 것뿐이다 — `_break_line` 폴백이 이미
+    어절(`_WORD_RE = [^ ⠀]+`) 단위라 그쪽으로 떨어진다.
+    """
+    return os.environ.get("BRAILLE_WORDWRAP", "syllable") == "word"
+
+
 def _wrap_line(
     line: str, breaks: list[int], width: int = _COLS, first_width: Optional[int] = None,
     keep_indent: bool = False,
@@ -623,7 +647,8 @@ class LayoutBraille:
             indent = (per_line[li] if per_line is not None
                       else (first_indent if li == first_at else 0))
             fw = (_COLS - indent) if indent else None
-            br = bo.break_points[li] if li < len(bo.break_points) else []
+            br = ([] if wordwrap_by_word()
+                  else bo.break_points[li] if li < len(bo.break_points) else [])
             broken, forced = _wrap_line(orig, br, _COLS, first_width=fw,
                                         keep_indent=keep_indent)
             if indent and broken:               # 표시용 들여쓰기
@@ -646,7 +671,8 @@ class LayoutBraille:
                 continue
             d_out: list[str] = []
             for li, dl in enumerate(d.braille_lines):
-                dbr = d.break_points[li] if li < len(d.break_points) else []
+                dbr = ([] if wordwrap_by_word()
+                       else d.break_points[li] if li < len(d.break_points) else [])
                 seg, _ = _wrap_line(dl, dbr, _COLS)
                 d_out.extend(seg)
             d.braille_lines = d_out

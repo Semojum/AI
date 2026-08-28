@@ -964,6 +964,48 @@ class TestPostLayoutCoords:
 class TestSyllableLineWrap:
     """BBPG-1.2.1 음절 줄바꿈 — 조판 후 모든 줄 ≤32, 점역자주 마커가 줄 경계에서 미분리."""
 
+    def test_wordwrap_switch_default_off(self) -> None:
+        """기본값은 음절 단위다 — 스위치를 켜야 어절 단위로 간다(원장 C-83)."""
+        import os
+        from app.ai.braille.layout_braille import wordwrap_by_word
+        assert wordwrap_by_word() is False
+        old = os.environ.get("BRAILLE_WORDWRAP")
+        try:
+            os.environ["BRAILLE_WORDWRAP"] = "word"
+            assert wordwrap_by_word() is True
+            os.environ["BRAILLE_WORDWRAP"] = "syllable"
+            assert wordwrap_by_word() is False
+        finally:
+            if old is None:
+                os.environ.pop("BRAILLE_WORDWRAP", None)
+            else:
+                os.environ["BRAILLE_WORDWRAP"] = old
+
+    def test_wordwrap_word_mode_breaks_at_word_boundary(self, lb, tmp_path, monkeypatch) -> None:
+        """어절 모드는 어절 경계에서만 접는다 — 음절 경계(break_points)를 무시한다.
+
+        음절 단위면 32칸을 꽉 채우고 어절 중간에서 넘어간다. 어절 단위면 그 어절을
+        통째로 다음 줄로 내려 줄 끝에 여백이 남는다. 그 여백이 gold 의 26~30칸 최빈도다.
+        """
+        import os
+        from uuid import uuid4
+        eid = uuid4()
+        word = "⠈⠍⠠⠻⠚⠉⠵"                       # 7셀짜리 한 어절
+        line = "⠀".join([word] * 6)              # 6어절 = 47셀 → 반드시 접힌다
+        lr = _layout((eid, "text", 1, 0))
+        bo = _out([line], eid)
+        bo.break_points = [[i for i in range(1, len(line))]]   # 음절 경계가 촘촘히 있다
+
+        monkeypatch.setenv("BRAILLE_WORDWRAP", "word")
+        lb.layout([bo], page_no=1, job_id="ww", layout_result=lr)
+        got = [l for l in _read_lines(tmp_path, "ww")
+               if l.strip(" ⠀") and "⠼" not in l]      # 페이지행 제외
+        assert len(got) >= 2, "접히지 않았다 — 표본이 32칸을 안 넘는다"
+        for ln in got:
+            for tok in ln.strip(" ⠀").split("⠀"):
+                assert tok == word, f"어절이 쪼개졌다: {ln!r}"
+
+
     @staticmethod
     def _layout_text(lb, text: str):
         import uuid
