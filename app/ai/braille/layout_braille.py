@@ -1096,7 +1096,11 @@ class LayoutBraille:
     def _compose_page_line(self, footer: str, orig_page: str, page_no: int) -> str:
         """페이지행: 원본 페이지번호(좌) · 꼬리말(가운데) · 점자 페이지번호(우) (BBPG 1장2절2)."""
         pn = _page_number_braille(page_no)
-        cells = [" "] * _COLS
+        # ★ 점자 빈칸으로 채운다(2026-08-28). 종전엔 ASCII 공백(U+0020)이었다 —
+        #   이 줄만 점자 파일에 ASCII 가 섞여, 셀을 세는 소비자(BE·FE·점자 프린터)가
+        #   다르게 읽고 앞 빈칸 통계도 어긋났다(생명과학 한 권 실측: ASCII 29칸 26줄·28칸 4줄).
+        #   나머지 조판은 전부 `_PAD`(U+2800)를 쓴다. 여기만 예외였다.
+        cells = [_PAD] * _COLS
         for k, ch in enumerate(pn):                       # 우: 점자 페이지 번호
             cells[_COLS - len(pn) + k] = ch
         left_end = 0
