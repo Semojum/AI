@@ -35,7 +35,7 @@ import os
 import re
 import time
 
-from app.ai.llm.base_opt import decide_tier_timeout, generate_with_retry
+from app.ai.llm.base_opt import _DEDUP_MIN_LEN, _norm_for_dedup, decide_tier_timeout, generate_with_retry
 from app.ai.braille import tag_names as _TAGS
 from app.ai.braille import tn_notices as _TN_NOTICES
 from app.core.config import config
@@ -312,8 +312,33 @@ def _same_gist(a: str, b: str) -> bool:
     return bool(na) and bool(nb) and (na == nb or na in nb or nb in na)
 
 
+def _dup_of_body(text: str, body_texts: list[str] | None) -> bool:
+    """이 전사 항목이 **같은 그림 안 본문 텍스트**에 이미 통째로 들어 있나(원장 C-78 · F23).
+
+    지우는 쪽은 **설명**이다. gold 는 그림 안 글자를 **본문에 한 번만** 적는다
+    (자리 실측: 본문 27 : 설명 1). 우리는 본문 요소로 한 번 + 설명에 또 한 번 = 두 번 적었다.
+
+    규칙을 좁게 잡는다 — 넓히면 **본문에 있어야 할 것까지 지운다**:
+      · **8자 이상**만 본다(`_DEDUP_MIN_LEN`). 짧은 말은 우연히 겹친다(`(가)`·`X 주사`).
+      · **정규화 후 완전 포함**일 때만(공백·태그 제거).
+      · **줄 단위**로만 지운다. 문장 중간을 잘라내면 "A와 B를 잇는 화살표"에서 A만 빠져
+        문장이 깨진다(원장 C-78 경고).
+    실측 대상은 **42건**(8자 이상 중복). 본문에만 있는 **224건은 설명에 없으므로 안 닿는다.**
+    """
+    if not body_texts:
+        return False
+    n = _norm_for_dedup(text)
+    if len(n) < _DEDUP_MIN_LEN:
+        return False
+    # ★ 본문 쪽도 여기서 다시 정규화한다. `_mark_body_texts_in_visuals` 가 이미 해서 오지만,
+    #   호출자가 원문을 그대로 주면 **조용히 아무것도 안 지운다**(공백 하나에 포함이 깨진다).
+    #   말없이 꺼지는 규칙이 제일 나쁘다 — 방어적으로 양쪽 다 정규화한다.
+    return any(n in _norm_for_dedup(b) for b in body_texts)
+
+
 def _outline_text_indents(
-    label: str, title: str, desc: str, items: list[tuple[int, str]], kind: str = ""
+    label: str, title: str, desc: str, items: list[tuple[int, str]], kind: str = "",
+    body_texts: list[str] | None = None,
 ) -> tuple[str, list[int]]:
     """개조식 → (텍스트, 줄별 들여쓰기). §6.3 규정 배치:
       제목(5칸, 점역자주 밖·§6.3.3(1)) → 유형+짧은 설명(점역자주·§6.3.4(1)) → 전사 항목(위계 들여).
@@ -344,6 +369,8 @@ def _outline_text_indents(
             continue
         if _same_gist(text, title) or _same_gist(text, head):
             continue                      # 제목·유형 줄을 그대로 되풀이한 항목은 지운다
+        if _dup_of_body(text, body_texts):
+            continue                      # 본문에 이미 있는 글자는 설명에서 뺀다(원장 C-78)
         lines.append(text); indents.append(_OUTLINE_BASE + _OUTLINE_STEP * max(0, level))  # 전사 §6.3.4(2)①
     if _WRAP_STYLE == "box":
         lines.append("<!상자끝><!/상자끝>"); indents.append(0)
@@ -404,7 +431,8 @@ def omission_draft(label: str) -> Draft:
 
 
 def desc_draft(
-    label: str, title: str, desc: str, items: list[tuple[int, str]], kind: str = ""
+    label: str, title: str, desc: str, items: list[tuple[int, str]], kind: str = "",
+    body_texts: list[str] | None = None,
 ) -> tuple[Draft, list[int]]:
     """1안: 설명(규정 §6.1.1(2) "점역자의 설명으로 대체"). 반환 (Draft, line_indents).
 
@@ -412,7 +440,7 @@ def desc_draft(
     이 배치가 정답에 가장 가깝다. 종전에는 이것을 '개조식'이라 부르고 '줄글'·'짧은 제목'을
     따로 냈는데, 규정은 "설명" 하나이고 gold도 형식이 안 갈려 2026-08-20에 묶었다.
     """
-    text, indents = _outline_text_indents(label, title, desc, items, kind)
+    text, indents = _outline_text_indents(label, title, desc, items, kind, body_texts)
     # ★ 들여쓰기를 **글 안 태그**로 박는다(2026-08-25 대표 지시). 안마다 자기 글에 실리니
     #   안을 바꿔도 어긋나지 않는다 — `tag_names` 의 들여쓰기 태그 주석 참조.
     return Draft(option=2, text=_TAGS.apply_indent_tags(text, indents),
@@ -645,7 +673,11 @@ async def build_visual_drafts(
              else (llm_prose or caption or title or struct_text))
 
     d_omit = omission_draft(label)
-    d_desc, indents = desc_draft(label, title, outline_desc, outline_items, kind)
+    # F23 · 그림 안 본문 글자를 설명에서 뺀다(원장 C-78). `_body_texts` 는
+    # `base_opt._mark_body_texts_in_visuals` 가 **요소마다 자기 것만** 담아 둔 값이다
+    # (공유 상태를 안 만든다 — `asyncio.gather` 로 여러 쪽이 겹쳐도 오염이 없다).
+    _body = (getattr(ext, "structure", None) or {}).get("_body_texts")
+    d_desc, indents = desc_draft(label, title, outline_desc, outline_items, kind, _body)
     drafts = [d_omit, d_desc, *extra_drafts(label)]
     # 줄글 안은 **뒤에** 붙인다 — 앞 셋의 option 번호·순번이 BE·FE 계약이다.
     # ★ 재료가 **진짜 줄글일 때만** 붙인다. 위 `prose`의 폴백 사슬(caption·title·struct_text)은

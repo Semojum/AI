@@ -300,6 +300,68 @@ async def generate_with_retry(
                 return resp, True
 
 
+
+# ── F23 · 그림 안 글자를 본문과 설명에 두 번 적지 않는다 (원장 C-78) ─────────────
+def visual_dedup_enabled() -> bool:
+    """그림 안 본문 글자를 설명에서 빼는 스위치(기본 끔). 원장 C-78 · 시연 F23."""
+    return os.environ.get("VISUAL_DEDUP", "0") == "1"
+
+
+_DEDUP_MIN_LEN = 8   # 이보다 짧으면 안 지운다 — 우연 일치가 많다(`(가)`·`X 주사`)
+
+
+def _norm_for_dedup(text: str) -> str:
+    """비교용 정규화 — 태그·공백을 지운 글자열."""
+    return re.sub(r"\s+", "", re.sub(r"<!/?[^>]+>", "", text or ""))
+
+
+def _bbox_inside(a, b, slack: float = 0.02) -> bool:
+    if not a or not b or len(a) < 4 or len(b) < 4:
+        return False
+    w, h = b[2] - b[0], b[3] - b[1]
+    return (b[0] - slack * w <= a[0] and b[1] - slack * h <= a[1]
+            and a[2] <= b[2] + slack * w and a[3] <= b[3] + slack * h)
+
+
+def _mark_body_texts_in_visuals(extracted, layout) -> None:
+    """시각 요소마다 **자기 bbox 안에 든 본문 텍스트**를 자기 `structure` 에 적어 둔다.
+
+    ★ 요소마다 자기 것만 담는다 — 인스턴스 속성이나 전역에 담으면 `asyncio.gather` 로
+      여러 쪽이 겹칠 때 **쪽 간 오염**이 난다(2026-08-29 pm 확인). 공유 상태를 안 만든다.
+
+    실측(캡션 켜진 dev+val 661쪽, 원장 C-78): 그림 bbox 안 본문 텍스트 289건 중
+    **설명에도 있는 것 65건**(8자 이상 42) · **설명엔 없는 것 224건**.
+    224건은 본문에 있어야 하는 것이라 **건드리면 안 된다** — 지우는 쪽을 '설명'으로 잡으면
+    그것들은 설명에 없으므로 **원리적으로 안 닿는다**.
+    gold 는 그림 안 글자를 **본문에 한 번만** 적는다(자리: 본문 27 : 설명 1).
+    """
+    if not visual_dedup_enabled() or not layout:
+        return
+    boxes = {e.element_id: e.bbox for e in getattr(layout, "elements", []) or [] if e.bbox}
+    types = {e.element_id: e.type for e in getattr(layout, "elements", []) or []}
+    bodies = [(boxes[i], t) for i, t in
+              ((e.element_id, (e.corrected_text or "")) for e in extracted)
+              if i in boxes and types.get(i) in _BODY_TYPES and t.strip()]
+    if not bodies:
+        return
+    for e in extracted:
+        if types.get(e.element_id) not in _VISUAL_TYPES:
+            continue
+        vb = boxes.get(e.element_id)
+        if not vb:
+            continue
+        inner = [_norm_for_dedup(t) for bb, t in bodies if _bbox_inside(bb, vb)]
+        inner = [t for t in inner if len(t) >= _DEDUP_MIN_LEN]
+        if inner:
+            st = dict(e.structure or {})
+            st["_body_texts"] = inner
+            e.structure = st
+
+
+_BODY_TYPES = {"text", "list_item", "title"}
+_VISUAL_TYPES = {"image", "diagram", "chart_graph", "cartoon"}
+
+
 class BaseOpt:
     """opt 공통 진입점. optimize() = 요소별 _optimize_one을 격리 없이 gather."""
 
@@ -309,6 +371,7 @@ class BaseOpt:
         routing_tier: str,
         layout: Optional[LayoutResult] = None,
     ) -> list[LLMOutput]:
+        _mark_body_texts_in_visuals(extracted, layout)
         return await asyncio.gather(*[self._optimize_one(e, routing_tier) for e in extracted])
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
