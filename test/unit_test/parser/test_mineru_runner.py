@@ -169,3 +169,31 @@ class TestMineruRetry:
         """재시도가 다 실패하면 예외가 올라가고 호출자가 텍스트 폴백으로 간다."""
         from app.ai.parser import mineru_runner as M
         assert M._MINERU_RETRIES >= 1
+
+
+# ── MinerU footer 신호 보존 (2026-08-29, 원장 C-86) ──────────────────────────
+# MinerU 는 header / footer / page_number 를 나눠서 주는데 `TYPE_MAP` 에 `footer` 가 없어
+# 기본값 `"text"` 로 떨어지고 **그 구분이 사라진다.** 꼬리말을 적을지는 규정↔관행이 갈려
+# (§2.1.2 는 적으라 · gold 는 91.4% 안 적음 · 25,382셀) 자문 대기이므로 **판정은 미루고
+# 신호만 남긴다.** 그래서 타입은 그대로 두고 flags 에만 표시한다.
+class TestMineruFooterFlag:
+    def test_footer_는_플래그로_남는다(self):
+        from app.ai.parser.mineru_runner import TYPE_MAP
+        # 타입 표에 `footer` 를 넣지 않는 것이 의도다 — 넣으면 `header_footer` 로 조판이
+        # 옮겨 가는데, 실측하면 출력이 한 글자도 안 바뀌고(`_is_running_foot` 962건 전원
+        # 통과) 판정만 흐려진다.
+        assert "footer" not in TYPE_MAP
+        assert TYPE_MAP.get("footer", "text") == "text"
+
+    def test_출력_타입은_안_바뀐다(self):
+        """★ 이 수정은 **출력 무변동**이어야 한다 — 플래그만 는다."""
+        from app.ai.parser.mineru_runner import TYPE_MAP
+        assert TYPE_MAP.get("header") == "header_footer"      # header 는 종전대로
+        assert TYPE_MAP.get("page_number") == "page_number"
+
+    def test_플래그_이름이_R플래그로_새지_않는다(self):
+        """`MINERU_FOOTER` 가 검토 플래그로 승격되면 그것도 출력 변경이다."""
+        from app.ai.quality.quality_checker import _FLAG_TO_REVIEW, _GENERIC_R_FLAG
+        assert "MINERU_FOOTER" not in _FLAG_TO_REVIEW
+        assert not _GENERIC_R_FLAG.match("MINERU_FOOTER")
+        assert not "MINERU_FOOTER".endswith("_FALLBACK")
