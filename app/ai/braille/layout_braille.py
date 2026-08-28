@@ -902,7 +902,7 @@ class LayoutBraille:
             if hlevel >= 3:
                 return _HEADING_DEEP_INDENT  # 3·4단계 5칸
             if hlevel == 2:
-                return _HEADING_LEVEL2_INDENT  # 2단계 3칸
+                return _HEADING_LEVEL2_INDENT  # 2단계 7칸(앞 빈칸 6)
             return 0  # 1단계는 가운데 정렬(별도 처리)
         if etype == "text":
             return _PARA_INDENT
