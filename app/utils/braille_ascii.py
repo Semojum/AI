@@ -100,3 +100,31 @@ def unicode_to_ascii(braille: str, *, space: str = "`") -> str:
         else:
             out.append(_UNSHIFT_REMAP.get(a) or a.lower())
     return "".join(out)
+
+
+# ── gold 읽기 — 표기를 스스로 판별한다 (2026-08-29) ──────────────────────────
+# ★ **문서로는 안 막힌다.** "gold 는 BRF-ASCII 다"를 핸드오프 맨 앞에 적어 두고도 같은 날
+#   30분 만에 다시 밟았다(원장 B-12 · C-87). 유니코드 `⠼`·`⠿` 로 gold 를 찾으면 **0건**이
+#   나오는데, 그 0을 "현상이 없다"로 읽으면 결론이 통째로 뒤집힌다.
+#   그래서 **기억해서 변환을 붙이는 대신, 무엇을 넣든 맞게 나오게** 한다.
+#
+# 판별 — 유니코드 점자 셀이 하나라도 있으면 이미 유니코드다. 없으면 BRF-ASCII 로 본다.
+#   gold(`test_data/output/*.brl` · `corpus/pages/braille/**/*.brf`)는 **코퍼스 관례**라
+#   `backtick="cell"` 이 정본이다(위 모듈 주석 참조 — "space" 로 읽으면 초성 ㄱ 이 사라진다).
+_BRAILLE_RANGE = range(0x2800, 0x2900)
+
+
+def looks_like_ascii_braille(text: str) -> bool:
+    """유니코드 점자 셀이 없으면 BRF-ASCII 표기로 본다."""
+    return not any(ord(c) in _BRAILLE_RANGE for c in text)
+
+
+def read_gold(path, *, backtick: str = "cell") -> str:
+    """정답 점자 파일을 **유니코드 점자로** 읽는다. 표기는 스스로 판별한다.
+
+    gold 를 읽는 코드는 이 함수만 쓴다 — `read_text()` 를 직접 부르면 BRF-ASCII 를
+    유니코드로 착각해 **집계가 조용히 0 이 된다.**
+    """
+    import pathlib
+    text = pathlib.Path(path).read_text(encoding="utf-8", errors="replace")
+    return ascii_to_unicode(text, backtick=backtick) if looks_like_ascii_braille(text) else text
