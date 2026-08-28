@@ -229,6 +229,13 @@ _BRAILLE_RE      = re.compile(r"[⠀-⣿]+")
 # _safe_to_unicode는 이 자리를 _GAP_MARK로 찍어 두고, _collapse_spaces가 모드전환
 # 부산물(⠀⠀)만 정리한 **뒤에** 빈칸으로 되돌린다 — 의도한 두 칸과 부산물을 가른다.
 _MULTI_SPACE_RE  = re.compile(r"(  +)")
+# ★ C5 — 쉼표 뒤 숫자에서 braillify 세그먼트를 끊는다(2026-08-29).
+#   braillify 2.0.0 이 `,4문단` 에 수표를 안 붙인다(`4문단`·`가나다4문단`·`하여, 4문` 은 붙는다).
+#   앞이 숫자면 **안 끊는다** — 자릿점(제41항 `1,000`)이 ⠼⠁⠐⠼⠚⠚⠚ 로 깨진다.
+_COMMA_DIGIT_RE  = re.compile(r"(?<![0-9],)(?<=,)(?=\d)")
+#   ⚠ lookbehind 를 **두 글자**로 본다. `(?<!\d)(?<=,)` 로 쓰면 둘 다 "바로 앞 한 글자"를
+#     보는데 `,` 는 숫자가 아니라 부정 lookbehind 가 **항상 참**이 되어 자릿점까지 끊긴다
+#     (`1,000원` → ⠼⠁⠐⠼⠚⠚⠚). 처음 그렇게 썼다가 검증에서 잡았다.
 _GAP_MARK        = "\x01"
 _DIGIT_ALPHA_RE  = re.compile(r"(?<=\d)(?=[A-Za-z])")   # 숫자 뒤 바로 오는 알파벳
 _HANGUL_SYL_RE   = re.compile(r"[가-힣]")        # 완성형 한글 음절
@@ -2018,6 +2025,16 @@ def _safe_to_unicode(seg: str, _split_eng: bool = True,
       두 칸은 항목 구분 부호다 — 「점자 도서 제작 지침」 3장 3절 4)(3)①(선택지 사이)·
       6)(1)(표의 셀 사이). 두 칸 이상 구간에서 잘라 따로 변환하고 빈칸 수를 복원한다.
     """
+    # ★ C5 — braillify 2.0.0 은 **쉼표 바로 뒤 숫자에 수표를 안 붙인다**(2026-08-29 실측).
+    #   `,4문단` → ⠐⠙(수표 없음) / `4문단`·`가나다4문단`·`하여, 4문` → ⠼⠙.
+    #   한글 뒤도 공백 뒤도 되는데 **쉼표 뒤만** 빠진다. 외부 라이브러리라 못 고친다.
+    #   수표가 빠지면 숫자 점형이 **한글로 읽힌다** — `65세 이상` 이 `카마세이상` 이 된다.
+    #   점역사가 아니라 **독자가 틀리게 읽는다.** C5 는 배포 차단 조건이다(M018 실물 5건).
+    #   ⚠ 앞이 숫자면 안 끊는다 — 위 `_COMMA_DIGIT_RE` 주석 참조.
+    if _COMMA_DIGIT_RE.search(seg):
+        return "".join(_safe_to_unicode(part, _split_eng, ctx)
+                       for part in _COMMA_DIGIT_RE.split(seg) if part)
+
     parts = _MULTI_SPACE_RE.split(seg)
     if len(parts) > 1:
         return "".join(_GAP_MARK * len(p) if i % 2 else _safe_to_unicode(p, _split_eng, ctx)
