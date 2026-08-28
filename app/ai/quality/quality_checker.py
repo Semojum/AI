@@ -75,11 +75,29 @@ _C5_DIGIT_RE = re.compile(r"[0-9]")
 # 플래그부터 무시하게 되므로 진짜 누락만 남긴다. 태그 제거는 contraction_lookalikes와
 # **같은 정규식**을 쓴다(둘이 갈리면 판정이 어긋난다).
 _C5_CIRCLED_RE = re.compile(r"\\textcircled\{[^}]*\}")
+# ★ 로그 밑은 **규정이 수표를 금한 자리**다(제46항 1호 — "로그의 밑은 수표 없이 내려 적는다").
+#   `\log_{2} x` 는 ⠸⠠⠆ 로 나가는 것이 맞는데, 요소에 다른 숫자가 없으면 게이트가 열려
+#   C5 가 뜬다. 규정대로 낸 출력을 배포 블로커로 세우는 셈이라 뺀다.
+#   ln·lim 도 같은 조항이다. **일반 아래첨자(화학식 등)는 빼지 않는다** — 그쪽은 규정
+#   확인이 안 됐고, 넓히면 진짜 누락을 놓친다(2026-08-29 실측 근거는 아래 오탐 감사).
+_C5_LOGSUB_RE = re.compile(r"\\(?:log|ln|lim)_\{?[0-9]+\}?")
+# 점역자주(TN)로 대체된 요소 — 양끝이 ⠠⠄ 인 한 덩어리. 표를 격자로 못 펴면 TableBraille 이
+# 표 본문 대신 점역자주 한 문단을 낸다(`_translate_one` 의 "비정형 → TN 단일안" 가지).
+# 그 자리는 **원문을 1:1 로 옮기는 요소가 아니라** 수치가 정당하게 요약·생략된다 —
+# 시각자료를 C5 에서 뺀 것과 같은 논리다.
+_TN_MARK = "⠠⠄"
 
 
 def _c5_gate_text(text: str) -> str:
-    """C5 숫자 게이트가 볼 원문 — 인라인 태그와 원문자를 벗긴 것."""
-    return _C5_CIRCLED_RE.sub("", _TAG_TOKEN_RE.sub("", text or ""))
+    """C5 숫자 게이트가 볼 원문 — 인라인 태그·원문자·로그 밑을 벗긴 것."""
+    return _C5_LOGSUB_RE.sub(
+        "", _C5_CIRCLED_RE.sub("", _TAG_TOKEN_RE.sub("", text or "")))
+
+
+def _is_tn_only(braille_lines) -> bool:
+    """점역 결과가 점역자주 한 덩어리인가 — C5 검사 대상이 아니다."""
+    body = "".join(braille_lines or []).strip()
+    return body.startswith(_TN_MARK) and body.endswith(_TN_MARK) and len(body) > 4
 
 
 # ── R13: 본문 텍스트 위험 구간 (2026-08-10) ─────────────────────────────────
@@ -260,6 +278,8 @@ class QualityChecker:
             b = braille_by_id.get(eid)
             if b is None or not any(ln.strip() for ln in b.braille_lines):
                 continue  # 점역 출력 자체가 없으면 상위 실패 신호(C1/C2)의 소관
+            if _is_tn_only(b.braille_lines):
+                continue  # 점역자주로 대체된 요소 — 위 _TN_MARK 주석 참조
             # ⠼가 있기만 하면 통과시키면 안 된다 — 영어 약자 ble이 같은 점형이라
             # `possible`의 ⠼가 스캐너를 대신 만족시켜 진짜 수표 누락을 가린다(number_sign.py).
             if not has_number_sign(o.corrected_text or "", "".join(b.braille_lines)):
