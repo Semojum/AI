@@ -152,6 +152,14 @@ _TN_SRC_MARK = "⠠⠄"                                  # 점역자 주 마커(
 #   같은 오해가 오늘 도표 축(diagram_opt._TITLE_INDENT)에서도 4로 고쳐졌다
 _TITLE_INDENT = 4
 
+# ★ 점자 지면의 빈칸은 전부 U+2800 이다(대표 지적 R1, 2026-08-24). 표 경로는 그때 빠졌다 —
+#   줄머리를 ASCII 공백 `"  "`로 적고 있었고 **눈으로는 `"⠀⠀"`와 구별이 안 돼** 넉 달을 살아남았다.
+#   그래서 리터럴을 쓰지 않고 반드시 이 이름으로 적는다. 2026-08-28 실측(생명과학 body p0004
+#   한 쪽): 우리 출력에 ASCII 공백 35자 · 점자 빈칸 544자. 표 줄이 전부 ASCII 쪽이었다.
+#   폭 계산은 안 바뀐다 — `layout_braille._cell_count`가 `len()`이라 둘 다 1셀로 센다.
+_PAD = "⠀"          # 점자 빈칸(U+2800)
+_ROW_INDENT = 2     # 표 본문 "3칸에서 시작" = 앞 빈칸 2 (자료지침 §3.1.1(1)②)
+
 # 표 위/아래 테두리 (자료지침 §3.1.3(2) `=GGG…=` / `=777…=`). 격자·선형이 같이 쓴다.
 _TBL_TOP = "⠿" + "⠛" * (_COLS - 2) + "⠿"
 _TBL_BOT = "⠿" + "⠶" * (_COLS - 2) + "⠿"
@@ -159,7 +167,7 @@ _TBL_BOT = "⠿" + "⠶" * (_COLS - 2) + "⠿"
 
 def _tn_transpose_line() -> str:
     """전치 점역자 주 한 줄. 지침 예 3-2는 3칸(빈칸 2)에서 적고 표 본문 위에 둔다."""
-    return "  " + _translate(_TN_SRC)
+    return _PAD * _ROW_INDENT + _translate(_TN_SRC)
 
 
 def _title_line(title: str) -> str:
@@ -167,7 +175,7 @@ def _title_line(title: str) -> str:
 
     layout이 폭을 건드리지 않도록 공백을 직접 적는다.
     """
-    return "⠀" * _TITLE_INDENT + _translate(title)   # 점자 빈칸(R1)
+    return _PAD * _TITLE_INDENT + _translate(title)
 
 
 def _border_line() -> str:
@@ -327,16 +335,17 @@ def _render_linear(corrected_text: str) -> list[str]:
             parts = [p.strip() for p in ln.split("|", 1)]
             if len(parts) > 1:
                 head_br, val_br = _translate(parts[0]), _translate(parts[1])
-                entry = f"  {head_br}⠀⠀{val_br}"
+                entry = f"{_PAD * _ROW_INDENT}{head_br}{_PAD * 2}{val_br}"
                 if len(entry) > _COLS:
                     # 정답 관행(세계사 p009 실측): 키+값이 32칸을 넘치면 키를 단독 줄로
                     # 세우고 값을 다음 줄부터 — 한 줄에 이어붙이지 않는다.
-                    result.append(f"  {head_br}")
-                    result.extend(_split_lines(f"  {val_br}") if len(val_br) + 2 > _COLS
-                                  else [f"  {val_br}"])
+                    result.append(f"{_PAD * _ROW_INDENT}{head_br}")
+                    pad = _PAD * _ROW_INDENT
+                    result.extend(_split_lines(f"{pad}{val_br}")
+                                  if len(val_br) + _ROW_INDENT > _COLS else [f"{pad}{val_br}"])
                     continue
             else:
-                entry = f"  {_translate(parts[0])}"
+                entry = f"{_PAD * _ROW_INDENT}{_translate(parts[0])}"
         else:
             entry = _translate(ln)
         if len(entry) <= _COLS:
@@ -511,8 +520,8 @@ def _render_rowwise(rows: list[list[str]], orig_len: list[int]) -> list[str]:
         cells = r[:n]
         if not any(c.strip() for c in cells):
             continue
-        lines.append("  " + "⠀⠀".join(_translate(c) if c.strip() else _EMPTY_CELL
-                                      for c in cells))
+        lines.append(_PAD * _ROW_INDENT + (_PAD * 2).join(
+            _translate(c) if c.strip() else _EMPTY_CELL for c in cells))
     return lines or [""]
 
 
@@ -603,7 +612,8 @@ def _render_unfold(corrected_text: str) -> list[str]:
     rows = [r + [""] * (n_cols - len(r)) for r in rows]
 
     if len(rows) < 2 or n_cols < 2:              # 전개할 축이 없음 → 값 나열
-        return [f"  {_translate('  '.join(c for c in r if c))}" for r in rows] or [""]
+        return [f"{_PAD * _ROW_INDENT}{_translate('  '.join(c for c in r if c))}"
+                for r in rows] or [""]
 
     # §3.1.1은 순서가 있는 판정이다 — ①"한 행을 32칸 안에 배열할 수 있다면 표의 정렬
     # 형태대로" 가 먼저고, (2)전치는 "원본 형태대로 점역할 수 **없다면**" 쓰는 뒷수단이다.
@@ -661,24 +671,24 @@ def _render_unfold(corrected_text: str) -> list[str]:
                     tops.append(v)
             section = " ".join([*tops, *(k for k in key if k)]).strip()
             if section and section != prev_section:
-                lines.append(f"  {_translate(section)}")
+                lines.append(f"{_PAD * _ROW_INDENT}{_translate(section)}")
                 prev_section = section
             # 열 머리 줄 = 구간 머리. 정답 도서 실측(사회문화 p087·p174)은 5칸(빈칸 4)에
             # 적고, 그 아래 딸린 줄은 3칸에서 '행 머리{쌍점}{한 칸}값'으로 적는다.
             # 쌍점 ⠐⠂ + 한 칸은 gold 원문과 셀 단위로 일치(p087 3행 ⠺⠑⠕⠐⠂⠀…).
             head_br = (f"{corner_br}{sep}" if corner_br else "") + _cell(col_names[j])
-            lines.append(f"    {head_br}")
+            lines.append(f"{_PAD * _TITLE_INDENT}{head_br}")
             for r in rows_in:
                 row_head = r[n_head_cols - 1] if n_head_cols else ""
                 row_br = f"{_translate(row_head)}{sep}" if row_head else ""
-                entry = f"  {row_br}{_cell(r[j])}"
+                entry = f"{_PAD * _ROW_INDENT}{row_br}{_cell(r[j])}"
                 if len(entry) <= _COLS or not row_br:
                     lines.append(entry)
                 elif _BOOK_STYLE:
                     # 정답 관행(세계사 p009·사회문화 p174 실측): 값이 32칸을 넘치면 행 머리를
                     # 단독 줄로 세우고(이때는 쌍점 없이) 값을 다음 줄부터 적는다.
-                    lines.append(f"  {_translate(row_head)}")
-                    lines.append(f"  {_cell(r[j])}")
+                    lines.append(f"{_PAD * _ROW_INDENT}{_translate(row_head)}")
+                    lines.append(f"{_PAD * _ROW_INDENT}{_cell(r[j])}")
                 else:
                     # 규정: 행 제목 단위로 줄을 바꾸고(§3.3.1(4)) 한 셀이 두 줄로 나뉘면
                     # 다음 줄 **첫 칸부터** 이어 적는다(도서지침 제3장 6)(3)).
