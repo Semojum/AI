@@ -1112,6 +1112,13 @@ def run(
     for item in content_list:
         item_type = item.get("type", "text")
         mapped_type = TYPE_MAP.get(item_type, "text")
+        # ★ MinerU 는 `header` / `footer` / `page_number` 를 나눠서 준다. 위 표에 `footer` 가
+        #   없어 기본값 `"text"` 로 떨어지고 **그 구분이 여기서 사라진다**(원장 C-86).
+        #   타입을 `header_footer` 로 바꾸지는 **않는다** — 실측하면 출력이 한 글자도 안 바뀌고
+        #   (`_is_running_foot` 962건 전원 통과 · `header_footer` 도 본문으로 조판된다),
+        #   꼬리말을 적을지 말지는 **규정↔관행이 갈려 자문 대기**다(§2.1.2 는 적으라 하는데
+        #   gold 는 91.4%를 안 적는다 · 25,382셀). 그래서 **판정은 미루고 신호만 남긴다.**
+        raw_footer = item_type == "footer"
         if mapped_type == "image" and item.get("sub_type") == "flowchart":
             mapped_type = "chart_graph"
         # 인쇄 캡션이 있는 시각자료는 생성 설명(GPT-4o+점역자주) 대신 인쇄 캡션을 그대로
@@ -1258,7 +1265,7 @@ def run(
             "image_path": image_path,
             "heading_level": hlevel,
             "caption_ref": None,
-            "flags": [],
+            "flags": ["MINERU_FOOTER"] if raw_footer else [],
         })
         order += 1
 
