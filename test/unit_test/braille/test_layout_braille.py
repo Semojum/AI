@@ -555,6 +555,42 @@ class TestLayoutBody:
         first = next(l for l in _read_lines(tmp_path, "h3") if l.strip(" ⠀"))
         assert first.startswith("⠀⠀⠀⠀") and first.strip(" ⠀") == "소제목"
 
+    def test_item_head_number_indent3(self, lb, tmp_path) -> None:
+        """문항·괄호 번호로 시작하는 3·4단계는 단원명이 아니라 항목 머리 → 3칸(앞 빈칸 2).
+
+        지침 2.4.2는 **단원명**에만 적용된다. `01 생물의 특성`이 한 쪽에 아홉 번 나오는
+        정답과 해설의 문항 머리나 `(1)` 같은 괄호 항목은 단원명이 아니다.
+        dev·val-2027 gold 전수 827건에서 앞 빈칸 2가 803건(97.1%)이고 **4는 0건**이다.
+        (2026-08-28, 원장 C-81)
+        """
+        for text in ("01 생물의 특성", "(1) 생물의 특성", "(가) 세포"):
+            eid = uuid4()
+            lr = _layout((eid, "title", 1, 4))
+            bo = _out(["항목"], eid)
+            bo.corrected_text = text
+            job = f"item{abs(hash(text)) % 9999}"
+            lb.layout([bo], page_no=1, job_id=job, layout_result=lr)
+            first = next(l for l in _read_lines(tmp_path, job) if l.strip(" ⠀"))
+            assert first.startswith("⠀⠀") and not first.startswith("⠀⠀⠀"), text
+
+    def test_item_head_rule_does_not_touch_real_headings(self, lb, tmp_path) -> None:
+        """번호가 없거나 단계가 2 이하면 종전대로다 — 규칙이 새지 않는다.
+
+        `01 …` 꼴은 강 제목에도 있지만 MinerU가 그건 lv1로 주고 우리는 2단계(6칸)로
+        조판한다. 그래서 이 규칙은 **3단계 이하**에만 건다.
+        """
+        eid = uuid4()                                   # 번호 없는 4단계 → 5칸 그대로
+        bo = _out(["소제목"], eid); bo.corrected_text = "생물의 특성"
+        lb.layout([bo], page_no=1, job_id="keep4", layout_result=_layout((eid, "title", 1, 4)))
+        first = next(l for l in _read_lines(tmp_path, "keep4") if l.strip(" ⠀"))
+        assert first.startswith("⠀⠀⠀⠀") and not first.startswith("⠀⠀⠀⠀⠀")
+
+        eid2 = uuid4()                                  # 번호가 있어도 2단계면 7칸 그대로
+        bo2 = _out(["강제목"], eid2); bo2.corrected_text = "01 생명 과학의 이해"
+        lb.layout([bo2], page_no=1, job_id="keep2", layout_result=_layout((eid2, "title", 1, 2)))
+        first2 = next(l for l in _read_lines(tmp_path, "keep2") if l.strip(" ⠀"))
+        assert first2.startswith("⠀" * 6) and not first2.startswith("⠀" * 7)
+
     def test_empty_element_no_tagging(self, lb, tmp_path) -> None:
         """내용 없는 요소(빈 줄뿐)는 rule_trail·빈 줄을 만들지 않는다."""
         e1, e2 = uuid4(), uuid4()
