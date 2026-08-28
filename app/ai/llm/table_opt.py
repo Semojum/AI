@@ -9,6 +9,7 @@ render_mode 우선순위: table_structure['render_mode'] → 행/열 수 기반 
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 from html import unescape as _html_unescape
@@ -407,6 +408,29 @@ def _is_answer_grid(grid: list) -> bool:
     return _is_answer_texts([c for row in grid for c in row])
 
 
+def two_col_mode() -> str:
+    """2열 표를 무엇으로 낼지(기본 `linear` = 현행). 원장 C-30.
+
+    지침 §3.1.1(1)은 ①"한 행을 32칸 안에 배열할 수 있다면 표의 정렬 형태대로"가 먼저다.
+    **열이 둘이라고 풀어 적으라는 조문은 없다.** 그런데 우리는 `max_col == 2`면 무조건
+    `linear`로 보낸다 — 원장 C-30이 "근거 없음"으로 적어 둔 그 규칙이다.
+
+    2026-08-29 실측으로 근거가 섰다.
+      · 우리가 `linear`를 고른 표 **167개 중 166개(99.4%)가 "2열이라서"** 다
+        (나머지 1개만 3열 이상 정답 요약표).
+      · 우리가 `linear`를 고른 **97쪽**에서 gold는 **행 구분선 `⠐⠐…`를 81개** 쓴다.
+        우리는 **23개**뿐이다. 행 구분선은 격자형의 표시다 — **gold는 거기서 격자를 쓴다.**
+      · 같은 쪽의 31칸 이상 줄 비율이 우리만 gold보다 **6~10p 빽빽하다**
+        (dev linear 28.6% : gold 22.6% · val linear 32.6% : gold 22.8%).
+        격자를 고른 쪽에서는 우리와 gold가 **±1p 안**으로 맞는다.
+
+    ★ 그래도 기본값을 안 바꾼다. 표 배치는 **초안 넷을 다 내보내 점역사가 고르는** 축이라
+      기본을 뒤집으면 `selected_idx`가 통째로 움직인다. 원장 C-30이 "A/B 필요"로 걸려
+      있으므로 **재 볼 수 있게만** 열어 둔다(C-30b·C-77·C-83과 같은 형태).
+    """
+    return "table_grid" if os.environ.get("TABLE_TWO_COL") == "grid" else "linear"
+
+
 def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
     if table_structure:
         if rm := table_structure.get("render_mode"):
@@ -416,7 +440,7 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
             max_row = max((c.get("row", 0) for c in cells), default=0) + 1
             max_col = max((c.get("col", 0) for c in cells), default=0) + 1
             if max_col == 2:
-                return "linear"
+                return two_col_mode()
             if max_row == 1:
                 return "transposed"
             if max_col >= 3 and _is_answer_summary(cells):
@@ -434,7 +458,7 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
         max_col = max(len(r) for r in tag_rows)
         if max_col >= 3 and _is_answer_grid(tag_rows):
             return "linear"
-        return "linear" if max_col == 2 else "table_grid"
+        return two_col_mode() if max_col == 2 else "table_grid"
     # table_structure 없음/빈 셀: HTML 표(MinerU) 또는 '|' 격자로 추론(narrative 오분류 방지).
     if _is_html_table(text):
         grid = _html_to_grid(text)      # 여기만 expand=True — 진짜 열 수를 세야 한다
@@ -442,14 +466,14 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
             max_col = max(len(r) for r in grid)
             if max_col >= 3 and _is_answer_grid(grid):
                 return "linear"
-            return "linear" if max_col == 2 else "table_grid"
+            return two_col_mode() if max_col == 2 else "table_grid"
     rows = [ln for ln in (text or "").splitlines() if "|" in ln]
     if not rows:
         return "narrative"
     max_col = max(len(r.split("|")) for r in rows)
     if max_col >= 3 and _is_answer_grid([r.split("|") for r in rows]):
         return "linear"
-    return "linear" if max_col == 2 else "table_grid"
+    return two_col_mode() if max_col == 2 else "table_grid"
 
 
 # 모델이 변환 대신 **상의를 답할 때** 나오는 말들. 이게 점자로 인쇄되면 점역사는 표 자리에서

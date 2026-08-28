@@ -62,6 +62,35 @@ class TestRenderMode:
         cells = "".join(f"<!칸>c{i}<!/칸>" for i in range(cols))
         assert _infer_render_mode(None, f"<!표><!행>{cells}<!/행><!/표>") == expected
 
+    def test_2열_스위치_기본은_풀어쓰기(self, monkeypatch):
+        """기본값은 종전 그대로 `linear` 다 — 스위치를 켜야 격자로 간다(원장 C-30).
+
+        2026-08-29 실측: 우리가 `linear` 를 고른 표 167개 중 **166개가 "2열이라서"** 이고,
+        그 쪽에서 gold 는 행 구분선을 81개 쓰는데 우리는 23개뿐이다(= gold 는 격자를 쓴다).
+        근거는 섰지만 표 배치는 초안 넷 중 무엇을 고르냐를 바꾸는 축이라 기본을 안 뒤집는다.
+        """
+        from app.ai.llm.table_opt import _infer_render_mode, two_col_mode
+        two = "<!칸>a<!/칸><!칸>b<!/칸>"
+        tbl = f"<!표><!행>{two}<!/행><!/표>"
+        monkeypatch.delenv("TABLE_TWO_COL", raising=False)
+        assert two_col_mode() == "linear"
+        assert _infer_render_mode(None, tbl) == "linear"
+        monkeypatch.setenv("TABLE_TWO_COL", "grid")
+        assert two_col_mode() == "table_grid"
+        assert _infer_render_mode(None, tbl) == "table_grid"
+
+    def test_3열은_스위치와_무관하게_격자(self, monkeypatch):
+        """스위치는 **2열에만** 건다. 3열 이상은 이미 격자라 안 건드린다."""
+        from app.ai.llm.table_opt import _infer_render_mode
+        three = "".join(f"<!칸>c{i}<!/칸>" for i in range(3))
+        tbl = f"<!표><!행>{three}<!/행><!/표>"
+        for v in (None, "grid"):
+            if v is None:
+                monkeypatch.delenv("TABLE_TWO_COL", raising=False)
+            else:
+                monkeypatch.setenv("TABLE_TWO_COL", v)
+            assert _infer_render_mode(None, tbl) == "table_grid"
+
     def test_태그가_없으면_종전_추론(self):
         from app.ai.llm.table_opt import _infer_render_mode
         assert _infer_render_mode(None, "그냥 문장이다") == "narrative"
