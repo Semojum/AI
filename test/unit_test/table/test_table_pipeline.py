@@ -282,19 +282,26 @@ class TestTableRenderModes:
         ]
         assert len(linear_outputs) >= 1, "3칸 시작 줄 없음"
 
-    def test_2열_격자는_구분선을_안_넣는다(self) -> None:
-        """지침은 구분선을 "열 제목과 열 항목 **사이**"로 정의한다 — 열 제목이 없으면 없다.
+    def test_2열_구분선은_머리행이_있을_때만(self) -> None:
+        """구분선은 "열 제목과 열 항목 사이"다 — 열 제목이 없으면 넣지 않는다(원장 C-30).
 
-        2열 표는 대개 키-값 나열이라 첫 행이 열 제목이 아니다. gold 실측에서 2열 표
-        339개 중 구분선이 있는 것은 40개(12%)뿐이라, 넣지 않는 쪽이 88.2% 맞는다.
-        3열 이상은 종전대로 넣는다. (2026-08-29, 원장 C-30)
+        2열 표는 대개 키-값 나열이라 첫 행이 열 제목이 아니다. 판정은 머리행 칸이
+        짧은가로 한다(제목은 라벨이라 짧고 값은 길다). gold 실측 408개에서
+        머리행 ≤10자 규칙이 전체 90.9%(늘 넣기 19.9% · 안 넣기 80.1%)다.
+        임계는 val 에서 고르고 dev 에서 평가했다(dev F1 0.82). 3열 이상은 종전대로.
         """
         from app.ai.braille.table_braille import _render_grid
         sep = "⠐" * 32
-        two = _render_grid("이름|점수\n가나다|95\n라마바|88")
-        assert sep not in two, f"2열에 구분선이 들어갔다: {two!r}"
+
+        short = _render_grid("이름|점수\n가나다|95\n라마바|88")
+        assert sep in short, f"짧은 머리행인데 구분선이 빠졌다: {short!r}"
+
+        long_head = ("실험 결과를 정리한 표의 첫 칸|둘째 칸도 아주 길게 적은 값이다\n"
+                     "가나다|95\n라마바|88")
+        assert sep not in _render_grid(long_head), "긴 첫 행인데 구분선이 들어갔다"
+
         three = _render_grid("구분|점수|등급\n가나다|95|가\n라마바|88|나")
-        assert sep in three, f"3열에 구분선이 빠졌다: {three!r}"
+        assert sep in three, "3열인데 구분선이 빠졌다"
 
     def test_no_ascii_space_in_table_braille(
         self, braille_outputs: list[BrailleOutput]
