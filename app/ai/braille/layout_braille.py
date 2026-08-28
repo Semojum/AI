@@ -101,6 +101,20 @@ _ITEM_HEAD = re.compile(
     r"|\d+\.\s)"                    # 1.
 )
 _HEADING_DEEP_INDENT = 4  # BBPG 2장2절1 3·4단계 제목 "5칸에서 시작" = 앞 빈칸 4
+# ★ MinerU가 제목으로 표시했지만 **단원명이 아닌** 항목 머리 — 문항 번호와 괄호 번호다.
+#   지침 2.4.2는 단원명에만 적용된다. 이것들은 문단이므로 "3칸에서 시작" = 앞 빈칸 2다.
+#   dev·val-2027 gold 전수 827건: **앞 빈칸 2가 803건(97.1%) · 4가 0건.**
+#   (dev 658 중 641 · val 169 중 162 — 양쪽 다 같은 방향, 8권 전부에 나온다)
+#   4칸이 하나도 없으므로 **지금 맞히던 자리를 깨지 않는다.**
+#     제로패딩 `01`·`02` … 525건 → 2칸 95.4%   (정답과 해설의 문항 머리, 한 쪽에 아홉 번씩)
+#     괄호   `(1)`·`(가)` …  302건 → 2칸 100.0%
+#   ⚠ 단계(hlevel)로 먼저 거른다. 강 제목 `01 생명 과학의 이해`도 같은 꼴이지만 MinerU가
+#     lv1로 주고 우리는 그걸 2단계(6칸)로 조판한다 — 이 규칙은 **3단계 이하에만** 건다.
+#     실측으로도 lv1에는 이 꼴이 0건이다(MinerU가 강 번호를 별도 블록으로 뺀다).
+#   ⚠ 빈 줄은 그대로 둔다. 제목 취급을 유지하므로 `_HEADING_BLANK[4] = (1, 0)`이 살아 있고,
+#     gold도 이 자리 위를 764건 중 613건(80%)에서 띈다. 문단으로 강등하면 그 빈 줄을 잃는다.
+_ITEM_HEAD_NUM = re.compile(r"^\s*(?:\(\s*[0-9가-힣A-Za-z]\s*\)|0\d(?!\d))")
+_ITEM_HEAD_INDENT = 2   # 문단과 같은 "3칸에서 시작"
 _HEADING_LEVEL2_INDENT = 6  # 2단계 제목 "7칸에서 시작" = 앞 빈칸 6 (BBPG 2장2절1 3)
 
 _DEFAULT_META: tuple[str, int, int] = ("text", 1_000_000, 0)
@@ -900,6 +914,8 @@ class LayoutBraille:
         """첫 줄 들여쓰기 칸 수. (조판 서식이므로 rule_trail 미기록 — 태민 정책)."""
         if is_heading:
             if hlevel >= 3:
+                if _ITEM_HEAD_NUM.match(bo.corrected_text or ""):
+                    return _ITEM_HEAD_INDENT  # 단원명이 아닌 항목 머리 → 문단과 같은 3칸
                 return _HEADING_DEEP_INDENT  # 3·4단계 5칸
             if hlevel == 2:
                 return _HEADING_LEVEL2_INDENT  # 2단계 3칸
