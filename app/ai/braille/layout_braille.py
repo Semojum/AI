@@ -904,7 +904,15 @@ class LayoutBraille:
             if hlevel == 2:
                 return _HEADING_LEVEL2_INDENT  # 2단계 3칸
             return 0  # 1단계는 가운데 정렬(별도 처리)
-        if etype == "text":
+        if etype in ("text", "formula"):
+            # ★ 수식도 문단과 같은 "3칸에서 시작"(§2.2.2(1))이다. 종전에는 아래 `return 0`으로
+            #   흘러 **줄머리에 붙어 나갔다**. 지침에 수식 블록 들여쓰기 조항이 없고(제11항은
+            #   수식 앞뒤를 두 칸 띄라는 것이지 줄머리가 아니다) 규정이 모호하므로 관행을 따른다.
+            #   dev-2027 gold 실측 — 수식 요소 첫 줄 **앞 빈칸 2가 180건 : 0이 9건(95.2%)**.
+            #   render_mode로 갈리지 않는다(block 154:7 · inline 26:2)라 둘 다 같이 들인다.
+            #   우리 종전 값은 0칸 235 / 239였다.
+            #   ⚠ val-2027은 문과 4권(화법과작문·동아시아사·생활과윤리·세계사)이라 수식 요소가
+            #     **0개**다. val은 악화가 아니라 변화 없음(중립)이다.
             return _PARA_INDENT
         if etype == "list_item":
             return _BULLET_LINE_INDENT
