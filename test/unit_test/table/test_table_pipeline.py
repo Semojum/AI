@@ -282,6 +282,20 @@ class TestTableRenderModes:
         ]
         assert len(linear_outputs) >= 1, "3칸 시작 줄 없음"
 
+    def test_2열_격자는_구분선을_안_넣는다(self) -> None:
+        """지침은 구분선을 "열 제목과 열 항목 **사이**"로 정의한다 — 열 제목이 없으면 없다.
+
+        2열 표는 대개 키-값 나열이라 첫 행이 열 제목이 아니다. gold 실측에서 2열 표
+        339개 중 구분선이 있는 것은 40개(12%)뿐이라, 넣지 않는 쪽이 88.2% 맞는다.
+        3열 이상은 종전대로 넣는다. (2026-08-29, 원장 C-30)
+        """
+        from app.ai.braille.table_braille import _render_grid
+        sep = "⠐" * 32
+        two = _render_grid("이름|점수\n가나다|95\n라마바|88")
+        assert sep not in two, f"2열에 구분선이 들어갔다: {two!r}"
+        three = _render_grid("구분|점수|등급\n가나다|95|가\n라마바|88|나")
+        assert sep in three, f"3열에 구분선이 빠졌다: {three!r}"
+
     def test_no_ascii_space_in_table_braille(
         self, braille_outputs: list[BrailleOutput]
     ) -> None:
