@@ -547,6 +547,20 @@ class TestLayoutBody:
         assert body[body.index("⠛⠛") + 1] == "⠉⠉"      # 시각 자료끼리 — 안 띈다
         assert body[body.index("⠉⠉") + 1] == ""         # 표 앞 — 띈다
 
+    def test_formula_block_indent3(self, lb, tmp_path) -> None:
+        """수식도 문단과 같은 3칸에서 시작한다(앞 빈칸 2).
+
+        지침에 수식 블록 들여쓰기 조항이 없다(제11항은 수식 앞뒤를 두 칸 띄라는 것이지
+        줄머리가 아니다). 규정이 모호하므로 관행을 따른다 — dev-2027 gold 실측에서
+        수식 요소 첫 줄은 앞 빈칸 2가 180건, 0이 9건(95.2%)이다. 종전에는 0칸이었다.
+        (2026-08-28, 원장 C-82)
+        """
+        eid = uuid4()
+        lr = _layout((eid, "formula", 1, 0))
+        lb.layout([_out(["⠼⠉⠒⠒⠼⠁⠚⠚"], eid)], page_no=1, job_id="fml", layout_result=lr)
+        first = next(l for l in _read_lines(tmp_path, "fml") if l.strip(" ⠀"))
+        assert first.startswith("⠀⠀") and not first.startswith("⠀⠀⠀")
+
     def test_heading_level3_indent5(self, lb, tmp_path) -> None:
         """3단계 제목 5칸 들여 (BBPG 2장2절1)."""
         eid = uuid4()
