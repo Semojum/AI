@@ -86,11 +86,18 @@ from app.ai.parser.mineru_runner import _heading_level
 
 
 class TestHeadingLevel:
-    def test_lv1은_1단계(self):
-        assert _heading_level({"text_level": 1}, "text", "서유럽 봉건 사회의 전개와 문화") == 1
+    def test_lv1은_2단계(self):
+        """MinerU lv1 = 강 제목 = BBPG 2단계(7칸). 1단계(가운데)가 아니다.
+
+        dev·val-2027 gold 전수: 앞빈칸 6칸 455줄 vs 가운데(앞 7칸 이상) 89줄.
+        6칸 455줄 중 292줄이 가운데 계산 `(32-길이)//2` 와 어긋나 **고정 들여쓰기**임이
+        증명된다. 우리가 가운데꼴로 내던 26줄 중 21줄을 gold 는 6칸으로 적는다.
+        (2026-08-28, 원장 C-79)
+        """
+        assert _heading_level({"text_level": 1}, "text", "서유럽 봉건 사회의 전개와 문화") == 2
 
     def test_번호_붙은_제목도_제목(self):
-        assert _heading_level({"text_level": 1}, "text", "1. 제국주의와 제1차 세계 대전") == 1
+        assert _heading_level({"text_level": 1}, "text", "1. 제국주의와 제1차 세계 대전") == 2
 
     def test_lv2이상은_4단계(self):
         # 정답 도서 실측(refonly 94권): 2단계 7칸은 0.18%로 거의 안 쓰고 3·4단계 5칸이 1.45%.
@@ -109,7 +116,7 @@ class TestHeadingLevel:
 
     def test_긴_문장은_제목_아님(self):
         assert _heading_level({"text_level": 1}, "text", "가" * 29) is None
-        assert _heading_level({"text_level": 1}, "text", "가" * 28) == 1
+        assert _heading_level({"text_level": 1}, "text", "가" * 28) == 2
 
     def test_표시_없으면_None(self):
         assert _heading_level({}, "text", "제목처럼 보여도") is None
