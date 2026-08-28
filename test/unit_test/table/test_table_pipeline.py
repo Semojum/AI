@@ -22,6 +22,9 @@ from app.schemas.content import BrailleOutput, ExtractedContent
 
 _DATA_PATH = Path(__file__).parent.parent.parent / "test_data" / "page_001" / "type" / "table" / "table_cap.json"
 _GRITS_THRESHOLD = 0.88
+# 표 줄머리 들여쓰기 = 점자 빈칸 2(U+2800). ASCII 공백이 아니다 —
+# 2026-08-28 이전엔 렌더러가 `"  "`(ASCII)를 썼고 이 단언들이 그걸 굳히고 있었다.
+_INDENT = "⠀⠀"
 
 
 def _load_mock() -> list[ExtractedContent]:
@@ -69,7 +72,7 @@ def _grits(extracted: ExtractedContent, output: BrailleOutput, render_mode: str)
         #   테두리 없이 나갔는데, 자료지침 §3.1.3(2)는 표에 테두리를 요구하며 열 수로
         #   예외를 두지 않고(도서지침 예3-2가 2열 표 실물), 코퍼스도 우리가 선형으로 낸
         #   표의 dev 92%·val 100%를 테두리 안에 둔다.
-        indented = [ln for ln in output.braille_lines if ln.startswith("  ")]
+        indented = [ln for ln in output.braille_lines if ln.startswith(_INDENT)]
         top = [ln for ln in output.braille_lines
                if len(ln) >= 8 and ln[0] == "⠿" and ln[-1] == "⠿" and set(ln[1:-1]) == {"⠛"}]
         bot = [ln for ln in output.braille_lines
@@ -91,7 +94,7 @@ def _grits(extracted: ExtractedContent, output: BrailleOutput, render_mode: str)
         nonblank = [ln for ln in output.braille_lines if ln.strip()]
         n_lines = len(output.braille_lines)
         checks.append(n_lines in (max_row, (max_col - 1) * max_row))
-        checks.append(all(ln.startswith("  ") for ln in nonblank))
+        checks.append(all(ln.startswith(_INDENT) for ln in nonblank))
     else:
         # table_grid — 지침 §3.1.3(2) 형식 (2026-08-06 갱신).
         # 구판 단언(전체 ⠿ 채움 테두리 + ⠒ 구분선)은 **한 달 전 폐기된 형식**이었다.
@@ -103,7 +106,7 @@ def _grits(extracted: ExtractedContent, output: BrailleOutput, render_mode: str)
                if len(ln) >= 8 and ln[0] == "⠿" and ln[-1] == "⠿" and set(ln[1:-1]) == {"⠛"}]
         bot = [ln for ln in output.braille_lines
                if len(ln) >= 8 and ln[0] == "⠿" and ln[-1] == "⠿" and set(ln[1:-1]) == {"⠶"}]
-        data = [ln for ln in output.braille_lines if ln.startswith("⠀⠀") or ln.startswith("  ")]
+        data = [ln for ln in output.braille_lines if ln.startswith(_INDENT)]
         checks.append(len(top) == 1)
         checks.append(len(bot) == 1)
         checks.append(len(data) == max_row)          # 원본 행이 전부 실렸는가
@@ -275,9 +278,27 @@ class TestTableRenderModes:
         """2열 표는 3칸에서 시작하는 '키  값' 줄로 나온다(정답 도서 관행)."""
         linear_outputs = [
             o for o in braille_outputs
-            if any(line.startswith("  ") for line in o.braille_lines)
+            if any(line.startswith(_INDENT) for line in o.braille_lines)
         ]
         assert len(linear_outputs) >= 1, "3칸 시작 줄 없음"
+
+    def test_no_ascii_space_in_table_braille(
+        self, braille_outputs: list[BrailleOutput]
+    ) -> None:
+        """점자 지면의 빈칸은 전부 U+2800이다(대표 지적 R1, 2026-08-24).
+
+        표 경로가 R1에서 빠져 줄머리를 ASCII 공백으로 적고 있었다. 눈으로는
+        `"⠀⠀"`와 구별이 안 돼 오래 살아남았으므로 회귀를 여기서 막는다.
+        선택 초안(braille_lines)과 대안 초안(drafts) 둘 다 본다.
+        """
+        for o in braille_outputs:
+            groups = [("본문", o.braille_lines)]
+            groups += [(f"초안 {d.render_mode}", d.braille_lines) for d in o.drafts]
+            for label, lines in groups:
+                for i, ln in enumerate(lines):
+                    if ln.startswith("[처리 불가") or ln.startswith("[표 수동"):
+                        continue          # 점역 안 된 원문 플레이스홀더는 예외
+                    assert " " not in ln, f"{label} {i}번째 줄에 ASCII 공백: {ln!r}"
 
     def test_blocked_fallback_produces_placeholder(self) -> None:
         from uuid import uuid4
@@ -333,13 +354,13 @@ class TestTransposeTranslatorNote:
                 "초고령 | 40 | 16 | 36 | 11 | 8")
         lines = _render_unfold(wide)
         expected = self._expected()
-        assert lines[0].replace(" ", "⠀") == expected, (
+        assert lines[0] == expected, (
             f"전치 점역자 주 불일치\n  기대(지침 예3-2): {expected!r}\n  실제            : {lines[0]!r}")
 
     def test_note_is_wrapped_in_tn_markers(self) -> None:
         """점역자 주 마커 ⠠⠄가 양끝에 있어야 rule_trail(BBPG-1.2.6)이 잡힌다."""
         from app.ai.braille.table_braille import _tn_transpose_line
-        line = _tn_transpose_line().strip()
+        line = _tn_transpose_line().strip(" ⠀")
         assert line.startswith("⠠⠄") and line.endswith("⠠⠄")
 
     def test_non_transposed_table_has_no_note(self) -> None:
