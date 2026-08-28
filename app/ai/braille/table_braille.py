@@ -247,6 +247,44 @@ def _use_record_rows(rows: list[list[str]]) -> bool:
             and _mean_cell_len(rows) >= _RECORD_MIN_CELL)
 
 
+_HEAD_CELL_MAX = 10   # 열 제목 칸의 최대 글자수 — 이보다 길면 제목이 아니라 값이다
+
+
+def _has_col_headers(first_row: list[str]) -> bool:
+    """첫 행이 **열 제목행**인가. 구분선을 넣을지 가른다(원장 C-30).
+
+    지침은 구분선을 일관되게 **"열 제목과 열 항목 사이"** 로 정의한다
+    (용어 정의 · §3.1.3(5) · §3.3.1). **열 제목이 없으면 구분선도 없다.**
+    그런데 종전에는 첫 행을 **무조건** 머리행으로 보고 넣었다.
+
+    2열 표는 대개 키-값 나열이라 첫 행이 열 제목이 아니다. 3열 이상은 실제로 제목이 있다.
+    그래서 2열에만 판정을 걸고, 판정은 **머리행 칸이 짧은가**로 한다 — 제목은 라벨이라 짧고
+    값은 길다.
+
+    gold 실측(2026-08-29, braille 이 표 단위로 짝지음 408개 · 양성 81):
+        정책                     dev 142    val 266    전체 408
+        늘 넣는다(종전)            50.7%      3.4%      19.9%
+        안 넣는다                49.3%     96.6%      80.1%
+        **머리행 ≤10자**         **81.7%**  95.9%   **90.9%**
+    ★ 임계는 **val 에서 고르고 dev 에서 평가**했다 — dev 정확 81.7% · 정밀 80.3% ·
+      재현 84.7% · F1 0.82. 곡선이 평평해(N=6~16 에서 dev F1 0.78~0.86) 뾰족한 봉우리가 아니다.
+    ⚠ val 은 양성이 9개뿐이라 val 쪽 정밀도(43.8%)는 표본이 얇다. val 에서는 '안 넣기'가
+      0.7p 낫지만 순손실이 2건이고, dev 이득이 +32p 라 전체로는 확실한 이득이다.
+    ⚠ 표본에는 앵커로 회수한 69개가 들어 있고 앵커 정확도는 95.0%다(5% 오염).
+      linear 표 439개 중 31개는 아직 짝을 못 지었다.
+    """
+    # ⚠ 판정은 **파싱된 첫 행**을 본다. `_html_to_grid(expand=False)` 가 `colspan` 을 안 펴므로
+    #   3~5열 표라도 첫 행이 `<td colspan="5">…</td>` 한 칸이면 여기서는 1~2칸으로 보인다.
+    #   실측(M017): dev 900쪽 중 그런 쪽이 **2쪽**(004 body p0192 열[3] · 009 body p0005 열[5,5])이고
+    #   둘 다 구분선이 사라졌는데 **gold 도 그 두 쪽 구분선이 0개**라 방향이 맞다.
+    #   즉 이 규칙은 '1열 표'만 건드리는 게 아니다 — **첫 행이 좁게 파싱되는 표**까지 닿는다.
+    if len(first_row) < 2:
+        return False                      # 1열은 글상자다 — 열 제목이 없으니 구분선도 없다
+    if len(first_row) > 2:
+        return True                       # 3열 이상은 종전대로 — 열 제목이 실제로 있다
+    return all(len(c.strip()) <= _HEAD_CELL_MAX for c in first_row if c.strip())
+
+
 def _render_grid(corrected_text: str) -> list[str]:
     """지침 §3.1 표 표기(행 단위 전개, 예3-4·3-6 실측 형식, 2026-07-19 정정).
 
@@ -283,7 +321,7 @@ def _render_grid(corrected_text: str) -> list[str]:
         vals = [(_translate(c) if c else "⠿⠿") for c in cells[1:]]
         body = head + ("⠐⠂⠀" + "⠀⠀".join(vals) if vals else "")
         lines.append("⠀⠀" + body)
-        if k == 0 and len(rows) > 1:
+        if k == 0 and len(rows) > 1 and _has_col_headers(cells):
             lines.append(rowsep)          # 머리행과 본문 사이(실측 위치)
     lines.append(bot)
     return lines
@@ -770,7 +808,11 @@ class TableBraille:
             """제목 줄을 표 위에 먼저 붙인다(§3 5)(2))."""
             return ([title_br] + lines) if title_br else lines
 
-        if "|" not in text:  # 비정형 → TN 단일안
+        if parsed_rows is None and "|" not in text:  # 비정형 → TN 단일안
+            # ★ `parsed_rows is None` 을 같이 본다(2026-08-29, N031). `<!표>` 태그가 있어도
+            #   **1열**이면 `" | ".join(["한 칸"])` 이 파이프를 안 남겨 여기서 TN 으로 새어
+            #   나갔다. gold 는 그 자리를 글상자로 적는다(테두리 + 각 항목 2칸).
+            #   태그가 파싱됐으면 열이 하나여도 격자 렌더러로 보낸다.
             tn = opt.tn_text or text
             lines, breaks = translate_with_breaks(tn)  # 음절 줄바꿈(BBPG-1.2.1)
             lines = _wt(lines)
