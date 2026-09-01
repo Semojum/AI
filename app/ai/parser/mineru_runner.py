@@ -855,6 +855,30 @@ def _layer_untrustworthy(s: str) -> bool:
     return bool(layer_bad)          # 조판을 무너뜨리는 종류만 — 기호 하나짜리는 통과시킨다
 
 
+# 한컴 수식 폰트(EH*·ST*)는 서브셋 인코딩이 제멋대로라 텍스트 레이어가 **평범한 ASCII 로**
+# 거짓말을 한다: `sin A` 가 ``TJO`A`` 로, `ABC` 가 `"#$` 로 나온다(수능특강 수학 I p052 실측).
+# 글자가 전부 정상 ASCII 라 `mangled_glyph_chars` 의 "교과서에 안 나오는 코드포인트" 신호에
+# 걸리지 않는다 — 그래서 멀쩡한 MinerU OCR 을 덮어썼다. 같은 지면의 다른 블록에서 MinerU 는
+# `sin A=sin (180°-A')` 를 제대로 읽었다.
+#
+# 폰트 이름은 2026-08-09 에 **쪽 단위 신뢰 신호**로는 기각됐지만, 여기서는 블록 단위로
+# "텍스트 레이어를 쓰지 말고 OCR 을 두라"는 좁은 판정에만 쓴다. 표본 100쪽 실측에서
+# 이 폰트 스팬 3,115개 중 **한글이 든 것은 0개**라, 본문을 잃을 자리가 아니다.
+_MATH_FONT_RE = re.compile(r"^(EH|ST)[A-Za-z]", re.I)
+
+
+def _has_math_font(fitz_page: fitz.Page, bbox: list[float]) -> bool:
+    """이 자리에 한컴 수식 폰트로 그린 글자가 있나."""
+    try:
+        d = fitz_page.get_text("dict", clip=fitz.Rect(bbox))
+    except Exception:                       # noqa: BLE001 — 판정 실패는 '아님'으로 둔다
+        return False
+    return any(_MATH_FONT_RE.match(sp.get("font") or "")
+               for bl in d.get("blocks", [])
+               for ln in bl.get("lines", [])
+               for sp in ln.get("spans", []))
+
+
 def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
     """bbox 안의 텍스트를 어절 경계 복원해서 뽑는다.
 
@@ -894,6 +918,8 @@ def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
 
 def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) -> str | None:
     """텍스트 레이어로 대체할 값. 못 믿으면 None(= MinerU 결과 유지)."""
+    if _MATH_FONT_GUARD and _has_math_font(fitz_page, bbox):
+        return None                        # 위 _has_math_font 주석 참조
     native = _native_text_spaced(fitz_page, bbox)
     if not native or _layer_untrustworthy(native):
         return None
@@ -909,6 +935,9 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) 
         return None
     return native
 
+
+# A/B 스위치 — 끄면 종전 동작이다.
+_MATH_FONT_GUARD = os.environ.get("MINERU_MATH_FONT_GUARD", "1") == "1"
 
 _MD_SEP_RE = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
 
