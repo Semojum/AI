@@ -14,11 +14,11 @@ from app.ai.braille.translator import translate_tagged_text
 from app.schemas.content import BrailleOutput, LLMOutput, RuleApplication
 
 _RULE = RuleApplication(
-    rule_id="KBR-0.1",
+    rule_id="MCST-기본-1",
     source="한국 점자 규정",
     section="기본 원칙 1",
-    title="기본 원칙",
-    excerpt="점자는 한국어 점자 규정에 따라 변환한다.",
+    rule_name="기본 원칙",
+    contents="점자는 한국어 점자 규정에 따라 변환한다.",
     priority="primary",
 )
 
@@ -58,16 +58,16 @@ class TestTextBrailleOutput:
         assert len(results[0].braille_lines) >= 1
 
     def test_each_line_within_32_cols(self):
-        # 모듈은 논리 줄, 32칸 줄바꿈은 layout(BBPG-1.2.1) → break_points wrap 후 검증
+        # 모듈은 논리 줄, 32칸 줄바꿈은 layout(NLD-1.2.1) → break_points wrap 후 검증
         from app.ai.braille.layout_braille import _wrap_line
         r = TextBraille().translate([_text_out("가" * 100)])[0]
         for line, br in zip(r.braille_lines, r.break_points):
             assert all(len(seg) <= 32 for seg in _wrap_line(line, br, 32)[0])
 
     def test_rule_trail_excludes_generic(self):
-        # 정책(태민 2026-06-01): 포괄/조판 규칙(KBR-0.1·BBPG-1.2.1)은 rule_trail 미기록
+        # 정책(태민 2026-06-01): 포괄/조판 규칙(MCST-0.1·NLD-1.2.1)은 rule_trail 미기록
         rids = [r.rule_id for r in TextBraille().translate([_text_out("테스트")])[0].rule_trail]
-        assert "BBPG-1.2.1" not in rids and "KBR-0.1" not in rids
+        assert "NLD-1.2.1" not in rids and "MCST-기본-1" not in rids
 
     def test_rule_trail_tn_marker_when_present(self):
         results = TextBraille().translate([_text_out("<!주>주석<!/주>")])
@@ -115,11 +115,11 @@ class TestFormulaBrailleOutput:
         assert all(len(line) <= 32 for line in results[0].braille_lines)
 
     def test_rule_trail_math_no_line_wrap(self):
-        # 구조 규칙(제곱=제18항)은 유지, 조판 규칙(BBPG-1.2.1)·포괄 수표(수학 제1항, Step17)는 제외
+        # 구조 규칙(제곱=제18항)은 유지, 조판 규칙(NLD-1.2.1)·포괄 수표(수학 제1항, Step17)는 제외
         rids = [r.rule_id for r in FormulaBraille().translate([_formula_out("x^2")])[0].rule_trail]
-        assert "KBR-수학-2.18" in rids
-        assert "KBR-수학-1.1" not in rids
-        assert "BBPG-1.2.1" not in rids
+        assert "MCST-수학-2.18" in rids
+        assert "MCST-수학-1.1" not in rids
+        assert "NLD-1.2.1" not in rids
 
     def test_placeholder_preserved_as_is(self):
         placeholder = "[처리 불가: 수식 OCR 실패]"
@@ -194,8 +194,8 @@ class TestRuleTrailCompleteness:
             assert r.rule_id,  f"rule_id 없음: {r}"
             assert r.source,   f"source 없음: {r}"
             assert r.section,  f"section 없음: {r}"
-            assert r.title,    f"title 없음: {r}"
-            assert r.excerpt,  f"excerpt 없음: {r}"
+            assert r.rule_name, f"rule_name 없음: {r}"
+            assert r.contents,  f"contents 없음: {r}"
             assert r.priority, f"priority 없음: {r}"
 
     def test_formula_braille_rule_trail_all_fields(self):
@@ -205,6 +205,6 @@ class TestRuleTrailCompleteness:
             assert r.rule_id,  f"rule_id 없음: {r}"
             assert r.source,   f"source 없음: {r}"
             assert r.section,  f"section 없음: {r}"
-            assert r.title,    f"title 없음: {r}"
-            assert r.excerpt,  f"excerpt 없음: {r}"
+            assert r.rule_name, f"rule_name 없음: {r}"
+            assert r.contents,  f"contents 없음: {r}"
             assert r.priority, f"priority 없음: {r}"

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import grpc
 
+from app.ai.braille.regulations import rule_meta
 from app.ai.braille.translator import translate_plain
 from app.core.config import config
 from app.core import pipeline
@@ -72,8 +73,21 @@ def _dict_to_text_element(d: dict):
         trail.rule_id = rt.get("rule_id", "")
         trail.source = rt.get("source", "")
         trail.section = rt.get("section", "")
-        trail.title = rt.get("title", "")
-        trail.excerpt = rt.get("excerpt", "")
+        trail.rule_name = rt.get("rule_name", "")
+        trail.contents = rt.get("contents", "")
+        # 2026-08-31 신설 — regulations.json 에서 그대로 실어 보낸다.
+        # RuleApplication 은 표시용 평문만 들고 있어 위계·기관·판은 레지스트리에서 꺼낸다.
+        meta = rule_meta(rt.get("rule_id", ""))
+        if meta:
+            trail.publisher = meta["publisher"]
+            trail.version = meta["version"]
+            path = meta["section"]
+            trail.path.part = path.get("Part", "")
+            trail.path.chapter = path.get("Chapter", "")
+            trail.path.section = path.get("Section", "")
+            trail.path.paragraph = path.get("Paragraph", "")
+            trail.path.subparagraph = path.get("Subparagraph", "")
+            trail.path.item = path.get("Item", "")
         trail.priority = rt.get("priority", "primary")
         trail.line_no = rt.get("line_no", -1)
         trail.col_start = rt.get("col_start", 0)
@@ -185,6 +199,12 @@ _LAYOUT = {"text": _PB.PAGE_LAYOUT_TEXT, "formula": _PB.PAGE_LAYOUT_FORMULA,
 def _dict_to_usage_report(c: dict):
     """`req_log.usage_report()` dict → proto. 사용량은 관측값이라 무슨 일이 있어도
     응답을 막지 않는다 — 빈 dict가 오면 0으로 채운 메시지를 돌려준다.
+
+    ⚠ **`input_tokens`는 응답 `usage` 실값이 아니라 「유효 입력」이다**(2026-08-23 대표
+    결재). 캡셔닝 프롬프트 캐싱을 켠 뒤로 실값에는 캐시 토큰이 안 들어 있는데 proto에는
+    캐시 칸이 없다. `req_log.usage_report()`가 단가 비율로 환산해(쓰기 1.25배·읽기 0.1배)
+    넘기므로 **BE는 이 값에 입력 단가를 그대로 곱하면 된다.** 실값은 메트릭 JSONL의
+    `input_tokens_raw`·`parts[]`에 남는다. 자세한 것은 `docs/SPEC-INTERFACE.md` §1.
 
     ★ **금액은 나가지 않는다**(BE 협의 2026-08-18). AI는 측정값(토큰·GPU 시간·쪽 유형)만
     싣고, 단가표·환율·카드 수수료·크레딧 배율은 BE의 관리 변수다. 관리자 페이지에서

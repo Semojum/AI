@@ -60,5 +60,5 @@ class TestRuleTrailSurvives:
         src = "○○ 및 △△△"
         spans = symbol_rule_spans(src, translate_tagged_text(src))
         assert len(spans) == 2
-        assert {s[2] for s in spans} == {"KBR-6.13.49"}
+        assert {s[2] for s in spans} == {"MCST-한글-6.13.49"}
         assert [s[1] - s[0] for s in spans] == [4, 5]   # ⠸⠴⠴⠇ · ⠸⠬⠬⠬⠇

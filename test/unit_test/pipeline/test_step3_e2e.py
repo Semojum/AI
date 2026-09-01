@@ -62,7 +62,7 @@ class TestTextChainE2E:
         assert all(len(o.braille_lines) >= 1 for o in outputs)
 
     def test_each_line_within_32_cols(self, outputs):
-        # 모듈은 논리 줄, 32칸 줄바꿈은 layout(BBPG-1.2.1) → break_points wrap 후 검증
+        # 모듈은 논리 줄, 32칸 줄바꿈은 layout(NLD-1.2.1) → break_points wrap 후 검증
         from app.ai.braille.layout_braille import _wrap_line
         for o in outputs:
             brs = o.break_points if len(o.break_points) == len(o.braille_lines) else [[]] * len(o.braille_lines)
@@ -70,11 +70,11 @@ class TestTextChainE2E:
                 assert all(len(seg) <= 32 for seg in _wrap_line(line, br, 32)[0])
 
     def test_rule_trail_excludes_generic(self, outputs):
-        # 정책(태민 2026-06-01): 포괄/조판 규칙(KBR-0.1·BBPG-1.2.1)은 rule_trail 미기록
+        # 정책(태민 2026-06-01): 포괄/조판 규칙(MCST-0.1·NLD-1.2.1)은 rule_trail 미기록
         for o in outputs:
             rids = [r.rule_id for r in o.rule_trail]
-            assert "BBPG-1.2.1" not in rids
-            assert "KBR-0.1" not in rids
+            assert "NLD-1.2.1" not in rids
+            assert "MCST-기본-1" not in rids
 
     def test_element_ids_preserved_in_order(self, outputs):
         src_ids = [str(e.element_id) for e in _load_text()]
@@ -110,7 +110,7 @@ class TestFormulaChainE2E:
         assert all(len(o.braille_lines) >= 1 for o in outputs)
 
     def test_each_line_within_32_cols(self, outputs):
-        # 모듈은 논리 줄, 32칸 줄바꿈은 layout(BBPG-1.2.1) → break_points wrap 후 검증
+        # 모듈은 논리 줄, 32칸 줄바꿈은 layout(NLD-1.2.1) → break_points wrap 후 검증
         from app.ai.braille.layout_braille import _wrap_line
         for o in outputs:
             brs = o.break_points if len(o.break_points) == len(o.braille_lines) else [[]] * len(o.braille_lines)
@@ -185,8 +185,8 @@ class TestFormulaChainE2E:
                 assert r.rule_id,  f"rule_id 없음: {r}"
                 assert r.source,   f"source 없음: {r}"
                 assert r.section,  f"section 없음: {r}"
-                assert r.title,    f"title 없음: {r}"
-                assert r.excerpt,  f"excerpt 없음: {r}"
+                assert r.rule_name, f"rule_name 없음: {r}"
+                assert r.contents,  f"contents 없음: {r}"
                 assert r.priority, f"priority 없음: {r}"
 
 
@@ -270,8 +270,8 @@ class TestSixChainFaultIsolation:
             from app.schemas.content import BrailleOutput, ExtractedContent, LLMOutput, RuleApplication
             ext = ExtractedContent(element_id=uuid4(), corrected_text=label, ocr_confidence=1.0)
             rule = RuleApplication(
-                rule_id="BBPG-1.2.1", source="점자 도서 제작 지침", section="제1장 제2절",
-                title="줄바꿈", excerpt="한 줄은 32칸을 넘지 않는다.", priority="primary",
+                rule_id="NLD-1.2.1", source="점자 도서 제작 지침", section="제1장 제2절",
+                rule_name="줄바꿈", contents="한 줄은 32칸을 넘지 않는다.", priority="primary",
             )
             llm = LLMOutput(element_id=ext.element_id, corrected_text=label,
                             routing_tier="ZERO", rule_trail=[rule])
@@ -375,8 +375,8 @@ class TestSixChainFaultIsolation:
         from app.schemas.task import PageTask
 
         rule = RuleApplication(
-            rule_id="BBPG-1.2.1", source="점자 도서 제작 지침",
-            section="제1장 제2절", title="줄바꿈", excerpt="한 줄은 32칸을 넘지 않는다.", priority="primary",
+            rule_id="NLD-1.2.1", source="점자 도서 제작 지침",
+            section="제1장 제2절", rule_name="줄바꿈", contents="한 줄은 32칸을 넘지 않는다.", priority="primary",
         )
         elem_id = uuid4()
         fake_extracted = ExtractedContent(element_id=elem_id, corrected_text="테스트", ocr_confidence=1.0)
@@ -523,3 +523,33 @@ class TestBboxSpaceInference:
         ext["meta"]["bbox_space"] = "pixel"
         lr, _, _ = _parse_txt_result(ext, "p1")
         assert lr.elements[0].bbox == (100, 200, 500, 600)
+
+
+class TestDraftPrintNoBrokenGlyph:
+    """점자에 깨진 묵자가 들어가면 안 된다 (대표 지시 2026-08-26).
+
+    점자 경로는 `sanitize_for_braille` 가 PUA 를 닫는데 초안 묵자는 그 길을 안 탄다.
+    그래서 점자는 멀쩡한데 점역사가 화면에서 보는 묵자에 깨진 글자가 떴다(d025 실측 9건).
+    """
+
+    def test_아는_PUA는_말로_바꾼다(self):
+        from app.core.pipeline import _draft_print_text
+        s = "자신과 닮은 자손을 만드는 것이다. \ue355 짚신벌레는 분열법으로 번식한다."
+        assert "(예)" in _draft_print_text(s)
+        assert "\ue355" not in _draft_print_text(s)
+        assert "(예)" in _draft_print_text("다음 \ue3c4 을 보자")
+
+    def test_한컴_흔적도_같이_푼다(self):
+        from app.core.pipeline import _draft_print_text
+        assert _draft_print_text("TJO x") == "sin x"
+        assert "≤" in _draft_print_text("2p-a<x\u00c92p")
+
+    def test_모르는_것은_그대로_두고_로그로_드러낸다(self):
+        """추정 치환은 안 한다 — 틀리면 되돌리기 어렵다."""
+        from app.core.pipeline import _draft_print_text
+        assert "\ue999" in _draft_print_text("다음 \ue999 을")
+
+    def test_들여쓰기_태그는_그대로_산다(self):
+        """F10 회귀 방지 — 같은 함수가 오늘 두 번째로 걸린 자리다."""
+        from app.core.pipeline import _draft_print_text
+        assert _draft_print_text("<!2칸>가나다").startswith("  가나다")

@@ -71,7 +71,7 @@ def test_opt_dispatches_skeleton_from_caption():
     """캡션만 있어도 §6.6.5 조직도 골격이 돈다(최상위 1칸=빈칸0·하위 +2칸)."""
     ext = ExtractedContent(element_id=uuid4(), corrected_text=_ORG, ocr_confidence=1.0)
     out = asyncio.run(DiagramOpt().optimize([ext], "ZERO"))[0]
-    assert "<!주>조직도<!/주>" in out.corrected_text
+    assert "<!주>그림<!/주>" in out.corrected_text
     assert out.line_indents[3:] == [0, 2, 4, 4, 2, 4]
     assert "황제" in out.corrected_text.split("\n")[3]
 
@@ -95,3 +95,19 @@ def test_all_eight_skeletons_reachable():
         assert ok(st), (sub, st)
         text, indents = assemble(st)
         assert text.count("\n") + 1 == len(indents), (sub, text, indents)
+
+
+def test_bare_type_word_head_is_stripped():
+    """캡션 첫 줄의 **맨 종류어**를 제목으로 쓰면 유형이 두 번 나간다 (F18, 대표 지적).
+
+    실물: '모식도\\n개념도:\\n삼각형 ABC:\\n…' — 캡셔너가 첫 줄에 종류를 쓰라는 지시를 받고
+    '모식도'를 썼는데, 종전 정규식이 콜론 붙은 여덟 낱말만 떼어 그 줄이 골격 제목으로 남았다.
+    유형은 §6.3.4(1) 점역자 주가 내는 몫이다.
+    """
+    from app.ai.llm.diagram_structure import caption_head, structure_from_caption
+
+    assert caption_head("모식도\n삼각형 ABC\n꼭짓점: A, B, C") == ""
+    assert (structure_from_caption("모식도\n삼각형 ABC\n꼭짓점: A, B, C") or {}).get("title") == ""
+    # 종류어 뒤에 내용이 있으면 내용만 남는다(종전 동작 유지)
+    assert caption_head("개념도: 삼각형 ABC") == "삼각형 ABC"
+    assert caption_head("그림: 절벽 아래 돌 더미") == "절벽 아래 돌 더미"

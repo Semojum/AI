@@ -68,7 +68,10 @@ class MetricsCollector:
             "blocked_element_count": n_blocked,
             "fallback_ratio": (n_blocked / n_elements) if n_elements else 0.0,
             "hcxt_calls": api.get("hcxt", 0),
-            "gpt4o_calls": api.get("gpt4o", 0),
+            # ★ 외부 LLM 호출 전부다(2026-08-20 개명). 종전 이름 gpt4o_calls는 모델 하나를
+            #   가리키는데 실제로는 다 셌다 — 라우팅이 쉬운 건 싼 모델, 어려운 건 비싼 모델로
+            #   보내므로 모델이 여럿이다. 모델별 내역은 아래 usage.models에서 본다.
+            "llm_calls": api.get("llm", 0),
             # 쪽당 사용량 + AI 쪽 원가 추정치. proto로는 측정값만 나가고(BE 협의
             # 2026-08-18) 금액은 여기에만 남는다 — **청구 정본은 BE 계산이다.**
             # 환율·단가판이 함께 실리므로 나중에 "어느 기준이었나"를 되짚을 수 있다.

@@ -19,6 +19,7 @@
 """
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import functools
 import time
@@ -72,6 +73,7 @@ class _PartApi:
     """한 파트(kind)의 **로컬 GPU** 사용 누계. 외부 LLM은 `_LlmEntry`가 맡는다."""
     hcxt_calls: int = 0
     hcxt_time_s: float = 0.0
+    gpu_time_s: float = 0.0        # HCXT 밖 GPU 경로 점유(벽시계)
     hcxt_timeouts: int = 0
     hcxt_fails: int = 0
     gpu_cost: float = 0.0         # HCXT 점유 시간 안분(USD)
@@ -97,6 +99,13 @@ class _ReqStats:
         return self.llm.setdefault((kind or "기타", model or "unknown"), _LlmEntry())
 
     def hcxt_used(self) -> float:
+        """HCXT **예산** 계산용 — HCXT에 쓴 시간만 센다.
+
+        ⚠ 여기에 `gpu_time_s`(MinerU 등)를 더하면 안 된다. 이 값은 `hcxt_budget_remaining`이
+        쓰고, 예산이 소진되면 요소가 외부 API 폴백으로 넘어간다 — 즉 **출력이 바뀐다.**
+        MinerU 시간을 섞으면 추출이 느린 쪽에서만 폴백이 걸려 같은 입력에 다른 결과가 난다.
+        관측용 합계는 `_totals()['gpu_seconds']`가 따로 낸다(2026-08-21).
+        """
         return sum(p.hcxt_time_s for p in self.parts.values())
 
 
@@ -199,7 +208,7 @@ def record_openai(kind: str, model: str, usage) -> None:
                getattr(usage, "completion_tokens", 0) or 0, cached, 0)
 
 
-def record_gpt4o(kind: str, prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
+def record_ext_llm(kind: str, prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
     """하위호환 — 모델을 안 밝힌 구 호출부. gpt-4o 단가로 계산한다."""
     record_llm(kind, "gpt-4o", prompt_tokens, completion_tokens)
 
@@ -221,14 +230,41 @@ def record_hcxt(kind: str, elapsed_s: float = 0.0, *, timed_out: bool = False, f
         p.hcxt_fails += 1
 
 
+def record_gpu(kind: str, elapsed_s: float) -> None:
+    """GPU 경로에 머문 시간 1건 기록(HCXT 밖 — MinerU 서브프로세스·로컬 모델 추론).
+
+    ★ 이 값은 **벽시계**다(2026-08-20 대표 지시). 순수 연산 시간이 아니라 상한이다 —
+      모델 로드와 파일 입출력이 섞인다. MinerU는 별도 프로세스라 우리 프로세스 안에서
+      GPU 점유를 직접 볼 수 없고, nvidia-smi를 폴링하면 여러 쪽이 동시에 돌 때 어느 쪽
+      몫인지 못 가른다. 쓰임이 '얼마나 머물렀는지 보는 것'이라 벽시계로 충분하다.
+      쪽당 원가에는 안 들어간다(AWS 인스턴스 시간으로 따로 매긴다 — `usage_report` 주석).
+
+    종전에는 `gpu_seconds`가 HCXT 시간만 셌다. HCXT가 비활성이라 30/30쪽 전부 0이었다.
+    """
+    st = _cur()
+    if st is None:
+        return
+    st.part(kind).gpu_time_s += max(0.0, elapsed_s)
+
+
+@contextlib.contextmanager
+def gpu_span(kind: str):
+    """`with gpu_span("추출"):` — 블록에 머문 시간을 GPU 점유로 기록한다."""
+    t0 = time.monotonic()
+    try:
+        yield
+    finally:
+        record_gpu(kind, time.monotonic() - t0)
+
+
 # ── 하위호환 shim(구 호출부) ────────────────────────────────────────────────
 
 def inc_hcxt() -> None:
     record_hcxt("기타")
 
 
-def inc_gpt4o() -> None:
-    record_gpt4o("기타")
+def inc_ext_llm() -> None:
+    record_ext_llm("기타")
 
 
 # ── 집계 조회 ───────────────────────────────────────────────────────────────
@@ -236,24 +272,42 @@ def inc_gpt4o() -> None:
 def _totals() -> dict:
     st = _cur()
     if st is None:
-        return {"hcxt": 0, "gpt4o": 0, "prompt_tokens": 0, "completion_tokens": 0,
+        return {"hcxt": 0, "llm": 0, "prompt_tokens": 0, "completion_tokens": 0,
                 "cache_read_tokens": 0, "cache_write_tokens": 0, "cost": 0.0,
                 "gpu_cost": 0.0, "gpu_seconds": 0.0, "unpriced_calls": 0, "models": []}
     add = lambda f: sum(f(p) for p in st.parts.values())      # noqa: E731 — 로컬 GPU
     addl = lambda f: sum(f(e) for e in st.llm.values())       # noqa: E731 — 외부 LLM
     return {
         "hcxt": add(lambda p: p.hcxt_calls),
-        "gpt4o": addl(lambda e: e.calls),      # 키 이름은 하위호환(metrics·api_counts)
+        # ★ 외부 LLM 호출 **전부**를 센다(2026-08-20 개명). 종전 키 이름이 "gpt4o"였는데
+        #   실제로는 모델과 무관하게 다 셌다. 우리 라우팅은 쉬운 건 싼 모델, 어려운 건 비싼
+        #   모델로 보내므로 앞으로 모델이 여럿이다 — 이름이 하나를 가리키면 로그를 읽는
+        #   사람이 오해한다. 실제로 캡셔닝이 claude로 도는데 gpt4o_calls=84로 찍혔다.
+        #   모델별 내역은 usage_report의 `models`에서 본다.
+        "llm": addl(lambda e: e.calls),
         "prompt_tokens": addl(lambda e: e.input_tokens),
         "completion_tokens": addl(lambda e: e.output_tokens),
         "cache_read_tokens": addl(lambda e: e.cache_read_tokens),
         "cache_write_tokens": addl(lambda e: e.cache_write_tokens),
         "cost": addl(lambda e: e.cost),
         "gpu_cost": add(lambda p: p.gpu_cost),
-        "gpu_seconds": add(lambda p: p.hcxt_time_s),
+        "gpu_seconds": add(lambda p: p.hcxt_time_s + p.gpu_time_s),
         "unpriced_calls": sum(e.calls for e in st.llm.values() if e.unpriced),
         "models": sorted({m for _k, m in st.llm}),
     }
+
+
+def cache_hit_rate() -> float:
+    """이번 요청의 프롬프트 캐시 적중률 — **입력 토큰 중 캐시에서 읽은 몫**.
+
+    분모가 `input + cache_read + cache_write`인 이유: Anthropic `usage`의
+    `input_tokens`에는 캐시 토큰이 **안 들어 있다**. 읽기만 분자로 두고 분모를
+    `input_tokens`로 잡으면 캐시가 잘 맞을수록 분모가 줄어 100%를 넘는다.
+    쓰기(1.25배 과금)도 분모에 넣어야 "첫 호출은 손해"가 수치에 보인다.
+    """
+    t = _totals()
+    denom = t["prompt_tokens"] + t["cache_read_tokens"] + t["cache_write_tokens"]
+    return (t["cache_read_tokens"] / denom) if denom else 0.0
 
 
 def _nanos(usd: float) -> int:
@@ -284,11 +338,32 @@ def usage_report() -> dict:
     by_model: dict[str, dict] = {}
     for (_kind, model), e in (st.llm if st else {}).items():
         m = by_model.setdefault(model, {"model": model, "calls": 0,
-                                        "input_tokens": 0, "output_tokens": 0})
+                                        "input_tokens": 0, "input_tokens_raw": 0,
+                                        "output_tokens": 0,
+                                        "cache_read_tokens": 0, "cache_write_tokens": 0})
         m["calls"] += e.calls
-        m["input_tokens"] += e.input_tokens
+        m["input_tokens_raw"] += e.input_tokens
         m["output_tokens"] += e.output_tokens
-    total = t["cost"] + t["gpu_cost"]
+        m["cache_read_tokens"] += e.cache_read_tokens
+        m["cache_write_tokens"] += e.cache_write_tokens
+    # ★ **`input_tokens`는 「유효 입력」이다**(2026-08-23 대표 결재). proto `ModelUsage`에
+    #   캐시 칸이 없고 BE는 이 값에 입력 단가를 곱한다. 그런데 Anthropic `usage.input_tokens`
+    #   에는 캐시 토큰이 안 들어 있어서, 실값을 그대로 보내면 BE가 캐시분을 **0원**으로 친다
+    #   (캡션 호출당 프롬프트 약 2,200토큰이 통째로 빠진다). 캐시 읽기는 입력의 0.1배,
+    #   5분 TTL 쓰기는 1.25배라 **그냥 더해도 틀린다.** 단가 비율로 환산해 더한다:
+    #       유효 입력 = 실입력 + 캐시쓰기 × 1.25 + 캐시읽기 × 0.1
+    #   이러면 BE가 지금 코드 그대로 곱해도 금액이 맞는다 — proto 변경도 BE 작업도 없다.
+    #   실값은 `input_tokens_raw`와 아래 `parts[]`에 갈라져 남는다(메트릭 JSONL 전용).
+    for m in by_model.values():
+        m["input_tokens"] = round(m["input_tokens_raw"]
+                                  + m["cache_write_tokens"] * 1.25
+                                  + m["cache_read_tokens"] * 0.1)
+    # ★ GPU는 쪽당 원가에 넣지 않는다(대표 지시 2026-08-20). AWS 서버 비용은 인스턴스
+    #   시간으로 따로 매기므로 쪽마다 안분하면 이중 계상이 된다. 점유 시간(gpu_seconds)은
+    #   관측값으로 계속 남기되 금액 합계에는 더하지 않는다.
+    #   ※ gpu_seconds는 HCXT 시간만 세어 30/30쪽 전부 0이었다. 2026-08-20에 MinerU
+    #     서브프로세스와 로컬 모델 추론 구간을 `gpu_span`으로 같이 재게 배선했다.
+    total = t["cost"]
     return {
         # ── proto로 나가는 측정값 ──
         "models": sorted(by_model.values(), key=lambda m: -m["input_tokens"]),
@@ -310,9 +385,20 @@ def usage_report() -> dict:
         "fx_fetched_at_ms": pricing.fx_fetched_at_ms(),
         "gpu_seconds": round(t["gpu_seconds"], 2),
         "unpriced_calls": t["unpriced_calls"],
+        # ⚠ **BE 원가 계산의 구멍**(2026-08-23): proto `ModelUsage`에는 캐시 토큰 칸이
+        #   없다. 캡셔닝에 캐시를 켠 뒤로 `input_tokens`는 캐시분을 빼고 오므로(그게
+        #   Anthropic 규약이다) BE가 그 값만 곱하면 프롬프트 몫(호출당 약 2,000토큰)을
+        #   통째로 0원으로 친다. 우리 원가 집계는 `pricing`이 배수로 처리해 맞지만
+        #   BE 청구는 그만큼 과소다. 계약에 칸을 내는 건 api 세션 소관이라 값만 먼저
+        #   싣는다 — 매퍼는 모르는 키를 무시하므로 proto가 따라오면 그때 배선한다.
+        "cache_read_tokens": t["cache_read_tokens"],
+        "cache_write_tokens": t["cache_write_tokens"],
+        "cache_hit_rate": round(cache_hit_rate(), 4),
         "parts": [           # 파트별 내역은 메트릭 JSONL에만 남긴다(소급 분석용)
             {"part": kind, "model": model, "calls": e.calls,
              "input_tokens": e.input_tokens, "output_tokens": e.output_tokens,
+             "cache_read_tokens": e.cache_read_tokens,
+             "cache_write_tokens": e.cache_write_tokens,
              "cost_usd": round(e.cost, 9), "unpriced": e.unpriced}
             for (kind, model), e in sorted((st.llm if st else {}).items(),
                                            key=lambda kv: -kv[1].cost)
@@ -321,22 +407,24 @@ def usage_report() -> dict:
 
 
 def api_counts() -> dict:
-    """하위호환: {'hcxt': n, 'gpt4o': n}."""
+    """호출 수 요약: {'hcxt': n, 'llm': n}. llm은 **외부 LLM 전부**(모델 무관)."""
     t = _totals()
-    return {"hcxt": t["hcxt"], "gpt4o": t["gpt4o"]}
+    return {"hcxt": t["hcxt"], "llm": t["llm"]}
 
 
 @_never_raises("")
 def api_summary() -> str:
     """한 줄 요약(요청 총계)."""
     t = _totals()
-    s = f"HCXT {t['hcxt']}회 · 외부LLM {t['gpt4o']}회"
-    if t["gpt4o"]:
+    s = f"HCXT {t['hcxt']}회 · 외부LLM {t['llm']}회"
+    if t["llm"]:
         tok = t["prompt_tokens"] + t["completion_tokens"]
         s += f"({tok:,}토큰 ${t['cost']:.4f})"
+    if t["cache_read_tokens"] or t["cache_write_tokens"]:
+        s += f" · 캐시적중 {cache_hit_rate() * 100:.1f}%"
     if t["gpu_cost"]:
         s += f" · GPU {t['gpu_seconds']:.0f}s ${t['gpu_cost']:.4f}"
-    total = t["cost"] + t["gpu_cost"]
+    total = t["cost"]          # GPU 제외 — 아래 주석 참조
     if total:
         s += f" = ${total:.4f}(₩{pricing.to_krw(total):,})"
     return s
@@ -377,7 +465,21 @@ def breakdown_lines() -> list[str]:
             note += f"⏱{p.hcxt_timeouts}"
         lines.append(f"  {kind:<10} {'HCXT(로컬GPU)':<18} {note:>21} ${p.gpu_cost:>8.4f}")
     t = _totals()
-    total = t["cost"] + t["gpu_cost"]
+    if t["cache_read_tokens"] or t["cache_write_tokens"]:
+        # 파트별로 따로 찍는다 — 캡셔닝은 프롬프트가 길어 캐시가 얹히고 분류는
+        # 시스템이 324토큰이라 최소 캐시 길이(1,024)에 못 미쳐 영원히 0이다.
+        # 뭉뚱그리면 "적중률이 낮다"가 어느 쪽 얘긴지 못 가른다.
+        for (kind, _model), e in sorted(st.llm.items()):
+            d = e.input_tokens + e.cache_read_tokens + e.cache_write_tokens
+            if not d:
+                continue
+            lines.append(f"  캐시 {kind:<8} 읽기 {e.cache_read_tokens:>9,} · "
+                         f"쓰기 {e.cache_write_tokens:>9,} · 적중률 "
+                         f"{e.cache_read_tokens / d * 100:5.1f}%")
+        lines.append(f"  캐시 합계     읽기 {t['cache_read_tokens']:>9,} · "
+                     f"쓰기 {t['cache_write_tokens']:>9,} · 적중률 "
+                     f"{cache_hit_rate() * 100:5.1f}%")
+    total = t["cost"]          # GPU 제외 — 아래 주석 참조
     lines.append(f"  합계 LLM ${t['cost']:.4f} + GPU ${t['gpu_cost']:.4f} = ${total:.4f} "
                  f"(₩{pricing.to_krw(total):,} @ {pricing.fx_rate():g})")
     if t["unpriced_calls"]:

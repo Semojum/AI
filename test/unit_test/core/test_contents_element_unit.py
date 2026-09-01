@@ -4,7 +4,7 @@
   · `TextElement.contents` = **항목 1개짜리 통 문자열**. FE(화면)·BE(다운로드,
     braille-assist)가 하는 것은 32칸 자름·면 나눔·페이지행·페이지 변경선뿐이다.
   · **조판 규칙은 이 문자열 안에 들어 있다** — 구조적 빈 줄은 `\\n`으로, 들여쓰기와
-    1단계 제목 가운데 정렬은 점자 공백 셀로. 전부 지침(BBPG 2장2절1·2절2·3절5) 규칙이지
+    1단계 제목 가운데 정렬은 점자 공백 셀로. 전부 지침(NLD 2장2절1·2절2·3절5) 규칙이지
     화면 사정이 아니다. FE·BE가 type·heading_level을 보고 재현하려면 규정을 다시 구현해야
     하고, 그러면 규칙이 세 벌로 갈라진다.
   · `Draft.contents` = 그 초안의 통 문자열. **선택 초안과 같은 앞뒤 빈 줄·들여쓰기**를
@@ -37,8 +37,9 @@ from app.schemas.layout import BBoxItem, LayoutResult
 _L1 = "⠓⠣⠉⠁"
 _L2 = "⠑⠕⠃⠎"
 _L3 = "⠠⠍⠓⠪⠁"
-_I = "  "                        # 문단·목록 들여쓰기 (BBPG "3칸에서 시작" = 앞 빈칸 2)
-_C1 = " " * ((32 - len(_L1)) // 2)   # 1단계 제목 가운데 정렬 여백 (BBPG 2장2절1)
+_I = "⠀⠀"                       # 문단·목록 들여쓰기 (NLD "3칸에서 시작" = 앞 빈칸 2)
+                                # ★ 점자 빈칸 U+2800 이다(R1, 2026-08-24). 지면의 빈칸은 전부 점자 셀이다.
+_C1 = "⠀" * ((32 - len(_L1)) // 2)   # 1단계 제목 가운데 정렬 여백 (NLD 2장2절1)
 
 
 class _D:
@@ -72,7 +73,7 @@ class TestSelectedLines:
         bo, flat = _flat_of([_L1, _L2, _L3])
         got = _selected_lines(bo, flat)
         assert len(got) == 1
-        # text 요소라 첫 줄만 3칸에서 시작(BBPG 2장2절2), 이어지는 줄은 첫 칸부터.
+        # text 요소라 첫 줄만 3칸에서 시작(NLD 2장2절2), 이어지는 줄은 첫 칸부터.
         assert got[0].splitlines() == [_I + _L1, _L2, _L3]
 
     def test_한_줄짜리(self) -> None:
@@ -97,16 +98,16 @@ class TestSelectedLines:
 
 
 class TestStructuralBlanks:
-    """구조적 빈 줄 — 지침 규칙(BBPG 2장2절1·2장2절2)이 통 문자열 안에 실려야 한다."""
+    """구조적 빈 줄 — 지침 규칙(NLD 2장2절1·2장2절2)이 통 문자열 안에 실려야 한다."""
 
     def test_1단계_제목은_위를_안_띄고_아래만_한_줄(self) -> None:
-        """BBPG 2장2절2 2)(2)① 열거에 '1단계 제목의 위'가 없다 — 위는 장바꿈이지 빈 줄이 아니다."""
+        """NLD 2장2절2 2)(2)① 열거에 '1단계 제목의 위'가 없다 — 위는 장바꿈이지 빈 줄이 아니다."""
         bo, flat = _flat_of([_L1], etype="title", hlevel=1)
         assert _selected_lines(bo, flat)[0] == f"{_C1}{_L1}\n\n"
 
     def test_2단계_제목은_앞뒤_한_줄(self) -> None:
         bo, flat = _flat_of([_L1], etype="title", hlevel=2)
-        assert _selected_lines(bo, flat)[0] == f"\n{' ' * 6}{_L1}\n\n"
+        assert _selected_lines(bo, flat)[0] == f"\n{'⠀' * 6}{_L1}\n\n"
 
     def test_표는_위아래_한_줄(self) -> None:
         bo, flat = _flat_of([_L1], etype="table", hlevel=0)
@@ -128,7 +129,7 @@ class TestStructuralBlanks:
         stream = "".join(flat[i].text for i in ids)
         assert stream.split("\n") == [
             "",                 # 2단계 제목 앞 한 줄
-            " " * 6 + _L1,      # 제목 — 7칸에서 시작
+            "⠀" * 6 + _L1,      # 제목 — 7칸에서 시작
             "",                 # 제목 뒤 한 줄
             _I + _L2, _L3,      # 본문 — 첫 줄만 3칸에서 시작
             "",                 # 표 위 한 줄
@@ -148,10 +149,10 @@ class TestStructuralBlanks:
                BrailleOutput(element_id=ids[1], braille_lines=[_L2])]
         flat = flatten_elements(bos, lr)
         stream = "".join(flat[i].text for i in ids)
-        assert stream.split("\n") == ["", " " * 6 + _L1, "", _L2, "", ""]
+        assert stream.split("\n") == ["", "⠀" * 6 + _L1, "", _L2, "", ""]
 
     def test_시각_자료가_연이어_나오면_사이를_안_띈다(self) -> None:
-        """BBPG 3장2절1 2) 다만 — 시각 자료끼리는 붙는다. 표는 3장1절4)(3)으로 정반대다."""
+        """NLD 3장2절1 2) 다만 — 시각 자료끼리는 붙는다. 표는 3장1절4)(3)으로 정반대다."""
         ids = [uuid4(), uuid4(), uuid4()]
         lr = LayoutResult(page_id="p1", elements=[
             BBoxItem(element_id=ids[0], type="image", bbox=(0, 0, 1, 1), reading_order=1),
@@ -176,8 +177,8 @@ class TestRuleTrailCoords:
     """좌표계 = 통 문자열 문자 오프셋. line_no는 0 고정."""
 
     def _rule(self, line_no, col_start, col_end):
-        return RuleApplication(rule_id="R", source="s", section="1", title="t",
-                               excerpt="e", line_no=line_no,
+        return RuleApplication(rule_id="R", source="s", section="1", rule_name="t",
+                               contents="e", line_no=line_no,
                                col_start=col_start, col_end=col_end, tag="symbol")
 
     def test_첫_줄_좌표(self) -> None:
@@ -205,7 +206,7 @@ class TestRuleTrailCoords:
         r = fe.trail[0]
         assert r.line_no == 0
         # 요소 전체 태그는 들여쓴 칸까지 포함한 본문 전 구간이다.
-        assert fe.text[r.col_start:r.col_end] == f"{' ' * 6}{_L1}\n{_L2}"
+        assert fe.text[r.col_start:r.col_end] == f"{'⠀' * 6}{_L1}\n{_L2}"
 
 
 class TestDraftsInvariant:
@@ -231,7 +232,7 @@ class TestDraftsInvariant:
         drafts = [_D([_L1], "생략"), _D([_L2], "짧은 제목"), _D([_L3], "개조식")]
         bo, flat = _flat_of([_L3], drafts=drafts, selected_idx=2)
         assert [d.label for d in drafts] == ["생략", "짧은 제목", "개조식"]
-        assert _draft_contents(bo, drafts[0], 0, flat)[0].strip() == _L1
+        assert _draft_contents(bo, drafts[0], 0, flat)[0].strip(" ⠀\n") == _L1
 
     def test_빈_초안도_자리를_지킨다(self) -> None:
         """생략 초안은 점자가 비어 있다 — 항목이 사라지면 selected_idx가 어긋난다."""
@@ -239,8 +240,8 @@ class TestDraftsInvariant:
         bo, flat = _flat_of([_L1], drafts=drafts, selected_idx=1)
         got = [_draft_contents(bo, d, i, flat) for i, d in enumerate(drafts)]
         assert len(got) == 2
-        assert got[0][0].strip() == ""
-        assert got[1][0].strip() == _L1
+        assert got[0][0].strip(" ⠀\n") == ""
+        assert got[1][0].strip(" ⠀\n") == _L1
 
 
 class TestFinalizeAcceptsBothForms:
@@ -270,7 +271,7 @@ def test_왕복_직렬화_후_줄이_안_깨진다() -> None:
     bo, flat = _flat_of([_L1, _L2, _L3])
     serialized = _selected_lines(bo, flat)                          # AI → BE
     restored = FinalizeBlock(lines=serialized).normalized_lines()   # BE → AI
-    assert [ln.strip() for ln in restored if ln.strip()] == [_L1, _L2, _L3]
+    assert [ln.strip(" ⠀\n") for ln in restored if ln.strip(" ⠀\n")] == [_L1, _L2, _L3]
 
 
 def test_flat_indent_matches_layout() -> None:
@@ -295,7 +296,7 @@ def test_flat_indent_matches_layout() -> None:
         LayoutBraille().layout([lay_bo], page_no=1, job_id="t", layout_result=lr)
         lay_first = lay_bo.braille_lines[0]
 
-        pad = len(flat_first) - len(flat_first.lstrip(" "))
-        assert pad == len(lay_first) - len(lay_first.lstrip(" ")), (
+        pad = len(flat_first) - len(flat_first.lstrip("⠀"))
+        assert pad == len(lay_first) - len(lay_first.lstrip("⠀")), (
             f"{etype}/h{hlevel}: 통 문자열 {pad}칸 vs 조판 "
             f"{len(lay_first) - len(lay_first.lstrip(' '))}칸")

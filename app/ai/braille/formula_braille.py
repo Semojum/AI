@@ -30,7 +30,7 @@ class FormulaBraille:
             struct_rules = latex_rule_ids(text)
         breaks = [_space_breaks(ln) for ln in lines]
         # 구조별 rule(분수·근·첨자·로그·극한 등)만 기록 — 요소 전체(line_no=-1).
-        # ★ Step17(2026-08-08) — 포괄 규정 KBR-수학-1.1("숫자는 수표를 앞세워 적는다")을 뺐다.
+        # ★ Step17(2026-08-08) — 포괄 규정 MCST-수학-1.1("숫자는 수표를 앞세워 적는다")을 뺐다.
         #   모든 수식 요소에 붙던 자명한 규정이라 정작 봐야 할 구조 판정(제곱 ⠣/⠘⠼2 원장 C-03,
         #   아래첨자 M-02)이 그 밑에 묻혔다.
         trail = [

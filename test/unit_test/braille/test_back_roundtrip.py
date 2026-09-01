@@ -123,11 +123,70 @@ class TestKnownLimits:
     def test_대문자_약어는_단독이어도_읽힌다(self) -> None:
         assert _rt("ATP") == "ATP"
 
-    def test_공백_넘는_구간은_못_읽는다(self) -> None:
-        """제32항 `MP4 Player`. decode가 공백 단위로 쪼개고 구간 경계를 못 믿는다."""
-        got = _rt("MP4 Player를 샀다")
-        assert got.startswith("MP4 ")
-        assert "Player" not in got
+    @pytest.mark.parametrize("text", ["such tactics", "the main reason", "the rough Atlantic Ocean"])
+    def test_로마자표_없는_영어줄을_읽는다(self, text: str) -> None:
+        """제29항 [다만] — 문단 전체가 로마자면 로마자표를 생략할 수 있다.
+
+        단서 셀이 없으므로 정방향으로 되짚어(`eng_braille.translate`) 원래 셀과
+        같을 때만 영어로 본다. 기능어를 하나 요구해 뜻 없는 알파벳을 걸러 낸다.
+        """
+        assert _rt(text) == text
+
+    @pytest.mark.parametrize("text", ["우주 그물로 감동 유도", "독자의 공감과 감동 유도"])
+    def test_한글줄을_영어로_뒤집지_않는다(self, text: str) -> None:
+        """실측 오탐 — 되짚기만으로는 `우주 그물로`가 `dujya Oiu`로 통과했다."""
+        assert _rt(text) == text
+
+    @pytest.mark.parametrize("text", ["1년 동안", "비만 3단계인 사람", "2도 올랐다"])
+    def test_숫자_뒤_한글을_되붙인다(self, text: str) -> None:
+        """제17항 [다만] — 숫자와 혼동되는 ㄴㄷㅁㅋㅌㅍㅎ 첫소리는 붙어 나와도 띄어 쓴다.
+
+        그래서 점자의 그 한 칸은 원문에 없던 것이다. 되돌리지 않으면 `1년`이 `1 년`이 된다.
+        코퍼스 실측 4,995건 중 붙여 쓴 원문이 3,786건(75.8%)이라 붙이는 쪽을 택했다.
+        """
+        assert _rt(text) == text
+
+    @pytest.mark.parametrize("text", ["a<b", "a>b", "(x<t)"])
+    def test_부등호를_읽는다(self, text: str) -> None:
+        """「수학 점자」 제4항 — <는 ⠔⠔, >는 ⠢⠢. 역표에 ≤·≥·≠만 있어 빠져 있었다."""
+        from app.ai.braille.kor_math_rules import convert_latex
+        from app.utils.braille_back import decode
+
+        assert decode(convert_latex(text), math=True) == text
+
+    @pytest.mark.parametrize("text", ["a≡b", "a±b", "a⊃b", "a∉b", "a⊥b", "a√b", "a∞b"])
+    def test_수학기호를_읽는다(self, text: str) -> None:
+        """수식 모드 전용 역표 — 한 칸짜리는 한글과 겹쳐 안 넣는다(∫=⠮는 '을')."""
+        from app.ai.braille.kor_math_rules import convert_latex
+        from app.utils.braille_back import decode
+
+        assert text[1] in decode(convert_latex(text), math=True)
+
+    def test_수식줄에_영어판정을_대지_않는다(self) -> None:
+        """`a √ b`가 `a ar b`로 뒤집히던 회귀 — ⠜는 √이자 영어 약자 ar이다."""
+        from app.ai.braille.kor_math_rules import convert_latex
+        from app.utils.braille_back import decode
+
+        assert decode(convert_latex("a √ b"), math=True) == "a √ b"
+
+    def test_글상자_테두리를_표시로_읽는다(self) -> None:
+        """테두리는 글자가 아니라 도형이다 — 음절로 읽으면 `옹운운운…옹`이 나온다."""
+        assert _rt("<!상자><!/상자>") == "【글상자】"
+        assert _rt("<!상자>과학 돋보기<!/상자>") == "【글상자 과학 돋보기】"
+
+    @pytest.mark.parametrize("text", ["옹기와 옹달샘", "가운데 옹 하나"])
+    def test_약자_옹은_그대로_읽는다(self, text: str) -> None:
+        """⠿는 테두리 셀이자 약자 '옹'이다 — 줄 전체가 테두리 꼴일 때만 표시로 바꾼다."""
+        assert _rt(text) == text
+
+    def test_공백_넘는_구간을_읽는다(self) -> None:
+        """제32항 `MP4 Player` — 2026-08-24까지는 못 읽던 한계였다.
+
+        decode가 줄을 공백으로 쪼개 둘째 낱말이 문맥을 잃었다. 이제 `_merge_roman_tokens`가
+        **종료표 ⠲가 실제로 앞에 있을 때만** 토큰을 합친다. 낱말 앞의 ⠴만 로마자표로 보므로
+        (제29항) 닫는 낫표 `』`=⠴⠆를 구간 시작으로 오인하지 않는다.
+        """
+        assert _rt("MP4 Player를 샀다") == "MP4 Player를 샀다"
 
 
 class TestPieupFinalAndWrapParens:

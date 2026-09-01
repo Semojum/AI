@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # 요소당 HCXT 상한은 config에서(단일 GPU 직렬 — 작게, 페이지 예산 보호). 구 90s/30s는 과도.
 
 # ── 점자 레이아웃 태깅 (LLM이 점역 직전 텍스트에 인라인 태그 삽입) ───────────────
-# 점역자주(BBPG-1.2.6)·글상자 테두리(BBPG-1.2.5)·빈칸을 LLM이 삽입하고 translator가
+# 점역자주(NLD-1.2.6)·글상자 테두리(NLD-1.2.5)·빈칸을 LLM이 삽입하고 translator가
 # 1:1 점자로 변환한다(plan §3-5). 하이브리드: HCXT 우선 → 검증 → GPT-4o 폴백 → 원문.
 # 효율·환각 방지: 태그 후보 신호(□·____·<보기> 등)가 있는 요소만 LLM 호출, 평문은 그대로.
 _TAG_CANDIDATE_RE = re.compile(
@@ -42,7 +42,10 @@ _TAG_CANDIDATE_RE = re.compile(
 # 이름은 한 벌뿐이다(`braille/tag_names.py`). 구 이름은 미지 태그로 걸러 낸다 —
 # LLM이 옛 이름을 내면 그 출력은 버리고 원문을 쓴다(태깅 없음 > 갈린 이름).
 _KNOWN_TAGS = {_TAGS.BOX_TOP, _TAGS.BOX_BOTTOM, _TAGS.TN,
-               _TAGS.BLANK_SQUARE, _TAGS.BLANK_TABLE, _TAGS.BLANK_RULE}
+               _TAGS.BLANK_SQUARE, _TAGS.BLANK_TABLE, _TAGS.BLANK_RULE,
+               # 네모 문자(제64항)는 LLM이 만들지 않는다 — 벡터 검출이 앞단에서 넣는다.
+               # 여기 없으면 그 태그를 단 요소에서 LLM 태깅 결과가 통째로 버려진다.
+               _TAGS.BOX_CHAR}
 _TAG_TOKEN_RE = re.compile(r"<!(/?)([^>]+)>")
 _FENCE_RE = re.compile(r"```[a-zA-Z]*\n?|```")
 
@@ -80,7 +83,7 @@ def _content_sig(s: str) -> str:
 
 
 def _borders_balanced(tagged: str) -> bool:
-    """테두리 위/아래는 같은 위계끼리 짝이어야 한다 (BBPG 1장5 (1)(2)).
+    """테두리 위/아래는 같은 위계끼리 짝이어야 한다 (NLD 1장5 (1)(2)).
 
     한쪽만 나오면 layout이 32칸 테두리 한 줄을 그려 놓고 영영 닫지 않는다
     (`layout_braille._expand_box_borders`는 짝을 맞추지 않는다). 요소 단위로 도는
@@ -137,7 +140,7 @@ async def _tag_layout(text: str) -> str:
 def _min_trail(text: str) -> list[RuleApplication]:
     """평문 텍스트에는 근거를 달지 않는다 (Step17, 2026-08-08 대표 지시).
 
-    종전에는 KBR-0.1("한국 점자는 한 칸을 구성하는 점 여섯 개…")을 모든 텍스트 요소에
+    종전에는 MCST-0.1("한국 점자는 한 칸을 구성하는 점 여섯 개…")을 모든 텍스트 요소에
     달았다 — dev 400쪽 실측 **19,381/19,650 요소(98.6%)**. 대표가 직접 지목한 바로 그
     항목이다("점형은 6점자로 적는다. 이런 건 점역사에게 전혀 필요없는 규정"). 점역사가
     이미 아는 것을 매 요소에 붙이면 정작 봐야 할 판단(캡션 문구·글상자·관행 갈림)이 묻힌다.

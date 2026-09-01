@@ -77,7 +77,7 @@ def test_no_review_needed_flag():
             f"REVIEW_NEEDED 플래그 발견: element_id={el['element_id']}"
 
 
-# ── 제목 단계(BBPG 2장2절1) — QA S1, 2026-08-07 ──────────────────────────────
+# ── 제목 단계(NLD 2장2절1) — QA S1, 2026-08-07 ──────────────────────────────
 # MinerU는 제목 블록을 이미 찾아 두는데 content_list에서 type이 "text"로 눕고 단계만
 # text_level에 남는다. 종전에는 그 값을 버려 조판이 제목 규칙을 한 번도 못 썼다
 # (QA 실측: 37쪽 558요소에 title 0개). 다만 그 표시의 35%는 문항 발문·선택지라
@@ -86,11 +86,18 @@ from app.ai.parser.mineru_runner import _heading_level
 
 
 class TestHeadingLevel:
-    def test_lv1은_1단계(self):
-        assert _heading_level({"text_level": 1}, "text", "서유럽 봉건 사회의 전개와 문화") == 1
+    def test_lv1은_2단계(self):
+        """MinerU lv1 = 강 제목 = NLD 2단계(7칸). 1단계(가운데)가 아니다.
+
+        dev·val-2027 gold 전수: 앞빈칸 6칸 455줄 vs 가운데(앞 7칸 이상) 89줄.
+        6칸 455줄 중 292줄이 가운데 계산 `(32-길이)//2` 와 어긋나 **고정 들여쓰기**임이
+        증명된다. 우리가 가운데꼴로 내던 26줄 중 21줄을 gold 는 6칸으로 적는다.
+        (2026-08-28, 원장 C-79)
+        """
+        assert _heading_level({"text_level": 1}, "text", "서유럽 봉건 사회의 전개와 문화") == 2
 
     def test_번호_붙은_제목도_제목(self):
-        assert _heading_level({"text_level": 1}, "text", "1. 제국주의와 제1차 세계 대전") == 1
+        assert _heading_level({"text_level": 1}, "text", "1. 제국주의와 제1차 세계 대전") == 2
 
     def test_lv2이상은_4단계(self):
         # 정답 도서 실측(refonly 94권): 2단계 7칸은 0.18%로 거의 안 쓰고 3·4단계 5칸이 1.45%.
@@ -109,7 +116,7 @@ class TestHeadingLevel:
 
     def test_긴_문장은_제목_아님(self):
         assert _heading_level({"text_level": 1}, "text", "가" * 29) is None
-        assert _heading_level({"text_level": 1}, "text", "가" * 28) == 1
+        assert _heading_level({"text_level": 1}, "text", "가" * 28) == 2
 
     def test_표시_없으면_None(self):
         assert _heading_level({}, "text", "제목처럼 보여도") is None
@@ -117,3 +124,76 @@ class TestHeadingLevel:
     def test_글이_아닌_유형은_제외(self):
         assert _heading_level({"text_level": 1}, "image", "그림") is None
         assert _heading_level({"text_level": 1}, "table", "표") is None
+
+
+class TestMineruRetry:
+    """MinerU 는 같은 지면·같은 코드에서도 비결정으로 죽는다. 한 번 더 부르면 살아난다.
+
+    실측(시연 12쪽, 2026-08-26): 07:26 판 폴백 0 · 12:27 판 2 · 13:15 판 1 ·
+    13:14 같은 쪽 재시도 성공. 폴백은 인쇄 줄 하나가 요소 하나라 표·그림 구조가 사라진다.
+    """
+
+    def test_한_번_실패하면_다시_부른다(self, tmp_path, monkeypatch):
+        from app.ai.parser import mineru_runner as M
+        calls = []
+
+        def flaky(pdf_path, out_dir, page_idx, timeout=None):
+            calls.append(page_idx)
+            if len(calls) == 1:
+                raise RuntimeError("MinerU 실행 실패 (returncode=1, page_idx=0)")
+            (out_dir / "x_content_list.json").write_text("[]", encoding="utf-8")
+
+        monkeypatch.setattr(M, "_run_mineru", flaky)
+        monkeypatch.setattr(M, "_cleanup_mineru_output", lambda d: None)
+        monkeypatch.setattr(M, "_flatten_mineru_output", lambda d: None)
+        raw = tmp_path / "mineru_raw"
+        raw.mkdir()
+        # 호출부와 같은 얼개를 그대로 태운다
+        for attempt in range(1 + M._MINERU_RETRIES):
+            try:
+                M._run_mineru(tmp_path / "a.pdf", raw, 0, timeout=None)
+                break
+            except M.MineruTimeout:
+                raise
+            except RuntimeError:
+                if attempt >= M._MINERU_RETRIES:
+                    raise
+        assert len(calls) == 2, calls
+
+    def test_타임아웃은_재시도하지_않는다(self):
+        """예산을 이미 다 썼다 — 다시 부르면 두 배다. 종전대로 폴백으로 간다."""
+        from app.ai.parser.mineru_runner import MineruTimeout
+        assert issubclass(MineruTimeout, RuntimeError)
+
+    def test_폴백은_살아_있다(self):
+        """재시도가 다 실패하면 예외가 올라가고 호출자가 텍스트 폴백으로 간다."""
+        from app.ai.parser import mineru_runner as M
+        assert M._MINERU_RETRIES >= 1
+
+
+# ── MinerU footer 신호 보존 (2026-08-29, 원장 C-86) ──────────────────────────
+# MinerU 는 header / footer / page_number 를 나눠서 주는데 `TYPE_MAP` 에 `footer` 가 없어
+# 기본값 `"text"` 로 떨어지고 **그 구분이 사라진다.** 꼬리말을 적을지는 규정↔관행이 갈려
+# (§2.1.2 는 적으라 · gold 는 91.4% 안 적음 · 25,382셀) 자문 대기이므로 **판정은 미루고
+# 신호만 남긴다.** 그래서 타입은 그대로 두고 flags 에만 표시한다.
+class TestMineruFooterFlag:
+    def test_footer_는_플래그로_남는다(self):
+        from app.ai.parser.mineru_runner import TYPE_MAP
+        # 타입 표에 `footer` 를 넣지 않는 것이 의도다 — 넣으면 `header_footer` 로 조판이
+        # 옮겨 가는데, 실측하면 출력이 한 글자도 안 바뀌고(`_is_running_foot` 962건 전원
+        # 통과) 판정만 흐려진다.
+        assert "footer" not in TYPE_MAP
+        assert TYPE_MAP.get("footer", "text") == "text"
+
+    def test_출력_타입은_안_바뀐다(self):
+        """★ 이 수정은 **출력 무변동**이어야 한다 — 플래그만 는다."""
+        from app.ai.parser.mineru_runner import TYPE_MAP
+        assert TYPE_MAP.get("header") == "header_footer"      # header 는 종전대로
+        assert TYPE_MAP.get("page_number") == "page_number"
+
+    def test_플래그_이름이_R플래그로_새지_않는다(self):
+        """`MINERU_FOOTER` 가 검토 플래그로 승격되면 그것도 출력 변경이다."""
+        from app.ai.quality.quality_checker import _FLAG_TO_REVIEW, _GENERIC_R_FLAG
+        assert "MINERU_FOOTER" not in _FLAG_TO_REVIEW
+        assert not _GENERIC_R_FLAG.match("MINERU_FOOTER")
+        assert not "MINERU_FOOTER".endswith("_FALLBACK")

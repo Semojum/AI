@@ -44,7 +44,7 @@ TYPE_MAP = {
     "figure":              "image",
 }
 
-# ── 제목 단계(BBPG 2장2절1) ──────────────────────────────────────────────────
+# ── 제목 단계(NLD 2장2절1) ──────────────────────────────────────────────────
 # MinerU는 제목 블록을 이미 찾아 놓는다. 다만 `content_list`에서는 type이 "text"로
 # 눕고 단계만 `text_level`에 남는다(vlm_middle_json_mkcontent.py: BlockType.TITLE →
 # ContentType.TEXT + text_level). 종전에는 그 값을 통째로 버리고 heading_level=None을
@@ -63,10 +63,41 @@ TYPE_MAP = {
 # ★ 3단계가 아니라 **4단계**다(2026-08-08 대표 결정). 정답 도서의 5칸 시작 줄 1,651줄을
 #   보면 위에 빈 줄 26.7% · 아래에 빈 줄 2.7%로, 아래를 거의 안 띄운다. 4단계가 (1,0)이라
 #   그 모양에 맞는다. 3단계로 두면 아래 빈 줄이 계속 들어가 정답보다 빈 줄이 많아진다.
+#
+# ★ 2026-08-28 — **lv1 을 1단계가 아니라 2단계로 보낸다**(원장 C-79).
+#   위 refonly 수치는 2027 코퍼스에서 재현되지 않는다. dev·val-2027 gold 전수 177,750줄:
+#       앞빈칸 6칸(2단계 7칸)      455줄  0.26%
+#       앞빈칸 7칸 이상(가운데)      89줄  0.05%
+#   **순서가 뒤집혀 있다.** refonly 가 무엇을 "가운데"로 셌는지는 여기서 확인할 수 없다 —
+#   느슨한 판정(`앞빈칸 == (32-길이)//2 ±1`)을 쓰면 6칸 줄까지 가운데로 잡히는데,
+#   6칸 455줄 중 **292줄은 그 계산과 어긋난다**(길이 25인데 앞 6 · 길이 2인데 앞 6).
+#   즉 gold 의 6칸은 정렬이 아니라 **지침 §2.4.2(1) 의 "2단계 7칸" 고정 들여쓰기**다.
+#
+#   영향 범위 — **앞뒤판 전수(braille M013)로 확정했다.** 6칸으로 새로 가는 줄이
+#       dev 18 · val 22 = **40줄**, 그중 gold 도 6칸인 것이 dev 75% · val 89%(합 82%).
+#   ⚠ 내가 먼저 코드 출력으로 어림한 값은 dev 18 · val 8 = 26줄이었고 **val 을 낮게 봤다.**
+#     원인은 `layout_braille._center` 다 — 32셀 이상이면 가운데 정렬을 **안 하고 그대로**
+#     돌려줘서(그 함수 참조) 긴 강 제목이 앞빈칸 0으로 나갔다. '가운데꼴로 나온 줄'만
+#     세면 그것들이 통째로 빠진다. 한국어 강 제목은 32셀을 쉽게 넘어 val(동아시아사·
+#     화법과작문)에 특히 많았다. 실제 효과가 어림보다 **크다**.
+#   gold 6칸 452줄 중 나머지는 우리가 **제목으로 잡지도 못한다**(MinerU 가 header_footer 로
+#   뺀다 — 013 body p0061 "실전 수능 문제" 실측). 그건 이 맵으로 못 고친다.
+#
+#   ⚠ ZERO 티어(텍스트레이어 직행) 쪽은 `title` 요소가 없어 **효과가 구조적으로 0**이다
+#     (dev 69쪽 · val 231쪽). 회귀가 아니라 적용 대상 밖이다.
+#   ⚠ lv1 48건을 눈으로 전수 확인했다 — **진짜 강 제목 44건 · 오검출 4건(8%)**
+#     (`是` 한 자, OCR 깨진 본문, `대표 기출  확인하기 | …` 꼴 둘). 이 맵이 만든 게 아니라
+#     원래 있던 오검출이 6칸으로 나가며 눈에 띈 것이다. 제목 판정 자체는 별건이다.
+#
+#   ⚠ 같은 강 제목을 **책마다 다르게** 적는다(001 은 body 6칸 / ans 가운데). 어느 단계인지
+#     판정할 근거가 묵자에 없다 — 원장 C-79 에 자문 항목으로 올려 뒀다.
+#   ⚠ lv1 이 2단계가 되면 `_HEADING_BLANK[2] = (1, 1)` 이 처음으로 살아나 제목 **위**에도
+#     빈 줄이 붙는다. 지침 §2.4.4(2)① 은 1·2단계는 아래만 띄라고 하지만 gold 는 쪽 중간
+#     6칸 제목 107건 중 **99건(93%)에서 위를 띈다**. 관행형이 맞다(원장 C-80).
 _HEAD_CHOICE_RE = re.compile(r"^\s*[①-⑳]")             # 선택지는 제목이 아니다
 _HEAD_END_RE = re.compile(r"[.?!]\s*$|것은\s*\??$|않은\s*것\s*은?\s*\??$|하시오\.?$")
 _HEAD_MAX_LEN = 28                                      # 이보다 길면 제목이 아니라 문장
-_HEAD_LEVEL_MAP = {1: 1}                                # lv1 → 1단계, 그 외 → 4단계
+_HEAD_LEVEL_MAP = {1: 2}                                # lv1 → 2단계(7칸), 그 외 → 4단계
 
 
 _announced_engine: str | None = None
@@ -95,7 +126,7 @@ def _announce_engine(mineru_bin: str) -> None:
 
 
 def _heading_level(item: dict, mapped_type: str, content: str) -> int | None:
-    """MinerU `text_level` → BBPG 제목 단계. 제목이 아니면 None."""
+    """MinerU `text_level` → NLD 제목 단계. 제목이 아니면 None."""
     lvl = item.get("text_level")
     if not lvl or mapped_type != "text":
         return None
@@ -105,6 +136,19 @@ def _heading_level(item: dict, mapped_type: str, content: str) -> int | None:
     if _HEAD_CHOICE_RE.match(t) or _HEAD_END_RE.search(t):
         return None
     return _HEAD_LEVEL_MAP.get(int(lvl), 4)
+
+
+class MineruTimeout(RuntimeError):
+    """추출이 페이지 예산을 다 태운 경우. **재시도하지 않는다** — 다시 부르면 예산이 두 배다."""
+
+
+# 재시도 횟수(총 시도 = 1 + 이 값). MinerU 는 같은 지면·같은 코드에서도 **비결정으로** 죽는다 —
+# `The expanded size of the tensor (2) must match the existing size (0)` 가 그 얼굴이다.
+# 실측(시연 12쪽, 2026-08-26): 07:26 판 폴백 0 · 12:27 판 2 · 13:15 판 1 · 13:14 재시도 성공.
+# 죽으면 텍스트레이어 폴백으로 가는데, 폴백은 **인쇄 줄 하나가 요소 하나**라 표·그림 구조가
+# 통째로 사라진다(대표 시연 지적 둘이 이것 하나 때문이었다 — 2쪽 표·3쪽 사진).
+# 한 번 더 부르면 사라지는 손해라 재시도를 넣는다. 다 실패하면 종전대로 폴백이다.
+_MINERU_RETRIES = int(os.environ.get("MINERU_RETRIES", "1"))
 
 
 def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | None = None) -> None:
@@ -129,7 +173,7 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | N
     #   백엔드로** 처리됐다. 실측 피해(사회문화 p178, 동일 페이지):
     #     hybrid+effort medium(구 기본) → text 35 · list **0**   (본문 과분절·목록 소실)
     #     vlm-engine 또는 hybrid+high   → text  8 · list  7      (07-17 캐시와 일치)
-    #   목록이 사라지면 글머리 3칸 들여쓰기(BBPG 2장3절5)가 통째로 빠진다.
+    #   목록이 사라지면 글머리 3칸 들여쓰기(NLD 2장3절5)가 통째로 빠진다.
     backend = os.environ.get("MINERU_BACKEND", "hybrid-engine")
     cmd += ["-b", backend]
     if api_url:
@@ -155,7 +199,7 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | N
         # 초과 시 subprocess가 프로세스를 kill하므로 고아 프로세스가 남지 않는다.
         result = subprocess.run(cmd, capture_output=False, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(
+        raise MineruTimeout(
             f"MinerU 추출 타임아웃 (>{exc.timeout:.0f}s, page_idx={page_idx}) — 텍스트레이어 폴백 대상"
         ) from exc
     if result.returncode != 0:
@@ -252,6 +296,64 @@ def _recrop_hidpi(fitz_page: fitz.Page, bbox: list[float], dst: str,
         logger.warning("고DPI 재크롭 실패 %s: %s", Path(dst).name, exc)
         return False
     return True
+
+
+
+# ── 글자를 그림으로 잡은 것을 표시한다 (원장 C-40 부록, 2026-08-23) ──────────────
+# 그림이 없는 텍스트 영역이 시각 요소로 잡히면 캡셔너가 **그 글자를 읽어** 설명으로 낸다
+# (실측: "그림: 본문: 28번 문제 … 인 사면체 ABCD가 있다"). 없는 그림의 설명은 점역사가
+# 알아채기 제일 어려운 오류다.
+#
+# 가르는 신호는 **같은 자리를 두 번 잡았는가**다. 레이아웃이 텍스트와 그림을 갈라 놓으므로
+# 정상이면 겹칠 이유가 없고, 글자를 그림으로 잡으면 그 텍스트 요소와 bbox가 거의 같다.
+#
+# ★ 손해를 전수로 재서 골랐다(dev 정상 시각 요소 830건):
+#     · '텍스트에 덮인 비율'은 꼬리가 길어 임계 0.9에서 정상 25건(3.0%)이 죽는다 —
+#       진짜 그림인데 축 라벨·캡션이 텍스트 요소로 겹쳐 잡힌 것들이다.
+#     · **IoU는 0.8 이상이 0건**이다(0.7 이상도 1건, 0.1%). 그래서 IoU를 쓴다.
+#   임계 0.8은 여유를 둔 값이다. 딱 붙이면 스캔본에서 값이 조금만 흔들려도 놓친다.
+#
+# ⚠ 한계: 이 분리가 잘 되는 이유가 교과서 코퍼스에서 레이아웃이 애초에 겹치게 안 잡기
+#   때문일 수 있다. 스캔본에서도 그런지는 표본이 없어 확인하지 못했다(원장 C-40).
+#   그래서 발동을 로그로 남긴다 — 실사용에서 세어 보는 것이 그 물음에 답하는 유일한 길이다.
+_TEXT_LOOKALIKE_IOU = 0.8
+_LOOKALIKE_TEXT_TYPES = frozenset({
+    "text", "title", "caption", "list_item", "footnote", "sidebar",
+    "header_footer", "page_number", "formula", "table",
+})
+
+
+def _bbox_iou(a: list[float], b: list[float]) -> float:
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _mark_text_lookalikes(elements: list[dict], page_no: int) -> int:
+    """텍스트 요소와 자리가 거의 같은 시각 요소에 표시를 남긴다. 표시한 개수 반환."""
+    texts = [e["bbox"] for e in elements
+             if e.get("type") in _LOOKALIKE_TEXT_TYPES
+             and isinstance(e.get("bbox"), list) and len(e["bbox"]) == 4]
+    if not texts:
+        return 0
+    n = 0
+    for el in elements:
+        bb = el.get("bbox")
+        if el.get("type") not in ("image", "chart_graph", "cartoon", "diagram"):
+            continue
+        if not isinstance(bb, list) or len(bb) != 4:
+            continue
+        best = max((_bbox_iou(bb, t) for t in texts), default=0.0)
+        if best >= _TEXT_LOOKALIKE_IOU:
+            el["text_lookalike_iou"] = round(best, 3)
+            n += 1
+            logger.info("가드3 글자를 그림으로 잡음 — page=%d id=%s iou=%.3f",
+                        page_no, str(el.get("element_id", ""))[:8], best,
+                        extra={"page": page_no, "guard": 3, "iou": round(best, 3),
+                               "stage": "캡셔닝", "status": "SKIPPED"})
+    return n
 
 
 def _extract_text_native(fitz_page: fitz.Page, bbox: list[float]) -> str:
@@ -525,6 +627,87 @@ def _h_rules(fitz_page: fitz.Page, bbox: list[float]) -> int | None:
     return sum(1 for length in spans.values() if length >= need)
 
 
+# ── 테두리뿐인 '표'는 글상자다 (F15, 2026-08-26) ─────────────────────────────
+# 위 괘선 판정은 **가로선 2개**를 표의 조건으로 삼는데, 글상자는 제 위·아래 테두리만으로
+# 그 2개를 채운다. 그래서 "글상자 안 문항 + 그 아래 보기"가 표로 남았다(대표 시연 4쪽 지적).
+# 가르는 신호는 **속 구분선**이다 — 표는 속에 행이나 열을 가르는 선이 있고, 글상자는 없다.
+#   실측 2027 dev+val 1,746쪽·표 924개: 속 구분선이 하나도 없는 표 16개.
+#   그 16개 중 답 모음 표(‘Level 1 기초 연습’ 형식, 짧은 셀 여러 행)는 진짜 표라 살려야 한다.
+#   → 셀이 줄글이거나(가장 긴 셀 > _COL_CELL_LEN) 한 행뿐일 때만 강등한다.
+#   그러면 4개가 강등된다: 수학 (가)(나) 조건 상자·사료 인용 상자·조약 조문 상자·설문지 양식.
+#   (설문지는 「제작 지침」 §6.6.3 양식이라 어차피 글상자로 적는다.)
+_BOX_EDGE = 6.0          # bbox 변에서 이 안쪽 선은 테두리로 본다(pt)
+_BOX_COVER = 0.9         # 글상자 사각형이 표 자리를 이만큼 덮으면 '상자 안'
+
+
+def _inner_separators(fitz_page: fitz.Page, bbox: list[float]) -> tuple[int, int]:
+    """bbox **속**(테두리 제외) 가로·세로 구분선 수."""
+    w, h = fitz_page.rect.width, fitz_page.rect.height
+    r = fitz.Rect(bbox[0] / 1000 * w, bbox[1] / 1000 * h,
+                  bbox[2] / 1000 * w, bbox[3] / 1000 * h)
+    rot = fitz_page.rotation_matrix
+    segs: list[tuple[float, float, float, float]] = []
+    for g in fitz_page.get_drawings():
+        for it in g["items"]:
+            if it[0] == "l":
+                p1, p2 = it[1] * rot, it[2] * rot
+                segs.append((min(p1.x, p2.x), min(p1.y, p2.y),
+                             max(p1.x, p2.x), max(p1.y, p2.y)))
+            elif it[0] == "re":
+                q = fitz.Rect(it[1]) * rot
+                q.normalize()
+                segs += ([(q.x0, q.y0, q.x1, q.y1)] if min(q.width, q.height) <= _RULE_FLAT
+                         else [(q.x0, q.y0, q.x1, q.y0), (q.x0, q.y1, q.x1, q.y1)])
+    bx0, by0 = r.x0 - _RULE_PAD, r.y0 - _RULE_PAD
+    bx1, by1 = r.x1 + _RULE_PAD, r.y1 + _RULE_PAD
+    hs: dict[int, float] = {}
+    vs: dict[int, float] = {}
+    for x0, y0, x1, y1 in segs:
+        if x1 < bx0 or x0 > bx1 or y1 < by0 or y0 > by1:
+            continue
+        if y1 - y0 <= _RULE_FLAT:                       # 가로선
+            cut = min(x1, bx1) - max(x0, bx0)
+            if cut > 1:
+                k = round((y0 + y1) / 2)
+                hs[k] = hs.get(k, 0.0) + cut
+        elif x1 - x0 <= _RULE_FLAT:                     # 세로선
+            cut = min(y1, by1) - max(y0, by0)
+            if cut > 1:
+                k = round((x0 + x1) / 2)
+                vs[k] = vs.get(k, 0.0) + cut
+    n_h = sum(1 for y, ln in hs.items()
+              if ln >= max(r.width, 1.0) * _RULE_SPAN
+              and abs(y - r.y0) > _BOX_EDGE and abs(y - r.y1) > _BOX_EDGE)
+    n_v = sum(1 for x, ln in vs.items()
+              if ln >= max(r.height, 1.0) * _RULE_SPAN
+              and abs(x - r.x0) > _BOX_EDGE and abs(x - r.x1) > _BOX_EDGE)
+    return n_h, n_v
+
+
+def _prose_grid(html: str) -> bool:
+    """격자가 아니라 **줄글 덩이**인가 — 셀 하나가 길거나 행이 하나뿐인가."""
+    rows = len(_TR_RE.findall(html or ""))
+    cells = [re.sub(r"<[^>]+>", "", m[1]).strip() for m in _TD_RE.findall(html or "")]
+    if not cells:
+        return False
+    return rows <= 1 or max(len(c) for c in cells) > _COL_CELL_LEN
+
+
+def _is_boxed_prose(fitz_page: fitz.Page, bbox: list[float], html: str,
+                    box_rects_pt: list) -> bool:
+    """그 '표'가 실은 글상자에 든 줄글인가 (위 절 주석 참조)."""
+    if not box_rects_pt or not _prose_grid(html):
+        return False
+    w, h = fitz_page.rect.width, fitz_page.rect.height
+    r = fitz.Rect(bbox[0] / 1000 * w, bbox[1] / 1000 * h,
+                  bbox[2] / 1000 * w, bbox[3] / 1000 * h)
+    if r.get_area() <= 0:
+        return False
+    if not any((r & q).get_area() > r.get_area() * _BOX_COVER for q in box_rects_pt):
+        return False
+    return _inner_separators(fitz_page, bbox) == (0, 0)
+
+
 _TR_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S | re.I)
 _TD_RE = re.compile(r"<t[dh]([^>]*)>(.*?)</t[dh]>", re.S | re.I)
 _COLSPAN_RE = re.compile(r"colspan\s*=\s*[\"']?(\d+)", re.I)
@@ -767,6 +950,79 @@ def _flowchart_lines(md: str) -> str:
 
 
 
+# ── 안 그려지는 글자 버리기(C006) ────────────────────────────────────────────
+# 크롭으로 만든 PDF 는 **잘려 나간 바깥 글자를 텍스트 레이어에 그대로 갖고 있다.**
+# 화면에는 안 그려지는데 추출기는 읽는다. 그래서 3쪽 글이 4쪽 요소로 섞여 나온다.
+#
+# ★ 원인 실측(시연문서 p07): 같은 글이 **두 벌** 있다.
+#     '•매체 자료의 왜곡 여부 확인'  [263,741] 잉크 0.00 (안 그려짐)
+#                                    [269,709] 잉크 0.21 (그려짐)
+#   Form XObject 프레임 rect 로는 못 가른다 — 프레임 bbox 는 PDF 좌표(하단 원점)라
+#   위아래가 뒤집히고, 애초에 지면이 프레임 안에서 옮겨 앉으며 바깥 글자도 같이
+#   변환돼 프레임 **안쪽** 좌표로 들어온다. 그러니 프레임이 아니라
+#   **실제로 그려졌는지**로 판정한다.
+#
+# ⚠ 멀쩡한 글을 버리면 훨씬 나쁘다. 그래서 **흰색 아닌 화소가 하나도 없을 때만** 버린다.
+#   글자가 있으면 안티에일리어싱만으로도 회색 화소가 남고, 흰 글자면 바탕이 어둡다.
+#   음영 상자·테두리가 걸쳐도 화소가 남아 그냥 살린다(놓치는 쪽이 안전하다).
+_INK_DPI = 100                    # 쪽당 한 번만 렌더한다
+_INK_WHITE = 250                  # 이보다 밝으면 아무것도 안 그려진 화소로 본다
+# 글자 요소만 본다. 그림·표·시각자료는 안 건드린다 — 요소째 사라지면 학생은 거기
+# 무엇이 있었다는 사실조차 모른다(불변규칙 1 빈 결과 금지).
+_UNPAINTED_TYPES = {"text", "title", "list_item", "caption",
+                    "footnote", "sidebar", "header_footer", "page_number"}
+
+
+def _is_painted(pix: "fitz.Pixmap", bb: list[float]) -> bool:
+    """0~1000 bbox 자리에 흰색 아닌 화소가 하나라도 있나."""
+    x0 = max(0, int(bb[0] / 1000 * pix.width))
+    x1 = min(pix.width, int(round(bb[2] / 1000 * pix.width)))
+    y0 = max(0, int(bb[1] / 1000 * pix.height))
+    y1 = min(pix.height, int(round(bb[3] / 1000 * pix.height)))
+    if x1 <= x0 or y1 <= y0:
+        return True                        # 잴 수 없으면 살린다
+    s, n, stride = pix.samples, pix.n, pix.stride
+    for y in range(y0, y1):
+        row = s[y * stride + x0 * n: y * stride + x1 * n]
+        if row and min(row) < _INK_WHITE:  # 바이트 min 은 C 속도다
+            return True
+    return False
+
+
+def _drop_unpainted(elements: list[dict], fitz_page: fitz.Page,
+                    page_no: int) -> list[dict]:
+    """지면에 실제로 그려지지 않은 글자 요소를 버린다. 위 주석의 판정을 쓴다."""
+    # ★ 회전 지면도 그대로 본다. 한때 여기서 회전 지면을 통째로 건너뛰었는데
+    #   (270° 478쪽에서 오검출 410건이 나온다고 봤다) 그건 **재는 쪽이 틀린 값**이었다 —
+    #   경계 파일(*_txt_result.json)을 재구성한 하네스로 쟀기 때문이다. 경계 파일은
+    #   파이프라인 **산출물**이고 bbox 좌표계가 파일마다 갈린다(result_builder.build 의
+    #   bbox_out 분기). 여기 들어오는 bbox 는 MinerU 원본 content_list 값이고, 그걸로
+    #   다시 재면 회전 지면 텍스트 요소 569개 중 **569개(100%)**가 제자리에 있다
+    #   (보정을 넣으면 오히려 69%로 떨어진다). 코퍼스 전수 재측정도 회전 지면 6,854요소
+    #   오검출 0 이다. **보정도 게이팅도 필요 없다.**
+    try:
+        pix = fitz_page.get_pixmap(dpi=_INK_DPI)
+    except Exception as exc:               # 렌더가 안 되면 아무것도 안 버린다
+        logger.warning("page %d: 렌더 실패로 안 그려진 글자 판정을 건너뛴다 (%s)",
+                       page_no, exc)
+        return elements
+    kept, dropped = [], []
+    for el in elements:
+        bb = el.get("bbox")
+        if (el.get("type") in _UNPAINTED_TYPES and (el.get("content") or "").strip()
+                and isinstance(bb, list) and len(bb) == 4
+                and not _is_painted(pix, bb)):
+            dropped.append(el)
+            continue
+        kept.append(el)
+    if dropped:
+        logger.info("page %d: 안 그려진 글자 요소 %d개 버림 (예: %r)", page_no,
+                    len(dropped), (dropped[0].get("content") or "")[:30])
+        for i, el in enumerate(kept):
+            el["reading_order"] = i
+    return kept
+
+
 def run(
     pdf_path: str,
     page_no: int,
@@ -799,7 +1055,21 @@ def run(
     raw_dir = Path(mineru_cache_dir) if mineru_cache_dir else base / "mineru_raw"
     if not list(raw_dir.rglob("*_content_list.json")):
         raw_dir.mkdir(parents=True, exist_ok=True)
-        _run_mineru(pdf_path, raw_dir, page_idx, timeout=timeout)
+        for _attempt in range(1 + _MINERU_RETRIES):
+            try:
+                _run_mineru(pdf_path, raw_dir, page_idx, timeout=timeout)
+                if _attempt:
+                    logger.warning("MinerU %d번째 시도에 성공 (page_idx=%d)", _attempt + 1, page_idx)
+                break
+            except MineruTimeout:
+                raise                       # 예산을 이미 다 썼다 — 다시 부르면 두 배다
+            except RuntimeError as exc:     # 비결정 실패 — 한 번 더 불러 본다
+                if _attempt >= _MINERU_RETRIES:
+                    raise
+                logger.warning("MinerU %d번째 시도 실패, 다시 부른다 (page_idx=%d): %s",
+                               _attempt + 1, page_idx, exc)
+                shutil.rmtree(raw_dir, ignore_errors=True)
+                raw_dir.mkdir(parents=True, exist_ok=True)
         _cleanup_mineru_output(raw_dir)
         _flatten_mineru_output(raw_dir)
 
@@ -827,9 +1097,28 @@ def run(
     merged_layout = []
     order = 1
 
+    # 글상자 사각형은 쪽당 한 번만 찾는다(표 판정에만 쓰이므로 표가 있을 때 처음 찾는다).
+    _box_cache: list = []
+
+    def _page_box_rects() -> list:
+        if not _box_cache:
+            try:
+                from app.ai.preprocessor.pdf_analyzer import box_rects
+                _box_cache.append(box_rects(fitz_page))
+            except Exception:  # noqa: BLE001 — 상자를 못 찾으면 종전대로 표로 둔다
+                _box_cache.append([])
+        return _box_cache[0]
+
     for item in content_list:
         item_type = item.get("type", "text")
         mapped_type = TYPE_MAP.get(item_type, "text")
+        # ★ MinerU 는 `header` / `footer` / `page_number` 를 나눠서 준다. 위 표에 `footer` 가
+        #   없어 기본값 `"text"` 로 떨어지고 **그 구분이 여기서 사라진다**(원장 C-86).
+        #   타입을 `header_footer` 로 바꾸지는 **않는다** — 실측하면 출력이 한 글자도 안 바뀌고
+        #   (`_is_running_foot` 962건 전원 통과 · `header_footer` 도 본문으로 조판된다),
+        #   꼬리말을 적을지 말지는 **규정↔관행이 갈려 자문 대기**다(§2.1.2 는 적으라 하는데
+        #   gold 는 91.4%를 안 적는다 · 25,382셀). 그래서 **판정은 미루고 신호만 남긴다.**
+        raw_footer = item_type == "footer"
         if mapped_type == "image" and item.get("sub_type") == "flowchart":
             mapped_type = "chart_graph"
         # 인쇄 캡션이 있는 시각자료는 생성 설명(GPT-4o+점역자주) 대신 인쇄 캡션을 그대로
@@ -929,6 +1218,10 @@ def run(
             n_rules = _h_rules(fitz_page, bb) if item_type == "table" else None
             if n_rules is not None and n_rules < _RULE_MIN_H:
                 mapped_type, content = "text", _table_to_text(content)
+            elif (n_rules is not None            # None = 벡터로 판단 불가, 손대지 않는다
+                    and _is_boxed_prose(fitz_page, bb, content, _page_box_rects())):
+                # 테두리뿐인 '표' = 글상자에 든 줄글 — 위 _is_boxed_prose 절 주석(F15)
+                mapped_type, content = "text", _table_to_text(content)
             else:
                 # 표는 구조 때문에 전면 대체를 못 하므로 글머리 기호(제72항)만 되돌리고,
                 # 셀 안 글자는 레이어를 근거로 한글 오독만 고친다(둘 다 전부-아니면-전무).
@@ -943,7 +1236,7 @@ def run(
         if mapped_type == "page_number" and not content.strip().lstrip('-').isnumeric():
             mapped_type = "text"
 
-        # 제목 단계(BBPG 2장2절1) — MinerU가 이미 찾아 둔 것을 살린다. 위 _heading_level 주석 참조.
+        # 제목 단계(NLD 2장2절1) — MinerU가 이미 찾아 둔 것을 살린다. 위 _heading_level 주석 참조.
         hlevel = _heading_level(item, mapped_type, content)
         if hlevel:
             mapped_type = "title"
@@ -972,9 +1265,12 @@ def run(
             "image_path": image_path,
             "heading_level": hlevel,
             "caption_ref": None,
-            "flags": [],
+            "flags": ["MINERU_FOOTER"] if raw_footer else [],
         })
         order += 1
+
+    # 지면에 안 그려진 글자 요소 버리기(C006) — fitz_page 를 닫기 전에 한다.
+    merged_layout = _drop_unpainted(merged_layout, fitz_page, page_no)
 
     doc.close()
 
@@ -990,6 +1286,7 @@ def run(
         with open(base / "merged_layout.json", "w", encoding="utf-8") as f:
             json.dump(layout_json, f, ensure_ascii=False, indent=2)
 
-    print(f"[mineru_runner] page {page_no}: {len(merged_layout)}개 요소, "
-          f"이미지 {sum(1 for e in merged_layout if e.get('image_path'))}개")
+    _mark_text_lookalikes(merged_layout, page_no)
+    logger.info("page %d: %d개 요소, 이미지 %d개", page_no, len(merged_layout),
+                sum(1 for e in merged_layout if e.get("image_path")))
     return merged_layout

@@ -126,12 +126,12 @@ def _w2c_lost_source(opt: LLMOutput, out: BrailleOutput) -> str | None:
 def _placeholder(opt: LLMOutput, reason: str = "점역 오류") -> BrailleOutput:
     """실패 요소 → [처리 불가] (placeholder 관례 = 리터럴 줄, 비어있지 않게).
 
-    불변 규칙 2(rule_trail 필수): 실패 요소도 포괄 규정(KBR-0.1)을 달아 응답 계약을 지킨다.
+    불변 규칙 2(rule_trail 필수): 실패 요소도 포괄 규정(MCST-0.1)을 달아 응답 계약을 지킨다.
     사유에 원문 조각을 실어 점역사가 무엇이 빠졌는지 바로 보게 한다. quality_checker가
     "[처리 불가" 접두로 C2를 올리므로 접두는 바꾸지 않는다.
     """
     return BrailleOutput(
         element_id=opt.element_id,
         braille_lines=[f"[처리 불가: {reason}]"],
-        rule_trail=[make_rule("KBR-0.1")],
+        rule_trail=[make_rule("MCST-기본-1")],
     )

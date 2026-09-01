@@ -1,6 +1,6 @@
 """인라인 태그 파서 회귀 테스트 — plan §3-5 / testdata_complex.txt 정본 대조.
 
-순환검증 금지(test_guide 원칙 1): 기대 점자 글리프는 BBPG 규정·testdata_complex.txt에서
+순환검증 금지(test_guide 원칙 1): 기대 점자 글리프는 NLD 규정·testdata_complex.txt에서
 수동 도출한다(생산 코드로 생성하지 않음). 테두리·마커 글리프는 braillify 유무와 무관하게
 고정이므로 결정적으로 단언한다. 제목 텍스트 점자(braillify 의존)는 구조만 검사하거나
 braillify 설치 시에만 정본 대조한다.
@@ -48,7 +48,7 @@ class TestPointMarkers:
 
 
 class TestBorder:
-    """글상자=표 테두리 (BBPG-1.2.5). 캡 ⠿, 위 채움 ⠛(=g), 아래 채움 ⠶(=7), 32칸."""
+    """글상자=표 테두리 (NLD-1.2.5). 캡 ⠿, 위 채움 ⠛(=g), 아래 채움 ⠶(=7), 32칸."""
 
     def test_위테두리_제목없음_전체채움(self):
         out = substitute_tags("<!상자><!/상자>")
@@ -61,7 +61,7 @@ class TestBorder:
         assert len(out) == 32
 
     def test_위테두리_제목_32칸_7칸배치(self):
-        # BBPG-1.2.5(4)②: 제목 7번째 칸부터, 양옆 한 칸 띔
+        # NLD-1.2.5(4)②: 제목 7번째 칸부터, 양옆 한 칸 띔
         out = substitute_tags("<!상자>범례<!/상자>")
         assert len(out) == 32
         assert out.startswith("⠿⠛⠛⠛⠛⠀")  # 캡1+채움4+빈칸1 → 제목 col7
@@ -140,18 +140,18 @@ class TestTnFalsePositivePipeline:
 
     def test_닮음기호_점역자주_오탐없음(self):
         # 수학 교과서 빈발: "∽"가 ⠠⠄로 변환돼도 점역자 주(TN)로 잡히면 안 됨.
-        # Phase B: ∽은 닮음(KBR-수학-4.42)으로 정상 기록되되 TN 태그는 없어야 한다.
+        # Phase B: ∽은 닮음(MCST-수학-4.42)으로 정상 기록되되 TN 태그는 없어야 한다.
         trail = self._trail("삼각형 ABC ∽ DEF 이다")
         assert not any(r.tag in ("tn_open", "tn_close") for r in trail)
-        assert all(r.rule_id != "BBPG-1.2.6" for r in trail)
-        assert any(r.rule_id == "KBR-수학-4.42" for r in trail)  # 닮음으로 정상 emit
+        assert all(r.rule_id != "NLD-1.2.6" for r in trail)
+        assert any(r.rule_id == "MCST-수학-4.42" for r in trail)  # 닮음으로 정상 emit
 
     def test_장음기호_오탐없음(self):
-        # ː(긴소리표)도 ⠠⠄지만 TN 아님 → 긴소리표(KBR-6.14.63)로 정상 기록.
+        # ː(긴소리표)도 ⠠⠄지만 TN 아님 → 긴소리표(MCST-6.14.63)로 정상 기록.
         trail = self._trail("모ː음 표시")
         assert not any(r.tag in ("tn_open", "tn_close") for r in trail)
-        assert all(r.rule_id != "BBPG-1.2.6" for r in trail)
-        assert any(r.rule_id == "KBR-6.14.63" for r in trail)
+        assert all(r.rule_id != "NLD-1.2.6" for r in trail)
+        assert any(r.rule_id == "MCST-한글-6.14.63" for r in trail)
 
     def test_진짜_점역자주_emit(self):
         # 점역자 주 태그만 있는 경우 — 내부에 ∽·ː 없으므로 심볼 emit 없이 TN만.
@@ -192,16 +192,16 @@ class TestSymbolRuleEmit:
 
         src = "온도는 25℃이다"
         spans = symbol_rule_spans(src, translate_tagged_text(src))
-        assert any(rid == "KBR-6.14.69" for _, _, rid in spans)
+        assert any(rid == "MCST-한글-6.14.69" for _, _, rid in spans)
 
     def test_세분인용_가운뎃점_줄임표_쌍반점(self):
         from app.ai.braille.symbol_rules import SYMBOL_RULE_IDS
 
         # 태민 결정: 전용 항으로 세분 (제49 단일 아님)
-        assert SYMBOL_RULE_IDS["·"] == "KBR-6.13.50"
-        assert SYMBOL_RULE_IDS["…"] == "KBR-6.13.53"
-        assert SYMBOL_RULE_IDS[";"] == "KBR-6.14.59"
-        assert SYMBOL_RULE_IDS["("] == "KBR-6.13.49"  # 괄호는 제49항 유지
+        assert SYMBOL_RULE_IDS["·"] == "MCST-한글-6.13.50"
+        assert SYMBOL_RULE_IDS["…"] == "MCST-한글-6.13.53"
+        assert SYMBOL_RULE_IDS[";"] == "MCST-한글-6.14.59"
+        assert SYMBOL_RULE_IDS["("] == "MCST-한글-6.13.49"  # 괄호는 제49항 유지
 
     def test_수학기호_emit(self):
         """Step17(2026-08-08) — 판단이 갈리는 기호만 emit한다(symbol_rules._DISCRETIONARY).
@@ -211,9 +211,9 @@ class TestSymbolRuleEmit:
         """
         trail = self._trail("A ∈ B, △ABC ∽ △DEF, x = y")
         rids = {r.rule_id for r in trail}
-        assert "KBR-수학-4.42" in rids       # ∽ 닮음 — ⠠⠄ 점형 충돌
-        assert "KBR-수학-7.60" not in rids   # ∈ 집합 — 기계적 1:1
-        assert "KBR-수학-1.3" not in rids    # = 등호 — 기계적 1:1
+        assert "MCST-수학-4.42" in rids       # ∽ 닮음 — ⠠⠄ 점형 충돌
+        assert "MCST-수학-7.60" not in rids   # ∈ 집합 — 기계적 1:1
+        assert "MCST-수학-1.3" not in rids    # = 등호 — 기계적 1:1
 
     def test_source_gate_오탐없음(self):
         # 기호 없는 평범한 텍스트 → 심볼 trail 없음
@@ -231,13 +231,13 @@ class TestSymbolRuleEmit:
         # ≒ 근삿값(제20항 2.20), ∑ 총합(제25항 2.25), √ 근호(제22항 2.22) — 규정 검증 후 추가
         from app.ai.braille.symbol_rules import SYMBOL_RULE_IDS
 
-        assert SYMBOL_RULE_IDS["≒"] == "KBR-수학-2.20"
-        assert SYMBOL_RULE_IDS["∑"] == "KBR-수학-2.25"
-        assert SYMBOL_RULE_IDS["√"] == "KBR-수학-2.22"
+        assert SYMBOL_RULE_IDS["≒"] == "MCST-수학-2.20"
+        assert SYMBOL_RULE_IDS["∑"] == "MCST-수학-2.25"
+        assert SYMBOL_RULE_IDS["√"] == "MCST-수학-2.22"
 
 
 class TestSyllableBreaks:
-    """BBPG-1.2.1 음절 줄바꿈 — translate_with_breaks가 단위(수·약자·점역자주 마커)
+    """NLD-1.2.1 음절 줄바꿈 — translate_with_breaks가 단위(수·약자·점역자주 마커)
     내부에는 줄바꿈 지점을 만들지 않고, 어절 경계는 항상 보장한다(접두 일관성)."""
 
     def test_숫자_단위_내부_미분리(self):
@@ -318,7 +318,7 @@ class TestElementLocalCoords:
         from app.ai.braille.symbol_rules import SYMBOL_TABLE
 
         bo = self._bo("온도는 25℃이다")
-        cel = [r for r in bo.rule_trail if r.rule_id == "KBR-6.14.69"]  # 섭씨
+        cel = [r for r in bo.rule_trail if r.rule_id == "MCST-한글-6.14.69"]  # 섭씨
         assert cel
         glyph = SYMBOL_TABLE["℃"]
         assert any(
@@ -335,10 +335,10 @@ class TestElementLocalCoords:
 
         bo = BrailleOutput(
             element_id=str(uuid.uuid4()), braille_lines=["⠸⠴⠇⠁⠃"],
-            rule_trail=[make_rule("KBR-6.13.49", line_no=0, col_start=0, col_end=3, tag="symbol")],
+            rule_trail=[make_rule("MCST-한글-6.13.49", line_no=0, col_start=0, col_end=3, tag="symbol")],
         )
         LayoutBraille()._apply_bullet_marker(bo)
-        bullet = next(r for r in bo.rule_trail if r.rule_id == "KBR-6.14.72")
+        bullet = next(r for r in bo.rule_trail if r.rule_id == "MCST-한글-6.14.72")
         assert (bullet.line_no, bullet.col_start, bullet.col_end) == (0, 0, 2)
         assert bo.braille_lines[0][bullet.col_start:bullet.col_end] == "⠸⠴"
 
@@ -354,7 +354,7 @@ class TestElementLocalCoords:
         bo = BrailleOutput(
             element_id=str(uuid.uuid4()),
             braille_lines=[top, "⠠⠄⠁⠃"],  # idx1 = 내용(앞 ⠠⠄ TN)
-            rule_trail=[make_rule("BBPG-1.2.6", line_no=1, col_start=0, col_end=2, tag="tn_open")],
+            rule_trail=[make_rule("NLD-1.2.6", line_no=1, col_start=0, col_end=2, tag="tn_open")],
             box_borders=[BoxBorder(kind="top", level=1, title="")],
         )
         LayoutBraille()._expand_box_borders(bo)
@@ -385,22 +385,22 @@ class TestStep17TrailScope:
         )])[0]
 
     def test_평문은_근거가_비어_있다(self):
-        # 종전에는 수표(제40항)+문장부호(제49항)+포괄(KBR-0.1)이 붙었다.
+        # 종전에는 수표(제40항)+문장부호(제49항)+포괄(MCST-0.1)이 붙었다.
         assert self._bo("2026년에 학생 3명이 왔다.").rule_trail == []
 
     def test_중복_근거는_한_번만(self):
         # ㉠㉡㉢가 한 요소에 셋이면 제64항은 한 번만 — "같은 줄에 중복" 제거.
         trail = self._bo("㉠과 ㉡과 ㉢").rule_trail
-        assert [(r.rule_id, r.tag) for r in trail].count(("KBR-6.14.71", "symbol")) == 1
+        assert [(r.rule_id, r.tag) for r in trail].count(("MCST-한글-6.14.71", "symbol")) == 1
 
     def test_판단_갈리는_기호는_남는다(self):
         # 그리스 지시자(원장 R-02) — 규정 ⠨ vs 도서 ⠈로 갈려 자문 대기 중.
-        assert any(r.rule_id == "KBR-4.10.30" for r in self._bo("각 θ를 구하라").rule_trail)
+        assert any(r.rule_id == "MCST-한글-4.10.30" for r in self._bo("각 θ를 구하라").rule_trail)
 
     def test_빈칸_태그는_제73항_근거를_단다(self):
         # 묵자 □를 '채워 넣을 빈칸'으로 본 것은 LLM 태깅의 판단이다(원장 C-06 자문 대기).
         trail = self._bo("다음 <!네모>에 알맞은 말을 쓰시오").rule_trail
-        blanks = [r for r in trail if r.rule_id == "KBR-6.14.73"]
+        blanks = [r for r in trail if r.rule_id == "MCST-한글-6.14.73"]
         assert blanks and blanks[0].tag == "blank_box"
 
     def test_글상자_테두리는_근거를_단다(self):
@@ -409,7 +409,7 @@ class TestStep17TrailScope:
 
         bo = self._bo("<!상자>보기<!/상자>\n가나다\n<!상자끝><!/상자끝>")
         LayoutBraille()._expand_box_borders(bo)
-        borders = [r for r in bo.rule_trail if r.rule_id == "BBPG-1.2.5"]
+        borders = [r for r in bo.rule_trail if r.rule_id == "NLD-1.2.5"]
         assert [r.tag for r in borders] == ["box_top·1단계·제목있음", "box_bottom·1단계"]
         for r in borders:                       # 좌표가 실제 테두리 줄을 가리킨다
             assert set(bo.braille_lines[r.line_no][r.col_start:r.col_end]) <= set("⠿⠛⠶⠀") or True

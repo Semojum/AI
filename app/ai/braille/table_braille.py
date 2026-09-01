@@ -3,7 +3,7 @@
 표의 복수 초안(3안)은 LLM 텍스트가 아니라 **레이아웃 3종**이다
 (stage4_complex.md 'T4-2 공통 규약' — 표=레이아웃 차이, 셀 값 동일):
   table_grid : ⠿ 테두리 + ⠒ 행 구분선 (격자 원형)
-  transposed : 행↔열 전치 (점자 도서 제작 지침 3장1절 BBPG-3.1.2, 점역자 주 동반)
+  transposed : 행↔열 전치 (점자 도서 제작 지침 3장1절 NLD-3.1.2, 점역자 주 동반)
   linear     : '  키  값' 선형 풀어쓰기 (3칸 시작, 유도점·콜론 없음)
 격자 구조가 아닌 비정형(narrative)·처리불가는 단일안으로 처리한다.
 """
@@ -30,7 +30,7 @@ from app.schemas.content import BrailleOutput, Draft, LLMOutput, RuleApplication
 def _base_trail(
     lines: list[str], source: str = "", *, content: bool = True
 ) -> list[RuleApplication]:
-    """점역자 주 마커(BBPG-1.2.6)·판단이 갈리는 특수기호를 점자 좌표로 emit.
+    """점역자 주 마커(NLD-1.2.6)·판단이 갈리는 특수기호를 점자 좌표로 emit.
 
     rule_trail은 **점역사가 판단해야 할 자리**만 기록한다(Step17 2026-08-08 대표 지시 —
     종전 "내용 변환만"에서 좁혔다). 수표·문장부호 같은 자명한 규정은 `content_rules`가
@@ -44,7 +44,7 @@ def _base_trail(
     """
     joined = "\n".join(lines)
     trail = [
-        make_rule_at("BBPG-1.2.6", lines, s, e, tag=tag)
+        make_rule_at("NLD-1.2.6", lines, s, e, tag=tag)
         for s, e, tag in tn_marker_spans(joined, source)
     ]
     trail += [
@@ -53,7 +53,7 @@ def _base_trail(
     ]
     # 드러냄표 ⠠⠤…⠤⠄ (제56항) — text 경로와 동일 배선(원본 태그 gate, r12).
     trail += [
-        make_rule_at("KBR-6.13.56", lines, s, e, tag=tag)
+        make_rule_at("MCST-한글-6.13.56", lines, s, e, tag=tag)
         for s, e, tag in emphasis_marker_spans(joined, source)
     ]
     if content:
@@ -62,7 +62,7 @@ def _base_trail(
 
 from app.ai.braille.constants import COLS as _COLS  # noqa: E402 (공용 상수)
 _BORDER  = "⠿"  # 표 테두리
-_EMPTY_CELL = "⠿⠿"  # 빈 셀 (BBPG-3.1.2(4))
+_EMPTY_CELL = "⠿⠿"  # 빈 셀 (NLD-3.1.2(4))
 _SEP     = "⠒"  # 행·셀 구분선
 
 # ── 표 구조 태그 (plan §3-5 확장) ─────────────────────────────────────────────
@@ -152,6 +152,14 @@ _TN_SRC_MARK = "⠠⠄"                                  # 점역자 주 마커(
 #   같은 오해가 오늘 도표 축(diagram_opt._TITLE_INDENT)에서도 4로 고쳐졌다
 _TITLE_INDENT = 4
 
+# ★ 점자 지면의 빈칸은 전부 U+2800 이다(대표 지적 R1, 2026-08-24). 표 경로는 그때 빠졌다 —
+#   줄머리를 ASCII 공백 `"  "`로 적고 있었고 **눈으로는 `"⠀⠀"`와 구별이 안 돼** 넉 달을 살아남았다.
+#   그래서 리터럴을 쓰지 않고 반드시 이 이름으로 적는다. 2026-08-28 실측(생명과학 body p0004
+#   한 쪽): 우리 출력에 ASCII 공백 35자 · 점자 빈칸 544자. 표 줄이 전부 ASCII 쪽이었다.
+#   폭 계산은 안 바뀐다 — `layout_braille._cell_count`가 `len()`이라 둘 다 1셀로 센다.
+_PAD = "⠀"          # 점자 빈칸(U+2800)
+_ROW_INDENT = 2     # 표 본문 "3칸에서 시작" = 앞 빈칸 2 (자료지침 §3.1.1(1)②)
+
 # 표 위/아래 테두리 (자료지침 §3.1.3(2) `=GGG…=` / `=777…=`). 격자·선형이 같이 쓴다.
 _TBL_TOP = "⠿" + "⠛" * (_COLS - 2) + "⠿"
 _TBL_BOT = "⠿" + "⠶" * (_COLS - 2) + "⠿"
@@ -159,7 +167,7 @@ _TBL_BOT = "⠿" + "⠶" * (_COLS - 2) + "⠿"
 
 def _tn_transpose_line() -> str:
     """전치 점역자 주 한 줄. 지침 예 3-2는 3칸(빈칸 2)에서 적고 표 본문 위에 둔다."""
-    return "  " + _translate(_TN_SRC)
+    return _PAD * _ROW_INDENT + _translate(_TN_SRC)
 
 
 def _title_line(title: str) -> str:
@@ -167,7 +175,7 @@ def _title_line(title: str) -> str:
 
     layout이 폭을 건드리지 않도록 공백을 직접 적는다.
     """
-    return " " * _TITLE_INDENT + _translate(title)
+    return _PAD * _TITLE_INDENT + _translate(title)
 
 
 def _border_line() -> str:
@@ -191,17 +199,118 @@ def _split_cell(text: str, width: int) -> list[str]:
     return lines or [""]
 
 
+# ★ 32칸에서 하드 컷하면 **숫자 한 개가 두 줄로 갈린다**(2026-08-29, braille 최소 재현).
+#   `낭트 칙령(1598, …` 이 `…⠼⠁⠑⠊` / `⠓⠐…` 로 갈리면 뒤 줄 `⠓` 는 수표를 잃어 **자음 ㅎ**
+#   으로 읽힌다 — 1598 이 '159' + '타' 가 된다. 셀 수는 맞고 뜻만 바뀌는 자리다.
+#   gold 실측(정답 1,251쪽, BRF-ASCII): 줄 끝이 수표+숫자로 **공백 없이** 끝나는 줄 129건 중
+#   **숫자가 갈린 것 0건**. 24건이 후보로 잡혔으나 전부 다음 줄이 한글로 이어지는 것이었고,
+#   `#aifd`(1964) 다음 줄 `c*`(년) 은 묵자에서 `1964년` 임을 확인했다(사회문화 p090).
+#   ⚠ gold 는 유니코드가 아니라 **BRF-ASCII** 다. 유니코드로 찾으면 0건이 나온다.
+_DIGIT_CELLS = frozenset("⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚")   # 1~0 (kor_math_rules._DIGIT_MAP 과 같은 값)
+_NUMBER_SIGN = "⠼"
+
+
+def _num_run_start(s: str, i: int) -> int:
+    """`s[i]` 가 수표로 열린 숫자 런 안이면 그 수표 위치, 아니면 `i`.
+
+    숫자 셀은 로마자 a~j 와 점형이 같으므로 **수표로 열린 런만** 본다(number_sign.py 와 같은
+    불변량). 로마자 낱말을 숫자로 오인해 애먼 자리에서 줄을 당기지 않기 위해서다.
+    """
+    if i >= len(s) or s[i] not in _DIGIT_CELLS:
+        return i
+    j = i
+    while j > 0 and s[j - 1] in _DIGIT_CELLS:
+        j -= 1
+    return j - 1 if j > 0 and s[j - 1] == _NUMBER_SIGN else i
+
+
 def _split_lines(text: str) -> list[str]:
-    lines, buf = [], ""
-    for ch in text:
-        if len(buf) >= _COLS:
-            lines.append(buf)
-            buf = ch
-        else:
-            buf += ch
-    if buf:
-        lines.append(buf)
+    lines: list[str] = []
+    i = 0
+    while i < len(text):
+        end = min(i + _COLS, len(text))
+        if end < len(text):
+            cut = _num_run_start(text, end)
+            # 런이 줄 머리부터 시작하면 당길 자리가 없다 — 그때만 하드 컷을 유지한다
+            # (수표+숫자만으로 32칸을 넘는 경우라 실물에서는 안 나온다).
+            if i < cut < end:
+                end = cut
+        lines.append(text[i:end])
+        i = end
     return lines or [""]
+
+
+# ── 칸이 길면 한 줄에 칸 하나 (지침 §3.1.1(1)③ · 원장 C-30b) ────────────────
+# §3.1.1(1): ②가로로 풀어 적었을 때 쉽게 이해할 수 있다면 열 항목을 두 칸씩 띄어 풀어 적는다.
+#            ③**열 항목이 여러 단어와 문장으로 되어 있어** 가로로 풀어 적을 경우 표를
+#              이해하기 어렵다면 번호 체계를 활용하여 풀어 적는다.
+# 즉 규정은 ②와 ③을 **칸 내용 길이**로 가른다. 우리는 열 수만 봤다.
+#
+# gold 실측(dev-2027 900쪽, 표 186개):
+#   행우선 127개 · 칸당 글자 중앙 25 (p75 36)
+#   열우선  59개 · 칸당 글자 중앙 82 (p25 48)
+# 사분위가 거의 안 겹친다 → 임계 40~45자. 기본 42.
+#
+# ★ **축은 바꾸지 않는다.** gold 가 어느 축을 레코드로 삼는지는 실측으로 안 갈렸다
+#   (글자 대조 머리행 11 : 첫열 13). 축을 잘못 바꾸면 지금보다 나빠지므로, 축은 그대로
+#   두고 **한 줄에 칸 하나만** 적는다. 대표가 지적한 증상(한 줄에 긴 칸 둘)은 이걸로 사라진다.
+# ⚠ 기본은 끔. 채택은 A/B 로 판정한다(원장 C-01b·C-77 과 같이 놓고 본다).
+# ⚠ CER 이 gold 배치와 어긋나 내려갈 수 있다 — 이 축은 배치라 CER 이 잘 못 잰다.
+_RECORD_MIN_CELL = float(os.environ.get("TABLE_RECORD_MIN_CELL", "42"))
+
+
+def record_rows_enabled() -> bool:
+    """칸이 길 때 한 줄에 칸 하나로 적는 스위치(기본 끔). 원장 C-30b."""
+    return os.environ.get("TABLE_RECORD_ROWS", "0") == "1"
+
+
+def _mean_cell_len(rows: list[list[str]]) -> float:
+    """머리행·행머리를 뺀 **값 칸**의 평균 글자수."""
+    vals = [c.strip() for r in rows[1:] for c in r[1:] if c.strip()]
+    return sum(len(c) for c in vals) / len(vals) if vals else 0.0
+
+
+def _use_record_rows(rows: list[list[str]]) -> bool:
+    return (record_rows_enabled() and len(rows) > 1 and len(rows[0]) > 2
+            and _mean_cell_len(rows) >= _RECORD_MIN_CELL)
+
+
+_HEAD_CELL_MAX = 10   # 열 제목 칸의 최대 글자수 — 이보다 길면 제목이 아니라 값이다
+
+
+def _has_col_headers(first_row: list[str]) -> bool:
+    """첫 행이 **열 제목행**인가. 구분선을 넣을지 가른다(원장 C-30).
+
+    지침은 구분선을 일관되게 **"열 제목과 열 항목 사이"** 로 정의한다
+    (용어 정의 · §3.1.3(5) · §3.3.1). **열 제목이 없으면 구분선도 없다.**
+    그런데 종전에는 첫 행을 **무조건** 머리행으로 보고 넣었다.
+
+    2열 표는 대개 키-값 나열이라 첫 행이 열 제목이 아니다. 3열 이상은 실제로 제목이 있다.
+    그래서 2열에만 판정을 걸고, 판정은 **머리행 칸이 짧은가**로 한다 — 제목은 라벨이라 짧고
+    값은 길다.
+
+    gold 실측(2026-08-29, braille 이 표 단위로 짝지음 408개 · 양성 81):
+        정책                     dev 142    val 266    전체 408
+        늘 넣는다(종전)            50.7%      3.4%      19.9%
+        안 넣는다                49.3%     96.6%      80.1%
+        **머리행 ≤10자**         **81.7%**  95.9%   **90.9%**
+    ★ 임계는 **val 에서 고르고 dev 에서 평가**했다 — dev 정확 81.7% · 정밀 80.3% ·
+      재현 84.7% · F1 0.82. 곡선이 평평해(N=6~16 에서 dev F1 0.78~0.86) 뾰족한 봉우리가 아니다.
+    ⚠ val 은 양성이 9개뿐이라 val 쪽 정밀도(43.8%)는 표본이 얇다. val 에서는 '안 넣기'가
+      0.7p 낫지만 순손실이 2건이고, dev 이득이 +32p 라 전체로는 확실한 이득이다.
+    ⚠ 표본에는 앵커로 회수한 69개가 들어 있고 앵커 정확도는 95.0%다(5% 오염).
+      linear 표 439개 중 31개는 아직 짝을 못 지었다.
+    """
+    # ⚠ 판정은 **파싱된 첫 행**을 본다. `_html_to_grid(expand=False)` 가 `colspan` 을 안 펴므로
+    #   3~5열 표라도 첫 행이 `<td colspan="5">…</td>` 한 칸이면 여기서는 1~2칸으로 보인다.
+    #   실측(M017): dev 900쪽 중 그런 쪽이 **2쪽**(004 body p0192 열[3] · 009 body p0005 열[5,5])이고
+    #   둘 다 구분선이 사라졌는데 **gold 도 그 두 쪽 구분선이 0개**라 방향이 맞다.
+    #   즉 이 규칙은 '1열 표'만 건드리는 게 아니다 — **첫 행이 좁게 파싱되는 표**까지 닿는다.
+    if len(first_row) < 2:
+        return False                      # 1열은 글상자다 — 열 제목이 없으니 구분선도 없다
+    if len(first_row) > 2:
+        return True                       # 3열 이상은 종전대로 — 열 제목이 실제로 있다
+    return all(len(c.strip()) <= _HEAD_CELL_MAX for c in first_row if c.strip())
 
 
 def _render_grid(corrected_text: str) -> list[str]:
@@ -230,6 +339,9 @@ def _render_grid(corrected_text: str) -> list[str]:
     rowsep = "⠐" * _COLS
     if not rows:
         return [top, bot]
+    grid = [[c.strip() for c in r.split("|")] for r in rows]
+    if _use_record_rows(grid):
+        return [top] + _record_lines(grid) + [bot]
     lines: list[str] = [top]
     for k, row in enumerate(rows):
         cells = [c.strip() for c in row.split("|")]
@@ -237,10 +349,28 @@ def _render_grid(corrected_text: str) -> list[str]:
         vals = [(_translate(c) if c else "⠿⠿") for c in cells[1:]]
         body = head + ("⠐⠂⠀" + "⠀⠀".join(vals) if vals else "")
         lines.append("⠀⠀" + body)
-        if k == 0 and len(rows) > 1:
+        if k == 0 and len(rows) > 1 and _has_col_headers(cells):
             lines.append(rowsep)          # 머리행과 본문 사이(실측 위치)
     lines.append(bot)
     return lines
+
+
+def _record_lines(grid: list[list[str]]) -> list[str]:
+    """행마다 '행머리' 한 줄 + 칸마다 '머리행이름: 값' 한 줄 (원장 C-30b).
+
+    축은 원본 그대로 둔다 — 머리행 이름을 이름표로 쓰므로 추측이 없다.
+    """
+    heads = grid[0]
+    out: list[str] = []
+    for row in grid[1:]:
+        rh = row[0].strip()
+        if rh:
+            out.append("⠀⠀" + _translate(rh))
+        for j, cell in enumerate(row[1:], start=1):
+            name = heads[j].strip() if j < len(heads) else ""
+            val = _translate(cell) if cell.strip() else "⠿⠿"
+            out.append("⠀⠀⠀⠀" + ((_translate(name) + "⠐⠂⠀") if name else "") + val)
+    return out
 
 
 def _render_linear(corrected_text: str) -> list[str]:
@@ -271,16 +401,17 @@ def _render_linear(corrected_text: str) -> list[str]:
             parts = [p.strip() for p in ln.split("|", 1)]
             if len(parts) > 1:
                 head_br, val_br = _translate(parts[0]), _translate(parts[1])
-                entry = f"  {head_br}⠀⠀{val_br}"
+                entry = f"{_PAD * _ROW_INDENT}{head_br}{_PAD * 2}{val_br}"
                 if len(entry) > _COLS:
                     # 정답 관행(세계사 p009 실측): 키+값이 32칸을 넘치면 키를 단독 줄로
                     # 세우고 값을 다음 줄부터 — 한 줄에 이어붙이지 않는다.
-                    result.append(f"  {head_br}")
-                    result.extend(_split_lines(f"  {val_br}") if len(val_br) + 2 > _COLS
-                                  else [f"  {val_br}"])
+                    result.append(f"{_PAD * _ROW_INDENT}{head_br}")
+                    pad = _PAD * _ROW_INDENT
+                    result.extend(_split_lines(f"{pad}{val_br}")
+                                  if len(val_br) + _ROW_INDENT > _COLS else [f"{pad}{val_br}"])
                     continue
             else:
-                entry = f"  {_translate(parts[0])}"
+                entry = f"{_PAD * _ROW_INDENT}{_translate(parts[0])}"
         else:
             entry = _translate(ln)
         if len(entry) <= _COLS:
@@ -447,7 +578,7 @@ def _render_rowwise(rows: list[list[str]], orig_len: list[int]) -> list[str]:
      원본 칸 수만큼만 찍힌다 — 과잉생산이 없다.)
 
     orig_len = 폭 맞춤(패딩) 전 각 행의 실제 칸 수. 원본에 있던 빈 칸은 ⠿⠿로 남기고
-    (BBPG-3.1.2(4)), 짧은 행을 늘리려고 붙인 패딩만 버린다 — 둘을 구분하지 않으면
+    (NLD-3.1.2(4)), 짧은 행을 늘리려고 붙인 패딩만 버린다 — 둘을 구분하지 않으면
     진짜 빈 칸이 사라지거나 없던 ⠿⠿가 생긴다.
     """
     lines: list[str] = []
@@ -455,8 +586,8 @@ def _render_rowwise(rows: list[list[str]], orig_len: list[int]) -> list[str]:
         cells = r[:n]
         if not any(c.strip() for c in cells):
             continue
-        lines.append("  " + "⠀⠀".join(_translate(c) if c.strip() else _EMPTY_CELL
-                                      for c in cells))
+        lines.append(_PAD * _ROW_INDENT + (_PAD * 2).join(
+            _translate(c) if c.strip() else _EMPTY_CELL for c in cells))
     return lines or [""]
 
 
@@ -512,7 +643,7 @@ def _transpose_rows(
 ) -> tuple[list[list[str]], list[int], int]:
     """행↔열 교환. 폭 맞춤(패딩)으로 채운 자리는 '실제 칸'에서 빼고 돌린다.
 
-    패딩을 실제 칸으로 착각한 채 전치하면 없던 빈 셀 ⠿⠿가 생긴다(BBPG-3.1.2(4)는
+    패딩을 실제 칸으로 착각한 채 전치하면 없던 빈 셀 ⠿⠿가 생긴다(NLD-3.1.2(4)는
     '내용이 없는 빈칸'에만 쓴다). 전치 후 각 행의 꼬리 패딩만 잘라낸다.
     """
     real = [[j < orig_len[i] for j in range(len(rows[i]))] for i in range(len(rows))]
@@ -527,7 +658,7 @@ def _transpose_rows(
 
 
 def _render_unfold(corrected_text: str) -> list[str]:
-    """표 → 풀어쓰기 (BBPG-3.1.2). 셀 길이에 따라 행 단위 / 열 단위로 갈린다(§3.1.1(1)).
+    """표 → 풀어쓰기 (NLD-3.1.2). 셀 길이에 따라 행 단위 / 열 단위로 갈린다(§3.1.1(1)).
 
     정답 도서(수능특강 점역본) 관찰:
         수급 분류  60—64세      ← 모서리 라벨 + 열 머리
@@ -547,7 +678,8 @@ def _render_unfold(corrected_text: str) -> list[str]:
     rows = [r + [""] * (n_cols - len(r)) for r in rows]
 
     if len(rows) < 2 or n_cols < 2:              # 전개할 축이 없음 → 값 나열
-        return [f"  {_translate('  '.join(c for c in r if c))}" for r in rows] or [""]
+        return [f"{_PAD * _ROW_INDENT}{_translate('  '.join(c for c in r if c))}"
+                for r in rows] or [""]
 
     # §3.1.1은 순서가 있는 판정이다 — ①"한 행을 32칸 안에 배열할 수 있다면 표의 정렬
     # 형태대로" 가 먼저고, (2)전치는 "원본 형태대로 점역할 수 **없다면**" 쓰는 뒷수단이다.
@@ -581,7 +713,7 @@ def _render_unfold(corrected_text: str) -> list[str]:
     corner = " ".join(corner_cells)
     corner_br = _translate(corner) if corner else ""
 
-    def _cell(v: str) -> str:                    # 빈 셀 = ⠿⠿ (BBPG-3.1.2(4))
+    def _cell(v: str) -> str:                    # 빈 셀 = ⠿⠿ (NLD-3.1.2(4))
         return _translate(v) if v else _EMPTY_CELL
 
     # 행 그룹(예: 성별) — 행 머리 열 중 마지막을 뺀 나머지가 그룹 키
@@ -605,24 +737,24 @@ def _render_unfold(corrected_text: str) -> list[str]:
                     tops.append(v)
             section = " ".join([*tops, *(k for k in key if k)]).strip()
             if section and section != prev_section:
-                lines.append(f"  {_translate(section)}")
+                lines.append(f"{_PAD * _ROW_INDENT}{_translate(section)}")
                 prev_section = section
             # 열 머리 줄 = 구간 머리. 정답 도서 실측(사회문화 p087·p174)은 5칸(빈칸 4)에
             # 적고, 그 아래 딸린 줄은 3칸에서 '행 머리{쌍점}{한 칸}값'으로 적는다.
             # 쌍점 ⠐⠂ + 한 칸은 gold 원문과 셀 단위로 일치(p087 3행 ⠺⠑⠕⠐⠂⠀…).
             head_br = (f"{corner_br}{sep}" if corner_br else "") + _cell(col_names[j])
-            lines.append(f"    {head_br}")
+            lines.append(f"{_PAD * _TITLE_INDENT}{head_br}")
             for r in rows_in:
                 row_head = r[n_head_cols - 1] if n_head_cols else ""
                 row_br = f"{_translate(row_head)}{sep}" if row_head else ""
-                entry = f"  {row_br}{_cell(r[j])}"
+                entry = f"{_PAD * _ROW_INDENT}{row_br}{_cell(r[j])}"
                 if len(entry) <= _COLS or not row_br:
                     lines.append(entry)
                 elif _BOOK_STYLE:
                     # 정답 관행(세계사 p009·사회문화 p174 실측): 값이 32칸을 넘치면 행 머리를
                     # 단독 줄로 세우고(이때는 쌍점 없이) 값을 다음 줄부터 적는다.
-                    lines.append(f"  {_translate(row_head)}")
-                    lines.append(f"  {_cell(r[j])}")
+                    lines.append(f"{_PAD * _ROW_INDENT}{_translate(row_head)}")
+                    lines.append(f"{_PAD * _ROW_INDENT}{_cell(r[j])}")
                 else:
                     # 규정: 행 제목 단위로 줄을 바꾸고(§3.3.1(4)) 한 셀이 두 줄로 나뉘면
                     # 다음 줄 **첫 칸부터** 이어 적는다(도서지침 제3장 6)(3)).
@@ -704,9 +836,13 @@ class TableBraille:
             """제목 줄을 표 위에 먼저 붙인다(§3 5)(2))."""
             return ([title_br] + lines) if title_br else lines
 
-        if "|" not in text:  # 비정형 → TN 단일안
+        if parsed_rows is None and "|" not in text:  # 비정형 → TN 단일안
+            # ★ `parsed_rows is None` 을 같이 본다(2026-08-29, N031). `<!표>` 태그가 있어도
+            #   **1열**이면 `" | ".join(["한 칸"])` 이 파이프를 안 남겨 여기서 TN 으로 새어
+            #   나갔다. gold 는 그 자리를 글상자로 적는다(테두리 + 각 항목 2칸).
+            #   태그가 파싱됐으면 열이 하나여도 격자 렌더러로 보낸다.
             tn = opt.tn_text or text
-            lines, breaks = translate_with_breaks(tn)  # 음절 줄바꿈(BBPG-1.2.1)
+            lines, breaks = translate_with_breaks(tn)  # 음절 줄바꿈(NLD-1.2.1)
             lines = _wt(lines)
             if title_br:                      # 제목 줄은 음절 줄바꿈 대상 아님(단일 줄)
                 breaks = [[]] + breaks
@@ -719,7 +855,7 @@ class TableBraille:
             append_nested(bo, opt.nested_text)   # 표 안 그림(Q11) 글상자 1단 덧붙임
             return bo
 
-        # 표 유형별 레이아웃 (셀 값 동일, 조판만 다름). 기본=풀어쓰기(BBPG-3.1.2 원칙).
+        # 표 유형별 레이아웃 (셀 값 동일, 조판만 다름). 기본=풀어쓰기(NLD-3.1.2 원칙).
         unfold_lines = _wt(_render_unfold(text))
         grid_lines = _wt(_render_grid(text))
         # 전치 초안도 점역자 주를 태그로 낸다 — 옛 구현은 _translate(_TN_TRANSPOSE)라
@@ -727,19 +863,19 @@ class TableBraille:
         transposed_lines = _wt([_tn_transpose_line()] + _render_grid(_transpose_text(text)))
         linear_lines = _wt(_render_linear(text))
         # 자동 경로가 전치했으면 그 점역자 주가 출력에 실린다 → 태그를 트레일 원본에 얹어
-        # BBPG-1.2.6이 emit되게 한다(_base_trail은 원본에 태그가 있을 때만 emit).
+        # NLD-1.2.6이 emit되게 한다(_base_trail은 원본에 태그가 있을 때만 emit).
         unfold_src = text + ("\n" + _TN_SRC if any(_TN_SRC_MARK in ln for ln in unfold_lines) else "")
         drafts = [
-            Draft(option=1, text=print_layout(text, "unfold"), render_mode="unfold", label="풀어쓰기(3칸·2칸)",
+            Draft(option=1, text=print_layout(text, "unfold"), render_mode="unfold", label="테두리 없음",
                   braille_lines=unfold_lines,
-                  rule_trail=_base_trail(unfold_lines, unfold_src) + [make_rule("BBPG-3.1.2")]),
-            Draft(option=2, text=print_layout(text, "table_grid"), render_mode="table_grid", label="격자형",
+                  rule_trail=_base_trail(unfold_lines, unfold_src) + [make_rule("NLD-3.1.2")]),
+            Draft(option=2, text=print_layout(text, "table_grid"), render_mode="table_grid", label="테두리+구분선",
                   braille_lines=grid_lines, rule_trail=_base_trail(grid_lines, text)),
-            Draft(option=3, text=print_layout(text, "transposed"), render_mode="transposed", label="행↔열 전치",
+            Draft(option=3, text=print_layout(text, "transposed"), render_mode="transposed", label="행열 바꿈",
                   braille_lines=transposed_lines,
                   rule_trail=_base_trail(transposed_lines, text + "\n" + _TN_SRC)
-                             + [make_rule("BBPG-3.1.2")]),
-            Draft(option=4, text=print_layout(text, "linear"), render_mode="linear", label="선형(키:값)",
+                             + [make_rule("NLD-3.1.2")]),
+            Draft(option=4, text=print_layout(text, "linear"), render_mode="linear", label="테두리만",
                   braille_lines=linear_lines, rule_trail=_base_trail(linear_lines, text)),
         ]
         # 기본 선택 = opt 추론 render_mode (없으면 풀어쓰기). 나머지는 대안 초안.

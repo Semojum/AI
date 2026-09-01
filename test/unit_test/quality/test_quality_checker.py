@@ -256,6 +256,69 @@ class TestC5RuntimeScanner:
         )
         assert [c.type for c in report.critical_errors] == ["C5"]
 
+    # ── 오탐 감사 2026-08-29 (dev+val 1,746쪽 · corpus-d026) ──────────────
+    # 현재 코드 기준 C5 9건 중 **4건이 오탐**이었고 갈래가 둘이다. C5는 배포 블로커라
+    # 오탐이 쌓이면 점역사가 제일 중요한 플래그부터 무시한다 — 아래 둘을 게이트에서 뺀다.
+    # ★ 둘 다 **층 문제가 아니다.** 최종 출력에도 그 자리엔 수표가 없는 게 맞다.
+
+    def test_log_subscript_is_not_c5(self):
+        """로그 밑은 규정 제46항 1호가 **수표를 금한 자리**다(⠸⠠⠆ = 로그 + 내린 2).
+
+        실물: 009 body p0047 `y = -\\log_{2} x` — 요소에 다른 숫자가 없어 게이트가
+        열렸고, 규정대로 낸 출력이 배포 블로커로 섰다.
+        """
+        layout, ids = _layout(1)
+        report = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(ids[0])],
+            llm_outputs=[_llm(ids[0], r"y = -\log_{2} x, \quad y = \log_{2} (-x)")],
+            braille_outputs=[BrailleOutput(
+                element_id=ids[0], braille_lines=["⠽⠒⠒⠔⠸⠠⠆⠭⠐⠀⠽⠒⠒⠸⠠⠆⠦⠔⠭⠴"])],
+        )
+        assert not any(c.type == "C5" for c in report.critical_errors)
+
+    def test_log_subscript_with_other_number_still_caught(self):
+        """로그 밑을 뺐다고 **그 요소 전체를 면제하지는 않는다** — 다른 숫자는 그대로 본다."""
+        layout, ids = _layout(1)
+        report = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(ids[0])],
+            llm_outputs=[_llm(ids[0], r"\log_{2} x 를 3번 계산")],
+            braille_outputs=[BrailleOutput(
+                element_id=ids[0], braille_lines=["⠸⠠⠆⠭⠀⠮⠀⠉⠘⠞⠀⠅⠎⠝"])],
+        )
+        assert [c.type for c in report.critical_errors] == ["C5"]
+
+    def test_tn_only_element_is_not_c5(self):
+        """점역자주로 대체된 요소 — 원문을 1:1 로 옮기는 자리가 아니다.
+
+        비정형 표는 `TableBraille._translate_one` 이 표 본문 대신 점역자주 한 문단을 낸다.
+        수치가 정당하게 요약·생략되므로 시각자료와 같은 이유로 뺀다.
+        실물: 004 body p0182 `▼ 소회의실 1 / 하경 …` · 001 p0160 · 014 p0117.
+        """
+        layout, ids = _layout(1)
+        report = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(ids[0])],
+            llm_outputs=[_llm(ids[0], "소회의실\n▼ 소회의실 1\n하경\n정민")],
+            braille_outputs=[BrailleOutput(
+                element_id=ids[0],
+                braille_lines=["⠠⠄⠕⠀⠙⠬⠉⠵⠀⠠⠥⠚⠽⠺⠠⠕⠂⠀⠘⠗⠨⠻⠙⠬⠕⠑⠱⠐⠠⠄"])],
+        )
+        assert not any(c.type == "C5" for c in report.critical_errors)
+
+    def test_tn_mark_inside_line_still_caught(self):
+        """양끝이 ⠠⠄ 일 때만 면제한다 — 본문 중간에 점역자주가 섞인 것은 그대로 본다."""
+        layout, ids = _layout(1)
+        report = QualityChecker().check(
+            "p_001", layout_result=layout,
+            extracted=[_ext(ids[0])],
+            llm_outputs=[_llm(ids[0], "정답은 3번")],
+            braille_outputs=[BrailleOutput(
+                element_id=ids[0], braille_lines=["⠨⠻⠊⠣⠃⠵⠀⠠⠄⠚⠒⠠⠄⠀⠉⠘⠞"])],
+        )
+        assert [c.type for c in report.critical_errors] == ["C5"]
+
     def test_english_contraction_plus_real_number_sign_no_c5(self):
         """반대 방향 — ble의 ⠼와 진짜 수표가 함께 있으면 C5가 아니다(오탐 금지)."""
         layout, ids = _layout(1)

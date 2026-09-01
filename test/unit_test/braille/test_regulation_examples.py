@@ -262,9 +262,23 @@ class TestBookStyleConventions:
         # 신규 코퍼스에 외국어 권이 없어 재확인 못 했으므로 종전 형을 유지한다.
         assert self._brf("(A)-(B)").startswith("7,a7")
 
-    def test_화살괄호는_작은따옴표(self):
-        assert self._brf("〈보기〉") == ",8~u@o0'"   # ‘보기’
-        assert self._brf("<보기>") == ",8~u@o0'"
+    def test_홑화살괄호는_그대로_나간다(self):
+        """★ 2026-08-26 뒤집힘 — 종전 기대값은 `‘보기’`(작은따옴표)였다.
+
+        그 근거("정답 코퍼스에 화살괄호 0회, 작은따옴표 3618회")가 **frozen(구판) 실측**이다.
+        dev-2027 60쪽 실측(eval E001): 〈 gold 100건/22쪽 대 우리 1건 · 〉 gold 65건 대 우리 0건.
+        규정도 화살괄호 쪽이다 — symbol_table 에 〈 = ⠐⠶ · 〉 = ⠶⠂ 가 이미 있다.
+
+        원인은 순서 충돌이었다 — `_ANGLE_LABEL_RE` 가 `<보기>` 를 `〈보기〉` 로 먼저 옳게
+        바꾸는데 `_ANGLE_RE` 가 그것까지 다시 잡아 작은따옴표로 되돌렸다. 결과가 두 겹으로
+        나빴다: **닫는 ⠴⠄ 가 앞 음절에 붙어 '보기'가 '보깋'이 됐다.**
+        """
+        assert self._brf("〈보기〉") == '"7~u@o71'      # ⠐⠶보기⠶⠂
+        assert self._brf("<보기>") == '"7~u@o71'       # ASCII 도 같은 자리로
+
+    def test_홑낫표는_그대로_둔다(self):
+        """「 」는 안 건드린다 — gold ⠐⠦ dev 70 대 묵자 「 47 로 셀이 겹친다(eval 08-22)."""
+        assert self._brf("「국어」") != '"7~u@o71'
 
 
 class TestRegulationSwitch:
@@ -325,3 +339,109 @@ class TestCircledJamoReg64:
 
     def test_동그라미_숫자는_수표_그대로(self) -> None:
         assert self._t("①").startswith("⠼")     # 규정=도서 일치라 건드리지 않는다
+
+
+class TestOXMark:
+    """맞고 틀림 기호 (「점자 자료 제작 지침」 2장 (4) · 예 2-31, 원장 C-14).
+
+    원문: "동그라미나 숫자 0은 로마자 O로, 도형 형태의 가위표(×)는 로마자 X로,
+    세모는 _+으로 적는다."  예 2-31 BRF 가 `0,o`(⠴⠠⠕) · `0,x`(⠴⠠⠭) 로 값을 확인해 준다.
+    실측(desk, dev-2027): 78조각·16쪽·4권 전부.
+
+    ⚠ 세모(△)와 `○`(U+25CB)는 **일부러 뺐다.** 둘은 숨김표·도형 기호로 이미 쓰여
+    (제40항 · `_UNLISTED_SHAPE_RUN_RE`) 맞고 틀림 문맥인지를 글만 보고 못 가른다.
+    넣어 봤더니 단위 테스트 28건이 깨졌다. 실측이 잡은 것도 `◯`(U+25EF)와 `×` 둘뿐이다.
+    """
+
+    def test_지침_예2_31(self):
+        from app.ai.braille.translator import translate_plain
+        got = translate_plain("일치하면 ◯, 일치하지 않으면 ×에 표시해 봅시다.")
+        assert "⠴⠠⠕" in got, got
+        assert "⠴⠠⠭" in got, got
+
+    def test_홀로_선_자리만_바꾼다(self):
+        from app.ai.braille.translator import translate_plain
+        assert "⠴⠠⠕" in translate_plain("※ ◯ 또는 ×")
+        assert "⠴⠠⠭" in translate_plain("3. ◯  4. ×")
+
+    def test_곱셈은_안_건드린다(self):
+        """곱셈 × 는 늘 피연산자 사이에 있다 — 여기 걸리면 수식이 깨진다."""
+        from app.ai.braille.translator import translate_plain
+        for s in ("2 × 3", "넓이는 3×4이다", "가로 × 세로", "2 × 3 = 6",
+                  "반지름×반지름", "넓이 = 3 × 4"):
+            assert "⠴⠠⠭" not in translate_plain(s), s
+
+    def test_계열_코드포인트를_다_잡는다(self):
+        """★ 2026-08-26 2차 — 1차는 U+25EF 만 넣어 `〇`(U+3007)·`⭕`(U+2B55)가
+        점형이 없어 **빈 문자열로 사라졌다**(eval 실측). 매핑 없는 글자가 조용히
+        없어지거나 원문자 그대로 실리면 안 된다."""
+        from app.ai.braille.translator import translate_plain
+        for c in "◯〇⭕":
+            assert translate_plain(c) == "⠴⠠⠕", (c, translate_plain(c))
+        for c in "×✕✖":
+            assert translate_plain(c) == "⠴⠠⠭", (c, translate_plain(c))
+
+    def test_답지_번호_사이는_정오표시다(self):
+        """`3. × 4. ◯` — 앞뒤가 다 답지 번호면 곱셈이 아니다(실물 d020 001/body/0184)."""
+        from app.ai.braille.translator import translate_plain
+        got = translate_plain("3. × 4. ◯")
+        assert "⠴⠠⠭" in got and "⠴⠠⠕" in got, got
+
+
+class TestHancomMathFont:
+    """한컴 수식 글꼴 흔적 되살리기 (대표 결재 2026-08-26).
+
+    한컴 수식 글꼴 PDF 는 함수 이름을 **ASCII 로 31 내려서** 싣는다
+    (T+31='s' · J+31='i' · O+31='n'). eval 실측 18건/3쪽.
+    ⚠ 시프트를 통째로 걸면 멀쩡한 대문자 낱말이 다 깨진다 — 아는 토막만 되살린다.
+    """
+
+    def test_함수_이름을_되살린다(self):
+        from app.ai.braille.translator import _decode_hancom_math as d
+        assert d("TJO x") == "sin x"
+        assert d("DPT 2x") == "cos 2x"
+        assert d("UBO a") == "tan a"
+
+    def test_멀쩡한_대문자는_안_건드린다(self):
+        from app.ai.braille.translator import _decode_hancom_math as d
+        assert d("SUBJECT TJOB") == "SUBJECT TJOB"     # 낱말 경계 밖은 손 안 댄다
+        assert d("ATJO") == "ATJO"
+
+    def test_아는_모지바케만_되살린다(self):
+        """É 는 문맥으로 ≤ 가 확정됐다(`2p-a<xÉ2p`). Û·Á·Ñ·Ú 는 정체를 몰라
+        **추정으로 넣지 않는다**(대표 지시) — 그대로 두고 로그만 남긴다."""
+        from app.ai.braille.translator import _decode_hancom_math as d
+        assert d("2p-a<xÉ2p") == "2p-a<x≤2p"
+        assert d("MOÛST") == "MOÛST"
+
+
+class TestNonBraillableChars:
+    """점자로 못 가는 글자 (C033 전수, dev-2027 d025 60쪽).
+
+    초안 묵자에 실리는 비-한글/비-ASCII 1,646개 중 **점자 경로도 못 넘기는 것이 198개·54종**
+    이었다. 값이 확실한 셋만 손댄다 — 나머지(한자·아랍 숫자·도형)는 규정 판단이 필요하다.
+    """
+
+    def test_제로폭_조합문자는_지운다(self):
+        """눈에 안 보이는데 점역만 방해한다. ZWNJ 23건 · 조합 네모 14건 실측."""
+        from app.core.pipeline import _draft_print_text
+        assert "\u200c" not in _draft_print_text("\u200c공유한")
+        assert "\u20de" not in _draft_print_text("답\u20de ③")
+
+    def test_괄호숫자를_편다(self):
+        """유니코드 이름이 PARENTHESIZED DIGIT 다 — 추정이 아니라 정의다(19건)."""
+        from app.core.pipeline import _draft_print_text
+        from app.ai.braille.translator import translate_plain
+        assert _draft_print_text("⑴ 방정식").startswith("(1)")
+        assert "⑴" not in translate_plain("⑴ 방정식")
+
+    def test_C1_제어문자도_지운다(self):
+        """`_CTRL_RE` 가 C0 만 잡고 있었다 — `\x93` 실측 37건."""
+        from app.core.pipeline import _draft_print_text
+        assert "\x93" not in _draft_print_text("O.\x93= L")
+
+    def test_모르는_것은_안_건드린다(self):
+        """한자·아랍 숫자·도형은 규정 판단이 필요하다. 추정으로 바꾸지 않는다."""
+        from app.core.pipeline import _draft_print_text
+        assert "非" in _draft_print_text("비(非)수급자")
+        assert "▽" in _draft_print_text("▽▽연구소")

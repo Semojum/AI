@@ -101,3 +101,30 @@ class TestCorpusCompleteness:
         ]
         for kor, brf in cross:
             assert ascii_to_unicode(brf) == translate_tagged_text(kor), kor
+
+
+# ── read_gold — 표기 자동 판별 (2026-08-29) ──────────────────────────────────
+# 같은 날 두 번 밟았다: gold 를 유니코드로 찾아 0건이 나오고 "현상 없음"으로 읽을 뻔했다
+# (원장 B-12 표 선형 조판 · C-87 2단계 글상자). 문서로 안 막혀서 배선으로 옮긴 것이다.
+class TestReadGold:
+    def test_ascii_gold_는_변환된다(self, tmp_path):
+        from app.utils.braille_ascii import read_gold
+        f = tmp_path / "g.brl"
+        f.write_text("=777=\n#aj", encoding="utf-8")      # 1단계 아래 테두리 + 수표+10
+        out = read_gold(f)
+        assert out.startswith("⠿⠶⠶⠶⠿")
+        assert "⠼⠁⠚" in out
+
+    def test_유니코드_gold_는_무변동(self, tmp_path):
+        from app.utils.braille_ascii import read_gold
+        f = tmp_path / "g.brf"
+        src = "⠿⠶⠶⠶⠿\n⠼⠁⠚"
+        f.write_text(src, encoding="utf-8")
+        assert read_gold(f) == src
+
+    def test_백틱은_코퍼스_관례로_셀이다(self, tmp_path):
+        """gold 의 백틱은 채움이 아니라 `@` 의 시프트형 = ⠈(초성 ㄱ). 기본값이 그것이다."""
+        from app.utils.braille_ascii import read_gold
+        f = tmp_path / "g.brl"
+        f.write_text("`", encoding="utf-8")
+        assert read_gold(f) == "⠈"

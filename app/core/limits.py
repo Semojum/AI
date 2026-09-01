@@ -44,15 +44,21 @@ _caption_lock = threading.Lock()
 
 
 def mineru_slot() -> asyncio.Semaphore:
-    """MinerU 추출 동시 실행 슬롯. 크기 = config.mineru_max_concurrent.
+    """MinerU 추출 동시 실행 슬롯. 크기 = `mineru_service.concurrency()`.
 
     GPU 추출 서버를 보호한다. 무릎(실측 2)을 넘겨 던지면 처리량은 안 늘고 꼬리만 길어져,
     상한에 걸리는 정상 페이지가 생긴다.
+
+    ★ 크기를 config에서 직접 읽지 않는다 — vLLM이 아닌 엔진에서는 동시 2가 MinerU를
+      스레드 레이스로 터뜨려 그 쪽이 표·그림을 잃는다(`mineru_service.concurrency()` 주석).
+      서버에 주는 상한과 우리가 던지는 수가 **같은 자리에서** 정해져야 한다.
     """
+    from app.ai.parser import mineru_service   # 지연 import — 파서가 core를 물지 않게
+
     loop = asyncio.get_running_loop()
     sem = _mineru_slots.get(loop)
     if sem is None:
-        sem = asyncio.Semaphore(max(1, config.mineru_max_concurrent))
+        sem = asyncio.Semaphore(mineru_service.concurrency())
         _mineru_slots[loop] = sem
     return sem
 
@@ -179,7 +185,7 @@ class RateLimiter:
     ★ 토큰 수는 **추정치**다(입력 = 프롬프트 문자 수, 출력 = max_tokens).
       실제 usage로 되맞추지 않는다 — 평시 소비가 상한의 1/250이라(실측 쪽당 2.4건)
       2배 오차가 나도 여유가 100배 남는다. 정밀도보다 단순함이 낫다.
-      # ponytail: 추정치 예약만. 실사용이 상한에 근접하면 record_gpt4o의 실제 usage로
+      # ponytail: 추정치 예약만. 실사용이 상한에 근접하면 record_ext_llm의 실제 usage로
       #           보정하는 단계를 붙일 것.
 
     ★ 스레드와 코루틴이 함께 쓴다 — 캡셔닝은 스레드풀, opt는 asyncio다. 계정이 하나이므로

@@ -1,15 +1,19 @@
-"""PART 7-2 — 이미지 점역 최적화 (§6.3 규정 + 대체텍스트 4안).
+"""PART 7-2 — 이미지 점역 최적화 (§6.3 규정 + 대체텍스트 3안).
 
-시각자료 대체텍스트 4안(QA 2026-07-05)을 생성한다 — 생략 / 짧은 제목 / 개조식 / 줄글.
+시각자료 대체텍스트 3안을 생성한다 — 생략 / 설명 / 참조.
 공통 로직은 visual_drafts.build_visual_drafts. 여기서는 이미지 구조(구성요소·원본 글자)를
-개조식 항목으로 넘기고(rule-based 전사, §6.3.4(2)①), 캡션 없으면 제목·줄글만 LLM이 채운다.
-장식용(decorative)은 기본 선택을 '생략'으로 둔다(§6.3.4(2)②·Q7).
+개조식 항목으로 넘기고(rule-based 전사, §6.3.4(2)①), 캡션이 없으면 LLM이 설명을 채운다.
+
+⚠ 아래 `decorative` 인자는 **지금 발화하지 않는다.** `st['decorative']`를 채우는 자리가
+  코드 전체에 없어 항상 None이고, 남은 경로 `no_seed`는 캡셔닝이 성공하면 안 걸린다.
+  즉 기본 선택은 사실상 항상 '설명'이다. 자세한 것은 visual_drafts 모듈 docstring.
 """
 
 from __future__ import annotations
 
 from app.ai.braille.nested_block import box_narrative
 from app.ai.llm.base_opt import BaseOpt
+from app.ai.braille import tag_names as _TAGS
 from app.ai.llm.visual_drafts import build_visual_drafts, visual_trail
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
@@ -23,7 +27,7 @@ def _nested_graph_text(structure: dict) -> str | None:
               if (n.get("type") or "").strip() in _NESTED_GRAPH_TYPES]
     return box_narrative(blocks, default_label="그래프")
 
-_RULE_ID = "JAJAK-6.3.4"   # 시각 자료 점역자 주 (점자 자료 제작 지침 §6.3.4)
+_RULE_ID = "NISE-6.3.4"   # 시각 자료 점역자 주 (점자 자료 제작 지침 §6.3.4)
 
 
 def _trail(drafts, selected_idx: int, source: str) -> list[RuleApplication]:
@@ -55,7 +59,9 @@ class ImageOpt(BaseOpt):
         )
         return LLMOutput(
             element_id=ext.element_id,
-            corrected_text=drafts[selected_idx].text,
+            # 요소 본문은 **태그 없는 글**로 둔다 — `line_indents` 호환 필드와
+            # 줄 단위로 짝지어지는 자리라 줄머리에 태그가 붙으면 짝이 깨진다.
+            corrected_text=_TAGS.strip_indent_tags(drafts[selected_idx].text)[0],
             render_mode="narrative",
             tn_text=drafts[selected_idx].text,
             routing_tier=tier,

@@ -61,6 +61,16 @@ _DIGIT_REV = {
     "⠋": "6", "⠛": "7", "⠓": "8", "⠊": "9", "⠚": "0",
     "⠂": ",", "⠄": ".",   # 자릿점/소수점(근사)
 }
+# ── 하단 숫자 (R2, 2026-08-24) ──────────────────────────────────────────────
+# 정방향 `kor_math_rules._DROPPED_DIGIT` 의 역. 수표 뒤 항목 번호·로그 밑에 쓰인다.
+# 이게 없어 `⠼⠆`(=2) 가 `⟨⠼⟩;` 로 샜다 — 정답 도서에도 같은 꼴이 92줄에 나온다
+# (`⠼⠂ … ⠼⠆ … ⠼⠒` = 1·2·3 연번이 결정적 근거였다).
+# ⚠ 위 `_DIGIT_REV` 와 겹치는 키가 없다(⠂ 만 겹치고 자릿점 쪽이 먼저다 — 숫자 런 안에서만
+#   쓰이므로 항목 번호 자리에는 안 걸린다).
+_DROPPED_DIGIT_REV = {
+    "⠂": "1", "⠆": "2", "⠒": "3", "⠲": "4", "⠢": "5",
+    "⠖": "6", "⠶": "7", "⠦": "8", "⠔": "9", "⠴": "0",
+}
 
 # 단어 약어(braillify) — 음절 분해 불가, 직접 등록. (한글 점자 제3장 단어약어)
 _WORD_ABBR = {
@@ -76,6 +86,17 @@ _WORD_ABBR = {
 _MATH_REV_MULTI = {       # 다중 셀(긴 것 먼저 매칭)
     "⠨⠒⠒": "≠", "⠸⠰⠑": "ln",
     "⠸⠌": "/", "⠌⠌": "÷", "⠒⠒": "=", "⠖⠖": "≤", "⠲⠲": "≥",
+    # 「수학 점자」 제4항 부등호 — < 와 > 가 빠져 있었다(≤·≥·≠만 있었다).
+    # 그래서 `(x < t)`가 `(x--t)`로 나왔다. 홑 ⠔는 음수·붙임표, ⠢는 덧셈이라
+    # 두 칸을 먼저 봐야 갈린다(_MATH_REV_MULTI는 긴 것부터 맞춘다).
+    "⠔⠔": "<", "⠢⠢": ">", "⠨⠔⠔": "≮", "⠨⠢⠢": "≯",
+    # 수학 기호 역매핑 누락분(2026-08-24). 수식 모드 전용 표라 한글·영어와 겹쳐도 안전하다.
+    # ★ 한 칸짜리는 넣지 않는다. ∫=⠮ 는 한글 '을', ∪=⠬ 는 '료', ∩=⠩ 는 '유'와 점형이 같아
+    #   인라인 수식으로 잘못 분류된 한글 토큰을 먹는다(실측 val 악화 34건 중 22건이 이것).
+    #   ∮=⠾ 는 묶음 괄호 닫기(제6항 2호)와 같은 셀이라 역시 넣지 않는다.
+    #   적분·합집합은 코퍼스 산출물에서 실사용이 확인되지 않아 손해만 남는다.
+    "⠮⠮": "∬", "⠐⠲": "⊃", "⠨⠖": "∉", "⠠⠨⠎": "Σ", "⠶⠶": "≡", "⠢⠔": "±",
+    "⠴⠄": "⊥",
     # ⚠ 구판 "⠦⠦→≤"는 폰트 오독(66=⠖⠖) + 중첩 묶음 ⠦⠦…에 오발동해 제거(2026-07-19)
     "⠒⠕": "→", "⠸⠩": "∇",
     # 일반연산·평행 (수학 제15·44항 — 정방향 2026-07-19 정정과 정합)
@@ -94,7 +115,33 @@ _MATH_REV_SINGLE = {
 }
 # 대괄호(제6항 ('…,))·도 단위는 다중 셀에서 우선 매칭
 _MATH_REV_MULTI.update({"⠷⠄": "[", "⠠⠾": "]", "⠴⠙": "°"})
-_MATH_MAX = max(len(k) for k in _MATH_REV_MULTI)        # = 3
+
+# ── 새던 여덟 종 (R2, 2026-08-24) ────────────────────────────────────────────
+# 대표가 실물 검수에서 지적한 `속⟨2808⟩난⟨2812⟩` 꼴이 이것이다. 정방향은 내는데 역맵에
+# 없어 코드포인트가 그대로 샜다. formula 요소 267건 중 **100건(37.5%)** 이 샜고 348회다.
+# 무엇이 몇 번 샜는지: ⠠ 132 · ⠸ 83 · ⠶ 72 · ⠈ 19 · ⠒ 18 · ⠆ 12 · ⠼ 10 · ⠂ 2.
+#
+# 정방향 정의(`kor_math_rules`)를 그대로 뒤집는다.
+_MATH_REV_MULTI.update({
+    # log — `_LOG_IND="⠸"` + `_LOG_NUM_SEP="⠠"`(밑이 숫자) / ⠰(밑이 변수)
+    "⠸⠠": "log_", "⠸⠰": "log_",
+    # 연립·조건분기 묶음 — `_SYS_OPEN/_SYS_CLOSE = "⠶⠄", "⠠⠶"`
+    "⠶⠄": "{", "⠠⠶": "}",
+    # 대문자 구절표 열기·닫기 — `_CAPS_OPEN="⠠⠠⠠"`, `_CAPS_CLOSE="⠠⠄"`
+    "⠠⠠⠠": "", "⠠⠄": "",
+    # 윗줄(bar)·모자(hat) — `_ACC_POSTFIX_MARK`
+    "⠈⠉": "̅", "⠈⠈⠢": "̂",
+})
+_MATH_REV_SINGLE.update({
+    "⠸": "log",     # 밑이 안 붙는 홑 log 지시자
+    "⠶": "{",       # 중괄호(정방향 `\{`·`\}` 가 둘 다 ⠶) — 짝을 못 가르므로 여는 쪽으로 편다
+    "⠠": "",        # 대문자표: 다음 글자를 크게 만드는 표시라 글자로는 안 남는다
+    "⠈": "'",       # 프라임(제17항)
+    "⠒": "=",       # 홑 ⠒ 는 등호 계열 잔재
+    "⠆": ";",       # 구분자
+    "⠂": ",",       # 쉼표
+})
+_MATH_MAX = max(len(k) for k in _MATH_REV_MULTI)
 # 토큰이 수식인지 판정 — 첨자·근호·분수 셀(⠘⠰⠜⠻⠌)이 **수식 피연산자**(수표 ⠼ 또는
 # 수식 여는괄호 ⠷)에 바로 이어질 때만 수식으로 본다. 한글 약자(바=⠘⠣·예=⠌⠣ 등)는
 # 뒤에 모음 셀이 와서 이 패턴에 안 걸리므로 '3반'·'1/2개' 같은 숫자+한글이 오판되지 않는다.
@@ -211,6 +258,27 @@ def _build_eng_reverse() -> tuple[dict[str, str], dict[str, str], dict[str, str]
     return anywhere, initial, final
 
 
+def _build_eng_words() -> dict[str, str]:
+    """낱말 **전체**가 일치할 때만 쓰는 셀→낱말 표(단어기호 + 단축형).
+
+    이게 없으면 `the`(⠮)가 한글 '을', `such`(⠎⠡)가 'sch'로 떨어진다 — 낱자 폴백이
+    약자를 모르기 때문이다. 낱말 경계(로마자표 직후·공백·종료표)에서만 맞춰 본다.
+    한 점형에 두 낱말이 걸리면(⠴=was/by) 정방향 표 순서대로 먼저 것을 쓴다.
+    """
+    from app.ai.braille import eng_braille as _E
+
+    # ★ 한 칸짜리는 넣지 않는다. `WORDSIGNS`가 그렇다(x=⠭ it · k=⠅ knowledge ·
+    #   f=⠋ from · y=⠽ you). 수식 변수와 점형이 같아서 넣으면 수식이 통째로 깨진다 —
+    #   실측 32,036요소에서 개선 5 · 악화 962였다. 여러 칸 단축형만 쓴다.
+    words: dict[str, str] = {}
+    for word, cell in _E.SHORT_FORMS.items():
+        if len(cell) >= 2:
+            words.setdefault(cell, word)
+    return words
+
+
+_ENG_WORD = _build_eng_words()
+_ENG_WORD_MAX = max((len(k) for k in _ENG_WORD), default=1)
 _ENG_ANY, _ENG_INIT, _ENG_FINAL = _build_eng_reverse()
 _ENG_MAX = max((len(k) for k in list(_ENG_ANY) + list(_ENG_INIT) + list(_ENG_FINAL)),
                default=1)
@@ -286,7 +354,17 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
     caps_word = False
     while j < n:
         c = s[j]
-        if c in (_SPACE_CELL, " "):                # 공백 → 런 종료(소비 안 함)
+        if c in (_SPACE_CELL, " "):                # 공백 → 원칙은 런 종료
+            # 제32항은 로마자표~종료표 **사이**를 한 구간으로 본다(`such tactics`).
+            # 그래서 종료표가 실제로 앞에 있으면 공백을 넘어 이어 간다 —
+            # `_roman_span_ahead`가 그 증거를 요구하므로 한글을 삼키지 않는다.
+            # 증거가 없으면 종전대로 끊는다(⠴는 닫는 따옴표, ⠲는 마침표와 같은 셀이라
+            # 구간처럼 보이는 한글 오탐이 정답 도서에 절반이다).
+            if s[i] == _ROMAN_START and _roman_span_ahead(s, j + 1):
+                out.append(" ")
+                caps_word = False          # 대문자 단어표는 낱말 하나까지다
+                j += 1
+                continue
             # ⚠ 제32항은 로마자표~종료표 **사이**를 한 구간으로 보므로 원칙적으로는
             #   공백을 넘어 이어져야 한다(`MP4 Player`). 하지만 그렇게 못 한다:
             #   ① `decode`가 줄을 **공백 단위로 쪼개** 토큰마다 따로 디코드한다.
@@ -326,6 +404,18 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
         # 영어 약자(er=⠻ · in=⠔ · the=⠮ …)를 낱자보다 먼저 본다. 낱자로 읽으면
         # 여기서 런이 깨져 뒤 낱말이 통째로 한글로 오독된다.
         _word_start = j == i + 1 or s[j - 1] in (_SPACE_CELL, " ", _CAPITAL)
+        # 단축형은 **로마자표가 낱말 앞에 온 런에서만** 본다(제29항). 낱말 중간의 ⠴는
+        # 로마자표가 아니라 닫는 낫표·따옴표다(』=⠴⠆) — 거기서 단축형을 대면
+        # `『대의각미록』에`가 `『대의각미록beneath`가 된다(실측 악화 10건 전부 이것).
+        if _word_start and not caps_word and (i == 0 or s[i - 1] in (_SPACE_CELL, " ")):
+            _end = j
+            while _end < n and s[_end] not in (_SPACE_CELL, " ", _ROMAN_END):
+                _end += 1
+            _w = _ENG_WORD.get(s[j:_end]) if _end - j <= _ENG_WORD_MAX else None
+            if _w is not None:
+                out.append(_w.upper() if caps_word else _w)
+                j = _end
+                continue
         _g = _eng_group_at(s, j, _word_start)
         if _g is not None:
             txt, ln = _g
@@ -363,7 +453,15 @@ def _decode_number(s: str, i: int) -> tuple[str, int]:
             j += 1
         else:
             break
-    if not out:                    # 수표 뒤 숫자 없음 → 기호로 둠
+    if not out:                    # 수표 뒤 일반 숫자 없음
+        # 하단 숫자일 수 있다(항목 번호·로그 밑). `⠼⠆` = 2 (R2)
+        if i + 1 < len(s) and s[i + 1] in _DROPPED_DIGIT_REV:
+            k = i + 1
+            got = []
+            while k < len(s) and s[k] in _DROPPED_DIGIT_REV:
+                got.append(_DROPPED_DIGIT_REV[s[k]])
+                k += 1
+            return "".join(got), k
         return "⟨⠼⟩", i + 1
     return "".join(out), j
 
@@ -378,6 +476,10 @@ def _decode_math_token(tok: str) -> str:
     i, n = 0, len(tok)
     while i < n:
         c = tok[i]
+        if c in (_SPACE_CELL, " "):                 # 빈칸 — 로마자 구간 병합으로 토큰
+            out.append(" ")                         # 안에 들어올 수 있다(⟨2800⟩로 샜다)
+            i += 1
+            continue
         if c == _NUMBER_SIGN:                       # 수표 → 숫자
             txt, j = _decode_number(tok, i)
             out.append(txt)
@@ -487,12 +589,42 @@ def _resolve_math_context(classes: list[str]) -> list[bool]:
     return res
 
 
+# 수식 구역 판정 문턱 (R2, 2026-08-24). `math=True` 로 부른 요소라도 **한글이 이만큼 섞였으면**
+# 자동 판별(토큰별)로 읽는다. 수식 요소에 설명 문장이 섞이면 그 한글이 수학 셀로 오독돼
+# `개체군 밀도` 가 `ρ_nγ eo,iu` 로 깨지기 때문이다.
+# ★ 문턱은 전수로 골랐다(formula 218건, 원문 대비 difflib 유사도):
+#     math=True 단독 0.684 · math=False 단독 0.494 · 문턱 0.40 **0.699**
+#   0.15~0.30 은 오히려 나빴다(0.592~0.671) — 순수 수식까지 자동 판별로 보내 깎인다.
+#   ⚠ 눈으로 세 건만 보면 False 가 나아 보인다. 그 셋이 전부 한글 섞인 소수 계열이었다.
+#
+# ★ 2026-08-24 재측정으로 **0.40 → 0.70 으로 올렸다.** 0.40 은 순수 수식까지 잡아먹는다 —
+#   점자 셀은 한글로 읽으면 대부분 한글이 되므로 "한글 비율이 높다"가 "한글이다"의 증거가
+#   못 된다. 실측 formula 218건(문턱별 발동 수 · 그중 한글경로가 실제로 나은 수 · 평균 유사도):
+#     0.40  발동 22 · 맞은 것  9(41%) · 0.6815   ← 종전. 13건이 손해였다
+#     0.55  발동 10 · 맞은 것  7(70%) · 0.6983
+#     0.70  발동  6 · 맞은 것  6(100%) · **0.7030**   ← 채택
+#     끔    발동  0 ·            · 0.6881
+#   실물: `S_n = a + (a+d) + …` 가 `서첸=그러므로"그러므로팧+…` 로 깨지던 것이 이것이다.
+_MATH_KOR_RATIO = 0.70
+# 이보다 짧은 수식은 통째로 수식으로 읽는다 — 설명 문장이 섞일 길이가 아니다.
+_MATH_KOR_MIN_CELLS = 24
+
+
 def decode(braille: str, *, math: bool = False) -> str:
     """점자 BRF 문자열 → 한국어 텍스트(근사). 줄바꿈은 보존.
 
     math=True면 전체를 수식 구역으로 보고 디코드한다(요소 type이 formula일 때 호출자가 지정).
     기본(False)은 공백 단위 토큰별로 수식/한글을 자동 판별한다(인라인 수식).
     """
+    if math and len(braille) >= _MATH_KOR_MIN_CELLS:
+        # 한글이 많이 섞인 수식 요소는 전체를 수식으로 보면 깨진다(R2). 자동 판별로 읽는다.
+        # ⚠ **짧은 순수 수식은 제외한다.** `π`(⠨⠏)·`θ`(⠨⠹) 같은 두 셀짜리는 자동 판별이
+        #   한글 음절로 읽어 비율이 100%가 되고, 그러면 `줘`·`적` 으로 깨진다
+        #   (회귀 테스트 `test_역점역_정확도_floor[build-math]` 가 잡았다).
+        loose = "\n".join(_decode_line_router(ln, False) for ln in braille.split("\n"))
+        body = "".join(loose.split())
+        if body and sum(1 for c in body if "가" <= c <= "힣") / len(body) >= _MATH_KOR_RATIO:
+            return loose
     out_lines = []
     for line in braille.split("\n"):
         out_lines.append(_decode_line_router(line, math))
@@ -539,14 +671,142 @@ def _mark_paren_pairs(line: str) -> str:
         lambda m: _PAREN_OPEN_MARK + m.group(1) + _PAREN_CLOSE_MARK, line)
 
 
+def _build_eng_function() -> frozenset[str]:
+    """영어 기능어 집합 — 로마자표 없는 영어 줄을 가려낼 때 마지막 증거로 쓴다."""
+    from app.ai.braille import eng_braille as _E
+
+    return frozenset(w.lower() for w in (*_E.WORDSIGNS, *_E.SHORT_FORMS)) | {"a", "i", "of", "and", "the", "is", "are", "was", "for", "on", "at", "with"}
+
+
+_ENG_FUNCTION = _build_eng_function()
+
+
+def _english_line(line: str) -> str | None:
+    """줄 전체가 로마자표 없는 영어면 그 텍스트, 아니면 None (제29항 [다만]).
+
+    제29항 [다만]은 **문단 전체가 로마자일 때 로마자표와 종료표를 생략할 수 있다**고
+    한다. 우리 정방향도 그 관행을 따르므로 순수 영어 문단에는 단서 셀이 하나도 없다.
+    단서가 없으면 한글로 읽혀 통째로 깨진다(`such tactics` → `어연 얽널다너`).
+
+    ★ 가르는 방법은 **정방향으로 되짚는 것**이다. 영어로 읽어 본 뒤 그 텍스트를
+      `eng_braille`로 다시 점자로 만들어 원래 셀과 **똑같을 때만** 영어로 본다.
+      한글은 이 왕복을 통과하지 못하므로 오탐이 구조적으로 막힌다.
+      실측(외국어 10쪽에서 뽑은 영문 261구절): 일치 145건 55.6%, 한글 오탐 0.
+      나머지 44%는 약자가 여러 낱말에 겹쳐 되짚기가 안 맞는 것이라 종전대로 둔다.
+    """
+    from app.ai.braille import eng_braille as _E
+
+    words = line.split(_SPACE_CELL)
+    if len(words) < 2:               # 한 낱말은 단서가 너무 약하다(⠎=so ↔ 한글)
+        return None
+    out: list[str] = []
+    for w in words:
+        if not w:
+            out.append("")
+            continue
+        got = _decode_roman_run(_ROMAN_START + w, 0)
+        if got is None or got[1] != len(w) + 1:     # 낱말을 끝까지 못 읽으면 영어가 아니다
+            return None
+        out.append(got[0])
+    text = " ".join(out)
+    if _E.translate(text).replace(" ", _SPACE_CELL) != line:
+        return None
+    # 왕복만으로는 모자란다 — 한글 두 낱말이 뜻 없는 알파벳으로 되짚기까지 통과한다
+    # (실측 오탐: `우주 그물로` → `dujya Oiu`, 글상자 테두리 → `forggg…`).
+    # 영어 문장이라면 기능어가 적어도 하나는 있다(the·to·do·in·so…). 그걸 요구한다.
+    return text if any(w.lower() in _ENG_FUNCTION for w in text.split()) else None
+
+
+def _merge_roman_tokens(tokens: list[str], seps: list[str]) -> tuple[list[str], list[str]]:
+    """로마자표로 열린 구간이 공백에서 끊기지 않게 토큰을 합친다(제32항).
+
+    라우터가 줄을 공백으로 쪼개므로 `⠴such tactics⠲`의 둘째 낱말이 문맥을 잃고
+    한글로 오독됐다(`such 얽널다너`). 합치는 조건은 **종료표 ⠲가 실제로 앞에 있을 때**
+    뿐이다 — `_roman_span_ahead`가 그 증거를 요구한다. 증거가 없으면 합치지 않는다.
+    """
+    out_t: list[str] = []
+    out_s: list[str] = []
+    i = 0
+    while i < len(tokens):
+        merged = tokens[i]
+        # 로마자표는 **낱말 앞**에 온다(제29항). 낱말 중간의 ⠴는 닫는 낫표·따옴표다
+        # (』=⠴⠆, ’=⠴⠄) — 그걸 구간 시작으로 보면 한글 문단을 통째로 삼킨다.
+        # 실측: 이 조건이 없을 때 32,036요소에서 악화 988건이었다.
+        st = 0 if merged.startswith(_ROMAN_START) else -1
+        while (st >= 0 and _ROMAN_END not in merged[st:] and i < len(seps)
+               and _roman_span_ahead("⠀".join(tokens[i + 1:]), 0)):
+            merged += seps[i] + tokens[i + 1]
+            i += 1
+        out_t.append(merged)
+        if i < len(seps):
+            out_s.append(seps[i])
+        i += 1
+    return out_t, out_s
+
+
+# 제17항 [다만] — 숫자와 혼동되는 'ㄴ ㄷ ㅁ ㅋ ㅌ ㅍ ㅎ'의 첫소리 글자와 '운'의 약자는
+# 숫자 뒤에 **붙어 나오더라도 띄어 쓴다**(규정 예시 `1년` = ⠼⠁ ⠉⠡). 그래서 점자의 그 한 칸은
+# 원문에 없던 것이다 — 되돌리지 않으면 `1년`이 `1 년`으로 나온다.
+# 코퍼스 실측: 이 자리 4,995건 중 붙여 쓴 원문이 3,786건(75.8%)이라 붙이는 쪽을 택한다.
+_NUM_CHO = frozenset((2, 3, 6, 15, 16, 17, 18))     # ㄴ ㄷ ㅁ ㅋ ㅌ ㅍ ㅎ
+
+
+def _join_num_hangul(text: str) -> str:
+    """숫자와 한글 사이의 **한 칸**을 되붙인다 (제17항 [다만])."""
+    def _repl(m: "re.Match[str]") -> str:
+        c = m.group(2)
+        if c == "운" or (ord(c) - 0xAC00) // 588 in _NUM_CHO:
+            return m.group(1) + c
+        return m.group(0)
+
+    # 앞이 로마자면 안 붙인다 — `MP3 파일`·`V1 단계`는 로마자+숫자가 한 덩이고
+    # 그 뒤 한 칸은 [다만]의 구분 칸이 아니라 진짜 낱말 사이 공백이다.
+    return re.sub(r"(?<![A-Za-z])(\d) ([가-힣])", _repl, text)
+
+
+# 글상자 테두리 줄 — 시작캡 + 같은 채움 셀 반복 + 끝캡 (layout_braille._BOX_LEVELS).
+# 글자가 아니라 도형이라 음절로 읽으면 `옹운운운운…옹`이 나온다. 실물 검수에서 이게
+# 본문 사이에 섞여 나와 읽기 어려웠다. 줄 **전체**가 이 꼴일 때만 표시로 바꾼다 —
+# ⠿는 약자 '옹'이기도 해서 줄 일부만 보고 판단하면 정상 한글을 깬다.
+# 제목이 테두리 안에 들어가는 꼴도 있다(NLD — 위 테두리 중간에 제목). 제목은 실제
+# 내용이므로 살려서 【글상자 제목】으로 낸다.
+# ⚠ 줄 **전체**가 테두리일 때만 잡으면 실물을 놓친다. 실제 데이터는 테두리 뒤에 줄바꿈
+#   없이 본문이 같은 문자열로 이어진다(`⠿⠛…⠿⠀⠿⠁⠲⠀⠦⠄⠫…`). 그래서 **테두리 구간만**
+#   찾아 바꾸고 나머지는 그대로 읽는다. 채움 셀을 4칸 이상 요구하므로 약자 '옹'(⠿ 한 칸)과
+#   `⠿⠁⠲`(ㄱ.) 같은 한글은 안 걸린다.
+# 표 칸 구분선 — 같은 셀만 길게 반복한다(NLD 표 조판). 글자가 아니라 도형이라 음절로
+# 읽으면 `,,,,,,,,,,,,`가 본문 사이에 섞인다(재점역 5차 69쪽에서 65요소). ⠂ 단독은 쉼표라
+# **6칸 이상 연속**일 때만 본다.
+_TABLE_RULE_RE = re.compile(r"^[⠀ ]*([⠐⠂⠤⠒⠶])\1{5,}[⠀ ]*$")
+
+_BOX_BORDER_RE = re.compile(
+    r"[⠿⠖⠓](⠛|⠶|⠒|⠐)\1{3,}(?:[⠀ ](.+?)[⠀ ]\1{3,})?[⠿⠲⠚]")
+
+
 def _decode_line_router(line: str, math: bool) -> str:
     """줄을 공백 단위로 나눠 수식 토큰은 수학 디코더로, 나머지는 한글 디코더로 라우팅."""
     if not line:
         return ""
+    if _TABLE_RULE_RE.match(line):      # 표 칸 구분선 — 글자가 아니라 도형이다
+        return "【표 구분선】"
+    if _BOX_BORDER_RE.search(line):     # 글상자 테두리 — 글자가 아니라 도형이다
+        out, last = [], 0
+        for m in _BOX_BORDER_RE.finditer(line):
+            if m.start() > last:
+                out.append(_decode_line_router(line[last:m.start()], math))
+            title = m.group(2)
+            out.append(f"【글상자 {_decode_line(title)}】" if title else "【글상자】")
+            last = m.end()
+        if last < len(line):
+            out.append(_decode_line_router(line[last:], math))
+        return "".join(out)
+    if not math:                     # 수식 줄에 영어 판정을 대면 안 된다 — `a √ b`가
+        eng = _english_line(line)    # `a ar b`로 뒤집힌다(⠜=√ ↔ 영어 약자 ar)
+        if eng is not None:          # 로마자표 없는 순수 영어 줄 (제29항 [다만])
+            return eng
     line = _mark_paren_pairs(line)
     parts = re.split(r"([⠀ ]+)", line)              # 공백 런을 분리자로 보존
-    tokens = parts[0::2]
-    seps = parts[1::2]
+    tokens, seps = _merge_roman_tokens(parts[0::2], parts[1::2])
     if math:
         is_math = [True] * len(tokens)
     else:
@@ -557,12 +817,13 @@ def _decode_line_router(line: str, math: bool) -> str:
             pieces.append(_decode_math_token(tok) if is_math[idx] else _decode_line(tok))
         if idx < len(seps):
             pieces.append(" " * len(seps[idx]))
-    return _restore_wrap_parens("".join(pieces))
+    return _join_num_hangul(_restore_wrap_parens("".join(pieces)))
 
 
 def _decode_line(s: str) -> str:
     out: list[str] = []
     i, n = 0, len(s)
+    _after_number = -1        # 수표 숫자가 방금 끝난 자리(아래 단위표 가드용)
     while i < n:
         ch = s[i]
         # 공백(점자/일반)
@@ -593,6 +854,7 @@ def _decode_line(s: str) -> str:
         if ch == _NUMBER_SIGN:
             txt, j = _decode_number(s, i)
             out.append(txt)
+            _after_number = j          # 이 자리 바로 뒤는 단위가 올 수 있다(아래 참조)
             i = j
             continue
         # 긴 셀 우선 매칭(단위·기호·약어·음절). 단위(℃=⠴⠙…)를 로마자보다 먼저
@@ -611,12 +873,45 @@ def _decode_line(s: str) -> str:
         #   **긴 쪽이 이긴다** — 로마자로 읽어서 더 많은 셀을 소비하면 그쪽이 맞다.
         #   길이가 같으면 기호가 이긴다: ℃(⠴⠙⠠⠉)·㎏(⠴⠅⠛⠲)은 로마자로 읽어도 같은
         #   4셀이므로 등록된 단위 기호로 남는다.
-        if ch == _ROMAN_START and best_ln >= 2:
+        # ★ **숫자 바로 뒤의 ⠴ 는 단위표다. 로마자표가 아니다.**(2026-08-25)
+        #   규정 [붙임2]가 비로마자 단위를 `숫자 + 단위표 0 + …` 로 적는다(50%=⠼⠑⠚⠴⠏).
+        #   로마자표는 반대로 **런 앞**에 온다(제35항 A4=⠴⠠⠁⠼⠙ · MP3) — 숫자 뒤에 붙는
+        #   ⠴ 를 로마자표로 읽을 자리가 규정에 없다.
+        #   이 가드가 없으면 종료표 ⠲ 가 마침표와 같은 셀이라 로마자 런이 **뒤 한글까지
+        #   통째로 삼킨다**. 실측(코퍼스 900쪽 표본): `%` 뒤가 한글인 줄 118건 중
+        #   **69건(58%)에서 `%` 가 사라지고 뒤 한글이 깨졌다**
+        #   (`25%이다.` → `25poi` · `5%이므로` → `5poeow로`).
+        if ch == _ROMAN_START and best_ln >= 2 and i == _after_number:
+            pass                       # 단위로 읽는다(아래 기호 분기로 떨어진다)
+        elif ch == _ROMAN_START and best_ln >= 2:
             _r = _decode_roman_run(s, i)
             if _r is not None and _r[1] - i > best_ln:
                 out.append(_r[0])
                 i = _r[1]
                 continue
+
+        # 닫는 홑화살괄호 ⠶⠂ — 규정 문장부호표(규정_텍스트.txt 2191~2192).
+        # ⠶ 는 **받침 ㅇ과 같은 셀**이라 탐욕 매칭이 앞 음절에 붙여 먹는다(보기〉 → 보깅,).
+        # 다만 `강,`(받침 ㅇ + 쉼표)와 셀이 겹치므로 **앞에 닫히지 않은 〈 가 있을 때만** 부호로 본다.
+        # 실측 dev-2027 900쪽: gold 가 〈보기〉를 702회 쓴다(작은따옴표꼴 0회).
+        if (best_ln >= 2 and s[i + best_ln:i + best_ln + 1] == "⠂"
+                and s[i + best_ln - 1] == "⠶" and s[i:i + best_ln - 1] in _COMBINED
+                and s.count("⠐⠶", 0, i) > "".join(out).count("〉")):
+            out.append(_COMBINED[s[i:i + best_ln - 1]])
+            out.append("〉")
+            i += best_ln + 1
+            continue
+
+        # 닫는 작은따옴표 ⠴⠄ — 규정 문장부호표의 `0'`(규정_텍스트.txt 2147~2154).
+        # ⠴는 **받침 ㅎ과 같은 셀**이라 탐욕 매칭이 앞 음절에 붙여 먹는다(기’ → 깋').
+        # 뒤 셀이 ⠄면 부호가 맞다 — 홀로 선 ⠄는 한국어 음절에 없다.
+        # 실측 dev-2027 900쪽: gold 1,933줄 · 우리 출력 2,305줄이 이 한 가지로 깨졌다.
+        if (best_ln >= 2 and s[i + best_ln:i + best_ln + 1] == "⠄"
+                and s[i + best_ln - 1] == "⠴" and s[i:i + best_ln - 1] in _COMBINED):
+            out.append(_COMBINED[s[i:i + best_ln - 1]])
+            out.append("’")
+            i += best_ln + 1
+            continue
 
         if best_ln >= 2:
             seg = s[i:i + best_ln]
@@ -663,6 +958,22 @@ def _decode_line(s: str) -> str:
         # 단일 셀 매칭(따옴표·쉼표 등)
         if best_ln == 1:
             out.append(_COMBINED[ch])
+            i += 1
+            continue
+        # 한글 표에 없으면 **수학 역표를 한 번 더 본다**. 인라인 수식으로 분류되지 못한
+        # 자리에서 연산기호가 그대로 샜다(실측 13,121건: ⠢=+ 가 `8⟨2822⟩13` 꼴).
+        # 긴 것부터 맞추고, 그래도 없으면 코드포인트로 정직하게 남긴다.
+        _m = 0
+        for _ln in range(min(_MATH_MAX, n - i), 1, -1):
+            if s[i:i + _ln] in _MATH_REV_MULTI:
+                _m = _ln
+                break
+        if _m:
+            out.append(_MATH_REV_MULTI[s[i:i + _m]])
+            i += _m
+            continue
+        if ch in _MATH_REV_SINGLE:
+            out.append(_MATH_REV_SINGLE[ch])
             i += 1
             continue
         # 못 푸는 셀 → 코드포인트 표시(정직)

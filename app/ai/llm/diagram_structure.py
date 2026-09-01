@@ -53,7 +53,17 @@ _BULLET_RE = re.compile(r"^([-*·•])\s+")
 _NUM_RE = re.compile(r"^(?:(\d{1,2})([.)])|([①-⑳])|([㉠-㉺]))\s+")
 _NUM_LEVEL = {".": 0, ")": 1}
 # 유형 제시어("도표: ", "그림: ") — captioner._ensure_type_word가 붙인 것.
-_LEAD_TYPE_RE = re.compile(r"^\s*(?:도표|그림|사진|그래프|삽화|만화|지도|표)\s*[:：]\s*")
+# ★ F18(대표 지적) — 캡션 첫 줄의 **종류어**를 안 떼면 점역자 주의 유형과 두 번 나간다.
+#   실물: '모식도\n개념도:\n삼각형 ABC:\n…' — 캡셔너가 첫 줄에 종류를 쓰라는 지시를 받고
+#   '모식도'를 썼는데(captioner._PROMPTS["diagram"]), 종전 정규식이 콜론 붙은 여덟 낱말만
+#   떼어 그 줄이 골격 **제목**으로 남았다. 유형은 §6.3.4(1)이 점역자 주로 내는 몫이므로
+#   첫 줄의 종류어는 여기서 걷어낸다. 콜론이 없어도(줄 전체가 종류어여도) 뗀다.
+_LEAD_TYPE_WORDS = (
+    "도표|그림|사진|그래프|삽화|만화|지도|표"
+    "|모식도|구조도|개념도|흐름도|순서도|공정도|조직도|계통도|가계도"
+    "|연대표|연표|양식|화면\\s*이미지|발표용\\s*슬라이드|슬라이드"
+)
+_LEAD_TYPE_RE = re.compile(rf"^\s*(?:{_LEAD_TYPE_WORDS})\s*(?:[:：]\s*|$)")
 # 연대표 날짜 — 연도(1948·기원전 57)나 '3월 1일'로 시작하고 한 칸 뒤 사건.
 _DATE_RE = re.compile(r"^((?:기원전\s*)?\d{1,4}\s*(?:년|년대|세기)?(?:\s*\d{1,2}\s*월)?"
                       r"(?:\s*\d{1,2}\s*일)?)\s*[:：]?\s+(.+)$")
@@ -87,6 +97,29 @@ def subtype_from_caption(caption: str) -> str:
     for word, sub in _SUBTYPE_WORDS:
         if word in head:
             return sub
+    return ""
+
+
+def type_word_from_caption(caption: str) -> str:
+    """캡션 첫 줄이 **말한 유형어 그대로**. 못 찾으면 "".
+
+    ★ 왜 필요한가(2026-08-26, F16) — `_SUBTYPE_WORDS`는 모식도·구조도·도식을 전부
+      `concept_map`으로 접는다. 골격은 §6.6.1을 같이 쓰니 그 접기가 맞다. 그런데 표시
+      이름까지 `_TYPE_LABEL[concept_map]`("개념도")로 바뀌면, **캡션이 '구조도'라고
+      말한 자료를 우리가 '개념도'라고 고쳐 부른다.**
+      dev-2027 60쪽 실측: 유형이 배정된 29건 중 **22건이 concept_map**인데 그중 다수가
+      캡션에 '모식도'·'구조도'라고 적혀 있다(`도표: 구조도, 삼각형 ABC…`).
+      대표 지적 F16("삼각형 그림을 개념도로 인식")이 이 자리다.
+      캡션이 유형어를 말했으면 그 말을 쓴다. 안 말했을 때만 대표 이름으로 물러난다.
+    """
+    head = ""
+    for ln in (caption or "").split("\n"):
+        if ln.strip():
+            head = ln
+            break
+    for word, _sub in _SUBTYPE_WORDS:
+        if word in head:
+            return word
     return ""
 
 

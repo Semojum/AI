@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from app.ai.llm.base_opt import BaseOpt
 from app.ai.llm.base_opt import numbers_grounded as _verify_numbers  # noqa: F401 (테스트가 import)
+from app.ai.braille import tag_names as _TAGS
 from app.ai.llm.visual_drafts import (
-    PROSE_IDX,
+    DESC_IDX,
     build_visual_drafts,
     resolve_label,
     visual_trail,
@@ -19,7 +20,7 @@ from app.ai.llm.visual_drafts import (
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
-_RULE_ID = "JAJAK-6.4.1"   # 그래프 골격 (점자 자료 제작 지침 §6.4)
+_RULE_ID = "NISE-6.4.1"   # 그래프 골격 (점자 자료 제작 지침 §6.4)
 
 # 차트 하위유형 → 한국어 유형 라벨(전사용)
 _SUBTYPE_LABEL = {
@@ -94,12 +95,14 @@ class ChartGraphOpt(BaseOpt):
         # 수치 그라운딩 — LLM이 생성한 줄글에서 원본 수치가 누락/변조됐는지(누락 시 R5).
         # ZERO/rule-based 줄글은 전사라 검사 불필요(생성 환각 위험 없음).
         ref = ", ".join(t for _, t in data_items) or caption
-        if tier not in ("ZERO",) and struct_prose is None and ref and not _verify_numbers(ref, drafts[PROSE_IDX].text):
+        if tier not in ("ZERO",) and struct_prose is None and ref and not _verify_numbers(ref, drafts[DESC_IDX].text):
             ext.flags = list(getattr(ext, "flags", None) or []) + ["R5"]
 
         return LLMOutput(
             element_id=ext.element_id,
-            corrected_text=drafts[selected_idx].text,
+            # 요소 본문은 **태그 없는 글**로 둔다 — `line_indents` 호환 필드와
+            # 줄 단위로 짝지어지는 자리라 줄머리에 태그가 붙으면 짝이 깨진다.
+            corrected_text=_TAGS.strip_indent_tags(drafts[selected_idx].text)[0],
             render_mode="narrative",
             tn_text=drafts[selected_idx].text,
             routing_tier=tier,

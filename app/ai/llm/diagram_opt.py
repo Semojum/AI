@@ -50,23 +50,32 @@ from typing import Optional
 
 from app.ai.braille.regulations import make_rule
 from app.ai.llm.base_opt import BaseOpt
-from app.ai.llm.diagram_structure import structure_from_caption, subtype_from_caption
+from app.ai.llm.diagram_structure import (
+    caption_outline,
+    structure_from_caption,
+    subtype_from_caption,
+    type_word_from_caption,
+)
 from app.ai.braille import tag_names as _TN
 from app.ai.braille import tn_notices as _TN_NOTICES
 from app.ai.llm.visual_drafts import (
-    OUTLINE_IDX,
+    DESC_IDX,
+    FAMILY_BOTTOMUP_LABEL,
+    FAMILY_BOTTOMUP_OPTION,
+    FLOW_CHAIN_LABEL,
+    FLOW_CHAIN_OPTION,
     LABELS,
     _dedupe,
     build_visual_drafts,
+    desc_label,
     extra_drafts,
     omission_draft,
     prose_draft,
-    title_draft,
 )
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import Draft, ExtractedContent, LLMOutput, RuleApplication
 
-_RULE_ID = "JAJAK-6.6.1"   # 도표 골격 (점자 자료 제작 지침 §6.6)
+_RULE_ID = "NISE-6.6.1"   # 도표 골격 (점자 자료 제작 지침 §6.6)
 # ★ 단위 = **앞 빈칸 수**. 규정의 "N칸에서 시작"은 앞 빈칸 N-1이다.
 #   `line_indents`를 소비하는 곳이 `" " * indent + line`로 쓰기 때문(layout_braille._indent_lines,
 #   같은 파일 `_PARA_INDENT = 2  # "3칸에서 시작" = 앞 빈칸 2`). 2026-08-09 이전에는 여기 상수가
@@ -81,6 +90,23 @@ _RULE_ID = "JAJAK-6.6.1"   # 도표 골격 (점자 자료 제작 지침 §6.6)
 #   실물로 확정하려면 지침 p137~138 원문을 눈으로 봐야 한다.
 _TITLE_INDENT = 4         # §6.3.3(1) 제목 5칸      — 정답 예6-25[0]
 _TYPE_NOTE_INDENT = 4     # §2.1.8(3) 시각 자료 설명 점역자 주 5칸 — 정답 예6-1·6-7·6-8[0]
+
+# ── 점자로 나가는 유형 제시어 (대표 결재 2026-08-26) ─────────────────────────
+# **두 층을 나눈다.**
+#   피커에 뜨는 이름   흐름도 · 개념도 · 조직도 · 가계도 · 연대표 …   그대로 둔다
+#                      (점역사가 무엇을 고르는지 알아야 한다)
+#   점자로 나가는 글   【점역자주】**그림:** …                        규정 형식으로 적는다
+#
+# 근거 — 지침 §6.3.4(1) 원문: "원본 제목에 **'사진', '그림'** 등과 같은 시각 자료 유형
+#   제시어가 없더라도 점역자 주표를 사용하여 시각 자료 유형을 표기한다."
+#   규정이 드는 유형 제시어가 '사진'·'그림'이지 '흐름도'·'개념도'가 아니다.
+# gold 실측도 같다 —
+#   · 도형 그림 11건 **전부** `그림:` · 개념도·모식도 0건 (biz, dev-2027 900쪽)
+#   · 흐름도도 `【점역자주】그림: …` 이지 '흐름도'가 아니다 (desk D020)
+#   · 그래프 88건도 `그림: 가로축은 …` 로 시작한다 (biz F23)
+#   · TN 블록 755개 중 그림설명이 438(58%) (biz B012)
+# ★ 이 값을 바꾸려면 대표 결재가 필요하다. 피커 이름(`_TYPE_LABEL`)과 헷갈리지 말 것.
+_OUTPUT_TYPE_WORD = "그림"
 _NOTE_INDENT = 2          # 형식 안내 점역자 주 3칸 — 정답 예6-19·6-22·6-23·6-24·6-25
 _ITEM_INDENT = 2          # 규정이 칸을 안 정한 유형(양식·연대표·화면이미지·슬라이드)의 항목 3칸
 _BRANCH_INDENT = 2        # §6.6.2(4)⑥ 선택지 3칸   — 정답 예6-19
@@ -100,12 +126,12 @@ _TYPE_LABEL = {
 
 
 # subtype → 그 골격을 정한 조항. ★ Step17(2026-08-08) 이전에는 **전부** _RULE_ID(개념도
-# §6.6.1)로 나갔다 — dev 400쪽 실측 JAJAK-6.6.1 42건 / 6.6.2(흐름도) 0건. 흐름도를 보면서
+# §6.6.1)로 나갔다 — dev 400쪽 실측 NISE-6.6.1 42건 / 6.6.2(흐름도) 0건. 흐름도를 보면서
 # "개념도 조항"이 근거로 붙는 셈이라 점역사에게는 틀린 근거였다. 8종을 각자 조항으로 가른다.
 _SUBTYPE_RULE = {
-    "concept_map": "JAJAK-6.6.1", "flowchart": "JAJAK-6.6.2", "form": "JAJAK-6.6.3",
-    "family_tree": "JAJAK-6.6.4", "org_chart": "JAJAK-6.6.5", "timeline": "JAJAK-6.6.6",
-    "screen_image": "JAJAK-6.6.7", "slide": "JAJAK-6.6.8",
+    "concept_map": "NISE-6.6.1", "flowchart": "NISE-6.6.2", "form": "NISE-6.6.3",
+    "family_tree": "NISE-6.6.4", "org_chart": "NISE-6.6.5", "timeline": "NISE-6.6.6",
+    "screen_image": "NISE-6.6.7", "slide": "NISE-6.6.8",
 }
 
 
@@ -115,7 +141,7 @@ def _min_trail(subtype: str, how: str) -> list[RuleApplication]:
     subtype 판정은 앞단 신호가 없을 때 캡션 첫 줄에서 우리가 **추측한 것**이고
     (`diagram_structure.subtype_from_caption`), 들여쓰기(개념도 5/3·조직도 1칸+2칸/단계)는
     그 판정에 딸려 결정된다. 판정이 틀리면 골격 전체가 틀리므로 점역사가 제일 먼저 볼 자리다.
-    how = "골격 조립"(structure에서 결정적 전사) | "캡션 4안"(구조 없어 캡션으로 폴백).
+    how = "골격 조립"(structure에서 결정적 전사) | "캡션 3안"(구조 없어 캡션으로 폴백).
     """
     rule_id = _SUBTYPE_RULE.get(subtype, _RULE_ID)
     label = _TYPE_LABEL.get(subtype, "도표")
@@ -134,7 +160,7 @@ def _structure(ext: ExtractedContent, subtype: str) -> dict:
 
     앞단(MinerU·분류기)은 도표 내부 구조를 내지 않아 `_ASSEMBLERS`가 한 번도 돈 적이 없었다
     (경계 JSON 실측 2026-08-08: structure 0건). 캡션은 이미 위계 줄을 갖고 있으므로
-    거기서 만든다 — `diagram_structure` 참조. 못 만들면 {} → 캡션 4안 폴백(종전 동작).
+    거기서 만든다 — `diagram_structure` 참조. 못 만들면 {} → 캡션 3안 폴백(종전 동작).
     """
     if ext.structure:
         return ext.structure
@@ -175,7 +201,7 @@ def assemble_concept_map(structure: dict) -> tuple[str, list[int]]:
 
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!주>개념도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)        # §6.3.4(1)
+    lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
 
     depth = _tree_depth(nodes)
     _flatten_concept(nodes, 0, depth, lines, indents)                        # §6.6.1(2)(3)
@@ -197,7 +223,7 @@ def assemble_flowchart(structure: dict) -> tuple[str, list[int]]:
 
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!주>흐름도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)        # §6.3.4(1)
+    lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
 
     for box in boxes:
         no = box.get("no", "")
@@ -238,7 +264,7 @@ def assemble_org_chart(structure: dict) -> tuple[str, list[int]]:
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
     # §6.3.4(1) 유형 + §6.6.5(3) 들여쓰기 방식 점역자 주
-    lines.append("<!주>조직도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
+    lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
     # ★ 2026-08-12 — 칸 수를 밝힌다. 정본(자료지침 예6-22)은 "하위에 속한 기구를 **2칸씩**
     #   들여 쓰기함"이라고 쓴다. 점자에는 선·상자가 없어 위계가 들여쓰기로만 남는데,
     #   몇 칸이 한 단계인지 말해 주지 않으면 독자는 빈칸을 세도 단계를 못 센다.
@@ -262,14 +288,14 @@ def assemble_family_tree(structure: dict) -> tuple[str, list[int]]:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
 
     if (structure.get("mode") or "top_down").strip() == "bottom_up":
-        lines.append("<!주>가계도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
+        lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
         lines.append("<!주>후손에서 선조 순(상향식)<!/주>"); indents.append(_NOTE_INDENT)
         for it in structure.get("items") or []:                             # §6.6.4(3)①
             t = (it.get("text") or "").strip()
             if t:
                 lines.append(t); indents.append(_BOTTOMUP_INDENT)           # §6.6.4(3)②
     else:
-        lines.append("<!주>가계도<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
+        lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
         lines.append("<!주>선조에서 후손 순(하향식)<!/주>"); indents.append(_NOTE_INDENT)
         _flatten_hier(structure.get("nodes") or [], 0, lines, indents)      # §6.6.4(2)①②
     return "\n".join(lines), indents
@@ -297,7 +323,7 @@ def assemble_timeline(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!주>연대표<!/주>:"); indents.append(_TYPE_NOTE_INDENT)        # §6.3.4(1)
+    lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
 
     for date, texts in _group_timeline(structure.get("events") or []):
         texts = [t for t in texts if t]
@@ -325,7 +351,7 @@ def assemble_form(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!주>양식<!/주>:"); indents.append(_TYPE_NOTE_INDENT)          # §6.3.4(1)
+    lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)          # §6.3.4(1)
     lines.append(_BOX_TOP); indents.append(0)                               # §6.6.3(2) 글상자
     for it in structure.get("items") or []:
         t = (it.get("text") or it.get("label") or "").strip()
@@ -348,7 +374,7 @@ def assemble_screen_image(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!주>화면 이미지<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
+    lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
     lines.append(_BOX_TOP); indents.append(0)                               # §6.6.7(1) 글상자 테두리
     # §6.6.7(3)① 구획별 표기 — 구획은 **빈 줄**로 가르고 내용은 전부 3칸(정답 예6-24).
     # 종전에는 구획명 1칸·내용 3칸으로 층을 뒀는데 정답에는 그런 층이 없다.
@@ -378,7 +404,7 @@ def assemble_slide(structure: dict) -> tuple[str, list[int]]:
     title = (structure.get("title") or "").strip()
     if title:
         lines.append(title); indents.append(_TITLE_INDENT)                  # §6.3.3(1)
-    lines.append("<!주>발표용 슬라이드<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
+    lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)  # §6.3.4(1)
     for it in structure.get("items") or []:                                 # §6.6.8(2)
         t = (it.get("text") or "").strip()
         if t:
@@ -418,18 +444,210 @@ def _skeleton_prose(text: str) -> str:
     return ", ".join(parts)
 
 
+# ── 하위유형 후보 매김 (§6.6, 2026-08-25 대표 지시) ──────────────────────────
+#
+# 종전에는 `_subtype()` 이 **하나만** 골랐다. 그런데 그 판정은 대개 캡션 첫 줄의 유형어
+# 하나에 걸려 있고, 유형어가 다른 신호와 어긋나는 자리가 실제로 있다. 임계를 넘는 후보를
+# 점수순으로 최대 셋 내주고 점역사가 고르게 한다 — 이름 규칙(유형명 자체가 방식) 덕에
+# 피커에 `개념도`·`흐름도`가 나란히 서면 무엇으로 보고 적었는지가 제목만으로 드러난다.
+#
+# ★ **신호는 코퍼스 실측으로만 정했다**(도표 요소 471건 전수, 2026-08-25).
+#     화살표     110건   흐름도 신호
+#     친족낱말    68건   가계도 신호
+#     위계깊이≥2  35건   개념도·조직도 신호
+#     화면낱말     8건 · 슬라이드낱말 3건 · 빈칸 2건 · 날짜 1건
+#   ⚠ **뒤 넷은 신호를 안 만든다.** 실물이 8·3·2·1건이라 임계를 정할 근거가 없다 —
+#     근거 없이 정하면 지어내는 것이다(양식·화면이미지·발표용 슬라이드·연대표).
+#     그 넷은 캡션 유형어로만 판정한다(종전 동작 그대로).
+#
+# ★ 후보가 실제로 값을 하는 모수는 471 중 **48건(10%)** 이다. 작지만, 그 48건이
+#   **지금 틀린 골격을 받고 있다**(개념도로 보고 위계 개조식을 붙이는데 화살표 흐름도다).
+#     35  개념도로 봤는데 화살표 → 흐름도 후보
+#      5  흐름도인데 위계 깊음 → 개념도 후보
+#      5  개념도인데 친족낱말 → 가계도 후보
+#      3  가계도인데 화살표 → 흐름도 후보
+#
+# ⚠ 8종 밖 자료는 **억지로 배정하지 않는다.** 유형어가 없는 77건 중 59건이 지도(35)·
+#   벤다이어그램(12)·그래프(6)·핵형(4) 등 §6.6 에 조항이 없는 것이다. 지도를 개념도로
+#   보면 위계 없는 자료에 위계 개조식이 붙는다. 후보가 하나도 임계를 못 넘으면 설명 폴백.
+_ARROW_RE = re.compile(r"[→⇒➔➜▶]|-->|->|=>")
+# ⚠ 낱말을 넓게 잡으면 생물 교과에서 오검출한다 — 실측: `딸` 하나가 **딸세포·딸핵**을 물어
+#   감수분열 모식도를 가계도 후보로 세웠다(page_158). 세포 용어를 뒤에 두고 뺀다.
+#   `세대`·`왕` 도 뺐다 — 생물(세대 교번)·역사(왕조)에서 가계도와 무관하게 흔하다.
+_KIN_RE = re.compile(r"아버지|어머니|아들|할아버지|할머니|손자|손녀|자녀|배우자|형제|남매"
+                     r"|후손|선조|가계|가문|족보"
+                     r"|딸(?!세포|핵|염색|염색체)")
+_CAND_MAX = 3          # 대표 결정 — 피커에 셋까지
+_CAND_MIN_SCORE = 2    # 임계. 유형어(3)는 늘 넘고, 신호 하나(2)면 후보로 선다
+# 둘째·셋째 후보의 option 번호. 1·2·6·7·8 은 BE·FE 계약이라 **9부터** 쓴다.
+_CAND_OPTION_BASE = 9
+
+
+def _subtype_scores(ext: ExtractedContent, caption: str) -> list[tuple[str, int]]:
+    """[(subtype, 점수)] 높은 순. 임계 미만은 뺀다.
+
+    점수는 근거의 세기다 — 앞단이 준 값(4) > 캡션 유형어(3) > 글 안 신호(2).
+    같은 점수면 캡션 유형어가 앞선다(현행 기본 선택을 안 바꾸기 위해서다).
+    """
+    score: dict[str, int] = {}
+
+    def bump(sub: str, pts: int) -> None:
+        if sub:
+            score[sub] = max(score.get(sub, 0), pts)
+
+    st = ext.structure or {}
+    bump((st.get("subtype") or "").strip(), 4)
+    bump((ext.visual_subtype or "").strip(), 4)
+    head_sub = subtype_from_caption(caption)
+    bump(head_sub, 3)
+
+    # 글 안 신호 — 실측으로 근거가 선 셋만(위 주석)
+    if _ARROW_RE.search(caption):
+        bump("flowchart", 2)
+    if _KIN_RE.search(caption):
+        bump("family_tree", 2)
+    if max((lv for lv, _t in caption_outline(caption)), default=0) >= 2:
+        bump("concept_map", 2)
+
+    ranked = sorted(score.items(),
+                    key=lambda kv: (-kv[1], 0 if kv[0] == head_sub else 1, kv[0]))
+    return [(k, v) for k, v in ranked if v >= _CAND_MIN_SCORE][:_CAND_MAX]
+
+
+def _caption_type_word(subtype: str, caption: str) -> str:
+    """캡션이 말한 유형어. **고른 subtype 과 같은 갈래일 때만** 쓴다. 아니면 "".
+
+    캡션이 '가계도'라 하는데 앞단이 concept_map 을 줬다면 둘이 어긋난 것이라
+    이름을 캡션 쪽으로 끌면 골격(개념도 조항)과 이름(가계도)이 따로 논다.
+    """
+    word = type_word_from_caption(caption)
+    return word if word and subtype_from_caption(caption) == subtype else ""
+
+
+def _skeleton_label(subtype: str, structure: dict, caption: str = "") -> str:
+    """골격 안의 이름. 가계도만 **실제로 조립된 방향**을 이름에 싣는다(§6.6.4(1)).
+
+    ★ 캡션이 유형어를 말했으면 **그 말을 쓴다**(2026-08-26, F16). `_SUBTYPE_WORDS`가
+      모식도·구조도·도식을 concept_map 으로 접기 때문에, 이름까지 대표 이름으로 바꾸면
+      '구조도'라고 적힌 자료가 피커에 '개념도'로 뜬다. 골격 접기와 표시 이름은 다른 문제다.
+    """
+    if subtype == "family_tree":
+        mode = (structure.get("mode") or "top_down").strip()
+        return FAMILY_BOTTOMUP_LABEL if mode == "bottom_up" else desc_label(subtype)
+    return _caption_type_word(subtype, caption) or desc_label(subtype)
+
+
+_CIRCLED_NO = tuple(chr(0x2460 + i) for i in range(20))      # ①~⑳
+
+
+def _circled(no, idx: int) -> str:
+    """상자 번호를 원문자로. 번호가 1~20의 숫자면 원문자, 아니면 있는 그대로.
+
+    ⚠ `no` 는 앞단이 정수로 줄 때가 있다(실측 — 단위 테스트가 잡았다). 문자열로 맞춘다.
+    """
+    raw = str(no if no is not None else "").strip().rstrip(".)")
+    if raw.isdigit() and 1 <= int(raw) <= 20:
+        return _CIRCLED_NO[int(raw) - 1]
+    return raw or (_CIRCLED_NO[idx] if idx < 20 else str(idx + 1))
+
+
+def assemble_flowchart_chain(structure: dict) -> tuple[str, list[int]]:
+    """흐름도 **관행형** 골격 — 원문자 번호 + 화살표를 한 문장으로 접는다.
+
+    규정형(`assemble_flowchart`, §6.6.2(4)③④ 상자 한 줄에 하나)과 **어느 쪽이 맞는지
+    정하지 않는다.** 대표가 "둘 다 내고 점역사가 고른다" 로 결재하셨다(2026-08-26).
+
+    gold 2027 실측(desk D020) —
+        【점역자주】그림: ①담배모자이크병에 걸린 식물로부터 추출액을 얻었다.
+                        → ②추출액을 세균여과기에 통과시켰다. → ③…
+        【점역자주】그림: X자극→시상하부→ - I→부신속질→(가)→물질대사촉진
+                        - II→골격근→…
+    두 번째 예처럼 **갈래는 붙임표로 나눈다** — 그것도 gold 실물이다.
+    """
+    title = (structure.get("title") or "").strip()
+    boxes = structure.get("boxes") or []
+    lines: list[str] = []
+    indents: list[int] = []
+    if title:
+        lines.append(title); indents.append(_TITLE_INDENT)
+        lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
+    else:
+        lines.append(f"<!주>{_OUTPUT_TYPE_WORD}<!/주>:"); indents.append(_TYPE_NOTE_INDENT)
+
+    chain: list[str] = []
+    branches: list[str] = []
+    for i, box in enumerate(boxes):
+        text = (box.get("text") or "").strip()
+        if not text:
+            continue
+        chain.append(f"{_circled(box.get('no', ''), i)}{text}")
+        for br in box.get("branches") or []:
+            label = (br.get("label") or "").strip()
+            to = str(br.get("to", "")).strip()
+            if label or to:
+                branches.append(" ".join(p for p in ("-", label, _FLOW_ARROW, to) if p))
+    if not chain:
+        return "\n".join(lines), indents
+    lines.append(f" {_FLOW_ARROW} ".join(chain)); indents.append(0)
+    for br in branches:                       # 갈래는 붙임표로 나눈다(gold 실물)
+        lines.append(br); indents.append(_BRANCH_INDENT)
+    return "\n".join(lines), indents
+
+
+def _flow_chain_alt(subtype: str, structure: dict) -> Optional[Draft]:
+    """흐름도 관행형 안. 상자가 둘 이상일 때만 낸다(하나면 체인이 아니다)."""
+    if subtype != "flowchart" or len(structure.get("boxes") or []) < 2:
+        return None
+    text, indents = assemble_flowchart_chain(structure)
+    return Draft(option=FLOW_CHAIN_OPTION,
+                 text=_TN.apply_indent_tags(text, indents),
+                 render_mode="narrative", label=FLOW_CHAIN_LABEL)
+
+
+def _family_alt(subtype: str, structure: dict) -> Optional[Draft]:
+    """가계도의 **반대 방향** 안. 그 방향 데이터가 없으면 None.
+
+    §6.6.4(1)은 하향식·상향식 중 "교재 이해에 효과적인 것"을 고르라고 한다. 그건 사람이
+    하는 판단이라 기계가 못 고른다 — 조립은 이미 둘 다 되어 있으니(`assemble_family_tree`의
+    mode 분기) 둘 다 내주고 점역사가 고르게 한다. 이번 변경의 본보기다.
+
+    ⚠ 방향을 **지어내지 않는다.** 하향식은 `nodes`, 상향식은 `items`를 재료로 쓰는데
+      한쪽만 있는 구조가 흔하다. 없는 쪽을 뒤집어 만들면 §6.6.4(3)④ 부모 번호가 빠진
+      반쪽짜리가 나가므로, 재료가 있는 방향만 낸다.
+    """
+    if subtype != "family_tree":
+        return None
+    cur = (structure.get("mode") or "top_down").strip()
+    alt_mode = "top_down" if cur == "bottom_up" else "bottom_up"
+    if not (structure.get("nodes") if alt_mode == "top_down" else structure.get("items")):
+        return None
+    text, indents = assemble_family_tree({**structure, "mode": alt_mode})
+    label = (desc_label("family_tree") if alt_mode == "top_down"
+             else FAMILY_BOTTOMUP_LABEL)
+    # ★ 자기 들여쓰기를 **글 안 태그**로 싣는다. 안 실으면 선택 안(하향식)의 값이 씌워져
+    #   세대 방향이 거꾸로 나간다 — 줄 수가 같아 길이 검사로도 안 걸린다(§6.6.4(2)②·(3)②).
+    return Draft(option=FAMILY_BOTTOMUP_OPTION,
+                 text=_TN.apply_indent_tags(text, indents),
+                 render_mode="narrative", label=label)
+
+
 class DiagramOpt(BaseOpt):
-    """ExtractedContent 목록 → LLMOutput 목록 (개념도·흐름도 등 도표). 대체텍스트 4안.
+    """ExtractedContent 목록 → LLMOutput 목록 (개념도·흐름도 등 도표). 대체텍스트 3안.
 
     도표는 구조가 §6.6 골격(개조식)으로 결정적 전사되므로 개조식 초안은 그 골격을 그대로 쓰고,
-    생략·짧은 제목·줄글을 더해 4안을 만든다(모두 rule-based — 구조가 있으면 LLM 미사용).
-    구조가 없으면 캡션으로 공통 4안 빌더에 위임(제목·개조식·줄글을 LLM이 채움).
+    생략·참조를 더해 3안을 만든다(모두 rule-based — 구조가 있으면 LLM 미사용).
+    구조가 없으면 캡션으로 공통 3안 빌더에 위임(설명을 LLM이 채움).
     """
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
-        subtype = _subtype(ext)
+        caption = (ext.corrected_text or "").strip()
+        # 임계 넘는 후보를 점수순 최대 셋(위 `_subtype_scores` 주석). 하나도 없으면
+        # 종전 단일 판정으로 물러난다 — 8종 밖 자료는 여기서 빈 목록이 되고 설명 폴백을 탄다.
+        cands = _subtype_scores(ext, caption)
+        subtype = cands[0][0] if cands else _subtype(ext)
         structure = _structure(ext, subtype)
-        label = _TYPE_LABEL.get(subtype, "도표")
+        # 캡션이 말한 유형어가 먼저다 — 모식도·구조도를 '개념도'로 고쳐 부르지 않는다(F16).
+        label = _caption_type_word(subtype, caption) or _TYPE_LABEL.get(subtype, "도표")
         title = (structure.get("title") or "").strip()
 
         assembled: Optional[tuple[str, list[int]]] = None
@@ -439,17 +657,49 @@ class DiagramOpt(BaseOpt):
 
         if assembled is not None:
             skeleton_text, skeleton_indents = assembled
-            # 개조식 = §6.6 골격 그대로(글상자 테두리·정밀 들여쓰기 보존). 나머지 3안은 파생.
+            # 설명 = §6.6 골격 그대로(글상자 테두리·정밀 들여쓰기 보존).
+            # ★ 2026-08-20 — 짧은 제목·줄글·유형만을 뺐다. 규정은 "설명" 하나이고
+            #   gold 실측에서 '유형만'이 0건이다(visual_drafts.LABELS 주석 참조).
+            # ★ 2026-08-25 — 골격 안을 **유형 이름**으로 내준다(계획서 §5). 조립은 그대로다.
             drafts = [
                 omission_draft(label),
-                title_draft(label, title),
-                Draft(option=3, text=skeleton_text, render_mode="narrative", label=LABELS[OUTLINE_IDX]),
-                prose_draft(label, _skeleton_prose(skeleton_text)),
+                Draft(option=2,
+                      text=_TN.apply_indent_tags(skeleton_text, skeleton_indents),
+                      render_mode="narrative",
+                      label=_skeleton_label(subtype, structure, caption)),
                 *extra_drafts(label),
             ]
+            # 가계도만 방향 둘을 **같이** 낸다 — §6.6.4(1)이 "교재 이해에 효과적인 쪽을
+            # 고르라"고 하는데 그건 기계가 못 고르는 판단이다. 둘 다 조립돼 있으니
+            # 내주고 점역사가 고른다. 데이터가 한 방향뿐이면 그 방향만 나간다.
+            if (alt := _family_alt(subtype, structure)) is not None:
+                drafts.append(alt)
+            # 흐름도는 규정형·관행형 둘을 나란히 낸다(대표 결재 2026-08-26).
+            if (chain := _flow_chain_alt(subtype, structure)) is not None:
+                drafts.append(chain)
+            # ★ 둘째·셋째 후보의 골격도 같이 낸다(대표 결정 — 최대 셋).
+            #   조립되는 것만 낸다: 그 유형의 structure 를 못 만들면 안을 안 세운다.
+            #   피커에 `개념도`·`흐름도`가 나란히 서면 무엇으로 보고 적었는지가 이름으로 드러난다.
+            opt_no = _CAND_OPTION_BASE
+            for alt_sub, _score in cands[1:]:
+                alt_entry = _ASSEMBLERS.get(alt_sub)
+                if alt_entry is None:
+                    continue
+                alt_st = _structure(ext, alt_sub)
+                if not alt_entry[1](alt_st):
+                    continue
+                alt_text, alt_ind = alt_entry[0](alt_st)
+                drafts.append(Draft(
+                    option=opt_no,
+                    text=_TN.apply_indent_tags(alt_text, alt_ind),
+                    render_mode="narrative",
+                    label=_skeleton_label(alt_sub, alt_st)))
+                opt_no += 1
+            # 줄글 설명(§6.1.1(5)) — 골격을 태그·테두리 없이 이은 것. rule-based다.
+            if (d_prose := prose_draft(_skeleton_prose(skeleton_text), subtype)) is not None:
+                drafts.append(d_prose)
             # 골격 경로는 build_visual_drafts를 안 타므로 접기를 여기서 직접 부른다.
-            # (실측: 제목 없는 개념도에서 짧은 제목과 유형만이 둘 다 "개념도"였다)
-            drafts, sel_idx = _dedupe(drafts, OUTLINE_IDX)
+            drafts, sel_idx = _dedupe(drafts, DESC_IDX)
             return LLMOutput(
                 element_id=ext.element_id,
                 corrected_text=skeleton_text,
@@ -460,11 +710,15 @@ class DiagramOpt(BaseOpt):
                 rule_trail=_min_trail(subtype, "골격 조립"),
                 drafts=drafts,
                 selected_idx=sel_idx,
-                line_indents=skeleton_indents if sel_idx == drafts.index(
-                    next(d for d in drafts if d.option == 3)) else None,
+                # ★ 2026-08-25 — **선택된 안이 스스로 들고 있는 값**을 그대로 넘긴다.
+                #   라벨로 찾아 골격 값을 씌우던 종전 방식은 안이 늘자 깨졌다(가계도 상향식).
+                #   `LLMOutput.line_indents`는 호환용으로 남기고 값의 출처만 안으로 옮겼다.
+                # 호환 필드 — 선택된 안의 **글에 박힌 태그**에서 되읽는다.
+                line_indents=(_TN.strip_indent_tags(drafts[sel_idx].text)[1]
+                              if 0 <= sel_idx < len(drafts) else None),
             )
 
-        # 폴백: 구조 없음 → 캡션으로 공통 4안 빌더(제목·개조식·줄글 LLM)
+        # 폴백: 구조 없음 → 캡션으로 공통 3안 빌더(설명 LLM)
         cap = (ext.corrected_text or "").strip()
         if not cap:
             return LLMOutput(
@@ -481,17 +735,25 @@ class DiagramOpt(BaseOpt):
                 drafts=[omission_draft(label)],
                 selected_idx=0,
             )
+        # ★ 외부 LLM 호출에 **후보 목록**을 넘긴다(대표 지시). 종전에는 유형을 하나로
+        #   못 박아 보내서, 우리가 잘못 고른 유형이 그대로 프롬프트의 전제가 됐다.
+        #   ⚠ 후보는 **프롬프트에만** 넘긴다. 점역자주에 찍히는 유형 낱말은 하나여야 한다 —
+        #     한때 label 에 실었더니 출력에 `개념도 또는 가계도:` 가 그대로 나갔다.
+        cand_names = [_TYPE_LABEL.get(k, "도표") for k, _v in cands]
         drafts, selected_idx, line_indents, tier, cap_src = await build_visual_drafts(
             ext, routing_tier, label=label, caption=cap, kind="도표",
+            candidates=cand_names,
         )
         return LLMOutput(
             element_id=ext.element_id,
-            corrected_text=drafts[selected_idx].text,
+            # 요소 본문은 **태그 없는 글**로 둔다 — `line_indents` 호환 필드와
+            # 줄 단위로 짝지어지는 자리라 줄머리에 태그가 붙으면 짝이 깨진다.
+            corrected_text=_TN.strip_indent_tags(drafts[selected_idx].text)[0],
             render_mode="narrative",
             tn_text=drafts[selected_idx].text,
             routing_tier=tier,
             processing_time_ms=0,
-            rule_trail=_min_trail(subtype, f"캡션 4안 · {cap_src}"),
+            rule_trail=_min_trail(subtype, f"캡션 3안 · {cap_src}"),
             drafts=drafts,
             selected_idx=selected_idx,
             line_indents=line_indents,

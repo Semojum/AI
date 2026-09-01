@@ -156,7 +156,7 @@ class Settings(BaseSettings):
     tls_cert_path: str = "/etc/ssl/semojum/server.crt"
     tls_key_path: str = "/etc/ssl/semojum/server.key"
 
-    # ── API (GPT-4o 캡셔닝/분류, GPT-5.x FALLBACK) ───────────────
+    # ── API (외부 VLM 캡셔닝/분류, 외부 LLM FALLBACK) ───────────────
     openai_api_key: str = ""
     anthropic_api_key: str = ""   # 폴백·캡셔닝 기본(태민 2026-07-17: openai 대신 anthropic)
 

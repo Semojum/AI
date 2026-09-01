@@ -31,9 +31,10 @@ class ReviewFlag(BaseModel):
     R6: DIAGRAM_SUBTYPE_UNKNOWN  R12: FOOTNOTE_SIDEBAR_MIXED
     R13: TEXT_RISKY_SEGMENT — 본문 중 태그·로마자·숫자가 든 구간(등급 신호, 2026-08-10)
     R14: FONT_MANGLED — 원본 글꼴이 깨져 추출된 요소(결함, 2026-08-10)
+    R15: PUA_DROPPED — 글꼴 사설영역 글리프가 점역에서 빠진 쪽(원장 B-09, 2026-08-22)
     """
 
-    type: str       # R1~R14
+    type: str       # R1~R15
     element_id: str
     message: str
 

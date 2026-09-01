@@ -82,14 +82,16 @@ _MATH_PAREN_E = "⠴"  # ) 닫는 소괄호
 # 재점역 A/B로 해야 한다. **인쇄 소괄호도 ⠦⠴** — 도서는 둘을 같은 점형으로 쓴다.
 # → book 모드는 ⠦⠴, regulation 모드는 규정 원형 ⠷⠾.
 _BOOK_STYLE_ENV = os.environ.get("BRAILLE_STYLE", "book") != "regulation"
-# ∴ 관행: 규정 제65항 2호는 ,*(⠠⠡)이나 도서는 ⠌⠄를 쓴다고 보고 관행형을 기본에 뒀다.
-# ⚠ **근거 재현 실패(2026-08-15)**: 주석의 'gold 86회 vs 규정형 0회'가 안 나온다.
-#   2027 실측은 dev 12:48 · val 32:18로, 규정형이 0회가 아니라 66회이고 dev에서는
-#   오히려 규정형이 4배 많다. ⠌⠄의 ⠌가 분수선·한글 자모와 겹치니 앵커 없이 센
-#   오염으로 보인다. 이 수치를 근거로 쓰지 말 것.
-#   A/B로도 못 잰다 — 우리가 이 기호를 사실상 안 낸다(원장 M-05). 레버는 추출이다.
-# ∵(⠈⠌)은 gold 용례가 없어 규정형 유지.
-_THEREFORE = "⠌⠄" if _BOOK_STYLE_ENV else "⠠⠡"
+# ∴ — 규정 제65항 2호 "그러므로(∴)는 ,*으로 적고"가 명확하다(,* = ⠠⠡).
+#   **2026-08-27 규정형으로 고정**(원장 M-05, 지침 D043). 종전 기본값은 도서 관행 ⠌⠄였다.
+# ⚠ 그 관행의 근거 'gold 86회 vs 규정형 0회'는 **재현되지 않는다**(2026-08-15 eval).
+#   2027 실측은 dev 12:48 · val 32:18로 규정형이 오히려 많다. ⠌⠄의 ⠌가 분수선·한글
+#   자모와 겹치니 앵커 없이 센 오염으로 보인다. **이 수치를 근거로 쓰지 말 것.**
+#   「점자 자료 제작 지침」·「점자 도서 제작 지침」에는 ∴가 아예 안 나온다(grep 0건).
+# ⚠ A/B로는 못 잰다 — 우리가 이 기호를 사실상 안 낸다(용례 dev 1쪽). 레버는 추출이다.
+#   본문 경로(symbol_table)는 이미 ⠠⠡였다 — 이 고정으로 두 경로가 같아진다.
+# ∵는 제65항 3호 @/ = ⠈⠌ 그대로.
+_THEREFORE = "⠠⠡"
 # ★ 2026-08-15 — 규정형 ⠷⠾로 고정(A/B 실험군). 종전 book 게이팅을 푼다.
 #   위 주석의 재점역 A/B는 `⠦⠴` vs **`⠶⠶`(중괄호)** 비교였다 — `⠷⠾`는 후보로 오른
 #   적이 없다. 규정 제6항 2호가 점역자 삽입 묶음을 ⠷⠾로 정하고(위 주석도 인정),
@@ -100,11 +102,14 @@ _THEREFORE = "⠌⠄" if _BOOK_STYLE_ENV else "⠠⠡"
 #     표본이 10건이라 얇다. 판정은 재점역 A/B로 한다(2026-07-19 교훈).
 _WRAP_S = "⠷"
 _WRAP_E = "⠾"
-# ⇔ 관행: 규정 제61항 ⠪⠒⠒⠕ 대신 ↔형 ⠪⠒⠕를 기본에 뒀다.
-# ⚠ **근거 재현 실패(2026-08-15)**: 'gold 17 vs 0'이 안 나온다. 2027 실측은
-#   dev 17:18 · val 5:0으로 dev에서는 규정형이 더 많다. ∴와 같은 오염으로 보인다.
-#   A/B로도 못 잰다(용례 0, 원장 M-05).
-_IFF_CELLS = "⠪⠒⠕" if _BOOK_STYLE_ENV else "⠪⠒⠒⠕"
+# ⇔ — 규정 제61항 6호 "필요충분(⇔)은 [33O으로 적는다" = ⠪⠒⠒⠕.
+#   **2026-08-27 규정형으로 고정**(원장 M-05, 지침 D043). 종전 기본값 ⠪⠒⠕는 같은 조항
+#   **5호가 쌍조건문 ↔에 정한 점형**이라, book 모드에서 ↔와 ⇔가 한 셀로 겹쳤다.
+# ⚠ 그 관행의 근거 'gold ⇔ 17회 vs 규정형 0회'는 **구판 수학2 한 권 단일 실측**이고
+#   재현되지 않는다(2026-08-15 eval: dev 17:18 · val 5:0). dev-2027 수학1에는 규정형
+#   실사용이 18회 있다. 관행형이라던 표본을 열어 보니 논리 ⇔가 아니라 개념도의 ↔였다
+#   (desk D042) — 겹친 점형이 만든 착시다.
+_IFF_CELLS = "⠪⠒⠒⠕"
 
 # 병치 닫음표 생략(T2, 2026-07-20 실측): 묶음이 끝나자마자 빈칸 없이 다른 함수 호출
 # 묶음이 시작되면 정답 도서는 **앞 묶음의 닫음표 ⠴를 적지 않는다**.
@@ -1436,7 +1441,7 @@ _LATEX_SIMPLE: dict[str, str] = {
     "\\ldots":    "⠠⠠⠠",  # … (제12항 [붙임1])
     "\\vdots":    "⠠⠠⠠",  # ⋮
     "\\ddots":    "⠨⠨⠨",  # ⋱
-    "\\therefore":_THEREFORE,  # ∴ (제65항 2호 ,* / 도서 관행 ⠌⠄)
+    "\\therefore":_THEREFORE,  # ∴ (제65항 2호 ,*)
     "\\because":  "⠈⠌",   # ∵ (수학 제65항 3호: @/)
     "\\rightarrow": "⠒⠕", # → (3o)
     "\\uparrow":   "⠰⠒⠕",  # ↑ (제10항 ;3o)
@@ -1447,8 +1452,8 @@ _LATEX_SIMPLE: dict[str, str] = {
     "\\leftrightarrow": "⠪⠒⠕",  # ↔ (폰트 "[3o")
     "\\Rightarrow":  "⠒⠒⠕",     # ⇒ (명제 제61항, "33o")
     "\\Leftarrow":   "⠐⠉⠉",     # ⇐ (미확인 — 규정 원문 재확인 필요)
-    # ⇔·⟺: 규정 제61항은 ⠪⠒⠒⠕이나 정답 도서는 ↔형 ⠪⠒⠕만 쓴다
-    # (수학2 gold ⠪⠒⠕ 17회 vs ⠪⠒⠒⠕ 0회, 2026-07-22 실측 — p020 12·19행 등).
+    # ⇔·⟺: 제61항 6호 [33O. 위 \leftrightarrow(↔, 5호 [3O)와 **다른 셀**이다 —
+    # 종전에는 둘을 같은 셀로 냈다(_IFF_CELLS 주석 참조).
     # 구현 전에는 \iff가 어느 표에도 없어 통째로 사라졌다(수학2 p020 ⟺ 무음 유실).
     "\\Leftrightarrow": _IFF_CELLS,
     "\\iff": _IFF_CELLS,
@@ -1778,49 +1783,49 @@ def convert_latex(latex: str) -> str:
     return result
 
 # ── 수식 구조 → rule_id (rule_trail emit용, Phase B) ────────────────────────
-# 항→장→KBR-수학-{장}.{항}. 규정 원문 + 장 경계로 검증(환각 0). 모두 regulations.json 실재.
+# 항→장→MCST-수학-{장}.{항}. 규정 원문 + 장 경계로 검증(환각 0). 모두 regulations.json 실재.
 _STRUCT_RULES: list[tuple[str, str]] = [
     # (rule_id, 설명)  — 탐지 순서가 trail 순서
-    ("KBR-수학-1.7", "분수"),      # 제7항
-    ("KBR-수학-2.18", "위첨자"),   # 제18항
-    ("KBR-수학-2.19", "아래첨자"), # 제19항
-    ("KBR-수학-2.21", "절댓값"),   # 제21항
-    ("KBR-수학-2.22", "근호"),     # 제22항
-    ("KBR-수학-2.25", "총합"),     # 제25항
-    ("KBR-수학-5.46", "로그"),     # 제46항
-    ("KBR-수학-5.47", "삼각함수"), # 제47항
-    ("KBR-수학-5.48", "역삼각함수"),  # 제48항
-    ("KBR-수학-5.49", "쌍곡선함수"),  # 제49항
-    ("KBR-수학-6.51", "극한"),     # 제51항
-    ("KBR-수학-6.54", "편도함수"), # 제54항
-    ("KBR-수학-6.55", "델연산자"), # 제55항
-    ("KBR-수학-6.56", "적분"),     # 제56항
-    ("KBR-수학-6.59", "선적분"),   # 제59항
+    ("MCST-수학-1.7", "분수"),      # 제7항
+    ("MCST-수학-2.18", "위첨자"),   # 제18항
+    ("MCST-수학-2.19", "아래첨자"), # 제19항
+    ("MCST-수학-2.21", "절댓값"),   # 제21항
+    ("MCST-수학-2.22", "근호"),     # 제22항
+    ("MCST-수학-2.25", "총합"),     # 제25항
+    ("MCST-수학-5.46", "로그"),     # 제46항
+    ("MCST-수학-5.47", "삼각함수"), # 제47항
+    ("MCST-수학-5.48", "역삼각함수"),  # 제48항
+    ("MCST-수학-5.49", "쌍곡선함수"),  # 제49항
+    ("MCST-수학-6.51", "극한"),     # 제51항
+    ("MCST-수학-6.54", "편도함수"), # 제54항
+    ("MCST-수학-6.55", "델연산자"), # 제55항
+    ("MCST-수학-6.56", "적분"),     # 제56항
+    ("MCST-수학-6.59", "선적분"),   # 제59항
 ]
 
 # 단순 LaTeX 기호 명령 → rule_id (구조 외, 검증된 항만). \cmd 토큰 단위 매칭(substring 무관).
 _LATEX_SYMBOL_RULES: dict[str, str] = {
     # 집합 (수학 제60항)
-    **{c: "KBR-수학-7.60" for c in (
+    **{c: "MCST-수학-7.60" for c in (
         "in", "notin", "ni", "subset", "supset", "subseteq", "supseteq",
         "cup", "cap", "emptyset", "varnothing", "vdash")},
     # 부등호 (수학 제4항)
-    **{c: "KBR-수학-1.4" for c in ("leq", "le", "geq", "ge", "neq", "ne")},
+    **{c: "MCST-수학-1.4" for c in ("leq", "le", "geq", "ge", "neq", "ne")},
     # 논리·명제 (수학 제61항)
-    **{c: "KBR-수학-7.61" for c in (
+    **{c: "MCST-수학-7.61" for c in (
         "forall", "exists", "neg", "lnot", "land", "wedge", "lor", "vee")},
     # 근사·합동·닮음 (수학 제29·32·43·42항)
-    "approx": "KBR-수학-3.29", "cong": "KBR-수학-3.32",
-    "equiv": "KBR-수학-4.43", "sim": "KBR-수학-4.42",
+    "approx": "MCST-수학-3.29", "cong": "MCST-수학-3.32",
+    "equiv": "MCST-수학-4.43", "sim": "MCST-수학-4.42",
     # 연산 (수학 제2항 ×÷±, 제15항 ⊕⊗∙)
-    "pm": "KBR-수학-1.2", "times": "KBR-수학-1.2", "div": "KBR-수학-1.2",
-    "cdot": "KBR-수학-2.15", "oplus": "KBR-수학-2.15",
-    "ominus": "KBR-수학-2.15", "otimes": "KBR-수학-2.15",
+    "pm": "MCST-수학-1.2", "times": "MCST-수학-1.2", "div": "MCST-수학-1.2",
+    "cdot": "MCST-수학-2.15", "oplus": "MCST-수학-2.15",
+    "ominus": "MCST-수학-2.15", "otimes": "MCST-수학-2.15",
     # 기타 (수학 제65항 ∴∵ℵ, 제50항 ∞)
-    "therefore": "KBR-수학-9.65", "because": "KBR-수학-9.65",
-    "aleph": "KBR-수학-9.65", "infty": "KBR-수학-6.50",
+    "therefore": "MCST-수학-9.65", "because": "MCST-수학-9.65",
+    "aleph": "MCST-수학-9.65", "infty": "MCST-수학-6.50",
     # 그리스 문자 (한글 제4장 제10절 제30항)
-    **{g: "KBR-4.10.30" for g in (
+    **{g: "MCST-한글-4.10.30" for g in (
         "alpha", "beta", "gamma", "delta", "epsilon", "varepsilon", "zeta",
         "eta", "theta", "iota", "kappa", "lambda", "mu", "nu", "xi", "pi",
         "rho", "sigma", "tau", "upsilon", "phi", "varphi", "chi", "psi", "omega",
@@ -1850,32 +1855,32 @@ def latex_rule_ids(latex: str) -> list[str]:
 
     s = latex
     if "\\frac" in s:
-        add("KBR-수학-1.7")
+        add("MCST-수학-1.7")
     if "\\sqrt" in s:
-        add("KBR-수학-2.22")
+        add("MCST-수학-2.22")
     if "\\sum" in s:
-        add("KBR-수학-2.25")
+        add("MCST-수학-2.25")
     if "\\lim" in s:
-        add("KBR-수학-6.51")
+        add("MCST-수학-6.51")
     if "\\log" in s or "\\ln" in s:
-        add("KBR-수학-5.46")
+        add("MCST-수학-5.46")
     if _RE_TRIG_ARC.search(s):
-        add("KBR-수학-5.48")
+        add("MCST-수학-5.48")
     if _RE_TRIG_HYP.search(s):
-        add("KBR-수학-5.49")
+        add("MCST-수학-5.49")
     if _RE_TRIG_BASE.search(s):
-        add("KBR-수학-5.47")
+        add("MCST-수학-5.47")
     if "\\partial" in s:
-        add("KBR-수학-6.54")
+        add("MCST-수학-6.54")
     if "\\nabla" in s:
-        add("KBR-수학-6.55")
+        add("MCST-수학-6.55")
     if "\\oint" in s:
-        add("KBR-수학-6.59")
+        add("MCST-수학-6.59")
     if "\\int" in s:
-        add("KBR-수학-6.56")
+        add("MCST-수학-6.56")
     if (_ABS_RE.search(s) or "\\lvert" in s or "\\lVert" in s
             or "\\|" in s or _RE_ABS_BAR.search(s)):
-        add("KBR-수학-2.21")
+        add("MCST-수학-2.21")
     # 첨자: 함수/구조 명령(자체 _·^ 보유)을 제거한 잔여에서만 ^·_ 판정 → \log_ \lim_ \sum_ 오계수 방지
     residual = _LIM_RE.sub(" ", s)
     residual = _LOG_BASE_RE.sub(" ", residual)
@@ -1884,9 +1889,9 @@ def latex_rule_ids(latex: str) -> list[str]:
     for cmd in ("\\log", "\\ln", "\\sum", "\\sqrt", "\\lim"):
         residual = residual.replace(cmd, " ")
     if _SUP_RE.search(residual):
-        add("KBR-수학-2.18")
+        add("MCST-수학-2.18")
     if _SUB_RE.search(residual):
-        add("KBR-수학-2.19")
+        add("MCST-수학-2.19")
     # 단순 기호 명령(\in, \leq, 그리스 등) — \cmd 토큰 단위로 추출(substring 충돌 없음)
     # sorted 필수 — set 순회 순서는 프로세스마다 다르고(문자열 해시 시드), _STRUCT_RULES에
     # 없는 규칙은 정렬 키가 모두 같아 stable sort가 그 순서를 그대로 남긴다. 점자 출력은

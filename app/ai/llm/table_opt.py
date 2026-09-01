@@ -9,6 +9,7 @@ render_mode 우선순위: table_structure['render_mode'] → 행/열 수 기반 
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 from html import unescape as _html_unescape
@@ -38,12 +39,23 @@ def _nested_image_text(ext: ExtractedContent) -> Optional[str]:
     return None
 
 
-_RENDER_LABEL = {"table_grid": "격자형", "transposed": "행열 바꿈",
-                 "linear": "선형(풀어쓰기)", "text_only": "풀어쓰기"}
+# ★ 2026-08-25 — 이름을 규정 낱말로 맞췄다(계획서 §5, 동작 무수정).
+#   · "행↔열 전치"(table_braille)와 "행열 바꿈"(여기)이 **같은 것의 두 이름**이었다 → 하나로.
+#
+# ★ 2026-08-25 대표 승인 — **셋이 묵자로는 똑같이 보이고 차이가 점자에만 있다.**
+#   그래서 이름이 그 차이를 말하게 한다. 네 종 표로 전수 확인한 차이는 이렇다:
+#     테두리+구분선  테두리 + 구분선(⠐ 반복) + 열 제목 뒤 쌍점(⠐⠂)
+#     테두리만       테두리는 있고 구분선·쌍점 없음
+#     테두리 없음    둘 다 없음
+#   구 이름 넷은 다 폐기다 — 격자형 / 정렬 유지 / 선형(키:값) / 키·값 풀어쓰기 /
+#   풀어쓰기(3칸·2칸). 앞의 셋은 무엇이 다른지를 안 알려 주고, 마지막은 이름에
+#   들여쓰기 값이 들어 있었다.
+_RENDER_LABEL = {"table_grid": "테두리+구분선", "transposed": "행열 바꿈",
+                 "linear": "테두리만", "text_only": "풀어쓰기"}
 
 
 def _min_trail(render_mode: str = "") -> list[RuleApplication]:
-    """표 점역 일반 사항(BBPG-3.1.1) — 요소 전체(line_no=-1).
+    """표 점역 일반 사항(NLD-3.1.1) — 요소 전체(line_no=-1).
 
     이 조항은 그 자체가 (B)다: "표는 …풀어주는 것을 원칙으로 하며 **점역자에 따라서
     표기 형식이 다를 수 있다**". 그래서 남기되, Step17에서 **우리가 고른 형식**을 tag에
@@ -51,7 +63,7 @@ def _min_trail(render_mode: str = "") -> list[RuleApplication]:
     (원장 C-01a 표 격자 테두리도 같은 갈림길이다).
     """
     label = _RENDER_LABEL.get(render_mode, "")
-    return [make_rule("BBPG-3.1.1", tag=label)]
+    return [make_rule("NLD-3.1.1", tag=label)]
 
 _PROMPT_TABLE_GRID = """당신은 한국어 점역 전문가입니다.
 다음 표 내용을 점역사주([점역사주])로 표현하는 2가지 방식을 제안하세요.
@@ -329,12 +341,114 @@ def _normalize_grid(grid: list[list[str]]) -> list[list[str]]:
 
 def _table_tags(table_structure, table_text: str) -> str:
     """표 구조 → <!표> 태그(stage② 표시·table_braille 입력). 비정형은 원문 유지."""
+    # ★ 이미 `<!표>` 구조 태그가 실려 오면 그대로 둔다(2026-09-02).
+    #   mode b 는 BE 가 편집본 txt 에 태그를 실어 보내는 경로다. 그 글에는 파이프가 없고
+    #   HTML 도 아니라 아래 **1열 표** 갈래로 떨어져, `<!표>`·`<!행>` 줄까지 한 칸짜리
+    #   행으로 **한 번 더 감쌌다**. 그러면 첫 칸이 태그가 되어 행 제목이 비고 쌍점만 남는다.
+    #     전  <!행><!칸>구분<!칸>A<!칸>B<!/행>        →  구분: A  B
+    #     후  <!행><!칸><!행><!칸>구분…<!/행><!/행>   →  : 구분  A  B
+    #   점역사가 편집하고 다시 점역하는 자리라 표가 매번 깨졌다.
+    if parse_table_tags(table_text) is not None:
+        return table_text
     grid = _table_to_grid(table_structure) if table_structure else []
     if not grid and _is_html_table(table_text):
         grid = _html_to_grid(table_text, expand=False)   # 병합은 원본대로 한 번만
     if not grid and "|" in table_text:
         grid = _pipe_to_grid(table_text)
+    if not grid and table_text.strip():
+        # ★ 1열 표(2026-08-29, 원장 C-30 · N031). 위에서 HTML→파이프로 바꿀 때
+        #   `" | ".join(["한 칸"])` 은 **파이프를 안 남긴다**. 그래서 `"|" in table_text` 가
+        #   거짓이 되고 원문이 그대로 나가, `table_braille` 가 격자로 못 읽고 점역자 주
+        #   narrative(`⠠⠄표. …`)로 떨어졌다. gold 는 그 자리를 **글상자**로 적는다.
+        #   실물 3건 전수 확인(생명과학 body p0115 · 언어와매체 body p0197 · body p0178):
+        #     gold  = 테두리 `⠿⠛…⠿` + 각 항목 **2칸**
+        #     종전  = 테두리 없음 + **0칸** + `⠠⠄표.` 접두(우리가 만든 말)
+        #   줄마다 한 칸인 격자로 세우면 `_render_grid` 가 그대로 그 모양을 낸다.
+        #   대상은 MinerU HTML 표 577개 중 **1열 13개**(dev 10 · val 3)다.
+        grid = [[ln.strip()] for ln in table_text.splitlines() if ln.strip()]
     return build_table_tags(_normalize_grid(grid)) if grid else table_text
+
+
+# ── 정답 요약표는 격자가 아니다 (biz B019, 2026-08-26) ──────────────────────
+# 답지의 "문항번호 정답번호" 요약은 §3.1 이 말하는 표가 아니다. 행·열 관계를 읽는
+# 자료가 아니라 **번호: 값 나열**이다. gold 는 여기에 표 구분선을 **아예 안 쓰고**
+# 테두리만 둘러 평문으로 적는다.
+#
+#   우리   【글상자】 → 【표 구분선】 → `01: 01 3  02 3  03 2 …`  (열 정렬용 2칸 공백)
+#   gold   【글상자】 → `(01)` 소제목 한 줄 → `01 ③  02 ③  03 ②` (한 칸)
+#
+# 실측(biz B019, dev-2027 d024): 표 감사 296건 중 **203건(69%)이 이 한 유형**이고,
+# 그중 183건이 한 쪽(EBS-E26-004 ans p0003)에 몰려 있다. 표 축 과잉 1.59배의 압도 원인이다.
+#
+# 신호 — **셀이 전부 맨숫자이거나 원문자 하나**다. 진짜 데이터 표는 어딘가에 머리글
+# 낱말(한글·로마자)이 있다. 그게 하나도 없고 두 자리 이하 숫자만 있으면 정답 요약표다.
+# ⚠ 좁게 잡는다. 열이 3 이상이고 셀이 6개 이상일 때만 본다 — 2열은 이미 linear 로 가고,
+#   작은 표를 잘못 뒤집으면 진짜 데이터 표가 테두리만 두른 평문이 된다.
+# 셀 하나의 꼴 — "번호" 또는 "번호 답"(한 셀에 둘이 같이 들어온다). 실측 실물:
+#   ['언어', '01', '01 3', '02 3', '03 2', …]  ← EBS-E26-004 ans p0003
+_ANSWER_CELL_RE = re.compile(
+    r"^(?:[0-9]{1,2}|[\u2460-\u2473])(?:\s+(?:[0-9]{1,2}|[\u2460-\u2473]))?$")
+_ANSWER_MIN_RATIO = 0.8   # 이만큼이 '번호[ 답]' 이면 정답 요약표
+_ANSWER_LABEL_MAX = 4     # 나머지는 '언어'·'매체'·'1회' 같은 짧은 소제목이어야 한다
+
+
+def _is_answer_texts(texts: list) -> bool:
+    """셀 글 목록이 정답 요약인가.
+
+    ★ 첫 판은 "전부 맨숫자 하나" 로 봤다가 실물에서 안 걸렸다(2026-08-26 실측).
+      실제 셀은 **한 칸에 '번호 답' 이 같이** 들어오고(`'01 3'`), 사이사이에 소단원
+      소제목(`'언어'`·`'매체'`·`'1회'`)이 섞인다. 그래서 **비율**로 본다 —
+      80% 이상이 '번호[ 답]' 이고 나머지는 넉 자 이하 짧은 이름표일 때만 정답 요약표다.
+      진짜 데이터 표는 어딘가에 긴 머리글이 있어 여기 안 걸린다
+      (실측: 조음 위치·방법 표 0% · 자료 취합 표 0%).
+    """
+    texts = [str(t or "").strip() for t in texts]
+    texts = [t for t in texts if t]
+    if len(texts) < 6:
+        return False
+    ok = [t for t in texts if _ANSWER_CELL_RE.match(t)]
+    if len(ok) < _ANSWER_MIN_RATIO * len(texts):
+        return False
+    # 안 걸린 나머지는 짧은 이름표여야 한다 — 긴 글이 섞이면 데이터 표다.
+    return all(len(t) <= _ANSWER_LABEL_MAX for t in texts if not _ANSWER_CELL_RE.match(t))
+
+
+def _is_answer_summary(cells: list) -> bool:
+    """정답 요약표인가(구조 dict 경로)."""
+    return _is_answer_texts([c.get("text", "") for c in cells])
+
+
+def _is_answer_grid(grid: list) -> bool:
+    """정답 요약표인가(HTML·파이프 격자 경로).
+
+    ★ **이 경로가 실제로 도는 자리다**(2026-08-26 실측). d024 경계 파일 60쪽에
+      `table_structure.cells` 가 든 표는 **0개**였다 — MinerU 표는 HTML 로 들어와서
+      `_html_to_grid` 를 탄다. 구조 dict 쪽에만 신호를 걸면 아무 데도 안 걸린다.
+    """
+    return _is_answer_texts([c for row in grid for c in row])
+
+
+def two_col_mode() -> str:
+    """2열 표를 무엇으로 낼지(기본 `linear` = 현행). 원장 C-30.
+
+    지침 §3.1.1(1)은 ①"한 행을 32칸 안에 배열할 수 있다면 표의 정렬 형태대로"가 먼저다.
+    **열이 둘이라고 풀어 적으라는 조문은 없다.** 그런데 우리는 `max_col == 2`면 무조건
+    `linear`로 보낸다 — 원장 C-30이 "근거 없음"으로 적어 둔 그 규칙이다.
+
+    2026-08-29 실측으로 근거가 섰다.
+      · 우리가 `linear`를 고른 표 **167개 중 166개(99.4%)가 "2열이라서"** 다
+        (나머지 1개만 3열 이상 정답 요약표).
+      · 우리가 `linear`를 고른 **97쪽**에서 gold는 **행 구분선 `⠐⠐…`를 81개** 쓴다.
+        우리는 **23개**뿐이다. 행 구분선은 격자형의 표시다 — **gold는 거기서 격자를 쓴다.**
+      · 같은 쪽의 31칸 이상 줄 비율이 우리만 gold보다 **6~10p 빽빽하다**
+        (dev linear 28.6% : gold 22.6% · val linear 32.6% : gold 22.8%).
+        격자를 고른 쪽에서는 우리와 gold가 **±1p 안**으로 맞는다.
+
+    ★ 그래도 기본값을 안 바꾼다. 표 배치는 **초안 넷을 다 내보내 점역사가 고르는** 축이라
+      기본을 뒤집으면 `selected_idx`가 통째로 움직인다. 원장 C-30이 "A/B 필요"로 걸려
+      있으므로 **재 볼 수 있게만** 열어 둔다(C-30b·C-77·C-83과 같은 형태).
+    """
+    return "table_grid" if os.environ.get("TABLE_TWO_COL") == "grid" else "linear"
 
 
 def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
@@ -346,9 +460,11 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
             max_row = max((c.get("row", 0) for c in cells), default=0) + 1
             max_col = max((c.get("col", 0) for c in cells), default=0) + 1
             if max_col == 2:
-                return "linear"
+                return two_col_mode()
             if max_row == 1:
                 return "transposed"
+            if max_col >= 3 and _is_answer_summary(cells):
+                return "linear"        # 정답 요약표 — 위 주석(biz B019)
             # 3열 이상 = **격자형**(2026-08-06 판정 번복 — 원장 C-01a).
             # 종전 기본은 풀어쓰기였다. gold 실측이 뒤집었다 — dev-2027의 테두리 표 445개 중
             # 383개(86%)가 격자형 '행제목: 값  값' 형식이고, 우리 격자형 렌더러가 내는
@@ -360,22 +476,45 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
     # 아니라 narrative로 떨어져, 격자로 나가야 할 표가 풀어쓰기로 나갔다.
     if (tag_rows := parse_table_tags(text or "")):
         max_col = max(len(r) for r in tag_rows)
-        return "linear" if max_col == 2 else "table_grid"
+        if max_col >= 3 and _is_answer_grid(tag_rows):
+            return "linear"
+        return two_col_mode() if max_col == 2 else "table_grid"
     # table_structure 없음/빈 셀: HTML 표(MinerU) 또는 '|' 격자로 추론(narrative 오분류 방지).
     if _is_html_table(text):
         grid = _html_to_grid(text)      # 여기만 expand=True — 진짜 열 수를 세야 한다
         if grid:
             max_col = max(len(r) for r in grid)
-            return "linear" if max_col == 2 else "table_grid"
+            if max_col >= 3 and _is_answer_grid(grid):
+                return "linear"
+            return two_col_mode() if max_col == 2 else "table_grid"
     rows = [ln for ln in (text or "").splitlines() if "|" in ln]
     if not rows:
         return "narrative"
     max_col = max(len(r.split("|")) for r in rows)
-    return "linear" if max_col == 2 else "table_grid"
+    if max_col >= 3 and _is_answer_grid([r.split("|") for r in rows]):
+        return "linear"
+    return two_col_mode() if max_col == 2 else "table_grid"
+
+
+# 모델이 변환 대신 **상의를 답할 때** 나오는 말들. 이게 점자로 인쇄되면 점역사는 표 자리에서
+# 회의록을 읽는다(eval 실측 2026-08-22: 7쪽 11,993셀, 한 쪽은 2,507셀).
+_TN_META_RE = re.compile(
+    r"점역\s*방식|방식을?\s*제안|제안합니다|일반적이므로|다음 두 가지|어떻게 (?:점역|표현)"
+)
+_TN_FAIL = "[처리 불가: 표 점역사주 생성 실패]"
 
 
 def _parse_tn_from_response(response: str) -> str:
-    """LLM 응답에서 [점역사주] 텍스트 추출. 선택된 방식 우선."""
+    """LLM 응답에서 [점역사주] 텍스트 추출. 선택된 방식 우선.
+
+    ★ 2026-08-22 — 종전에는 초안 줄을 못 찾으면 **응답 전체를 그대로 돌려줬다**
+      ("응답 전체가 TN인 경우"라는 낙관). 모델이 변환 대신 "이렇게 점역하면 어떨까요"를
+      답하면 그 상의가 통째로 점자가 됐다. 실측 7쪽 11,993셀.
+      → ① 여는 대괄호만 맞으면 살린다(`[점역사주:` 처럼 콜론을 붙이는 변형이 실제 원인이었다)
+        ② 그래도 없으면 **원문을 흘리지 않고** 실패 표시를 낸다
+        ③ 살린 줄에 상의 말투가 남아 있으면 실패로 본다.
+      실패 표시는 짧고 눈에 띄어 점역사가 그 자리를 바로 찾는다.
+    """
     lines = [ln.strip() for ln in response.splitlines() if ln.strip()]
     selected_idx = None
     for ln in lines:
@@ -385,25 +524,42 @@ def _parse_tn_from_response(response: str) -> str:
             except (ValueError, IndexError):
                 pass
 
-    drafts = [ln for ln in lines if "[점역사주]" in ln]
+    drafts = [ln for ln in lines if "[점역사주" in ln and not _TN_META_RE.search(ln)]
     if not drafts:
-        # 응답 전체가 TN인 경우
-        return response.strip() if response.strip() else "[처리 불가: 표 점역사주 생성 실패]"
+        return _TN_FAIL
 
-    if selected_idx is not None and 0 <= selected_idx < len(drafts):
-        return drafts[selected_idx]
-    return drafts[0]
+    picked = drafts[selected_idx] if (selected_idx is not None and 0 <= selected_idx < len(drafts)) else drafts[0]
+    return _strip_tn_labels(picked)
+
+
+# 골라낸 줄에 남는 포장 — 방식 번호와 [점역사주] 표지는 **점역사에게 줄 내용이 아니다.**
+# 종전에는 이것까지 점자로 찍혀 나갔다(실물 "※※[방식1]※※ [점역사주: …]").
+_TN_LABEL_RE = re.compile(r"^[\s*※#\-]*\[?\s*방식\s*[0-9]+\s*\]?[\s*※:.)]*")
+_TN_MARK_RE = re.compile(r"\[\s*점역사주\s*[:\]]\s*")
+
+
+def _strip_tn_labels(line: str) -> str:
+    s = _TN_LABEL_RE.sub("", line).strip()
+    s = _TN_MARK_RE.sub("", s, count=1).strip()
+    return s.rstrip("]").strip() or _TN_FAIL
 
 
 
 # 표 배치 4안의 **묵자** — 점역 전 산출물이라 opt 단계에서 만든다 (2026-08-06).
 # mode a는 점역을 하지 않으므로(include_braille=False) 여기서 안 만들면 대체 초안이 아예 없다.
 # mode b·c에서는 table_braille가 같은 배치에 점자를 붙여 덮어쓴다(값은 같다 — 같은 함수).
+# ★ 2026-08-25 — 이름만 고쳤다. '선형(키:값)'은 규정에도 점역사 어휘에도 없는 조어라
+#   **빼려고 했는데 실측이 막았다**: linear 와 unfold 는 점자 출력이 다르다
+#   (코퍼스 2열 표 106개 전수 대조 — 같은 것 0 · 다른 것 106. linear 는 테두리를 두르고
+#   행 배치도 다르다). 겹치는 것은 묵자 배치뿐이고 점자는 겹치지 않는다. 빼면 2열 표가
+#   전부 다시 흘러 **동작이 바뀐다** — 이 단계는 "라벨만, 동작 무수정"이라 이름만 고친다.
+#   조어를 지우되 unfold 와 구별되게 "테두리만"로 둔다. 실제 제거는 A/B 대상이다.
+#   option 번호는 BE·FE 계약이라 1~4 그대로다.
 _TABLE_DRAFT_MODES = [
-    (1, "unfold", "풀어쓰기(3칸·2칸)"),
-    (2, "table_grid", "격자형"),
-    (3, "transposed", "행↔열 전치"),
-    (4, "linear", "선형(키:값)"),
+    (1, "unfold", "테두리 없음"),
+    (2, "table_grid", "테두리+구분선"),
+    (3, "transposed", "행열 바꿈"),
+    (4, "linear", "테두리만"),
 ]
 
 

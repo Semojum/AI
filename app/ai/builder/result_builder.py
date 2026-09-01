@@ -8,12 +8,13 @@ import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import copy_context
 from pathlib import Path
 
 import fitz
 from PIL import Image, ImageDraw, ImageFont
 
-from app.ai.captioning.captioner import caption, log_backend_status
+from app.ai.captioning.captioner import backend_status, caption, log_backend_status
 from app.ai.captioning.classifier import classify_with_confidence
 from app.ai.llm.diagram_structure import subtype_from_caption
 from app.utils.logger import get_logger
@@ -68,7 +69,7 @@ _CLASSIFY_TYPE_MAP = {
     "chart": "chart_graph",
     "image": "image",
     # 'diagram'은 pipeline._TYPE_ALIAS에 이미 있고 _run_diagram_chain이 받는다(§6.6 도표 골격).
-    # 하위유형(개념도/흐름도/…)을 모르면 diagram_opt가 공통 4안으로 안전 폴백한다.
+    # 하위유형(개념도/흐름도/…)을 모르면 diagram_opt가 공통 3안으로 안전 폴백한다.
     "diagram": "diagram",
 }
 
@@ -128,7 +129,7 @@ def reset_caption_fatal() -> None:
     _caption_fatal = None
 
 
-def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
+def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | None]:
     """(캡션, 확정 타입, 성공여부, 세분류 신뢰도).
 
     ★ 실패 문자열을 본문으로 흘리지 않는다. 예전에는 "[캡셔닝 실패]"를 content로 반환해
@@ -157,8 +158,28 @@ def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
     if _caption_fatal:
         return "", original_type, False, None
 
+    # 가드3 — 텍스트 요소와 자리가 거의 같은 시각 요소는 **글자를 그림으로 잡은 것**이다
+    # (원장 C-40 부록). 캡션을 부르지 않는다. 판정은 `mineru_runner._mark_text_lookalikes`.
+    iou = el.get("text_lookalike_iou")
+    if iou is not None:
+        logger.info("가드3 캡션 생략(글자를 그림으로 잡음) job=%s page=%s id=%s iou=%s",
+                    el.get("job_id", "?"), el.get("page_no", "?"), eid, iou,
+                    extra={"job_id": el.get("job_id"), "page": el.get("page_no"),
+                           "guard": 3, "iou": iou, "stage": "캡셔닝", "status": "SKIPPED"})
+        return "", original_type, False, None
+
     if not img_path or not Path(img_path).exists():
         logger.warning("캡셔닝 불가 — 이미지 경로 없음 id=%s path=%r", eid, img_path)
+        return "", original_type, False, None
+
+    # ★ 캡셔닝 끄기 스위치(2026-08-22 대표 지시 — API 크레딧 절약).
+    #   기호 층 A/B는 캡션이 결과에 영향이 없는데도 재추출 한 번에 20~30달러가 나갔다.
+    #   끄면 **캡셔닝 실패와 같은 길**을 탄다 — 빈 캡션 + 성공여부 False라 하위 opt가
+    #   규정상 '생략' 표기를 내고 품질검사가 R11로 띄운다(요소는 살아 있다).
+    #   ⚠ 이 산출물로 **시각 축을 재면 안 된다.** 그래서 응답 메타에 표시를 박는다
+    #      (pipeline의 processing_meta.caption_disabled).
+    if os.getenv("SEMOJUM_NO_CAPTION") == "1":
+        logger.info("캡셔닝 꺼짐(SEMOJUM_NO_CAPTION=1) — 생략 처리 id=%s", eid)
         return "", original_type, False, None
 
     last: Exception | None = None
@@ -166,7 +187,7 @@ def _do_caption(el: dict) -> tuple[str, str, bool, float | None]:
         try:
             image_type, subconf = classify_with_confidence(img_path)
             mapped_type = _CLASSIFY_TYPE_MAP.get(image_type, "image")
-            text = caption(img_path, image_type)
+            text = caption(img_path, image_type, context=context)
             # ★ 예외 없이 **빈 캡션**이 오는 길이 있다(모델이 거부하거나 빈 응답을 줌).
             #   그걸 성공으로 넘기면 build()의 `not content.strip()` 가지에서 요소가
             #   통째로 사라진다 — 실측: job_260807160446 p1의 만화가 이렇게 없어졌고
@@ -259,6 +280,7 @@ def _link_captions(elements: list[dict]) -> None:
     """
     visuals = [e for e in elements if e["type"] in _CAPTIONABLE and e.get("bbox")]
     if not visuals:
+        _notify_orphan_captions(elements)
         return
     for cap in elements:
         if cap["type"] != "caption" or not cap.get("bbox"):
@@ -273,6 +295,64 @@ def _link_captions(elements: list[dict]) -> None:
                 best, best_d = v, d
         if best:
             cap["caption_ref"] = best["id"]
+    _notify_orphan_captions(elements)
+
+
+# ── 짝 없는 캡션 = 놓친 그림 (F07, 대표 지적) ────────────────────────────────
+# 대표 지적(3쪽): "그림 자료가 있는데 클릭하면 **그 그림의 캡션 텍스트만** 나온다.
+# 시각자료를 아예 생략했다고도 안 적는 경우가 규정에 있나. 없다면 `▲ 참호전` 이 아니라
+# `<!점역자주>그림 생략: 참호전<!/점역자주>` 식으로 적어야 하지 않나."
+#
+# 실물이 그랬다 — 시연 p3 요소 33개에 caption 이 셋('▲ 참호전' 등)인데 **시각 요소가 0개**다.
+# MinerU 가 캡션만 텍스트로 잡고 그림은 못 잡았다(대표 추측이 맞았다). 그러면 캡션 글이
+# 그냥 본문으로 나가고, 거기 그림이 있었다는 사실이 **어디에도 안 남는다.**
+#
+# 규정 §6.1.1(4)·§6.3.4(2)② — 생략이 허용되는 것은 **장식 용도**이거나 **본문 이해에
+# 불필요**한 경우뿐이다. 캡션이 달린 자료는 그 둘이 아니다. 최소한 **생략했다는 사실은
+# 알려야** 한다. 설명을 못 붙이는 것(크롭이 없다)과 안 알리는 것은 다른 문제다.
+_CAP_LEAD_RE = re.compile(r"^\s*[▲▼◀▶△▽■□●○※*]\s*")
+
+
+def _notify_orphan_captions(elements: list[dict]) -> int:
+    """짝을 못 찾은 캡션을 '그림 생략' 점역자 주로 바꾼다. 바꾼 개수 반환."""
+    from app.ai.braille.tag_names import tn
+    n = 0
+    for cap in elements:
+        if cap.get("type") != "caption" or cap.get("caption_ref"):
+            continue
+        body = _CAP_LEAD_RE.sub("", (cap.get("content") or "").strip())
+        if not body or body.startswith("<!"):
+            continue
+        cap["content"] = tn(f"그림 생략: {body}")
+        cap.setdefault("flags", []).append("ORPHAN_CAPTION")
+        n += 1
+    return n
+
+
+# ── 주변 본문 문맥 (C003, 2026-08-25 대표 지시) ──────────────────────────────
+# 크롭만 보면 그 그림에서 **무엇이 중요한지** 알 수 없다. 대표 실사례 — 초등 블록쌓기
+# 문제에서 3D 로 쌓인 블록 개수를 묻는데 그림 설명만 내서 문제를 못 푸는 설명이 나갔다.
+# 쪽 요소 목록은 여기(`_caption_all`)가 이미 갖고 있으므로 새 배관을 파지 않는다.
+#
+# 고르는 법: **앞쪽 가장 가까운 텍스트계 요소**를 먼저 본다(발문이 그림 앞에 온다).
+# 없으면 뒤를 본다(캡션이 그림 뒤에 붙는 배치). 세 칸까지만 — 더 멀면 그 그림 얘기가 아니다.
+_CTX_TEXT_TYPES = {"text", "title", "list_item", "caption", "footnote", "sidebar"}
+_CTX_SPAN = 3
+
+
+def _neighbor_text(ordered: list[dict], idx: int) -> str:
+    """`ordered[idx]` 시각 요소 옆 본문. 없으면 빈 문자열."""
+    def _pick(rng) -> str:
+        for j in rng:
+            if not (0 <= j < len(ordered)):
+                continue
+            e = ordered[j]
+            if e.get("type") in _CTX_TEXT_TYPES:
+                t = (e.get("content") or "").strip()
+                if t:
+                    return t
+        return ""
+    return _pick(range(idx - 1, idx - 1 - _CTX_SPAN, -1)) or _pick(range(idx + 1, idx + 1 + _CTX_SPAN))
 
 
 def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
@@ -288,6 +368,9 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
     vis = [el for el in ordered if el["type"] in _VISUAL_TYPES]
     if not vis:
         return {}
+    # 시각 요소마다 옆 본문을 한 번만 뽑아 둔다(스레드에 넘길 값이라 미리 만든다).
+    ctx = {id(el): _neighbor_text(ordered, i)
+           for i, el in enumerate(ordered) if el["type"] in _VISUAL_TYPES}
     # 백엔드·키 상태를 프로세스당 1회 남긴다 — 키가 없으면 여기서 error로 뜬다.
     # (종전엔 실패가 요소별 로그로만 흘러 실행이 끝나면 원인이 사라졌다.)
     global _backend_logged
@@ -299,10 +382,24 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
     out: dict[int, tuple] = {}
     if len(vis) == 1 or workers == 1:
         for el in vis:
-            out[id(el)] = _do_caption_logged(el)
+            out[id(el)] = _do_caption_logged(el, ctx.get(id(el), ""))
     else:
         with ThreadPoolExecutor(max_workers=min(workers, len(vis))) as pool:
-            futs = {pool.submit(_do_caption_logged, el): el for el in vis}
+            # ★ **컨텍스트를 복사해 넘긴다**(2026-08-23 실측으로 잡은 계정 구멍).
+            #   `req_log`는 요청 통계를 `contextvars`에 담는데 `ThreadPoolExecutor.submit`은
+            #   컨텍스트를 **전파하지 않는다**. 그래서 풀로 간 캡셔닝·분류 호출은
+            #   `record_anthropic`이 통째로 무시했다 — 시각 요소가 하나뿐인 쪽(위 분기,
+            #   부르는 스레드에서 그대로 돈다)만 집계되고 나머지는 사라졌다.
+            #   실측(dev 100쪽 재추출 2026-08-23): 크롭 72장 → 기대 호출 144건인데
+            #   `usage`에 잡힌 것은 **32건뿐**이었고, 캐시 파일은 142개가 쌓였다.
+            #   그만큼 우리 원가 보고가 과소였다(캡셔닝 몫 약 4.5배).
+            #   ⚠ 작업마다 **새 복사본**을 준다 — 같은 `Context`를 두 스레드가 동시에
+            #     들어가면 "cannot enter context" 로 터진다.
+            #   ※ 누계 객체(`_ReqStats`)는 복사본들이 **같은 것을 가리킨다**(맵만 복사된다).
+            #     그래서 합계가 제대로 쌓인다. 카운터 증가는 원자적이지 않으나 관측값이라
+            #     그 정도 경합은 감수한다.
+            futs = {pool.submit(copy_context().run, _do_caption_logged, el,
+                                ctx.get(id(el), "")): el for el in vis}
             for fut in as_completed(futs):
                 el = futs[fut]
                 try:
@@ -310,11 +407,30 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
                 except Exception as exc:  # noqa: BLE001 — 요소 격리(불변규칙 3)
                     logger.warning("    캡셔닝 예외 %s: %s", str(el.get("element_id", ""))[:8], exc)
                     out[id(el)] = ("", el["type"], False, None)
-    logger.info("  캡셔닝 %d개 동시 %d — %.1fs", len(vis), workers, time.monotonic() - t0)
+    ok_n = sum(1 for v in out.values() if v[2])
+    logger.info("  캡셔닝 %d개 중 %d개 성공 · 동시 %d — %.1fs",
+                len(vis), ok_n, workers, time.monotonic() - t0)
+    # ★ 한 개도 성공 못 하면 그 쪽의 시각자료는 전부 '생략'으로 나간다. 요소 플래그
+    #   (CAPTION_FAILED→R11)와 페이지 NEEDS_REVIEW 로 이미 알리지만, **로그에서
+    #   한 줄로 안 보이면 사람이 못 알아챈다** — 2026-08-26 시연 실행이 키 없이 돌아
+    #   시각자료 전부가 '그림 생략'으로 나갔는데 실행 로그만 봐서는 그게 안 보였다.
+    # ⚠ 성공 0건이라고 다 사고는 아니다. 일부러 건너뛴 자리가 있다 —
+    #   가드3(글자를 그림으로 잡은 것)·DISABLE_LLM_FALLBACK 은 **의도된 생략**이라
+    #   여기서 ERROR 를 내면 정상 실행이 빨간 줄로 덮인다(2026-08-27 실측: 첫 쪽부터 났다).
+    #   설정이 통째로 어긋난 자리 — **키가 없거나 캡셔너가 잠긴 경우** — 만 ERROR 로 올린다.
+    if vis and ok_n == 0:
+        st = backend_status()
+        systemic = (not st["key_present"]) or bool(_caption_fatal)
+        (logger.error if systemic else logger.info)(
+            "  %s 이 쪽의 시각자료 %d개가 하나도 설명되지 않았다 — 전부 '생략'으로 "
+            "나간다(요소 CAPTION_FAILED · 페이지 NEEDS_REVIEW). 백엔드 %s(%s) 키 %s%s",
+            "⚠" if systemic else "·", len(vis), st["backend"], st["model"],
+            "있음" if st["key_present"] else "**없음**",
+            f" · 잠김({_caption_fatal})" if _caption_fatal else "")
     return out
 
 
-def _do_caption_logged(el: dict) -> tuple:
+def _do_caption_logged(el: dict, context: str = "") -> tuple:
     """`_do_caption` + 요소별 소요시간 로깅.
 
     프로세스 전역 슬롯을 잡고 호출한다 — 페이지 안 스레드풀(기본 4)만으로는 페이지가
@@ -325,7 +441,7 @@ def _do_caption_logged(el: dict) -> tuple:
 
     with caption_slot():
         t = time.monotonic()
-        content, el_type, ok, subconf = _do_caption(el)
+        content, el_type, ok, subconf = _do_caption(el, context)
         logger.info("    캡셔닝 %s(%s→%s) %.1fs%s", str(el.get("element_id", ""))[:8],
                     el["type"], el_type, time.monotonic() - t, "" if ok else " [실패]")
     return content, el_type, ok, subconf
@@ -387,7 +503,7 @@ def build(
             "flags": (["CAPTION_FAILED"] + ([f"CAPTION_ERR:{_caption_fatal.split(':', 1)[0]}"]
                                             if _caption_fatal else [])) if caption_failed else [],
         }
-        # 제목 단계(BBPG 2장2절1) — 여기서 안 실으면 조판이 가운데 정렬·들여쓰기를 못 쓴다.
+        # 제목 단계(NLD 2장2절1) — 여기서 안 실으면 조판이 가운데 정렬·들여쓰기를 못 쓴다.
         # mineru_runner가 MinerU의 text_level을 걸러 넣어 준다.
         if el.get("heading_level"):
             entry["heading_level"] = el["heading_level"]
@@ -439,5 +555,5 @@ def build(
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
 
-    print(f"[result_builder] {out_path} 저장 ({len(elements)}개 요소)")
+    logger.info("경계 파일 저장: %s (%d개 요소)", out_path, len(elements))
     return result

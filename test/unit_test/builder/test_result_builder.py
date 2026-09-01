@@ -115,7 +115,7 @@ def test_image_captioning_result(monkeypatch):
     """caption/classify를 mock하여 build()가 placeholder 없는 결과를 생성하는지 검증."""
     monkeypatch.setattr(
         "app.ai.builder.result_builder.caption",
-        lambda img_path, img_type: "테스트 캡셔닝: 두 학생이 실험 도구를 사용하는 장면입니다.",
+        lambda img_path, img_type, context="": "테스트 캡셔닝: 두 학생이 실험 도구를 사용하는 장면입니다.",
     )
     monkeypatch.setattr(
         "app.ai.builder.result_builder.classify_with_confidence",
@@ -203,7 +203,7 @@ class TestEmptyCaptionKeepsElement:
     def test_빈_캡션이어도_요소가_남는다(self, monkeypatch):
         import app.ai.builder.result_builder as rb
         monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("cartoon", 0.9))
-        monkeypatch.setattr(rb, "caption", lambda p, t: "   ")
+        monkeypatch.setattr(rb, "caption", lambda p, t, context="": "   ")
         monkeypatch.setattr(rb.Path, "exists", lambda self: True)
         res = _build([self._img()], "t_emptycap", 1, "OCR")
         assert len(res["elements"]) == 1
@@ -214,7 +214,7 @@ class TestEmptyCaptionKeepsElement:
     def test_정상_캡션은_그대로(self, monkeypatch):
         import app.ai.builder.result_builder as rb
         monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("cartoon", 0.9))
-        monkeypatch.setattr(rb, "caption", lambda p, t: "만화: 후보 토론회")
+        monkeypatch.setattr(rb, "caption", lambda p, t, context="": "만화: 후보 토론회")
         monkeypatch.setattr(rb.Path, "exists", lambda self: True)
         res = _build([self._img()], "t_okcap", 1, "OCR")
         assert res["elements"][0]["content"] == "만화: 후보 토론회"
@@ -239,7 +239,7 @@ class TestDiagramSubtypeOnBoundary:
     def _run(self, monkeypatch, cap, job):
         import app.ai.builder.result_builder as rb
         monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("diagram", 0.9))
-        monkeypatch.setattr(rb, "caption", lambda p, t: cap)
+        monkeypatch.setattr(rb, "caption", lambda p, t, context="": cap)
         monkeypatch.setattr(rb.Path, "exists", lambda self: True)
         return _build([self._img()], job, 1, "OCR")["elements"][0]
 
@@ -251,3 +251,34 @@ class TestDiagramSubtypeOnBoundary:
     def test_유형어가_없으면_칸을_비운다(self, monkeypatch):
         el = self._run(monkeypatch, "도표: 몽골 제국 최대 영역 지도\n중앙아시아", "t_vsub2")
         assert "visual_subtype" not in el      # §6.6에 골격 없는 유형 → 캡션 폴백
+
+
+def test_orphan_caption_becomes_omission_notice():
+    """짝 없는 캡션 = 놓친 그림. 생략했다는 사실은 알려야 한다 (F07, 대표 지적).
+
+    실물: 시연 p3 요소 33개에 caption 이 셋('▲ 참호전' 등)인데 **시각 요소가 0개**였다.
+    MinerU 가 캡션만 잡고 그림을 못 잡아, 캡션 글이 그냥 본문으로 나가고 거기 그림이
+    있었다는 사실이 어디에도 안 남았다. §6.1.1(4)·§6.3.4(2)② 는 장식·불필요한 경우에만
+    생략을 허용한다 — 캡션이 달린 자료는 그 둘이 아니다.
+    """
+    from app.ai.builder.result_builder import _link_captions
+
+    els = [{"id": "c1", "type": "caption", "content": "▲ 참호전",
+            "bbox": [0, 0, 10, 10], "caption_ref": ""},
+           {"id": "t1", "type": "text", "content": "본문", "bbox": [0, 20, 10, 30]}]
+    _link_captions(els)
+    assert els[0]["content"] == "<!주>그림 생략: 참호전<!/주>"
+    assert "ORPHAN_CAPTION" in els[0]["flags"]
+
+
+def test_caption_with_a_visual_is_left_alone():
+    """짝이 있으면 캡션은 그대로 둔다 — 그림이 설명을 받는다."""
+    from app.ai.builder.result_builder import _link_captions
+
+    els = [{"id": "c1", "type": "caption", "content": "▲ 참호전",
+            "bbox": [0, 20, 10, 30], "caption_ref": ""},
+           {"id": "i1", "type": "image", "content": "그림",
+            "bbox": [0, 0, 10, 18], "caption_ref": ""}]
+    _link_captions(els)
+    assert els[0]["content"] == "▲ 참호전"
+    assert els[0]["caption_ref"] == "i1"

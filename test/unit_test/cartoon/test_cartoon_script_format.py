@@ -2,8 +2,8 @@
 
 근거(모두 원문 대조):
   · 「제작 지침」§5.3.3(1) 장면 번호 5칸 / (2) 인물의 대화 3칸 / (3) 인물명과 대사는 쌍점 구분
-  · BBPG 제3장 9)(1)② 컷과 컷 사이에는 빈 줄을 두지 않는다
-  · BBPG [예 3-54] 정답 점자 역점역 = "학생: 선생님, 농업의 사회적 …" (쌍점 뒤 한 칸)
+  · NLD 제3장 9)(1)② 컷과 컷 사이에는 빈 줄을 두지 않는다
+  · NLD [예 3-54] 정답 점자 역점역 = "학생: 선생님, 농업의 사회적 …" (쌍점 뒤 한 칸)
   · §6.3.4(3) 화자 불명은 '말풍선'
 """
 from __future__ import annotations
@@ -42,7 +42,7 @@ def _outline(caption: str) -> str:
 
 class TestScriptFormat:
     def test_대사가_인물명_쌍점_형식으로_나온다(self):
-        """QA 13번 — '(인물명): (대사)' 형식. BBPG 예3-54 정답 대조."""
+        """QA 13번 — '(인물명): (대사)' 형식. NLD 예3-54 정답 대조."""
         out = _outline(_SCRIPT)
         assert "학생: 선생님, 농업의 사회적 역할이 무엇인가요?" in out
         assert "선생님: 사람이 살아가는 데" in out
@@ -64,20 +64,26 @@ class TestScriptFormat:
         assert "흐름:" not in _outline(_REAL)
 
     def test_빈_줄이_없다(self):
-        """QA 14번 + BBPG 3장 9)(1)②."""
+        """QA 14번 + NLD 3장 9)(1)②."""
         out = _outline(_REAL)
         assert "\n\n" not in out
         assert all(line.strip() for line in out.splitlines())
 
     def test_들여쓰기가_규정_칸수이고_줄수와_맞는다(self):
-        """§5.3.3(1) 장면 5칸 · (2) 대화 3칸. 그리고 line_indents는 줄마다 하나씩."""
+        """§5.3.3(1) 장면 5칸 · (2) 대화 3칸. 그리고 line_indents는 줄마다 하나씩.
+
+        ★ **값은 앞 빈칸 수다. 규정의 칸 번호가 아니다.**(2026-08-25 정정)
+          "5칸에서 적는다" = 앞 빈칸 4 · "3칸에서 적는다" = 앞 빈칸 2.
+          이 테스트가 5·3 을 그대로 박고 있어서 `_OUTLINE_BASE` 의 off-by-one 을
+          열다섯 날 지켜 주고 있었다.
+        """
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, corrected_text=_SCRIPT)
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
         lines = opt.corrected_text.splitlines()
         assert len(opt.line_indents) == len(lines)          # 종전엔 어긋났다(head 안 줄바꿈)
         got = dict(zip(lines, opt.line_indents))
-        assert got["장면 1"] == 5
-        assert got["학생: 선생님, 농업의 사회적 역할이 무엇인가요?"] == 3
+        assert got["장면 1"] == 4        # §5.3.3(1) "5칸에서 적는다"
+        assert got["학생: 선생님, 농업의 사회적 역할이 무엇인가요?"] == 2   # (2) "3칸"
 
     def test_제목이_두_번_나오지_않는다(self):
         """§5.3(1) 제목은 점역자주 머리줄 한 곳. QA 13번 중복."""

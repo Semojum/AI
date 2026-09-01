@@ -25,9 +25,9 @@
 
 | 이름 | 쌍 길이(전→후) | 무엇 |
 |---------------|----------|---------|------|
-| `점역자주`    | `주`     | 17→9    | 점역자 주 (BBPG-1.2.6) |
+| `점역자주`    | `주`     | 17→9    | 점역자 주 (NLD-1.2.6) |
 | `드러냄`      | `강조`   | 13→11   | 드러냄표·밑줄 강조 (규정 제56항) |
-| `테두리_위`   | `상자`   | 19→11   | 글상자 위 테두리 (BBPG-1.2.5) |
+| `테두리_위`   | `상자`   | 19→11   | 글상자 위 테두리 (NLD-1.2.5) |
 | `테두리_아래` | `상자끝` | 21→15   | 글상자 아래 테두리 |
 | `빈칸_표`     | `빈칸`   | 9→6     | 표 기입칸 (제73항) |
 | `빈칸_밑줄`   | `밑줄`   | 11→6    | 밑줄 빈칸 (제73항, 표와 다른 기호) |
@@ -38,14 +38,20 @@ translator의 라우팅 앵커(`_INLINE_MATH_RE`)라 파급 대비 이득이 작
 """
 from __future__ import annotations
 
+import re
+
 # ── 현행 이름 ────────────────────────────────────────────────────────────────
 TN = "주"                 # 점역자 주
 EMPH = "강조"             # 드러냄표
+BOLD = "굵은"             # 굵은 글자 (규정 제56항 · 원장 B-05)
 BOX_TOP = "상자"          # 글상자 위 테두리
 BOX_BOTTOM = "상자끝"     # 글상자 아래 테두리
 BLANK_TABLE = "빈칸"      # 표 기입칸
 BLANK_RULE = "밑줄"       # 밑줄 빈칸
 BLANK_SQUARE = "네모"     # 네모 빈칸
+# 규정 제64항 "네모 문자" — 네모 **안에 글자가 든** 자리를 감싸는 쌍 태그.
+# `네모`(빈칸)와 다른 태그다: 저쪽은 안이 빈 네모라 단독으로 쓰고 여기는 내용을 감싼다.
+BOX_CHAR = "네모글"      # 네모 문자 (제64항 · 원장 C-16-2)
 
 
 def tn(text: str) -> str:
@@ -56,3 +62,65 @@ def tn(text: str) -> str:
 def box(title: str = "") -> tuple[str, str]:
     """(위 테두리, 아래 테두리). 제목 없으면 빈 쌍."""
     return f"<!{BOX_TOP}>{title}<!/{BOX_TOP}>", f"<!{BOX_BOTTOM}><!/{BOX_BOTTOM}>"
+
+
+# ── 들여쓰기 태그 (2026-08-25 대표 지시) ──────────────────────────────────────
+# 줄별 들여쓰기를 **글 안에 태그로** 박는다. 종전에는 `line_indents` 목록을 요소 한 곳에만
+# 실어, 안이 여럿일 때 **선택 안의 값이 다른 안에도 씌워졌다**(가계도 상향식에 하향식
+# 들여쓰기가 붙고 줄 수가 같아 길이 검사도 통과했다). 태그는 자기 글에 붙어 다니므로
+# 안을 바꿔도 어긋나지 않는다.
+#
+# ★★ **태그 숫자는 앞 빈칸 수다. 지침의 칸 번호가 아니다.**(대표가 직접 못 박음)
+#      지침 "3칸에서 적는다" = <!2칸>      지침 "5칸에서 적는다" = <!4칸>
+#      지침 "7칸에서 적는다" = <!6칸>
+#    2026-08-10 에 `_TITLE_INDENT` 를 5→4 로 고치며 한 번 밟은 자리다. 다시 밟지 말 것.
+#
+# ★★★ **태그는 묵자에서 점자로 갈 때 달라지는 것만 표기한다.**(대표 지시 2026-08-25)
+#    이 원칙은 이 태그만의 것이 아니라 **인라인 태그 전체의 기준**이다.
+#    그래서 **들여쓰기 0에는 태그를 안 붙인다** — 0은 기본값이라 달라지는 게 없고,
+#    표기할 것이 없으면 태그도 없다. 지침 "1칸에서 적는다"는 태그 없는 줄이다.
+#      해모수            ← 태그 없음(앞 빈칸 0)
+#      <!2칸>주몽
+#      <!4칸>유리
+#
+# ⚠ 표 셀 태그 `<!칸>` 과 글자가 겹쳐 보이지만 정규식이 **줄머리 + 숫자**를 요구하므로
+#   섞이지 않는다(`<!칸>` 에는 숫자가 없다).
+_INDENT_TAG_RE = re.compile(r"^<!(\d+)칸>")
+
+
+def indent_tag(spaces: int) -> str:
+    """앞 빈칸 수 → 들여쓰기 태그. 0이면 빈 문자열(태그 없음) — 위 원칙 참조."""
+    n = int(spaces)
+    return f"<!{n}칸>" if n > 0 else ""
+
+
+def split_indent(line: str) -> tuple[int | None, str]:
+    """줄 → (앞 빈칸 수 | None, 태그 뗀 줄). 태그가 없으면 (None, 원문)."""
+    m = _INDENT_TAG_RE.match(line)
+    if not m:
+        return None, line
+    return int(m.group(1)), line[m.end():]
+
+
+def apply_indent_tags(text: str, indents: list[int] | None) -> str:
+    """(글, 줄별 앞 빈칸) → 줄머리에 태그를 박은 글. 줄 수가 안 맞으면 원문 그대로."""
+    lines = text.split("\n")
+    if not indents or len(indents) != len(lines):
+        return text
+    return "\n".join(indent_tag(n) + ln for n, ln in zip(indents, lines))
+
+
+def strip_indent_tags(text: str) -> tuple[str, list[int] | None]:
+    """태그 박힌 글 → (태그 뗀 글, 줄별 앞 빈칸). 태그가 하나도 없으면 (원문, None)."""
+    out: list[str] = []
+    indents: list[int] = []
+    found = False
+    for ln in text.split("\n"):
+        n, rest = split_indent(ln)
+        if n is None:
+            indents.append(0)
+        else:
+            found = True
+            indents.append(n)
+        out.append(rest)
+    return "\n".join(out), (indents if found else None)

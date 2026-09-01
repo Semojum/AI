@@ -11,8 +11,8 @@ from app.schemas.content import RuleApplication
 
 
 def _trail(n: int) -> list[RuleApplication]:
-    return [RuleApplication(rule_id="T", source="s", section="1", title="t",
-                            excerpt="e", priority="primary",
+    return [RuleApplication(rule_id="T", source="s", section="1", rule_name="t",
+                            contents="e", priority="primary",
                             line_no=i, col_start=0, col_end=1) for i in range(n)]
 
 

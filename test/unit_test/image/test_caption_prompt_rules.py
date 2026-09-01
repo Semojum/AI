@@ -34,7 +34,7 @@ class TestThinkingDisabled:
         with patch("anthropic.Anthropic", return_value=client), \
              patch("app.ai.captioning.captioner.llm_limiter", create=True), \
              patch("app.core.limits.llm_limiter"), \
-             patch("app.utils.req_log.inc_gpt4o"):
+             patch("app.utils.req_log.inc_ext_llm"):
             captioner._caption_anthropic("Zm9v", "image/png", "설명하세요")
         kwargs = client.messages.create.call_args.kwargs
         assert kwargs["thinking"] == {"type": "disabled"}, (
@@ -64,3 +64,78 @@ class TestGoldDerivedBans:
         # 오늘 §5.3.3(3)로 고친 것 — 이번 변경이 되돌리지 않았는지 확인.
         p = captioner._PROMPTS["cartoon"]
         assert "장면 1" in p and "인물명: 대사" in p and "§5.3.3(2)" in p
+
+
+class TestPromptCaching:
+    """프롬프트를 `system`에 두어 캐시가 얹히는가 (2026-08-23, API비용 2번).
+
+    캐시는 접두 일치이고 렌더 순서가 `tools → system → messages`다. 프롬프트가
+    사용자 턴에서 이미지 **뒤**에 있으면 접두에 매번 다른 이미지가 끼어 적중률이
+    구조적으로 0이 된다 — 캐시를 켰다고 믿는데 한 푼도 안 아끼는 상태다.
+    """
+
+    def _call(self):
+        resp = MagicMock(content=[_Block()], usage=MagicMock(input_tokens=1, output_tokens=1))
+        client = MagicMock()
+        client.messages.create.return_value = resp
+        with patch("anthropic.Anthropic", return_value=client), \
+             patch("app.core.limits.llm_limiter"), \
+             patch("app.utils.req_log.record_anthropic"):
+            captioner._caption_anthropic("Zm9v", "image/png", "설명하세요")
+        return client.messages.create.call_args.kwargs
+
+    def test_프롬프트가_system에_캐시_표시와_함께_간다(self) -> None:
+        kwargs = self._call()
+        assert kwargs["system"] == [{"type": "text", "text": "설명하세요",
+                                     "cache_control": {"type": "ephemeral"}}]
+
+    def test_사용자_턴에는_이미지만_남는다(self) -> None:
+        # 이미지 뒤에 텍스트가 남아 있으면 접두가 매번 달라져 캐시가 안 붙는다.
+        content = self._call()["messages"][0]["content"]
+        assert [b["type"] for b in content] == ["image"]
+
+    @pytest.mark.parametrize("kind", ["image", "cartoon", "diagram", "chart"])
+    def test_네_프롬프트_모두_최소_캐시_길이를_넘는다(self, kind: str) -> None:
+        # 1,024토큰 미만은 표시를 달아도 조용히 캐시되지 않는다. 한국어는 글자당
+        # 약 1토큰이라 글자 수로 하한을 잡아 둔다(실측 1,784~3,041자).
+        assert len(captioner._PROMPTS[kind]) > 1200
+
+
+class TestUsableByTranslator:
+    """대표 기준(2026-08-26) — 그림을 이해시키는 것이 아니라 **그대로 쓸 수 있는 문장**.
+
+    "점역사가 읽으면 무슨 그림인지 아는 걸로 끝나면 안 된다. 우리가 제공하는 설명이,
+    점역사가 그 시각자료를 점역할 때 쓸 설명과 유사해야 한다."
+
+    이 테스트는 프롬프트가 그 기준을 실제로 담고 있는지만 본다(출력 품질은 눈검사 몫).
+    """
+
+    def test_존재_확인형_금지가_들어_있다(self):
+        from app.ai.captioning.captioner import _COMMON
+        assert "무엇이 있다/나타나 있다/작용한다" in _COMMON
+        assert "값" in _COMMON
+
+    def test_대립_방향어를_요구한다(self):
+        from app.ai.captioning.captioner import _COMMON
+        assert "대립·방향" in _COMMON
+
+    def test_한_사실은_한_번만(self):
+        from app.ai.captioning.captioner import _COMMON
+        assert "한 사실은 한 번만" in _COMMON
+
+    def test_자체_검증_질문이_있다(self):
+        """'그대로 옮겨 쓸 수 있는가' 를 모델이 스스로 묻게 한다."""
+        from app.ai.captioning.captioner import _COMMON
+        assert "그대로 옮겨 쓸 수" in _COMMON
+
+    def test_도표_템플릿_둘(self):
+        from app.ai.captioning.captioner import _PROMPTS as PROMPTS
+        d = PROMPTS["diagram"]
+        assert "같은 문장 틀로 나란히" in d      # 작용 비교형
+        assert "범례는 처음 한 번만" in d        # 가계도
+
+    def test_그래프는_값을_비우지_않는다(self):
+        from app.ai.captioning.captioner import _PROMPTS as PROMPTS
+        c = PROMPTS["chart"]
+        assert "값을 비우지 마세요" in c
+        assert "등간격 눈금을 처음부터 끝까지 나열하지는" in c

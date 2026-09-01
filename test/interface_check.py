@@ -34,7 +34,7 @@ from app.ai.braille.constants import COLS, ROWS                 # noqa: E402
 warnings.filterwarnings("ignore")          # 자체 서명 인증서 경고
 CERT = "/etc/ssl/semojum/server.crt"
 MAX_MSG = 20 * 1024 * 1024
-CELL_W = COLS      # 32칸 (BBPG 1장1절3)
+CELL_W = COLS      # 32칸 (NLD 1장1절3)
 PAGE_ROWS = ROWS   # 26줄 — 단면은 본문 25 + 페이지행 1. '25줄'이 아니다
 SAMPLE_TEXT = "다음 그림은 2024년 자료이다. 빈칸 □ 에 알맞은 말을 쓰시오."
 

@@ -67,6 +67,9 @@ R2_SUBTYPE_CONFIDENCE_THRESHOLD = 0.75
 
 # C5: 수표(⠼) 런타임 스캐너 — 아라비아 숫자와 수표 기호
 _C5_DIGIT_RE = re.compile(r"[0-9]")
+
+# 결함 탐지가 아니라 **등급**인 플래그 — 쪽 status 판정에서 뺀다(요소 화면에는 그대로 뜬다).
+_GRADE_FLAGS = frozenset({"R13", "R10"})
 # ★ 게이트는 **점역 대상 글자에만** 연다(2026-08-10). 종전엔 corrected_text를 원문 그대로
 # 훑어 인라인 태그 이름의 숫자(`<!상자끝2>`)가 게이트를 열었다 — 태그는 테두리 점형으로
 # 치환되니 수표가 나올 리 없고, 그래서 무조건 C5가 떴다. 실측(dev+val 839쪽) C5 146건 중
@@ -75,11 +78,29 @@ _C5_DIGIT_RE = re.compile(r"[0-9]")
 # 플래그부터 무시하게 되므로 진짜 누락만 남긴다. 태그 제거는 contraction_lookalikes와
 # **같은 정규식**을 쓴다(둘이 갈리면 판정이 어긋난다).
 _C5_CIRCLED_RE = re.compile(r"\\textcircled\{[^}]*\}")
+# ★ 로그 밑은 **규정이 수표를 금한 자리**다(제46항 1호 — "로그의 밑은 수표 없이 내려 적는다").
+#   `\log_{2} x` 는 ⠸⠠⠆ 로 나가는 것이 맞는데, 요소에 다른 숫자가 없으면 게이트가 열려
+#   C5 가 뜬다. 규정대로 낸 출력을 배포 블로커로 세우는 셈이라 뺀다.
+#   ln·lim 도 같은 조항이다. **일반 아래첨자(화학식 등)는 빼지 않는다** — 그쪽은 규정
+#   확인이 안 됐고, 넓히면 진짜 누락을 놓친다(2026-08-29 실측 근거는 아래 오탐 감사).
+_C5_LOGSUB_RE = re.compile(r"\\(?:log|ln|lim)_\{?[0-9]+\}?")
+# 점역자주(TN)로 대체된 요소 — 양끝이 ⠠⠄ 인 한 덩어리. 표를 격자로 못 펴면 TableBraille 이
+# 표 본문 대신 점역자주 한 문단을 낸다(`_translate_one` 의 "비정형 → TN 단일안" 가지).
+# 그 자리는 **원문을 1:1 로 옮기는 요소가 아니라** 수치가 정당하게 요약·생략된다 —
+# 시각자료를 C5 에서 뺀 것과 같은 논리다.
+_TN_MARK = "⠠⠄"
 
 
 def _c5_gate_text(text: str) -> str:
-    """C5 숫자 게이트가 볼 원문 — 인라인 태그와 원문자를 벗긴 것."""
-    return _C5_CIRCLED_RE.sub("", _TAG_TOKEN_RE.sub("", text or ""))
+    """C5 숫자 게이트가 볼 원문 — 인라인 태그·원문자·로그 밑을 벗긴 것."""
+    return _C5_LOGSUB_RE.sub(
+        "", _C5_CIRCLED_RE.sub("", _TAG_TOKEN_RE.sub("", text or "")))
+
+
+def _is_tn_only(braille_lines) -> bool:
+    """점역 결과가 점역자주 한 덩어리인가 — C5 검사 대상이 아니다."""
+    body = "".join(braille_lines or []).strip()
+    return body.startswith(_TN_MARK) and body.endswith(_TN_MARK) and len(body) > 4
 
 
 # ── R13: 본문 텍스트 위험 구간 (2026-08-10) ─────────────────────────────────
@@ -209,6 +230,8 @@ class QualityChecker:
         llm_outputs: Iterable[LLMOutput] = (),
         braille_outputs: Iterable[BrailleOutput] = (),
         line_overflow_rate: float = 0.0,
+        blank_page: bool = False,
+        flat_text: Optional[dict] = None,
     ) -> QualityReport:
         extracted = list(extracted)
         llm_outputs = list(llm_outputs)
@@ -259,9 +282,17 @@ class QualityChecker:
             b = braille_by_id.get(eid)
             if b is None or not any(ln.strip() for ln in b.braille_lines):
                 continue  # 점역 출력 자체가 없으면 상위 실패 신호(C1/C2)의 소관
+            if _is_tn_only(b.braille_lines):
+                continue  # 점역자주로 대체된 요소 — 위 _TN_MARK 주석 참조
             # ⠼가 있기만 하면 통과시키면 안 된다 — 영어 약자 ble이 같은 점형이라
             # `possible`의 ⠼가 스캐너를 대신 만족시켜 진짜 수표 누락을 가린다(number_sign.py).
-            if not has_number_sign(o.corrected_text or "", "".join(b.braille_lines)):
+            # ★ 2026-09-02 — 조판본이 아니라 **응답에 실리는 통 문자열**을 본다.
+            #   조판(layout)은 FE·BE 로 넘어간 뒤 저장·디버그용만 남았는데, 검사기가 그
+            #   조판본을 보고 있었다. 글상자 요소에서 조판이 본문 한 줄을 통째로 버려
+            #   수표가 사라졌고, 멀쩡한 쪽이 C5(배포 블로커)로 떴다.
+            #   실측 dev 900쪽: 오탐 1건. flat 이 없으면(옛 호출) 종전대로 조판본을 본다.
+            cells = (flat_text or {}).get(str(o.element_id)) or "".join(b.braille_lines)
+            if not has_number_sign(o.corrected_text or "", cells):
                 criticals.append(CriticalError(
                     type="C5", element_id=eid,
                     message="수표(⠼) 누락 — 원문에 아라비아 숫자가 있으나 요소 점자에 수표 없음",
@@ -356,7 +387,10 @@ class QualityChecker:
         # 짧은 쪽과 구별되지 않는다(단위 테스트 12건이 그 자리에서 깨졌다). pipeline.py 배선 사안.
         n_elements = len(layout_result.elements) if layout_result else 0
         c1_message = ""
-        if n_elements == 0 and not llm_outputs:
+        if n_elements == 0 and not llm_outputs and not blank_page:
+            # ★ 빈 페이지는 실패가 아니다(T702). 묵자에 글·그림·획이 하나도 없으면
+            #   요소가 0인 것이 정상이고, 그걸 C1으로 올리면 앱이 "변환 차단"을 띄운다.
+            #   빈 지면을 끼워 넣는 것은 점역 조판에서 정상 동작이다.
             c1_message = "전체 추출 실패 — 페이지에서 요소를 하나도 얻지 못함"
         elif n_elements > 0 and not llm_outputs:
             c1_message = "전체 처리 실패 — 모든 체인이 출력 없이 종료"
@@ -390,9 +424,14 @@ class QualityChecker:
             review_flags=reviews,
         )
         if status != "COMPLETED":
+            # ★ 상태와 **사유를 같은 레코드에** 싣는다(T2). 원인을 찾으려고 위아래를
+            #   훑지 않아도 되게 한다. `code` 는 첫 Critical 의 종류다.
             logger.info(
                 "품질 판정 %s (page=%s · C %d건 · R %d건)",
                 status, page_id, len(criticals), len(reviews),
+                extra={"page": page_id, "status": status,
+                       "code": criticals[0].type if criticals else None,
+                       "stage": "품질검사"},
             )
         return report
 
@@ -400,10 +439,14 @@ class QualityChecker:
     def _decide_status(criticals: list[CriticalError], reviews: list[ReviewFlag]) -> str:
         if any(c.type in ("C1", "C7") for c in criticals):
             return "BLOCKED"
-        # R13은 **결함 탐지가 아니라 등급**이다 — 본문의 26%에 붙으므로 status에 넣으면
-        # 거의 모든 쪽이 NEEDS_REVIEW가 된다(실측 839쪽: COMPLETED 255→9). 쪽 판정이
-        # 무정보해지면 지금 그나마 있는 신호(status가 CER을 가르는 AUC 0.651)까지 잃는다.
-        # 요소 화면에는 그대로 뜨고, 쪽 판정만 종전과 동일하게 둔다.
-        if criticals or any(r.type != "R13" for r in reviews):
+        # R13·R10은 **결함 탐지가 아니라 등급**이다 — "여기는 평균보다 자주 고쳐야 한다"
+        # 까지만 말한다. 등급을 쪽 판정에 넣으면 거의 모든 쪽이 NEEDS_REVIEW가 되어
+        # 쪽 신호가 무정보해진다(R13 실측 839쪽: COMPLETED 255→9).
+        # 2026-09-02 — R10(표)도 뺐다. 같은 등급인데 R13만 빼 놓아 표가 있는 쪽이 전부
+        # 검토로 떴다. dev 900쪽 실측: 검토 필요 72%→57% · 완료 28%→42%(129쪽 이동).
+        # ⚠ 등급은 **요소 화면에 그대로 뜬다** — 검수 순서 신호로 계속 쓰인다.
+        #   쪽 판정에서만 뺀 것이지 "플래그 없는 쪽은 안 봐도 된다"는 뜻이 아니다
+        #   (재현율 6.9% · COMPLETED 쪽의 21.2%가 셀 30% 이상 수정 필요).
+        if criticals or any(r.type not in _GRADE_FLAGS for r in reviews):
             return "NEEDS_REVIEW"
         return "COMPLETED"

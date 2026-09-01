@@ -60,7 +60,7 @@ class TestChartGraphPipelineBasic:
             assert len(o.braille_lines) >= 1
 
     def test_all_lines_within_32_cols(self, braille_outputs: list[BrailleOutput]) -> None:
-        # 모듈은 논리 줄을 내고 32칸 줄바꿈은 layout이 수행(BBPG-1.2.1).
+        # 모듈은 논리 줄을 내고 32칸 줄바꿈은 layout이 수행(NLD-1.2.1).
         from app.ai.braille.layout_braille import _wrap_line
         for o in braille_outputs:
             brs = o.break_points if len(o.break_points) == len(o.braille_lines) else [[]] * len(o.braille_lines)
@@ -135,6 +135,6 @@ class TestTypeLabelFromCaption:
         assert resolve_label("그래프", "2010년 이후 완만히 증가한다", "") == "그래프"
 
     def test_짧은_제목에_유형어가_두_번_안_들어간다(self) -> None:
-        from app.ai.llm.visual_drafts import title_draft
-        t = title_draft("모식도", "모식도: 신경-근육 시냅스").text
+        from app.ai.llm.visual_drafts import desc_draft
+        t = desc_draft("모식도", "", "모식도: 신경-근육 시냅스", None)[0].text
         assert t.count("모식도") == 1, t

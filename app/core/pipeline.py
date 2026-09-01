@@ -117,6 +117,49 @@ _RUNNING_FOOT_RES = (
 )
 _HF_TAG_RE = re.compile(r"<!/?[^>]+>")      # 러닝풋 판정 전 <!강조> 등 인라인 태그 제거
 
+# ── 지면 가장자리 머리글·표지 억제 (2026-08-24) ─────────────────────────────
+# 러닝풋 억제(_is_running_foot)는 `header_footer` 타입에만 걸린다. 그런데 실측하니
+# 머리글의 대부분이 **`text` 타입으로 온다**(text 36 · header_footer 6 · title 1).
+# 그래서 `2027학년도 EBS 수능특강 문학`·`정답과 해설 21` 같은 배너가 본문에 실렸다.
+#
+# 판정은 **지면 가장자리 + 배너 문구** 둘 다일 때만 한다. 실측 100쪽 전수에서
+# **억제 65건 · 손해 0건**(gold 에 있는데 지우는 것)이다.
+# ⚠ 어제(C-59)는 손해가 더 크다고 봤는데 그건 검증 도구가 **공통 4셀만 맞아도 "gold 에
+#   있다"** 로 판정한 착시였다. 정렬점수 0.6 임계를 걸어 다시 재 결과가 위 수치다(C-61).
+_PAGE_EDGE_BAND = 0.07                      # 지면 위아래 7% 안
+# ⚠ `학년도`·`N회` 단독은 넣지 않는다. 정답본이 **출처 표기**로 살린다
+#   (`2025학년도 수능`·`2026학년도 6월 모의평가`·`1회`). 실측 손해 12건 중 셋이 이것이다.
+#   `수능특강`이 붙은 도서명 배너만 잡는다.
+_HEADER_BANNER_RE = re.compile(r"정답과\s*해설|수능특강|실전학습|주제·소재편")
+# 본문 상호참조는 머리글이 아니다 — `정답과 해설 125쪽`. 지면 가장자리에 와도 살린다.
+_XREF_RE = re.compile(r"\d+\s*쪽")
+# 머리글 뒤에 글상자가 붙은 요소는 통째로 지우면 테두리를 잃는다(`정답과 해설 21` + 글상자).
+_BOX_TAG_RE = re.compile(r"<!상자")
+
+
+def _page_edge_band(elements: list[dict]) -> tuple[float, float, float] | None:
+    """요소 bbox 로 지면 위·아래 끝과 높이를 낸다. bbox 가 없으면 None(억제 안 함)."""
+    ys = [(e["bbox"][1], e["bbox"][3]) for e in elements
+          if isinstance(e.get("bbox"), (list, tuple)) and len(e["bbox"]) >= 4]
+    if not ys:
+        return None
+    top = min(y for y, _ in ys)
+    bot = max(y2 for _, y2 in ys)
+    return (top, bot, bot - top) if bot > top else None
+
+
+def _is_edge_header(content: str, bbox, band: tuple[float, float, float] | None) -> bool:
+    """지면 가장자리에 놓인 머리글·표지 배너인가."""
+    if band is None or not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+        return False
+    top, bot, h = band
+    if (bbox[1] - top) / h > _PAGE_EDGE_BAND and (bot - bbox[3]) / h > _PAGE_EDGE_BAND:
+        return False                        # 지면 가장자리가 아니다
+    c = _HF_TAG_RE.sub("", content or "")
+    if not _HEADER_BANNER_RE.search(c) or _XREF_RE.search(c):
+        return False
+    return not _BOX_TAG_RE.search(content or "")
+
 
 def _is_running_foot(content: str) -> bool:
     """header_footer 요소가 인쇄 전용 러닝풋인가(실측 패턴 목록 기반)."""
@@ -297,6 +340,26 @@ def _write_stage(task: PageTask, dir_name: str, filename: str, objs: list) -> No
 
 # ── 현주 추출 (Phase 1) — data/NNN_txt_result.json 생성 ────────────────────
 
+async def _gather_chains(coros):
+    """체인들을 모아 실행. 요소 격리(불변 규칙 3)를 위해 예외를 값으로 돌려준다.
+
+    ★ `CHAIN_SEQUENTIAL=1`이면 gather 대신 **순차 await**로 돈다(2026-08-21).
+      진단 전용 스위치다 — 같은 입력에 산출이 갈리는 쪽이 있는데(NULL 두 벌 1/709,
+      실험 두 벌 34/709), 그 원인이 체인 동시 실행의 공유 상태인지 가리려면 순차 조건이
+      필요하다. 순차에서도 갈리면 동시성이 아니고, 안 갈리면 동시성이 원인이다.
+      기본은 꺼져 있고, 켜면 느려지므로 운영에서는 쓰지 않는다.
+    """
+    if os.environ.get("CHAIN_SEQUENTIAL") == "1":
+        out = []
+        for c in coros:
+            try:
+                out.append(await c)
+            except Exception as exc:      # noqa: BLE001 — gather(return_exceptions=True)와 같은 계약
+                out.append(exc)
+        return out
+    return await asyncio.gather(*coros, return_exceptions=True)
+
+
 def _blocks_from_text(pdf_text: Optional[str]) -> list[dict]:
     """ZERO 폴백: 블록 추출이 비면 텍스트를 줄 단위 요소로(좌표 없음)."""
     elements: list[dict] = []
@@ -355,11 +418,14 @@ async def _extract_via_models(
             #   '느린 페이지'로 오인돼 끊긴다. 상한은 비정상 탐지기이므로 그러면
             #   탐지기가 망가진다. 대기는 페이지 예산(180초) 쪽에서만 계산한다.
             from app.core.limits import mineru_slot
+            from app.utils.req_log import gpu_span
             async with mineru_slot():
-                merged = await asyncio.to_thread(
-                    mineru_run, tmp_path, task.page_no, task.job_id, "OCR",
-                    timeout=config.mineru_timeout_resolved,
-                )
+                # 슬롯을 잡은 뒤부터 잰다 — 큐 대기는 GPU 점유가 아니다.
+                with gpu_span("추출"):
+                    merged = await asyncio.to_thread(
+                        mineru_run, tmp_path, task.page_no, task.job_id, "OCR",
+                        timeout=config.mineru_timeout_resolved,
+                    )
             result = await asyncio.to_thread(
                 build_result, merged, task.job_id, task.page_no, "OCR",
             )
@@ -402,6 +468,18 @@ async def _fallback_text_layer(task: PageTask, doc_meta: DocumentMeta) -> tuple[
         return [], 0, 0
 
 
+def _page_size_px(pdf_data: bytes, page_no: int) -> tuple[int, int]:
+    """쪽 크기(2x 렌더 픽셀). LLM 추출은 bbox 를 안 주지만 응답 계약상 크기는 필요하다."""
+    try:
+        import fitz
+        with fitz.open(stream=pdf_data, filetype="pdf") as d:
+            r = d[min(max(page_no - 1, 0), d.page_count - 1)].rect
+            return int(r.width * 2), int(r.height * 2)
+    except Exception as exc:  # noqa: BLE001 — 크기를 못 재면 0으로 둔다(FE가 비율 매핑을 건너뛴다)
+        logger.warning("쪽 크기 산출 실패: %s", exc)
+        return 0, 0
+
+
 def _page_image_path(task: PageTask):
     """Opus 폴백용 페이지 이미지 — 저장분(input/page_NNN.jpg) 우선, 없으면 즉석 렌더."""
     from pathlib import Path
@@ -439,8 +517,10 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     from app.ai.preprocessor.pdf_analyzer import (
         analyze_pdf,
         box_rects_norm,
+        char_box_glyphs_norm,
         extract_text_blocks,
         mark_glyphs_norm,
+        tag_char_boxes,
         regroup_boxed,
         tag_answer_marks,
         tag_boxed_elements,
@@ -454,7 +534,31 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     image_width = image_height = 0
     # bbox 좌표계는 경로마다 다르다("pixel" = 2x 렌더 픽셀 / "norm1000" = 0~1000 정규화).
     # 추출한 자리에서 한 번 정하고 meta에 적어 둔다 — 소비자가 다른 필드로 유추하면 안 된다.
-    if doc_meta.routing_tier == "ZERO":
+    # 고급 점역(요청 advanced_ai) — MinerU 대신 LLM 이 쪽 이미지를 직접 읽는다.
+    # ZERO 티어(텍스트 레이어가 멀쩡한 쪽)는 그대로 둔다. 거기서는 원본 글자를 그대로
+    # 옮기는 편이 정확하고, 고급 점역이 노리는 것은 깨진 지면이다.
+    advanced_used = ""
+    if task.advanced_ai and doc_meta.routing_tier != "ZERO":
+        from app.ai.parser import opus_fallback as _llm
+        if _llm.advanced_available():
+            img = _page_image_path(task)
+            if img:
+                els, used = await asyncio.to_thread(_llm.extract_advanced, str(img))
+                if els:
+                    advanced_used = used
+                    logger.info("고급 점역 추출 채택: %s %d요소 (page=%d)",
+                                used, len(els), task.page_no)
+        if not advanced_used:
+            logger.warning("고급 점역 추출 실패 — MinerU 로 되돌린다 (page=%d)", task.page_no)
+
+    if advanced_used:
+        # LLM 추출에는 bbox 가 없다. 좌표계는 ZERO·폴백과 같은 규약("pixel")으로 적어 둔다.
+        method, bbox_space = "LLM_VISION", "pixel"
+        elements = els
+        image_width, image_height = await asyncio.to_thread(
+            _page_size_px, task.pdf_data, task.page_no
+        )
+    elif doc_meta.routing_tier == "ZERO":
         method, bbox_space = "TEXT_NATIVE", "pixel"
         blocks, image_width, image_height = await asyncio.to_thread(
             extract_text_blocks, task.pdf_data, task.page_no
@@ -464,7 +568,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         method = "OCR"
         elements, image_width, image_height, bbox_space = await _extract_via_models(task, doc_meta)
 
-    # 글상자 테두리(BBPG-1.2.5 · 원장 C-01b) — 묵자의 벡터 사각형이 감싼 텍스트 요소에
+    # 글상자 테두리(NLD-1.2.5 · 원장 C-01b) — 묵자의 벡터 사각형이 감싼 텍스트 요소에
     # 테두리 태그를 붙인다. 두 경로(ZERO·MinerU) 모두 여기를 지나므로 한 자리면 된다.
     if not doc_meta.scan_only:
         rects = await asyncio.to_thread(box_rects_norm, task.pdf_data, task.page_no)
@@ -477,7 +581,9 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         # "읽기순서가 끊겼다"로 상자를 통째로 건너뛴다(원장 C-17 후속).
         if n := regroup_boxed(elements, rects):
             logger.info("글상자 %d개 순서 재정렬 (page=%d)", n, task.page_no)
-        if n := tag_boxed_elements(elements, rects):
+        # page_w — 곁단 판정(원장 C-77)이 상자 폭을 지면 폭과 견준다. 좌표계에 맞춘다.
+        _page_w = float(image_width) if (bbox_space == "pixel" and image_width) else 1000.0
+        if n := tag_boxed_elements(elements, rects, _page_w):
             logger.info("글상자 %d개 태깅 (page=%d)", n, task.page_no)
 
         # 정오 표시 ○·×(원장 M-04) — 채움 경로라 텍스트레이어에도 MinerU에도 안 잡힌다.
@@ -488,6 +594,16 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                      for k, r in marks]
         if n := tag_answer_marks(elements, marks):
             logger.info("정오 표시 %d개 태깅 (page=%d)", n, task.page_no)
+
+        # 네모 문자(규정 제64항 · 원장 C-16-2) — 지문 빈칸 ▯(가)▯ 의 네모는 벡터 드로잉이라
+        # 텍스트 추출에 안 잡힌다. 추출물에는 `(가)`만 남아 문두 지시와 구분이 사라진다.
+        cboxes = await asyncio.to_thread(char_box_glyphs_norm, task.pdf_data, task.page_no)
+        if bbox_space == "pixel" and image_width and image_height:
+            cboxes = [(t, [r[0] / 1000 * image_width, r[1] / 1000 * image_height,
+                           r[2] / 1000 * image_width, r[3] / 1000 * image_height])
+                      for t, r in cboxes]
+        if n := tag_char_boxes(elements, cboxes):
+            logger.info("네모 문자 %d개 태깅 (page=%d)", n, task.page_no)
 
         # 놓친 그림 회수 — 앞단이 시각 요소를 **0개** 낸 쪽만 비전 모델로 다시 본다.
         # 평가 실측: 시각 요소가 0인 26쪽에서 우리가 gold의 1%만 쓴다(프롬프트로는 안 움직인다).
@@ -513,7 +629,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     # 페이지만 claude-opus-4-8이 직접 읽는다. 실측상 저품질 페이지에서만 유효(3~4배),
     # 중간 품질은 득실 반반이라 빈약 신호(요소 수·글자수)일 때만 트리거.
     from app.ai.parser import opus_fallback
-    if opus_fallback.enabled() and opus_fallback.is_meager(elements):
+    if (not advanced_used) and opus_fallback.enabled() and opus_fallback.is_meager(elements):
         img = _page_image_path(task)
         if img:
             better = await asyncio.to_thread(opus_fallback.extract, str(img))
@@ -521,6 +637,27 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                 logger.warning("Opus 추출 폴백 채택: %d→%d요소 (page=%d)",
                                len(elements), len(better), task.page_no)
                 elements, method = better, "OPUS_VISION"
+
+    # 줄바꿈으로 쪼개진 텍스트 조각 잇기(#263) — **두 추출 경로가 만나는 자리다.**
+    # 한때 mineru_runner 안에 뒀는데 ZERO 티어(TEXT_NATIVE)가 그 경로를 안 타서 절반에
+    # 안 걸렸다(100쪽 표본 A/B 총 편집셀 차 0 · 대표가 지적한 시연 p01 이 ZERO 티어였다).
+    # 여기서 하면 두 경로가 다 걸린다. bbox 좌표계가 경로마다 다르므로 bbox_space 를 넘긴다.
+    if elements:
+        import fitz
+        from app.ai.preprocessor.line_join import join_wrapped_lines
+        from app.ai.preprocessor.pdf_analyzer import _coerce_pdf_bytes
+        try:
+            with fitz.open(stream=_coerce_pdf_bytes(task.pdf_data), filetype="pdf") as _d:
+                _pg = _d[max(0, min(task.page_no - 1, _d.page_count - 1))]
+                n0 = len(elements)
+                elements = join_wrapped_lines(
+                    elements, _pg, bbox_space=bbox_space,
+                    image_width=image_width, image_height=image_height)
+            if n0 != len(elements):
+                logger.info("줄바꿈 조각 %d개 이음 (page=%d · %s)",
+                            n0 - len(elements), task.page_no, method)
+        except Exception as exc:      # noqa: BLE001 — 잇기는 있으면 좋은 것, 실패는 격리
+            logger.warning("줄바꿈 조각 잇기 건너뜀 (page=%d): %s", task.page_no, exc)
 
     extraction = {
         "meta": {
@@ -788,7 +925,7 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
 
 # ── 선택지·보기 하위항목 분절(P2a, opt 직전) ─────────────────────────────────
 # 4분류: ① 규칙 미비 — MinerU는 선택지(①~⑤)·보기(ㄱㄴㄷㄹ)를 줄바꿈만 있는 한 list_item
-#   요소로 묶어 내지만, 정답 도서는 항목마다 별도 줄(2칸 들여)로 조판한다(BBPG-2.3.5).
+#   요소로 묶어 내지만, 정답 도서는 항목마다 별도 줄(2칸 들여)로 조판한다(NLD-2.3.5).
 #   결합 요소를 그대로 두면 항목 하나의 사소한 차이가 전체 블록을 통째로 miss 처리한다
 #   (채점기는 요소 단위 연속부분열 일치를 본다 — 5항목 중 1개만 달라도 5개 전부 실패).
 #   줄머리 마커가 뚜렷이 2개 이상 있을 때만 쪼갠다: 선택지 원문자(①~⑳)·보기 자음(ㄱ.~ㅎ.)
@@ -898,12 +1035,60 @@ _BOX_BLOCK_RE = re.compile(
     r"(<!상자(\d?)>)(.*?)(<!/상자\2>)(.*?)(?=<!상자끝)", re.S)
 
 
-# 인쇄면 줄바꿈을 잇는 요소 유형. list_item은 한 줄이 한 항목이라 제외한다.
-_PARA_JOIN_TYPES = {"text", "caption", "footnote", "sidebar"}
+# 인쇄면 줄바꿈을 잇는 요소 유형.
+# list_item 도 넣는다(2026-08-24). "한 줄이 한 항목"이라 빼 뒀는데 실측이 반대다 —
+# devall·valall 추출의 list_item 866건 중 **774건(89%)** 이 단 폭에 밀린 wrap 이고
+# `사회 전체와의 연관 속에서 / 폭넓게 탐구하려는`처럼 어절이, 때로는 낱말이
+# (`그 / 러다 보니`) 줄 끝에서 갈린다. 새 항목은 아래 `_LIST_HEAD_RE`가 지킨다.
+_PARA_JOIN_TYPES = {"text", "caption", "footnote", "sidebar", "list_item"}
 # 인쇄면 한 단으로 볼 최소 폭. 이보다 좁고 들쭉날쭉하면 시·대사처럼 줄바꿈 자체가
 # 내용인 블록이라 잇지 않는다.
 _PARA_MIN_COL = 15
-_LIST_HEAD_RE = re.compile(r"^\s*(?:[①-⑮㉠-㉪]|[0-9]{1,2}\s*[.)]|[가-핳]\s*[.)]|[-•·])\s")
+# 괄호 꼴 항목 번호도 새 항목이다 — `(가)`·`(1)`. 이게 없으면 항목끼리 이어 붙는다.
+_LIST_HEAD_RE = re.compile(
+    r"^\s*(?:[①-⑮㉠-㉪]|\(\s*(?:[가-힣]|[0-9]{1,2})\s*\)"
+    r"|[0-9]{1,2}\s*[.)]|[가-핳]\s*[.)]|[-•·])\s*")
+
+
+# 낱말 갈림을 볼 때 양쪽 끝이 진짜 글자인지 확인한다 — 태그·기호 줄을 거른다.
+_WORD_EDGE_RE = re.compile(r"[0-9A-Za-z가-힣]$")
+_WORD_HEAD_RE = re.compile(r"^[0-9A-Za-z가-힣]")
+
+
+def _join_split_words(text: str) -> str:
+    """**낱말 가운데서** 갈린 줄만 잇는다 — `유전 물` / `질인`, `그` / `러다 보니`.
+
+    이 갈림은 어떤 조판에서도 내용일 수 없다. 시·대사처럼 줄바꿈이 내용인 블록에서도
+    낱말은 안 쪼갠다. 그래서 단 폭·유형을 따지지 않고 잇는다(NLD §1.2.1 어절단위 줄바꿈).
+    붙일지 띄울지는 `_join_wrapped_lines`와 같은 판정기(`_join_words`)가 정한다.
+    """
+    if "\n" not in text:
+        return text
+    from app.ai.preprocessor.pdf_analyzer import _join_words
+
+    out: list[str] = []
+    touched = False
+    for block in text.split("\n\n"):
+        lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
+        if len(lines) < 2:
+            out.append(block)
+            continue
+        merged = [lines[0]]
+        for nxt in lines[1:]:
+            # ★ **양쪽이 진짜 글자일 때만** 본다. `_join_words` 는 태그·기호 줄에도 빈
+            #   구분자를 돌려주므로 그대로 믿으면 글상자 태그와 글머리가 붙는다
+            #   (실측: `<!상자><!/상자>` + `•강아지는…` → 한 줄, A/B 에서 CER 악화로 잡혔다).
+            if (_WORD_EDGE_RE.search(merged[-1]) and _WORD_HEAD_RE.match(nxt)
+                    and not _LIST_HEAD_RE.match(nxt)
+                    and _join_words(merged[-1], nxt) == ""):
+                merged[-1] += nxt
+                touched = True
+            else:
+                merged.append(nxt)
+        out.append("\n".join(merged))
+    # ★ 이을 것이 없으면 **원문을 그대로** 돌려준다. 재조립만 해도 줄 앞뒤 공백과 빈 줄이
+    #   사라져 손댈 이유가 없는 요소까지 달라진다(실측: 갈림 없는 95쪽이 바뀌었다).
+    return "\n\n".join(out) if touched else text
 
 
 def _join_wrapped_lines(text: str) -> str:
@@ -912,7 +1097,7 @@ def _join_wrapped_lines(text: str) -> str:
     MinerU/OCR 추출은 **인쇄면 한 줄이 한 줄**이라 문단 가운데 줄바꿈이 그대로 남는다.
     그대로 점역하면 어절이 인쇄면 줄 끝에서 갈린다 — `총 5개` / `의 문항이`가 두 어절로
     나가고, 32칸을 못 채운 짧은 줄이 남는다. 점자는 **어절 단위로** 접는 것이 규정이라
-    (BBPG §1.2.1 "어절단위 줄바꿈"), 인쇄면 줄바꿈은 점역 전에 지워야 한다.
+    (NLD §1.2.1 "어절단위 줄바꿈"), 인쇄면 줄바꿈은 점역 전에 지워야 한다.
     실측 OCR 텍스트 요소 5,621개 중 1,988개(35.4%)가 이 상태다.
 
     어느 줄바꿈이 인쇄면 줄바꿈인지는 **다음 줄 첫 어절이 이 줄에 들어갔겠는가**로 가른다.
@@ -934,7 +1119,10 @@ def _join_wrapped_lines(text: str) -> str:
             continue
         col = max(len(ln) for ln in lines)
         if col < _PARA_MIN_COL:
-            out.append(block)
+            # 좁은 단이라 문단 잇기는 안 한다. 다만 **낱말 가운데 갈림**은 잇는다 —
+            # 그건 조판이 아니라 오류다. 이 게이트가 막고 있어서 b16exp 추출의 text
+            # 요소 105건이 `유전 물` / `질인` 꼴로 남아 있었다(2026-08-24 실측).
+            out.append(_join_split_words(block))
             continue
         merged = [lines[0]]
         for nxt in lines[1:]:
@@ -994,13 +1182,28 @@ def _parse_txt_result(
                 for v in (el.get("bbox") or []) if isinstance(v, (int, float))]
         space = "pixel" if (vals and max(vals) > 1000) else (
             "pixel" if method == "TEXT_NATIVE" else "norm1000")
+    elif space == "norm1000":
+        # ★ 2026-09-02 (원장 C-91 잔여) — 메타를 믿되 **값과 어긋나면 값을 따른다.**
+        #   정규화 좌표는 정의상 0~1000 을 못 넘는다. `norm1000` 이라 적혀 있는데 쪽 최대값이
+        #   1000 을 넘으면 그건 정규화가 아니다. 그대로 믿으면 픽셀 좌표를 한 번 더 확대해
+        #   FE 하이라이트가 통째로 어긋난다.
+        #   실측(dev·val 경계 1,200쪽): 4쪽이 여기 걸린다 — 쪽 최대 1,150·6,150·8,000 인데
+        #   쪽 높이는 1,474 다. 확대하면 11,792 까지 간다.
+        _pm = max((v for el in extraction.get("elements", [])
+                   for v in (el.get("bbox") or []) if isinstance(v, (int, float))), default=0)
+        if _pm > 1000:
+            logger.warning("경계 meta 가 norm1000 이라는데 쪽 최대값이 %.0f 다 — 픽셀로 본다 "
+                           "(확대하면 좌표가 어긋난다)", _pm)
+            space = "pixel"
     scale_bbox = ((iw / 1000, ih / 1000, iw / 1000, ih / 1000)
                   if space == "norm1000" and iw and ih else None)
 
     bbox_items: list[BBoxItem] = []
     ext_map: dict[UUID, ExtractedContent] = {}
 
-    for idx, el in enumerate(_split_list_marker_items(extraction.get("elements", [])), start=1):
+    _els = _split_list_marker_items(extraction.get("elements", []))
+    _band = _page_edge_band(_els)
+    for idx, el in enumerate(_els, start=1):
         try:
             eid = UUID(str(el.get("id")))
         except (ValueError, TypeError):
@@ -1012,12 +1215,17 @@ def _parse_txt_result(
         content = el.get("content", "") or ""
         if etype in _PARA_JOIN_TYPES:
             content = _join_wrapped_lines(content)
+        else:
+            content = _join_split_words(content)      # 낱말 갈림은 유형을 안 가린다
         content = _promote_box_title(_split_inline_choices(content))
         if etype in _TEXT_TYPES and _is_boilerplate(content):
             logger.info("보일러플레이트 드롭(%s): %.60s", etype, content)
             continue
         if etype == "header_footer" and _is_running_foot(content):
             logger.info("러닝풋 억제(header_footer): %.60s", content)
+            continue
+        if _is_edge_header(content, el.get("bbox"), _band):
+            logger.info("지면 가장자리 머리글 억제(%s): %.60s", etype, content)
             continue
         # 추출 모델의 '못 읽었다' 해설문 → 내용 비우고 R11(원본 확인 요망)로 넘긴다.
         refused = _is_extraction_refusal(content)
@@ -1300,7 +1508,9 @@ async def _run_chain_logged(label: str, elems: list, factory, idx: int, total: i
     except Exception as exc:
         _chain_done += 1
         logger.error("    [%d/%d] %s 실패(%.1fs): %s", _chain_done, total, label,
-                     time.monotonic() - t0, exc)
+                     time.monotonic() - t0, exc,
+                     extra={"job_id": task.job_id, "page": task.page_no,
+                            "stage": label, "status": "CHAIN_FAILED"})
         raise
     _chain_done += 1
     n_llm = len(result[1]) if isinstance(result, tuple) else 0
@@ -1311,6 +1521,29 @@ async def _run_chain_logged(label: str, elems: list, factory, idx: int, total: i
 # mode b 표 블록. table_opt/table_braille가 쓰는 것과 같은 태그다(tag_names 미등재 —
 # `표`·`행`·`칸`은 translator의 인라인 마커가 아니라 **표 체인 전용 구조 태그**다).
 _MODE_B_TABLE_RE = re.compile(r"<!표>.*?<!/표>", re.DOTALL)
+# hwp·docx 에서 뽑은 표는 BE 가 **HTML `<table>`** 로 실어 보낸다(노션 Review T705·T706).
+# 종전에는 `<!표>` 형식만 표로 봤고, HTML 은 평범한 글줄로 떨어져 **마크업이 그대로
+# 점자화**됐다(`<table>` → ⠠⠦⠞⠁⠼⠴⠄ …). 같은 격자 파서(`table_opt._html_to_grid`)로
+# 태그 형식으로 옮겨 표 체인에 태운다 — 병합 셀 처리도 그쪽 규약을 그대로 따른다.
+_MODE_B_HTML_TABLE_RE = re.compile(r"<table[^>]*>.*?</table>", re.DOTALL | re.IGNORECASE)
+
+
+def _mode_b_html_tables_to_tags(src: str) -> str:
+    """mode b 원문의 HTML 표를 `<!표>` 태그 형식으로 바꾼다. 표가 없으면 그대로."""
+    if not src or "<table" not in src.lower():
+        return src
+    from app.ai.braille.table_braille import build_table_tags
+    from app.ai.llm.table_opt import _html_to_grid
+
+    def _sub(m: re.Match) -> str:
+        try:
+            rows = _html_to_grid(m.group(0), expand=False)
+        except Exception:  # noqa: BLE001 — 못 읽으면 원문 그대로(종전 동작)
+            logger.warning("mode b HTML 표 파싱 실패 — 원문 유지")
+            return m.group(0)
+        return build_table_tags(rows) if rows else m.group(0)
+
+    return _MODE_B_HTML_TABLE_RE.sub(_sub, src)
 
 
 def _mode_b_segments(src: str) -> list[tuple[int, str, str]]:
@@ -1348,10 +1581,10 @@ async def _run_pipeline(task: PageTask) -> dict:
         #   BE는 txt·hwp를 줄마다 `\n`으로 이어 붙인 한 문자열로 보내므로, 그 `\n`이
         #   그대로 요소 경계다.
         #   · 빈 줄은 요소를 만들지 않는다 — 지침상 문단 구분은 빈 줄이 아니라 들여쓰기다
-        #     (BBPG 2장2절2 "3칸에서 시작"). 대신 `order`에 **원본 줄 번호**를 그대로 실어
+        #     (NLD 2장2절2 "3칸에서 시작"). 대신 `order`에 **원본 줄 번호**를 그대로 실어
         #     BE가 빈 줄이 어디였는지 알 수 있게 한다(번호가 건너뛴다).
         #   · id는 `text_list`와 `braille_text_list`가 같다 — 그게 짝짓기의 열쇠다.
-        src_lines = _mode_b_segments(task.source_text or "")
+        src_lines = _mode_b_segments(_mode_b_html_tables_to_tags(task.source_text or ""))
         if not src_lines:                       # 내용이 없으면 빈 응답(빈 결과 금지 규칙은
             src_lines = [(1, "text", task.source_text or "")]   # 플레이스홀더가 담당)
         line_ids = [uuid4() for _ in src_lines]
@@ -1378,7 +1611,7 @@ async def _run_pipeline(task: PageTask) -> dict:
                                             include_braille=True))
         # 요소 격리(불변 규칙 3) — 표 하나가 깨져도 본문은 나가야 한다.
         ext, llm_outputs, braille_outputs = [], [], []
-        for _r in await asyncio.gather(*_chains, return_exceptions=True):
+        for _r in await _gather_chains(_chains):
             if isinstance(_r, Exception):
                 logger.error("mode b 체인 실패 (계속 진행): %s", _r)
                 continue
@@ -1449,11 +1682,9 @@ async def _run_pipeline(task: PageTask) -> dict:
 
     with stage("점역", gpu=True) as st:
         st.note = _type_breakdown(layout_result)
-        chain_results = await asyncio.gather(
-            *(_run_chain_logged(label, elems, fn, i, len(active))
-              for i, (label, elems, fn) in enumerate(active)),
-            return_exceptions=True,
-        )
+        chain_results = await _gather_chains(
+            [_run_chain_logged(label, elems, fn, i, len(active))
+             for i, (label, elems, fn) in enumerate(active)])
 
     all_extracted: list[ExtractedContent] = []
     all_llm: list[LLMOutput] = []
@@ -1539,8 +1770,33 @@ _DRAFT_TAG_RE = re.compile(r"<!/?[^>]*>")
 
 
 def _draft_print_text(text: str) -> str:
-    """초안 묵자 — 내부 태그 제거. 줄바꿈·공백은 배치이므로 보존한다."""
-    return _DRAFT_TAG_RE.sub("", text or "").strip()
+    """초안 묵자 — 내부 태그 제거. 줄바꿈·공백은 배치이므로 보존한다.
+
+    ★ F10(대표 지적) — "시각 요소 설명에는 `<!2칸>` 이 제대로 반영되는데 밑에 추천 텍스트나
+      default 로 보이던 텍스트들엔 다 그런 태깅이 없다."
+
+      `<!2칸>` 은 **지우면 안 되는 태그**다. 위 docstring 이 "줄바꿈·공백은 배치이므로
+      보존한다" 고 하는데 **들여쓰기가 바로 그 배치 정보**다. 2026-08-26 새벽에 줄별
+      들여쓰기를 `line_indents` 필드에서 글 안 태그로 옮기면서(#256) 이 정규식의 표적이
+      됐다. `tn_text` 는 값을 그대로 실어 태그가 남으니 시각 요소 설명에는 보이고 초안
+      묵자에는 안 보였다 — 대표가 본 그대로다.
+
+      그래서 **지우지 말고 실제 공백으로 바꾼다.** 칸 수는 `strip_indent_tags` 가 이미
+      돌려주므로 그걸 먼저 태워 환산한 뒤 나머지 태그를 지운다.
+    """
+    from app.ai.braille.tag_names import strip_indent_tags
+    from app.ai.braille.translator import normalize_print_draft
+
+    body, indents = strip_indent_tags(text or "")
+    if indents:
+        body = "\n".join(" " * n + ln for n, ln in zip(indents, body.split("\n")))
+    # ⚠ .strip() 을 그대로 쓰면 **첫 줄 들여쓰기를 먹는다**(`<!2칸>가나다` → '가나다').
+    #   앞뒤 빈 줄만 떼고 각 줄의 오른쪽 공백만 다듬는다.
+    out = _DRAFT_TAG_RE.sub("", body).strip("\n")
+    # ★ 점자에 깨진 묵자가 들어가면 안 된다(대표 지시 2026-08-26). 점자 경로만 정화하고
+    #   여기를 빼먹어서 초안 묵자에 PUA 글자가 그대로 떴다. 남는 것은 로그로 드러낸다.
+    out = normalize_print_draft(out, where="draft_print")
+    return "\n".join(ln.rstrip() for ln in out.split("\n"))
 
 
 def _draft_contents(bo, d, di: int, flat: dict) -> list[str]:
@@ -1611,6 +1867,11 @@ def _build_response(
 
     # PART 11: 품질 판정 — C/R 감지 후 status 결정 (COMPLETED|NEEDS_REVIEW|BLOCKED)
     from app.ai.quality.quality_checker import QualityChecker
+    # 요소가 하나도 없을 때만 묵자를 다시 본다 — 빈 지면이면 C1(BLOCKED)이 아니다(T702).
+    blank_page = False
+    if not extracted and not llm_outputs and task.pdf_data:
+        from app.ai.preprocessor.pdf_analyzer import page_is_blank
+        blank_page = page_is_blank(task.pdf_data, task.page_no)
     quality_report = QualityChecker().check(
         page_id,
         layout_result=layout_result,
@@ -1618,6 +1879,9 @@ def _build_response(
         llm_outputs=llm_outputs,
         braille_outputs=braille_outputs,
         line_overflow_rate=line_overflow_rate,
+        blank_page=blank_page,
+        # 응답에 실리는 통 문자열을 넘긴다 — 검사기가 조판본 대신 이걸 본다(C5 오탐).
+        flat_text={str(k): fe.text for k, fe in (flat or {}).items()},
     )
 
     response: dict = {
@@ -1629,6 +1893,8 @@ def _build_response(
             "pdf_layer_confidence": doc_meta.pdf_confidence if doc_meta else 0.0,
             "routing_tier_used": routing_tier,
             "scan_only": doc_meta.scan_only if doc_meta else False,
+            # 캡셔닝을 끄고 돈 산출물이면 박아 둔다 — 이걸로 시각 축을 재면 안 된다.
+            "caption_disabled": os.getenv("SEMOJUM_NO_CAPTION") == "1",
         },
         "quality_report": quality_report.model_dump(),
     }
@@ -1751,6 +2017,21 @@ def _build_response(
         if _risk and "quality_report" in response:
             response["quality_report"].setdefault("review_flags", []).append(
                 {"type": "R11", "element_id": "page", "message": _risk})
+        # B-09(원장) — 폰트 사설영역(PUA) 글리프가 점역에서 공백으로 사라진다. 어느 아이콘이
+        # 어느 말인지 모르는 것은 추측해 옮기지 않되(pm 결재 2026-08-22), **조용히 지우지도
+        # 않는다**: 글리프 코드와 횟수를 남기고 그 쪽을 NEEDS_REVIEW로 세워 점역사가 원본을
+        # 보게 한다. 실측 근거 — print 3,182쪽 중 339쪽(10.7%)에 PUA가 있고 1,967회다.
+        from app.ai.braille.translator import dropped_pua as _dropped_pua
+        _pua = _dropped_pua("\n".join(
+            c for e in (response.get("text_list") or []) for c in (e.get("contents") or [])))
+        if _pua and "quality_report" in response:
+            _codes = ", ".join(f"U+{ord(ch):04X}×{n}" for ch, n in _pua.most_common())
+            response["quality_report"].setdefault("review_flags", []).append(
+                {"type": "R15", "element_id": "page",
+                 "message": f"글꼴 사설영역 글리프 {sum(_pua.values())}자가 점역에서 빠졌다 — 원본 확인 필요 ({_codes})"})
+            if response.get("status") == "COMPLETED":
+                response["status"] = "NEEDS_REVIEW"
+                response["quality_report"]["status"] = "NEEDS_REVIEW"
     except Exception as exc:  # noqa: BLE001 — 등급 실패가 점역 결과를 막지 않는다
         logger.warning("검수 등급 산출 실패(무시): %s", exc)
 

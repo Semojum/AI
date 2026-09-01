@@ -14,8 +14,10 @@ VRAM: MinerU VLM ≈ 3GB로 가벼워 HCXT(~12.8GB)와 22GB GPU에서 공존 가
 from __future__ import annotations
 
 import atexit
+import json
 import os
 import signal
+import shutil
 import subprocess
 import threading
 import time
@@ -51,6 +53,72 @@ def _mineru_api_bin() -> str:
         if cand.exists():
             return str(cand)
     return "mineru-api"
+
+
+def _engine_is_vllm() -> bool:
+    """MinerU가 vLLM 엔진으로 도는가.
+
+    MinerU는 `mineru/utils/engine_utils.py:_select_linux_engine`에서 `import vllm`이
+    되면 vLLM, 안 되면 transformers를 고른다. 우리는 **다른 conda env의 bin을** 부르므로
+    우리 프로세스에서 import로는 못 본다 — 그 env의 bin/에 vllm 실행파일이 있는지로 본다.
+    경로를 못 정하면(PATH의 bare mineru) PATH에서 찾고, 그래도 모르면 False다.
+    모를 때 False로 두는 건 의도다 — 아래 concurrency()가 안전한 쪽(동시 1)으로 간다.
+
+    `MINERU_ENGINE`을 주면 그게 이긴다. vLLM을 라이브러리로만 깔아 콘솔 스크립트가 없는
+    배치에서 우리 추정이 틀릴 수 있는데, 그때 처리량이 조용히 반토막 나면 안 된다.
+    """
+    forced = os.environ.get("MINERU_ENGINE", "").strip().lower()
+    if forced:                       # 운영 탈출구 — 우리 추정이 틀린 배치에서 손으로 못 박는다
+        return forced.startswith("vllm")
+    mb = os.environ.get("MINERU_BIN") or config.mineru_bin
+    if mb:
+        return Path(mb).with_name("vllm").exists()
+    return shutil.which("vllm") is not None
+
+
+_clamped_logged = False
+
+
+def concurrency() -> int:
+    """MinerU 동시 요청 실효값. **transformers 엔진이면 1로 조인다.**
+
+    ★ 2026-08-26 — MinerU 3.4.0 hybrid-engine이 vLLM 없는 env에서 도는 경우, VLM 추론은
+      `mineru_vl_utils/vlm_client/transformers_client.py`의 `aio_batch_predict`가
+      `asyncio.to_thread`로 스레드에 던진다. **락이 없다.** 그 스레드들이 같은
+      `Qwen2VLForConditionalGeneration` 인스턴스를 쓰는데, 이 모델은 호출 사이에
+      `self.model.rope_deltas`를 남겨 두고 재사용한다(transformers 4.57.6
+      `modeling_qwen2_vl.py:1454`). 동시 요청 둘이 서로의 rope_deltas를 덮어써 터진다:
+
+        RuntimeError: The expanded size of the tensor (2) must match the existing size (0)
+                      at non-singleton dimension 1. Target sizes: [3, 2, 1]. Tensor sizes: [0, 1]
+
+      실측(로그 2,171쪽 전수): 텍스트레이어 폴백 142쪽(6.5%) 중 **102쪽(72%)이 이 에러**다.
+      폴백은 표·그림 구조를 통째로 잃으므로(`pipeline._fallback_text_layer`) 표가 텍스트
+      줄로 풀려 왼칸·오른칸·행이름이 뒤섞인다 — 2026-08-26 시연 지적 1번이 이것이다.
+
+      재시도(#307)로는 못 막는다. 상대 요청이 도는 동안은 두 번째 시도도 같이 터진다
+      (2026-08-26 실측: 사회문화 p105 재시도 1·2차 모두 실패, 231.7초 소모).
+
+    vLLM 엔진에는 이 공유 상태가 없다(연속 배칭). 그래서 vLLM일 때만 설정값을 그대로 쓴다.
+    처리량 대가는 vLLM 경로에서 0이고, transformers 경로에서만 발생한다
+    (동시 1→716쪽/h · 2→1,080). transformers 경로는 어차피 RUNBOOK이 권하는 경로가 아니다.
+    """
+    global _clamped_logged
+    n = max(1, config.mineru_max_concurrent)
+    if _engine_is_vllm():
+        return n
+    # ★ 조이든 안 조이든 **엔진이 느린 쪽으로 떨어졌다는 사실 자체를 크게 알린다**
+    #   (2026-08-26 pm 지시). 이게 조용해서 밤새 전수 재추출 한 벌이 잘못된 엔진 위에서
+    #   돌 뻔했다. 종전에는 `mineru_runner._announce_engine`이 INFO 한 줄을 낼 뿐이었다.
+    if not _clamped_logged:
+        _clamped_logged = True
+        logger.warning(
+            "⚠ MinerU 엔진이 vLLM이 아니다(bin=%s). 느린 경로이고(RUNBOOK 기준 57.7s/p) "
+            "transformers 클라이언트가 스레드 비안전이라 동시 요청이 겹치면 rope_deltas "
+            "레이스로 추출이 터진다 — 그 쪽은 표·그림을 통째로 잃는다(텍스트레이어 폴백). "
+            "동시 요청을 %d→1로 조인다. vLLM env(RUNBOOK §1 mnr_vllm)로 띄우면 원래 값을 쓴다.",
+            os.environ.get("MINERU_BIN") or config.mineru_bin or "(PATH)", n)
+    return 1
 
 
 # 죽은 서비스를 되살릴 때 쓰는 자물쇠·한도.
@@ -103,6 +171,28 @@ def get_url() -> str | None:
         return ensure_started(wait=_RESTART_WAIT)
 
 
+def _warn_if_unsafe_reuse(url: str) -> None:
+    """남이 띄워 둔 서버를 물려받았는데 그게 동시 2 이상이면 알린다.
+
+    우리 슬롯을 1로 조여도 **다른 프로세스가 같은 서버에 동시에 던지면** 레이스는 그대로다
+    (concurrency() 주석 참조). 서버는 한 번 뜨면 재사용되므로, 나중에 MINERU_BIN을 바꿔도
+    이미 뜬 transformers 서버에 붙는다 — 2026-08-26에 이 조용함이 전수 재추출 한 벌을
+    통째로 오염시켰다. 고칠 수는 없으니 최소한 보이게 한다.
+    """
+    if _engine_is_vllm():
+        return
+    try:
+        with urllib.request.urlopen(url + "/health", timeout=2.0) as r:
+            n = json.loads(r.read().decode("utf-8")).get("max_concurrent_requests")
+    except Exception:  # noqa: BLE001
+        return
+    if isinstance(n, int) and n > 1:
+        logger.warning(
+            "재사용한 MinerU 서버가 동시 %d로 떠 있다(엔진 transformers). 우리 요청은 1로 "
+            "조이지만 다른 프로세스가 같이 던지면 rope_deltas 레이스로 추출이 터진다. "
+            "그 쪽은 표·그림을 잃는다. 이 서버를 내리고 vLLM env로 다시 띄우는 것이 정답이다.", n)
+
+
 def ensure_started(wait: float = 240.0) -> str | None:
     """영구 mineru-api를 보장(외부 URL 사용 또는 자동 기동). 사용 URL 반환, 실패 시 None."""
     global _proc, _pgid, _url
@@ -121,6 +211,7 @@ def ensure_started(wait: float = 240.0) -> str | None:
     if _health(url):                       # 이미 떠 있으면 재사용
         _url = url
         logger.info("MinerU 영구 서비스 재사용: %s", url)
+        _warn_if_unsafe_reuse(url)
         return url
 
     # 동시 요청 허용치. mineru-api 기본은 3이며 이 환경변수로 올린다.
@@ -138,7 +229,7 @@ def ensure_started(wait: float = 240.0) -> str | None:
         _path = f"{_api_dir}{os.pathsep}{_path}"
     env = {**os.environ,
            "PATH": _path,
-           "MINERU_API_MAX_CONCURRENT_REQUESTS": str(config.mineru_max_concurrent)}
+           "MINERU_API_MAX_CONCURRENT_REQUESTS": str(concurrency())}
 
     # vLLM 백엔드 필수 둘. 자식 프로세스에만 얹는다 — 우리 프로세스의 링커를 건드리면
     # 다른 확장 모듈이 엉뚱한 libstdc++를 물 수 있다.
@@ -148,6 +239,13 @@ def ensure_started(wait: float = 240.0) -> str | None:
         env["LD_LIBRARY_PATH"] = f"{ld}{os.pathsep}{prev}" if prev else ld
     if config.mineru_batch_invariant:
         # 같은 입력 → 같은 출력. 끄면 같은 조건 재실행이 80.0%만 일치해 A/B가 불가능하다.
+        # ★ 켜도 100%는 아니다(2026-08-21 실측). 같은 커밋·같은 조건 두 벌에서 최종 산출이
+        #   갈린 쪽이 **1/709(0.14%)** 있었다 — MinerU vlm 추론이 표 요소에서 새는 자리가
+        #   남는다(EBS-E26-014 p0079, table_body가 갈려 점자 2줄 차이).
+        #   레버는 이것뿐이다: mineru CLI·mineru-api 어느 쪽에도 seed·temperature 옵션이
+        #   없고(--host/--port/--reload/--allow-public-http-client/--enable-vlm-preload가 전부),
+        #   vLLM 엔진 인자는 MinerU 내부에서 만들어 우리가 못 준다.
+        #   → 추출 계열 A/B의 **총편집 잡음 바닥 ±10셀은 구조적 하한**이다. 없앨 수 없다.
         env.setdefault("VLLM_BATCH_INVARIANT", "1")
 
     # vLLM이 선점할 VRAM 비율. MinerU 기본 0.5는 HCXT와 GPU 한 장을 나눠 쓰는
@@ -164,13 +262,21 @@ def ensure_started(wait: float = 240.0) -> str | None:
         "MINERU_API_LOG", str(Path.cwd() / "storage" / "logs" / "mineru_api.log")))
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        # ★ 회전(2026-08-21). 이어붙이기만 하다 보니 16MB까지 자랐다. MinerU가 쪽마다
+        #   INFO를 쏟아 기동 실패 원인이 오히려 묻힌다 — 로그를 남기는 목적이 그거였는데.
+        #   기동 시점에 한 번만 본다(도는 중에는 안 자른다 — 파일 핸들이 열려 있다).
+        cap = int(os.environ.get("MINERU_API_LOG_MAX_MB", "32")) * 1024 * 1024
+        if log_path.exists() and log_path.stat().st_size > cap:
+            prev = log_path.with_suffix(".log.1")
+            prev.unlink(missing_ok=True)
+            log_path.rename(prev)          # 직전 한 벌만 남긴다
         sink = open(log_path, "ab")
     except Exception:  # noqa: BLE001
         sink = subprocess.DEVNULL
         log_path = None
 
     logger.info("MinerU 영구 서비스 기동 중: %s (VLM 프리로드 · 동시 %d · VRAM %s)…",
-                url, config.mineru_max_concurrent, gpu_util)
+                url, concurrency(), gpu_util)
     try:
         _proc = subprocess.Popen(
             [_mineru_api_bin(), "--host", "127.0.0.1", "--port", str(_PORT),

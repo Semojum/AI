@@ -127,23 +127,23 @@ class TestMathStructEmit:
         from app.ai.braille.kor_math_rules import latex_rule_ids
 
         assert latex_rule_ids(r"\frac{a^2}{b_i}") == [
-            "KBR-수학-1.7", "KBR-수학-2.18", "KBR-수학-2.19"]
-        assert latex_rule_ids(r"\sqrt{x}") == ["KBR-수학-2.22"]
+            "MCST-수학-1.7", "MCST-수학-2.18", "MCST-수학-2.19"]
+        assert latex_rule_ids(r"\sqrt{x}") == ["MCST-수학-2.22"]
 
     def test_함수명령_아래첨자_오계수없음(self) -> None:
         # \lim_ \log_ \sum_ 의 _ 가 아래첨자(2.19)로 오계수되면 안 됨
         from app.ai.braille.kor_math_rules import latex_rule_ids
 
-        assert latex_rule_ids(r"\lim_{x \to 0}") == ["KBR-수학-6.51"]
-        assert latex_rule_ids(r"\log_2 x") == ["KBR-수학-5.46"]
-        assert latex_rule_ids(r"\sum_{i=1}^{n}") == ["KBR-수학-2.25"]
+        assert latex_rule_ids(r"\lim_{x \to 0}") == ["MCST-수학-6.51"]
+        assert latex_rule_ids(r"\log_2 x") == ["MCST-수학-5.46"]
+        assert latex_rule_ids(r"\sum_{i=1}^{n}") == ["MCST-수학-2.25"]
 
     def test_삼각함수_변형_정확분류(self) -> None:
         from app.ai.braille.kor_math_rules import latex_rule_ids
 
-        assert latex_rule_ids(r"\sin x") == ["KBR-수학-5.47"]
-        assert latex_rule_ids(r"\arcsin x") == ["KBR-수학-5.48"]   # \sin 오매칭 금지
-        assert latex_rule_ids(r"\sinh x") == ["KBR-수학-5.49"]     # \sin 오매칭 금지
+        assert latex_rule_ids(r"\sin x") == ["MCST-수학-5.47"]
+        assert latex_rule_ids(r"\arcsin x") == ["MCST-수학-5.48"]   # \sin 오매칭 금지
+        assert latex_rule_ids(r"\sinh x") == ["MCST-수학-5.49"]     # \sin 오매칭 금지
 
     def test_formula_braille_구조trail(self) -> None:
         import uuid
@@ -155,10 +155,10 @@ class TestMathStructEmit:
                         render_mode="formula_block", routing_tier="ZERO")
         trail = FormulaBraille().translate([opt])[0].rule_trail
         rids = {r.rule_id for r in trail}
-        # Step17(2026-08-08): 포괄 마커 KBR-수학-1.1(수표)은 뺐다 — 구조 규칙만 남는다.
-        assert "KBR-수학-1.1" not in rids
-        assert "KBR-수학-1.7" in rids    # 분수
-        assert "KBR-수학-2.22" in rids   # 근호
+        # Step17(2026-08-08): 포괄 마커 MCST-수학-1.1(수표)은 뺐다 — 구조 규칙만 남는다.
+        assert "MCST-수학-1.1" not in rids
+        assert "MCST-수학-1.7" in rids    # 분수
+        assert "MCST-수학-2.22" in rids   # 근호
 
     def test_구조없는_수식은_근거없음(self) -> None:
         """Step17 — 구조가 없으면 보여 줄 판단도 없다. 근거는 비운다(종전: 일반 마커 1건)."""
@@ -214,10 +214,10 @@ class TestLatexSymbolCommandEmit:
         from app.ai.braille.kor_math_rules import latex_rule_ids
 
         got = set(latex_rule_ids(r"\alpha \in A, x \leq y"))
-        assert {"KBR-4.10.30", "KBR-수학-7.60", "KBR-수학-1.4"} <= got
+        assert {"MCST-한글-4.10.30", "MCST-수학-7.60", "MCST-수학-1.4"} <= got
 
     def test_int_은_적분이며_in_오매칭없음(self) -> None:
         # \int = 적분(6.56)만, \in(집합 7.60)으로 오매칭되면 안 됨(토큰 단위 추출)
         from app.ai.braille.kor_math_rules import latex_rule_ids
 
-        assert latex_rule_ids(r"\int x dx") == ["KBR-수학-6.56"]
+        assert latex_rule_ids(r"\int x dx") == ["MCST-수학-6.56"]

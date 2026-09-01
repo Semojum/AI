@@ -22,6 +22,9 @@ from app.schemas.content import BrailleOutput, ExtractedContent
 
 _DATA_PATH = Path(__file__).parent.parent.parent / "test_data" / "page_001" / "type" / "table" / "table_cap.json"
 _GRITS_THRESHOLD = 0.88
+# 표 줄머리 들여쓰기 = 점자 빈칸 2(U+2800). ASCII 공백이 아니다 —
+# 2026-08-28 이전엔 렌더러가 `"  "`(ASCII)를 썼고 이 단언들이 그걸 굳히고 있었다.
+_INDENT = "⠀⠀"
 
 
 def _load_mock() -> list[ExtractedContent]:
@@ -69,7 +72,7 @@ def _grits(extracted: ExtractedContent, output: BrailleOutput, render_mode: str)
         #   테두리 없이 나갔는데, 자료지침 §3.1.3(2)는 표에 테두리를 요구하며 열 수로
         #   예외를 두지 않고(도서지침 예3-2가 2열 표 실물), 코퍼스도 우리가 선형으로 낸
         #   표의 dev 92%·val 100%를 테두리 안에 둔다.
-        indented = [ln for ln in output.braille_lines if ln.startswith("  ")]
+        indented = [ln for ln in output.braille_lines if ln.startswith(_INDENT)]
         top = [ln for ln in output.braille_lines
                if len(ln) >= 8 and ln[0] == "⠿" and ln[-1] == "⠿" and set(ln[1:-1]) == {"⠛"}]
         bot = [ln for ln in output.braille_lines
@@ -78,7 +81,7 @@ def _grits(extracted: ExtractedContent, output: BrailleOutput, render_mode: str)
         checks.append(len(top) == 1 and len(bot) == 1)           # 위·아래 테두리 각 한 줄
         checks.append(len(output.braille_lines) == max_row + 2)  # 총 줄 수 = 행 + 테두리 2
     elif render_mode == "unfold":
-        # 풀어쓰기(BBPG-3.1.2)는 지침 §3.1.1(1)에 따라 **두 조판**이 다 정답이다
+        # 풀어쓰기(NLD-3.1.2)는 지침 §3.1.1(1)에 따라 **두 조판**이 다 정답이다
         # (2026-07-20 정정 — 정답 도서 실측으로 확인):
         #   ② 낱말 수준·좁은 표 → 행 단위: 원본 한 행이 한 줄  → 줄 수 = max_row
         #      (생물 p122 '자율 신경  침 분비  폐의 기관지  동공' / p119 동일 형식)
@@ -91,7 +94,7 @@ def _grits(extracted: ExtractedContent, output: BrailleOutput, render_mode: str)
         nonblank = [ln for ln in output.braille_lines if ln.strip()]
         n_lines = len(output.braille_lines)
         checks.append(n_lines in (max_row, (max_col - 1) * max_row))
-        checks.append(all(ln.startswith("  ") for ln in nonblank))
+        checks.append(all(ln.startswith(_INDENT) for ln in nonblank))
     else:
         # table_grid — 지침 §3.1.3(2) 형식 (2026-08-06 갱신).
         # 구판 단언(전체 ⠿ 채움 테두리 + ⠒ 구분선)은 **한 달 전 폐기된 형식**이었다.
@@ -103,7 +106,7 @@ def _grits(extracted: ExtractedContent, output: BrailleOutput, render_mode: str)
                if len(ln) >= 8 and ln[0] == "⠿" and ln[-1] == "⠿" and set(ln[1:-1]) == {"⠛"}]
         bot = [ln for ln in output.braille_lines
                if len(ln) >= 8 and ln[0] == "⠿" and ln[-1] == "⠿" and set(ln[1:-1]) == {"⠶"}]
-        data = [ln for ln in output.braille_lines if ln.startswith("⠀⠀") or ln.startswith("  ")]
+        data = [ln for ln in output.braille_lines if ln.startswith(_INDENT)]
         checks.append(len(top) == 1)
         checks.append(len(bot) == 1)
         checks.append(len(data) == max_row)          # 원본 행이 전부 실렸는가
@@ -162,12 +165,12 @@ class TestTablePipelineBasic:
                 )
 
     def test_rule_trail_excludes_generic(self, braille_outputs: list[BrailleOutput]) -> None:
-        # 정책(태민 2026-06-01): 포괄 표 규칙(BBPG-3.1.1)·조판 규칙(BBPG-1.2.1) 미기록.
+        # 정책(태민 2026-06-01): 포괄 표 규칙(NLD-3.1.1)·조판 규칙(NLD-1.2.1) 미기록.
         # 구조화 표는 점역자 주가 없으면 rule_trail이 비는 것이 정상.
         for o in braille_outputs:
             rids = [r.rule_id for r in o.rule_trail]
-            assert "BBPG-3.1.1" not in rids
-            assert "BBPG-1.2.1" not in rids
+            assert "NLD-3.1.1" not in rids
+            assert "NLD-1.2.1" not in rids
 
     def test_element_ids_preserved(
         self,
@@ -275,9 +278,71 @@ class TestTableRenderModes:
         """2열 표는 3칸에서 시작하는 '키  값' 줄로 나온다(정답 도서 관행)."""
         linear_outputs = [
             o for o in braille_outputs
-            if any(line.startswith("  ") for line in o.braille_lines)
+            if any(line.startswith(_INDENT) for line in o.braille_lines)
         ]
         assert len(linear_outputs) >= 1, "3칸 시작 줄 없음"
+
+    def test_1열_표는_글상자로_나간다(self) -> None:
+        """1열 표는 격자가 아니라 글상자다 — 테두리 + 각 항목 3칸(원장 C-30 · N031).
+
+        `" | ".join(["한 칸"])` 이 파이프를 안 남겨서, 1열은 `_table_tags` 와
+        `_translate_one` 두 군데서 격자 경로를 빠져나가 점역자 주(`⠠⠄표. …`)로
+        떨어지고 있었다. gold 는 그 자리를 글상자로 적는다(생명과학 body p0115 ·
+        언어와매체 body p0197 실물 대조). 접두 `표.` 는 gold 에 없는 말이었다.
+        """
+        from app.ai.braille.table_braille import TableBraille, build_table_tags
+        from app.schemas.content import LLMOutput
+
+        tags = build_table_tags([["보기"], ["ㄱ. 첫째 항목이다."], ["ㄴ. 둘째 항목이다."]])
+        out = TableBraille().translate([LLMOutput(
+            element_id="11111111-1111-1111-1111-111111111111",
+            corrected_text=tags, render_mode="table_grid",
+            routing_tier="ZERO", processing_time_ms=0)])[0]
+        lines = out.braille_lines
+        assert lines[0].startswith("⠿⠛") and lines[-1].startswith("⠿⠶"), f"테두리 없음: {lines!r}"
+        body = [l for l in lines[1:-1] if l.strip(" ⠀")]
+        assert body and all(l.startswith("⠀⠀") for l in body), f"항목이 3칸이 아니다: {body!r}"
+        assert not any("⠠⠄" in l for l in lines), "점역자 주 접두가 남았다"
+        assert len(out.drafts) == 4, f"초안이 4개가 아니다: {len(out.drafts)}"
+
+    def test_2열_구분선은_머리행이_있을_때만(self) -> None:
+        """구분선은 "열 제목과 열 항목 사이"다 — 열 제목이 없으면 넣지 않는다(원장 C-30).
+
+        2열 표는 대개 키-값 나열이라 첫 행이 열 제목이 아니다. 판정은 머리행 칸이
+        짧은가로 한다(제목은 라벨이라 짧고 값은 길다). gold 실측 408개에서
+        머리행 ≤10자 규칙이 전체 90.9%(늘 넣기 19.9% · 안 넣기 80.1%)다.
+        임계는 val 에서 고르고 dev 에서 평가했다(dev F1 0.82). 3열 이상은 종전대로.
+        """
+        from app.ai.braille.table_braille import _render_grid
+        sep = "⠐" * 32
+
+        short = _render_grid("이름|점수\n가나다|95\n라마바|88")
+        assert sep in short, f"짧은 머리행인데 구분선이 빠졌다: {short!r}"
+
+        long_head = ("실험 결과를 정리한 표의 첫 칸|둘째 칸도 아주 길게 적은 값이다\n"
+                     "가나다|95\n라마바|88")
+        assert sep not in _render_grid(long_head), "긴 첫 행인데 구분선이 들어갔다"
+
+        three = _render_grid("구분|점수|등급\n가나다|95|가\n라마바|88|나")
+        assert sep in three, "3열인데 구분선이 빠졌다"
+
+    def test_no_ascii_space_in_table_braille(
+        self, braille_outputs: list[BrailleOutput]
+    ) -> None:
+        """점자 지면의 빈칸은 전부 U+2800이다(대표 지적 R1, 2026-08-24).
+
+        표 경로가 R1에서 빠져 줄머리를 ASCII 공백으로 적고 있었다. 눈으로는
+        `"⠀⠀"`와 구별이 안 돼 오래 살아남았으므로 회귀를 여기서 막는다.
+        선택 초안(braille_lines)과 대안 초안(drafts) 둘 다 본다.
+        """
+        for o in braille_outputs:
+            groups = [("본문", o.braille_lines)]
+            groups += [(f"초안 {d.render_mode}", d.braille_lines) for d in o.drafts]
+            for label, lines in groups:
+                for i, ln in enumerate(lines):
+                    if ln.startswith("[처리 불가") or ln.startswith("[표 수동"):
+                        continue          # 점역 안 된 원문 플레이스홀더는 예외
+                    assert " " not in ln, f"{label} {i}번째 줄에 ASCII 공백: {ln!r}"
 
     def test_blocked_fallback_produces_placeholder(self) -> None:
         from uuid import uuid4
@@ -333,13 +398,13 @@ class TestTransposeTranslatorNote:
                 "초고령 | 40 | 16 | 36 | 11 | 8")
         lines = _render_unfold(wide)
         expected = self._expected()
-        assert lines[0].replace(" ", "⠀") == expected, (
+        assert lines[0] == expected, (
             f"전치 점역자 주 불일치\n  기대(지침 예3-2): {expected!r}\n  실제            : {lines[0]!r}")
 
     def test_note_is_wrapped_in_tn_markers(self) -> None:
-        """점역자 주 마커 ⠠⠄가 양끝에 있어야 rule_trail(BBPG-1.2.6)이 잡힌다."""
+        """점역자 주 마커 ⠠⠄가 양끝에 있어야 rule_trail(NLD-1.2.6)이 잡힌다."""
         from app.ai.braille.table_braille import _tn_transpose_line
-        line = _tn_transpose_line().strip()
+        line = _tn_transpose_line().strip(" ⠀")
         assert line.startswith("⠠⠄") and line.endswith("⠠⠄")
 
     def test_non_transposed_table_has_no_note(self) -> None:
@@ -405,3 +470,41 @@ class TestTableRegulationSwitch:
         wide36 = ("자율 신경 | 침 분비 | 폐의 기관지 | 동공\n"
                   "A | 촉진 | 수축 | 축소\nB | 억제 | 이완 | 확대")
         assert self._unfold(wide36, "book") != self._unfold(wide36, "regulation")
+
+
+class TestNumberRunNotSplit:
+    """32칸 하드 컷이 숫자 한 개를 두 줄로 가르던 것 (2026-08-29, 원장 B-12).
+
+    수표를 잃은 뒷부분은 **자음으로 읽힌다** — `⠓` 는 8이자 ㅎ이라 1598 이 '159'+'타'가 된다.
+    셀 수는 맞고 뜻만 바뀌는 자리라 채점으로는 안 잡힌다.
+    gold 실측(정답 1,251쪽): 줄 끝이 수표+숫자로 공백 없이 끝나는 129건 중 갈린 것 **0건**.
+    """
+
+    def test_number_run_moves_to_next_line(self):
+        from app.ai.braille.table_braille import _render_linear
+        out = _render_linear("<!행><!칸>" + "가" * 9 + "프랑스<!칸>낭트 칙령(1598, 위그노에게<!/행>")
+        body = [ln for ln in out if not ln.startswith("⠿")]
+        joined = "".join(body)
+        assert "⠼⠁⠑⠊⠓" in joined, "수표+1598 이 한 줄에 온전히 있어야 한다"
+        for ln in body:                       # 어느 줄도 수표 없이 숫자로 시작하지 않는다
+            assert not (ln and ln[0] in "⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚"), ln
+
+    def test_roman_word_is_not_pulled(self):
+        """수표 없는 a~j 런(로마자)은 당기지 않는다 — 점형이 숫자와 같아 오인하기 쉽다."""
+        from app.ai.braille.table_braille import _num_run_start
+        s = "⠁⠃⠉⠙⠑"                          # 수표 없이 이어진 셀 = 로마자 abcde
+        assert _num_run_start(s, 3) == 3
+
+    def test_number_run_start_pulls_to_sign(self):
+        from app.ai.braille.table_braille import _num_run_start
+        s = "⠛⠼⠁⠑⠊⠓"                        # ⠼ 가 1번 자리, 숫자 런 2~5
+        assert _num_run_start(s, 4) == 1
+        assert _num_run_start(s, 0) == 0      # 숫자 셀이 아니면 그대로
+
+    def test_run_at_line_head_keeps_hard_cut(self):
+        """런이 줄 머리부터면 당길 자리가 없다 — 하드 컷을 유지해 무한 루프를 막는다."""
+        from app.ai.braille.table_braille import _split_lines
+        from app.ai.braille.constants import COLS
+        text = "⠼" + "⠁" * (COLS + 5)
+        out = _split_lines(text)
+        assert len(out) == 2 and len(out[0]) == COLS

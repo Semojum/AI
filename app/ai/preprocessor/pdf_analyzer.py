@@ -11,6 +11,8 @@ import fitz
 from app.schemas.layout import DocumentMeta
 from app.utils.logger import get_logger
 
+from app.ai.braille.tag_names import BOX_CHAR as TAG_BOX_CHAR
+
 logger = get_logger(__name__)
 
 MIN_TEXT_LENGTH = 10
@@ -176,8 +178,41 @@ _UL_COVER = 0.5          # 글자 폭이 선과 이만큼 겹쳐야 밑줄로 �
 _UL_OPEN, _UL_CLOSE = "<!강조>", "<!/강조>"
 
 
+def _grid_rules(cands: list) -> set:
+    """표 구분선인 선들. **밑줄이 아니다.**
+
+    ★ F04(대표 지적) — 표 제목행에만 `<!강조>`가 붙는 것을 보고 "굵은 글씨라서 붙인 것
+      아닌가" 하셨는데, 실물은 그것도 아니었다. **표의 가로 구분선을 밑줄로 오검출**하고
+      있었다. 시연 p2 실측: 제목행 '구분'·'전통 사회'·'근대 이후의 사회'가 전부
+      `_is_underlined=True`. 그 아래 3.56pt 에 폭 54/154/154 짜리 선이 있는데 그게
+      표의 열 구분선이다. 본문 셀('이 매우 어려운 폐쇄적…')도 같은 이유로 물린다.
+
+    가르는 신호는 **같은 x-분할이 여러 y 에서 되풀이되는 것**이다(= 격자).
+      표 구분선   y=179.4 · 196.4 · 309.4 가 전부 [(74.6,128.4),(128.4,282.4),(282.4,436.5)]
+      진짜 밑줄   언어 p034 y=598.2 은 12조각, y=583.2 는 7조각 — 분할이 매번 다르다
+    선 폭이나 연속성으로는 안 갈린다(진짜 밑줄도 여러 조각이 틈 없이 이어진다).
+    """
+    from collections import defaultdict
+    byy = defaultdict(list)
+    for r in cands:
+        byy[round(r.y0, 1)].append(r)
+    sig_y = defaultdict(set)
+    for y, segs in byy.items():
+        if len(segs) < 2:                     # 한 조각짜리는 격자 판정을 안 한다
+            continue
+        segs = sorted(segs, key=lambda r: r.x0)
+        sig = tuple((round(r.x0, 1), round(r.x1, 1)) for r in segs)
+        sig_y[sig].add(y)
+    out = set()
+    for sig, ys in sig_y.items():
+        if len(ys) >= 2:                      # 같은 분할이 두 줄 이상 = 표 격자
+            for y in ys:
+                out.update(id(r) for r in byy[y])
+    return out
+
+
 def underline_rects(page) -> list:
-    """페이지의 밑줄 후보 선(표시 좌표계 Rect)."""
+    """페이지의 밑줄 후보 선(표시 좌표계 Rect). 표 구분선은 뺀다(위 `_grid_rules`)."""
     rot = page.rotation_matrix
     page_w = page.rect.width
     out = []
@@ -185,7 +220,8 @@ def underline_rects(page) -> list:
         r = fitz.Rect(g["rect"]) * rot
         if r.height <= _UL_MAX_H and _UL_MIN_W <= r.width <= page_w * _UL_PAGE_W_RATIO:
             out.append(r)
-    return out
+    grid = _grid_rules(out)
+    return [r for r in out if id(r) not in grid]
 
 
 def _is_underlined(cb, underlines) -> bool:
@@ -291,6 +327,39 @@ _PAR_COL_OVERLAP = 0.6     # 같은 단으로 볼 x 겹침 비율
 _PAR_FULL_RIGHT = 0.04     # 단 오른쪽에서 이 비율 안쪽까지 오면 '끝까지 찬 줄'
 _PAR_GAP_MAX = 1.0         # 줄 간격이 줄높이의 이 배 이하일 때만 이음
 _PAR_INDENT_MIN = 0.6      # 단 왼쪽에서 줄높이의 이 배 넘게 들어가면 새 문단 첫 줄
+_PAR_RIGHT_Q = 0.95        # 단 오른쪽 끝을 잡을 분위수(max는 꼬리말 한 줄에 흔들린다)
+
+# 이어 붙이면 안 되는 자리 두 가지(2026-08-20 실물 확인).
+#   ① 뒤 조각이 **항목 표지**로 시작 — 선택지 ②와 ③, 표의 두 행을 한 덩어리로 붙였다
+#      (사회문화 p0041 '② …태도' + '③ 자신의 주장과…', 언어와매체 p0107 표 두 행).
+#   ② 앞 조각이 **문장부호로 끝남** — 수학은 식 번호(yy㉠)를 오른쪽 정렬해서 그 줄이
+#      늘 '단 끝까지 찼다'가 되고, 끝난 문장 뒤에 다음 식을 붙였다(수학 I p0050).
+# ⚠ 표지 목록을 좁게 잡는다(2026-08-20 2차 실물). 처음에 ⓐ-ⓩ·㉠-㉭까지 넣었더니
+#   본문 속 기호를 문두로 오인해 한 문단을 끊었다('…여자이고,' + 'ⓑ는 남자이다').
+#   실제로 새 항목을 여는 것은 선택지 번호와 보기 표지뿐이다.
+_PAR_ITEM_HEAD = re.compile(
+    r"^\s*(?:[①-⑳]|[⑴-⒇]|[ㄱ-ㅎ]\.|\d{1,2}\s*[.)]|[(（]\s*\d{1,2}\s*[)）])")
+
+
+_HANGUL_RE = re.compile(r"[가-힣]")
+_TAG_RE = re.compile(r"<!/?[^>]*>")
+
+
+def _par_blocked(prev: str, nxt: str) -> bool:
+    """문단으로 이으면 안 되는 자리인가.
+
+    뒤 조각이 수식 줄이면 잇지 않는다 — 묵자가 일부러 나눈 자리라 쪼개진 게 아니다.
+    문단 병합은 PyMuPDF가 한 줄씩 끊어 놓은 것을 되돌리는 일이지, 원본이 나눈 줄을
+    합치는 일이 아니다(수학 I p0032·p0037에서 'BCÓ=DCÓ'가 앞 문장에 붙었다).
+    """
+    # 태그를 벗기고 본다 — 표 행이 <!강조>①<!/강조>로 시작하면 그냥 매칭이 못 잡는다
+    # (언어와매체 p0107에서 표 머리행에 첫 행이 붙었다).
+    if _PAR_ITEM_HEAD.match(_TAG_RE.sub("", nxt).lstrip()):
+        return True
+    # 뒤 조각에 한글이 **하나도 없으면** 수식·기호 줄이다.
+    #   비율(30%)로 걸렀더니 수식이 섞인 본문까지 끊겼다('…유전자형은' + 'AAXõXºDd이다.').
+    body = _TAG_RE.sub("", nxt).strip()
+    return bool(body) and not _HANGUL_RE.search(body)
 
 # 이을 때 공백을 넣을지 — 한국어 줄바꿈은 어절 경계에서도, 어절 가운데서도 일어난다.
 # 실측(job_260807103532 p1): '있을까'+'하고'는 띄어야 하고('있을까 하고'),
@@ -418,10 +487,20 @@ def _merge_paragraph_blocks(blocks: list[dict]) -> list[dict]:
         a = out[-1]
         ax0, ay0, ax1, ay1 = a["bbox"]
         col = [x["bbox"] for x in items if ovl(x["bbox"], b["bbox"]) >= _PAR_COL_OVERLAP] or [b["bbox"]]
-        col_left, col_right = min(c[0] for c in col), max(c[2] for c in col)
+        col_left = min(c[0] for c in col)
+        # ★ 단의 오른쪽 끝은 **max가 아니라 분위수**다(2026-08-20). 꼬리말 한 줄이 단을
+        #   부풀려 그 단의 본문이 통째로 과분절됐다 — 사회문화 p0008 좌측 문단은 줄이
+        #   x 132에서 끝나는데 꼬리말 '8  2027학년도 EBS 수능특강 사회·문화'가 160까지
+        #   가서 col_right가 160이 됐고, 네 줄 전부 '단 끝까지 안 찼다'로 탈락했다.
+        #   꼬리말은 왼쪽 정렬도 폭도 본문과 비슷해 겹침 기준으로는 안 걸러진다.
+        #   ⚠ 90분위 이하로 내리면 짧게 끝난 문단 마지막 줄까지 '끝까지 찼다'가 되어
+        #     다른 문단을 붙인다(실측 p0008에서 80분위는 요소가 하나 더 준다).
+        xs = sorted(c[2] for c in col)
+        col_right = xs[-1] if len(xs) < 4 else xs[min(int(len(xs) * _PAR_RIGHT_Q), len(xs) - 1)]
         width = max(1.0, col_right - col_left)
         joinable = (
-            ovl(a["bbox"], b["bbox"]) >= _PAR_COL_OVERLAP
+            not _par_blocked(a["content"], b["content"])
+            and ovl(a["bbox"], b["bbox"]) >= _PAR_COL_OVERLAP
             and -0.3 * lh <= by0 - ay1 <= _PAR_GAP_MAX * lh
             and last_x1[-1] >= col_right - _PAR_FULL_RIGHT * width  # 직전 줄이 단 끝까지 참
             and bx0 - col_left <= _PAR_INDENT_MIN * lh              # 뒤 줄이 들여쓰기로 시작 안 함
@@ -454,9 +533,19 @@ def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int,
             page_idx = max(0, min(page_no - 1, doc.page_count - 1))
             page = doc[page_idx]
             w, h = page.rect.width, page.rect.height
+            # ★ 회전 지면 보정(2026-08-20). PyMuPDF의 텍스트 블록 좌표는 **회전 전**
+            #   좌표계(mediabox)로 나오는데 page.rect는 회전 후 크기다. 그대로 쓰면
+            #   270° 쪽에서 x가 쪽 폭을 넘고 종횡비가 뒤집힌다 — 영문 한 줄이 13x442로
+            #   세로로 길게 잡혔다(외국어 코퍼스 실측, 응답 '쪽 밖' 169건 전량이 이 얼굴).
+            #   rotation_matrix를 곱하면 표시 좌표가 된다(실측 21/21 전부 정상 범위).
+            rot = page.rotation_matrix if page.rotation else None
             blocks: list[dict] = []
             for b in _merge_paragraph_blocks(_page_text_blocks_spaced(page)):
                 x0, y0, x1, y1 = b["bbox"]
+                if rot is not None:
+                    r = fitz.Rect(x0, y0, x1, y1) * rot
+                    r.normalize()
+                    x0, y0, x1, y1 = r.x0, r.y0, r.x1, r.y1
                 blocks.append({
                     "content": b["content"],
                     "bbox": [round(x0 * 2), round(y0 * 2), round(x1 * 2), round(y1 * 2)],
@@ -469,7 +558,7 @@ def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int,
     return blocks, int(round(w * 2)), int(round(h * 2))
 
 
-# ── 글상자 테두리(BBPG-1.2.5 · 원장 C-01b) ─────────────────────────────────
+# ── 글상자 테두리(NLD-1.2.5 · 원장 C-01b) ─────────────────────────────────
 # 지문·보기·설명 박스는 묵자에서 **벡터 사각형**으로 그려져 있어 텍스트 추출만으로는
 # 안 보인다(밑줄과 같은 사정). 정답 도서는 이걸 dev-2027 900쪽에서 1,783번 쓰는데
 # 우리는 0번이었다 — gold 셀의 5.2%가 테두리 줄이다.
@@ -484,29 +573,129 @@ _BOX_MIN_W = 0.20        # 페이지 폭 대비 최소 너비 — 이보다 좁�
 _BOX_MIN_H = 18.0        # 최소 높이(pt) — 밑줄·구분선 제외
 _BOX_MAX_AREA = 0.85     # 페이지 면적의 이 비율을 넘으면 페이지 테두리·배경
 _BOX_X_TOL = 2.0         # 좌우가 이만큼 안에서 같으면 같은 상자의 위·아래 조각(pt)
+# 곁단(사이드바) 상자 — 좁지만 길다. 폭 하한 하나로만 재면 통째로 떨어진다(F06 ⓐ 실측:
+# 사회문화 p194 "우리나라의 다문화 교육 정책" 곁단이 84.5pt/595pt = 0.142로 0.20에 걸려
+# 미검출). 아이콘·라벨은 가로세로가 **둘 다** 작으므로 높이로 가른다.
+_BOX_SIDE_MIN_W = 0.12   # 아래 높이 조건을 만족할 때의 폭 하한
+_BOX_SIDE_MIN_H = 60.0   # 이보다 높으면 '좁고 긴 상자'로 본다(pt)
+# 판면 밖으로 흘러나가는 도형은 **도련 장식**이다 — 글상자는 판면 안에 그려진다.
+# (F06 ⓑ 실측: p194 머리띠 배너가 x −166.9~386.4로 판면을 넘나드는 곡선 리본 22겹인데,
+#  클리핑만 하고 받아들이면 제목 "자료 탐구"를 감싼 빈 글상자가 두 겹으로 붙는다.)
+_BOX_IN_PAGE = 0.9       # 원래 넓이의 이 비율은 판면 안이어야 한다
+# 부모 넓이의 이 비율을 넘게 채우는 안쪽 사각형은 **중첩이 아니라 같은 상자를 두 겹으로
+# 그린 것**이다(기기 베젤+화면, 그림자, 채움+선 두 경로). 종전 0.98은 너무 빡빡해 그 겹이
+# 위계를 한 단 올렸다. 실측 dev-2027 900쪽 자식 사각형 206개의 부모 대비 넓이비는
+# 뚜렷한 쌍봉이다 — 0.9~1.0에 29개(두 겹) · 0.0~0.4에 156개(진짜 중첩) · 0.7~0.9에 5개뿐.
+_BOX_SAME_AREA = 0.85
+
+
+def page_is_blank(pdf_data: bytes, page_no: int) -> bool:
+    """그 지면이 **정말 비었는가** — 글자도 그림도 획도 없는가 (T702).
+
+    추출이 요소를 0개 냈을 때 그것이 **실패**인지 **빈 지면**인지 가른다. 빈 지면을 실패로
+    올리면 앱이 "서버에서 변환이 차단된 페이지입니다"를 띄운다(노션 Review 3c243813…b40c).
+    빈 지면을 끼워 넣는 것은 점역 조판에서 정상 동작이다.
+    """
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(_coerce_pdf_bytes(pdf_data))
+            tmp_path = f.name
+        doc = fitz.open(tmp_path)
+        try:
+            page = doc[max(0, min(page_no - 1, doc.page_count - 1))]
+            if page.get_text("text").strip():
+                return False
+            if page.get_images(full=True):
+                return False
+            return not page.get_drawings()
+        finally:
+            doc.close()
+    except Exception as exc:  # noqa: BLE001 — 못 읽으면 '비었다'고 단정하지 않는다
+        logger.warning("빈 지면 판정 실패(비지 않은 것으로 본다): %s", exc)
+        return False
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+def _disp(bbox, rot) -> "fitz.Rect":
+    """회전 전(mediabox) 좌표 → 표시 좌표 Rect. 회전 없으면 그대로다."""
+    r = fitz.Rect(bbox) * rot
+    r.normalize()
+    return r
+
+
+# 획이 테두리에서 이만큼 안쪽으로 들어가면 사각형이 아니다(둥근 모서리 여유 포함)
+_BOX_HUG_TOL = 0.12      # 짧은 변 대비
+_BOX_HUG_MIN = 2.0       # 최소 허용폭(pt)
+
+
+def _hugs_border(g, r, rot) -> bool:
+    """그 도형이 **사각형 테두리**인가 — 모든 획이 bbox 변에 붙어 있는가.
+
+    종전에는 도형의 bbox만 보고 글상자로 삼았다. 그러면 **속을 가로지르는 그림**이
+    전부 상자가 된다 — 실측 EBS-E26-009 p0007의 삼각형 ABC 도형(98×65pt)이 꼭짓점
+    라벨을 품은 '글상자'로 잡혔다. 테두리는 변만 그리고 속은 비운다는 것이 가르는 신호다.
+    둥근 모서리 상자는 모서리 곡선이 변 근처라 그대로 통과한다.
+
+    ★ 재는 것은 **직선 토막의 가운데**다. 꼭짓점만 보면 삼각형을 못 거른다 — 꼭짓점은
+      어떤 도형이든 제 bbox 변에 닿기 때문이다. 빗변의 가운데는 속을 지난다.
+      곡선(둥근 모서리)·`re`는 재지 않는다. 모서리 곡선을 속으로 오인하면 진짜 상자가 떨어진다.
+    """
+    tol = max(_BOX_HUG_MIN, min(r.width, r.height) * _BOX_HUG_TOL)
+    for it in g["items"]:
+        if it[0] != "l":
+            continue
+        p1, p2 = fitz.Point(it[1]) * rot, fitz.Point(it[2]) * rot
+        x, y = (p1.x + p2.x) / 2, (p1.y + p2.y) / 2
+        if (min(abs(x - r.x0), abs(x - r.x1)) > tol
+                and min(abs(y - r.y0), abs(y - r.y1)) > tol):
+            return False
+    return True
 
 
 def box_rects(page) -> list:
     """페이지의 글상자 후보 사각형(표시 좌표 Rect). 겹치는 후보는 큰 것 하나로 묶는다."""
     pr = page.rect
     W = pr.width
+    # ★ 회전 지면 보정(#228 후속, 2026-08-24). get_drawings·rawdict는 **회전 전**(mediabox)
+    #   좌표로 나오는데 page.rect는 회전 후 크기다. 그대로 쓰면 270° 지면에서 사각형이
+    #   엉뚱한 자리로 정규화된다(실측: 180°에서 쪽 높이의 0.18 어긋남, 90°는 딴 자리).
+    #   경계 요소 bbox는 이미 표시 좌표라(extract_text_blocks) 여기도 맞춰야 짝이 된다.
+    rot = page.rotation_matrix
     try:
-        tblocks = [fitz.Rect(b["bbox"]) for b in page.get_text("rawdict")["blocks"]
+        tblocks = [_disp(b["bbox"], rot) for b in page.get_text("rawdict")["blocks"]
                    if b.get("type") == 0]
         drawings = page.get_drawings()
     except Exception:  # noqa: BLE001 — 손상 페이지는 테두리 없이 진행
         return []
     out: list = []
     for g in drawings:
-        r = fitz.Rect(g["rect"])
-        if not r.intersects(pr):
+        raw = _disp(g["rect"], rot)
+        if not raw.intersects(pr):
             continue
-        r = r & pr
-        if r.width < W * _BOX_MIN_W or r.height < _BOX_MIN_H:
+        r = raw & pr
+        # 판면 밖으로 크게 흘러나갔으면 도련 장식이다(위 _BOX_IN_PAGE 주석).
+        if raw.get_area() > 0 and r.get_area() < raw.get_area() * _BOX_IN_PAGE:
+            continue
+        if r.height < _BOX_MIN_H:
+            continue
+        min_w = _BOX_SIDE_MIN_W if r.height >= _BOX_SIDE_MIN_H else _BOX_MIN_W
+        if r.width < W * min_w:
             continue
         if r.get_area() > pr.get_area() * _BOX_MAX_AREA:
             continue
         if "s" not in g["type"]:              # 채움 전용 = 음영·배너(위 주석 참조)
+            continue
+        # 선색이 채움색과 같으면 **보이는 테두리가 없다** — 채움 전용과 다를 바 없는
+        # 음영·마스크다(p194 배너의 흰 리본: fill=(1,1,1) color=(1,1,1)).
+        if "f" in g["type"] and g.get("color") is not None and g.get("color") == g.get("fill"):
+            continue
+        if not _hugs_border(g, r, rot):       # 속을 가로지르는 획 = 그림이지 테두리가 아니다
             continue
         if not any(t in r for t in tblocks):  # 감싼 글이 없다
             continue
@@ -528,13 +717,45 @@ def box_rects(page) -> list:
             continue
         # 완전히 안에 들었다 = 중첩, 남긴다. 단 **거의 같은 크기**는 중첩이 아니라
         # 같은 테두리를 채움·선 두 경로로 그린 것이다 — 남기면 같은 상자를 두 번 감싼다.
-        if any(r in m and r.get_area() < m.get_area() * 0.98 for m in merged):
+        if any(r in m and r.get_area() < m.get_area() * _BOX_SAME_AREA for m in merged):
             merged.append(r)
             continue
         if any((r & m).get_area() > r.get_area() * 0.7 for m in merged):
             continue                                     # 어중간하게 겹친다 = 같은 상자
         merged.append(r)
-    return merged
+    return _drop_many_siblings(merged)
+
+
+# 한 상자가 이만큼 넘는 직계 자식을 품으면 그 자식들은 **상자가 아니라 내용**이다.
+# 말풍선·구획 목록이 그렇다(EBS-E26-004 p0116 메신저 지면: 화면 하나에 말풍선 12개).
+# 정답 도서는 그 지면을 상자 하나로 감싸고 말풍선에는 테두리를 치지 않는다.
+# 실측 dev-2027 900쪽, 자식을 가진 상자 82개의 직계 자식 수 분포가 쌍봉이다 —
+#   1개 50 · 2개 16 · 3개 7 · 4개 3 · 5개 1 · (6~9개 **0**) · 10개 2 · 12개 2 · 14개 1
+# 6~9가 통째로 비어 있어 자를 자리가 분명하다. val-2027 846쪽은 최대가 5개라 이 규칙에
+# 걸리는 상자가 아예 없다(무영향) — 근거는 dev 5쪽뿐이라는 뜻이기도 하다.
+_BOX_MANY_KIDS = 8
+
+
+def _drop_many_siblings(rects: list) -> list:
+    """자식이 너무 많은 상자의 **자식들**을 버린다(부모는 남긴다). 위 상수 주석 참조."""
+    if len(rects) <= _BOX_MANY_KIDS:
+        return rects
+    parent: dict[int, int | None] = {}
+    kids: dict[int, int] = {}
+    for i, a in enumerate(rects):
+        best, best_area = None, None
+        for j, b in enumerate(rects):
+            if i == j or not (a in b and a.get_area() < b.get_area() * _BOX_SAME_AREA):
+                continue
+            if best_area is None or b.get_area() < best_area:
+                best, best_area = j, b.get_area()
+        parent[i] = best
+        if best is not None:
+            kids[best] = kids.get(best, 0) + 1
+    crowded = {k for k, n in kids.items() if n >= _BOX_MANY_KIDS}
+    if not crowded:
+        return rects
+    return [r for i, r in enumerate(rects) if parent[i] not in crowded]
 
 
 # ── 정오 표시 ○·× (원장 M-04·C-14) ─────────────────────────────────────────
@@ -561,13 +782,14 @@ def mark_glyphs(page) -> list[tuple[str, "fitz.Rect"]]:
       이 가드가 없으면 수학1에서 곱셈 ×를 정오 표시로 오검출한다(실측 2쪽).
     """
     pr = page.rect
+    rot = page.rotation_matrix          # 회전 지면 보정 — box_rects의 _disp 주석 참조
     out: list[tuple[str, fitz.Rect]] = []
     try:
         drawings = page.get_drawings()
     except Exception:  # noqa: BLE001
         return []
     for g in drawings:
-        r = fitz.Rect(g["rect"])
+        r = _disp(g["rect"], rot)
         if r not in pr or g["type"] != "f" or g.get("color"):
             continue
         if not (_MARK_MIN <= r.width <= _MARK_MAX and _MARK_MIN <= r.height <= _MARK_MAX
@@ -634,6 +856,114 @@ def tag_answer_marks(elements: list[dict], marks: list) -> int:
         if best is not None:
             best["content"] = f"({kind}){best['content']}"
             n += 1
+    return n
+
+
+# ── 네모 문자(규정 제64항 · 원장 C-16-2) ─────────────────────────────────────
+# 규정 제64항: "…네모 문자는 `⠸⠦ ⠴⠇`으로 묶어 나타낸다." 규정 예시 넷이 전부 한 글자다.
+#
+# ★ 왜 검출이 필요한가 — **그 네모는 글자가 아니라 그림이다.** 지문 빈칸 "전쟁 중에
+#   ▯(가)▯ 이/가 남긴"의 네모는 벡터 드로잉이라 텍스트 추출에 안 잡히고, 추출물에는
+#   `(가)`만 남아 문두 지시 `(가)`와 구분이 사라진다. 쪽 맞춘 전수 대조에서 우리 414 대
+#   gold 867(−453)이었고 미달의 대부분이 이 자리다(원장 C-16-2).
+#
+# 문턱은 실측으로 정했다(gold 쪽 단위 개수 대조, 2026-08-23):
+#   · 사각형 W<60·H<20pt — 이보다 크면 표 칸·도형 노드다. 실측 `EBS-E26-014` 오검출이
+#     64×38(표 칸)·83×29였고, 문턱을 120×40에서 60×20으로 좁히니 015 정확일치 94→98%,
+#     012 92→94%, 014 87→88%로 셋 다 올랐다.
+#   · 토큰은 `(가)` 꼴과 한글 낱글자만. 숫자·로마자·원문자까지 넓히면 015가 94→83%로
+#     무너진다(표 안 낱자·수식 변수를 줍는다).
+#   · 획 사각형(`type`에 `s`)만 본다. 채움 배지는 두 갈래가 섞여 있다 — `EBS-E26-009`
+#     절 번호 배지(11×11 채움)는 gold가 적지만, `EBS-E26-014` 답지 제목 `정`·`답` 배지는
+#     **장식이라 gold가 안 적는다**(원장 C-16-3). 가르는 기준이 아직 없어 이번 판은 뺐다.
+_CHAR_BOX_MAX_W = 60.0
+_CHAR_BOX_MAX_H = 20.0
+_CHAR_BOX_TOKEN_RE = re.compile(r"\([가-힣A-Za-z0-9]\)|[가-힣]")
+
+
+def char_box_glyphs(page) -> list[tuple[str, list]]:
+    """네모 문자 후보 `(토큰, 표시좌표 Rect)`. 실패하면 빈 목록."""
+    rot = page.rotation_matrix          # 회전 지면 보정 — box_rects의 _disp 주석 참조
+    try:
+        rects = [d for d in (_disp(g["rect"], rot) for g in page.get_drawings()
+                             if "s" in g["type"])
+                 if d.width < _CHAR_BOX_MAX_W and d.height < _CHAR_BOX_MAX_H]
+        words = page.get_text("words")
+    except Exception:  # noqa: BLE001 — 손상 페이지는 네모 문자 없이 진행
+        return []
+    out: list[tuple[str, list]] = []
+    for w in words:
+        token = w[4]
+        if not _CHAR_BOX_TOKEN_RE.fullmatch(token):
+            continue
+        r = _disp(w[:4], rot)
+        if any(box.contains(r) for box in rects):
+            out.append((token, r))
+    return out
+
+
+def char_box_glyphs_norm(pdf_data: bytes, page_no: int) -> list[tuple[str, list[float]]]:
+    """네모 문자 후보를 0~1000 정규화 좌표로. 실패하면 빈 목록(본문은 나가야 한다)."""
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(_coerce_pdf_bytes(pdf_data))
+            tmp_path = f.name
+        doc = fitz.open(tmp_path)
+        try:
+            page = doc[max(0, min(page_no - 1, doc.page_count - 1))]
+            w, h = page.rect.width or 1, page.rect.height or 1
+            return [(t, [r.x0 / w * 1000, r.y0 / h * 1000, r.x1 / w * 1000, r.y1 / h * 1000])
+                    for t, r in char_box_glyphs(page)]
+        finally:
+            doc.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("네모 문자 검출 실패(없이 진행): %s", exc)
+        return []
+    finally:
+        if tmp_path:
+            os.unlink(tmp_path)
+
+
+def tag_char_boxes(elements: list[dict], boxes: list) -> int:
+    """네모 문자를 품은 토큰을 `<!네모글>…<!/네모글>`로 감싼다(in-place). 감싼 개수 반환.
+
+    같은 토큰이 한 요소에 여러 번 나오면 **앞에서부터 하나씩** 감싼다 — 한 요소 안
+    `(가)`가 지시문과 빈칸 두 자리에 나오는 쪽이 흔한데, 감싸는 자리는 상자가 있는 수만큼이다.
+    (자리까지 맞추려면 글자별 좌표가 필요한데 추출물에는 요소 bbox밖에 없다. 개수는 맞는다.)
+    """
+    if not boxes or not elements:
+        return 0
+    open_tag, close_tag = f"<!{TAG_BOX_CHAR}>", f"<!/{TAG_BOX_CHAR}>"
+    n = 0
+    cursor: dict[int, int] = {}
+    for token, (bx0, by0, bx1, by1) in boxes:
+        cx, cy = (bx0 + bx1) / 2, (by0 + by1) / 2
+        target = None
+        for el in elements:
+            bb = el.get("bbox")
+            if not bb or len(bb) != 4 or el.get("type") not in ("text", "list_item", "title"):
+                continue
+            if not (bb[0] <= cx <= bb[2] and bb[1] <= cy <= bb[3]):
+                continue
+            if token not in (el.get("content") or ""):
+                continue
+            target = el
+            break
+        if target is None:
+            continue
+        key = id(target)
+        start = cursor.get(key, 0)
+        pos = (target["content"] or "").find(token, start)
+        if pos < 0:
+            pos = (target["content"] or "").find(token)
+            if pos < 0:
+                continue
+        content = target["content"]
+        target["content"] = (content[:pos] + open_tag + token + close_tag
+                             + content[pos + len(token):])
+        cursor[key] = pos + len(open_tag) + len(token) + len(close_tag)
+        n += 1
     return n
 
 
@@ -718,7 +1048,30 @@ def regroup_boxed(elements: list[dict], rects: list) -> int:
     return moved
 
 
-def tag_boxed_elements(elements: list[dict], rects: list) -> int:
+# ── 곁단 용어 상자를 주석으로 (지침 §2.4.7 · 원장 C-77) ────────────────────────
+# §2.4.7: "본문의 특정 영역에 대해서 유도선 등을 이용해 설명하거나 덧붙이는 글상자 등은
+#   주석 표기 방법을 적용할 수 있다." (1) 주석표는 별표(⠐⠔) (4) 주석표 뒤 한 칸 띄고
+#   주석과 설명을 쌍점으로 구분한다.
+# gold 실측(dev-2027 900쪽): 주석표 ⠐⠔ **110회**, 다른 표시자 1회. 우리는 0회였다.
+# ⚠ 기본은 끔이다. 곁단이 주석으로 빠지면 글상자 수가 줄어 원장 C-01b 축이 같이 움직인다 —
+#   A/B는 두 축을 **같이 놓고** 봐야 한다(pm 2026-08-27).
+_SIDEBAR_MAX_W = 0.35      # 지면 폭 대비 이보다 좁아야 곁단으로 본다
+_SIDEBAR_MAX_TEXTS = 2     # 감싼 글 요소가 이보다 많으면 본문 상자다
+
+
+def sidebar_as_note() -> bool:
+    """곁단 용어 상자를 §2.4.7 주석으로 적는 스위치(기본 끔)."""
+    return os.environ.get("SIDEBAR_AS_NOTE", "0") == "1"
+
+
+def _is_sidebar_note(rect, page_w: float, title: str, texts: list) -> bool:
+    """이 상자를 주석으로 적을 곁단 용어 상자로 볼까 (원장 C-77)."""
+    if not sidebar_as_note() or not title or len(texts) > _SIDEBAR_MAX_TEXTS:
+        return False
+    return (rect[2] - rect[0]) < _SIDEBAR_MAX_W * page_w
+
+
+def tag_boxed_elements(elements: list[dict], rects: list, page_w: float = 1000.0) -> int:
     """사각형이 감싼 텍스트 요소 앞뒤에 테두리 태그를 넣는다(in-place). 감싼 상자 수 반환.
 
     ★ **표·그림을 품은 사각형도 글상자다**(「제작 지침」 3장 지문 (4): 지문 속 글상자는
@@ -726,7 +1079,7 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
       태그는 글 요소에만 붙이되(표 HTML 안에 태그를 넣으면 표 체인이 깨진다), 시각 요소도
       읽기순서 연속성 판정에는 함께 센다.
 
-    ★ **중첩을 살린다**(BBPG-1.2.5 위계). gold는 자료 박스 안에 표를 넣고 안쪽에 2단계
+    ★ **중첩을 살린다**(NLD-1.2.5 위계). gold는 자료 박스 안에 표를 넣고 안쪽에 2단계
       테두리(⠖⠒…⠲)를 쓴다 — dev-2027 900쪽에 343개, 그중 81%가 1단계 안이다. 우리는
       0개였다. 사각형이 다른 사각형 안에 들면 그 깊이만큼 위계를 올려 태그한다.
 
@@ -740,7 +1093,7 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
     def _inside(a, b) -> bool:
         """a가 b 안에 완전히 드는가(같은 사각형은 아니다)."""
         return (b[0] <= a[0] and b[1] <= a[1] and a[2] <= b[2] and a[3] <= b[3]
-                and (a[2] - a[0]) * (a[3] - a[1]) < (b[2] - b[0]) * (b[3] - b[1]) * 0.98)
+                and (a[2] - a[0]) * (a[3] - a[1]) < (b[2] - b[0]) * (b[3] - b[1]) * _BOX_SAME_AREA)
 
     ordered = sorted(rects, key=lambda r: -((r[2] - r[0]) * (r[3] - r[1])))
     depth = {id(r): sum(1 for q in ordered if _inside(r, q)) for r in ordered}
@@ -789,6 +1142,14 @@ def tag_boxed_elements(elements: list[dict], rects: list) -> int:
             title = _tag_title(elements[title_i])
             promoted.add(title_i)
         first, last = texts[0], texts[-1]
+        # 곁단 용어 상자는 테두리 대신 주석으로 적는다(§2.4.7 · 원장 C-77, 기본 끔).
+        if _is_sidebar_note(rect, page_w, title, texts):
+            body = (elements[first].get("content") or "").lstrip()
+            elements[first]["content"] = f"※ {title}: {body}"
+            for i in texts:
+                claimed[i] = max(claimed.get(i, 0), level)
+            n += 1
+            continue
         sfx = "" if level == 1 else str(level)        # <!상자2> = 2단계(translator 규약)
         opens.setdefault(first, []).append((level, f"<!상자{sfx}>{title}<!/상자{sfx}>"))
         closes.setdefault(last, []).append((level, f"<!상자끝{sfx}><!/상자끝{sfx}>"))
