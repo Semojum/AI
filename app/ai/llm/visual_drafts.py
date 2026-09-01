@@ -559,8 +559,15 @@ def volume_ref_draft(label: str, ref: str = "") -> Draft:
 
     ref는 '묵자쪽-그 쪽에서의 순번'이라 요소 하나만 봐서는 못 만든다. 여기서는 빈 채로
     두고 `pipeline._number_volume_refs`가 페이지 단위로 채운다.
+
+    ★ 앞 낱말은 자료 유형이 아니라 **그림**이다(2026-09-02, 원장 C-93). 규정은 문구를
+      정하지 않았고(「점자 자료 제작 지침」 1.3.4 (3)은 "별책의 시각 자료 위치를 점역자
+      주로 알려 참조하도록 한다"까지만 말한다), dev+val 전수 실측 **85건이 모두 `그림
+      N-M 참조`**다 — 도표·구조도·그래프도 예외 없이 `그림`으로 적는다. 종전에는 유형명을
+      그대로 써 `구조도 52-1 참조`로 나갔다. `type_label`은 번호를 채울 때 쓰므로 남긴다.
     """
-    body = f"{label} {ref} 참조" if ref else f"{label} 참조"
+    word = "그림"
+    body = f"{word} {ref} 참조" if ref else f"{word} 참조"
     return Draft(option=6, text=_tn(body), render_mode="narrative",
                  label=LABELS[VOLREF_IDX], type_label=label)
 
