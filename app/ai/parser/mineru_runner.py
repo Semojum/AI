@@ -936,8 +936,14 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) 
     return native
 
 
-# A/B 스위치 — 끄면 종전 동작이다.
-_MATH_FONT_GUARD = os.environ.get("MINERU_MATH_FONT_GUARD", "1") == "1"
+# ⚠ **기본은 꺼짐이다**(2026-09-02 실측). 수학 지면 40쪽을 같은 커밋에서 환경변수만
+#   바꿔 두 팔로 돌렸더니 깨진 흔적 총계가 **385 → 385 로 그대로**였다. 좋아진 쪽
+#   (p58 26→14 · p40 18→14 · p49 8→6)과 나빠진 쪽(p76 10→13 · p85 4→6 · 해설면 여럿 +1~2)이
+#   상쇄된다. 텍스트 레이어를 버리면 MinerU OCR 이 대신 들어오는데, 그 OCR 도 수식 폰트가
+#   그린 글자를 똑같이 잘못 읽고 글자 수만 늘어(1,488→1,464 · 850→987) 잡음을 함께 들여온다.
+#   개별 지면에서는 분명히 낫다(수학 I p052 의 `삼각형 "#$` 가 사라진다). 그래서 코드는
+#   남기되 **켜는 것은 자리별 판단**으로 둔다 — `MINERU_MATH_FONT_GUARD=1`.
+_MATH_FONT_GUARD = os.environ.get("MINERU_MATH_FONT_GUARD", "0") == "1"
 
 _MD_SEP_RE = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
 
