@@ -33,15 +33,15 @@ from app.schemas.content import BoxBorder, BrailleOutput, LLMOutput, RuleApplica
 
 
 def _box_borders(source: str) -> list[BoxBorder]:
-    """원본 글상자 테두리 태그 → box_borders(BBPG-1.2.5, layout 재렌더용)."""
+    """원본 글상자 테두리 태그 → box_borders(NLD-1.2.5, layout 재렌더용)."""
     return [BoxBorder(kind=k, level=lv, title=t) for k, lv, t in box_borders_from_source(source)]
 
 
 def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
-    """점역자 주 마커(BBPG-1.2.6)·내용 기호 규칙만 점자 좌표로 emit(태민 정책: 내용 변환만)."""
+    """점역자 주 마커(NLD-1.2.6)·내용 기호 규칙만 점자 좌표로 emit(태민 정책: 내용 변환만)."""
     joined = "\n".join(lines)
     trail = [
-        make_rule_at("BBPG-1.2.6", lines, s, e, tag=tag)
+        make_rule_at("NLD-1.2.6", lines, s, e, tag=tag)
         for s, e, tag in tn_marker_spans(joined, source)
     ]
     trail += [
@@ -52,7 +52,7 @@ def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
 
 
 def _to_braille(text: str) -> tuple[list[str], list[list[int]]]:
-    """논리 줄 + 음절 줄바꿈 offset. 32칸 줄바꿈은 layout(BBPG-1.2.1)."""
+    """논리 줄 + 음절 줄바꿈 offset. 32칸 줄바꿈은 layout(NLD-1.2.1)."""
     if text.startswith("[처리 불가"):
         return [text], [[]]
     return translate_with_breaks(text)

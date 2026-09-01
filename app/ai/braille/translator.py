@@ -1035,7 +1035,7 @@ _warned_unknown_tags: set[str] = set()
 
 # 단일·대칭 인라인 마커: 태그명 → 점자 글리프
 _TAG_INLINE_MARKER: dict[str, str] = {
-    _TAGS.TN: "⠠⠄",     # BBPG-1.2.6 점역자 주 — 양끝 동일(대칭)
+    _TAGS.TN: "⠠⠄",     # NLD-1.2.6 점역자 주 — 양끝 동일(대칭)
     _TAGS.BLANK_TABLE: "⠿⠿",   # 표 기입칸 (규정 제73항 "표의 빈칸" `==` → ⠿⠿)
     # 규정 제73항 "밑줄 빈칸" `_-` → ⠸⠤. **표의 빈칸과 다른 기호다.**
     # 종전엔 이 태그가 없어 text_opt 지시가 본문 밑줄(____)까지 빈칸_표로 보냈다 —
@@ -1081,14 +1081,14 @@ _TAG_PAIR_MARKER: dict[str, tuple[str, str]] = {
     _TAGS.BOX_CHAR: ("⠸⠦", "⠴⠇"),
 }
 
-# 테두리(글상자 = 표, BBPG-1.2.5): (캡, 채움) 글리프. 32칸 한 줄로 렌더.
+# 테두리(글상자 = 표, NLD-1.2.5): (캡, 채움) 글리프. 32칸 한 줄로 렌더.
 _BORDER_FILL: dict[str, tuple[str, str]] = {
     _TAGS.BOX_TOP:    ("⠿", "⠛"),  # 위: 첫/끝 = , 중간 g
     _TAGS.BOX_BOTTOM: ("⠿", "⠶"),  # 아래: 첫/끝 = , 중간 7
 }
 from app.ai.braille.constants import COLS as _BORDER_COLS  # noqa: E402 (공용 상수)
 _BORDER_BLANK     = "⠀"   # 점자 빈칸(U+2800)
-_BORDER_LEFT_FILL = 4     # 캡 뒤 채움 칸 → 제목 7칸에서 시작(BBPG-1.2.5(4)②: 캡1+채움4+빈칸1)
+_BORDER_LEFT_FILL = 4     # 캡 뒤 채움 칸 → 제목 7칸에서 시작(NLD-1.2.5(4)②: 캡1+채움4+빈칸1)
 
 # 신형식 <!이름>…<!/이름> + 구형식 <!이름>…<!이름> 모두 수용(닫기 슬래시 옵션).
 # 위계: 이름 뒤 단계 숫자 옵션(<!상자2>=2단계, 없으면 1단계). group(1)=단계, group(2)=제목.
@@ -1099,7 +1099,7 @@ _BORDER_PAIR_RE = {
 
 
 def _border_line(name: str, title_braille: str) -> str:
-    """글상자/표 테두리 32칸 줄. 제목 있으면 BBPG-1.2.5(4)② 배치(7칸, 양옆 띔)."""
+    """글상자/표 테두리 32칸 줄. 제목 있으면 NLD-1.2.5(4)② 배치(7칸, 양옆 띔)."""
     cap, fill = _BORDER_FILL[name]
     inner = _BORDER_COLS - 2
     if not title_braille:
@@ -1112,7 +1112,7 @@ def _border_line(name: str, title_braille: str) -> str:
             + t + _BORDER_BLANK + fill * right_fill + cap)
 
 
-# 글상자 테두리 태그(위/아래, 위계 옵션) 문서 순서 수집 — box_borders(BBPG-1.2.5) layout 재렌더
+# 글상자 테두리 태그(위/아래, 위계 옵션) 문서 순서 수집 — box_borders(NLD-1.2.5) layout 재렌더
 # group(1)=이름, group(2)=단계 숫자(옵션), group(3)=제목
 _BORDER_ANY_RE = re.compile(
     rf"<!({re.escape(_TAGS.BOX_TOP)}|{re.escape(_TAGS.BOX_BOTTOM)})([23]?)>(.*?)<!/?\1\2>",
@@ -1152,7 +1152,7 @@ def isolate_border_tags(text: str) -> str:
 
 
 def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
-    """원본의 글상자 테두리 태그를 문서 순서대로 (kind, level, 제목점자)로 수집(BBPG-1.2.5).
+    """원본의 글상자 테두리 태그를 문서 순서대로 (kind, level, 제목점자)로 수집(NLD-1.2.5).
 
     layout이 이 목록으로 위계별 테두리·제목 배치(중간7칸/윗줄5칸/케이스①)를 재렌더한다.
     translator는 인라인 32칸 테두리(위치 마커, 항상 1단계 ⠿ 형식)도 그대로 둔다(_border_line).
@@ -1168,7 +1168,7 @@ def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
     return out
 
 
-TN_MARKER = "⠠⠄"  # 점역자 주 점자 마커 (BBPG-1.2.6), 양끝 동일
+TN_MARKER = "⠠⠄"  # 점역자 주 점자 마커 (NLD-1.2.6), 양끝 동일
 
 
 def _tag_name(token: str) -> str:
@@ -1196,7 +1196,7 @@ def source_has_tn(text: str) -> bool:
 #   (B) 원장 C-04(표 기입칸 ⠿⠿)·C-05(밑줄 빈칸 ⠸⠤)·C-06(체크박스 ⠸⠦)이 전부
 #       "규정 모호 → 관행 채택 · ❓ 자문" 상태다.
 # dev 400쪽 실측: ⠸⠦ 131개·⠿⠿ 26개가 근거 0건으로 나갔다.
-_BLANK_TAG_RULE = "KBR-6.14.73"
+_BLANK_TAG_RULE = "MCST-한글-6.14.73"
 _BLANK_TAG_NAMES = {_TAGS.BLANK_TABLE: "blank_table", _TAGS.BLANK_SQUARE: "blank_box"}
 
 
@@ -2191,7 +2191,7 @@ def translate_tagged_text(text: str) -> str:
     return merge_hidden_runs(_translate_fallback(text))
 
 
-# ── 음절 단위 줄바꿈 지점 산출 (BBPG-1.2.1) ──────────────────────────────────
+# ── 음절 단위 줄바꿈 지점 산출 (NLD-1.2.1) ──────────────────────────────────
 # 한글은 음절 단위, 외국어는 단어 단위 줄바꿈이 원칙. 운영 경로(braillify)는 약자를
 # 적용해 음절↔점자 매핑이 불투명하므로, '접두 일관성'으로 약자를 깨지 않는 경계만 고른다:
 # 어절[:b] 점역 결과가 어절 점역 전체의 접두이면 b는 안전한 줄바꿈 지점(약자가 b를
@@ -2346,7 +2346,7 @@ EMPHASIS_OPEN, EMPHASIS_CLOSE = _TAG_PAIR_MARKER[_TAGS.EMPH]  # ⠠⠤ … ⠤�
 def emphasis_marker_spans(
     braille: str, source_text: str
 ) -> list[tuple[int, int, str]]:
-    """점역 결과에서 드러냄표 마커(⠠⠤…⠤⠄, KBR-6.13.56) 위치 → (start, end, tag) 목록.
+    """점역 결과에서 드러냄표 마커(⠠⠤…⠤⠄, MCST-6.13.56) 위치 → (start, end, tag) 목록.
 
     source-gate(tn_marker_spans와 같은 원칙): 출력만 스캔하면 붙임표(⠤)·점역자 주(⠠⠄)
     등 유사 점형을 오인하므로, 원본의 **한글 든 드러냄 쌍 개수만큼만** 앞에서부터

@@ -1,16 +1,16 @@
 """점자 조판 공용 상수.
 
 여러 braille 모듈(translator·layout·text/table/image/… braille)에서 중복 정의하던
-32칸·26줄을 한 곳으로 모은다. (BBPG 1장1절3: 가로 32칸·세로 26줄 기본 규격.)
+32칸·26줄을 한 곳으로 모은다. (NLD 1장1절3: 가로 32칸·세로 26줄 기본 규격.)
 """
 
 COLS = 32  # 한 줄 칸 수
-ROWS = 26  # 한 페이지 줄 수 (BBPG 1장1절3: 세로 26줄)
+ROWS = 26  # 한 페이지 줄 수 (NLD 1장1절3: 세로 26줄)
 
-# 인쇄·제본 면 (BBPG 1장2절2: 페이지행은 홀수 페이지에만 — 양면 행간인쇄 책 전제).
-#   단면(False, 기본): 매 페이지에 페이지행(본문 25 + 페이지행 1).
-#   양면(True): 홀수 점자페이지만 페이지행, 짝수 페이지는 26줄 전부 본문.
-DOUBLE_SIDED = False
+# 2026-09-01 — DOUBLE_SIDED 를 뺐다(결정 F).
+#   어느 면에 페이지행을 넣나는 braille-assist `page_row_on`(odd|every|even|none)이 정본이고,
+#   조판이 FE·BE로 넘어간 뒤 AI 쪽 판정은 저장·디버그용 미리보기에만 남았다.
+#   두 벌로 두면 언젠가 갈린다.
 
 
 # ── 감쌈 붙임표 자리표시자 (translator._paren_repl → inline_math·translator 공유) ──

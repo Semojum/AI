@@ -47,7 +47,7 @@ class TestValidateTagging:
         assert not _validate_tagging("③ □", "")
 
     def test_안닫힌_테두리_거부(self):
-        # 위 테두리만 = 32칸 줄 하나를 그려 놓고 상자를 안 닫는다 (BBPG 1장5 (2))
+        # 위 테두리만 = 32칸 줄 하나를 그려 놓고 상자를 안 닫는다 (NLD 1장5 (2))
         assert not _validate_tagging("<보기>\nㄱ. 가", "<!상자>보기<!/상자>\nㄱ. 가")
         assert not _validate_tagging("<보기>\nㄱ. 가", "<보기>\nㄱ. 가\n<!상자끝><!/상자끝>")
 

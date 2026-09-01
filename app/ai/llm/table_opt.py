@@ -55,7 +55,7 @@ _RENDER_LABEL = {"table_grid": "테두리+구분선", "transposed": "행열 바�
 
 
 def _min_trail(render_mode: str = "") -> list[RuleApplication]:
-    """표 점역 일반 사항(BBPG-3.1.1) — 요소 전체(line_no=-1).
+    """표 점역 일반 사항(NLD-3.1.1) — 요소 전체(line_no=-1).
 
     이 조항은 그 자체가 (B)다: "표는 …풀어주는 것을 원칙으로 하며 **점역자에 따라서
     표기 형식이 다를 수 있다**". 그래서 남기되, Step17에서 **우리가 고른 형식**을 tag에
@@ -63,7 +63,7 @@ def _min_trail(render_mode: str = "") -> list[RuleApplication]:
     (원장 C-01a 표 격자 테두리도 같은 갈림길이다).
     """
     label = _RENDER_LABEL.get(render_mode, "")
-    return [make_rule("BBPG-3.1.1", tag=label)]
+    return [make_rule("NLD-3.1.1", tag=label)]
 
 _PROMPT_TABLE_GRID = """당신은 한국어 점역 전문가입니다.
 다음 표 내용을 점역사주([점역사주])로 표현하는 2가지 방식을 제안하세요.
@@ -341,6 +341,15 @@ def _normalize_grid(grid: list[list[str]]) -> list[list[str]]:
 
 def _table_tags(table_structure, table_text: str) -> str:
     """표 구조 → <!표> 태그(stage② 표시·table_braille 입력). 비정형은 원문 유지."""
+    # ★ 이미 `<!표>` 구조 태그가 실려 오면 그대로 둔다(2026-09-02).
+    #   mode b 는 BE 가 편집본 txt 에 태그를 실어 보내는 경로다. 그 글에는 파이프가 없고
+    #   HTML 도 아니라 아래 **1열 표** 갈래로 떨어져, `<!표>`·`<!행>` 줄까지 한 칸짜리
+    #   행으로 **한 번 더 감쌌다**. 그러면 첫 칸이 태그가 되어 행 제목이 비고 쌍점만 남는다.
+    #     전  <!행><!칸>구분<!칸>A<!칸>B<!/행>        →  구분: A  B
+    #     후  <!행><!칸><!행><!칸>구분…<!/행><!/행>   →  : 구분  A  B
+    #   점역사가 편집하고 다시 점역하는 자리라 표가 매번 깨졌다.
+    if parse_table_tags(table_text) is not None:
+        return table_text
     grid = _table_to_grid(table_structure) if table_structure else []
     if not grid and _is_html_table(table_text):
         grid = _html_to_grid(table_text, expand=False)   # 병합은 원본대로 한 번만

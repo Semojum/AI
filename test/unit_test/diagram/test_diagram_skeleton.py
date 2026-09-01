@@ -147,11 +147,11 @@ class TestStep17DiagramTrail:
     def test_subtype마다_제_조항(self):
         from app.ai.llm.diagram_opt import _min_trail
 
-        assert _min_trail("flowchart", "골격 조립")[0].rule_id == "JAJAK-6.6.2"
-        assert _min_trail("org_chart", "골격 조립")[0].rule_id == "JAJAK-6.6.5"
-        assert _min_trail("timeline", "골격 조립")[0].rule_id == "JAJAK-6.6.6"
+        assert _min_trail("flowchart", "골격 조립")[0].rule_id == "NISE-6.6.2"
+        assert _min_trail("org_chart", "골격 조립")[0].rule_id == "NISE-6.6.5"
+        assert _min_trail("timeline", "골격 조립")[0].rule_id == "NISE-6.6.6"
         # 종전에는 셋 다 개념도(§6.6.1)로 나갔다 — 흐름도에 개념도 조항이 근거로 붙었다.
-        assert _min_trail("concept_map", "골격 조립")[0].rule_id == "JAJAK-6.6.1"
+        assert _min_trail("concept_map", "골격 조립")[0].rule_id == "NISE-6.6.1"
 
     def test_tag에_유형과_조립방식(self):
         from app.ai.llm.diagram_opt import _min_trail
@@ -183,7 +183,7 @@ class TestStep17CaptionSource:
 
         drafts = [Draft(option=i + 1, text="x", render_mode="narrative", label=lb)
                   for i, lb in enumerate(LABELS)]
-        r = visual_trail("JAJAK-6.3.4", drafts, DESC_IDX, "AI 생성")[0]
+        r = visual_trail("NISE-6.3.4", drafts, DESC_IDX, "AI 생성")[0]
         assert r.tag == "설명·AI 생성"
 
 

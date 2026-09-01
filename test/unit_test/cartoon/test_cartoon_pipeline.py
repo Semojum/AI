@@ -60,7 +60,7 @@ class TestCartoonPipelineBasic:
             assert len(o.braille_lines) >= 1
 
     def test_all_lines_within_32_cols(self, braille_outputs: list[BrailleOutput]) -> None:
-        # 모듈은 논리 줄을 내고 32칸 줄바꿈은 layout이 수행(BBPG-1.2.1).
+        # 모듈은 논리 줄을 내고 32칸 줄바꿈은 layout이 수행(NLD-1.2.1).
         from app.ai.braille.layout_braille import _wrap_line
         for o in braille_outputs:
             brs = o.break_points if len(o.break_points) == len(o.braille_lines) else [[]] * len(o.braille_lines)

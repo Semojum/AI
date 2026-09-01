@@ -62,7 +62,7 @@ class TestTextChainE2E:
         assert all(len(o.braille_lines) >= 1 for o in outputs)
 
     def test_each_line_within_32_cols(self, outputs):
-        # 모듈은 논리 줄, 32칸 줄바꿈은 layout(BBPG-1.2.1) → break_points wrap 후 검증
+        # 모듈은 논리 줄, 32칸 줄바꿈은 layout(NLD-1.2.1) → break_points wrap 후 검증
         from app.ai.braille.layout_braille import _wrap_line
         for o in outputs:
             brs = o.break_points if len(o.break_points) == len(o.braille_lines) else [[]] * len(o.braille_lines)
@@ -70,11 +70,11 @@ class TestTextChainE2E:
                 assert all(len(seg) <= 32 for seg in _wrap_line(line, br, 32)[0])
 
     def test_rule_trail_excludes_generic(self, outputs):
-        # 정책(태민 2026-06-01): 포괄/조판 규칙(KBR-0.1·BBPG-1.2.1)은 rule_trail 미기록
+        # 정책(태민 2026-06-01): 포괄/조판 규칙(MCST-0.1·NLD-1.2.1)은 rule_trail 미기록
         for o in outputs:
             rids = [r.rule_id for r in o.rule_trail]
-            assert "BBPG-1.2.1" not in rids
-            assert "KBR-0.1" not in rids
+            assert "NLD-1.2.1" not in rids
+            assert "MCST-기본-1" not in rids
 
     def test_element_ids_preserved_in_order(self, outputs):
         src_ids = [str(e.element_id) for e in _load_text()]
@@ -110,7 +110,7 @@ class TestFormulaChainE2E:
         assert all(len(o.braille_lines) >= 1 for o in outputs)
 
     def test_each_line_within_32_cols(self, outputs):
-        # 모듈은 논리 줄, 32칸 줄바꿈은 layout(BBPG-1.2.1) → break_points wrap 후 검증
+        # 모듈은 논리 줄, 32칸 줄바꿈은 layout(NLD-1.2.1) → break_points wrap 후 검증
         from app.ai.braille.layout_braille import _wrap_line
         for o in outputs:
             brs = o.break_points if len(o.break_points) == len(o.braille_lines) else [[]] * len(o.braille_lines)
@@ -185,8 +185,8 @@ class TestFormulaChainE2E:
                 assert r.rule_id,  f"rule_id 없음: {r}"
                 assert r.source,   f"source 없음: {r}"
                 assert r.section,  f"section 없음: {r}"
-                assert r.title,    f"title 없음: {r}"
-                assert r.excerpt,  f"excerpt 없음: {r}"
+                assert r.rule_name, f"rule_name 없음: {r}"
+                assert r.contents,  f"contents 없음: {r}"
                 assert r.priority, f"priority 없음: {r}"
 
 
@@ -270,8 +270,8 @@ class TestSixChainFaultIsolation:
             from app.schemas.content import BrailleOutput, ExtractedContent, LLMOutput, RuleApplication
             ext = ExtractedContent(element_id=uuid4(), corrected_text=label, ocr_confidence=1.0)
             rule = RuleApplication(
-                rule_id="BBPG-1.2.1", source="점자 도서 제작 지침", section="제1장 제2절",
-                title="줄바꿈", excerpt="한 줄은 32칸을 넘지 않는다.", priority="primary",
+                rule_id="NLD-1.2.1", source="점자 도서 제작 지침", section="제1장 제2절",
+                rule_name="줄바꿈", contents="한 줄은 32칸을 넘지 않는다.", priority="primary",
             )
             llm = LLMOutput(element_id=ext.element_id, corrected_text=label,
                             routing_tier="ZERO", rule_trail=[rule])
@@ -375,8 +375,8 @@ class TestSixChainFaultIsolation:
         from app.schemas.task import PageTask
 
         rule = RuleApplication(
-            rule_id="BBPG-1.2.1", source="점자 도서 제작 지침",
-            section="제1장 제2절", title="줄바꿈", excerpt="한 줄은 32칸을 넘지 않는다.", priority="primary",
+            rule_id="NLD-1.2.1", source="점자 도서 제작 지침",
+            section="제1장 제2절", rule_name="줄바꿈", contents="한 줄은 32칸을 넘지 않는다.", priority="primary",
         )
         elem_id = uuid4()
         fake_extracted = ExtractedContent(element_id=elem_id, corrected_text="테스트", ocr_confidence=1.0)

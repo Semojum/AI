@@ -2,7 +2,7 @@
 
 점자 '변환'(이미지→점자)은 반드시 gRPC(grpc_server.py)로만 처리한다.
 /finalize는 변환이 아니라 **조판(페이지 조립)** 전용 — 점역사가 편집한 블록을
-점자 규정(BBPG)대로 페이지로 조립해 회신한다(모델·braillify 미사용, 순수 규칙).
+점자 규정(NLD)대로 페이지로 조립해 회신한다(모델·braillify 미사용, 순수 규칙).
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ async def models_status():
 
 
 # ── 마감 조판 (/finalize) ────────────────────────────────────────────────────
-# 점역사가 블록 단위로 편집한 점자(이미 32칸 줄)를 받아 BBPG 규정대로 페이지 조립.
+# 점역사가 블록 단위로 편집한 점자(이미 32칸 줄)를 받아 NLD 규정대로 페이지 조립.
 # 블록 간 빈 줄(제목 단계별)·25줄 페이지 나눔·페이지행(원본번호·꼬리말·점자번호) 적용.
 
 class FinalizeBlock(BaseModel):
@@ -72,7 +72,7 @@ class FinalizeResponse(BaseModel):
 
 @router.post("/finalize", response_model=FinalizeResponse)
 async def finalize_page(req: FinalizeRequest) -> FinalizeResponse:
-    """편집 블록 → BBPG 페이지 조립. (점자 변환 아님 — 규칙 기반 조판만.)"""
+    """편집 블록 → NLD 페이지 조립. (점자 변환 아님 — 규칙 기반 조판만.)"""
     from app.ai.braille.layout_braille import LayoutBraille
 
     pages = LayoutBraille().finalize(

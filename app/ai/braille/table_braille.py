@@ -3,7 +3,7 @@
 표의 복수 초안(3안)은 LLM 텍스트가 아니라 **레이아웃 3종**이다
 (stage4_complex.md 'T4-2 공통 규약' — 표=레이아웃 차이, 셀 값 동일):
   table_grid : ⠿ 테두리 + ⠒ 행 구분선 (격자 원형)
-  transposed : 행↔열 전치 (점자 도서 제작 지침 3장1절 BBPG-3.1.2, 점역자 주 동반)
+  transposed : 행↔열 전치 (점자 도서 제작 지침 3장1절 NLD-3.1.2, 점역자 주 동반)
   linear     : '  키  값' 선형 풀어쓰기 (3칸 시작, 유도점·콜론 없음)
 격자 구조가 아닌 비정형(narrative)·처리불가는 단일안으로 처리한다.
 """
@@ -30,7 +30,7 @@ from app.schemas.content import BrailleOutput, Draft, LLMOutput, RuleApplication
 def _base_trail(
     lines: list[str], source: str = "", *, content: bool = True
 ) -> list[RuleApplication]:
-    """점역자 주 마커(BBPG-1.2.6)·판단이 갈리는 특수기호를 점자 좌표로 emit.
+    """점역자 주 마커(NLD-1.2.6)·판단이 갈리는 특수기호를 점자 좌표로 emit.
 
     rule_trail은 **점역사가 판단해야 할 자리**만 기록한다(Step17 2026-08-08 대표 지시 —
     종전 "내용 변환만"에서 좁혔다). 수표·문장부호 같은 자명한 규정은 `content_rules`가
@@ -44,7 +44,7 @@ def _base_trail(
     """
     joined = "\n".join(lines)
     trail = [
-        make_rule_at("BBPG-1.2.6", lines, s, e, tag=tag)
+        make_rule_at("NLD-1.2.6", lines, s, e, tag=tag)
         for s, e, tag in tn_marker_spans(joined, source)
     ]
     trail += [
@@ -53,7 +53,7 @@ def _base_trail(
     ]
     # 드러냄표 ⠠⠤…⠤⠄ (제56항) — text 경로와 동일 배선(원본 태그 gate, r12).
     trail += [
-        make_rule_at("KBR-6.13.56", lines, s, e, tag=tag)
+        make_rule_at("MCST-한글-6.13.56", lines, s, e, tag=tag)
         for s, e, tag in emphasis_marker_spans(joined, source)
     ]
     if content:
@@ -62,7 +62,7 @@ def _base_trail(
 
 from app.ai.braille.constants import COLS as _COLS  # noqa: E402 (공용 상수)
 _BORDER  = "⠿"  # 표 테두리
-_EMPTY_CELL = "⠿⠿"  # 빈 셀 (BBPG-3.1.2(4))
+_EMPTY_CELL = "⠿⠿"  # 빈 셀 (NLD-3.1.2(4))
 _SEP     = "⠒"  # 행·셀 구분선
 
 # ── 표 구조 태그 (plan §3-5 확장) ─────────────────────────────────────────────
@@ -578,7 +578,7 @@ def _render_rowwise(rows: list[list[str]], orig_len: list[int]) -> list[str]:
      원본 칸 수만큼만 찍힌다 — 과잉생산이 없다.)
 
     orig_len = 폭 맞춤(패딩) 전 각 행의 실제 칸 수. 원본에 있던 빈 칸은 ⠿⠿로 남기고
-    (BBPG-3.1.2(4)), 짧은 행을 늘리려고 붙인 패딩만 버린다 — 둘을 구분하지 않으면
+    (NLD-3.1.2(4)), 짧은 행을 늘리려고 붙인 패딩만 버린다 — 둘을 구분하지 않으면
     진짜 빈 칸이 사라지거나 없던 ⠿⠿가 생긴다.
     """
     lines: list[str] = []
@@ -643,7 +643,7 @@ def _transpose_rows(
 ) -> tuple[list[list[str]], list[int], int]:
     """행↔열 교환. 폭 맞춤(패딩)으로 채운 자리는 '실제 칸'에서 빼고 돌린다.
 
-    패딩을 실제 칸으로 착각한 채 전치하면 없던 빈 셀 ⠿⠿가 생긴다(BBPG-3.1.2(4)는
+    패딩을 실제 칸으로 착각한 채 전치하면 없던 빈 셀 ⠿⠿가 생긴다(NLD-3.1.2(4)는
     '내용이 없는 빈칸'에만 쓴다). 전치 후 각 행의 꼬리 패딩만 잘라낸다.
     """
     real = [[j < orig_len[i] for j in range(len(rows[i]))] for i in range(len(rows))]
@@ -658,7 +658,7 @@ def _transpose_rows(
 
 
 def _render_unfold(corrected_text: str) -> list[str]:
-    """표 → 풀어쓰기 (BBPG-3.1.2). 셀 길이에 따라 행 단위 / 열 단위로 갈린다(§3.1.1(1)).
+    """표 → 풀어쓰기 (NLD-3.1.2). 셀 길이에 따라 행 단위 / 열 단위로 갈린다(§3.1.1(1)).
 
     정답 도서(수능특강 점역본) 관찰:
         수급 분류  60—64세      ← 모서리 라벨 + 열 머리
@@ -713,7 +713,7 @@ def _render_unfold(corrected_text: str) -> list[str]:
     corner = " ".join(corner_cells)
     corner_br = _translate(corner) if corner else ""
 
-    def _cell(v: str) -> str:                    # 빈 셀 = ⠿⠿ (BBPG-3.1.2(4))
+    def _cell(v: str) -> str:                    # 빈 셀 = ⠿⠿ (NLD-3.1.2(4))
         return _translate(v) if v else _EMPTY_CELL
 
     # 행 그룹(예: 성별) — 행 머리 열 중 마지막을 뺀 나머지가 그룹 키
@@ -842,7 +842,7 @@ class TableBraille:
             #   나갔다. gold 는 그 자리를 글상자로 적는다(테두리 + 각 항목 2칸).
             #   태그가 파싱됐으면 열이 하나여도 격자 렌더러로 보낸다.
             tn = opt.tn_text or text
-            lines, breaks = translate_with_breaks(tn)  # 음절 줄바꿈(BBPG-1.2.1)
+            lines, breaks = translate_with_breaks(tn)  # 음절 줄바꿈(NLD-1.2.1)
             lines = _wt(lines)
             if title_br:                      # 제목 줄은 음절 줄바꿈 대상 아님(단일 줄)
                 breaks = [[]] + breaks
@@ -855,7 +855,7 @@ class TableBraille:
             append_nested(bo, opt.nested_text)   # 표 안 그림(Q11) 글상자 1단 덧붙임
             return bo
 
-        # 표 유형별 레이아웃 (셀 값 동일, 조판만 다름). 기본=풀어쓰기(BBPG-3.1.2 원칙).
+        # 표 유형별 레이아웃 (셀 값 동일, 조판만 다름). 기본=풀어쓰기(NLD-3.1.2 원칙).
         unfold_lines = _wt(_render_unfold(text))
         grid_lines = _wt(_render_grid(text))
         # 전치 초안도 점역자 주를 태그로 낸다 — 옛 구현은 _translate(_TN_TRANSPOSE)라
@@ -863,18 +863,18 @@ class TableBraille:
         transposed_lines = _wt([_tn_transpose_line()] + _render_grid(_transpose_text(text)))
         linear_lines = _wt(_render_linear(text))
         # 자동 경로가 전치했으면 그 점역자 주가 출력에 실린다 → 태그를 트레일 원본에 얹어
-        # BBPG-1.2.6이 emit되게 한다(_base_trail은 원본에 태그가 있을 때만 emit).
+        # NLD-1.2.6이 emit되게 한다(_base_trail은 원본에 태그가 있을 때만 emit).
         unfold_src = text + ("\n" + _TN_SRC if any(_TN_SRC_MARK in ln for ln in unfold_lines) else "")
         drafts = [
             Draft(option=1, text=print_layout(text, "unfold"), render_mode="unfold", label="테두리 없음",
                   braille_lines=unfold_lines,
-                  rule_trail=_base_trail(unfold_lines, unfold_src) + [make_rule("BBPG-3.1.2")]),
+                  rule_trail=_base_trail(unfold_lines, unfold_src) + [make_rule("NLD-3.1.2")]),
             Draft(option=2, text=print_layout(text, "table_grid"), render_mode="table_grid", label="테두리+구분선",
                   braille_lines=grid_lines, rule_trail=_base_trail(grid_lines, text)),
             Draft(option=3, text=print_layout(text, "transposed"), render_mode="transposed", label="행열 바꿈",
                   braille_lines=transposed_lines,
                   rule_trail=_base_trail(transposed_lines, text + "\n" + _TN_SRC)
-                             + [make_rule("BBPG-3.1.2")]),
+                             + [make_rule("NLD-3.1.2")]),
             Draft(option=4, text=print_layout(text, "linear"), render_mode="linear", label="테두리만",
                   braille_lines=linear_lines, rule_trail=_base_trail(linear_lines, text)),
         ]

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import os
 import re
+from difflib import SequenceMatcher
 import time
 
 from app.ai.llm.base_opt import _DEDUP_MIN_LEN, _norm_for_dedup, decide_tier_timeout, generate_with_retry
@@ -240,7 +241,7 @@ def _oneline(text: str) -> str:
     """점역자주 한 덩이는 **논리 줄 하나**다 — 줄바꿈·빈 줄을 공백으로 접는다.
 
     QA 2026-08-07 14번("캡셔닝 안에 불필요한 빈 줄"). 근거 두 겹:
-      · BBPG 제3장 9)(1)② — 만화의 컷과 컷 사이에는 빈 줄을 두지 않는다.
+      · NLD 제3장 9)(1)② — 만화의 컷과 컷 사이에는 빈 줄을 두지 않는다.
       · 「제작 지침」 §6.3.4(1) — 시각 자료 설명은 점역자 주표 **안**에 넣는 한 덩이다.
     실측(대표님 QA 실행분): 캡션 34건 중 **27건(79%)** 이 캡션 안에 빈 줄을 갖고 있었고,
     그게 그대로 점역자주 안으로 들어가 조판까지 흘렀다.
@@ -299,7 +300,16 @@ def _shorten(text: str, limit: int = 45) -> str:
 # `desc != title` 로만 걸러서는 못 잡는다 — 수식 구분자(`$`)·공백·문장부호만 달라도 통과한다.
 # 그래서 **가늠자를 씻어서** 비교한다. 시연 12쪽에서 2줄이 지워지고 오탐은 0이었다.
 # ⚠ 제목·유형 줄하고만 견준다. 앞선 항목 전부와 견주면 위계가 반복되는 정상 항목을 지운다.
-_GIST_STRIP = re.compile(r"[\s$·,.…‘’“”\"'()]")
+_GIST_STRIP = re.compile(r"[\s$·,.…‘’“”\"'()\[\]{}~\-–—:;/]")
+# 되풀이 판정에 쓰는 닮음 문턱. 이 값 아래는 서로 다른 말로 본다.
+#   0.80 은 gold 대조에서 정한 값 — "아메바 현미경 사진 - 단세포 생물 예시" 와
+#   "아메바 현미경 사진, 단세포 생물의 예시임." 같은 조사·구분자 차이만 잡고,
+#   "가로축: 시간" 과 "세로축: 농도" 처럼 뼈대만 같은 줄은 안 잡는다.
+#   ★ 0.80 으로 뒀다가 "5월 ○○군 풍혈지: 12.0" 과 "7월 ○○군 풍혈지: 14.2" 가 같은 말로
+#     잡혔다. 값이 다른 자료 줄을 지우면 정보가 사라진다 — 문턱을 올리고 숫자 가드를 뒀다.
+_GIST_RATIO = 0.88
+_GIST_MIN_LEN = 8        # 짧은 말은 우연히 닮는다
+_DIGITS = re.compile(r"\d+")
 
 
 def _gist(s: str) -> str:
@@ -307,9 +317,23 @@ def _gist(s: str) -> str:
 
 
 def _same_gist(a: str, b: str) -> bool:
-    """두 줄이 사실상 같은 문구인가 — 구분자·공백·문장부호 차이는 무시한다."""
+    """두 줄이 사실상 같은 문구인가 — 구분자·공백·문장부호 차이는 무시한다.
+
+    완전 포함만 보던 때는 어순이나 조사가 조금만 달라도 못 잡았다. 실측에서
+    "검색과 메뉴 아이콘" 과 "검색 아이콘과 메뉴 아이콘 두 개로 구성" 이 둘 다 남아
+    같은 말을 두 번 적었다. 여덟 자 이상이면 닮음도 함께 본다.
+    """
     na, nb = _gist(a), _gist(b)
-    return bool(na) and bool(nb) and (na == nb or na in nb or nb in na)
+    if not (na and nb):
+        return False
+    if na == nb or na in nb or nb in na:
+        return True
+    if min(len(na), len(nb)) < _GIST_MIN_LEN:
+        return False
+    # 숫자가 다르면 값이 다른 자료 줄이다 — 닮았어도 지우지 않는다.
+    if _DIGITS.findall(na) != _DIGITS.findall(nb):
+        return False
+    return SequenceMatcher(None, na, nb).ratio() >= _GIST_RATIO
 
 
 def _dup_of_body(text: str, body_texts: list[str] | None) -> bool:
@@ -350,13 +374,14 @@ def _outline_text_indents(
     desc = _strip_dup_type(desc, label)
     head = f"{label}: {desc}" if (desc and not _same_gist(desc, title)) else label
     if _WRAP_STYLE == "box":
-        # box(A/B): 블록 전체를 글상자로 — 제목은 위 테두리 안(BBPG-1.2.5), 유형/설명은 첫 줄.
+        # box(A/B): 블록 전체를 글상자로 — 제목은 위 테두리 안(NLD-1.2.5), 유형/설명은 첫 줄.
         lines.append(f"<!상자>{title}<!/상자>"); indents.append(0)
         lines.append(head); indents.append(0)
     else:
         if title:
             lines.append(title); indents.append(_TITLE_INDENT)      # §6.3.3(1) 제목 5칸(plain)
-        lines.append(_tn(head)); indents.append(0)                   # §6.3.4(1) 유형/설명 점역자주
+        lines.append(_oneline(head)); indents.append(0)              # §6.3.4(1) 유형/설명
+        tn_from = len(lines) - 1        # 여기부터 마지막 줄까지가 점역자 주 구간
     # ⚠ 여기에 "하위에 속한 항목을 2칸씩 들여 쓰기함" 고지를 붙였다가 뺐다(2026-08-12 대표 지시).
     #   점역자 주는 **일반적이지 않은 처리**를 했을 때 쓰는 것이다 — 표를 전치했다거나,
     #   반복되는 문구를 축약했다거나. 위계를 들여쓰기로 펴는 것은 점자 조판에서 일반적이라
@@ -374,6 +399,15 @@ def _outline_text_indents(
         lines.append(text); indents.append(_OUTLINE_BASE + _OUTLINE_STEP * max(0, level))  # 전사 §6.3.4(2)①
     if _WRAP_STYLE == "box":
         lines.append("<!상자끝><!/상자끝>"); indents.append(0)
+    else:
+        # ★ 점역자 주는 **설명 전체**를 감싼다 — 유형·설명 줄부터 마지막 전사 항목까지.
+        #   종전에는 머리줄 하나만 `<!주>…<!/주>` 로 닫아서, 점역자가 쓴 나머지 줄이
+        #   주표 밖으로 나갔다. 그러면 읽는 사람이 어디까지가 점역자 말인지 모른다.
+        #   근거 둘 — NLD-1.2.6 "추가·삭제·변경 등 원본과 달라진 내용을 점역자 주표
+        #   안에 적는다", 그리고 gold 실측: 점역자 주 구간 483건 중 **92.8%가 여러 줄에
+        #   걸친다**(한 줄로 끝나는 것은 7.2%뿐).
+        lines[tn_from] = f"<!{_TAGS.TN}>{lines[tn_from]}"
+        lines[-1] = f"{lines[-1]}<!/{_TAGS.TN}>"
     return "\n".join(lines), indents
 
 
@@ -702,10 +736,17 @@ async def build_visual_drafts(
             drafts.append(d_prose)
 
     # 기본은 설명이다. gold 실측에서 설명이 79.6%로 압도한다(생략 12.2% · 참조 8.0%).
-    # ⚠ 아래 `decorative` 분기는 **지금 발화하지 않는다** — 모듈 docstring 참조.
-    #   호출부가 넘기는 값이 사실상 no_seed뿐이고, 캡셔닝이 성공하면 그것도 False다.
-    #   즉 이 줄은 항상 DESC_IDX를 고른다. 고칠 자리는 여기가 아니라 판정 신호 쪽이다.
-    selected_idx = OMIT_IDX if decorative else DESC_IDX
+    #
+    # ★ 2026-09-01 — `decorative` 만으로 생략을 고르지 않는다.
+    #   호출부가 넘기는 값이 사실상 `no_seed`(캡션·제목이 없음)인데, **캡션이 없다는 것과
+    #   그림이 장식이라는 것은 다른 사실이다.** 캡셔닝이 실패했어도 그림 안 글자를 전사한
+    #   항목이 있으면 그건 값을 담은 자료다. 종전에는 "2020: 12 / 2021: 34" 를 손에 쥐고도
+    #   점역사에게 "그래프 생략" 을 기본으로 보여 줬다.
+    #   규정 §6.1.1(3) 의 생략 대상은 ①본문에서 충분히 설명한 것 ②장식 ③불필요한 것이지
+    #   캡션이 없는 것이 아니다. 재료가 **아무것도** 없으면 아래 `_no_material` 가 생략 한
+    #   안만 내므로 그 경우는 그대로 걸러진다.
+    has_material = bool(struct_outline or struct_prose or llm_outline or llm_prose)
+    selected_idx = OMIT_IDX if (decorative and not has_material) else DESC_IDX
 
     # ★ 재료가 하나도 없으면 **생략 한 안만** 낸다 (2026-08-12 대표 지시).
     #   캡션·제목·원본 글자가 다 없으면 짧은 제목·개조식·줄글은 낼 게 없어 전부

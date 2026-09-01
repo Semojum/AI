@@ -57,7 +57,7 @@ def _llm(text: str, *, drafts=None, render_mode="text_only") -> LLMOutput:
 class TestRuleRegistry:
 
     def test_registry_size(self):
-        # KBR+BBPG 226 + 자료지침(JAJAK) 13 (Step17에서 §6.6.3~6.6.8 여섯 조항 추가 —
+        # MCST+NLD 226 + 자료지침(NISE) 13 (Step17에서 §6.6.3~6.6.8 여섯 조항 추가 —
         # 도표 8종이 저마다 제 조항을 근거로 달 수 있게. 원문은 braille-source/text/ 발췌)
         assert len(all_rule_ids()) == 239
 
@@ -69,7 +69,7 @@ class TestRuleRegistry:
 
     def test_make_rule_rejects_dangling(self):
         with pytest.raises(KeyError):
-            make_rule("KBR-9.9.9")
+            make_rule("MCST-한글-9.9.9")
 
     def test_braille_modules_emit_registered_ids(self):
         vis_drafts = [

@@ -75,7 +75,7 @@ from app.ai.llm.visual_drafts import (
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import Draft, ExtractedContent, LLMOutput, RuleApplication
 
-_RULE_ID = "JAJAK-6.6.1"   # 도표 골격 (점자 자료 제작 지침 §6.6)
+_RULE_ID = "NISE-6.6.1"   # 도표 골격 (점자 자료 제작 지침 §6.6)
 # ★ 단위 = **앞 빈칸 수**. 규정의 "N칸에서 시작"은 앞 빈칸 N-1이다.
 #   `line_indents`를 소비하는 곳이 `" " * indent + line`로 쓰기 때문(layout_braille._indent_lines,
 #   같은 파일 `_PARA_INDENT = 2  # "3칸에서 시작" = 앞 빈칸 2`). 2026-08-09 이전에는 여기 상수가
@@ -126,12 +126,12 @@ _TYPE_LABEL = {
 
 
 # subtype → 그 골격을 정한 조항. ★ Step17(2026-08-08) 이전에는 **전부** _RULE_ID(개념도
-# §6.6.1)로 나갔다 — dev 400쪽 실측 JAJAK-6.6.1 42건 / 6.6.2(흐름도) 0건. 흐름도를 보면서
+# §6.6.1)로 나갔다 — dev 400쪽 실측 NISE-6.6.1 42건 / 6.6.2(흐름도) 0건. 흐름도를 보면서
 # "개념도 조항"이 근거로 붙는 셈이라 점역사에게는 틀린 근거였다. 8종을 각자 조항으로 가른다.
 _SUBTYPE_RULE = {
-    "concept_map": "JAJAK-6.6.1", "flowchart": "JAJAK-6.6.2", "form": "JAJAK-6.6.3",
-    "family_tree": "JAJAK-6.6.4", "org_chart": "JAJAK-6.6.5", "timeline": "JAJAK-6.6.6",
-    "screen_image": "JAJAK-6.6.7", "slide": "JAJAK-6.6.8",
+    "concept_map": "NISE-6.6.1", "flowchart": "NISE-6.6.2", "form": "NISE-6.6.3",
+    "family_tree": "NISE-6.6.4", "org_chart": "NISE-6.6.5", "timeline": "NISE-6.6.6",
+    "screen_image": "NISE-6.6.7", "slide": "NISE-6.6.8",
 }
 
 

@@ -1,12 +1,12 @@
 """PART 10 — LayoutBraille 조판 단위 테스트.
 
-조판/레이아웃 규정 정본 = 점자 도서 제작 지침(BBPG). 점자 글리프는 한국 점자
-규정(KBR)에서 도출. (폐기된 JAJAK 기반 마커 전면 교체됨.)
+조판/레이아웃 규정 정본 = 점자 도서 제작 지침(NLD). 점자 글리프는 한국 점자
+규정(MCST)에서 도출. (폐기된 NISE 기반 마커 전면 교체됨.)
 
-BBPG 1장2절1: 32칸 줄바꿈, 25줄 페이지 넘김
-BBPG 1장2절2: ⠼N 점자 페이지 번호 우측 정렬 (마침표 없음, 예 1-6)
+NLD 1장2절1: 32칸 줄바꿈, 25줄 페이지 넘김
+NLD 1장2절2: ⠼N 점자 페이지 번호 우측 정렬 (마침표 없음, 예 1-6)
 
-TestLayoutRulesSpec: BBPG 제1·2장 레이아웃 규칙 검증.
+TestLayoutRulesSpec: NLD 제1·2장 레이아웃 규칙 검증.
   - testable=True 규칙은 직접 assert.
   - 미구현 규칙은 명세 문서화용으로 testable=False (조판 본체 #2에서 배선).
 """
@@ -113,7 +113,7 @@ def _rule(rule_id: str) -> dict:
 
 
 class TestLayoutRulesSpec:
-    """BBPG 제1·2장 레이아웃 규칙 — 명세 기반 테스트.
+    """NLD 제1·2장 레이아웃 규칙 — 명세 기반 테스트.
 
     데이터 파일(bbpg_layout_rules.json)의 params와 실제 헬퍼 출력을 함께 검증.
     """
@@ -129,7 +129,7 @@ class TestLayoutRulesSpec:
         assert result.startswith("⠀" * (_COLS - len(text)))
 
     def test_page_number_right_aligned_in_page(self, lb, tmp_path) -> None:
-        """BBPG 1장2절2 — 점자 페이지 번호는 32칸 우측 정렬."""
+        """NLD 1장2절2 — 점자 페이지 번호는 32칸 우측 정렬."""
         lb.layout([_out(["테스트"])], page_no=1, job_id="align-test")
         last_line = _read_lines(tmp_path, "align-test")[-1]
         assert len(last_line) == _COLS
@@ -140,7 +140,7 @@ class TestLayoutRulesSpec:
 
         페이지행 요소는 _format_element(32칸 조판)를 타지 않는 유일한 경로라
         braille_text_list에 원문 길이 그대로(실측 최장 165칸) 실려 나갔다.
-        절단은 BBPG 1장3절4("꼬리말이 들어갈 수 있는 칸수만큼만 … 앞에서부터").
+        절단은 NLD 1장3절4("꼬리말이 들어갈 수 있는 칸수만큼만 … 앞에서부터").
         """
         hf, pn = uuid4(), uuid4()
         long_hf = "⠔⠔" + "⠇⠚⠽" * 20          # 62칸
@@ -179,27 +179,24 @@ class TestLayoutRulesSpec:
                   layout_result=_layout((pn, "page_number", 1, 0)))
         assert _read_lines(tmp_path, "c6c")[-1] == page_line
 
-    def test_double_sided_페이지행_홀수만(self, lb, monkeypatch) -> None:
-        """양면 제본(DOUBLE_SIDED): 홀수 점자페이지만 페이지행, 짝수는 26줄 본문 (BBPG 1장2절2)."""
-        monkeypatch.setattr("app.ai.braille.layout_braille.DOUBLE_SIDED", True)
-        content = [f"⠁{i % 10}" for i in range(60)]      # 2페이지 초과 분량
-        pages = lb._paginate(content, 1, "", "")
-        assert pages[0][-1].rstrip(" ⠀").endswith("⠼⠁")       # 1페이지(홀수): 페이지행 ⠼1
-        assert len(pages[1]) == _ROWS                       # 2페이지(짝수): 26줄 전부 본문
-        assert not pages[1][-1].rstrip(" ⠀").endswith("⠼⠃")    # 2페이지: 페이지행(⠼2) 없음
+    def test_페이지행_매페이지(self, lb) -> None:
+        """미리보기 조판은 매 면에 페이지행을 넣는다.
 
-    def test_single_sided_페이지행_매페이지(self, lb) -> None:
-        """단면(기본): 모든 페이지에 페이지행 (DOUBLE_SIDED=False)."""
+        어느 면에 넣나는 braille-assist `page_row_on`이 정본이라 여기서 다시 판정하지
+        않는다(2026-09-01 결정 F — 종전 DOUBLE_SIDED 분기 제거). 이 경로는 저장·디버그용
+        미리보기이고 응답에 실리는 통 문자열에는 면 배치가 들어가지 않는다.
+        """
         content = [f"⠁{i % 10}" for i in range(60)]
         pages = lb._paginate(content, 1, "", "")
         assert pages[0][-1].rstrip(" ⠀").endswith("⠼⠁")        # 1페이지 페이지행
         assert pages[1][-1].rstrip(" ⠀").endswith("⠼⠃")        # 2페이지도 페이지행 ⠼2
+        assert all(len(p) == _ROWS for p in pages)             # 면은 늘 26줄
 
-    # ── BBPG 마커/헬퍼 검증 ───────────────────────────────────────────────────
+    # ── NLD 마커/헬퍼 검증 ───────────────────────────────────────────────────
 
     def test_underline_blank_marker(self) -> None:
-        """BBPG 2장2절3 — 밑줄 빈칸은 길이와 관계없이 ⠸⠤ 1개 (KBR 밑줄 빈칸)."""
-        rule = _rule("BBPG-2.2.3-underline-blank")
+        """NLD 2장2절3 — 밑줄 빈칸은 길이와 관계없이 ⠸⠤ 1개 (MCST 밑줄 빈칸)."""
+        rule = _rule("NLD-2.2.3-underline-blank")
         assert rule["params"]["underline_blank_marker"] == _UNDERLINE_BLANK_MARKER == "⠸⠤"
         assert rule["params"]["count_always"] == 1
         assert format_underline_blank("다음 _에 알맞은") == "다음 ⠸⠤에 알맞은"
@@ -210,8 +207,8 @@ class TestLayoutRulesSpec:
         assert format_underline_blank("변화 없음") == "변화 없음"
 
     def test_bullet_tier_markers(self) -> None:
-        """BBPG 2장3절5 — 글머리 위계 2단계: 1단계 동그라미 ⠸⠴, 2단계 붙임표 ⠤ (KBR 제72항)."""
-        rule = _rule("BBPG-2.3.5-bullet-tiers")
+        """NLD 2장3절5 — 글머리 위계 2단계: 1단계 동그라미 ⠸⠴, 2단계 붙임표 ⠤ (MCST 제72항)."""
+        rule = _rule("NLD-2.3.5-bullet-tiers")
         assert rule["params"]["tier1_marker"] == _BULLET_MARKERS[1] == "⠸⠴"
         assert rule["params"]["tier2_marker"] == _BULLET_MARKERS[2] == "⠤"
         assert rule["params"]["indent_cols"] == 3
@@ -225,8 +222,8 @@ class TestLayoutRulesSpec:
         assert format_bullet_item("항목", 1) == "⠀⠀⠸⠴⠀항목"
 
     def test_page_change_line(self) -> None:
-        """BBPG 2장2절2-3) — 변경선은 첫 칸부터 ⠤로 채운 선 + 우측정렬 원본 페이지번호."""
-        rule = _rule("BBPG-2.2.2-page-change-line")
+        """NLD 2장2절2-3) — 변경선은 첫 칸부터 ⠤로 채운 선 + 우측정렬 원본 페이지번호."""
+        rule = _rule("NLD-2.2.2-page-change-line")
         assert rule["params"]["fill_glyph"] == _PAGE_CHANGE_FILL == "⠤"
         assert rule["params"]["total_cols"] == _COLS
         orig = "⠼⠃"  # 원본 페이지 번호 2
@@ -238,29 +235,29 @@ class TestLayoutRulesSpec:
         assert line == "⠤" * (_COLS - len(orig)) + orig
 
     def test_overflow_page_number(self) -> None:
-        """BBPG 2장2절2 — 선행 페이지 초과 시 ⠼⠤. JAJAK no-page ⠒⠒ 마커는 폐기."""
-        rule = _rule("BBPG-2.2.2-overflow-page")
+        """NLD 2장2절2 — 선행 페이지 초과 시 ⠼⠤. NISE no-page ⠒⠒ 마커는 폐기."""
+        rule = _rule("NLD-2.2.2-overflow-page")
         assert rule["params"]["overflow_page_number"] == _OVERFLOW_PAGE_NUMBER == "⠼⠤"
         assert rule["params"]["no_page_placeholder"] is None
         assert format_overflow_page_number() == "⠼⠤"
 
     def test_citation_indent_3cols(self) -> None:
-        """BBPG 2장2절6 — 출전이 본문 아래에 있을 경우 다음 줄 3칸에 적는다."""
-        rule = _rule("BBPG-2.2.6-citation-below")
+        """NLD 2장2절6 — 출전이 본문 아래에 있을 경우 다음 줄 3칸에 적는다."""
+        rule = _rule("NLD-2.2.6-citation-below")
         assert rule["params"]["indent_cols"] == 3
         result = format_citation("정호승, 슬픔이 기쁨에게")
         assert result == "⠀⠀정호승, 슬픔이 기쁨에게"
 
     def test_paragraph_start_indent(self) -> None:
-        """BBPG 2장2절2 — 새 문단은 3칸에서 시작."""
-        rule = _rule("BBPG-2.2.2-paragraph")
+        """NLD 2장2절2 — 새 문단은 3칸에서 시작."""
+        rule = _rule("NLD-2.2.2-paragraph")
         assert rule["params"]["first_line_indent"] == 3
         assert rule["params"]["continuation_indent"] == 0
         assert format_paragraph_start("본문 내용") == "⠀⠀본문 내용"
 
     def test_box_borders(self) -> None:
-        """BBPG 1장2절5 — 글상자 위 ⠿…⠛…⠿ / 아래 ⠿…⠶…⠿ (32칸)."""
-        rule = _rule("BBPG-1.2.5-box")
+        """NLD 1장2절5 — 글상자 위 ⠿…⠛…⠿ / 아래 ⠿…⠶…⠿ (32칸)."""
+        rule = _rule("NLD-1.2.5-box")
         assert rule["params"]["border_end"] == _BOX_BORDER_END == "⠿"
         assert rule["params"]["top_fill"] == _BOX_TOP_FILL == "⠛"
         assert rule["params"]["bottom_fill"] == _BOX_BOTTOM_FILL == "⠶"
@@ -280,7 +277,7 @@ class TestLayoutRulesSpec:
         assert len(_BBPG_RULES["rules"]) >= 10
         for r in _BBPG_RULES["rules"]:
             assert "id" in r
-            assert "rule_id" in r and r["rule_id"].startswith("BBPG")
+            assert "rule_id" in r and r["rule_id"].startswith("NLD")
             assert "description" in r
             assert "testable" in r
 
@@ -344,7 +341,7 @@ class TestLayoutBody:
             assert _cell_count(line) <= _COLS
 
     def test_heading_blank_lines(self, lb, tmp_path) -> None:
-        """1단계 제목 → 위 0줄·아래 1줄 (BBPG 2장2절2 2)(2)① 열거에 '1단계 위'가 없다)."""
+        """1단계 제목 → 위 0줄·아래 1줄 (NLD 2장2절2 2)(2)① 열거에 '1단계 위'가 없다)."""
         e1, e2 = uuid4(), uuid4()
         lr = _layout((e1, "text", 1, 0), (e2, "title", 2, 1))
         lb.layout([_out(["본문"], e1), _out(["제목"], e2)],
@@ -355,7 +352,7 @@ class TestLayoutBody:
         assert lines[2] == ""                        # 아래 1줄
 
     def test_3단계_제목만_위아래_빈_줄(self, lb, tmp_path) -> None:
-        """BBPG 2장2절2 2)(2)① — 3단계는 위아래, 4단계는 위에만."""
+        """NLD 2장2절2 2)(2)① — 3단계는 위아래, 4단계는 위에만."""
         e1, e2, e3 = uuid4(), uuid4(), uuid4()
         lr = _layout((e1, "text", 1, 0), (e2, "title", 2, 3), (e3, "text", 3, 0))
         lb.layout([_out(["본문"], e1), _out(["소제목"], e2), _out(["뒷글"], e3)],
@@ -459,7 +456,7 @@ class TestLayoutBody:
         assert rate > 0.0  # 강제분리 발생
 
     def test_text_paragraph_indent(self, lb, tmp_path) -> None:
-        """BBPG 2장2절2 — text 새 문단 첫 줄 3칸, 이어지는 줄 첫칸."""
+        """NLD 2장2절2 — text 새 문단 첫 줄 3칸, 이어지는 줄 첫칸."""
         eid = uuid4()
         lr = _layout((eid, "text", 1, 0))
         bo = _out(["가" * 50], eid)  # 50 → 첫줄 29(3칸+29) 후 줄바꿈
@@ -482,7 +479,7 @@ class TestLayoutBody:
         assert not any(r.tag == "indent" for r in bo.rule_trail)
 
     def test_heading_level1_centered(self, lb, tmp_path) -> None:
-        """1단계 제목 가운데 정렬 (BBPG 2장2절1)."""
+        """1단계 제목 가운데 정렬 (NLD 2장2절1)."""
         eid = uuid4()
         lr = _layout((eid, "title", 1, 1))
         lb.layout([_out(["제목"], eid)], page_no=1, job_id="ctr", layout_result=lr)
@@ -506,7 +503,7 @@ class TestLayoutBody:
         assert l24.startswith("L24")                       # 페이지 넘어간 연속 줄은 재들여쓰기 없음
 
     def test_heading_level2_indent7(self, lb, tmp_path) -> None:
-        """2단계 제목 7칸 들여 (BBPG 2장2절1 3): 쪽바꿈하여 7칸에서 시작)."""
+        """2단계 제목 7칸 들여 (NLD 2장2절1 3): 쪽바꿈하여 7칸에서 시작)."""
         eid = uuid4()
         lr = _layout((eid, "title", 1, 2))
         lb.layout([_out(["중제목"], eid)], page_no=1, job_id="h2", layout_result=lr)
@@ -515,13 +512,13 @@ class TestLayoutBody:
         assert first.strip(" ⠀") == "중제목"
 
     def test_heading_blank_lines_규정(self) -> None:
-        """BBPG 2장2절2 2)①: 3단계=위아래 빈 줄, 4단계=위에만."""
+        """NLD 2장2절2 2)①: 3단계=위아래 빈 줄, 4단계=위에만."""
         from app.ai.braille.layout_braille import _HEADING_BLANK
         assert _HEADING_BLANK[3] == (1, 1)   # 3단계 위아래
         assert _HEADING_BLANK[4] == (1, 0)   # 4단계 위에만
 
     def test_표_시각자료_위아래_빈줄(self, lb) -> None:
-        """표·시각자료는 위아래 빈 줄 삽입 (BBPG 2장2절2 2)①④)."""
+        """표·시각자료는 위아래 빈 줄 삽입 (NLD 2장2절2 2)①④)."""
         formatted = [(0, "text", ["⠁⠁"]), (0, "table", ["⠞⠞"]), (0, "text", ["⠃⠃"])]
         body = [l for page in lb._assemble_pages(formatted, "", "", 1) for l in page]
         ti = body.index("⠞⠞")
@@ -541,7 +538,7 @@ class TestLayoutBody:
         assert not any(body[i] == "" == body[i + 1] for i in range(len(body) - 1))
 
     def test_시각_자료가_연이어_나오면_사이를_안_띈다(self, lb) -> None:
-        """BBPG 3장2절1 2) 다만. 표는 3장1절4)(3)으로 반대라 사이를 띈다."""
+        """NLD 3장2절1 2) 다만. 표는 3장1절4)(3)으로 반대라 사이를 띈다."""
         formatted = [(0, "image", ["⠛⠛"]), (0, "chart_graph", ["⠉⠉"]), (0, "table", ["⠞⠞"])]
         body = [l for page in lb._assemble_pages(formatted, "", "", 1) for l in page]
         assert body[body.index("⠛⠛") + 1] == "⠉⠉"      # 시각 자료끼리 — 안 띈다
@@ -562,7 +559,7 @@ class TestLayoutBody:
         assert first.startswith("⠀⠀") and not first.startswith("⠀⠀⠀")
 
     def test_heading_level3_indent5(self, lb, tmp_path) -> None:
-        """3단계 제목 5칸 들여 (BBPG 2장2절1)."""
+        """3단계 제목 5칸 들여 (NLD 2장2절1)."""
         eid = uuid4()
         lr = _layout((eid, "title", 1, 3))
         lb.layout([_out(["소제목"], eid)], page_no=1, job_id="h3", layout_result=lr)
@@ -616,7 +613,7 @@ class TestLayoutBody:
         assert _read_lines(tmp_path, "empty")[0].strip(" ⠀") == "내용"  # 선두 빈 줄 없음
 
     def test_orig_page_continuation_prefix(self, lb, tmp_path) -> None:
-        """한 원본 페이지가 여러 점자 페이지에 걸치면 2번째부터 알파벳 접두(a39…) (BBPG 1장2절2)."""
+        """한 원본 페이지가 여러 점자 페이지에 걸치면 2번째부터 알파벳 접두(a39…) (NLD 1장2절2)."""
         e1, e2 = uuid4(), uuid4()
         lr = _layout((e1, "sidebar", 1, 0), (e2, "page_number", 2, 0))
         body = _out([f"줄{i}" for i in range(30)], e1)  # 30줄 → 2 점자 페이지
@@ -688,13 +685,13 @@ class TestBorderIndentB2:
 
 
 class TestBulletMarkerKBR72:
-    """KBR 제72항: list_item 첫머리 ○□△ 숨김표 글리프 → 글머리형 정정 (글머리 분기)."""
+    """MCST 제72항: list_item 첫머리 ○□△ 숨김표 글리프 → 글머리형 정정 (글머리 분기)."""
 
     @staticmethod
     def _bo(line: str, rule_trail=None) -> BrailleOutput:
         from app.ai.braille.regulations import make_rule
         if rule_trail is None:
-            rule_trail = [make_rule("KBR-6.13.49", line_no=0, col_start=0, col_end=3, tag="symbol")]
+            rule_trail = [make_rule("MCST-한글-6.13.49", line_no=0, col_start=0, col_end=3, tag="symbol")]
         return BrailleOutput(element_id=str(uuid4()), braille_lines=[line], rule_trail=rule_trail)
 
     def test_동그라미_글머리_변환(self) -> None:
@@ -702,15 +699,15 @@ class TestBulletMarkerKBR72:
         LayoutBraille()._apply_bullet_marker(bo)
         assert bo.braille_lines[0] == "⠸⠴⠁⠃"   # 꼬리 ⠇ 제거 → 글머리 ⠸⠴
         rids = [r.rule_id for r in bo.rule_trail]
-        assert "KBR-6.14.72" in rids            # 글머리로 정정
-        assert "KBR-6.13.49" not in rids        # 숨김표 entry 제거
+        assert "MCST-한글-6.14.72" in rids            # 글머리로 정정
+        assert "MCST-한글-6.13.49" not in rids        # 숨김표 entry 제거
 
     def test_네모_세모_글머리(self) -> None:
         for hidden, bullet in [("⠸⠶⠇", "⠸⠶"), ("⠸⠬⠇", "⠸⠬")]:
             bo = self._bo(hidden + "⠁")
             LayoutBraille()._apply_bullet_marker(bo)
             assert bo.braille_lines[0] == bullet + "⠁"
-            assert any(r.rule_id == "KBR-6.14.72" for r in bo.rule_trail)
+            assert any(r.rule_id == "MCST-한글-6.14.72" for r in bo.rule_trail)
 
     def test_숨김표아니면_불변(self) -> None:
         bo = self._bo("⠁⠃⠉", rule_trail=[])    # 첫머리가 글머리 글리프 아님
@@ -722,15 +719,15 @@ class TestBulletMarkerKBR72:
         from app.ai.braille.regulations import make_rule
         bo = BrailleOutput(
             element_id=str(uuid4()), braille_lines=["⠸⠴⠇⠁⠃"],
-            rule_trail=[make_rule("KBR-6.13.49", line_no=0, col_start=0, col_end=3, tag="symbol")],
+            rule_trail=[make_rule("MCST-한글-6.13.49", line_no=0, col_start=0, col_end=3, tag="symbol")],
         )
         lines, _ = LayoutBraille()._format_element(bo, "list_item", 0)
         assert lines[0] == "⠀⠀⠸⠴⠁⠃"            # 3칸 들여 + 글머리형
-        assert any(r.rule_id == "KBR-6.14.72" for r in bo.rule_trail)
+        assert any(r.rule_id == "MCST-한글-6.14.72" for r in bo.rule_trail)
 
 
 class TestBoxBorderBBPG125:
-    """BBPG-1.2.5 글상자 테두리 — layout 전담 렌더(B안). 위계 1단계 + 제목 배치 + 빈 줄."""
+    """NLD-1.2.5 글상자 테두리 — layout 전담 렌더(B안). 위계 1단계 + 제목 배치 + 빈 줄."""
 
     def test_box_borders_from_source_순서수집(self) -> None:
         from app.ai.braille.translator import box_borders_from_source
@@ -922,7 +919,7 @@ class TestPostLayoutCoords:
         lr = _layout((eid, "text", 1, 0))
         lb.layout([bo], page_no=1, job_id="symc", layout_result=lr)
         glyph = SYMBOL_TABLE["℃"]
-        cel = [r for r in bo.rule_trail if r.rule_id == "KBR-6.14.69"]
+        cel = [r for r in bo.rule_trail if r.rule_id == "MCST-한글-6.14.69"]
         assert cel
         assert any(
             bo.braille_lines[r.line_no][r.col_start:r.col_end] == glyph for r in cel
@@ -934,7 +931,7 @@ class TestPostLayoutCoords:
         eid = bo.element_id
         lr = _layout((eid, "list_item", 1, 0))
         lb.layout([bo], page_no=1, job_id="bulc", layout_result=lr)
-        bullet = next((r for r in bo.rule_trail if r.rule_id == "KBR-6.14.72"), None)
+        bullet = next((r for r in bo.rule_trail if r.rule_id == "MCST-한글-6.14.72"), None)
         assert bullet is not None
         assert bo.braille_lines[bullet.line_no][bullet.col_start:bullet.col_end] == "⠸⠴"
         assert bullet.col_start == 2                 # 글머리 "3칸에서 시작" = 0-based col 2
@@ -962,7 +959,7 @@ class TestPostLayoutCoords:
 
 
 class TestSyllableLineWrap:
-    """BBPG-1.2.1 음절 줄바꿈 — 조판 후 모든 줄 ≤32, 점역자주 마커가 줄 경계에서 미분리."""
+    """NLD-1.2.1 음절 줄바꿈 — 조판 후 모든 줄 ≤32, 점역자주 마커가 줄 경계에서 미분리."""
 
     def test_wordwrap_switch_default_off(self) -> None:
         """기본값은 음절 단위다 — 스위치를 켜야 어절 단위로 간다(원장 C-83)."""

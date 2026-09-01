@@ -77,7 +77,7 @@ def test_no_review_needed_flag():
             f"REVIEW_NEEDED 플래그 발견: element_id={el['element_id']}"
 
 
-# ── 제목 단계(BBPG 2장2절1) — QA S1, 2026-08-07 ──────────────────────────────
+# ── 제목 단계(NLD 2장2절1) — QA S1, 2026-08-07 ──────────────────────────────
 # MinerU는 제목 블록을 이미 찾아 두는데 content_list에서 type이 "text"로 눕고 단계만
 # text_level에 남는다. 종전에는 그 값을 버려 조판이 제목 규칙을 한 번도 못 썼다
 # (QA 실측: 37쪽 558요소에 title 0개). 다만 그 표시의 35%는 문항 발문·선택지라
@@ -87,7 +87,7 @@ from app.ai.parser.mineru_runner import _heading_level
 
 class TestHeadingLevel:
     def test_lv1은_2단계(self):
-        """MinerU lv1 = 강 제목 = BBPG 2단계(7칸). 1단계(가운데)가 아니다.
+        """MinerU lv1 = 강 제목 = NLD 2단계(7칸). 1단계(가운데)가 아니다.
 
         dev·val-2027 gold 전수: 앞빈칸 6칸 455줄 vs 가운데(앞 7칸 이상) 89줄.
         6칸 455줄 중 292줄이 가운데 계산 `(32-길이)//2` 와 어긋나 **고정 들여쓰기**임이

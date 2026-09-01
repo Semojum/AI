@@ -40,7 +40,7 @@ class TestStructuredInput:
 
     def test_빈셀_채움(self):
         from app.ai.braille.table_braille import _render_unfold, _render_grid
-        assert any("⠿⠿" in l for l in _render_unfold("A | \nC | D"))   # 빈 셀=⠿⠿(BBPG-3.1.2(4))
+        assert any("⠿⠿" in l for l in _render_unfold("A | \nC | D"))   # 빈 셀=⠿⠿(NLD-3.1.2(4))
         assert any("⠿⠿" in l for l in _render_grid("A | \nC | D"))
 
 
