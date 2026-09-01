@@ -468,6 +468,18 @@ async def _fallback_text_layer(task: PageTask, doc_meta: DocumentMeta) -> tuple[
         return [], 0, 0
 
 
+def _page_size_px(pdf_data: bytes, page_no: int) -> tuple[int, int]:
+    """쪽 크기(2x 렌더 픽셀). LLM 추출은 bbox 를 안 주지만 응답 계약상 크기는 필요하다."""
+    try:
+        import fitz
+        with fitz.open(stream=pdf_data, filetype="pdf") as d:
+            r = d[min(max(page_no - 1, 0), d.page_count - 1)].rect
+            return int(r.width * 2), int(r.height * 2)
+    except Exception as exc:  # noqa: BLE001 — 크기를 못 재면 0으로 둔다(FE가 비율 매핑을 건너뛴다)
+        logger.warning("쪽 크기 산출 실패: %s", exc)
+        return 0, 0
+
+
 def _page_image_path(task: PageTask):
     """Opus 폴백용 페이지 이미지 — 저장분(input/page_NNN.jpg) 우선, 없으면 즉석 렌더."""
     from pathlib import Path
@@ -522,7 +534,31 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     image_width = image_height = 0
     # bbox 좌표계는 경로마다 다르다("pixel" = 2x 렌더 픽셀 / "norm1000" = 0~1000 정규화).
     # 추출한 자리에서 한 번 정하고 meta에 적어 둔다 — 소비자가 다른 필드로 유추하면 안 된다.
-    if doc_meta.routing_tier == "ZERO":
+    # 고급 점역(요청 advanced_ai) — MinerU 대신 LLM 이 쪽 이미지를 직접 읽는다.
+    # ZERO 티어(텍스트 레이어가 멀쩡한 쪽)는 그대로 둔다. 거기서는 원본 글자를 그대로
+    # 옮기는 편이 정확하고, 고급 점역이 노리는 것은 깨진 지면이다.
+    advanced_used = ""
+    if task.advanced_ai and doc_meta.routing_tier != "ZERO":
+        from app.ai.parser import opus_fallback as _llm
+        if _llm.advanced_available():
+            img = _page_image_path(task)
+            if img:
+                els, used = await asyncio.to_thread(_llm.extract_advanced, str(img))
+                if els:
+                    advanced_used = used
+                    logger.info("고급 점역 추출 채택: %s %d요소 (page=%d)",
+                                used, len(els), task.page_no)
+        if not advanced_used:
+            logger.warning("고급 점역 추출 실패 — MinerU 로 되돌린다 (page=%d)", task.page_no)
+
+    if advanced_used:
+        # LLM 추출에는 bbox 가 없다. 좌표계는 ZERO·폴백과 같은 규약("pixel")으로 적어 둔다.
+        method, bbox_space = "LLM_VISION", "pixel"
+        elements = els
+        image_width, image_height = await asyncio.to_thread(
+            _page_size_px, task.pdf_data, task.page_no
+        )
+    elif doc_meta.routing_tier == "ZERO":
         method, bbox_space = "TEXT_NATIVE", "pixel"
         blocks, image_width, image_height = await asyncio.to_thread(
             extract_text_blocks, task.pdf_data, task.page_no
@@ -532,7 +568,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         method = "OCR"
         elements, image_width, image_height, bbox_space = await _extract_via_models(task, doc_meta)
 
-    # 글상자 테두리(BBPG-1.2.5 · 원장 C-01b) — 묵자의 벡터 사각형이 감싼 텍스트 요소에
+    # 글상자 테두리(NLD-1.2.5 · 원장 C-01b) — 묵자의 벡터 사각형이 감싼 텍스트 요소에
     # 테두리 태그를 붙인다. 두 경로(ZERO·MinerU) 모두 여기를 지나므로 한 자리면 된다.
     if not doc_meta.scan_only:
         rects = await asyncio.to_thread(box_rects_norm, task.pdf_data, task.page_no)
@@ -593,7 +629,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     # 페이지만 claude-opus-4-8이 직접 읽는다. 실측상 저품질 페이지에서만 유효(3~4배),
     # 중간 품질은 득실 반반이라 빈약 신호(요소 수·글자수)일 때만 트리거.
     from app.ai.parser import opus_fallback
-    if opus_fallback.enabled() and opus_fallback.is_meager(elements):
+    if (not advanced_used) and opus_fallback.enabled() and opus_fallback.is_meager(elements):
         img = _page_image_path(task)
         if img:
             better = await asyncio.to_thread(opus_fallback.extract, str(img))
@@ -889,7 +925,7 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
 
 # ── 선택지·보기 하위항목 분절(P2a, opt 직전) ─────────────────────────────────
 # 4분류: ① 규칙 미비 — MinerU는 선택지(①~⑤)·보기(ㄱㄴㄷㄹ)를 줄바꿈만 있는 한 list_item
-#   요소로 묶어 내지만, 정답 도서는 항목마다 별도 줄(2칸 들여)로 조판한다(BBPG-2.3.5).
+#   요소로 묶어 내지만, 정답 도서는 항목마다 별도 줄(2칸 들여)로 조판한다(NLD-2.3.5).
 #   결합 요소를 그대로 두면 항목 하나의 사소한 차이가 전체 블록을 통째로 miss 처리한다
 #   (채점기는 요소 단위 연속부분열 일치를 본다 — 5항목 중 1개만 달라도 5개 전부 실패).
 #   줄머리 마커가 뚜렷이 2개 이상 있을 때만 쪼갠다: 선택지 원문자(①~⑳)·보기 자음(ㄱ.~ㅎ.)
@@ -1023,7 +1059,7 @@ def _join_split_words(text: str) -> str:
     """**낱말 가운데서** 갈린 줄만 잇는다 — `유전 물` / `질인`, `그` / `러다 보니`.
 
     이 갈림은 어떤 조판에서도 내용일 수 없다. 시·대사처럼 줄바꿈이 내용인 블록에서도
-    낱말은 안 쪼갠다. 그래서 단 폭·유형을 따지지 않고 잇는다(BBPG §1.2.1 어절단위 줄바꿈).
+    낱말은 안 쪼갠다. 그래서 단 폭·유형을 따지지 않고 잇는다(NLD §1.2.1 어절단위 줄바꿈).
     붙일지 띄울지는 `_join_wrapped_lines`와 같은 판정기(`_join_words`)가 정한다.
     """
     if "\n" not in text:
@@ -1061,7 +1097,7 @@ def _join_wrapped_lines(text: str) -> str:
     MinerU/OCR 추출은 **인쇄면 한 줄이 한 줄**이라 문단 가운데 줄바꿈이 그대로 남는다.
     그대로 점역하면 어절이 인쇄면 줄 끝에서 갈린다 — `총 5개` / `의 문항이`가 두 어절로
     나가고, 32칸을 못 채운 짧은 줄이 남는다. 점자는 **어절 단위로** 접는 것이 규정이라
-    (BBPG §1.2.1 "어절단위 줄바꿈"), 인쇄면 줄바꿈은 점역 전에 지워야 한다.
+    (NLD §1.2.1 "어절단위 줄바꿈"), 인쇄면 줄바꿈은 점역 전에 지워야 한다.
     실측 OCR 텍스트 요소 5,621개 중 1,988개(35.4%)가 이 상태다.
 
     어느 줄바꿈이 인쇄면 줄바꿈인지는 **다음 줄 첫 어절이 이 줄에 들어갔겠는가**로 가른다.
@@ -1532,7 +1568,7 @@ async def _run_pipeline(task: PageTask) -> dict:
         #   BE는 txt·hwp를 줄마다 `\n`으로 이어 붙인 한 문자열로 보내므로, 그 `\n`이
         #   그대로 요소 경계다.
         #   · 빈 줄은 요소를 만들지 않는다 — 지침상 문단 구분은 빈 줄이 아니라 들여쓰기다
-        #     (BBPG 2장2절2 "3칸에서 시작"). 대신 `order`에 **원본 줄 번호**를 그대로 실어
+        #     (NLD 2장2절2 "3칸에서 시작"). 대신 `order`에 **원본 줄 번호**를 그대로 실어
         #     BE가 빈 줄이 어디였는지 알 수 있게 한다(번호가 건너뛴다).
         #   · id는 `text_list`와 `braille_text_list`가 같다 — 그게 짝짓기의 열쇠다.
         src_lines = _mode_b_segments(_mode_b_html_tables_to_tags(task.source_text or ""))

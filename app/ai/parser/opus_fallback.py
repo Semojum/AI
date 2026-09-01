@@ -1,11 +1,25 @@
-"""Opus 4.8 비전 추출 폴백 — MinerU 추출이 빈약한 페이지를 모델이 직접 읽는다 (D-05).
+"""LLM 비전 추출 — 쪽 이미지를 모델이 직접 읽어 경계 파일 요소를 만든다.
 
-기준: 오프라인 실측(2026-07-17)에서 텍스트 무수정 <15% 페이지만 유효(3~4배 개선),
-중간 품질 페이지는 득실 반반이라 교체하지 않는다. 런타임엔 정답이 없으므로
-추출 자체의 빈약 신호(요소 수·본문 글자수)로 판정한다.
+두 갈래로 쓴다.
 
-비용이 드는 경로라 **기본 off** — `OPUS_EXTRACT_FALLBACK=1` + ANTHROPIC_API_KEY 있을 때만.
-호출·토큰은 req_log에 기록한다.
+**① 고급 점역**(`advanced_ai=true`, 2026-09-01 대표 결정)
+   MinerU **대신** 이 경로가 지면을 읽는다. 기본은 Sonnet 5, 실패하거나 결과가 빈약하면
+   Opus 5로 한 번 더 간다. 실측 근거(수학 정답 해설 10쪽, `temp/reports/0901_모델사다리_전문.html`):
+
+   | | 깨진 글자가 든 블록 | LaTeX 비율 | 10쪽 비용 |
+   |---|---|---|---|
+   | MinerU | 128 | 44.9% | GPU 20~35초/쪽 |
+   | Sonnet 5 | **0** | **77.5%** | $1.27 |
+   | Opus 5 | 0 | 74.1% | $2.71 |
+
+   MinerU 는 한자·가나가 섞여 나온다(`以⑦）`·`軸`·`구-七기가를`). Sonnet 5 는 그게 없고
+   값이 Opus 의 절반이라 기본으로 둔다.
+
+**② 빈약 폴백**(D-05, 기본 off — `OPUS_EXTRACT_FALLBACK=1`)
+   고급 점역이 꺼진 보통 경로에서, MinerU 결과가 사실상 비었을 때만 한 번 구제한다.
+   중간 품질 페이지는 득실이 반반이라 교체하지 않는다(2026-07-17 오프라인 실측).
+
+호출·토큰은 `req_log` 에 모델명과 함께 남는다 — 모델마다 단가가 달라 이름이 없으면 원가가 안 맞는다.
 """
 from __future__ import annotations
 
@@ -13,14 +27,23 @@ import base64
 import json
 import logging
 import os
+
 from app.core.config import config
 
 logger = logging.getLogger(__name__)
 
+# 고급 점역 기본 모델과, 그게 실패했을 때 한 번 더 갈 모델.
+ADVANCED_MODEL = os.environ.get("ADVANCED_EXTRACT_MODEL", "claude-sonnet-5")
+ADVANCED_FALLBACK_MODEL = os.environ.get("ADVANCED_EXTRACT_FALLBACK_MODEL", "claude-opus-5")
+# 빈약 폴백(②)에서 쓰는 모델. 종전 동작을 그대로 둔다.
 MODEL = os.environ.get("OPUS_EXTRACT_MODEL", "claude-opus-4-8")
 
+# 상한을 넘겨 JSON 이 잘리면 그 쪽이 통째로 날아간다. 실측에서 16,000 으로는 10쪽 중
+# 2쪽이 잘렸다. 큰 상한은 스트리밍으로 받아야 HTTP 타임아웃에 안 걸린다.
+_MAX_TOKENS = int(os.environ.get("ADVANCED_EXTRACT_MAX_TOKENS", "32000"))
+
 # 빈약 판정: 요소가 이만큼도 안 나오거나, 텍스트류 총 글자가 이만큼도 안 되면
-# MinerU가 페이지를 사실상 못 읽은 것이다(실측: 문제 페이지는 보통 요소 0~3·수십 자).
+# 페이지를 사실상 못 읽은 것이다(실측: 문제 페이지는 보통 요소 0~3·수십 자).
 _MIN_ELEMENTS = int(os.environ.get("OPUS_FALLBACK_MIN_ELEMENTS", "3"))
 _MIN_TEXT_CHARS = int(os.environ.get("OPUS_FALLBACK_MIN_CHARS", "120"))
 
@@ -31,16 +54,31 @@ type: text(문단 단위로, 중간에 자르지 말 것) | list_item(선택지 
 header_footer | page_number | caption | table(행은 |, 줄은 개행) | formula(LaTeX) |
 image(content는 빈 문자열)
 
-규칙: 글자를 지어내지 마세요. 강조 구간은 <!강조>…<!/강조>. JSON 외 출력 금지."""
+수식은 반드시 LaTeX으로 적습니다. 이 규칙이 가장 중요합니다.
+- 유니코드 수학 기호를 그대로 쓰지 마세요. `≤`는 `\\le`, `≥`는 `\\ge`, `≠`는 `\\neq`,
+  `∫`는 `\\int`, `∑`는 `\\sum`, `√`는 `\\sqrt{}`, `→`는 `\\to`, `×`는 `\\times`,
+  `⊥`는 `\\perp`, `∠`는 `\\angle`, `∈`는 `\\in`, `∞`는 `\\infty`로 적습니다.
+- 분수는 `\\frac{분자}{분모}`, 첨자는 `x^{2}`·`a_{n}`으로 적습니다.
+- 문장 안에 섞인 수식도 `$...$`로 감쌉니다. 예: `함수 $f(x)$가 $0 \\le x \\le 4$에서`
+- 독립된 수식 줄은 type을 formula로 하고 `$...$` 없이 LaTeX만 적습니다.
+
+규칙: 글자를 지어내지 마세요. 지면에 없는 한자를 넣지 마세요.
+강조 구간은 <!강조>…<!/강조>. 흐릿해서 못 읽는 글자는 `□` 하나로 적습니다. JSON 외 출력 금지."""
 
 
 def enabled() -> bool:
+    """빈약 폴백(②)이 켜져 있나. 고급 점역(①)은 요청 플래그로 따로 켠다."""
     return (os.environ.get("OPUS_EXTRACT_FALLBACK", "0") == "1"
             and bool(config.anthropic_api_key))
 
 
+def advanced_available() -> bool:
+    """고급 점역을 쓸 수 있나 — 키가 있어야 한다."""
+    return bool(config.anthropic_api_key)
+
+
 def is_meager(elements: list[dict]) -> bool:
-    """MinerU 추출이 빈약한가 — Opus 폴백 트리거 신호."""
+    """추출이 빈약한가 — 폴백 트리거 신호."""
     if len(elements) < _MIN_ELEMENTS:
         return True
     chars = sum(len(e.get("content") or "") for e in elements
@@ -48,32 +86,66 @@ def is_meager(elements: list[dict]) -> bool:
     return chars < _MIN_TEXT_CHARS
 
 
-def extract(image_path: str) -> list[dict] | None:
-    """페이지 이미지 → 경계 파일 형식 elements. 실패 시 None(호출부가 원 추출 유지)."""
+def _parse(txt: str) -> list:
+    """모델 응답 → JSON 배열. 코드펜스와 앞뒤 군더더기를 걷어 낸다."""
+    txt = txt.strip()
+    if txt.startswith("```"):
+        txt = txt.split("\n", 1)[1].rsplit("```", 1)[0]
+    try:
+        return json.loads(txt)
+    except json.JSONDecodeError:
+        s, e = txt.find("["), txt.rfind("]")
+        if s < 0 or e <= s:
+            raise
+        return json.loads(txt[s:e + 1])
+
+
+def extract(image_path: str, model: str | None = None,
+            label: str = "opus추출") -> list[dict] | None:
+    """쪽 이미지 → 경계 파일 형식 elements. 실패 시 None(호출부가 원 추출을 유지한다)."""
+    model = model or MODEL
     try:
         import anthropic
+
         from app.core.limits import estimate_tokens, llm_limiter
         from app.utils.req_log import record_anthropic
         client = anthropic.Anthropic()
         b64 = base64.b64encode(open(image_path, "rb").read()).decode()
-        # 계정 분당 상한. 쪽 전체 이미지라 입력이 크고 출력도 8,000토큰까지 잡는다.
-        llm_limiter().acquire_sync(estimate_tokens(_PROMPT, len(b64) * 3 // 4), 8000)
-        resp = client.messages.create(
-            model=MODEL, max_tokens=8000,
+        # 계정 분당 상한. 쪽 전체 이미지라 입력이 크고 출력도 상한까지 잡는다.
+        llm_limiter().acquire_sync(estimate_tokens(_PROMPT, len(b64) * 3 // 4), _MAX_TOKENS)
+        # 큰 출력은 스트리밍으로 받는다 — 안 그러면 HTTP 타임아웃에 걸린다.
+        with client.messages.stream(
+            model=model, max_tokens=_MAX_TOKENS,
             messages=[{"role": "user", "content": [
                 {"type": "image",
                  "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
                 {"type": "text", "text": _PROMPT},
             ]}],
-        )
-        # Opus는 Sonnet보다 입력 2.5배·출력 2.5배다 — 모델을 밝혀야 원가가 맞는다.
-        record_anthropic("opus추출", MODEL, getattr(resp, "usage", None))
-        txt = "".join(b.text for b in resp.content if b.type == "text").strip()
-        if txt.startswith("```"):
-            txt = txt.split("\n", 1)[1].rsplit("```", 1)[0]
-        els = json.loads(txt)
-        return [{"id": f"opus-{i:03d}", "order": i, "type": e.get("type", "text"),
+        ) as stream:
+            resp = stream.get_final_message()
+        # 모델마다 단가가 다르다 — 이름을 남겨야 원가가 맞는다.
+        record_anthropic(label, model, getattr(resp, "usage", None))
+        els = _parse("".join(b.text for b in resp.content if b.type == "text"))
+        return [{"id": f"llm-{i:03d}", "order": i, "type": e.get("type", "text"),
                  "content": e.get("content") or ""} for i, e in enumerate(els)]
-    except Exception as exc:  # noqa: BLE001 — 폴백 실패는 원 추출 유지로 격리
-        logger.warning("Opus 추출 폴백 실패(원 추출 유지): %s", exc)
+    except Exception as exc:  # noqa: BLE001 — 추출 실패는 호출부가 원 추출로 격리한다
+        logger.warning("LLM 추출 실패(%s): %s", model, exc)
         return None
+
+
+def extract_advanced(image_path: str) -> tuple[list[dict] | None, str]:
+    """고급 점역 추출. Sonnet 5 로 읽고, 실패하거나 빈약하면 Opus 5 로 한 번 더 간다.
+
+    반환 `(elements, 쓴 모델)`. 둘 다 못 읽으면 `(None, "")` — 호출부가 MinerU 로 되돌린다.
+    """
+    els = extract(image_path, ADVANCED_MODEL, "고급추출")
+    if els and not is_meager(els):
+        return els, ADVANCED_MODEL
+    logger.warning("고급 추출 1차(%s) %s — %s 로 다시 읽는다",
+                   ADVANCED_MODEL, "빈약" if els else "실패", ADVANCED_FALLBACK_MODEL)
+    better = extract(image_path, ADVANCED_FALLBACK_MODEL, "고급추출")
+    if better and not is_meager(better):
+        return better, ADVANCED_FALLBACK_MODEL
+    # 2차도 빈약하면 그나마 나온 쪽을 준다. 둘 다 없으면 호출부가 MinerU 로 간다.
+    return (better or els or None), (ADVANCED_FALLBACK_MODEL if better else
+                                     (ADVANCED_MODEL if els else ""))

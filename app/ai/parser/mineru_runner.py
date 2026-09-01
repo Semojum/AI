@@ -44,7 +44,7 @@ TYPE_MAP = {
     "figure":              "image",
 }
 
-# ── 제목 단계(BBPG 2장2절1) ──────────────────────────────────────────────────
+# ── 제목 단계(NLD 2장2절1) ──────────────────────────────────────────────────
 # MinerU는 제목 블록을 이미 찾아 놓는다. 다만 `content_list`에서는 type이 "text"로
 # 눕고 단계만 `text_level`에 남는다(vlm_middle_json_mkcontent.py: BlockType.TITLE →
 # ContentType.TEXT + text_level). 종전에는 그 값을 통째로 버리고 heading_level=None을
@@ -126,7 +126,7 @@ def _announce_engine(mineru_bin: str) -> None:
 
 
 def _heading_level(item: dict, mapped_type: str, content: str) -> int | None:
-    """MinerU `text_level` → BBPG 제목 단계. 제목이 아니면 None."""
+    """MinerU `text_level` → NLD 제목 단계. 제목이 아니면 None."""
     lvl = item.get("text_level")
     if not lvl or mapped_type != "text":
         return None
@@ -173,7 +173,7 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | N
     #   백엔드로** 처리됐다. 실측 피해(사회문화 p178, 동일 페이지):
     #     hybrid+effort medium(구 기본) → text 35 · list **0**   (본문 과분절·목록 소실)
     #     vlm-engine 또는 hybrid+high   → text  8 · list  7      (07-17 캐시와 일치)
-    #   목록이 사라지면 글머리 3칸 들여쓰기(BBPG 2장3절5)가 통째로 빠진다.
+    #   목록이 사라지면 글머리 3칸 들여쓰기(NLD 2장3절5)가 통째로 빠진다.
     backend = os.environ.get("MINERU_BACKEND", "hybrid-engine")
     cmd += ["-b", backend]
     if api_url:
@@ -1236,7 +1236,7 @@ def run(
         if mapped_type == "page_number" and not content.strip().lstrip('-').isnumeric():
             mapped_type = "text"
 
-        # 제목 단계(BBPG 2장2절1) — MinerU가 이미 찾아 둔 것을 살린다. 위 _heading_level 주석 참조.
+        # 제목 단계(NLD 2장2절1) — MinerU가 이미 찾아 둔 것을 살린다. 위 _heading_level 주석 참조.
         hlevel = _heading_level(item, mapped_type, content)
         if hlevel:
             mapped_type = "title"
