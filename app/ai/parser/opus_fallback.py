@@ -27,6 +27,7 @@ import base64
 import json
 import logging
 import os
+import time
 
 from app.core.config import config
 
@@ -41,6 +42,11 @@ MODEL = os.environ.get("OPUS_EXTRACT_MODEL", "claude-opus-4-8")
 # 상한을 넘겨 JSON 이 잘리면 그 쪽이 통째로 날아간다. 실측에서 16,000 으로는 10쪽 중
 # 2쪽이 잘렸다. 큰 상한은 스트리밍으로 받아야 HTTP 타임아웃에 안 걸린다.
 _MAX_TOKENS = int(os.environ.get("ADVANCED_EXTRACT_MAX_TOKENS", "32000"))
+
+# 1차가 오래 걸렸으면 2차를 부르지 않는다. 페이지 예산이 180초(C7)인데 추출 한 번이
+# 실측 60~110초라, 두 번 부르면 점역·조판 시간이 남지 않아 쪽 전체가 BLOCKED 로 죽는다.
+# 되돌아갈 MinerU 는 20~35초라 그쪽이 낫다.
+_ADVANCED_RETRY_BUDGET = float(os.environ.get("ADVANCED_EXTRACT_RETRY_BUDGET", "60"))
 
 # 빈약 판정: 요소가 이만큼도 안 나오거나, 텍스트류 총 글자가 이만큼도 안 되면
 # 페이지를 사실상 못 읽은 것이다(실측: 문제 페이지는 보통 요소 0~3·수십 자).
@@ -144,9 +150,17 @@ def extract_advanced(image_path: str) -> tuple[list[dict] | None, str]:
 
     반환 `(elements, 쓴 모델)`. 둘 다 못 읽으면 `(None, "")` — 호출부가 MinerU 로 되돌린다.
     """
+    t0 = time.monotonic()
     els = extract(image_path, ADVANCED_MODEL, "고급추출")
     if els and not is_meager(els):
         return els, ADVANCED_MODEL
+    spent = time.monotonic() - t0
+    if spent > _ADVANCED_RETRY_BUDGET:
+        # 2차까지 부르면 페이지 예산을 넘긴다. 1차 결과가 있으면 그거라도 쓰고,
+        # 없으면 호출부가 MinerU 로 되돌린다.
+        logger.warning("고급 추출 1차가 %.0f초 걸려 2차를 건너뛴다(예산 %.0f초)",
+                       spent, _ADVANCED_RETRY_BUDGET)
+        return (els or None), (ADVANCED_MODEL if els else "")
     logger.warning("고급 추출 1차(%s) %s — %s 로 다시 읽는다",
                    ADVANCED_MODEL, "빈약" if els else "실패", ADVANCED_FALLBACK_MODEL)
     better = extract(image_path, ADVANCED_FALLBACK_MODEL, "고급추출")
