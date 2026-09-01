@@ -67,6 +67,9 @@ R2_SUBTYPE_CONFIDENCE_THRESHOLD = 0.75
 
 # C5: 수표(⠼) 런타임 스캐너 — 아라비아 숫자와 수표 기호
 _C5_DIGIT_RE = re.compile(r"[0-9]")
+
+# 결함 탐지가 아니라 **등급**인 플래그 — 쪽 status 판정에서 뺀다(요소 화면에는 그대로 뜬다).
+_GRADE_FLAGS = frozenset({"R13", "R10"})
 # ★ 게이트는 **점역 대상 글자에만** 연다(2026-08-10). 종전엔 corrected_text를 원문 그대로
 # 훑어 인라인 태그 이름의 숫자(`<!상자끝2>`)가 게이트를 열었다 — 태그는 테두리 점형으로
 # 치환되니 수표가 나올 리 없고, 그래서 무조건 C5가 떴다. 실측(dev+val 839쪽) C5 146건 중
@@ -429,10 +432,14 @@ class QualityChecker:
     def _decide_status(criticals: list[CriticalError], reviews: list[ReviewFlag]) -> str:
         if any(c.type in ("C1", "C7") for c in criticals):
             return "BLOCKED"
-        # R13은 **결함 탐지가 아니라 등급**이다 — 본문의 26%에 붙으므로 status에 넣으면
-        # 거의 모든 쪽이 NEEDS_REVIEW가 된다(실측 839쪽: COMPLETED 255→9). 쪽 판정이
-        # 무정보해지면 지금 그나마 있는 신호(status가 CER을 가르는 AUC 0.651)까지 잃는다.
-        # 요소 화면에는 그대로 뜨고, 쪽 판정만 종전과 동일하게 둔다.
-        if criticals or any(r.type != "R13" for r in reviews):
+        # R13·R10은 **결함 탐지가 아니라 등급**이다 — "여기는 평균보다 자주 고쳐야 한다"
+        # 까지만 말한다. 등급을 쪽 판정에 넣으면 거의 모든 쪽이 NEEDS_REVIEW가 되어
+        # 쪽 신호가 무정보해진다(R13 실측 839쪽: COMPLETED 255→9).
+        # 2026-09-02 — R10(표)도 뺐다. 같은 등급인데 R13만 빼 놓아 표가 있는 쪽이 전부
+        # 검토로 떴다. dev 900쪽 실측: 검토 필요 72%→57% · 완료 28%→42%(129쪽 이동).
+        # ⚠ 등급은 **요소 화면에 그대로 뜬다** — 검수 순서 신호로 계속 쓰인다.
+        #   쪽 판정에서만 뺀 것이지 "플래그 없는 쪽은 안 봐도 된다"는 뜻이 아니다
+        #   (재현율 6.9% · COMPLETED 쪽의 21.2%가 셀 30% 이상 수정 필요).
+        if criticals or any(r.type not in _GRADE_FLAGS for r in reviews):
             return "NEEDS_REVIEW"
         return "COMPLETED"
