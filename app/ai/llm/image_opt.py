@@ -27,7 +27,7 @@ def _nested_graph_text(structure: dict) -> str | None:
               if (n.get("type") or "").strip() in _NESTED_GRAPH_TYPES]
     return box_narrative(blocks, default_label="그래프")
 
-_RULE_ID = "JAJAK-6.3.4"   # 시각 자료 점역자 주 (점자 자료 제작 지침 §6.3.4)
+_RULE_ID = "NISE-6.3.4"   # 시각 자료 점역자 주 (점자 자료 제작 지침 §6.3.4)
 
 
 def _trail(drafts, selected_idx: int, source: str) -> list[RuleApplication]:

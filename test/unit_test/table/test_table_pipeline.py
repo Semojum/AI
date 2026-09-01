@@ -81,7 +81,7 @@ def _grits(extracted: ExtractedContent, output: BrailleOutput, render_mode: str)
         checks.append(len(top) == 1 and len(bot) == 1)           # 위·아래 테두리 각 한 줄
         checks.append(len(output.braille_lines) == max_row + 2)  # 총 줄 수 = 행 + 테두리 2
     elif render_mode == "unfold":
-        # 풀어쓰기(BBPG-3.1.2)는 지침 §3.1.1(1)에 따라 **두 조판**이 다 정답이다
+        # 풀어쓰기(NLD-3.1.2)는 지침 §3.1.1(1)에 따라 **두 조판**이 다 정답이다
         # (2026-07-20 정정 — 정답 도서 실측으로 확인):
         #   ② 낱말 수준·좁은 표 → 행 단위: 원본 한 행이 한 줄  → 줄 수 = max_row
         #      (생물 p122 '자율 신경  침 분비  폐의 기관지  동공' / p119 동일 형식)
@@ -165,12 +165,12 @@ class TestTablePipelineBasic:
                 )
 
     def test_rule_trail_excludes_generic(self, braille_outputs: list[BrailleOutput]) -> None:
-        # 정책(태민 2026-06-01): 포괄 표 규칙(BBPG-3.1.1)·조판 규칙(BBPG-1.2.1) 미기록.
+        # 정책(태민 2026-06-01): 포괄 표 규칙(NLD-3.1.1)·조판 규칙(NLD-1.2.1) 미기록.
         # 구조화 표는 점역자 주가 없으면 rule_trail이 비는 것이 정상.
         for o in braille_outputs:
             rids = [r.rule_id for r in o.rule_trail]
-            assert "BBPG-3.1.1" not in rids
-            assert "BBPG-1.2.1" not in rids
+            assert "NLD-3.1.1" not in rids
+            assert "NLD-1.2.1" not in rids
 
     def test_element_ids_preserved(
         self,
@@ -402,7 +402,7 @@ class TestTransposeTranslatorNote:
             f"전치 점역자 주 불일치\n  기대(지침 예3-2): {expected!r}\n  실제            : {lines[0]!r}")
 
     def test_note_is_wrapped_in_tn_markers(self) -> None:
-        """점역자 주 마커 ⠠⠄가 양끝에 있어야 rule_trail(BBPG-1.2.6)이 잡힌다."""
+        """점역자 주 마커 ⠠⠄가 양끝에 있어야 rule_trail(NLD-1.2.6)이 잡힌다."""
         from app.ai.braille.table_braille import _tn_transpose_line
         line = _tn_transpose_line().strip(" ⠀")
         assert line.startswith("⠠⠄") and line.endswith("⠠⠄")

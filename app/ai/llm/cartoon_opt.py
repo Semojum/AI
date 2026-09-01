@@ -15,7 +15,7 @@ from app.ai.llm.visual_drafts import build_visual_drafts, visual_trail
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
-_RULE_ID = "JAJAK-5.3"   # 만화 골격 (점자 자료 제작 지침 §5.3)
+_RULE_ID = "NISE-5.3"   # 만화 골격 (점자 자료 제작 지침 §5.3)
 
 # §5.3.3(1) 장면 번호는 5칸, (2) 인물의 대화는 3칸.
 # visual_drafts의 위계 레벨은 level0→3칸(_OUTLINE_BASE)·level1→5칸이므로 **대사가 level0,
@@ -32,7 +32,7 @@ def _trail(drafts, selected_idx: int, source: str) -> list[RuleApplication]:
 def _say(speaker: str, text: str) -> str:
     """§5.3.3(3) 인물명과 대사는 쌍점으로 구분. 쌍점 뒤 한 칸 띈다.
 
-    BBPG 제3장 [예 3-54] 정답 점자를 역점역해 확인한 형태 — "학생: 선생님, 농업의 사회적…".
+    NLD 제3장 [예 3-54] 정답 점자를 역점역해 확인한 형태 — "학생: 선생님, 농업의 사회적…".
     종전 코드는 `f"{speaker}:{txt}"`로 붙여 써서 정답과 어긋났다(2026-08-07 규정 대조).
     """
     return f"{speaker}: {text}".strip()
@@ -80,7 +80,7 @@ def _caption_items(caption: str) -> tuple[str, list[tuple[int, str]]]:
     for raw in (caption or "").splitlines():
         line = raw.strip()
         if not line:
-            continue                                   # BBPG 3장 9)(1)② 빈 줄 버림
+            continue                                   # NLD 3장 9)(1)② 빈 줄 버림
         if not title and _HEAD_RE.match(line):
             title = _HEAD_RE.sub("", line).strip()
             continue

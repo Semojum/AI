@@ -86,7 +86,7 @@ class TestContentRulesSpans:
     """Step17(2026-08-08) — 수표 rule_trail emit 폐지. 판별 로직 자체는 위 클래스가 지킨다.
 
     `content_rules`가 수표 span을 달던 시절의 회귀 테스트였다. 대표 지시로 "숫자는 수표를
-    앞세운다"(KBR-5.11.40)는 점역사에게 자명한 규정이라 rule_trail에서 뺐다(dev 14,179회).
+    앞세운다"(MCST-5.11.40)는 점역사에게 자명한 규정이라 rule_trail에서 뺐다(dev 14,179회).
     ble↔수표 판별(`number_sign_indices`)은 C5 스캐너가 계속 쓰므로 TestNumberSignIndices가
     그대로 지킨다 — 여기서는 '더 이상 근거로 안 나간다'만 못 박는다.
     """

@@ -20,7 +20,7 @@ from app.ai.llm.visual_drafts import (
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
-_RULE_ID = "JAJAK-6.4.1"   # 그래프 골격 (점자 자료 제작 지침 §6.4)
+_RULE_ID = "NISE-6.4.1"   # 그래프 골격 (점자 자료 제작 지침 §6.4)
 
 # 차트 하위유형 → 한국어 유형 라벨(전사용)
 _SUBTYPE_LABEL = {

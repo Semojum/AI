@@ -11,9 +11,9 @@ class RuleApplication(BaseModel):
 
     rule_id: str
     source: str
-    section: str
-    title: str
-    excerpt: str
+    section: str      # 위계를 " · " 로 합친 표시용 한 줄 (원본 위계는 regulations.rule_meta)
+    rule_name: str    # 조항 명칭 = regulations.json 의 rule_name
+    contents: str     # 조항 원문 = regulations.json 의 contents
     priority: str = "primary"  # "primary" | "secondary"
     # 요소-로컬 좌표(조판 후) — 좌표계 = 이 블록의 contents 배열.
     # FE는 contents[line_no][col_start:col_end]만 하이라이트(계산 없음). line_no=-1 → 요소 전체.
@@ -99,7 +99,7 @@ class LLMOutput(BaseModel):
 
 
 class BoxBorder(BaseModel):
-    """글상자 테두리 메타 (BBPG-1.2.5). layout이 위계·제목 배치로 재렌더한다.
+    """글상자 테두리 메타 (NLD-1.2.5). layout이 위계·제목 배치로 재렌더한다.
 
     translator는 점자 스트림에 인라인 32칸 테두리 줄을 위치 마커로 남기고(제어문자 없음),
     제목 전체(클립 전)·위계를 이 메타로 순서대로 전달한다. layout이 마커 줄을 순서대로
@@ -119,11 +119,11 @@ class BrailleOutput(BaseModel):
     # 점자만 보면 수표+숫자가 일반 숫자와 구분되지 않기 때문. braille_lines와 줄 수가 같다.
     corrected_text: str = ""
     braille_lines: list[str]  # 논리 줄(개행 단위). 32칸 줄바꿈은 PART 10 layout이 수행
-    # 줄별 음절 줄바꿈 허용 offset(BBPG-1.2.1) — layout이 32칸 줄바꿈에 사용, 응답엔 미노출.
+    # 줄별 음절 줄바꿈 허용 offset(NLD-1.2.1) — layout이 32칸 줄바꿈에 사용, 응답엔 미노출.
     # braille_lines와 길이가 같다(줄 i의 허용 offset 목록). 비면 layout이 어절 단위로 분리.
     break_points: list[list[int]] = Field(default_factory=list)
     rule_trail: list[RuleApplication] = Field(default_factory=list)
-    box_borders: list[BoxBorder] = Field(default_factory=list)  # 글상자 테두리(BBPG-1.2.5), layout 재렌더용
+    box_borders: list[BoxBorder] = Field(default_factory=list)  # 글상자 테두리(NLD-1.2.5), layout 재렌더용
     # 복수 초안 각각의 점역 결과 (BE/FE 노출용). 단일안은 빈 리스트.
     drafts: list[Draft] = Field(default_factory=list)
     selected_idx: int = 0

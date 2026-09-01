@@ -2,8 +2,8 @@
 
 근거(모두 원문 대조):
   · 「제작 지침」§5.3.3(1) 장면 번호 5칸 / (2) 인물의 대화 3칸 / (3) 인물명과 대사는 쌍점 구분
-  · BBPG 제3장 9)(1)② 컷과 컷 사이에는 빈 줄을 두지 않는다
-  · BBPG [예 3-54] 정답 점자 역점역 = "학생: 선생님, 농업의 사회적 …" (쌍점 뒤 한 칸)
+  · NLD 제3장 9)(1)② 컷과 컷 사이에는 빈 줄을 두지 않는다
+  · NLD [예 3-54] 정답 점자 역점역 = "학생: 선생님, 농업의 사회적 …" (쌍점 뒤 한 칸)
   · §6.3.4(3) 화자 불명은 '말풍선'
 """
 from __future__ import annotations
@@ -42,7 +42,7 @@ def _outline(caption: str) -> str:
 
 class TestScriptFormat:
     def test_대사가_인물명_쌍점_형식으로_나온다(self):
-        """QA 13번 — '(인물명): (대사)' 형식. BBPG 예3-54 정답 대조."""
+        """QA 13번 — '(인물명): (대사)' 형식. NLD 예3-54 정답 대조."""
         out = _outline(_SCRIPT)
         assert "학생: 선생님, 농업의 사회적 역할이 무엇인가요?" in out
         assert "선생님: 사람이 살아가는 데" in out
@@ -64,7 +64,7 @@ class TestScriptFormat:
         assert "흐름:" not in _outline(_REAL)
 
     def test_빈_줄이_없다(self):
-        """QA 14번 + BBPG 3장 9)(1)②."""
+        """QA 14번 + NLD 3장 9)(1)②."""
         out = _outline(_REAL)
         assert "\n\n" not in out
         assert all(line.strip() for line in out.splitlines())

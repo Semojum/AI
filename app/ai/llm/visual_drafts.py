@@ -240,7 +240,7 @@ def _oneline(text: str) -> str:
     """점역자주 한 덩이는 **논리 줄 하나**다 — 줄바꿈·빈 줄을 공백으로 접는다.
 
     QA 2026-08-07 14번("캡셔닝 안에 불필요한 빈 줄"). 근거 두 겹:
-      · BBPG 제3장 9)(1)② — 만화의 컷과 컷 사이에는 빈 줄을 두지 않는다.
+      · NLD 제3장 9)(1)② — 만화의 컷과 컷 사이에는 빈 줄을 두지 않는다.
       · 「제작 지침」 §6.3.4(1) — 시각 자료 설명은 점역자 주표 **안**에 넣는 한 덩이다.
     실측(대표님 QA 실행분): 캡션 34건 중 **27건(79%)** 이 캡션 안에 빈 줄을 갖고 있었고,
     그게 그대로 점역자주 안으로 들어가 조판까지 흘렀다.
@@ -350,7 +350,7 @@ def _outline_text_indents(
     desc = _strip_dup_type(desc, label)
     head = f"{label}: {desc}" if (desc and not _same_gist(desc, title)) else label
     if _WRAP_STYLE == "box":
-        # box(A/B): 블록 전체를 글상자로 — 제목은 위 테두리 안(BBPG-1.2.5), 유형/설명은 첫 줄.
+        # box(A/B): 블록 전체를 글상자로 — 제목은 위 테두리 안(NLD-1.2.5), 유형/설명은 첫 줄.
         lines.append(f"<!상자>{title}<!/상자>"); indents.append(0)
         lines.append(head); indents.append(0)
     else:

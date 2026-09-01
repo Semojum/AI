@@ -2,18 +2,18 @@
 
 BrailleOutput 목록 → 32칸 × 25줄 페이지 조판 → 파일 저장.
 
-조판/레이아웃 규정 정본 = 점자 도서 제작 지침(BBPG). 점자 글리프는 한국 점자
-규정(KBR)에서 도출. PDF 점자는 표준 Braille ASCII 폰트(#b=숫자2)로 디코딩.
-(폐기된 점자 자료 제작 지침 JAJAK 기반 마커 전면 교체됨.)
+조판/레이아웃 규정 정본 = 점자 도서 제작 지침(NLD). 점자 글리프는 한국 점자
+규정(MCST)에서 도출. PDF 점자는 표준 Braille ASCII 폰트(#b=숫자2)로 디코딩.
+(폐기된 점자 자료 제작 지침 NISE 기반 마커 전면 교체됨.)
 
-BBPG 1장2절1: 32칸 줄바꿈, 25줄 페이지 넘김
-BBPG 1장2절2: 페이지행 — 원본 페이지번호(좌·첫칸) · 꼬리말(가운데) · 점자 페이지번호(우)
-BBPG 1장2절2-3): 원본 페이지 변경선 — 첫 칸부터 ⠤로 채운 선 + 우측정렬 원본 페이지번호
-BBPG 1장2절5: 글상자 테두리 — 위 ⠿…⠛…⠿ / 아래 ⠿…⠶…⠿ (32칸), 앞뒤 빈 줄
-BBPG 2장2절2: 문단 — 새 문단 3칸 시작, 이어지는 줄 첫 칸
-BBPG 2장2절3: 밑줄 빈칸 ⠸⠤ (길이 무관 1개)
-BBPG 2장2절6: 출전 — 본문 아래일 때 다음 줄 3칸
-BBPG 2장3절5: 글머리 기호 — 3칸 표기, 위계 1단계 동그라미 ⠸⠴ / 2단계 붙임표 ⠤ (KBR 제72항)
+NLD 1장2절1: 32칸 줄바꿈, 25줄 페이지 넘김
+NLD 1장2절2: 페이지행 — 원본 페이지번호(좌·첫칸) · 꼬리말(가운데) · 점자 페이지번호(우)
+NLD 1장2절2-3): 원본 페이지 변경선 — 첫 칸부터 ⠤로 채운 선 + 우측정렬 원본 페이지번호
+NLD 1장2절5: 글상자 테두리 — 위 ⠿…⠛…⠿ / 아래 ⠿…⠶…⠿ (32칸), 앞뒤 빈 줄
+NLD 2장2절2: 문단 — 새 문단 3칸 시작, 이어지는 줄 첫 칸
+NLD 2장2절3: 밑줄 빈칸 ⠸⠤ (길이 무관 1개)
+NLD 2장2절6: 출전 — 본문 아래일 때 다음 줄 3칸
+NLD 2장3절5: 글머리 기호 — 3칸 표기, 위계 1단계 동그라미 ⠸⠴ / 2단계 붙임표 ⠤ (MCST 제72항)
 """
 
 from __future__ import annotations
@@ -34,10 +34,10 @@ if TYPE_CHECKING:  # 런타임 import 회피 (annotations 지연 평가)
 
 logger = logging.getLogger(__name__)
 
-from app.ai.braille.constants import COLS as _COLS, ROWS as _ROWS, DOUBLE_SIDED  # noqa: E402 (공용 상수)
+from app.ai.braille.constants import COLS as _COLS, ROWS as _ROWS  # noqa: E402 (공용 상수)
 
-# ── BBPG 2장2절1 제목 단계별 빈 줄 (level → (앞, 뒤)) ───────────────────────
-# 근거 조항은 BBPG 2장2절2 2)(2)① 하나다 — 빈 줄을 넣어도 되는 자리를 **열거**한다:
+# ── NLD 2장2절1 제목 단계별 빈 줄 (level → (앞, 뒤)) ───────────────────────
+# 근거 조항은 NLD 2장2절2 2)(2)① 하나다 — 빈 줄을 넣어도 되는 자리를 **열거**한다:
 #   "1단계 제목의 아래, 2단계 제목의 아래, 3단계 제목의 위아래, 4단계 제목의 위"
 # 같은 조 (1)이 "시각적 효과·공간적 배치를 위해 삽입된 빈 줄은 점자에서는 삭제한다"라
 # 못 박으므로, 열거에 없는 자리에 빈 줄을 넣으면 규정 위반이다.
@@ -48,27 +48,27 @@ from app.ai.braille.constants import COLS as _COLS, ROWS as _ROWS, DOUBLE_SIDED 
 #    위아래에 빈 줄을 두고 이어 적을 수 있다". 교과서가 이 경우라 예외를 채택한다.
 _HEADING_BLANK: dict[int, tuple[int, int]] = {1: (0, 1), 2: (1, 1), 3: (1, 1), 4: (1, 0)}
 
-# BBPG 3장2절1 2) "모든 시각 자료의 위아래는 한 줄을 띈다. 다만, 시각 자료가 연이어 나올
+# NLD 3장2절1 2) "모든 시각 자료의 위아래는 한 줄을 띈다. 다만, 시각 자료가 연이어 나올
 # 때 그 사이는 줄을 띄지 않는다." — 표는 여기서 뺀다. 3장1절4)(3)이 "표가 연이어 나올 때
 # 그 사이에는 빈 줄을 둔다"로 정반대라, 둘을 같이 다루면 한쪽이 반드시 틀린다.
 _VISUAL_TYPES = frozenset({"image", "cartoon", "chart_graph", "diagram"})
 
-# BBPG 2장2절2 2)(2)④·3장1절4)(1)·3장2절1 2): 표·시각 자료는 위아래에 빈 줄을 삽입한다.
+# NLD 2장2절2 2)(2)④·3장1절4)(1)·3장2절1 2): 표·시각 자료는 위아래에 빈 줄을 삽입한다.
 _BLANK_AROUND_TYPES = _VISUAL_TYPES | {"table"}
 
 # 단어 구분 = ASCII 공백 또는 점자 빈칸(U+2800)
 _WORD_RE = re.compile(r"[^ ⠀]+")
 
 # rule_trail rule_id (regulations.json 키)
-_RULE_LINE_WRAP = "BBPG-1.2.1"      # 줄바꿈(32칸), tag=line_wrap
+_RULE_LINE_WRAP = "NLD-1.2.1"      # 줄바꿈(32칸), tag=line_wrap
 # 인라인 태그(§3-5 `<!이름>`/`<!/이름>`) 제거용 — 발문 판정은 묵자만 본다.
 _TAG_RE = re.compile(r"<!/?[^>]+>")
-_RULE_HEADING_BLANK = "BBPG-2.2.1"  # 단계별 제목 표기, tag=heading_blank
-_RULE_PARA_INDENT = "BBPG-2.2.2"    # 문단 형식(새 문단 3칸), tag=indent
-_RULE_BULLET_INDENT = "BBPG-2.3.5"  # 글머리 3칸, tag=indent
-_RULE_BOX_BORDER = "BBPG-1.2.5"     # 글상자 테두리(Step17 emit), tag=box_top/box_bottom·N단계
+_RULE_HEADING_BLANK = "NLD-2.2.1"  # 단계별 제목 표기, tag=heading_blank
+_RULE_PARA_INDENT = "NLD-2.2.2"    # 문단 형식(새 문단 3칸), tag=indent
+_RULE_BULLET_INDENT = "NLD-2.3.5"  # 글머리 3칸, tag=indent
+_RULE_BOX_BORDER = "NLD-1.2.5"     # 글상자 테두리(Step17 emit), tag=box_top/box_bottom·N단계
 
-# ── KBR 제72항 글머리 기호: 숨김표 글리프(_..l, 꼬리 ⠇) → 글머리형(_.., 꼬리 없음) ──
+# ── MCST 제72항 글머리 기호: 숨김표 글리프(_..l, 꼬리 ⠇) → 글머리형(_.., 꼬리 없음) ──
 # ○□△가 list_item 글머리로 쓰이면 숨김표(제49항)가 아니라 글머리형(제72항)이어야 한다.
 # text 체인은 문맥을 몰라 숨김표로 변환·emit하므로 여기서 글리프·rule을 글머리로 정정한다.
 _HIDDEN_TO_BULLET: dict[str, str] = {
@@ -79,16 +79,16 @@ _HIDDEN_TO_BULLET: dict[str, str] = {
     #   단계에서 •를 먼저 글머리 셀로 바꾸므로 ⠐⠆인 채 여기까지 오지 않는다.
     #   글머리 점형은 symbol_rules._SYMBOL_BULLET이 정본이다.
 }
-_RULE_BULLET = "KBR-6.14.72"   # 글머리 기호 (제72항)
-_RULE_HIDDEN_SINGLE = "KBR-6.13.49"  # 숨김표 단일(제49항) — list_item 첫머리면 글머리로 정정
+_RULE_BULLET = "MCST-한글-6.14.72"   # 글머리 기호 (제72항)
+_RULE_HIDDEN_SINGLE = "MCST-한글-6.13.49"  # 숨김표 단일(제49항) — list_item 첫머리면 글머리로 정정
 
 # ★ 들여쓰기 상수는 "빈칸 개수"다 (규정의 '시작 칸' 숫자가 아님).
-#   BBPG "3칸에서 시작" = 글자가 3번째 칸부터 = 앞에 빈칸 2개.
+#   NLD "3칸에서 시작" = 글자가 3번째 칸부터 = 앞에 빈칸 2개.
 #   정답 코퍼스 1131p/85,600줄 전수 검증: 빈칸은 0(66.0%)·2(31.3%)·4(2.2%)·6(0.4%)칸만
 #   나오고 홀수는 사실상 없다 → 규정의 1·3·5·7칸 시작과 정확히 일치.
 #   (2026-07-16 이전엔 상수를 시작 칸 숫자 그대로 써서 전 줄이 1칸씩 밀려 있었다.)
-_PARA_INDENT = 2        # BBPG 2장2절2 새 문단 "3칸에서 시작" = 앞 빈칸 2 (text)
-_BULLET_LINE_INDENT = 2  # BBPG 2장3절5 글머리/목록 "3칸에서 시작" = 앞 빈칸 2 (list_item)
+_PARA_INDENT = 2        # NLD 2장2절2 새 문단 "3칸에서 시작" = 앞 빈칸 2 (text)
+_BULLET_LINE_INDENT = 2  # NLD 2장3절5 글머리/목록 "3칸에서 시작" = 앞 빈칸 2 (list_item)
 
 # ★ MinerU는 선택지(①②③…)를 한 요소로 묶어서 낸다. 요소 첫 줄만 들이면 ②③…이
 #   이어지는 줄(0칸)로 흘러 정답(각 항목 2칸 시작)과 어긋난다.
@@ -101,7 +101,7 @@ _ITEM_HEAD = re.compile(
     r"|[가-힣]\.\s"                   # 가.
     r"|\d+\.\s)"                    # 1.
 )
-_HEADING_DEEP_INDENT = 4  # BBPG 2장2절1 3·4단계 제목 "5칸에서 시작" = 앞 빈칸 4
+_HEADING_DEEP_INDENT = 4  # NLD 2장2절1 3·4단계 제목 "5칸에서 시작" = 앞 빈칸 4
 # ★ MinerU가 제목으로 표시했지만 **단원명이 아닌** 항목 머리 — 문항 번호와 괄호 번호다.
 #   지침 2.4.2는 단원명에만 적용된다. 이것들은 문단이므로 "3칸에서 시작" = 앞 빈칸 2다.
 #   dev·val-2027 gold 전수 827건: **앞 빈칸 2가 803건(97.1%) · 4가 0건.**
@@ -116,7 +116,7 @@ _HEADING_DEEP_INDENT = 4  # BBPG 2장2절1 3·4단계 제목 "5칸에서 시작"
 #     gold도 이 자리 위를 764건 중 613건(80%)에서 띈다. 문단으로 강등하면 그 빈 줄을 잃는다.
 _ITEM_HEAD_NUM = re.compile(r"^\s*(?:\(\s*[0-9가-힣A-Za-z]\s*\)|0\d(?!\d))")
 _ITEM_HEAD_INDENT = 2   # 문단과 같은 "3칸에서 시작"
-_HEADING_LEVEL2_INDENT = 6  # 2단계 제목 "7칸에서 시작" = 앞 빈칸 6 (BBPG 2장2절1 3)
+_HEADING_LEVEL2_INDENT = 6  # 2단계 제목 "7칸에서 시작" = 앞 빈칸 6 (NLD 2장2절1 3)
 
 _DEFAULT_META: tuple[str, int, int] = ("text", 1_000_000, 0)
 # 페이지행으로 빠지는 요소 타입 — **원본 페이지 번호(page_number)뿐이다.**
@@ -130,30 +130,30 @@ _PAGE_LINE_TYPES = {"page_number"}
 # 1단계를 우선하고, 같은 단계면 읽기순서가 앞선 것을 쓴다(_footer_text 주석).
 _FOOTER_HEADING_LEVELS = (1, 2)
 
-# 원본 페이지 연속 표기용 알파벳 점자(a~z, 로마자표 없는 맨 letter) — BBPG 1장2절2
+# 원본 페이지 연속 표기용 알파벳 점자(a~z, 로마자표 없는 맨 letter) — NLD 1장2절2
 _ALPHA_BRAILLE = "⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵"
 
-# ── BBPG 2장2절3 밑줄 빈칸 (KBR 밑줄 빈칸 기호 _- = ⠸⠤) ──────────────────────
+# ── NLD 2장2절3 밑줄 빈칸 (MCST 밑줄 빈칸 기호 _- = ⠸⠤) ──────────────────────
 _UNDERLINE_BLANK_MARKER = "⠸⠤"
 
-# ── BBPG 2장3절5 글머리 기호 — 위계 2단계 (글리프 KBR 제72항) ────────────────
+# ── NLD 2장3절5 글머리 기호 — 위계 2단계 (글리프 MCST 제72항) ────────────────
 # 1단계(상위) 동그라미 ⠸⠴, 2단계(하위) 붙임표 ⠤
 _BULLET_MARKERS: dict[int, str] = {1: "⠸⠴", 2: "⠤"}
 _BULLET_INDENT = 2  # 3칸에 표기(2칸 들여 후 3번째 칸)
 
-# ── BBPG 2장2절2 문단 형식 ──────────────────────────────────────────────────
+# ── NLD 2장2절2 문단 형식 ──────────────────────────────────────────────────
 _PARAGRAPH_INDENT = 2  # 새 문단은 "3칸에서 시작" = 앞 빈칸 2
 
-# ── BBPG 2장2절6 출전 ──────────────────────────────────────────────────────
+# ── NLD 2장2절6 출전 ──────────────────────────────────────────────────────
 _CITATION_INDENT = 2  # 인용 "3칸에서 시작" = 앞 빈칸 2
 
-# ── BBPG 2장2절2-3) 원본 페이지 변경선 ─────────────────────────────────────
-_PAGE_CHANGE_FILL = "⠤"  # 변경선 채움 점형(BBPG는 ⠤ 또는 ⠒ 허용 — ⠤ 채택)
+# ── NLD 2장2절2-3) 원본 페이지 변경선 ─────────────────────────────────────
+_PAGE_CHANGE_FILL = "⠤"  # 변경선 채움 점형(NLD는 ⠤ 또는 ⠒ 허용 — ⠤ 채택)
 
-# ── BBPG 2장2절2 선행 페이지 번호 초과 (#- = ⠼⠤) ───────────────────────────
+# ── NLD 2장2절2 선행 페이지 번호 초과 (#- = ⠼⠤) ───────────────────────────
 _OVERFLOW_PAGE_NUMBER = "⠼⠤"
 
-# ── BBPG 1장2절5 글상자 테두리 ─────────────────────────────────────────────
+# ── NLD 1장2절5 글상자 테두리 ─────────────────────────────────────────────
 _BOX_BORDER_END = "⠿"   # 양 끝 (=)
 _BOX_TOP_FILL = "⠛"     # 위 테두리 중간 (g)
 _BOX_BOTTOM_FILL = "⠶"  # 아래 테두리 중간 (7)
@@ -164,7 +164,7 @@ _BORDER_BLANK = "⠀"     # 점자 빈칸(U+2800) — 제목 앞뒤 띔
 #   ⚠ `.brf`(BRF-ASCII) 내보내기는 `unicode_to_ascii` 가 담당하고 그쪽 빈칸은 U+0020 이 맞다.
 #     여기서 바꾸는 것은 **유니코드 점자 층**뿐이다.
 _PAD = "⠀"              # 들여쓰기·정렬에 쓰는 점자 빈칸
-_BORDER_LEFT_FILL = 4   # 캡1+채움4+빈칸1 → 제목 7칸째 시작 (BBPG-1.2.5(4)②)
+_BORDER_LEFT_FILL = 4   # 캡1+채움4+빈칸1 → 제목 7칸째 시작 (NLD-1.2.5(4)②)
 # 위계별 테두리 (start_cap, fill, end_cap). 표준 Braille ASCII: =⠿ g⠛ 7⠶ 6⠖ 3⠒ 4⠲ h⠓ j⠚ "⠐
 # 현재 1단계만 발생(태그에 위계 없음). 2·3단계는 §3-5 태그 규약 확정 후 사용.
 _BOX_LEVELS: dict[int, dict[str, tuple[str, str, str]]] = {
@@ -177,7 +177,7 @@ _BOX_TITLE_INLINE_MAX = _COLS - 2 - _BORDER_LEFT_FILL - 2  # = 24
 _BOX_TITLE_INDENT = 4  # 케이스① 제목 윗줄 "5칸에서 시작" = 앞 빈칸 4 (2026-08-10 정정)
 
 
-# 테두리 줄 양 끝 캡: 1단계 ⠿, 위계 2·3단계 위 ⠖…⠲ / 아래 ⠓…⠚ (BBPG-1.2.5(3)·(5))
+# 테두리 줄 양 끝 캡: 1단계 ⠿, 위계 2·3단계 위 ⠖…⠲ / 아래 ⠓…⠚ (NLD-1.2.5(3)·(5))
 _BORDER_START_CAPS = frozenset("⠿⠖⠓")
 _BORDER_END_CAPS = frozenset("⠿⠲⠚")
 
@@ -217,28 +217,28 @@ def _lead_blanks(lines: list[str]) -> int:
 
 
 def format_underline_blank(text: str) -> str:
-    """밑줄 빈칸(_+)을 ⠸⠤ 1개로 치환 — 길이 무관 (BBPG 2장2절3)."""
+    """밑줄 빈칸(_+)을 ⠸⠤ 1개로 치환 — 길이 무관 (NLD 2장2절3)."""
     return re.sub(r"_+", _UNDERLINE_BLANK_MARKER, text)
 
 
 def format_citation(text: str) -> str:
-    """출전 정보를 다음 줄 3칸에 배치 (BBPG 2장2절6)."""
+    """출전 정보를 다음 줄 3칸에 배치 (NLD 2장2절6)."""
     return _PAD * _CITATION_INDENT + text
 
 
 def format_paragraph_start(text: str) -> str:
-    """새 문단을 3칸에서 시작 (BBPG 2장2절2 문단 형식)."""
+    """새 문단을 3칸에서 시작 (NLD 2장2절2 문단 형식)."""
     return _PAD * _PARAGRAPH_INDENT + text
 
 
 def format_bullet_item(text: str, tier: int) -> str:
-    """글머리 기호: 3칸 표기, tier 1→⠸⠴(동그라미) 2→⠤(붙임표), 기호 뒤 1칸 (BBPG 2장3절5)."""
+    """글머리 기호: 3칸 표기, tier 1→⠸⠴(동그라미) 2→⠤(붙임표), 기호 뒤 1칸 (NLD 2장3절5)."""
     marker = _BULLET_MARKERS.get(min(max(tier, 1), 2), _BULLET_MARKERS[2])
     return _PAD * _BULLET_INDENT + f"{marker}{_PAD}{text}"
 
 
 def format_page_change_line(orig_page_braille: str) -> str:
-    """원본 페이지 변경선: 첫 칸부터 ⠤로 채우고 우측 정렬로 원본 페이지번호 (BBPG 2장2절2-3).
+    """원본 페이지 변경선: 첫 칸부터 ⠤로 채우고 우측 정렬로 원본 페이지번호 (NLD 2장2절2-3).
 
     단일 마커가 아니라 줄 전체(32칸)를 채우는 '선'이다.
     """
@@ -247,22 +247,22 @@ def format_page_change_line(orig_page_braille: str) -> str:
 
 
 def format_box_top() -> str:
-    """글상자 위 테두리: ⠿ + ⠛×(32-2) + ⠿ (BBPG 1장2절5)."""
+    """글상자 위 테두리: ⠿ + ⠛×(32-2) + ⠿ (NLD 1장2절5)."""
     return _BOX_BORDER_END + _BOX_TOP_FILL * (_COLS - 2) + _BOX_BORDER_END
 
 
 def format_box_bottom() -> str:
-    """글상자 아래 테두리: ⠿ + ⠶×(32-2) + ⠿ (BBPG 1장2절5)."""
+    """글상자 아래 테두리: ⠿ + ⠶×(32-2) + ⠿ (NLD 1장2절5)."""
     return _BOX_BORDER_END + _BOX_BOTTOM_FILL * (_COLS - 2) + _BOX_BORDER_END
 
 
 def format_overflow_page_number() -> str:
-    """선행 페이지 번호가 본문 시작을 넘을 때 ⠼⠤ (BBPG 2장2절2). JAJAK ⠒⠒ no-page 마커는 폐기."""
+    """선행 페이지 번호가 본문 시작을 넘을 때 ⠼⠤ (NLD 2장2절2). NISE ⠒⠒ no-page 마커는 폐기."""
     return _OVERFLOW_PAGE_NUMBER
 
 
 def _page_number_braille(n: int) -> str:
-    # 점자 페이지 번호 = 수표 + 숫자 (BBPG 1장2절2 예 1-6: ⠼NN, 끝에 마침표 없음)
+    # 점자 페이지 번호 = 수표 + 숫자 (NLD 1장2절2 예 1-6: ⠼NN, 끝에 마침표 없음)
     digits = "".join(_DIGIT_MAP.get(c, c) for c in str(n))
     return f"{_NUMBER_INDICATOR}{digits}"
 
@@ -278,7 +278,7 @@ def _cell_count(text: str) -> int:
 
 
 def _center(text: str, width: int = _COLS) -> str:
-    """text를 width 안에서 가운데 정렬 (BBPG 2장2절1 1단계 제목)."""
+    """text를 width 안에서 가운데 정렬 (NLD 2장2절1 1단계 제목)."""
     t = text.strip()
     if _cell_count(t) >= width:
         return t
@@ -519,7 +519,7 @@ class LayoutBraille:
         orig_page: str,
         page_no: int,
     ) -> list[list[str]]:
-        """이미 조판된 블록 줄들을 페이지로 조립(BBPG): 제목·표·시각자료 빈 줄 + 페이지 + 페이지행.
+        """이미 조판된 블록 줄들을 페이지로 조립(NLD): 제목·표·시각자료 빈 줄 + 페이지 + 페이지행.
 
         재-wrap·들여쓰기는 하지 않는다(블록 줄은 이미 32칸 조판본). layout()(초안)과
         finalize()(편집본)가 공유하는 순수 조립부.
@@ -537,7 +537,7 @@ class LayoutBraille:
             if not el_lines:
                 continue
             before, after = _HEADING_BLANK.get(hlevel, (0, 0))
-            if etype in _BLANK_AROUND_TYPES:        # 표·시각자료 위아래(BBPG 2장2절2 2)(2)④)
+            if etype in _BLANK_AROUND_TYPES:        # 표·시각자료 위아래(NLD 2장2절2 2)(2)④)
                 before, after = max(before, 1), max(after, 1)
             # 요소가 스스로 달고 온 앞뒤 빈 줄(글상자 위아래 띔 §1.2.5(6))도 같은 '한 줄'
             # 요구다. 떼어 내 before/after에 합치면 경계 빈 줄과 겹칠 일이 없다.
@@ -548,7 +548,7 @@ class LayoutBraille:
                     and not _is_border_line(body[0])
                     and not _is_border_line(
                         next((ln for ln in reversed(lines) if ln.strip()), ""))):
-                # BBPG 3장2절1 2) 다만 — 시각 자료가 연이어 나올 때 그 사이는 안 띈다.
+                # NLD 3장2절1 2) 다만 — 시각 자료가 연이어 나올 때 그 사이는 안 띈다.
                 # 글상자로 묶인 것끼리는 예외다 — 1장2절5(6)이 "사이에 빈 줄"이라 반대다.
                 before = pending = 0
             if (pending or before) and lines:       # 두 줄 이상 띄는 자리는 규정에 없다
@@ -621,7 +621,7 @@ class LayoutBraille:
         is_heading = hlevel >= 1
         first_indent = self._first_indent(bo, etype, is_heading, hlevel)
         self._mark_item_lines(bo, etype, first_indent)
-        # 32칸 테두리 줄(글상자 BBPG-1.2.5·표 격자)은 layout이 폭을 소유하므로 들이지 않는다
+        # 32칸 테두리 줄(글상자 NLD-1.2.5·표 격자)은 layout이 폭을 소유하므로 들이지 않는다
         # — 들이면 35칸이 되어 _break_line이 테두리를 쪼갠다. 그렇다고 요소 전체의 들여쓰기를
         # 버리면 글상자 안 문단이 0칸에서 시작해 gold와 어긋난다(원장 C-01b) — 첫 들여쓰기를
         # **테두리 안 첫 줄**로 옮긴다. ★ `_indent_lines`(통 문자열)와 같은 판정이어야 한다.
@@ -707,7 +707,7 @@ class LayoutBraille:
                 r.line_no, r.col_start, r.col_end = nl, nc, nc + len(glyph)
 
     def _render_box_top(self, level: int, title: str) -> list[str]:
-        """위 테두리 줄 렌더 (BBPG-1.2.5). 제목 ≤24칸이면 중간 7칸, 초과면 윗줄 5칸(케이스①)."""
+        """위 테두리 줄 렌더 (NLD-1.2.5). 제목 ≤24칸이면 중간 7칸, 초과면 윗줄 5칸(케이스①)."""
         start, fill, end = _BOX_LEVELS.get(level, _BOX_LEVELS[1])["top"]
         inner = _COLS - 2
         if not title:
@@ -723,7 +723,7 @@ class LayoutBraille:
         return title_lines + [start + fill * inner + end]
 
     def _render_box_bottom(self, level: int) -> str:
-        """아래 테두리 줄 렌더 (BBPG-1.2.5)."""
+        """아래 테두리 줄 렌더 (NLD-1.2.5)."""
         start, fill, end = _BOX_LEVELS.get(level, _BOX_LEVELS[1])["bottom"]
         return start + fill * (_COLS - 2) + end
 
@@ -752,10 +752,10 @@ class LayoutBraille:
     def _expand_box_borders(self, bo: BrailleOutput, *, tight: bool = False) -> None:
         """글상자 테두리 위치 마커(인라인 32칸 줄)를 box_borders와 순서대로 짝지어 재렌더(in-place).
 
-        translator가 남긴 32칸 테두리 줄을 위계·제목 배치로 다시 그리고(BBPG-1.2.5),
+        translator가 남긴 32칸 테두리 줄을 위계·제목 배치로 다시 그리고(NLD-1.2.5),
         글상자 위아래에 빈 줄을 넣는다(1.2.5(5)). box_borders 없으면 변경 없음.
 
-        ★ Step17(2026-08-08) — 그린 테두리마다 근거를 남긴다(BBPG-1.2.5, tag=box_top/box_bottom).
+        ★ Step17(2026-08-08) — 그린 테두리마다 근거를 남긴다(NLD-1.2.5, tag=box_top/box_bottom).
           여기가 대표가 지목한 "레이아웃 관련 점자 기호를 왜 그걸 골랐는지"의 핵심이다.
           이 테두리는 묵자에 점자 기호로 적혀 있던 것이 아니라 **우리가 판단해서 넣은 것**이다
           — LLM 태깅(`text_opt._TAG_PROMPT`)이나 `pdf_analyzer`의 벡터 사각형 검출이 "이건
@@ -812,7 +812,7 @@ class LayoutBraille:
 
     @staticmethod
     def _border_rule(spec: "BoxBorder", line_no: int, line: str) -> RuleApplication:
-        """그린 글상자 테두리 한 줄 → BBPG-1.2.5 근거(요소-로컬 좌표).
+        """그린 글상자 테두리 한 줄 → NLD-1.2.5 근거(요소-로컬 좌표).
 
         tag에 위치(위/아래)·위계·제목 유무를 담는다 — 점역사가 "왜 여기에 상자를 쳤고
         왜 이 단계 캡을 썼는지"를 판단하는 데 필요한 정보이자, 원장 C-01a/C-01b 자문 항목이다.
@@ -825,9 +825,9 @@ class LayoutBraille:
         )
 
     def _apply_bullet_marker(self, bo: BrailleOutput) -> None:
-        """list_item 첫머리 숨김표 글리프(○□△)를 KBR 제72항 글머리형으로 정정(in-place).
+        """list_item 첫머리 숨김표 글리프(○□△)를 MCST 제72항 글머리형으로 정정(in-place).
 
-        text 체인은 요소 type을 몰라 ○를 숨김표(⠸⠚⠇, KBR-6.13.49)로 변환·emit한다.
+        text 체인은 요소 type을 몰라 ○를 숨김표(⠸⠚⠇, MCST-6.13.49)로 변환·emit한다.
         list_item 첫머리의 ○□△는 글머리이므로 글리프(꼬리 ⠇ 제거)와 rule_trail
         (6.13.49→6.14.72)을 정정한다. (태민 정책: 위계 추론 없이 단일 글머리형.)
         """
@@ -901,7 +901,7 @@ class LayoutBraille:
         뒤에 들여쓰기를 붙이므로 코드를 합치지 못했다 — 한쪽만 고치면 화면과 다운로드가
         갈라진다. 회귀 `test_flat_string.py::test_flat_indent_matches_layout`이 둘을 묶는다.
 
-        1단계 제목은 들여쓰기가 아니라 가운데 정렬(BBPG 2장2절1)이라 pad를 좌우 여백으로
+        1단계 제목은 들여쓰기가 아니라 가운데 정렬(NLD 2장2절1)이라 pad를 좌우 여백으로
         계산한다 — 32칸을 넘으면 정렬하지 않는다(`_center`와 같은 판정).
         """
         draft = lines is not None             # 초안은 본문 줄을 건드리지 않는다
@@ -977,7 +977,7 @@ class LayoutBraille:
         """본문 요소와 페이지행 요소(page_number) 분리.
 
         페이지행은 슬롯이 셋뿐이다 — 원본 페이지 번호(좌)·꼬리말(가운데)·점자 페이지
-        번호(우) (BBPG 1장2절1). 즉 page_number 타입에서 **한 요소만** 페이지행에 쓰이는데,
+        번호(우) (NLD 1장2절1). 즉 page_number 타입에서 **한 요소만** 페이지행에 쓰이는데,
         종전에는 타입이 같다는 이유로 나머지 요소까지 전부 이 통에 담겨 **본문에도
         페이지행에도 찍히지 않고 사라졌다.**
 
@@ -1048,7 +1048,7 @@ class LayoutBraille:
         전수 실측(dev+val 1,131p): 32칸 초과 50줄(header_footer 43·page_number 7),
         최장 165칸. 본문 타입(text·list_item)은 0줄 — 일반 조판은 정상이었다.
 
-        **왜 줄바꿈이 아니라 절단인가(BBPG 1장3절4)**: "제목이 길어 전체를 꼬리말로 적을 수
+        **왜 줄바꿈이 아니라 절단인가(NLD 1장3절4)**: "제목이 길어 전체를 꼬리말로 적을 수
         없는 경우에는 핵심 단어를 선택하여 꼬리말이 들어갈 수 있는 칸수만큼만 적는다.
         다만, 분명한 핵심어 선택이 어려운 경우에는 앞에서부터 내용의 일부를 적어 준다."
         핵심어 자동 선택은 근거 없는 추측이 되므로 규정이 명시한 폴백(앞에서부터)을 쓴다.
@@ -1144,7 +1144,7 @@ class LayoutBraille:
         return self._first_nonempty(page_line_items, meta, "page_number")
 
     def _compose_page_line(self, footer: str, orig_page: str, page_no: int) -> str:
-        """페이지행: 원본 페이지번호(좌) · 꼬리말(가운데) · 점자 페이지번호(우) (BBPG 1장2절2)."""
+        """페이지행: 원본 페이지번호(좌) · 꼬리말(가운데) · 점자 페이지번호(우) (NLD 1장2절2)."""
         pn = _page_number_braille(page_no)
         # ★ 점자 빈칸으로 채운다(2026-08-28). 종전엔 ASCII 공백(U+0020)이었다 —
         #   이 줄만 점자 파일에 ASCII 가 섞여, 셀을 세는 소비자(BE·FE·점자 프린터)가
@@ -1184,8 +1184,11 @@ class LayoutBraille:
             #   남은 것이 전부 빈 줄이면 거기서 끝낸다 — 빈 면을 만들지 않기 위해서다.
             if pages and all(x == "" for x in lines[i:]):
                 break
-            # 양면 제본이면 홀수 점자페이지만 페이지행, 짝수는 26줄 본문(BBPG 1장2절2). 단면은 매 페이지.
-            has_page_line = (not DOUBLE_SIDED) or (pno % 2 == 1)
+            # ★ 어느 면에 페이지행을 넣나는 **braille-assist `page_row_on`이 정한다**
+            #   (2026-09-01 결정 F). 조판이 FE·BE로 넘어간 뒤 이 판정은 저장·디버그용
+            #   미리보기에만 쓰이고 응답(통 문자열)에는 안 실린다. 두 벌로 두면 언젠가
+            #   갈리므로 여기서는 늘 넣는 쪽으로 굳혔다 — 실제 면 배치는 lib이 다시 한다.
+            has_page_line = True
             cap = (_ROWS - 1) if has_page_line else _ROWS
             content: list[str] = []
             while i < n and len(content) < cap:
@@ -1206,7 +1209,7 @@ class LayoutBraille:
 
     def _continuation_orig_page(self, orig_page: str, page_idx: int) -> str:
         """한 원본 페이지가 여러 점자 페이지에 걸칠 때 2번째(page_idx>=1)부터
-        원본 번호 앞에 로마자표 없이 알파벳(a,b,c…)을 붙인다 (BBPG 1장2절2-2)(3))."""
+        원본 번호 앞에 로마자표 없이 알파벳(a,b,c…)을 붙인다 (NLD 1장2절2-2)(3))."""
         if not orig_page or page_idx == 0:
             return orig_page
         k = page_idx - 1
@@ -1226,7 +1229,7 @@ class LayoutBraille:
 # AI finalize 폐기에 따라 ProcessPage 응답의 contents는 **조판하지 않은 통 문자열**이다.
 # 32칸 자름·면 나눔·페이지행·페이지 변경선만 FE(화면)·BE(다운로드, braille-assist)가 한다.
 # **조판 규칙(구조적 빈 줄·들여쓰기·가운데 정렬)은 전부 우리 몫이다** — 제목 앞뒤 빈 줄과
-# 3/5/7칸 들여쓰기, 1단계 제목 가운데 정렬은 지침(BBPG 2장2절1·2절2·3절5) 규칙이지 화면
+# 3/5/7칸 들여쓰기, 1단계 제목 가운데 정렬은 지침(NLD 2장2절1·2절2·3절5) 규칙이지 화면
 # 사정이 아니다. FE·BE가 type·heading_level을 보고 재현하려면 규정을 다시 구현해야 하고,
 # 그러면 규칙이 세 벌로 갈라진다. 여기서 점자 공백 셀로 문자열에 직접 박아 내보낸다.
 
@@ -1377,10 +1380,10 @@ def flatten_elements(
         lines, pads = lb._indent_lines(bo, etype, hlevel)
         pads, seps = _fold_full_lines(lines, pads, etype)
         before, after = _HEADING_BLANK.get(hlevel, (0, 0))
-        if etype in _BLANK_AROUND_TYPES:      # 표·시각자료 위아래(BBPG 2장2절2 2)(2)④)
+        if etype in _BLANK_AROUND_TYPES:      # 표·시각자료 위아래(NLD 2장2절2 2)(2)④)
             before, after = max(before, 1), max(after, 1)
         if etype in _VISUAL_TYPES and prev_type in _VISUAL_TYPES:
-            # BBPG 3장2절1 2) 다만 — 시각 자료가 연이어 나올 때 그 사이는 안 띈다.
+            # NLD 3장2절1 2) 다만 — 시각 자료가 연이어 나올 때 그 사이는 안 띈다.
             # 여기선 빈 줄이 **앞 요소의 suffix에 이미 박혀** 있으므로 그만큼 되돈다
             # (줄 배열을 들고 가는 `_assemble_pages`와 달리 되감을 lines가 없다).
             if trailing:
