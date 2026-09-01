@@ -1182,6 +1182,19 @@ def _parse_txt_result(
                 for v in (el.get("bbox") or []) if isinstance(v, (int, float))]
         space = "pixel" if (vals and max(vals) > 1000) else (
             "pixel" if method == "TEXT_NATIVE" else "norm1000")
+    elif space == "norm1000":
+        # ★ 2026-09-02 (원장 C-91 잔여) — 메타를 믿되 **값과 어긋나면 값을 따른다.**
+        #   정규화 좌표는 정의상 0~1000 을 못 넘는다. `norm1000` 이라 적혀 있는데 쪽 최대값이
+        #   1000 을 넘으면 그건 정규화가 아니다. 그대로 믿으면 픽셀 좌표를 한 번 더 확대해
+        #   FE 하이라이트가 통째로 어긋난다.
+        #   실측(dev·val 경계 1,200쪽): 4쪽이 여기 걸린다 — 쪽 최대 1,150·6,150·8,000 인데
+        #   쪽 높이는 1,474 다. 확대하면 11,792 까지 간다.
+        _pm = max((v for el in extraction.get("elements", [])
+                   for v in (el.get("bbox") or []) if isinstance(v, (int, float))), default=0)
+        if _pm > 1000:
+            logger.warning("경계 meta 가 norm1000 이라는데 쪽 최대값이 %.0f 다 — 픽셀로 본다 "
+                           "(확대하면 좌표가 어긋난다)", _pm)
+            space = "pixel"
     scale_bbox = ((iw / 1000, ih / 1000, iw / 1000, ih / 1000)
                   if space == "norm1000" and iw and ih else None)
 
