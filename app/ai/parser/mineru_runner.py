@@ -417,6 +417,25 @@ def _bullet_item_keys(layer: str) -> list[str]:
 _BLOCK_MATH_WRAP_RE = re.compile(r"^\s*(\${1,2})\s*(.*?)\s*\1\s*$", re.DOTALL)
 
 
+# MinerU 는 마크다운으로 내보내므로 본문 구두점을 역슬래시로 이스케이프한다
+# (`\_`·`\-`·`` \` ``). 그 역슬래시가 경계 파일까지 그대로 흘러 점역사 편집창에
+# `\- 일부 농민이` 로 보이고, 점역기는 역슬래시를 ⠸⠡ 로 적어 셀이 늘어난다 —
+# 받아쓰기 빈칸 `\_\_\_\_` 하나가 8칸(⠸⠡⠸⠤ ×4)으로 부풀었다(영어듣기 p030 실측).
+# ⚠ `$…$` 안은 LaTeX 라 건드리지 않는다. `\|`·`\{` 는 거기서 뜻이 있는 기호다.
+_MD_ESCAPE_RE = re.compile(r"\\([-_*#`\[\]()+.!~>|])")
+_MATH_SPAN_RE = re.compile(r"(\$[^$]*\$)")
+
+
+def _unescape_markdown(content: str) -> str:
+    """마크다운 이스케이프를 원래 글자로 되돌린다(수식 구간 제외)."""
+    if "\\" not in content:
+        return content
+    return "".join(
+        part if part.startswith("$") else _MD_ESCAPE_RE.sub(r"\1", part)
+        for part in _MATH_SPAN_RE.split(content)
+    )
+
+
 def _strip_block_math_delim(content: str) -> str:
     r"""`$$\n식\n$$` → `식`. 구분자가 없으면 그대로(멱등)."""
     m = _BLOCK_MATH_WRAP_RE.match(content or "")
@@ -1194,6 +1213,11 @@ def run(
         # 진짜 수식 첨자는 interline_equation(LaTeX) 경로라 여기 영향 없다.
         if content and "<su" in content:
             content = re.sub(r"</?su[bp]>", "", content)
+
+        # 마크다운 이스케이프 되돌리기 — 위 _unescape_markdown 주석 참조.
+        # formula 는 통째로 LaTeX 라 손대지 않는다.
+        if content and mapped_type != "formula":
+            content = _unescape_markdown(content)
 
         # 블록 수식 구분자 벗기기(QA 11번, 2026-08-08). MinerU는 수식을 마크다운 관례대로
         # `$$\n식\n$$` 세 줄로 내보낸다 — 한 줄짜리 수식인데 경계 파일에 줄바꿈이 두 개
