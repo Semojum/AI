@@ -736,10 +736,17 @@ async def build_visual_drafts(
             drafts.append(d_prose)
 
     # 기본은 설명이다. gold 실측에서 설명이 79.6%로 압도한다(생략 12.2% · 참조 8.0%).
-    # ⚠ 아래 `decorative` 분기는 **지금 발화하지 않는다** — 모듈 docstring 참조.
-    #   호출부가 넘기는 값이 사실상 no_seed뿐이고, 캡셔닝이 성공하면 그것도 False다.
-    #   즉 이 줄은 항상 DESC_IDX를 고른다. 고칠 자리는 여기가 아니라 판정 신호 쪽이다.
-    selected_idx = OMIT_IDX if decorative else DESC_IDX
+    #
+    # ★ 2026-09-01 — `decorative` 만으로 생략을 고르지 않는다.
+    #   호출부가 넘기는 값이 사실상 `no_seed`(캡션·제목이 없음)인데, **캡션이 없다는 것과
+    #   그림이 장식이라는 것은 다른 사실이다.** 캡셔닝이 실패했어도 그림 안 글자를 전사한
+    #   항목이 있으면 그건 값을 담은 자료다. 종전에는 "2020: 12 / 2021: 34" 를 손에 쥐고도
+    #   점역사에게 "그래프 생략" 을 기본으로 보여 줬다.
+    #   규정 §6.1.1(3) 의 생략 대상은 ①본문에서 충분히 설명한 것 ②장식 ③불필요한 것이지
+    #   캡션이 없는 것이 아니다. 재료가 **아무것도** 없으면 아래 `_no_material` 가 생략 한
+    #   안만 내므로 그 경우는 그대로 걸러진다.
+    has_material = bool(struct_outline or struct_prose or llm_outline or llm_prose)
+    selected_idx = OMIT_IDX if (decorative and not has_material) else DESC_IDX
 
     # ★ 재료가 하나도 없으면 **생략 한 안만** 낸다 (2026-08-12 대표 지시).
     #   캡션·제목·원본 글자가 다 없으면 짧은 제목·개조식·줄글은 낼 게 없어 전부
