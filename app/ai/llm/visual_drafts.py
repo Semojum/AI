@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import os
 import re
+from difflib import SequenceMatcher
 import time
 
 from app.ai.llm.base_opt import _DEDUP_MIN_LEN, _norm_for_dedup, decide_tier_timeout, generate_with_retry
@@ -299,7 +300,16 @@ def _shorten(text: str, limit: int = 45) -> str:
 # `desc != title` 로만 걸러서는 못 잡는다 — 수식 구분자(`$`)·공백·문장부호만 달라도 통과한다.
 # 그래서 **가늠자를 씻어서** 비교한다. 시연 12쪽에서 2줄이 지워지고 오탐은 0이었다.
 # ⚠ 제목·유형 줄하고만 견준다. 앞선 항목 전부와 견주면 위계가 반복되는 정상 항목을 지운다.
-_GIST_STRIP = re.compile(r"[\s$·,.…‘’“”\"'()]")
+_GIST_STRIP = re.compile(r"[\s$·,.…‘’“”\"'()\[\]{}~\-–—:;/]")
+# 되풀이 판정에 쓰는 닮음 문턱. 이 값 아래는 서로 다른 말로 본다.
+#   0.80 은 gold 대조에서 정한 값 — "아메바 현미경 사진 - 단세포 생물 예시" 와
+#   "아메바 현미경 사진, 단세포 생물의 예시임." 같은 조사·구분자 차이만 잡고,
+#   "가로축: 시간" 과 "세로축: 농도" 처럼 뼈대만 같은 줄은 안 잡는다.
+#   ★ 0.80 으로 뒀다가 "5월 ○○군 풍혈지: 12.0" 과 "7월 ○○군 풍혈지: 14.2" 가 같은 말로
+#     잡혔다. 값이 다른 자료 줄을 지우면 정보가 사라진다 — 문턱을 올리고 숫자 가드를 뒀다.
+_GIST_RATIO = 0.88
+_GIST_MIN_LEN = 8        # 짧은 말은 우연히 닮는다
+_DIGITS = re.compile(r"\d+")
 
 
 def _gist(s: str) -> str:
@@ -307,9 +317,23 @@ def _gist(s: str) -> str:
 
 
 def _same_gist(a: str, b: str) -> bool:
-    """두 줄이 사실상 같은 문구인가 — 구분자·공백·문장부호 차이는 무시한다."""
+    """두 줄이 사실상 같은 문구인가 — 구분자·공백·문장부호 차이는 무시한다.
+
+    완전 포함만 보던 때는 어순이나 조사가 조금만 달라도 못 잡았다. 실측에서
+    "검색과 메뉴 아이콘" 과 "검색 아이콘과 메뉴 아이콘 두 개로 구성" 이 둘 다 남아
+    같은 말을 두 번 적었다. 여덟 자 이상이면 닮음도 함께 본다.
+    """
     na, nb = _gist(a), _gist(b)
-    return bool(na) and bool(nb) and (na == nb or na in nb or nb in na)
+    if not (na and nb):
+        return False
+    if na == nb or na in nb or nb in na:
+        return True
+    if min(len(na), len(nb)) < _GIST_MIN_LEN:
+        return False
+    # 숫자가 다르면 값이 다른 자료 줄이다 — 닮았어도 지우지 않는다.
+    if _DIGITS.findall(na) != _DIGITS.findall(nb):
+        return False
+    return SequenceMatcher(None, na, nb).ratio() >= _GIST_RATIO
 
 
 def _dup_of_body(text: str, body_texts: list[str] | None) -> bool:
