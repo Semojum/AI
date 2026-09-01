@@ -356,7 +356,8 @@ def _outline_text_indents(
     else:
         if title:
             lines.append(title); indents.append(_TITLE_INDENT)      # §6.3.3(1) 제목 5칸(plain)
-        lines.append(_tn(head)); indents.append(0)                   # §6.3.4(1) 유형/설명 점역자주
+        lines.append(_oneline(head)); indents.append(0)              # §6.3.4(1) 유형/설명
+        tn_from = len(lines) - 1        # 여기부터 마지막 줄까지가 점역자 주 구간
     # ⚠ 여기에 "하위에 속한 항목을 2칸씩 들여 쓰기함" 고지를 붙였다가 뺐다(2026-08-12 대표 지시).
     #   점역자 주는 **일반적이지 않은 처리**를 했을 때 쓰는 것이다 — 표를 전치했다거나,
     #   반복되는 문구를 축약했다거나. 위계를 들여쓰기로 펴는 것은 점자 조판에서 일반적이라
@@ -374,6 +375,15 @@ def _outline_text_indents(
         lines.append(text); indents.append(_OUTLINE_BASE + _OUTLINE_STEP * max(0, level))  # 전사 §6.3.4(2)①
     if _WRAP_STYLE == "box":
         lines.append("<!상자끝><!/상자끝>"); indents.append(0)
+    else:
+        # ★ 점역자 주는 **설명 전체**를 감싼다 — 유형·설명 줄부터 마지막 전사 항목까지.
+        #   종전에는 머리줄 하나만 `<!주>…<!/주>` 로 닫아서, 점역자가 쓴 나머지 줄이
+        #   주표 밖으로 나갔다. 그러면 읽는 사람이 어디까지가 점역자 말인지 모른다.
+        #   근거 둘 — NLD-1.2.6 "추가·삭제·변경 등 원본과 달라진 내용을 점역자 주표
+        #   안에 적는다", 그리고 gold 실측: 점역자 주 구간 483건 중 **92.8%가 여러 줄에
+        #   걸친다**(한 줄로 끝나는 것은 7.2%뿐).
+        lines[tn_from] = f"<!{_TAGS.TN}>{lines[tn_from]}"
+        lines[-1] = f"{lines[-1]}<!/{_TAGS.TN}>"
     return "\n".join(lines), indents
 
 
