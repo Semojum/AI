@@ -231,6 +231,7 @@ class QualityChecker:
         braille_outputs: Iterable[BrailleOutput] = (),
         line_overflow_rate: float = 0.0,
         blank_page: bool = False,
+        flat_text: Optional[dict] = None,
     ) -> QualityReport:
         extracted = list(extracted)
         llm_outputs = list(llm_outputs)
@@ -285,7 +286,13 @@ class QualityChecker:
                 continue  # 점역자주로 대체된 요소 — 위 _TN_MARK 주석 참조
             # ⠼가 있기만 하면 통과시키면 안 된다 — 영어 약자 ble이 같은 점형이라
             # `possible`의 ⠼가 스캐너를 대신 만족시켜 진짜 수표 누락을 가린다(number_sign.py).
-            if not has_number_sign(o.corrected_text or "", "".join(b.braille_lines)):
+            # ★ 2026-09-02 — 조판본이 아니라 **응답에 실리는 통 문자열**을 본다.
+            #   조판(layout)은 FE·BE 로 넘어간 뒤 저장·디버그용만 남았는데, 검사기가 그
+            #   조판본을 보고 있었다. 글상자 요소에서 조판이 본문 한 줄을 통째로 버려
+            #   수표가 사라졌고, 멀쩡한 쪽이 C5(배포 블로커)로 떴다.
+            #   실측 dev 900쪽: 오탐 1건. flat 이 없으면(옛 호출) 종전대로 조판본을 본다.
+            cells = (flat_text or {}).get(str(o.element_id)) or "".join(b.braille_lines)
+            if not has_number_sign(o.corrected_text or "", cells):
                 criticals.append(CriticalError(
                     type="C5", element_id=eid,
                     message="수표(⠼) 누락 — 원문에 아라비아 숫자가 있으나 요소 점자에 수표 없음",

@@ -1880,6 +1880,8 @@ def _build_response(
         braille_outputs=braille_outputs,
         line_overflow_rate=line_overflow_rate,
         blank_page=blank_page,
+        # 응답에 실리는 통 문자열을 넘긴다 — 검사기가 조판본 대신 이걸 본다(C5 오탐).
+        flat_text={str(k): fe.text for k, fe in (flat or {}).items()},
     )
 
     response: dict = {
