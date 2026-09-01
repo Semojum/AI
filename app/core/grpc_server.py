@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import grpc
 
+from app.ai.braille.regulations import rule_meta
 from app.ai.braille.translator import translate_plain
 from app.core.config import config
 from app.core import pipeline
@@ -72,8 +73,21 @@ def _dict_to_text_element(d: dict):
         trail.rule_id = rt.get("rule_id", "")
         trail.source = rt.get("source", "")
         trail.section = rt.get("section", "")
-        trail.title = rt.get("title", "")
-        trail.excerpt = rt.get("excerpt", "")
+        trail.rule_name = rt.get("rule_name", "")
+        trail.contents = rt.get("contents", "")
+        # 2026-08-31 신설 — regulations.json 에서 그대로 실어 보낸다.
+        # RuleApplication 은 표시용 평문만 들고 있어 위계·기관·판은 레지스트리에서 꺼낸다.
+        meta = rule_meta(rt.get("rule_id", ""))
+        if meta:
+            trail.publisher = meta["publisher"]
+            trail.version = meta["version"]
+            path = meta["section"]
+            trail.path.part = path.get("Part", "")
+            trail.path.chapter = path.get("Chapter", "")
+            trail.path.section = path.get("Section", "")
+            trail.path.paragraph = path.get("Paragraph", "")
+            trail.path.subparagraph = path.get("Subparagraph", "")
+            trail.path.item = path.get("Item", "")
         trail.priority = rt.get("priority", "primary")
         trail.line_no = rt.get("line_no", -1)
         trail.col_start = rt.get("col_start", 0)
