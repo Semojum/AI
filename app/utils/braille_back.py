@@ -849,6 +849,10 @@ def _decode_line_router(line: str, math: bool) -> str:
         eng = _english_line(line)    # `a ar b`로 뒤집힌다(⠜=√ ↔ 영어 약자 ar)
         if eng is not None:          # 로마자표 없는 순수 영어 줄 (제29항 [다만])
             return eng
+    # 네모 빈칸 ⠸⠦␣⠴⠇ — 규정 제73항. 가운데가 **공백 셀**이라 아래 토큰 분리가
+    # 여는 쪽과 닫는 쪽을 갈라 놓는다(layout_braille._ATOMIC_SEQS 와 같은 이유).
+    # 줄을 쪼개기 전에 통째로 치운다.
+    line = line.replace(_BOX_CHAR_OPEN + _SPACE_CELL + _BOX_CHAR_CLOSE, "▯▯")
     line = _mark_paren_pairs(line)
     parts = re.split(r"([⠀ ]+)", line)              # 공백 런을 분리자로 보존
     tokens, seps = _merge_roman_tokens(parts[0::2], parts[1::2])
@@ -864,6 +868,9 @@ def _decode_line_router(line: str, math: bool) -> str:
             pieces.append(" " * len(seps[idx]))
     return _join_num_hangul(_restore_wrap_parens("".join(pieces)))
 
+
+# 네모 문자 쌍(규정 제64항) — 정방향 translator._TAGS.BOX_CHAR 와 같은 점형이다.
+_BOX_CHAR_OPEN, _BOX_CHAR_CLOSE = "⠸⠦", "⠴⠇"
 
 # 페이지행 걸침 접두 토큰 — 낱자 하나 + 수표 + 숫자로 **토큰이 끝나야** 한다.
 # ⚠ 숫자 셀은 유니코드에서 **연속 범위가 아니다**(1=⠁ 2=⠃ 3=⠉ 4=⠙ 5=⠑ 6=⠋ 7=⠛
@@ -892,6 +899,22 @@ def _decode_line(s: str) -> str:
             out.append(_ALPHA_REV[ch])
             i += 1
             continue
+        # 줄 단위 선처리가 넣어 둔 네모 빈칸은 그대로 흘린다(_mark_paren_pairs 의
+        # 센티넬까지 통과시키면 괄호 복원이 깨지므로 이 글자 하나로 좁힌다).
+        if ch == "▯":
+            out.append(ch)
+            i += 1
+            continue
+        # 네모 문자 — 규정 제64항 "네모 문자는 _8 0l으로 묶어 나타낸다"(⠸⠦ … ⠴⠇).
+        # 정방향은 translator._TAGS.BOX_CHAR 가 이 쌍을 낸다. 역방향에 짝이 없어
+        # ⠸ 가 수학표의 log 로 새고 ⠴ 가 로마자표로 읽혀 `log"1l` 이 됐다 —
+        # 코퍼스 전수에서 '그림 마커 미복원' 1만 건대의 주범이다.
+        if s[i:i + 2] == _BOX_CHAR_OPEN:
+            j = s.find(_BOX_CHAR_CLOSE, i + 2)
+            if j > 0:
+                out.append("▯" + _decode_line(s[i + 2:j]) + "▯")
+                i = j + 2
+                continue
         # 점역자 주 마커
         if s[i:i + 2] == _TN_MARKER:
             out.append("【점역자주】")
