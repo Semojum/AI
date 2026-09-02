@@ -108,9 +108,14 @@ message ProcessingMeta {
 }
 
 message Draft {                     // 시각 6안(기본 selected_idx=2 개조식)·표 4안. 개수 하드코딩 금지
-  string          text     = 1;     // 초안 묵자. 내부 태그 제거됨
+  string          text     = 1;     // 초안 묵자. 들여쓰기는 실제 공백으로 환산됨
   repeated string contents = 2;     // 초안 점자. mode a는 빈 배열
   string          label    = 3;     // 피커 표시명 ("생략" / "개조식 설명" / "행↔열 전치" ...)
+  // 2026-09-02 신설. 그 안의 **태그가 살아 있는** 묵자다 — `<!주>`·`<!2칸>`.
+  // 종전에는 요소 하나에 `TextElement.tn_text` 한 값뿐이라 **처음 고른 안의 것**만 담겼고,
+  // 점역사가 '만화'에서 '참조'로 바꿔도 화면 위칸이 만화 대사 그대로였다(대표 지적).
+  // FE 는 고른 안의 이 값을 위칸에 그린다. `TextElement.tn_text` 는 그대로 두어 호환된다.
+  string          tn_text  = 4;
 }
 
 message TextElement {

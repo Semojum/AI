@@ -1796,6 +1796,53 @@ def _selected_lines(bo, flat: dict) -> list[str]:
 _DRAFT_TAG_RE = re.compile(r"<!/?[^>]*>")
 
 
+def _print_contents(o, mode: str, etype: str, hlevel: int) -> str:
+    """`text_list.contents` 에 실을 묵자 — **들여쓰기 태그를 살려서** 담는다.
+
+    ⚠ 2026-09-02 점검. 들여쓰기가 점자에만 실리고 묵자는 전 유형이 0칸이었다
+    (점자 2칸 570줄·4칸 161줄 대 묵자 0칸 1,102줄). 시각 요소만의 문제가 아니었다.
+
+    · 시각 요소는 `diagram_opt` 가 `corrected_text` 에서 `strip_indent_tags` 로 태그를
+      떼어 담는다. 칸 정보가 `tn_text` 에만 남아 화면에서 사라졌다.
+    · 본문·제목·수식은 애초에 묵자 쪽에 들여쓰기를 다는 자리가 없었다. 판정은
+      `LayoutBraille._first_indent` 하나뿐이고 그건 점자 경로에서만 돈다.
+
+    **공백이 아니라 태그로 싣는다**(대표 지시): 점역사 화면에 `<!2칸>` 이 보여야 하고,
+    그 글을 그대로 mode b 로 되돌리면 점역기가 같은 들여쓰기를 다시 적용한다.
+    공백으로 바꾸면 왕복할 때마다 공백이 쌓이고 태그가 사라진다.
+
+    ⚠ **mode b 는 손대지 않는다.** 계약이 `contents == [원문 그 줄]` 이다 — BE 가 보낸
+    원문을 그대로 돌려주는 자리라 우리가 무엇을 더하면 편집할 때마다 덧붙는다
+    (`test_mode_b_contract`).
+    """
+    src = o.tn_text or ""
+    if "<!" not in src:
+        src = o.corrected_text or ""
+    if mode == "b" or not src.strip():
+        return src
+    if "<!" in src:
+        return src                          # 태그가 이미 있다(시각 요소)
+    first = _first_indent_for(o, etype, hlevel)
+    if first <= 0:
+        return src
+    head, _, rest = src.partition("\n")
+    tagged = f"<!{first}칸>{head}"
+    return tagged + ("\n" + rest if rest else "")
+
+
+def _first_indent_for(o, etype: str, hlevel: int) -> int:
+    """묵자 첫 줄 들여쓰기 칸 수 — **점자 조판과 같은 판정**을 쓴다.
+
+    규칙을 두 벌로 두면 화면과 점자가 갈린다. mode a 는 점역을 안 해 `flat` 이 없으므로
+    `LayoutBraille._first_indent` 를 직접 부른다.
+    """
+    from app.ai.braille.layout_braille import LayoutBraille
+    try:
+        return LayoutBraille()._first_indent(o, etype, hlevel > 0, hlevel)
+    except Exception:                      # noqa: BLE001 — 판정 실패는 0칸으로 둔다
+        return 0
+
+
 def _draft_print_text(text: str) -> str:
     """초안 묵자 — 내부 태그 제거. 줄바꿈·공백은 배치이므로 보존한다.
 
@@ -1958,13 +2005,29 @@ def _build_response(
                 "tn_text": o.tn_text or "",
                 "is_blocked": "[처리 불가" in o.corrected_text,
                 "render_mode": o.render_mode,
-                "contents": [o.corrected_text],
+                # ★ 들여쓰기를 실제 공백으로 실어 보낸다(2026-09-02 대표 지적).
+                #   SPEC-INTERFACE §1-0: "조판 규칙(빈 줄·들여쓰기·가운데 정렬)은 AI 가
+                #   `contents` 안에 넣어 보낸다." 그런데 시각 요소의 줄별 들여쓰기는
+                #   `<!2칸>` 태그로 **`tn_text` 에만** 실려 있었다 — `corrected_text` 를
+                #   그대로 담던 이 자리에는 칸 정보가 하나도 없었다.
+                #   mode b 로 넘기면 들여쓰기가 살아나는 것도 그래서다(점역기가 태그를 본다).
+                #   `_draft_print_text` 가 초안에 쓰는 것과 **같은 환산**을 쓴다 —
+                #   태그를 지우지 않고 공백으로 바꾼다.
+                "contents": [_print_contents(
+                    o, task.mode,
+                    elem_by_id.get(o.element_id, _DUMMY_ELEM).type,
+                    getattr(elem_by_id.get(o.element_id), "heading_level", None) or 0)],
                 "rule_trail": [r.model_dump() for r in o.rule_trail],
                 # 시각 요소 대체 초안 — **묵자만** 싣는다 (2026-08-06).
                 # mode a는 점역을 하지 않으므로(include_braille=False) 점자가 없다.
                 # mode c는 여기 묵자와 `braille_text_list`의 묵자+점자를 함께 받는다.
                 "drafts": [
-                    {"text": _draft_print_text(d.text), "label": d.label, "contents": []}
+                    {"text": _draft_print_text(d.text), "label": d.label,
+                     # 태그가 살아 있는 묵자 — 안마다 다르다(2026-09-02 대표 지적).
+                     # 종전에는 요소 하나의 `tn_text` 뿐이라 처음 고른 안의 것만 남았고,
+                     # 점역사가 안을 바꿔도 화면 위칸이 안 바뀌었다.
+                     "tn_text": d.text or "",
+                     "contents": []}
                     for d in (o.drafts or [])
                 ],
                 "selected_idx": o.selected_idx,
@@ -2017,6 +2080,7 @@ def _build_response(
                         # 피커가 초안별 점자를 바로 꺼내 쓸 수 있어야 한다.
                         "text": _draft_print_text(d.text),
                         "label": d.label,
+                        "tn_text": d.text or "",
                         "contents": _draft_contents(
                             braille_by_id.get(o.element_id), d, di, flat
                         ),
