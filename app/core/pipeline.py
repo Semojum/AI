@@ -452,24 +452,19 @@ async def _extract_via_models(
         return elements, w, h, "pixel"
 
 
-def _graft_geometry(llm_els: list[dict], mnr_els: list[dict]) -> int:
-    """MinerU 요소의 좌표를 LLM 추출 요소에 옮겨 붙인다.
+def _graft_text(mnr_els: list[dict], llm_els: list[dict]) -> int:
+    """**MinerU 요소를 기준으로 두고** LLM 이 읽은 글자만 갈아 끼운다.
 
-    고급 점역은 LLM 이 지면을 직접 읽어 **내용**은 좋지만 좌표가 없다. 좌표·그림
-    잘라내기·캡션 연결은 MinerU 몫이고 LLM 이 대신 못 준다(2026-09-03 대표 지시:
-    "고급 점역 켜도 MinerU 가 하는 역할은 모두 그대로"). 그래서 둘을 같이 돌리고
-    여기서 **내용은 LLM, 기하는 MinerU** 로 합친다.
+    고급 점역의 몫은 "MinerU 가 한자로 깨뜨리는 글자를 제대로 읽는 것"이지 지면 구조를
+    다시 잡는 것이 아니다(2026-09-03 대표 지시). 그래서 **레이아웃·좌표·읽기순서·유형·
+    캡션 연결은 MinerU 것을 그대로 쓰고** 글자만 바꾼다. 이렇게 해야 bbox 가 보통 경로와
+    똑같이 맞는다.
 
-    짝짓기는 두 갈래다.
-      · 그림·표 → 글자가 없어 유사도가 안 먹는다. **같은 유형끼리 나온 차례**로 짝짓는다.
-      · 나머지 → 정규화한 앞 80자의 유사도(0.45 이상), 한 짝은 한 번만 쓴다.
-    못 찾은 요소는 좌표 없이 둔다(호출부가 (0,0,0,0) 으로 내보낸다).
+    ⚠ 종전에는 반대로 했다 — LLM 요소 목록을 기준으로 두고 좌표만 얹었다. 그러면 LLM 이
+      쪼갠 단위와 MinerU 레이아웃이 어긋나 **FE 하이라이트가 글자와 안 맞았다.**
 
-    ⚠ **더 넣었다가 뺀 것 둘**(정답 해설 1쪽 고정 입력으로 8조합 전수 측정, 2026-09-03).
-      LLM 이 문단을 합쳐 읽으니 MinerU 조각을 모아 좌표를 합집합으로 잡으면 나을 줄 알았다.
-      실측은 반대였다 — 조각에 양보하려고 유사도에서 부분일치를 건너뛰게 하자 58/77 이
-      51/77 로 떨어졌고, 합집합을 붙여도 54/77 까지밖에 안 돌아왔다. 합집합만 따로
-      켠 것은 이득이 정확히 0이다. 유사도가 이미 그 자리를 더 잘 잡고 있었다.
+    짝짓기는 정규화한 앞 80자의 유사도(0.45 이상)다. 한 LLM 요소는 한 번만 쓴다.
+    짝을 못 찾은 MinerU 요소는 **원래 글자를 지킨다** — 비우면 내용이 사라진다.
     """
     import difflib
     import re as _re
@@ -479,42 +474,23 @@ def _graft_geometry(llm_els: list[dict], mnr_els: list[dict]) -> int:
 
     used: set[int] = set()
     hit = 0
-    # ① 그림·표는 유형별 등장 차례로 짝짓는다 — 내용이 비어 유사도가 안 먹는다.
-    _VISUAL = {"image", "table", "cartoon", "chart_graph", "formula"}
-    by_type: dict[str, list[int]] = {}
-    for j, m in enumerate(mnr_els):
-        if m.get("type") in _VISUAL:
-            by_type.setdefault(m["type"], []).append(j)
-    seen: dict[str, int] = {}
-    for el in llm_els:
-        t = el.get("type")
-        if t not in _VISUAL:
-            continue
-        k = seen.get(t, 0)
-        seen[t] = k + 1
-        cand = by_type.get(t, [])
-        if k < len(cand) and mnr_els[cand[k]].get("bbox"):
-            el["bbox"] = mnr_els[cand[k]]["bbox"]
-            used.add(cand[k])
-            hit += 1
-    # ② 나머지는 글자 유사도. 앞에서부터 훑되 이미 쓴 짝은 건너뛴다.
-    for el in llm_els:
-        if el.get("bbox"):
-            continue
+    for el in mnr_els:
         a = norm(el.get("content"))
         if len(a) < 4:
             continue
         best, best_r = -1, 0.45
-        for j, m in enumerate(mnr_els):
-            if j in used or not m.get("bbox"):
+        for j, m in enumerate(llm_els):
+            if j in used:
                 continue
-            r = difflib.SequenceMatcher(None, a, norm(m.get("content") or m.get("text"))).ratio()
+            r = difflib.SequenceMatcher(None, a, norm(m.get("content"))).ratio()
             if r > best_r:
                 best, best_r = j, r
         if best >= 0:
-            el["bbox"] = mnr_els[best]["bbox"]
-            used.add(best)
-            hit += 1
+            txt = llm_els[best].get("content") or ""
+            if txt.strip():
+                el["content"] = txt
+                used.add(best)
+                hit += 1
     return hit
 
 
@@ -642,15 +618,19 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
 
     if advanced_used:
         method = "LLM_VISION"
-        elements = els
         if mnr and mnr[0]:
-            # 좌표는 MinerU 것을 쓴다 — 좌표계도 그쪽(norm1000)을 그대로 따라간다.
-            n = _graft_geometry(elements, mnr[0])
+            # ★ **MinerU 가 기준이다**(2026-09-03 대표 지시). 고급 점역의 몫은 MinerU 가
+            #   한자로 깨뜨리는 글자를 제대로 읽는 것이지 지면 구조를 다시 잡는 것이
+            #   아니다. 레이아웃·좌표·읽기순서·유형·캡션 연결을 MinerU 것으로 두고
+            #   글자만 갈아 끼우면 bbox 가 보통 경로와 **똑같이** 맞는다.
+            elements = mnr[0]
+            n = _graft_text(elements, els)
             image_width, image_height, bbox_space = mnr[1], mnr[2], mnr[3]
-            logger.info("고급 점역 좌표 이식 %d/%d 요소 (page=%d)",
+            logger.info("고급 점역 글자 이식 %d/%d 요소 (page=%d)",
                         n, len(elements), task.page_no)
         else:
-            # MinerU 가 없으면 좌표도 없다. 좌표계는 종전 규약("pixel")으로 적어 둔다.
+            # MinerU 가 없으면 LLM 결과를 그대로 쓴다(좌표 없음). 종전 규약을 따른다.
+            elements = els
             bbox_space = "pixel"
             image_width, image_height = await asyncio.to_thread(
                 _page_size_px, task.pdf_data, task.page_no
