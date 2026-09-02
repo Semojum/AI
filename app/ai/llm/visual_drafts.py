@@ -316,6 +316,16 @@ def _gist(s: str) -> str:
     return _GIST_STRIP.sub("", s or "")
 
 
+_TYPE_HEAD_RE = re.compile(
+    r"^\s*(그림|사진|그래프|만화|지도|도표|삽화|영상|모식도|개념도|흐름도|구조도|"
+    r"조직도|가계도|연대표|계통도|순서도)\s*[::,]\s*")
+
+
+def _strip_type_word(s: str) -> str:
+    """머리줄에서 제시어를 뗀다 — `그림: 퍼킨스 점자 타자기` → `퍼킨스 점자 타자기`."""
+    return _TYPE_HEAD_RE.sub("", s or "").strip()
+
+
 def _same_gist(a: str, b: str) -> bool:
     """두 줄이 사실상 같은 문구인가 — 구분자·공백·문장부호 차이는 무시한다.
 
@@ -380,7 +390,11 @@ def _outline_text_indents(
     else:
         if title:
             lines.append(title); indents.append(_TITLE_INDENT)      # §6.3.3(1) 제목 5칸(plain)
-        lines.append(_oneline(head)); indents.append(0)              # §6.3.4(1) 유형/설명
+        # ★ 제목이 이미 유형을 밝히면 머리줄을 겹쳐 내지 않는다(2026-09-02).
+        #   `모식도, HCl 형성 과정` 다음에 또 `그림:` 이 나가 제시어가 두 번 실렸다
+        #   (테스트_이미지 3·4쪽). 규정 §6.3.4(1)은 유형을 **한 번** 밝히라는 조항이다.
+        if not (title and head.rstrip(":： ") == label and _TYPE_HEAD_RE.match(title)):
+            lines.append(_oneline(head)); indents.append(0)          # §6.3.4(1) 유형/설명
         tn_from = len(lines) - 1        # 여기부터 마지막 줄까지가 점역자 주 구간
     # ⚠ 여기에 "하위에 속한 항목을 2칸씩 들여 쓰기함" 고지를 붙였다가 뺐다(2026-08-12 대표 지시).
     #   점역자 주는 **일반적이지 않은 처리**를 했을 때 쓰는 것이다 — 표를 전치했다거나,
@@ -392,7 +406,16 @@ def _outline_text_indents(
         text = (text or "").strip()
         if not text:
             continue
-        if _same_gist(text, title) or _same_gist(text, head):
+        # ★ 머리줄과 견줄 때는 **제시어를 떼고** 본다(2026-09-02).
+        #   head 는 `그림: 퍼킨스 점자 타자기` 꼴이라 앞의 `그림:` 이 붙은 채로 견주면
+        #   `퍼킨스 점자 타자기 사진` 과 포함 관계가 깨져 같은 말이 두 번 실렸다
+        #   (테스트_이미지 7쪽: 머리줄 + `…사진` + `점자를 입력하는 기계식 타자기` 세 줄).
+        # ⚠ 제시어를 뗀 나머지가 너무 짧으면 견주지 않는다. `그림: 설명` 처럼 머리줄이
+        #   한 낱말이면 그 낱말을 품은 멀쩡한 항목까지 지워진다(실측: "본문에 없는 설명
+        #   항목입니다" 가 `설명` 에 걸렸다).
+        bare = _strip_type_word(head)
+        if (_same_gist(text, title) or _same_gist(text, head)
+                or (len(_gist(bare)) >= _GIST_MIN_LEN and _same_gist(text, bare))):
             continue                      # 제목·유형 줄을 그대로 되풀이한 항목은 지운다
         if _dup_of_body(text, body_texts):
             continue                      # 본문에 이미 있는 글자는 설명에서 뺀다(원장 C-78)
