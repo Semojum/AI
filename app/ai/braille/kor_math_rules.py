@@ -810,8 +810,14 @@ def _normalize_latex_input(latex: str) -> str:
 # 화살표(⠒⠕)는 제51항(양쪽 한 칸)이라 제외 — ⠒⠒ 토큰만 정확히 매칭.
 # ⠔·⠢는 관계·연산 접두 뒤(⠈⠔ 관계물결·⠸⠔ ⊖·⠸⠢ ⊕ — 제29·34항 한 칸, 제15항 한 칸)면
 # 뺄셈·덧셈이 아니므로 제외(lookbehind).
+# ★ 여러 칸으로 적는 관계 기호는 **한 칸짜리보다 먼저** 놓는다 — 뒤에 두면
+#   `⠨⠢⠢`의 둘째 칸만 op로 잡혀 앞 공백이 안 지워진다(실측 `⠭⠀⠨⠢⠢⠀⠼⠚`).
+#   제4항 3·5·7·9호 같지않다 계열 · 제9항 비례 ⠐⠂ · 제20항 근사 ⠐⠒⠒.
+# `:`·`≒`는 11e 시점에 아직 원문자다 — 점형으로 바뀌기 전이라 여기서 잡는다.
+_MULTI_TIGHT = "⠨⠒⠒|⠨⠢⠢|⠨⠔⠔|⠨⠲⠲|⠨⠖⠖|⠐⠒⠒|⠐⠂"
 _TIGHT_OPS_RE = re.compile(
-    r"(\S)[ ⠀]*((?<![⠈⠸])⠒⠒|(?<![⠈⠸])⠢|(?<![⠈⠸])⠔|×|÷|<|>|≤|≥|≠|±|∓)[ ⠀]*(?=(\S))")
+    r"(\S)[ ⠀]*(" + _MULTI_TIGHT +
+    r"|(?<![⠈⠸])⠒⠒|(?<![⠈⠸])⠢|(?<![⠈⠸])⠔|×|÷|<|>|≤|≥|≠|±|∓|≒|:)[ ⠀]*(?=(\S))")
 
 
 # ── 비점자 잔류 정화 (2026-07-21, w2c) ──────────────────────────────────────
@@ -911,7 +917,7 @@ _GEOM_CMD_SYMBOL = {"\\angle": "∠", "\\triangle": "△"}
 # ⚠ 한글 가운뎃점(사회·문화)은 건드리면 안 된다 — 실측 14,031건이다. 그래서 양옆이
 #   영숫자·괄호일 때만 붙인다. 실측 공백 낀 붙임 대상 540건(cdot 282·neq 225·equiv 33).
 _ATTACHED_OP_SP_RE = re.compile(
-    r"(?<=[A-Za-z0-9)\]])[ \t]*(\\cdot|\\neq|\\equiv|·|≠|≡)[ \t]*(?=[A-Za-z0-9(\[\\])")
+    r"(?<=[A-Za-z0-9)\]}])[ \t]*(\\cdot|\\neq|\\equiv|·|≠|≡)[ \t]*(?=[A-Za-z0-9(\[{\\])")
 _GREEK_TIGHT_RE = re.compile(r"([α-ωΑ-Ω·])[ \t]+(?=[A-Za-z])")
 # 명령 꼴(`\Delta x`)은 0c 시점에 아직 점형 문자가 아니다. 공백만 지우면 `\Deltax`가 되어
 # 미지 명령으로 사라지므로 유니코드 문자로 바꾸면서 같이 지운다(`\anglePO`와 같은 함정).
@@ -1791,18 +1797,25 @@ def _stage0d_recurring(latex: str) -> str:
     return _BARE_DEC_RE.sub(_NUMBER_INDICATOR + "⠲", "".join(out))
 
 
+# 정수부 없는 소수의 수표 겹침(`#4#dg`) — 소수점 바로 뒤 수표는 같은 수의 이어진
+# 자리라 잉여다(제8항 1호 `#4dg`).
+_DEC_DUP_NUM_RE = re.compile(
+    _NUMBER_INDICATOR + "⠲" + _NUMBER_INDICATOR + r"(?=[⠁-⠚⠈])")
+
+
 def _finish_recurring(result: str) -> str:
     """자리표시자 → 순환마디 여는 표 ⠈(제8항 2호). 표 앞의 잉여 수표는 지운다."""
     if _RECUR_MARK not in result:
-        return result
+        # ★ 순환마디가 없어도 수표 겹침은 걷는다 — 종전에는 여기서 되돌아가
+        #   `.47` 이 `⠼⠲⠼⠙⠛`(수표 둘)로 나갔다.
+        return _DEC_DUP_NUM_RE.sub(_NUMBER_INDICATOR + "⠲", result)
     # 표가 숫자열을 끊어 **뒤 숫자에 수표가 다시** 붙는다 — 같은 수의 이어진 자리라
     # 잉여다. 먼저 걷고, 표를 마디 첫 숫자 앞으로 옮긴다(제8항 2호).
     t = result.replace(_RECUR_MARK + _NUMBER_INDICATOR, _RECUR_MARK)
     t = re.sub(r"([⠁-⠚])" + _RECUR_MARK, r"⠈\1", t).replace(_RECUR_MARK, "⠈")
     # 정수부 없는 소수는 위에서 수표+소수점을 직접 냈으므로, 11단계가 뒤 숫자에 붙인
     # 수표가 겹친다(`#4#dg`). 소수점 바로 뒤 수표만 걷는다.
-    return re.sub(_NUMBER_INDICATOR + "⠲" + _NUMBER_INDICATOR + r"(?=[⠁-⠚⠈])",
-                  _NUMBER_INDICATOR + "⠲", t)
+    return _DEC_DUP_NUM_RE.sub(_NUMBER_INDICATOR + "⠲", t)
 
 
 def convert_latex(latex: str) -> str:
