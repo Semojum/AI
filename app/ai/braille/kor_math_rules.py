@@ -1677,6 +1677,63 @@ def _stage15_spaces(result: str) -> str:
     return result.replace(_W2R_ROW_SEP, "⠀⠀")
 
 
+# ── 순환소수·소수점 (수학 점자 제8항) ─────────────────────────────────────────
+# 1호 — 소수점은 ⠲(폰트 "4"). 정수부가 없으면 **수표 뒤 바로 소수점**이다(`.47` = `#4dg`).
+# 2호 — 순환마디는 그 **앞에 ⠈(폰트 "@")를 한 번만** 적는다. 마디가 둘로 떨어져 있어도
+#        여는 자리에만 붙인다(`0.73̇9̇` = `#j4g@ci`).
+# ★ 종전에는 결합 점(U+0307 · U+0308)을 아예 몰라 미지문자로 샜고, 소수점 앞에 수표가
+#   중복으로 붙었다(`.9̇` → `⟨002E⟩#i⟨0307⟩`). 규정 예시 6건이 전부 틀렸다.
+_DOT_ABOVE = "\u0307"
+_RECUR_RE = re.compile(r"(\d)" + _DOT_ABOVE)
+# 자리표시자 — 마지막 단계에서 순환마디 여는 표 ⠈ 로 편다. 숫자 사이에 끼므로
+# 수표 처리를 흔들지 않게 비-ASCII 를 쓴다.
+_RECUR_MARK = "\ue90a"
+
+
+# 정수부 없는 소수(`.47`) — 규정 제8항 1호 예시가 `#4dg` 다. 수표 뒤 바로 소수점이라
+# 0 을 채우면 `#j4dg` 가 되어 어긋난다. 소수점만 점형으로 바꿔 수표 구간에 들여보낸다.
+_BARE_DEC_RE = re.compile(r"(?<![\d.])\.(?=\d)")
+
+
+# LaTeX `\dot{6}` 도 같은 뜻이다 — 결합 문자로 펴서 한 자리에서 받는다.
+_DOT_CMD_RE = re.compile(r"\\dot\{(\d)\}")
+
+
+def _stage0d_recurring(latex: str) -> str:
+    r"""0d. 순환소수 — 결합 점을 순환마디 여는 표 ⠈ 로 옮긴다(제8항 2호)."""
+    latex = _DOT_CMD_RE.sub(r"\1" + _DOT_ABOVE, latex)
+    if _DOT_ABOVE not in latex and not _BARE_DEC_RE.search(latex):
+        return latex
+    # 마디의 **첫 숫자 뒤**에 표를 달아 둔다. 앞에 두면 숫자열 사이에 끼어 11단계
+    # 소수점·수표 규칙이 `.`을 못 본다(`0.6̇` → `#j⟨002E⟩@f`). 점형이 다 나온 뒤
+    # `_finish_recurring` 이 그 숫자 **앞**으로 옮긴다.
+    out, opened = [], False
+    for i, ch in enumerate(latex):
+        if ch == _DOT_ABOVE:
+            continue
+        out.append(ch)
+        if latex[i + 1:i + 2] == _DOT_ABOVE and not opened:
+            out.append(_RECUR_MARK)
+            opened = True
+    # 정수부 없는 소수(`.47`)는 수표 뒤 바로 소수점이다(제8항 1호 `#4dg`).
+    # 0 을 채우면 `#j4dg` 가 되어 어긋나므로, 소수점을 여기서 점형으로 낸다.
+    return _BARE_DEC_RE.sub(_NUMBER_INDICATOR + "⠲", "".join(out))
+
+
+def _finish_recurring(result: str) -> str:
+    """자리표시자 → 순환마디 여는 표 ⠈(제8항 2호). 표 앞의 잉여 수표는 지운다."""
+    if _RECUR_MARK not in result:
+        return result
+    # 표가 숫자열을 끊어 **뒤 숫자에 수표가 다시** 붙는다 — 같은 수의 이어진 자리라
+    # 잉여다. 먼저 걷고, 표를 마디 첫 숫자 앞으로 옮긴다(제8항 2호).
+    t = result.replace(_RECUR_MARK + _NUMBER_INDICATOR, _RECUR_MARK)
+    t = re.sub(r"([⠁-⠚])" + _RECUR_MARK, r"⠈\1", t).replace(_RECUR_MARK, "⠈")
+    # 정수부 없는 소수는 위에서 수표+소수점을 직접 냈으므로, 11단계가 뒤 숫자에 붙인
+    # 수표가 겹친다(`#4#dg`). 소수점 바로 뒤 수표만 걷는다.
+    return re.sub(_NUMBER_INDICATOR + "⠲" + _NUMBER_INDICATOR + r"(?=[⠁-⠚⠈])",
+                  _NUMBER_INDICATOR + "⠲", t)
+
+
 def convert_latex(latex: str) -> str:
     r"""LaTeX 수식 문자열 → 점자 BRF.
 
@@ -1747,6 +1804,7 @@ def convert_latex(latex: str) -> str:
     result = _normalize_latex_input(latex)      # 0a. MinerU/마크다운 입력 정규화
 
     result = _stage0c_bare_args(result)             # 0c. 중괄호 없는 한 글자 인자
+    result = _stage0d_recurring(result)             # 0d. 순환소수·소수점(제8항)
     result = _stage0b_nth_root(result)              # 0b. \sqrt[n]{} — 대괄호 치환보다 먼저
     result = _stage1_math_brackets(result)          # 1·1a. 수학 괄호 + 병치 닫음표 생략
     result = _stage1b_accents(result)               # 1b. 문자 위 기호
@@ -1766,6 +1824,7 @@ def convert_latex(latex: str) -> str:
     result = _stage10_latex_symbols(result)         # 10. 단순 LaTeX 기호 명령
     result = _stage10x_minus(result)                # 10x. 뺄셈표 (숫자보다 먼저)
     result = _stage11_numbers(result)               # 11·11a. 숫자 + a~j 구분점
+    result = _finish_recurring(result)              # 11a2. 순환마디 표(제8항 2호)
     result = _stage11b_arithmetic(result)           # 11b. + =
     result = _stage11c_math_context_symbols(result)  # 11c. 문맥 overload 분기
     result = _tighten_operator_spacing(result)      # 11e. 연산·비교 기호 앞뒤 붙임
