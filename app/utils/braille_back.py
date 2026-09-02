@@ -621,6 +621,16 @@ _MATH_KOR_RATIO = 0.70
 _MATH_KOR_MIN_CELLS = 24
 
 
+# 마침표 뒤에 올 수 있는 닫는 부호들 — 이게 오면 그 ⠲ 는 어말이다(∋ 아님).
+#   ⠠⠄ 점역자 주표 · ⠠⠴ 닫는 소괄호 · ⠴ 닫는 큰따옴표 · ⠐⠶ 닫는 홑화살괄호 · ⠶ 닫는 괄호
+_PERIOD_CLOSERS = ("⠠⠄", "⠠⠴", "⠐⠶", "⠴", "⠶")
+
+
+def _closing_follows(s: str, at: int) -> bool:
+    """위치 at 에서 닫는 부호가 시작하는가(긴 것부터 본다)."""
+    return any(s.startswith(c, at) for c in _PERIOD_CLOSERS)
+
+
 def decode(braille: str, *, math: bool = False) -> str:
     """점자 BRF 문자열 → 한국어 텍스트(근사). 줄바꿈은 보존.
 
@@ -967,9 +977,15 @@ def _decode_line(s: str) -> str:
             out.append(_SENT_END[ch])
             i += 1
             continue
-        # 어말 마침표 ⠲ — ∋ 기호와 같은 점형이라, 앞에 텍스트가 있고 어말(끝/공백 앞)일
-        # 때만 마침표로 본다(곳.=…⠲ → 곳 + .). 단독 ⠲(앞이 비었거나 공백)는 기호(∋)로 둔다.
-        if ch == _ROMAN_END and out and out[-1] != " " and _final(i + 1):
+        # 어말 마침표 ⠲ — ∋ 기호와 같은 점형이라, 앞에 텍스트가 있고 어말일 때만
+        # 마침표로 본다(곳.=…⠲ → 곳 + .). 단독 ⠲(앞이 비었거나 공백)는 기호(∋)로 둔다.
+        # ★ '어말'에 **뒤따르는 닫는 부호**를 넣는다(2026-09-03). 종전에는 끝·공백만 봐서,
+        #   마침표 바로 뒤에 점역자 주표나 닫는 괄호가 오면 ∋ 로 샜다 —
+        #   `열을 바꾸었음∋【점역자주】`. 실측(gold 시각자료): ⠠⠄ 78 · ⠠⠴ 22 자리.
+        #   근거: 재추출 묵자 1,361쪽에 마침표 29,887회 · ∋ **0회**. 이 코퍼스에 집합
+        #   기호는 없다. 수식 토큰은 앞단(_MATH_REV)에서 갈리므로 여기 안 온다.
+        if ch == _ROMAN_END and out and out[-1] != " " and (
+                _final(i + 1) or _closing_follows(s, i + 1)):
             out.append(".")
             i += 1
             continue
