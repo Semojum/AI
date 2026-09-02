@@ -242,6 +242,22 @@ def _load_special_rev() -> dict:
 
 _SPECIAL_REV = _load_special_rev()
 _SPECIAL_MAX = max((len(k) for k in _SPECIAL_REV), default=0)
+
+# 모음 낱자(제7항) — 온표 ⠿ 뒤 모음. **_SPECIAL_REV 에 넣으면 안 된다**: ⠿는 약자 '옹'
+# 이기도 해서 무조건 펴면 `옹알이`(⠿⠣⠂⠕)가 `ㅏㄹ이`로 깨진다. 자음 낱자(㉠=⠿⠁)는
+# 뒤 셀이 음절 첫소리와 안 겹쳐 무조건 펴도 되지만, 모음은 겹친다.
+# 그래서 **양옆이 경계일 때만** 편다. 전 코퍼스 실측(1,131쪽): 경계로 둘러싸인 출현
+# 227건 중 224건이 묵자에 그 모음 낱자가 있고 '옹X'는 **0건**이다(나머지 3건은 짝 미확인).
+# 붙어 나오는 6,988건은 손대지 않는다.
+_VOWEL_JAMO_REV = {
+    "⠿⠣": "ㅏ", "⠿⠗": "ㅐ", "⠿⠜": "ㅑ", "⠿⠜⠗": "ㅒ", "⠿⠎": "ㅓ", "⠿⠝": "ㅔ",
+    "⠿⠱": "ㅕ", "⠿⠌": "ㅖ", "⠿⠥": "ㅗ", "⠿⠧": "ㅘ", "⠿⠧⠗": "ㅙ", "⠿⠽": "ㅚ",
+    "⠿⠬": "ㅛ", "⠿⠍": "ㅜ", "⠿⠏": "ㅝ", "⠿⠏⠗": "ㅞ", "⠿⠍⠗": "ㅟ", "⠿⠩": "ㅠ",
+    "⠿⠪": "ㅡ", "⠿⠺": "ㅢ", "⠿⠕": "ㅣ",
+}
+_VOWEL_JAMO_MAX = max(len(k) for k in _VOWEL_JAMO_REV)
+# 낱자 양옆에 올 수 있는 경계 — 칸·줄끝과, 낱자를 나열할 때 쓰는 문장부호들.
+_JAMO_BOUND = frozenset("⠀ \n⠐⠲⠆⠦⠴⠄⠶⠔⠒")
 # 통합 역맵(약어 + 음절 + 기호). 긴 셀 우선 매칭을 위해 최대 길이 기록.
 _COMBINED: dict[str, str] = {**_SYMBOL_REV, **_SYLLABLE_REV, **_WORD_ABBR}
 # 단독 문장부호(마침표·쉼표·느낌표)도 풀리도록 — 기존 기호 매핑은 덮지 않는다.
@@ -970,6 +986,19 @@ def _decode_line(s: str) -> str:
         # 로마자 대문자는 ⠴…⠲ 로마자 런 안에서만 처리(맥락 있음).
         # 동그라미 숫자·문자·낱자(제64항) — 수표/온표보다 먼저(①=⠼⠂ 가 평문 숫자로,
         # ㉠=⠿⠁ 이 ∞로 오인되지 않게). 긴 셀 우선.
+        # 모음 낱자(제7항) — 양옆이 경계일 때만. ⠿는 약자 '옹'이기도 해 무조건 펴면
+        # `옹알이`가 깨진다(위 _VOWEL_JAMO_REV 주석의 실측 근거).
+        if ch == "⠿" and (i == 0 or s[i - 1] in _JAMO_BOUND):
+            for ln in range(min(_VOWEL_JAMO_MAX, n - i), 1, -1):
+                tok = s[i:i + ln]
+                if tok in _VOWEL_JAMO_REV and (i + ln >= n or s[i + ln] in _JAMO_BOUND):
+                    out.append(_VOWEL_JAMO_REV[tok])
+                    i += ln
+                    break
+            else:
+                ln = 0
+            if ln:
+                continue
         _sp = 0
         for ln in range(min(_SPECIAL_MAX, n - i), 0, -1):
             if s[i:i + ln] in _SPECIAL_REV:
