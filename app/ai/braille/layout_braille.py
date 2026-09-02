@@ -24,6 +24,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple, Optional
 
+from app.ai.braille.tag_names import split_indent
 from app.ai.braille.kor_math_rules import _NUMBER_INDICATOR, _DIGIT_MAP
 from app.ai.braille.regulations import make_rule
 from app.ai.braille.translator import _BOOK_STYLE  # 도서 관행 스위치(BRAILLE_STYLE)
@@ -938,6 +939,13 @@ class LayoutBraille:
         self, bo: BrailleOutput, etype: str, is_heading: bool, hlevel: int
     ) -> int:
         """첫 줄 들여쓰기 칸 수. (조판 서식이므로 rule_trail 미기록 — 태민 정책)."""
+        # ★ `<!N칸>` 태그가 있으면 **그 값이 이긴다**(2026-09-03). mode a 에서 점역사가
+        #   들여쓰기를 손본 결과가 이 태그이고, mode b 로 되돌아올 때 그대로 지켜야 한다.
+        #   종전에는 태그를 아무도 안 읽어(tag_names.split_indent 호출부 0개) mode b 가
+        #   요소 유형만 보고 **전부 2칸**으로 밀어 넣었다 — <!6칸> 제목도 2칸이 됐다.
+        tagged, _ = split_indent(bo.corrected_text or "")
+        if tagged is not None:
+            return tagged
         if is_heading:
             if hlevel >= 3:
                 if _ITEM_HEAD_NUM.match(bo.corrected_text or ""):
