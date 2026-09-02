@@ -665,6 +665,9 @@ _MATH_KOR_MIN_CELLS = 24
 #   ⠠⠄ 점역자 주표 · ⠠⠴ 닫는 소괄호 · ⠴ 닫는 큰따옴표 · ⠐⠶ 닫는 홑화살괄호 · ⠶ 닫는 괄호
 _PERIOD_CLOSERS = ("⠠⠄", "⠠⠴", "⠐⠶", "⠴", "⠶")
 
+# 홑 곱셈표 — 앞뒤가 모두 공백 셀인 ⠡ 만. 붙은 ⠡ 는 한글 약자 '연'이라 안 건드린다.
+_LONE_TIMES_RE = re.compile(r"(?<=⠀)⠡(?=⠀)")
+
 
 def _closing_follows(s: str, at: int) -> bool:
     """위치 at 에서 닫는 부호가 시작하는가(긴 것부터 본다)."""
@@ -869,6 +872,11 @@ def _decode_line_router(line: str, math: bool) -> str:
     # 여는 쪽과 닫는 쪽을 갈라 놓는다(layout_braille._ATOMIC_SEQS 와 같은 이유).
     # 줄을 쪼개기 전에 통째로 치운다.
     line = line.replace(_BOX_CHAR_OPEN + _SPACE_CELL + _BOX_CHAR_CLOSE, "▯▯")
+    # 홑 곱셈표 ⠡ — 「수학 점자」 제2항. 한글 약자 '연'과 점형이 같지만 **앞뒤가 모두
+    # 공백일 때만** 곱셈표다(제11항 "수식은 앞뒤를 두 칸씩 띄어 쓴다").
+    # 실측(코퍼스 2,500쪽): 홑 ⠡ 110건이 전부 가계도 교배 기호이고, 약자 '연'으로 쓰인
+    # 붙은 ⠡ 는 18,316건으로 공백 조건에서 완전히 갈린다.
+    line = _LONE_TIMES_RE.sub("×", line)
     line = _mark_paren_pairs(line)
     parts = re.split(r"([⠀ ]+)", line)              # 공백 런을 분리자로 보존
     tokens, seps = _merge_roman_tokens(parts[0::2], parts[1::2])
@@ -915,9 +923,9 @@ def _decode_line(s: str) -> str:
             out.append(_ALPHA_REV[ch])
             i += 1
             continue
-        # 줄 단위 선처리가 넣어 둔 네모 빈칸은 그대로 흘린다(_mark_paren_pairs 의
-        # 센티넬까지 통과시키면 괄호 복원이 깨지므로 이 글자 하나로 좁힌다).
-        if ch == "▯":
+        # 줄 단위 선처리가 넣어 둔 글자(네모 빈칸 ▯ · 곱셈표 ×)는 그대로 흘린다.
+        # _mark_paren_pairs 의 센티넬까지 통과시키면 괄호 복원이 깨지므로 좁게 잡는다.
+        if ch in "▯×":
             out.append(ch)
             i += 1
             continue
