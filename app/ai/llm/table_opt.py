@@ -461,6 +461,15 @@ def two_col_mode() -> str:
 _SENT_MIN_CHARS = int(os.environ.get("TABLE_SENTENCE_CHARS", "18"))
 
 
+def _is_sentence_grid(grid: list[list[str]]) -> bool:
+    """행렬 꼴로 온 표에 대한 §3.1.1 (1)③ 판정. 값 칸 중앙값 길이로 본다."""
+    vals = [c.strip() for r in grid[1:] for c in r[1:] if c and c.strip()]
+    if len(vals) < 3:
+        return False
+    import statistics
+    return statistics.median(len(v) for v in vals) >= _SENT_MIN_CHARS
+
+
 def _is_sentence_table(cells: list[dict]) -> bool:
     """열 항목이 '여러 단어와 문장'인가 — §3.1.1 (1)③ 의 조건.
 
@@ -506,6 +515,8 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
         max_col = max(len(r) for r in tag_rows)
         if max_col >= 3 and _is_answer_grid(tag_rows):
             return "linear"
+        if max_col >= 3 and _is_sentence_grid(tag_rows):
+            return "numbered"
         return two_col_mode() if max_col == 2 else "table_grid"
     # table_structure 없음/빈 셀: HTML 표(MinerU) 또는 '|' 격자로 추론(narrative 오분류 방지).
     if _is_html_table(text):
@@ -514,13 +525,18 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
             max_col = max(len(r) for r in grid)
             if max_col >= 3 and _is_answer_grid(grid):
                 return "linear"
+            if max_col >= 3 and _is_sentence_grid(grid):
+                return "numbered"
             return two_col_mode() if max_col == 2 else "table_grid"
     rows = [ln for ln in (text or "").splitlines() if "|" in ln]
     if not rows:
         return "narrative"
     max_col = max(len(r.split("|")) for r in rows)
-    if max_col >= 3 and _is_answer_grid([r.split("|") for r in rows]):
+    grid = [r.split("|") for r in rows]
+    if max_col >= 3 and _is_answer_grid(grid):
         return "linear"
+    if max_col >= 3 and _is_sentence_grid(grid):
+        return "numbered"
     return two_col_mode() if max_col == 2 else "table_grid"
 
 
