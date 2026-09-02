@@ -370,6 +370,9 @@ def _eng_group_at(s: str, j: int, at_word_start: bool) -> tuple[str, int] | None
     return None
 
 
+_COMMA_CELL = "⠂"
+
+
 def _roman_span_ahead(s: str, at: int) -> bool:
     """`at`부터 로마자 구간이 이어지는가 — **종료표 ⠲가 앞에 실제로 있는지**로 본다.
 
@@ -503,6 +506,17 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
         if c == _SUBSCRIPT:                          # 첨자표 등 → 근사로 건너뜀
             j += 1
             continue
+        if c == _COMMA_CELL:
+            # 제32항 구간은 **종료표까지**다. `A, B, C`(⠴⠠⠁⠂ ⠠⠃⠂ ⠠⠉⠲)의 쉼표에서
+            # 끊으면 둘째·셋째 글자가 문맥을 잃고 한글로 읽힌다(`A, b, 나.`).
+            # 공백 처리와 같은 조건 — 명시적 로마자표로 열렸고 종료표가 앞에 있을 때만.
+            # ★ **약자 판정보다 뒤**여야 한다. 앞에 두면 낱말 안의 'ea'(같은 셀)를 먹어
+            #   `reason` 이 `r,son` 이 된다(실측: 영어 줄 단위 테스트 2건이 깨졌다).
+            if s[i] == _ROMAN_START and _roman_span_ahead(s, j + 1):
+                out.append(",")
+                caps_word = False              # 대문자 단어표는 낱말 하나까지다
+                j += 1
+                continue
         break                                       # 비로마자 셀 → 런 종료
     if not out:
         return None
