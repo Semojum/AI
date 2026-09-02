@@ -11,6 +11,8 @@ FALLBACK → GPT-4o API, 45초 제한 (3회 연속 실패 후)
 from __future__ import annotations
 
 import logging
+import asyncio
+import os
 import re
 import time
 
@@ -133,8 +135,109 @@ def _extract(resp: str) -> str:
     return t
 
 
+# ── 배치 교정 (2026-09-02) ────────────────────────────────────────────────
+# 종전에는 수식 **요소마다** LLM 을 한 번씩 불렀다. 정답 해설 한 쪽에 수식이 43개면
+# 43회다. 동시 4페이지면 순간 170회가 넘어 계정 분당 한도에 걸리고, 재시도 백오프가
+# 쌓여 추출·점역이 함께 늘어졌다 — 운영 실측(2026-09-02, 정답 해설 10쪽)에서 7쪽이
+# 180초 예산을 넘겨 BLOCKED 였고 `FALLBACK 수식 최적화 실패` 가 6건이었다.
+#
+# 한 번에 묶어 보내고 번호로 짝을 맞춘다. **개수가 어긋나면 통째로 버리고 원본을 쓴다** —
+# 짝이 밀리면 다른 수식의 교정본이 엉뚱한 자리에 박히는데, 그건 안 고친 것보다 나쁘다.
+_BATCH_ON = os.environ.get("FORMULA_BATCH", "1") == "1"
+_BATCH_SIZE = int(os.environ.get("FORMULA_BATCH_SIZE", "12"))
+
+_BATCH_PROMPT = """당신은 한국어 수학 점역 전문가입니다.
+아래 LaTeX 수식들을 각각 점역 가능한 형태로 교정하세요.
+
+규칙:
+1. LaTeX 구조 유지 (\\frac, \\sqrt, ^, _ 등)
+2. 불완전한 LaTeX 구문 복원
+3. OCR 오인식 기호 교정 (예: O→0, l→1)
+4. [처리 불가: ...] 플레이스홀더는 그대로 유지
+
+입력은 `[N]` 으로 번호가 붙어 있습니다. 출력도 **같은 번호를 같은 개수만큼**,
+한 줄에 하나씩 `[N] 교정된LaTeX` 형식으로만 내세요. 설명·머리말을 붙이지 마세요.
+
+{items}"""
+
+_BATCH_PREFILL = "[1] "
+_BATCH_LINE_RE = re.compile(r"^\s*\[(\d+)\]\s*(.*)$")
+
+
+def _batch_parse(resp: str, n: int) -> list[str] | None:
+    """`[N] …` 응답 → 번호순 목록. 짝이 안 맞으면 None(호출부가 원본을 지킨다)."""
+    if not resp:
+        return None
+    text = resp if resp.lstrip().startswith("[") else _BATCH_PREFILL + resp
+    got: dict[int, str] = {}
+    cur: int | None = None
+    for line in text.splitlines():
+        m = _BATCH_LINE_RE.match(line)
+        if m:
+            cur = int(m.group(1))
+            got[cur] = m.group(2).strip()
+        elif cur is not None and line.strip():
+            got[cur] = (got[cur] + "\n" + line.rstrip()).strip()
+    if len(got) != n or set(got) != set(range(1, n + 1)):
+        return None
+    return [got[i] for i in range(1, n + 1)]
+
+
 class FormulaOpt(BaseOpt):
     """ExtractedContent 목록 → LLMOutput 목록 (수식)."""
+
+    async def optimize(self, extracted, routing_tier, layout=None):
+        """LLM 이 필요한 것만 골라 **묶어서** 한 번에 교정한다(위 _BATCH_SIZE 주석).
+
+        ZERO 티어·빈 수식·C3 폴백은 LLM 을 안 타므로 종전 경로 그대로 둔다.
+        배치가 실패하거나 짝이 안 맞으면 요소별 호출로 되돌아간다 — 느려질 뿐 결과는 같다.
+        """
+        if not _BATCH_ON or routing_tier == "ZERO":
+            return await super().optimize(extracted, routing_tier, layout)
+        need = [e for e in extracted
+                if "C3_FALLBACK" not in e.flags
+                and (e.latex_string or e.corrected_text or "").strip()]
+        if len(need) < 2:
+            return await super().optimize(extracted, routing_tier, layout)
+
+        fixed: dict = {}
+        for i in range(0, len(need), _BATCH_SIZE):
+            chunk = need[i:i + _BATCH_SIZE]
+            raws = [(e.latex_string or e.corrected_text or "") for e in chunk]
+            items = "\n".join(f"[{k}] {r}" for k, r in enumerate(raws, 1))
+            _tier, timeout = decide_tier_timeout(
+                min((e.ocr_confidence for e in chunk), default=1.0))
+            try:
+                resp, used_fb = await generate_with_retry(
+                    _BATCH_PROMPT.format(items=items),
+                    timeout=timeout * 2, element_id=chunk[0].element_id, kind="수식",
+                    prefill=_BATCH_PREFILL,
+                    max_new_tokens=256 * len(chunk), fallback_max_tokens=512 * len(chunk),
+                    transform=lambda t: t,
+                )
+            except Exception:                       # noqa: BLE001 — 배치 실패는 요소별로 되돌린다
+                resp, used_fb = "", False
+            got = _batch_parse(resp, len(chunk))
+            if got is None:
+                logger.warning("수식 배치 %d개 짝이 안 맞아 원본을 지킨다", len(chunk))
+                continue
+            for e, raw, out in zip(chunk, raws, got):
+                fixed[e.element_id] = (_normalize(_extract(out) or raw),
+                                       "FALLBACK" if used_fb else _tier)
+
+        async def _one(e):
+            hit = fixed.get(e.element_id)
+            if hit is None:
+                return await self._optimize_one(e, routing_tier)
+            raw = e.latex_string or e.corrected_text or ""
+            return LLMOutput(
+                element_id=e.element_id, corrected_text=hit[0],
+                render_mode="formula_inline" if len(raw) <= 30 else "formula_block",
+                routing_tier=hit[1], processing_time_ms=0,
+                rule_trail=_min_trail(hit[0]),
+            )
+
+        return await asyncio.gather(*[_one(e) for e in extracted])
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
         raw = ext.latex_string or ext.corrected_text or ""
