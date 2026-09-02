@@ -143,6 +143,22 @@ _MATH_REV_MULTI.update({
     # 윗줄(bar)·모자(hat) — `_ACC_POSTFIX_MARK`
     "⠈⠉": "̅", "⠈⠈⠢": "̂",
 })
+# 삼각함수(규정 제47항) — sin=⠖⠎ · cos=⠖⠉ · tan=⠖⠞ · sec=⠖⠤ · csc=⠖⠣ · cot=⠖⠳.
+# 역맵이 통째로 없어서 `tan x` 가 `∈얼옥` 으로 깨졌다(규정 제11항 예시에서 바로 재현).
+# ★ **정방향 표(kor_math_rules._TRIG)를 뒤집어 만든다** — 손으로 적으면 어긋난다.
+def _build_trig_rev() -> dict[str, str]:
+    try:
+        from app.ai.braille.kor_math_rules import _TRIG
+    except Exception:                                     # noqa: BLE001
+        return {}
+    # 긴 이름이 먼저 이기도록 셀이 긴 것부터 넣는다(arcsin 이 sin 보다 앞).
+    return {cells: name for name, cells in
+            sorted(_TRIG.items(), key=lambda kv: -len(kv[1]))}
+
+
+_TRIG_CELLS = tuple(_build_trig_rev())
+_MATH_REV_MULTI.update(_build_trig_rev())
+
 _MATH_REV_SINGLE.update({
     # ★ 단독 ⠸ 는 log 가 아니다(2026-09-03 정정). 규정 제46항은 로그를 **두 칸**으로 적는다 —
     #   밑이 숫자면 `⠸⠠`, 문자·괄호면 `⠸⠰`(예 `_,5#b` = log₅2). 둘 다 위 MULTI 에 있다.
@@ -584,6 +600,11 @@ def _classify_token(tok: str) -> str:
         return "OP"
     if tok in _GREEK_TOKENS:
         return "GREEK"
+    # 삼각함수 접두 ⠖(규정 제47항)로 시작하고 뒤가 등록된 함수면 수식이다.
+    # ⠖ 는 한글에서 낱말 첫 칸으로 안 오므로 오탐이 없다 — 이걸 안 보면
+    # `tan x`(⠖⠞⠭)가 TEXT 로 떨어져 `∈얼옥` 이 된다.
+    if tok[:1] == "⠖" and any(tok.startswith(k) for k in _TRIG_CELLS):
+        return "MATH"
     has_num = _NUMBER_SIGN in tok
     if has_num and (_MATH_SIGNAL_RE.search(tok) or any(p in tok for p in _MATH_PAREN_CELLS)):
         # ★ 단위 기호가 수식 신호를 품는다 (2026-08-09). 규정 제68항이 ㎡를 문자 그대로
