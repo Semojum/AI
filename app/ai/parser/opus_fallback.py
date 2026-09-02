@@ -121,7 +121,14 @@ def extract(image_path: str, model: str | None = None,
 
         from app.core.limits import estimate_tokens, llm_limiter
         from app.utils.req_log import record_anthropic
-        client = anthropic.Anthropic()
+        # ★ 키를 **명시로 넘긴다**(2026-09-02). 인자 없이 만들면 SDK 가 환경변수만 보는데,
+        #   우리 키는 `.env` → `config.anthropic_api_key` 로 들어온다. 그래서 운영에서
+        #   `advanced_available()` 은 True 인데 정작 호출이
+        #   "Could not resolve authentication method" 로 죽어 **고급 점역이 매번 MinerU 로
+        #   되돌아갔다** — 기능이 켜져도 한 번도 동작한 적이 없다. 캡셔너(captioner.py)는
+        #   처음부터 명시로 넘기고 있었다.
+        client = anthropic.Anthropic(api_key=config.anthropic_api_key or None,
+                                     timeout=180.0, max_retries=1)
         b64 = base64.b64encode(open(image_path, "rb").read()).decode()
         # 계정 분당 상한. 쪽 전체 이미지라 입력이 크고 출력도 상한까지 잡는다.
         llm_limiter().acquire_sync(estimate_tokens(_PROMPT, len(b64) * 3 // 4), _MAX_TOKENS)
