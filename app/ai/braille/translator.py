@@ -342,11 +342,15 @@ class _RomanCtx:
 
     __slots__ = ("has_hangul", "hangul_ratio", "opened")
 
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, *, force: bool = False) -> None:
         han = len(_HANGUL_SYL_RE.findall(text))
         lat = len(_LATIN_CHAR_RE.findall(text))
-        self.has_hangul = han > 0
-        self.hangul_ratio = han / (han + lat) if (han + lat) else 0.0
+        # force — 꼬리말처럼 **한국어 문서의 한 조각**이라 줄 안에 한글이 없어도 제29항이
+        # 그대로 적용되는 자리(translate_plain). 근거는 gold 페이지행 실측이다:
+        # '로마숫자 + 숫자' 꼬리말 5,318건 중 로마자표를 붙인 것이 4,776건(89.8%).
+        # 본문은 건드리지 않는다 — 거기 문턱값 0.2 는 따로 측정된 값이다(위 주석).
+        self.has_hangul = han > 0 or force
+        self.hangul_ratio = 1.0 if force else (han / (han + lat) if (han + lat) else 0.0)
         # 이 줄에서 로마자 구간이 이미 열렸는가(제29항 후단 — 첫 로마자 앞에만 ⠴).
         self.opened = False
 
@@ -1361,7 +1365,7 @@ def _inline_sub_braille(b: str) -> str:
     return _ROMAN_START + b.replace(_CAPITAL_IND * 2, _CAPITAL_IND)
 
 
-def _translate_with_braillify(text: str) -> str:
+def _translate_with_braillify(text: str, *, force_roman: bool = False) -> str:
     parts = _FORMULA_RE.split(text)
     # (종류, 점자, 앞 원문공백, 뒤 원문공백). 종류: "t"=텍스트 "f"=수식 "i"=인라인 첨자 토큰
     chunks: list[tuple[str, str, bool, bool]] = []
@@ -1370,7 +1374,8 @@ def _translate_with_braillify(text: str) -> str:
     # 로마자표 ⠴ 줄 문맥(제29항) — 수식 밖 본문만, 태그명 <!수식>은 빼고 센다.
     # 세그먼트가 아니라 이 한 줄이 판정 단위이고, 텍스트 세그 전부가 같은 ctx를 쓴다.
     roman_ctx = _RomanCtx("".join(_RESIDUAL_BANG_TAG_RE.sub("", parts[i])
-                                 for i in range(0, len(parts), 2)))
+                                  for i in range(0, len(parts), 2)),
+                          force=force_roman)
 
     for i, part in enumerate(parts):
         if i % 2 == 0:  # 일반 텍스트 세그먼트
@@ -2153,7 +2158,7 @@ def merge_hidden_runs(braille: str) -> str:
         lambda m: "⠸" + m.group(2) * (len(m.group(0)) // 3) + "⠇", braille)
 
 
-def translate_tagged_text(text: str) -> str:
+def translate_tagged_text(text: str, *, force_roman: bool = False) -> str:
     """<!수식> 태그가 포함된 텍스트를 점자 BRF로 변환."""
     # 레거시 심볼 폰트 복원은 **수식 라우팅보다 먼저** 해야 한다. 뒤에 두면 "x¤ +1>0"이
     # 수식으로 안 잡혀 위첨자표(⠘⠼⠃)로 나가는데, 정답 도서는 제곱을 ⠣로 적는다.
@@ -2182,12 +2187,15 @@ def translate_tagged_text(text: str) -> str:
     #   여기서 점형으로 바꿔 두면 수식 구간 판정에 안 걸린다(`_AMP_RE` 와 같은 수법).
     text = _OX_MARK_RE.sub(_ox_mark_repl, text)
     text = inline_math.wrap(text)
-    if _BOOK_STYLE:
+    if _BOOK_STYLE and not force_roman:
+        # ★ 꼬리말(force_roman)에서는 이 관행을 끈다. 섹션번호 낱자형의 근거는 **본문** 실측
+        #   세 쪽인데, 페이지행 꼬리말은 반대다 — gold 실측 로마자표형 5,762 : 낱자형 466
+        #   (92.5%). 여기서 낱자형을 쓰면 로마자표·종료표가 빠져 그 셀이 한글로 읽힌다.
         text = _book_roman_to_cells(text)   # 로마 숫자 섹션번호 → 낱자 점형(도서 관행, 수식 밖만)
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     text = sanitize_for_braille(text)        # PUA·제어문자 정화(요소 전체 소실 방지)
     if _BRAILLIFY_AVAILABLE:
-        return merge_hidden_runs(_translate_with_braillify(text))
+        return merge_hidden_runs(_translate_with_braillify(text, force_roman=force_roman))
     return merge_hidden_runs(_translate_fallback(text))
 
 
@@ -2375,7 +2383,7 @@ def emphasis_marker_spans(
     return spans
 
 
-def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
+def translate_with_breaks(text: str, *, force_roman: bool = False) -> tuple[list[str], list[list[int]]]:
     """텍스트 → (논리 줄별 점자, 줄별 음절 줄바꿈 offset). 32칸 분리는 layout이 수행.
 
     원문 개행(\\n)으로만 논리 줄을 나눈다(하드 32분리 폐기 — 음절·지시부호·마커를
@@ -2409,7 +2417,7 @@ def translate_with_breaks(text: str) -> tuple[list[str], list[list[int]]]:
     lines: list[str] = []
     breaks: list[list[int]] = []
     for src_line in text.split("\n"):
-        braille = translate_tagged_text(src_line)
+        braille = translate_tagged_text(src_line, force_roman=force_roman)
         lines.append(braille)
         breaks.append(_break_offsets(src_line, braille))
     return (lines or [""], breaks or [[]])
@@ -2428,7 +2436,9 @@ def translate_plain(text: str) -> str:
     """
     if not text or not text.strip():
         return ""
-    lines, _ = translate_with_breaks(text)
+    # ★ 꼬리말은 한국어 문서의 한 조각이라, 그 안에 한글이 없어도 로마자표 ⠴ 를 붙인다
+    #   (제29항). gold 페이지행 실측 4,776 : 542 (89.8%). 본문 경로는 종전 그대로다.
+    lines, _ = translate_with_breaks(text, force_roman=True)
     return "\n".join(lines)
 
 
