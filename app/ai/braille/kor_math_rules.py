@@ -1430,6 +1430,10 @@ _LATEX_SIMPLE: dict[str, str] = {
     "\\rightleftarrows": "⠪⠶⠕",  # ⇄ (제61항 [7O)
     "\\nexists":  "⠨⠨⠢",    # ∄ (제61항 ..5)
     "\\circledcirc": "⠸⠴⠴",  # ⦾ 겹동그라미 (제15항 6호 _00)
+    "\\rhd":      "⠸⠜",     # ▷ 정규부분군 (제33항 _>)
+    "\\lhd":      "⠸⠣",     # ◁ 정규부분군 (제33항 _<)
+    "\\vartriangleright": "⠸⠜",
+    "\\vartriangleleft":  "⠸⠣",
     "\\bullet":   "⠸⠲",     # ∙ 검정동그라미 (제15항 7호 _4)
     "\\approx":   "⠈⠔⠈⠔", # ≈ 이중물결 (제29항 @9@9, 앞뒤 한 칸)
     "\\equiv":    "⠶⠶",   # ≡ 합동 (기하 제43항 77=⠶⠶ — ⠛은 폰트 g 오독)
@@ -1596,7 +1600,8 @@ def _stage11c_math_context_symbols(result: str) -> str:
     for _u, _c in (("≯", "⠨⠢⠢"), ("≮", "⠨⠔⠔"), ("≱", "⠨⠲⠲"), ("≰", "⠨⠖⠖"),
                    ("≅", "⠈⠔⠒⠒"), ("≁", "⠨⠈⠔"), ("⊢", "⠸⠒"), ("⊣", "⠈⠸⠒"),
                    ("⊨", "⠘⠸⠒"), ("⇏", "⠨⠒⠒⠕"), ("⇄", "⠪⠶⠕"), ("∄", "⠨⠨⠢"),
-                   ("⦾", "⠸⠴⠴"), ("∙", "⠸⠲")):
+                   ("⦾", "⠸⠴⠴"), ("∙", "⠸⠲"), ("▷", "⠸⠜"), ("◁", "⠸⠣"),
+                   ("⊲", "⠸⠣"), ("⊳", "⠸⠜")):
         result = result.replace(_u, _c)
     result = result.replace("∴", _THEREFORE)
     # 숫자 사이 쉼표(제41항): ⠂로 적고 **뒤 숫자에 수표를 다시 적지 않는다**(제43항).
@@ -1740,10 +1745,17 @@ _NOT_RE = re.compile(r"\\not\s*(\\[A-Za-z]+|.)")
 # `5{,}700{,}000` — LaTeX 에서 **자릿점**을 쓰는 표준 표기다(중괄호가 쉼표 뒤 여백을
 # 없앤다). 우리는 이걸 못 읽어 자릿점이 곱셈점 ⠐ 으로 나갔다(규정 제41항은 ⠂).
 _BRACE_COMMA_RE = re.compile(r"\{\s*,\s*\}")
+# `\overset{\frown}{AB}` — 호(제36항)의 다른 표기. `\overparen` 으로 편다.
+_OVERSET_ARC_RE = re.compile(r"\\overset\s*\{\s*\\frown\s*\}\s*\{([^{}]*)\}")
 
 
 def _stage0f_brace_comma(latex: str) -> str:
-    r"""0f. `{,}` → 평범한 쉼표. 자릿점 규칙(제41·43항)이 그 뒤를 받는다."""
+    r"""0f. `{,}` → 평범한 쉼표. 자릿점 규칙(제41·43항)이 그 뒤를 받는다.
+
+    ★ `\overset{\frown}{AB}` 도 여기서 편다 — 호(제36항)를 이 표기로 쓰는 자료가 있는데
+      `\overparen` 계열만 알아서 호 기호 ⠈⠪ 가 통째로 사라졌다.
+    """
+    latex = _OVERSET_ARC_RE.sub(r"\\overparen{\1}", latex)
     return _BRACE_COMMA_RE.sub(",", latex)
 
 
