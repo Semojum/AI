@@ -51,7 +51,8 @@ def _nested_image_text(ext: ExtractedContent) -> Optional[str]:
 #   풀어쓰기(3칸·2칸). 앞의 셋은 무엇이 다른지를 안 알려 주고, 마지막은 이름에
 #   들여쓰기 값이 들어 있었다.
 _RENDER_LABEL = {"table_grid": "테두리+구분선", "transposed": "행열 바꿈",
-                 "linear": "테두리만", "text_only": "풀어쓰기"}
+                 "linear": "테두리만", "text_only": "풀어쓰기",
+                 "numbered": "번호 체계"}
 
 
 def _min_trail(render_mode: str = "") -> list[RuleApplication]:
@@ -451,6 +452,31 @@ def two_col_mode() -> str:
     return "table_grid" if os.environ.get("TABLE_TWO_COL") == "grid" else "linear"
 
 
+# 지침 §3.1.1 (1) 은 표 점역 형식을 **순서가 있는 세 갈래**로 정한다.
+#   ① 한 행이 한 줄 폭에 들어가면 정렬 형태 그대로     → table_grid
+#   ② 원본 형태로 못 하면 가로로 두 칸씩 띄어 풀어 적기 → linear
+#   ③ 열 항목이 여러 단어·문장이라 ②로도 어려우면 번호 체계로 풀어 적기 → numbered
+# ③이 통째로 빠져 있었다(2026-09-02 신설). 문장이 든 표를 격자로 내면 한 줄이 폭을 크게
+# 넘어 §3.2.2 단축으로도 안 잡히고, 값 사이 두 칸 규칙 때문에 어디가 어느 열인지 흐려진다.
+_SENT_MIN_CHARS = int(os.environ.get("TABLE_SENTENCE_CHARS", "18"))
+
+
+def _is_sentence_table(cells: list[dict]) -> bool:
+    """열 항목이 '여러 단어와 문장'인가 — §3.1.1 (1)③ 의 조건.
+
+    머리행을 뺀 값 칸의 **중앙값 길이**로 본다. 낱말·수치 표는 짧고, 서술형 표는 길다.
+    평균이 아니라 중앙값을 쓰는 것은 한두 칸이 유난히 길어도 표 전체 성격이 바뀌지는
+    않기 때문이다.
+    """
+    vals = [str(c.get("text") or c.get("value") or "").strip()
+            for c in cells if c.get("row", 0) > 0 and c.get("col", 0) > 0]
+    vals = [v for v in vals if v]
+    if len(vals) < 3:
+        return False
+    import statistics
+    return statistics.median(len(v) for v in vals) >= _SENT_MIN_CHARS
+
+
 def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
     if table_structure:
         if rm := table_structure.get("render_mode"):
@@ -465,6 +491,8 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
                 return "transposed"
             if max_col >= 3 and _is_answer_summary(cells):
                 return "linear"        # 정답 요약표 — 위 주석(biz B019)
+            if max_col >= 3 and _is_sentence_table(cells):
+                return "numbered"      # §3.1.1 (1)③ — 아래 _is_sentence_table 주석
             # 3열 이상 = **격자형**(2026-08-06 판정 번복 — 원장 C-01a).
             # 종전 기본은 풀어쓰기였다. gold 실측이 뒤집었다 — dev-2027의 테두리 표 445개 중
             # 383개(86%)가 격자형 '행제목: 값  값' 형식이고, 우리 격자형 렌더러가 내는
@@ -560,16 +588,23 @@ _TABLE_DRAFT_MODES = [
     (2, "table_grid", "테두리+구분선"),
     (3, "transposed", "행열 바꿈"),
     (4, "linear", "테두리만"),
+    # §3.1.1 (1)③ — 열 항목이 여러 단어·문장인 표. 2026-09-02 신설.
+    (5, "numbered", "번호 체계"),
 ]
 
 
 def _print_drafts(table_text: str, render_mode: str) -> tuple[list[Draft], int]:
-    """표 묵자 초안 4안 + 기본 선택 번호. `|`가 없으면(비정형) 초안을 만들지 않는다."""
+    """표 묵자 초안 5안 + 기본 선택 번호. `|`가 없으면(비정형) 초안을 만들지 않는다.
+
+    5안 = §3.1.1 (1) 세 갈래(정렬 유지·가로 풀어쓰기·번호 체계) + 전치 + 테두리 변형.
+    번호 체계는 2026-09-02 신설 — 점자 쪽(table_braille) 초안과 개수·순서가 같아야 한다.
+    """
     if "|" not in (table_text or ""):
         return [], 0
     drafts = [Draft(option=n, text=print_layout(table_text, m), render_mode=m, label=lb)
               for n, m, lb in _TABLE_DRAFT_MODES]
-    sel = {"unfold": 0, "table_grid": 1, "transposed": 2, "linear": 3}.get(render_mode, 0)
+    sel = {"unfold": 0, "table_grid": 1, "transposed": 2, "linear": 3,
+           "numbered": 4}.get(render_mode, 0)
     return drafts, sel
 
 

@@ -489,6 +489,40 @@ def _record_lines(grid: list[list[str]]) -> list[str]:
     return out
 
 
+def _render_numbered(corrected_text: str) -> list[str]:
+    """지침 §3.1.1 (1)③ — 번호 체계를 활용하여 풀어 적는다.
+
+    규정 원문: "열 항목이 여러 단어와 문장으로 되어 있어 가로로 풀어 적을 경우 표를
+    이해하기 어렵다면 번호 체계를 활용하여 풀어 적는다."
+
+    형식은 규정이 정한 번호 체계를 그대로 쓴다(§3.3.2 (2) 위계 표기와 같은 갈래):
+    행마다 `1. 행제목` 을 3칸에서 적고, 그 아래 열마다 `1) 열제목: 값` 을 5칸에서 적는다.
+    번호는 **우리가 새로 매기는 것이 아니라** 규정이 요구하는 위계 표시다.
+
+    ⚠ 이 렌더러는 §3.1.1 의 **판정 순서 셋째**다 — ①정렬 유지 ②가로 풀어쓰기 로
+      안 될 때만 온다. 판정은 `table_opt._infer_render_mode` 가 한다.
+    """
+    rows = [ln for ln in corrected_text.splitlines() if ln.strip()]
+    if not rows:
+        return [_TBL_TOP, _TBL_BOT]
+    grid = [[c.strip() for c in r.split("|")] for r in rows]
+    heads = grid[0]
+    out: list[str] = [_TBL_TOP]
+    for i, row in enumerate(grid[1:], start=1):
+        rh = row[0].strip()
+        out.extend(_wrap_row(_translate(f"{i}. {rh}") if rh else _translate(f"{i}."),
+                             first_indent=2, cont_indent=4))
+        for j, cell in enumerate(row[1:], start=1):
+            name = heads[j].strip() if j < len(heads) else ""
+            val = cell.strip()
+            if not val:
+                continue
+            body = f"{j}) {name}: {val}" if name else f"{j}) {val}"
+            out.extend(_wrap_row(_translate(body), first_indent=4, cont_indent=6))
+    out.append(_TBL_BOT)
+    return out
+
+
 def _render_linear(corrected_text: str) -> list[str]:
     """2열 표 → 한 줄에 '키  값'. 3칸에서 시작하고 키와 값을 두 칸 띄운다.
         `  언어 문제  64.9`   (유도점·콜론 없음 — 코퍼스 확인)
@@ -895,6 +929,17 @@ def print_layout(corrected_text: str, mode: str) -> str:
     if not rows:
         return corrected_text
     out: list[str] = []
+    if mode == "numbered":                    # §3.1.1 (1)③ 번호 체계
+        heads = rows[0]
+        for i, r in enumerate(rows[1:], start=1):
+            out.append(f"{i}. {r[0].strip()}" if r and r[0].strip() else f"{i}.")
+            for j, cell in enumerate(r[1:], start=1):
+                v = cell.strip()
+                if not v:
+                    continue
+                nm = heads[j].strip() if j < len(heads) else ""
+                out.append(("  " + (f"{j}) {nm}: {v}" if nm else f"{j}) {v}")))
+        return "\n".join(out)
     if mode == "linear":                      # 키  값 (2열 표)
         for r in rows:
             out.append("  ".join(c for c in r if c) if len(r) > 1 else (r[0] if r else ""))
@@ -978,6 +1023,8 @@ class TableBraille:
         # 양끝 마커 ⠠⠄가 빠져 '그냥 한 줄 문장'으로 나갔고 rule_trail도 안 잡혔다.
         transposed_lines = _wt([_tn_transpose_line()] + _render_grid(_transpose_text(text)))
         linear_lines = _wt(_render_linear(text))
+        # §3.1.1 (1)③ 번호 체계 — 열 항목이 문장인 표의 정본 형식(2026-09-02 신설).
+        numbered_lines = _wt(_render_numbered(text))
         # 자동 경로가 전치했으면 그 점역자 주가 출력에 실린다 → 태그를 트레일 원본에 얹어
         # NLD-1.2.6이 emit되게 한다(_base_trail은 원본에 태그가 있을 때만 emit).
         unfold_src = text + ("\n" + _TN_SRC if any(_TN_SRC_MARK in ln for ln in unfold_lines) else "")
@@ -993,9 +1040,13 @@ class TableBraille:
                              + [make_rule("NLD-3.1.2")]),
             Draft(option=4, text=print_layout(text, "linear"), render_mode="linear", label="테두리만",
                   braille_lines=linear_lines, rule_trail=_base_trail(linear_lines, text)),
+            Draft(option=5, text=print_layout(text, "numbered"),
+                  render_mode="numbered", label="번호 체계", braille_lines=numbered_lines,
+                  rule_trail=_base_trail(numbered_lines, text) + [make_rule("NLD-3.1.1")]),
         ]
         # 기본 선택 = opt 추론 render_mode (없으면 풀어쓰기). 나머지는 대안 초안.
-        sel = {"unfold": 0, "table_grid": 1, "transposed": 2, "linear": 3}.get(opt.render_mode, 0)
+        sel = {"unfold": 0, "table_grid": 1, "transposed": 2, "linear": 3,
+               "numbered": 4}.get(opt.render_mode, 0)
         bo = BrailleOutput(
             element_id=opt.element_id,
             braille_lines=drafts[sel].braille_lines,

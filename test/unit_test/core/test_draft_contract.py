@@ -68,7 +68,7 @@ class TestModeA:
 
     def test_초안이_있다(self, mode_a: dict) -> None:
         """종전에는 여기가 0이었다 — 표 초안이 점역 단계에서만 만들어졌다."""
-        assert len(mode_a["text_list"][0]["drafts"]) == 4
+        assert len(mode_a["text_list"][0]["drafts"]) == 5
 
     def test_점자는_안_싣는다(self, mode_a: dict) -> None:
         for d in mode_a["text_list"][0]["drafts"]:
@@ -87,12 +87,12 @@ class TestModeC:
 
     def test_원문_목록에_묵자_초안(self, mode_c: dict) -> None:
         ds = mode_c["text_list"][0]["drafts"]
-        assert len(ds) == 4
+        assert len(ds) == 5
         assert all(d["contents"] == [] for d in ds)
 
     def test_점역_목록에_묵자와_점자(self, mode_c: dict) -> None:
         ds = mode_c["braille_text_list"][0]["drafts"]
-        assert len(ds) == 4
+        assert len(ds) == 5
         for d in ds:
             assert d["text"].strip(), "묵자가 비었다"
             assert d["contents"] and d["contents"][0].strip(), "점자가 비었다"
@@ -112,7 +112,7 @@ class TestDistinctLayouts:
 
     def test_표_초안_점자가_서로_다르다(self, mode_c: dict) -> None:
         cs = [d["contents"][0] for d in mode_c["braille_text_list"][0]["drafts"]]
-        assert len(set(cs)) == 4, "배치 4안의 점자가 겹친다"
+        assert len(set(cs)) == 5, "배치 5안의 점자가 겹친다"
 
     def test_전치안은_점역자_주를_밝힌다(self, mode_c: dict) -> None:
         t = [d for d in mode_c["braille_text_list"][0]["drafts"]
