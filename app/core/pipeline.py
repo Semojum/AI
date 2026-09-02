@@ -218,6 +218,15 @@ _EXTRACTION_REFUSAL_RES = (
                r"[^.]{0,40}\bOCR\b", re.IGNORECASE),
     # 모델 사과·자기소개 계열(문두 한정)
     re.compile(r"^\s*(?:I'?m\s+sorry|I\s+am\s+sorry|As\s+an\s+AI\b)", re.IGNORECASE),
+    # ★ 한국어 짝(2026-09-03). 위 패턴이 전부 영어라, 한국어로 답하는 모델이 쓴
+    #   해설문은 한 줄도 안 걸려 초안에 그대로 실렸다(FE QA S-7).
+    re.compile(r"(?:읽을\s*수\s*있는|판독\s*가능한|인식(?:할\s*수\s*있는|되는))\s*"
+               r"(?:글자|문자|텍스트|내용)[가이]?\s*(?:없|보이지\s*않)"),
+    re.compile(r"(?:텍스트|글자|내용)[가이]?\s*(?:전혀\s*)?(?:없습니다|없음|보이지\s*않습니다)"),
+    re.compile(r"(?:추출|판독|인식)(?:할\s*수\s*(?:없|가\s*없)|이\s*(?:불가|되지\s*않))"),
+    re.compile(r"^\s*(?:죄송(?:합니다|하지만)|저는\s*(?:AI|인공지능))"),
+    re.compile(r"^\s*이\s*(?:이미지|페이지|지면)에(?:는|서는)?\s*[^.\n]{0,20}"
+               r"(?:없습니다|없음|보이지\s*않습니다)"),
 )
 
 
@@ -443,6 +452,72 @@ async def _extract_via_models(
         return elements, w, h, "pixel"
 
 
+def _graft_geometry(llm_els: list[dict], mnr_els: list[dict]) -> int:
+    """MinerU 요소의 좌표를 LLM 추출 요소에 옮겨 붙인다.
+
+    고급 점역은 LLM 이 지면을 직접 읽어 **내용**은 좋지만 좌표가 없다. 좌표·그림
+    잘라내기·캡션 연결은 MinerU 몫이고 LLM 이 대신 못 준다(2026-09-03 대표 지시:
+    "고급 점역 켜도 MinerU 가 하는 역할은 모두 그대로"). 그래서 둘을 같이 돌리고
+    여기서 **내용은 LLM, 기하는 MinerU** 로 합친다.
+
+    짝짓기는 두 갈래다.
+      · 그림·표 → 글자가 없어 유사도가 안 먹는다. **같은 유형끼리 나온 차례**로 짝짓는다.
+      · 나머지 → 정규화한 앞 80자의 유사도(0.45 이상), 한 짝은 한 번만 쓴다.
+    못 찾은 요소는 좌표 없이 둔다(호출부가 (0,0,0,0) 으로 내보낸다).
+
+    ⚠ **더 넣었다가 뺀 것 둘**(정답 해설 1쪽 고정 입력으로 8조합 전수 측정, 2026-09-03).
+      LLM 이 문단을 합쳐 읽으니 MinerU 조각을 모아 좌표를 합집합으로 잡으면 나을 줄 알았다.
+      실측은 반대였다 — 조각에 양보하려고 유사도에서 부분일치를 건너뛰게 하자 58/77 이
+      51/77 로 떨어졌고, 합집합을 붙여도 54/77 까지밖에 안 돌아왔다. 합집합만 따로
+      켠 것은 이득이 정확히 0이다. 유사도가 이미 그 자리를 더 잘 잡고 있었다.
+    """
+    import difflib
+    import re as _re
+
+    def norm(t: str) -> str:
+        return _re.sub(r"[\s\W_]+", "", (t or ""))[:80]
+
+    used: set[int] = set()
+    hit = 0
+    # ① 그림·표는 유형별 등장 차례로 짝짓는다 — 내용이 비어 유사도가 안 먹는다.
+    _VISUAL = {"image", "table", "cartoon", "chart_graph", "formula"}
+    by_type: dict[str, list[int]] = {}
+    for j, m in enumerate(mnr_els):
+        if m.get("type") in _VISUAL:
+            by_type.setdefault(m["type"], []).append(j)
+    seen: dict[str, int] = {}
+    for el in llm_els:
+        t = el.get("type")
+        if t not in _VISUAL:
+            continue
+        k = seen.get(t, 0)
+        seen[t] = k + 1
+        cand = by_type.get(t, [])
+        if k < len(cand) and mnr_els[cand[k]].get("bbox"):
+            el["bbox"] = mnr_els[cand[k]]["bbox"]
+            used.add(cand[k])
+            hit += 1
+    # ② 나머지는 글자 유사도. 앞에서부터 훑되 이미 쓴 짝은 건너뛴다.
+    for el in llm_els:
+        if el.get("bbox"):
+            continue
+        a = norm(el.get("content"))
+        if len(a) < 4:
+            continue
+        best, best_r = -1, 0.45
+        for j, m in enumerate(mnr_els):
+            if j in used or not m.get("bbox"):
+                continue
+            r = difflib.SequenceMatcher(None, a, norm(m.get("content") or m.get("text"))).ratio()
+            if r > best_r:
+                best, best_r = j, r
+        if best >= 0:
+            el["bbox"] = mnr_els[best]["bbox"]
+            used.add(best)
+            hit += 1
+    return hit
+
+
 async def _fallback_text_layer(task: PageTask, doc_meta: DocumentMeta) -> tuple[list[dict], int, int]:
     """MinerU 실패/타임아웃 폴백: 텍스트레이어가 있으면 PyMuPDF로 본문만 추출.
 
@@ -538,12 +613,26 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     # ZERO 티어(텍스트 레이어가 멀쩡한 쪽)는 그대로 둔다. 거기서는 원본 글자를 그대로
     # 옮기는 편이 정확하고, 고급 점역이 노리는 것은 깨진 지면이다.
     advanced_used = ""
+    mnr: tuple[list[dict], int, int, str] | None = None
     if task.advanced_ai and doc_meta.routing_tier != "ZERO":
         from app.ai.parser import opus_fallback as _llm
         if _llm.advanced_available():
             img = _page_image_path(task)
             if img:
-                els, used = await asyncio.to_thread(_llm.extract_advanced, str(img))
+                # ★ MinerU 를 **끄지 않고 같이 돌린다**(2026-09-03 대표 지시). 고급 점역은
+                #   내용을 잘 읽지만 좌표를 못 준다 — 종전에는 이 경로에서 bbox 가 통째로
+                #   (0,0,0,0) 이라 FE 하이라이트가 아예 안 떴다. LLM 은 API·MinerU 는 GPU 라
+                #   서로 안 막으므로 나란히 돌리면 벽시계는 둘 중 긴 쪽이다.
+                llm_job = asyncio.create_task(
+                    asyncio.to_thread(_llm.extract_advanced, str(img))
+                )
+                mnr_job = asyncio.create_task(_extract_via_models(task, doc_meta))
+                els, used = await llm_job
+                try:
+                    mnr = await mnr_job
+                except Exception as exc:  # noqa: BLE001 — 좌표가 없을 뿐 내용은 살린다
+                    logger.warning("고급 점역 곁의 MinerU 실패(좌표 없이 진행): %s", exc)
+                    mnr = None
                 if els:
                     advanced_used = used
                     logger.info("고급 점역 추출 채택: %s %d요소 (page=%d)",
@@ -552,12 +641,20 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             logger.warning("고급 점역 추출 실패 — MinerU 로 되돌린다 (page=%d)", task.page_no)
 
     if advanced_used:
-        # LLM 추출에는 bbox 가 없다. 좌표계는 ZERO·폴백과 같은 규약("pixel")으로 적어 둔다.
-        method, bbox_space = "LLM_VISION", "pixel"
+        method = "LLM_VISION"
         elements = els
-        image_width, image_height = await asyncio.to_thread(
-            _page_size_px, task.pdf_data, task.page_no
-        )
+        if mnr and mnr[0]:
+            # 좌표는 MinerU 것을 쓴다 — 좌표계도 그쪽(norm1000)을 그대로 따라간다.
+            n = _graft_geometry(elements, mnr[0])
+            image_width, image_height, bbox_space = mnr[1], mnr[2], mnr[3]
+            logger.info("고급 점역 좌표 이식 %d/%d 요소 (page=%d)",
+                        n, len(elements), task.page_no)
+        else:
+            # MinerU 가 없으면 좌표도 없다. 좌표계는 종전 규약("pixel")으로 적어 둔다.
+            bbox_space = "pixel"
+            image_width, image_height = await asyncio.to_thread(
+                _page_size_px, task.pdf_data, task.page_no
+            )
     elif doc_meta.routing_tier == "ZERO":
         method, bbox_space = "TEXT_NATIVE", "pixel"
         blocks, image_width, image_height = await asyncio.to_thread(

@@ -60,7 +60,7 @@ def _read_as_pdf(file_path: str) -> bytes:
     sys.exit(1)
 
 
-async def run_direct(file_path: str, mode: str, job_id: str, load_models: bool = False, pipeline_timeout: float | None = None) -> None:
+async def run_direct(file_path: str, mode: str, job_id: str, load_models: bool = False, pipeline_timeout: float | None = None, advanced: bool = False) -> None:
     """서버 없이 pipeline.run() 직접 호출."""
     from app.schemas.task import PageTask
     from app.core import pipeline
@@ -79,6 +79,7 @@ async def run_direct(file_path: str, mode: str, job_id: str, load_models: bool =
         total_pages=1,
         pdf_data=pdf_data,
         mode=mode,
+        advanced_ai=advanced,
     )
 
     print(f"[local_runner] 직접 실행 — mode={mode} job_id={job_id} size={len(pdf_data):,} bytes")
@@ -142,6 +143,8 @@ def main() -> None:
         "--server", default=None,
         help="gRPC 서버 주소 (예: localhost:50051). 미지정 시 직접 실행."
     )
+    parser.add_argument("--advanced", action="store_true",
+                        help="고급 점역(advanced_ai) — MinerU 와 LLM 비전을 같이 돌린다")
     parser.add_argument(
         "--load-models", action="store_true",
         help="직접 실행 시 HCXT 모델 로드 (실제 GPU 모델 E2E 테스트용)"
@@ -165,6 +168,7 @@ def main() -> None:
             args.file, args.mode, job_id,
             load_models=args.load_models,
             pipeline_timeout=args.pipeline_timeout,
+            advanced=args.advanced,
         ))
 
 
