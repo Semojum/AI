@@ -122,6 +122,26 @@ _FENCE_RE = re.compile(r"```[a-zA-Z]*\n?|```")
 _DOLLAR_RE = re.compile(r"^\s*\${1,2}|\${1,2}\s*$")
 
 
+# 모델이 수식 옆에 붙여 쓴 해설 줄. 앞머리("주어진 수식을 분석하겠습니다.")로도, 꼬리
+# 목록("- `2 π`는 `2π`로 붙여 표기를 통일했습니다.")으로도 온다.
+# ★ **수식에 한국어 종결어미가 나올 일이 없다**는 것이 근거다. 실측(storage 산출물
+#   수식 출력 10,417개)에서 이 꼬리를 가진 줄은 47개뿐이고 74종 전수를 눈으로 봤을 때
+#   **정상 수식은 0개**였다. 본문 텍스트에는 이 규칙을 쓰면 안 된다 — 지문 대사가
+#   "…하겠습니다"로 끝나는 일이 흔하다.
+_COMMENT_LINE_RE = re.compile(r"(?:습니다|합니다|입니다|됩니다|바랍니다|하겠습니다)\s*[.。]?\s*$")
+
+
+def _drop_commentary(t: str) -> str:
+    """수식 출력에서 모델 해설 줄을 걷어 낸다. 다 걷히면 원본을 지킨다(빈 수식 금지)."""
+    if not t:
+        return t
+    kept = [ln for ln in t.splitlines() if not _COMMENT_LINE_RE.search(ln)]
+    if len(kept) == len(t.splitlines()):
+        return t                          # 걷을 게 없으면 원본을 그대로 (공백까지 보존)
+    out = "\n".join(kept).strip()
+    return out or t
+
+
 def _extract(resp: str) -> str:
     """프리필 스캐폴드·코드펜스·$$ 구분자를 제거하고 본문은 그대로 둔다(여러 줄 LaTeX 보존).
 
@@ -132,7 +152,7 @@ def _extract(resp: str) -> str:
     t = _FENCE_RE.sub("", t).strip()      # ```latex … ``` 펜스(언어태그 포함)
     t = t.strip("`").strip()              # 잔여 인라인 백틱(`…`)
     t = _DOLLAR_RE.sub("", t).strip()     # $$ … $$ 구분자
-    return t
+    return _drop_commentary(t)
 
 
 # ── 배치 교정 (2026-09-02) ────────────────────────────────────────────────
@@ -180,7 +200,9 @@ def _batch_parse(resp: str, n: int) -> list[str] | None:
             got[cur] = (got[cur] + "\n" + line.rstrip()).strip()
     if len(got) != n or set(got) != set(range(1, n + 1)):
         return None
-    return [got[i] for i in range(1, n + 1)]
+    # `[N]` 으로 시작하지 않는 줄은 위에서 앞 수식에 이어 붙는다 — 해설을 덧붙이면
+    # 그게 수식이 되어 버린다(FE QA: "~방식으로 처리했습니다"가 초안에 그대로 실림).
+    return [_drop_commentary(got[i]) for i in range(1, n + 1)]
 
 
 class FormulaOpt(BaseOpt):
