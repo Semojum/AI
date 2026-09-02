@@ -1703,6 +1703,13 @@ async def _run_pipeline(task: PageTask) -> dict:
 
     # PART 10: 레이아웃 조판 — 다운로드용 result.brf/txt 저장은 그대로 둔다.
     # 응답 contents는 조판본이 아니라 통 문자열이다(조판 가이드 §3, AI finalize 폐기).
+    # ★ 별책 참조 번호는 **조판 앞에서** 채운다(2026-09-02). flatten_elements 가 초안별
+    #   점자를 `flat` 에 굳혀 두므로, 그 뒤에 번호를 채우면 묵자에만 반영되고 점자 초안은
+    #   번호 없는 옛 문구로 남는다 — 점역사 화면의 두 창이 다른 말을 했다.
+    _order_map = {e.element_id: e.reading_order for e in layout_result.elements}
+    all_llm.sort(key=lambda o: _order_map.get(o.element_id, 1_000_000))
+    _number_volume_refs(all_llm, task.page_no, all_braille)
+
     flat: dict = {}
     if include_braille and all_braille:
         with stage("조판"):
@@ -1720,23 +1727,43 @@ async def _run_pipeline(task: PageTask) -> dict:
     )
 
 
-def _number_volume_refs(llm_outputs: list[LLMOutput], page_no: int) -> None:
+def _number_volume_refs(llm_outputs: list[LLMOutput], page_no: int,
+                        braille_outputs: list | None = None) -> None:
     """'별책 참조' 안의 번호를 페이지 단위로 채운다 — `그림 20-4 참조` (원장 C-28).
 
     번호는 정답 관행 그대로 **묵자쪽-그 쪽에서의 순번**이다(009 본책 85건 실측:
     p0004 → `그림 4-1`·`그림 4-2`, p0020 → `그림 20-1`~`20-4`). 순번은 시각 요소끼리만
     세므로 요소 하나만 봐서는 못 만든다 — 읽기 순서로 정렬된 뒤인 여기서 채운다.
     llm_outputs를 **제자리에서** 고친다(호출부가 같은 객체를 계속 쓴다).
+
+    ★ 번호는 **점자에도** 실어야 한다(2026-09-02). 종전에는 여기서 묵자 초안만 고쳤는데,
+    점역은 이 함수보다 먼저 끝나 있어 점자 쪽 초안은 번호 없는 옛 문구(`구조도 참조`)로
+    남았다 — 점역사 화면의 묵자 창과 점자 창이 서로 다른 말을 했다. 그래서 같은 자리의
+    점자 초안을 다시 점역해 맞춘다(참조 안은 한 줄짜리라 비용이 없다).
     """
+    from app.ai.braille.translator import translate_with_breaks
     from app.ai.llm.visual_drafts import LABELS, VOLREF_IDX, volume_ref_draft
 
+    bo_by_id = {b.element_id: b for b in (braille_outputs or [])}
     ordinal = 0
     for o in llm_outputs:
         for i, d in enumerate(o.drafts or []):
             if d.label != LABELS[VOLREF_IDX]:
                 continue
             ordinal += 1
-            o.drafts[i] = volume_ref_draft(d.type_label, f"{page_no}-{ordinal}")
+            nd = volume_ref_draft(d.type_label, f"{page_no}-{ordinal}")
+            o.drafts[i] = nd
+            bo = bo_by_id.get(o.element_id)
+            for j, bd in enumerate(bo.drafts or []) if bo else ():
+                if bd.label != LABELS[VOLREF_IDX]:
+                    continue
+                lines, breaks = translate_with_breaks(nd.text)
+                bo.drafts[j] = bd.model_copy(update={
+                    "text": nd.text, "braille_lines": lines, "break_points": breaks})
+                if bo.selected_idx == j:
+                    bo.braille_lines = lines
+                    bo.break_points = breaks
+                break
             break
 
 
@@ -1863,7 +1890,7 @@ def _build_response(
     # 그대로 내보내면 본문 위 그림 등에서 순서가 뒤바뀐다 — FE가 order로 렌더 가능하도록.)
     _order_of = {e.element_id: e.reading_order for e in layout_result.elements}
     llm_outputs = sorted(llm_outputs, key=lambda o: _order_of.get(o.element_id, 1_000_000))
-    _number_volume_refs(llm_outputs, task.page_no)
+    # 번호 채우기는 조판 앞에서 이미 끝났다(위 _number_volume_refs 주석 참조).
 
     # PART 11: 품질 판정 — C/R 감지 후 status 결정 (COMPLETED|NEEDS_REVIEW|BLOCKED)
     from app.ai.quality.quality_checker import QualityChecker
