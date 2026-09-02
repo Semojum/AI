@@ -1081,6 +1081,15 @@ def _decode_line(s: str) -> str:
             out.append(_MATH_REV_SINGLE[ch])
             i += 1
             continue
+        # 낱자 폴백 — 여기까지 왔다는 건 **한글로도 기호로도 안 풀렸다**는 뜻이다.
+        # 그 자리가 로마자 낱자 점형이면 낱자로 낸다. 수식 속 변수(`b=2`·`k=1`)가
+        # 미지셀로 나가던 자리다 — 한글은 이미 실패했으므로 잃을 것이 없다.
+        # ⚠ 토큰을 통째로 수식으로 올리는 안은 **기각했다**(실측 이득 723 · 손해 1,199).
+        #   `수컷(2n=12+XY)의` 같은 한글 섞인 줄이 통째로 로마자로 뒤집혔다.
+        if os.environ.get("BRAILLE_ALPHA_FALLBACK", "1") == "1" and ch in _ALPHA_REV:
+            out.append(_ALPHA_REV[ch])
+            i += 1
+            continue
         # 못 푸는 셀 → 코드포인트 표시(정직)
         out.append(f"⟨{ord(ch):04X}⟩")
         i += 1
