@@ -567,7 +567,9 @@ _CMD_ALIAS = {
     r"\subset": "⊂", r"\supset": "⊃", r"\cup": "∪", r"\cap": "∩",
     r"\angle": "∠", r"\triangle": "△", r"\square": "□",
     r"\cdots": "⋯", r"\dots": "⋯", r"\ldots": "⋯",
-    r"\bullet": "·", r"\perp": "⊥", r"\parallel": "∥", r"\sslash": "∥",
+    # ★ `\bullet` 은 곱셈점 `·` 이 아니라 **검정동그라미 ∙**(제15항 7호 `_4`)다.
+    #   `·`(제2항 붙임)로 펴면 규정 점형이 달라진다.
+    r"\bullet": "∙", r"\perp": "⊥", r"\parallel": "∥", r"\sslash": "∥",
     r"\circ": "∘",                            # 합성 ∘ (제15항 5호 _0) — 각도 ^∘는 별도 선처리
     r"\fallingdotseq": "≒", r"\doteq": "≒",
     r"\neg": "¬", r"\lnot": "¬",
@@ -981,13 +983,25 @@ def _stage0b_nth_root(result: str) -> str:
       선점된다(2026-07-19 정정). 또한 _needs_wrap이 ASCII 괄호를 보고 판정할 수 있는
       **유일한 단계**다(1단계 이후 호출자들은 점형 괄호를 넘기게 된다).
     """
-    def _sqrt_n_replace(m: re.Match) -> str:
-        n_part = convert_latex(m.group(1))
-        inner  = convert_latex(m.group(2))
-        inner_w = _wrap_ins(inner) if _needs_wrap(m.group(2)) else inner
-        return f"{n_part}{_SQRT_N_IND}{inner_w}"
-
-    return _SQRT_N_RE.sub(_sqrt_n_replace, result)
+    # ★ 정규식(`[^{}]*`)으로는 **중첩 중괄호를 못 읽는다** — `\sqrt[3]{x^{3}}` 과
+    #   `\sqrt[m]{\sqrt[n]{a}}` 가 안 잡혀 대괄호가 점형 ⠷⠄…⠠⠾ 로 그대로 나갔다.
+    #   제곱근(_stage2c_sqrt)과 같은 방식으로 괄호를 세어 인자를 떼어 낸다.
+    out: list[str] = []
+    i = 0
+    while i < len(result):
+        if result[i:i + 6] == "\\sqrt[":
+            close = result.find("]", i + 6)
+            if close > 0 and result[close + 1:close + 2] == "{":
+                raw, after = _extract_brace_content(result, close + 1)
+                n_part = convert_latex(result[i + 6:close])
+                inner = convert_latex(raw)
+                out.append(n_part + _SQRT_N_IND
+                           + (_wrap_ins(inner) if _needs_wrap(raw) else inner))
+                i = after
+                continue
+        out.append(result[i])
+        i += 1
+    return "".join(out)
 
 
 def _stage1_math_brackets(result: str) -> str:
@@ -1415,6 +1429,8 @@ _LATEX_SIMPLE: dict[str, str] = {
     "\\nRightarrow": "⠨⠒⠒⠕",  # ⇏ (제61항 .33O)
     "\\rightleftarrows": "⠪⠶⠕",  # ⇄ (제61항 [7O)
     "\\nexists":  "⠨⠨⠢",    # ∄ (제61항 ..5)
+    "\\circledcirc": "⠸⠴⠴",  # ⦾ 겹동그라미 (제15항 6호 _00)
+    "\\bullet":   "⠸⠲",     # ∙ 검정동그라미 (제15항 7호 _4)
     "\\approx":   "⠈⠔⠈⠔", # ≈ 이중물결 (제29항 @9@9, 앞뒤 한 칸)
     "\\equiv":    "⠶⠶",   # ≡ 합동 (기하 제43항 77=⠶⠶ — ⠛은 폰트 g 오독)
     "\\sim":      "⠈⠔",   # ∼ 관계·분포 (제34항 @9). 닮음 ∽(⠠⠄)는 유니코드 경유
@@ -1579,7 +1595,8 @@ def _stage11c_math_context_symbols(result: str) -> str:
     # 부정 부등호 유니코드(제4항 3·5·7·9호) — LaTeX 명령과 같은 점형으로 편다.
     for _u, _c in (("≯", "⠨⠢⠢"), ("≮", "⠨⠔⠔"), ("≱", "⠨⠲⠲"), ("≰", "⠨⠖⠖"),
                    ("≅", "⠈⠔⠒⠒"), ("≁", "⠨⠈⠔"), ("⊢", "⠸⠒"), ("⊣", "⠈⠸⠒"),
-                   ("⊨", "⠘⠸⠒"), ("⇏", "⠨⠒⠒⠕"), ("⇄", "⠪⠶⠕"), ("∄", "⠨⠨⠢")):
+                   ("⊨", "⠘⠸⠒"), ("⇏", "⠨⠒⠒⠕"), ("⇄", "⠪⠶⠕"), ("∄", "⠨⠨⠢"),
+                   ("⦾", "⠸⠴⠴"), ("∙", "⠸⠲")):
         result = result.replace(_u, _c)
     result = result.replace("∴", _THEREFORE)
     # 숫자 사이 쉼표(제41항): ⠂로 적고 **뒤 숫자에 수표를 다시 적지 않는다**(제43항).
@@ -1720,6 +1737,16 @@ _NOT_NEG = "⠨"
 _NOT_RE = re.compile(r"\\not\s*(\\[A-Za-z]+|.)")
 
 
+# `5{,}700{,}000` — LaTeX 에서 **자릿점**을 쓰는 표준 표기다(중괄호가 쉼표 뒤 여백을
+# 없앤다). 우리는 이걸 못 읽어 자릿점이 곱셈점 ⠐ 으로 나갔다(규정 제41항은 ⠂).
+_BRACE_COMMA_RE = re.compile(r"\{\s*,\s*\}")
+
+
+def _stage0f_brace_comma(latex: str) -> str:
+    r"""0f. `{,}` → 평범한 쉼표. 자릿점 규칙(제41·43항)이 그 뒤를 받는다."""
+    return _BRACE_COMMA_RE.sub(",", latex)
+
+
 def _stage0e_not_prefix(latex: str) -> str:
     r"""0e. `\not X` → 부정표 + X (제34·60항)."""
     if "\\not" not in latex:
@@ -1836,6 +1863,7 @@ def convert_latex(latex: str) -> str:
     result = _normalize_latex_input(latex)      # 0a. MinerU/마크다운 입력 정규화
 
     result = _stage0c_bare_args(result)             # 0c. 중괄호 없는 한 글자 인자
+    result = _stage0f_brace_comma(result)           # 0f. `{,}` 자릿점 표기(제41항)
     result = _stage0e_not_prefix(result)            # 0e. \not 부정 접두(제34·60항)
     result = _stage0d_recurring(result)             # 0d. 순환소수·소수점(제8항)
     result = _stage0b_nth_root(result)              # 0b. \sqrt[n]{} — 대괄호 치환보다 먼저
