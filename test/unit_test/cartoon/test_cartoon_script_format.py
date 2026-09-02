@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from uuid import uuid4
 
 from app.ai.llm.cartoon_opt import CartoonOpt, _caption_items
@@ -81,7 +82,10 @@ class TestScriptFormat:
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
         lines = opt.corrected_text.splitlines()
         assert len(opt.line_indents) == len(lines)          # 종전엔 어긋났다(head 안 줄바꿈)
-        got = dict(zip(lines, opt.line_indents))
+        # ★ 2026-09-03 — 점역자 주는 **장면까지**만 감싸고 대사는 밖으로 나간다(#408).
+        #   태그는 조판이 떼므로 들여쓰기 판정에서는 벗겨 놓고 본다.
+        _bare = [re.sub(r"<!/?[^>]+>", "", ln) for ln in lines]
+        got = dict(zip(_bare, opt.line_indents))
         assert got["장면 1"] == 4        # §5.3.3(1) "5칸에서 적는다"
         assert got["학생: 선생님, 농업의 사회적 역할이 무엇인가요?"] == 2   # (2) "3칸"
 
