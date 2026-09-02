@@ -343,10 +343,24 @@ _ENG_MAX = max((len(k) for k in list(_ENG_ANY) + list(_ENG_INIT) + list(_ENG_FIN
                default=1)
 
 
+# 하단 약자(EBAE lower signs) 중 **낱말의 처음이나 끝에 올 수 없는 것들**.
+# 그 조건을 안 걸면 뒤따르는 문장부호가 약자로 새어 나간다: `Ⅲ, Ⅳ`(⠴⠠⠠⠊⠊⠊⠂ ⠠⠠⠊⠧⠲)
+# 의 쉼표 ⠂ 가 'ea' 로 읽혀 `IIIEA IV` 가 나왔다. 뒤 칸이 글자가 아니면 약자가 아니다.
+# ⚠ `in`(⠔)·`en`(⠢)은 **뺀다** — EBAE에서 낱말 끝에 올 수 있다(`main`). 넣었더니
+#   로마자표 없는 영어 줄 판정이 깨졌다(`the main reason` 단위 테스트).
+_ENG_LOWER_SIGNS = frozenset("⠂⠆⠒⠲⠖⠶")
+
+
 def _eng_group_at(s: str, j: int, at_word_start: bool) -> tuple[str, int] | None:
     """s[j]에서 시작하는 영어 약자 → (글자, 소비한 셀 수). 없으면 None."""
     for ln in range(min(_ENG_MAX, len(s) - j), 0, -1):
         seg = s[j:j + ln]
+        # 하단 약자는 뒤에 글자가 이어질 때만 약자다(위 주석). ⠲(dd/dis)는 종료표와
+        # 같은 셀이라 호출부가 먼저 소비하므로 여기까지 오지 않는다.
+        if len(seg) == 1 and seg in _ENG_LOWER_SIGNS:
+            nxt = s[j + 1] if j + 1 < len(s) else ""
+            if nxt not in _ALPHA_REV and nxt not in _ENG_ANY and nxt != _CAPITAL:
+                continue
         if at_word_start and seg in _ENG_INIT:
             return _ENG_INIT[seg], ln
         if not at_word_start and seg in _ENG_FINAL:
