@@ -218,6 +218,9 @@ _SPEAKER_LINE = re.compile(
     r"^\s*(?:학생\s*[A-Z가-힣]?|선생님|사회자|연구자|가이드|진행자|기자|아나운서|발표자"
     r"|남학생|여학생|남성|여성|후보자?\s*\d+|[갑을병정무]|교사|손님|점원|의사|환자)\s*[::]")
 
+# 장면 표시 — 원본에 없는 점역자 표시라 저마다 따로 주로 감싼다(§5.3.3(1)).
+_SCENE_LINE = re.compile(r"^장면\s*\d+\s*$")
+
 _PREFILL = "[개조식]\n"
 
 _SECTION_RE = re.compile(r"\[(제목|개조식|줄글)\]\s*(.*)")
@@ -454,8 +457,15 @@ def _outline_text_indents(
         #   자리인데(NLD-1.2.6), 그림 속 대사는 원본에 있는 말이라 점역자가 지어낸 게
         #   아니다. gold 실측: `화자: 발화` 줄이 주 **밖 49 : 안 21**(70%가 밖).
         #   종전에는 설명 전체를 감싸서 대사까지 주 안에 들어갔다.
+        # 장면 표시(`장면 1`)는 원본 만화에 글자로 없고 점역자가 붙인 것이라 **저마다
+        # 따로** 주로 감싼다(정답 도서 형식). 그 사이 대사는 주 밖 본문이다.
+        for k, ln in enumerate(lines):
+            if k > tn_from and _SCENE_LINE.match(ln.strip()):
+                lines[k] = f"<!{_TAGS.TN}>{ln}<!/{_TAGS.TN}>"
         tn_to = len(lines) - 1
-        while tn_to > tn_from and _SPEAKER_LINE.match(lines[tn_to].strip()):
+        while tn_to > tn_from and (
+                _SPEAKER_LINE.match(lines[tn_to].strip())
+                or lines[tn_to].startswith(f"<!{_TAGS.TN}>")):
             tn_to -= 1
         lines[tn_from] = f"<!{_TAGS.TN}>{lines[tn_from]}"
         lines[tn_to] = f"{lines[tn_to]}<!/{_TAGS.TN}>"
