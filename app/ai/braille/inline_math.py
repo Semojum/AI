@@ -119,7 +119,34 @@ def normalize(span: str) -> str:
 _ENUM_HEAD_RE = re.compile(r"^(\(\s*\d+\s*\)|\d+\s*[.)]|[①-⑳]|[.,])\s*")
 
 
+# ★ `\text{한글}` 이 든 LaTeX 은 **통째로 한 구간**이다(2026-09-03).
+#   _ATOM 에 한글이 없어서 `\text{득표율}` 이 `\text{` 와 `득표율}` 로 갈렸고,
+#   그 결과 수식이 조각나 `\%` · 닫는 중괄호가 그대로 점역되고 `\times` 가 한글 약자
+#   '연'으로 나갔다(실측: `득표율} (\%  concc  득표수  유효 투표수  연100`).
+#   LaTeX 명령이 든 식은 여기서 먼저 통째로 잡아 쪼개지지 않게 한다.
+_LATEX_SPAN_RE = re.compile(
+    r"\\(?:text|mathrm|mathbf|frac|dfrac|sqrt|times|div|le|ge|neq|pm|cdot|sum|int|lim)\b"
+    r"[^\n]*?(?=\s*$|\s{2,}|$)")
+
+
+def _wrap_latex_spans(seg: str) -> str:
+    """LaTeX 명령이 든 구간을 통째로 감싼다. 못 잡으면 아래 토큰 규칙이 이어받는다."""
+    def repl(m: re.Match) -> str:
+        core = m.group().strip()
+        if not core or "<!수식>" in core:
+            return m.group()
+        return f"<!수식>{normalize(core)}<!/수식>"
+
+    return _LATEX_SPAN_RE.sub(repl, seg)
+
+
 def _wrap_segment(seg: str) -> str:
+    # LaTeX 명령이 보이면 그쪽을 먼저 통째로 잡는다 — 한글에서 안 끊긴다.
+    if "\\" in seg or "\\text" in seg:
+        wrapped = _wrap_latex_spans(seg)
+        if "<!수식>" in wrapped:
+            return wrapped
+
     def repl(m: re.Match) -> str:
         span = m.group()
         core = span.strip()
