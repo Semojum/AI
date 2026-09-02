@@ -477,6 +477,23 @@ def _decode_number(s: str, i: int) -> tuple[str, int]:
     return "".join(out), j
 
 
+# 수식 토큰 꼬리가 순수 한글인가 — 맞으면 그 부분은 한글 디코더 몫이다.
+# 한 음절 이상이고, 한글·마침표·쉼표 말고는 아무것도 안 나와야 한다(미지셀 ⟨…⟩ 포함 금지).
+_KOR_TAIL_OK = re.compile(r"^[가-힣]+[.,]?$")
+
+
+def _korean_tail(tok: str, at: int) -> str | None:
+    """tok[at:] 가 통째로 한글로 풀리면 그 문자열, 아니면 None."""
+    rest = tok[at:]
+    if len(rest) < 2:
+        return None
+    try:
+        d = _decode_line(rest)
+    except Exception:                                # noqa: BLE001
+        return None
+    return d if _KOR_TAIL_OK.match(d) else None
+
+
 def _decode_math_token(tok: str) -> str:
     """수식 토큰을 수학 의미로 디코드 — 구조·연산자 셀을 ^ _ √ × + 등으로 복원.
 
@@ -509,6 +526,13 @@ def _decode_math_token(tok: str) -> str:
             out.append(_MATH_REV_SINGLE[c])
             i += 1
             continue
+        # ★ 수식 토큰의 **꼬리가 한글**이면 거기서 한글 디코더에 넘긴다(2026-09-03).
+        #   gold 는 `2분의1이다.` 를 공백 없이 한 토큰으로 적는데, 종전에는 뒤 한글까지
+        #   로마자로 읽어 `2분의1oi∋` 가 됐다(⠕⠊=이다 → o,i · ⠲=마침표 → ∋).
+        #   꼬리 전체가 한글 음절로 깨끗이 풀릴 때만 넘긴다 — 변수 o·i 를 잃지 않는다.
+        if i and (tail := _korean_tail(tok, i)):
+            out.append(tail)
+            break
         if c in _ALPHA_REV:                          # 변수(로마자)
             out.append(_ALPHA_REV[c])
             i += 1
@@ -841,6 +865,12 @@ def _decode_line_router(line: str, math: bool) -> str:
     return _join_num_hangul(_restore_wrap_parens("".join(pieces)))
 
 
+# 페이지행 걸침 접두 토큰 — 낱자 하나 + 수표 + 숫자로 **토큰이 끝나야** 한다.
+# ⚠ 숫자 셀은 유니코드에서 **연속 범위가 아니다**(1=⠁ 2=⠃ 3=⠉ 4=⠙ 5=⠑ 6=⠋ 7=⠛
+#   8=⠓ 9=⠊ 0=⠚). `[⠁-⠚]` 로 쓰면 ⠈·⠕ 같은 한글 자모까지 들어와 `운6기`가 `g6기`로 깨진다.
+_CONT_PREFIX_RE = re.compile(r".⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]+")
+
+
 def _decode_line(s: str) -> str:
     out: list[str] = []
     i, n = 0, len(s)
@@ -850,6 +880,16 @@ def _decode_line(s: str) -> str:
         # 공백(점자/일반)
         if ch == _SPACE_CELL or ch == " ":
             out.append(" ")
+            i += 1
+            continue
+        # 페이지행 걸침 접두 알파벳 — 지침 1장2절2-2(3). 원본 한 쪽이 여러 점자 면에
+        # 걸치면 두 번째 면부터 원본 쪽 번호 **앞에** 로마자표 없이 a·b·c… 를 적는다
+        # (braille-assist `_alpha` 와 대칭). 종전에는 이 낱자가 어느 표에도 없어
+        # `⟨2803⟩4` 로 샜다 — 실측 1,500쪽에 2,467건으로 미지셀 1위였다.
+        # ★ **토큰 전체가 `낱자 + 수표 + 숫자`일 때만** 본다. 줄머리+수표만 보면
+        #   `운6기`(⠛⠼⠋⠈⠕)의 ⠛ 를 g 로 읽어 한글이 깨진다(회귀 테스트가 잡았다).
+        if i == 0 and ch in _ALPHA_REV and _CONT_PREFIX_RE.fullmatch(s):
+            out.append(_ALPHA_REV[ch])
             i += 1
             continue
         # 점역자 주 마커
