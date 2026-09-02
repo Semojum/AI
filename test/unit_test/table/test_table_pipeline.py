@@ -303,7 +303,7 @@ class TestTableRenderModes:
         body = [l for l in lines[1:-1] if l.strip(" ⠀")]
         assert body and all(l.startswith("⠀⠀") for l in body), f"항목이 3칸이 아니다: {body!r}"
         assert not any("⠠⠄" in l for l in lines), "점역자 주 접두가 남았다"
-        assert len(out.drafts) == 4, f"초안이 4개가 아니다: {len(out.drafts)}"
+        assert len(out.drafts) == 5, f"초안이 5개가 아니다: {len(out.drafts)}"
 
     def test_2열_구분선은_머리행이_있을_때만(self) -> None:
         """구분선은 "열 제목과 열 항목 사이"다 — 열 제목이 없으면 넣지 않는다(원장 C-30).

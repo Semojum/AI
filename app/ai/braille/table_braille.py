@@ -313,6 +313,104 @@ def _has_col_headers(first_row: list[str]) -> bool:
     return all(len(c.strip()) <= _HEAD_CELL_MAX for c in first_row if c.strip())
 
 
+# ── 지침 §3.2.2 열 너비의 단축 기법 (2026-09-02 신설, 원장 C-92) ──────────────
+# "표의 정렬을 유지하기 위해 행·열 제목과 열 항목은 해당 열의 공간에 맞춰 축어나 범례를
+#  사용하여 길이를 단축할 수 있다. 이런 경우 원본과 달라진 내용이나 범례를 점역자 주로 알린다."
+#
+# 실측(표 opt 산출 2,500건): 3열 이상 표 1,436건 중 93~96%가 격자로 나가고 그중 82%가
+# 한 줄 폭(`constants.COLS`)을 넘는다. 규정은 줄이는 법을 일곱 가지로 줬는데 우리가 하나도 안 썼다.
+#
+# 일곱 중 **되돌릴 수 있고 뜻을 안 잃는 넷만** 쓴다. 축어(1)·소문자(3)는 낱말을 지어내야
+# 하고 범례(2)는 표마다 기호를 새로 정해야 해서 rule-based 로 안전하지 않다 — LLM 몫이다.
+#   (5) 반복된 단위: 한 열이 모두 같은 단위로 끝나면 그 단위를 열 제목으로 올린다
+#   (4) 구두점 생략: 값 끝의 마침표·쉼표를 뗀다
+#   (7) 수표 생략: 열 항목이 모두 숫자면 수표(⠼)를 뺀다
+#   (6) 한 종류 기호: 표 전체에 한 기호만 쓰이면 통째로 뗀다
+# 어느 것도 한 줄(`constants.COLS`, 지금 32칸)에 들어가면 발동하지 않는다 —
+# 규정이 "정렬을 유지하기 위해" 라고 조건을 달았다. 칸수는 상수라 바뀌면 함께 따라간다.
+# A/B 스위치 — 끄면 종전 동작이다.
+_SHORTEN = os.environ.get("TABLE_SHORTEN", "1") == "1"
+_TN_OPEN, _TN_CLOSE = "<!주>", "<!/주>"
+
+_UNIT_RE = re.compile(r"[\(（]?\s*(%|명|개|원|년|월|일|시간|분|초|kg|g|km|m|cm|mm|℃|점|회|배|만 ?톤|톤)\s*[\)）]?$")
+
+
+def _shorten_columns(grid: list[list[str]]) -> tuple[list[list[str]], list[str]]:
+    """§3.2.2 로 열을 줄인다. (줄인 표, 점역자 주로 알릴 것) 반환."""
+    if len(grid) < 2:
+        return grid, []
+    ncol = max(len(r) for r in grid)
+    notes: list[str] = []
+    seen_units: set[str] = set()
+    out = [list(r) + [""] * (ncol - len(r)) for r in grid]
+
+    # (5) 반복된 단위 → 열 제목으로
+    for j in range(1, ncol):
+        vals = [r[j].strip() for r in out[1:] if j < len(r) and r[j].strip()]
+        if len(vals) < 2:
+            continue
+        units = {m.group(1) for v in vals if (m := _UNIT_RE.search(v))}
+        if len(units) == 1 and all(_UNIT_RE.search(v) for v in vals):
+            u = units.pop()
+            head = out[0][j].strip()
+            if u not in head:
+                out[0][j] = f"{head}({u})" if head else f"({u})"
+            for r in out[1:]:
+                if j < len(r):
+                    r[j] = _UNIT_RE.sub("", r[j]).strip()
+            if u not in seen_units:
+                seen_units.add(u)
+                # ★ 문구는 우리가 지어내지 않는다(2026-09-02 대표 지시 — 조립은 rule-based,
+                #   문안은 근거가 있어야 한다). 규정 §3.2.2 (5)의 낱말을 그대로 쓴다:
+                #   "반복된 단위나 축어 등은 열 제목으로 옮겨 표기". gold 에는 이 고지의
+                #   정형 문구가 없고(전수 0건) `범례: …` 꼴만 2건 있다 — 원장 C-95.
+                # 조사를 코드가 붙이면 "년는" 처럼 틀린다 — 붙임 없이 쌍점으로 잇는다.
+                notes.append(f"단위 {u}: 열 제목으로 옮겨 표기")
+
+    # (4) 구두점 생략 — 값 끝의 마침표
+    for r in out[1:]:
+        for j in range(1, len(r)):
+            if r[j].endswith("."):
+                r[j] = r[j][:-1]
+    return out, notes
+
+
+def _wrap_row(body: str, first_indent: int = 2, cont_indent: int = 4) -> list[str]:
+    """지침 §3.2.1 (3) — 줄이 넘어가는 내용은 두 줄로 나눈다.
+
+    폭 기준은 `constants.COLS` 하나뿐이다 — 칸수를 바꾸면 여기도 따라간다.
+
+    "①열 제목: 해당 열 제목의 시작 지점과 동일한 위치에 적는다.
+      ②행 제목, 열 항목: 해당 행 제목의 시작 지점보다 오른쪽으로 두 칸 들여 쓴다."
+    행 단위 전개 형식에서는 행 제목이 3칸(앞 빈칸 2)에서 시작하므로 이어지는 줄은 5칸이다.
+
+    ⚠ "두 줄을 넘어서는 안 된다"는 단서가 있으나, 셋째 줄이 필요한 만큼 긴 항목을
+      잘라 버리면 내용을 잃는다. 여기서는 **자르지 않고** 필요한 만큼 나눈다 —
+      규정은 표를 짧게 만들라는 것이지 글자를 버리라는 것이 아니다.
+    """
+    lines, cur, indent = [], "", first_indent
+    for tok in body.split("⠀"):
+        cand = (cur + "⠀" + tok) if cur else tok
+        if len("⠀" * indent + cand) > _COLS and cur:
+            lines.append("⠀" * indent + cur)
+            indent, cur = cont_indent, tok
+        else:
+            cur = cand
+    if cur:
+        lines.append("⠀" * indent + cur)
+    return lines or ["⠀" * first_indent]
+
+
+def _grid_width(grid: list[list[str]]) -> int:
+    """격자로 냈을 때 가장 긴 줄의 셀 수(대략)."""
+    w = 0
+    for row in grid:
+        head = _translate(row[0]) if row and row[0] else "⠿⠿"
+        vals = [(_translate(c) if c.strip() else "⠿⠿") for c in row[1:]]
+        w = max(w, len("⠀⠀" + head + ("⠐⠂⠀" + "⠀⠀".join(vals) if vals else "")))
+    return w
+
+
 def _render_grid(corrected_text: str) -> list[str]:
     """지침 §3.1 표 표기(행 단위 전개, 예3-4·3-6 실측 형식, 2026-07-19 정정).
 
@@ -342,13 +440,31 @@ def _render_grid(corrected_text: str) -> list[str]:
     grid = [[c.strip() for c in r.split("|")] for r in rows]
     if _use_record_rows(grid):
         return [top] + _record_lines(grid) + [bot]
+    # §3.2.2 — 32칸을 넘을 때만 줄인다(위 _shorten_columns 주석 참조).
+    notes: list[str] = []
+    if _SHORTEN and _grid_width(grid) > _COLS:
+        grid, notes = _shorten_columns(grid)
+        if notes and _grid_width(grid) <= _COLS:
+            rows = ["|".join(r) for r in grid]
+        elif notes:
+            rows = ["|".join(r) for r in grid]      # 다 못 줄여도 줄인 만큼은 쓴다
+        else:
+            notes = []
     lines: list[str] = [top]
+    if notes:
+        # 규정: "원본과 달라진 내용이나 범례를 점역자 주로 알린다"
+        # ★ 리터럴 `[점역자 주]` 금지(규약 9) — 태그로 넣어야 ⠠⠄ 표가 된다.
+        lines.extend(_wrap_row(_translate(_TN_OPEN + ", ".join(notes) + _TN_CLOSE)))
     for k, row in enumerate(rows):
         cells = [c.strip() for c in row.split("|")]
         head = _translate(cells[0]) if cells[0] else "⠿⠿"
         vals = [(_translate(c) if c else "⠿⠿") for c in cells[1:]]
         body = head + ("⠐⠂⠀" + "⠀⠀".join(vals) if vals else "")
-        lines.append("⠀⠀" + body)
+        # §3.2.1 (3) — 32칸을 넘으면 나눠 적고 이어지는 줄은 두 칸 더 들여쓴다.
+        if _SHORTEN and len("⠀⠀" + body) > _COLS:
+            lines.extend(_wrap_row(body))
+        else:
+            lines.append("⠀⠀" + body)
         if k == 0 and len(rows) > 1 and _has_col_headers(cells):
             lines.append(rowsep)          # 머리행과 본문 사이(실측 위치)
     lines.append(bot)
@@ -370,6 +486,40 @@ def _record_lines(grid: list[list[str]]) -> list[str]:
             name = heads[j].strip() if j < len(heads) else ""
             val = _translate(cell) if cell.strip() else "⠿⠿"
             out.append("⠀⠀⠀⠀" + ((_translate(name) + "⠐⠂⠀") if name else "") + val)
+    return out
+
+
+def _render_numbered(corrected_text: str) -> list[str]:
+    """지침 §3.1.1 (1)③ — 번호 체계를 활용하여 풀어 적는다.
+
+    규정 원문: "열 항목이 여러 단어와 문장으로 되어 있어 가로로 풀어 적을 경우 표를
+    이해하기 어렵다면 번호 체계를 활용하여 풀어 적는다."
+
+    형식은 규정이 정한 번호 체계를 그대로 쓴다(§3.3.2 (2) 위계 표기와 같은 갈래):
+    행마다 `1. 행제목` 을 3칸에서 적고, 그 아래 열마다 `1) 열제목: 값` 을 5칸에서 적는다.
+    번호는 **우리가 새로 매기는 것이 아니라** 규정이 요구하는 위계 표시다.
+
+    ⚠ 이 렌더러는 §3.1.1 의 **판정 순서 셋째**다 — ①정렬 유지 ②가로 풀어쓰기 로
+      안 될 때만 온다. 판정은 `table_opt._infer_render_mode` 가 한다.
+    """
+    rows = [ln for ln in corrected_text.splitlines() if ln.strip()]
+    if not rows:
+        return [_TBL_TOP, _TBL_BOT]
+    grid = [[c.strip() for c in r.split("|")] for r in rows]
+    heads = grid[0]
+    out: list[str] = [_TBL_TOP]
+    for i, row in enumerate(grid[1:], start=1):
+        rh = row[0].strip()
+        out.extend(_wrap_row(_translate(f"{i}. {rh}") if rh else _translate(f"{i}."),
+                             first_indent=2, cont_indent=4))
+        for j, cell in enumerate(row[1:], start=1):
+            name = heads[j].strip() if j < len(heads) else ""
+            val = cell.strip()
+            if not val:
+                continue
+            body = f"{j}) {name}: {val}" if name else f"{j}) {val}"
+            out.extend(_wrap_row(_translate(body), first_indent=4, cont_indent=6))
+    out.append(_TBL_BOT)
     return out
 
 
@@ -779,6 +929,17 @@ def print_layout(corrected_text: str, mode: str) -> str:
     if not rows:
         return corrected_text
     out: list[str] = []
+    if mode == "numbered":                    # §3.1.1 (1)③ 번호 체계
+        heads = rows[0]
+        for i, r in enumerate(rows[1:], start=1):
+            out.append(f"{i}. {r[0].strip()}" if r and r[0].strip() else f"{i}.")
+            for j, cell in enumerate(r[1:], start=1):
+                v = cell.strip()
+                if not v:
+                    continue
+                nm = heads[j].strip() if j < len(heads) else ""
+                out.append(("  " + (f"{j}) {nm}: {v}" if nm else f"{j}) {v}")))
+        return "\n".join(out)
     if mode == "linear":                      # 키  값 (2열 표)
         for r in rows:
             out.append("  ".join(c for c in r if c) if len(r) > 1 else (r[0] if r else ""))
@@ -862,6 +1023,8 @@ class TableBraille:
         # 양끝 마커 ⠠⠄가 빠져 '그냥 한 줄 문장'으로 나갔고 rule_trail도 안 잡혔다.
         transposed_lines = _wt([_tn_transpose_line()] + _render_grid(_transpose_text(text)))
         linear_lines = _wt(_render_linear(text))
+        # §3.1.1 (1)③ 번호 체계 — 열 항목이 문장인 표의 정본 형식(2026-09-02 신설).
+        numbered_lines = _wt(_render_numbered(text))
         # 자동 경로가 전치했으면 그 점역자 주가 출력에 실린다 → 태그를 트레일 원본에 얹어
         # NLD-1.2.6이 emit되게 한다(_base_trail은 원본에 태그가 있을 때만 emit).
         unfold_src = text + ("\n" + _TN_SRC if any(_TN_SRC_MARK in ln for ln in unfold_lines) else "")
@@ -877,9 +1040,13 @@ class TableBraille:
                              + [make_rule("NLD-3.1.2")]),
             Draft(option=4, text=print_layout(text, "linear"), render_mode="linear", label="테두리만",
                   braille_lines=linear_lines, rule_trail=_base_trail(linear_lines, text)),
+            Draft(option=5, text=print_layout(text, "numbered"),
+                  render_mode="numbered", label="번호 체계", braille_lines=numbered_lines,
+                  rule_trail=_base_trail(numbered_lines, text) + [make_rule("NLD-3.1.1")]),
         ]
         # 기본 선택 = opt 추론 render_mode (없으면 풀어쓰기). 나머지는 대안 초안.
-        sel = {"unfold": 0, "table_grid": 1, "transposed": 2, "linear": 3}.get(opt.render_mode, 0)
+        sel = {"unfold": 0, "table_grid": 1, "transposed": 2, "linear": 3,
+               "numbered": 4}.get(opt.render_mode, 0)
         bo = BrailleOutput(
             element_id=opt.element_id,
             braille_lines=drafts[sel].braille_lines,

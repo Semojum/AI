@@ -59,7 +59,8 @@ class TestOptimize:
         opt = asyncio.run(TableOpt().optimize([ext], "ZERO"))
         bo = TableBraille().translate(opt)[0]
         labels = [d.label for d in bo.drafts]
-        assert labels == ["테두리 없음", "테두리+구분선", "행열 바꿈", "테두리만"]
+        # §3.1.1 (1)③ 번호 체계가 2026-09-02 에 5안으로 들어왔다.
+        assert labels == ["테두리 없음", "테두리+구분선", "행열 바꿈", "테두리만", "번호 체계"]
         assert bo.selected_idx == 1, "3열 이상 표의 기본은 테두리+구분선(labels[1])"
         # ★ 2026-08-06 판정 번복(원장 C-01a). 2026-07-29에는 "코퍼스 14,382줄에 테두리형 0개"를
         #   근거로 뺐는데, 그 표본이 **구판 수능특강 한 종류**였다. 82권으로 재니 정반대다 —

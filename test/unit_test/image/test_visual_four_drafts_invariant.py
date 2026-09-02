@@ -51,7 +51,9 @@ def _assert_distinct(drafts, *, expect: int | None = None) -> None:
 def _assert_omit_only(drafts) -> None:
     """재료가 없으면 생략 한 안만 (2026-08-12 대표 지시)."""
     assert [d.label for d in drafts] == [vd.LABELS[0]], [d.label for d in drafts]
-_EXPECTED_TABLE = 4    # 표 렌더 4안(성격이 다르다)
+# 표 렌더 5안 — §3.1.1 (1) 이 정한 세 갈래(정렬 유지·가로 풀어쓰기·번호 체계)에
+# 전치와 테두리 변형을 더한 것이다. 번호 체계는 2026-09-02 신설.
+_EXPECTED_TABLE = 5
 
 
 def _ext(conf: float = 1.0):
