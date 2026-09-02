@@ -26,3 +26,15 @@ def test_정규부분군(tex, want):
 @pytest.mark.parametrize("tex", [r"\overset{\frown}{AB}", r"\overparen{AB}"])
 def test_호(tex):
     assert "⠈⠪" in _b(tex)
+
+
+@pytest.mark.parametrize("tex,want", [
+    (r"x \ngtr 0", "⠭⠨⠢⠢⠼⠚"),               # 제4항 3호 — 여러 칸 관계 기호도 붙임
+    (r"x \nleq y", "⠭⠨⠖⠖⠽"),                 # 제4항 9호
+    ("10 : 3 = 5 : x", "⠼⠁⠚⠐⠂⠼⠉⠒⠒⠼⠑⠐⠂⠭"),   # 제9항 비례
+    (r"\sqrt{3} \fallingdotseq 1.732", "⠜⠼⠉⠐⠒⠒⠼⠁⠲⠛⠉⠃"),  # 제20항 근사
+    (r"\frac{dy}{dt} \cdot \frac{dt}{du}", "⠙⠞⠌⠙⠽⠐⠙⠥⠌⠙⠞"),  # 제2항 [붙임]
+    (".47", "⠼⠲⠙⠛"),                          # 제8항 1호 — 수표 하나
+])
+def test_붙임과_소수(tex, want):
+    assert convert_latex(tex).strip() == want
