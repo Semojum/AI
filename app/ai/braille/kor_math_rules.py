@@ -1405,6 +1405,16 @@ _LATEX_SIMPLE: dict[str, str] = {
     "\\nleq":     "⠨⠖⠖",  # ≰ 보다작거나같지않다 (9호 .66)
     "\\ngeqslant": "⠨⠲⠲",
     "\\nleqslant": "⠨⠖⠖",
+    # 관계·논리 기호(수학 제32·34·60·61항) — 표에 없어 **통째로 사라지던 것들**.
+    # 규정 정답쌍 312건 전수 검사에서 드러났다.
+    "\\cong":     "⠈⠔⠒⠒",   # ≅ 물결아래등호 (제32항 @933)
+    "\\nsim":     "⠨⠈⠔",    # ≁ 관계 부정 (제34항 .@9)
+    "\\vdash":    "⠸⠒",     # ⊢ (제60항 _3)
+    "\\dashv":    "⠈⠸⠒",    # ⊣ (제60항 @_3)
+    "\\models":   "⠘⠸⠒",    # ⊨ (제60항 ^_3)
+    "\\nRightarrow": "⠨⠒⠒⠕",  # ⇏ (제61항 .33O)
+    "\\rightleftarrows": "⠪⠶⠕",  # ⇄ (제61항 [7O)
+    "\\nexists":  "⠨⠨⠢",    # ∄ (제61항 ..5)
     "\\approx":   "⠈⠔⠈⠔", # ≈ 이중물결 (제29항 @9@9, 앞뒤 한 칸)
     "\\equiv":    "⠶⠶",   # ≡ 합동 (기하 제43항 77=⠶⠶ — ⠛은 폰트 g 오독)
     "\\sim":      "⠈⠔",   # ∼ 관계·분포 (제34항 @9). 닮음 ∽(⠠⠄)는 유니코드 경유
@@ -1567,7 +1577,9 @@ def _stage11c_math_context_symbols(result: str) -> str:
     # ≠: 수식 문맥은 도서 관행 .3(_NEQ 주석 참조) — symbol_table(규정형 .33)보다 먼저 치환.
     result = result.replace("≠", _NEQ)
     # 부정 부등호 유니코드(제4항 3·5·7·9호) — LaTeX 명령과 같은 점형으로 편다.
-    for _u, _c in (("≯", "⠨⠢⠢"), ("≮", "⠨⠔⠔"), ("≱", "⠨⠲⠲"), ("≰", "⠨⠖⠖")):
+    for _u, _c in (("≯", "⠨⠢⠢"), ("≮", "⠨⠔⠔"), ("≱", "⠨⠲⠲"), ("≰", "⠨⠖⠖"),
+                   ("≅", "⠈⠔⠒⠒"), ("≁", "⠨⠈⠔"), ("⊢", "⠸⠒"), ("⊣", "⠈⠸⠒"),
+                   ("⊨", "⠘⠸⠒"), ("⇏", "⠨⠒⠒⠕"), ("⇄", "⠪⠶⠕"), ("∄", "⠨⠨⠢")):
         result = result.replace(_u, _c)
     result = result.replace("∴", _THEREFORE)
     # 숫자 사이 쉼표(제41항): ⠂로 적고 **뒤 숫자에 수표를 다시 적지 않는다**(제43항).
@@ -1688,6 +1700,8 @@ _RECUR_RE = re.compile(r"(\d)" + _DOT_ABOVE)
 # 자리표시자 — 마지막 단계에서 순환마디 여는 표 ⠈ 로 편다. 숫자 사이에 끼므로
 # 수표 처리를 흔들지 않게 비-ASCII 를 쓴다.
 _RECUR_MARK = "\ue90a"
+# `\not` 자리표시자 — 기호가 점형이 된 뒤 부정표 ⠨ 로 편다.
+_NOT_MARK = "\ue90b"
 
 
 # 정수부 없는 소수(`.47`) — 규정 제8항 1호 예시가 `#4dg` 다. 수표 뒤 바로 소수점이라
@@ -1697,6 +1711,24 @@ _BARE_DEC_RE = re.compile(r"(?<![\d.])\.(?=\d)")
 
 # LaTeX `\dot{6}` 도 같은 뜻이다 — 결합 문자로 펴서 한 자리에서 받는다.
 _DOT_CMD_RE = re.compile(r"\\dot\{(\d)\}")
+
+
+# `\not X` — 규정은 부정을 **뒤 기호 앞에 ⠨** 를 붙여 나타낸다(제34·60항
+# `A.,RB`·`A.6,A`·`,A.61,M`). LaTeX 은 `\not` 을 앞에 따로 쓰므로 여기서 합친다.
+# 이미 전용 명령이 있는 것(\notin·\nsim·\ngtr …)은 그 표가 먼저 이긴다.
+_NOT_NEG = "⠨"
+_NOT_RE = re.compile(r"\\not\s*(\\[A-Za-z]+|.)")
+
+
+def _stage0e_not_prefix(latex: str) -> str:
+    r"""0e. `\not X` → 부정표 + X (제34·60항)."""
+    if "\\not" not in latex:
+        return latex
+
+    def _rep(m: re.Match) -> str:
+        return _NOT_MARK + m.group(1)
+
+    return _NOT_RE.sub(_rep, latex)
 
 
 def _stage0d_recurring(latex: str) -> str:
@@ -1804,6 +1836,7 @@ def convert_latex(latex: str) -> str:
     result = _normalize_latex_input(latex)      # 0a. MinerU/마크다운 입력 정규화
 
     result = _stage0c_bare_args(result)             # 0c. 중괄호 없는 한 글자 인자
+    result = _stage0e_not_prefix(result)            # 0e. \not 부정 접두(제34·60항)
     result = _stage0d_recurring(result)             # 0d. 순환소수·소수점(제8항)
     result = _stage0b_nth_root(result)              # 0b. \sqrt[n]{} — 대괄호 치환보다 먼저
     result = _stage1_math_brackets(result)          # 1·1a. 수학 괄호 + 병치 닫음표 생략
@@ -1825,6 +1858,7 @@ def convert_latex(latex: str) -> str:
     result = _stage10x_minus(result)                # 10x. 뺄셈표 (숫자보다 먼저)
     result = _stage11_numbers(result)               # 11·11a. 숫자 + a~j 구분점
     result = _finish_recurring(result)              # 11a2. 순환마디 표(제8항 2호)
+    result = result.replace(_NOT_MARK, _NOT_NEG)    # 11a3. \not → 부정표 ⠨
     result = _stage11b_arithmetic(result)           # 11b. + =
     result = _stage11c_math_context_symbols(result)  # 11c. 문맥 overload 분기
     result = _tighten_operator_spacing(result)      # 11e. 연산·비교 기호 앞뒤 붙임
