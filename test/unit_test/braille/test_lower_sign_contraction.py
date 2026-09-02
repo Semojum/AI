@@ -18,3 +18,14 @@ def test_쉼표가_약자로_새지_않는다(text, want):
 
 # `main` 처럼 낱말 끝의 in(⠔)·en(⠢)은 그대로 약자다 — 기존
 # test_back_roundtrip.py::test_로마자표_없는_영어줄을_읽는다[the main reason] 가 지킨다.
+
+
+@pytest.mark.parametrize("text", [
+    "점 A, B, C를",
+    "세 직선 OP, OR, OQ의",
+    "두 수 m, n은 자연수",
+    "함수 f, g의",
+])
+def test_로마자_나열이_쉼표에서_안_끊긴다(text):
+    """제32항 구간은 종료표까지다 — 쉼표에서 끊으면 뒤 글자가 한글로 읽힌다."""
+    assert decode(translate_plain(text)) == text
