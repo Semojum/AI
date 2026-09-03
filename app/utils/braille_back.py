@@ -825,6 +825,21 @@ def _strip_bold_marks(line: str) -> str:
     return _BOLD_PAIR_RE.sub(lambda m: m.group(1), line)
 
 
+# ── 한글표·한글 종료표 (규정 제39항) ─────────────────────────────────────────
+# 로마자가 주된 문장 안, 수식의 일부, 화학 반응식 안에 한글이 나올 때 한글표 `_(`
+# (⠸⠷)과 한글 종료표 `_)`(⠸⠾)으로 묶는다. 역맵에 없어 쓰레기가 나갔다 —
+# `(㉠)+(㉢)=` 가 `⟨2838⟩온㉠⟨2838⟩언+⟨2838⟩온㉢⟨2838⟩언=` 로 풀렸다
+# (⠸ 가 미해독으로 남고 ⠷ 가 뒤 셀과 붙어 엉뚱한 음절이 됐다).
+# 실측(전 코퍼스 1,131쪽): ⠸⠷ **397** · ⠸⠾ **383**.
+# 감싼 것이 곧 한글 본문이므로 **표만 벗기고 내용을 그대로 낸다.**
+_HANGUL_IND_RE = re.compile(r"⠸⠷((?:(?!⠸⠷|⠸⠾)[\u2800-\u28ff]){0,80})⠸⠾")
+
+
+def _strip_hangul_indicator(line: str) -> str:
+    """짝이 맞는 한글표·한글 종료표를 벗긴다(제39항)."""
+    return _HANGUL_IND_RE.sub(lambda m: m.group(1), line)
+
+
 def _build_eng_function() -> frozenset[str]:
     """영어 기능어 집합 — 로마자표 없는 영어 줄을 가려낼 때 마지막 증거로 쓴다."""
     from app.ai.braille import eng_braille as _E
@@ -967,7 +982,7 @@ def _decode_line_router(line: str, math: bool) -> str:
     # 실측(코퍼스 2,500쪽): 홑 ⠡ 110건이 전부 가계도 교배 기호이고, 약자 '연'으로 쓰인
     # 붙은 ⠡ 는 18,316건으로 공백 조건에서 완전히 갈린다.
     line = _LONE_TIMES_RE.sub("×", line)
-    line = _mark_paren_pairs(_strip_bold_marks(line))
+    line = _mark_paren_pairs(_strip_hangul_indicator(_strip_bold_marks(line)))
     parts = re.split(r"([⠀ ]+)", line)              # 공백 런을 분리자로 보존
     tokens, seps = _merge_roman_tokens(parts[0::2], parts[1::2])
     if math:
