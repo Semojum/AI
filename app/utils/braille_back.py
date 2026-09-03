@@ -266,7 +266,8 @@ _COMBINED: dict[str, str] = {**_SYMBOL_REV, **_SYLLABLE_REV, **_WORD_ABBR}
 for _c, _t in (("⠲", "."), ("⠐", ","), ("⠖", "!")):
     _COMBINED.setdefault(_c, _t)
 # 변이체 정본화 — 같은 점형이 여러 유니코드(붙임표/하이픈/대시)로 매핑될 때 ASCII 정본 우선.
-for _c, _t in (("⠤", "-"),):
+# 물결표 ⠈⠔ 도 같다 — 재추출 묵자 전수에서 `~` 832회 · `∼` 1회다. ASCII 쪽으로 편다.
+for _c, _t in (("⠤", "-"), ("⠈⠔", "~")):
     _COMBINED[_c] = _t
 # 소괄호 자리표시자(_mark_paren_pairs가 붙인다) → 실제 괄호
 _COMBINED["\ufdd2"] = "("
@@ -1120,6 +1121,12 @@ def _decode_line(s: str) -> str:
                 # ⠴는 닫는 큰따옴표이자 **받침 ㅎ**이라(좋=⠨⠥⠴) 탐욕 매칭이 앞 음절에
                 # 붙여 먹는다. 받침 ㅍ과 같이 **실제로 쓰이는 음절 목록**으로 가른다.
                 out.append(_COMBINED[seg[:-1]])
+                # ★ 떼어낸 ⠴ 가 **뒤 셀과 함께 등록된 기호**를 이루면(』=⠴⠆ · ’=⠴⠄)
+                #   여기서 닫는 큰따옴표로 굳히면 안 된다. 한 칸 물러나 다음 바퀴가
+                #   두 셀로 읽게 둔다 — `『천연론』` 이 `『천연론”;` 로 나가던 자리다.
+                if ("⠴" + s[i + best_ln:i + best_ln + 1]) in _COMBINED:
+                    i += best_ln - 1
+                    continue
                 out.append("”")
             elif (seg in _SYLLABLE_REV and seg[-1] in _SENT_END
                   and seg[:-1] in _COMBINED and _final(i + best_ln)):
