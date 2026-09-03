@@ -470,7 +470,7 @@ def _roman_span_ahead(s: str, at: int) -> bool:
     return False                              # 종료표 없이 끝 → 끊는다
 
 
-def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
+def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, int] | None:
     """로마자 런이면 (텍스트, 다음위치), 아니면 None.
 
     시작: 로마자표 ⠴ , 또는 대문자 단어표 ⠠⠠ 다음에 알파벳(문장 중 영문, 예 TV).
@@ -493,6 +493,17 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
 
     out: list[str] = []
     caps_word = False
+    caps_next = False          # 단일 대문자표 ⠠ 를 만난 직후
+
+    def _emit(t: str) -> None:
+        nonlocal caps_next
+        if caps_word:
+            t = t.upper()
+        elif caps_next:
+            t = t[:1].upper() + t[1:]
+        caps_next = False
+        out.append(t)
+
     while j < n:
         c = s[j]
         if c in (_SPACE_CELL, " "):                # 공백 → 원칙은 런 종료
@@ -521,7 +532,7 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
                 # 여기서 끊으면 숫자 뒤 낱말이 로마자 문맥을 잃고 한글로 오독된다.
                 # 명시적 로마자표 ⠴로 시작한 런에서만 이어 간다 — 종료표가 어디서 끝나는지
                 # 알 수 있기 때문이다.
-                if s[i] == _ROMAN_START and _roman_span_ahead(s, j + 2):
+                if span_ok or (s[i] == _ROMAN_START and _roman_span_ahead(s, j + 2)):
                     num, j = _decode_number(s, j)
                     out.append(num)
                     continue
@@ -537,10 +548,13 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
             j += 2
             continue
         if c == _CAPITAL:                           # 단일 대문자표
+            # ★ 다음 셀이 **낱자일 때만** 대문자로 만들던 것을 고쳤다. 통일영어점자는
+            #   낱말을 약자로 줄이므로(제32항) 대문자표 뒤가 약자인 자리가 흔한데
+            #   (`,:5`=When · `,/RUCTURE`=Structure · `,_!`=Their), 그 자리에서 ⠠ 가
+            #   통째로 버려져 소문자로 나갔다. 표시를 들고 있다가 **다음에 내보내는
+            #   조각**에 씌운다 — 낱자든 약자든 같다.
+            caps_next = True
             j += 1
-            if j < n and s[j] in _ALPHA_REV:
-                out.append(_ALPHA_REV[s[j]].upper())
-                j += 1
             continue
         # 영어 약자(er=⠻ · in=⠔ · the=⠮ …)를 낱자보다 먼저 본다. 낱자로 읽으면
         # 여기서 런이 깨져 뒤 낱말이 통째로 한글로 오독된다.
@@ -554,18 +568,17 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
                 _end += 1
             _w = _ENG_WORD.get(s[j:_end]) if _end - j <= _ENG_WORD_MAX else None
             if _w is not None:
-                out.append(_w.upper() if caps_word else _w)
+                _emit(_w)
                 j = _end
                 continue
         _g = _eng_group_at(s, j, _word_start)
         if _g is not None:
             txt, ln = _g
-            out.append(txt.upper() if caps_word else txt)
+            _emit(txt)
             j += ln
             continue
         if c in _ALPHA_REV:
-            ch = _ALPHA_REV[c]
-            out.append(ch.upper() if caps_word else ch)
+            _emit(_ALPHA_REV[c])
             j += 1
             continue
         if c == _SUPERSCRIPT and s[i] == _ROMAN_START:
@@ -1000,6 +1013,11 @@ def _build_eng_function() -> frozenset[str]:
 
 _ENG_FUNCTION = _build_eng_function()
 
+# 낱말 끝에 오는 문장 부호 — 로마자표 없는 영문 줄에서만 뗀다. ⠲ 는 로마자 종료표와
+# 같은 셀이라 런이 통째로 먹어 버려 마침표가 사라졌고(`home.` → `home`), 나머지는
+# 런을 끊어 낱말 판정을 실패시켰다.
+_ENG_TAIL_PUNCT = {"⠲": ".", "⠂": ",", "⠦": "?", "⠖": "!", "⠆": ";", "⠒": ":"}
+
 
 def _english_line(line: str) -> str | None:
     """줄 전체가 로마자표 없는 영어면 그 텍스트, 아니면 None (제29항 [다만]).
@@ -1017,24 +1035,50 @@ def _english_line(line: str) -> str | None:
     from app.ai.braille import eng_braille as _E
 
     words = line.split(_SPACE_CELL)
-    if len(words) < 2:               # 한 낱말은 단서가 너무 약하다(⠎=so ↔ 한글)
+    if sum(1 for w in words if w) < 2:   # 한 낱말은 단서가 너무 약하다(⠎=so ↔ 한글)
         return None
     out: list[str] = []
+    mid_cap = False
     for w in words:
         if not w:
             out.append("")
             continue
-        got = _decode_roman_run(_ROMAN_START + w, 0)
-        if got is None or got[1] != len(w) + 1:     # 낱말을 끝까지 못 읽으면 영어가 아니다
+        # 낱말 끝 문장 부호를 떼고 읽는다. 로마자표가 없는 문단이라 ⠲ 는 종료표가
+        # 아니라 **마침표**이고, 나머지는 런을 끊어 낱말을 못 읽게 만든다.
+        core, tail = w, ""
+        while core and core[-1] in _ENG_TAIL_PUNCT:
+            tail = _ENG_TAIL_PUNCT[core[-1]] + tail
+            core = core[:-1]
+        if not core:
             return None
-        out.append(got[0])
+        got = _decode_roman_run(_ROMAN_START + core, 0, span_ok=True)
+        if got is None or got[1] != len(core) + 1:  # 낱말을 끝까지 못 읽으면 영어가 아니다
+            return None
+        if _CAPITAL in core[1:] and core[0] != _CAPITAL:
+            mid_cap = True           # 낱말 **중간**의 대문자표 — 영어 표기에 거의 없다
+        out.append(got[0] + tail)
     text = " ".join(out)
-    if _E.translate(text).replace(" ", _SPACE_CELL) != line:
-        return None
-    # 왕복만으로는 모자란다 — 한글 두 낱말이 뜻 없는 알파벳으로 되짚기까지 통과한다
-    # (실측 오탐: `우주 그물로` → `dujya Oiu`, 글상자 테두리 → `forggg…`).
-    # 영어 문장이라면 기능어가 적어도 하나는 있다(the·to·do·in·so…). 그걸 요구한다.
-    return text if any(w.lower() in _ENG_FUNCTION for w in text.split()) else None
+    funcs = {w.strip(".,;:?!'").lower() for w in text.split()} & _ENG_FUNCTION
+    if _E.translate(text).replace(" ", _SPACE_CELL) == line:
+        # 왕복만으로는 모자란다 — 한글 두 낱말이 뜻 없는 알파벳으로 되짚기까지 통과한다
+        # (실측 오탐: `우주 그물로` → `dujya Oiu`, 글상자 테두리 → `forggg…`).
+        # 영어 문장이라면 기능어가 적어도 하나는 있다(the·to·do·in·so…). 그걸 요구한다.
+        return text if funcs else None
+    # ── 제29항 [다만] 영문 **문단** — 왕복이 구조적으로 안 맞는 자리 ──────────
+    # 정방향 `eng_braille` 는 숫자를 점자로 안 바꾸고(`1940s`), 낱말표를 도서와 다르게
+    # 쓴다(`to` → ⠖ 인데 도서는 ⠞⠕). 그래서 영어 지문 줄은 아무리 옳게 읽어도 왕복을
+    # 통과하지 못한다 — 영어 교재 한 쪽이 통째로 뜻 없는 한글로 나가던 뿌리다.
+    # 왕복 대신 **기능어 두 개**를 증거로 쓴다. 전 코퍼스 18,892쪽 실측:
+    #   기능어 0개 25,754줄 · 1개 9,697줄 · 2개 이상 10,788줄.
+    #
+    # ★ **서로 다른** 기능어 둘을 요구한다. 같은 기호가 되풀이되는 줄(자모 보기 `ㄴ ㄷ ㄹ`
+    #   = ⠿ 가 여러 번 → `for, forin for:`, 표 구분선 → `for … for`)이 기능어 개수만으로는
+    #   통과한다. 전 코퍼스 실측으로 갈랐다 — 개수 기준이면 영어책 밖에서 81줄이 뒤집히고
+    #   그중 20줄이 한글 손해인데, **서로 다른** 둘을 요구하면 뒤집히는 줄이 63줄로 줄고
+    #   그중 한글 손해는 **7줄**이다. 이득은 11,616 → 11,323줄만 준다.
+    #   낱말 **중간**의 대문자표(`mid_cap`)도 뺀다 — 영어 표기에 거의 없고, 한글 오탐
+    #   `⠁⠉ ⠚⠻⠙⠻ … ⠕⠝`(→ `according jerder … on`)이 그 꼴이었다.
+    return text if len(funcs) >= 2 and not mid_cap else None
 
 
 def _merge_roman_tokens(tokens: list[str], seps: list[str]) -> tuple[list[str], list[str]]:
