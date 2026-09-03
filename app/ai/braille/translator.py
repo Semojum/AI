@@ -253,6 +253,143 @@ def _syllable_to_braille(syl: str) -> str:
     return _CHOSEONG[cho] + _JUNGSEONG[jung] + _JONGSEONG[jong]
 
 
+# ── 옛한글(중세 국어) — 규정 제3장 「옛 글자」 제19~25항 ────────────────────
+# 국어 교재의 중세 국어 지문은 옛 자모가 섞여 **완성형으로 조합되지 않는다**
+# (`ᄒᆞ야` = ᄒ + ᆞ + 야). braillify는 첫가끝 자모를 거부하고, _safe_to_unicode의
+# "변환 불가 글자 제거"가 그 음절을 **통째로 지운다** — `ᄒᆞ야` → `야`(2026-09-03 실측).
+# 예외도 플래그도 없는 무성 삭제라 점역사가 발견할 수 없다. ◯·▲(_SPECIAL_MAP)와 같은
+# 계열이고, 이쪽은 규정에 점형이 **명시돼 있어** 조립하면 된다.
+#
+# ★ gold 대조(2027 코퍼스 27쪽·235런): **216(91.9%)이 정답 BRF에 그대로 있다.**
+#   나머지 19는 묵자 재추출 오독이다 — `어드ᄫᅳᆫ`을 `ᄫᅩᆫ`으로(7건, gold는 ⠐⠘⠶⠵),
+#   `ᄭᅮᆷ(꿈)`을 `ᄭᅮᆯ`로 읽은 것(gold ⠐⠠⠈⠍⠢).
+# ⚠ 방점(제27항 거성 ⠸⠂·상성 ⠸⠅)은 넣지 않았다. 묵자에서 가운뎃점·쌍점과 같은 글자라
+#   중세 국어 지문임을 알아야 갈리는데, 그 판정이 이 함수 밖이다.
+_OLD_CHO = {          # 첫소리 (제19~22항). 옛 글자표 ⠐를 앞세운다.
+    "ᅀ": "⠐⠨",       # ㅿ 반치음
+    "ᅌ": "⠐⠙",       # ㆁ 옛이응
+    "ᅙ": "⠐⠚",       # ㆆ 여린히읗
+    "ᄝ": "⠐⠑⠶",     # ㅱ 순경음 미음   (제20항 연서)
+    "ᄫ": "⠐⠘⠶",     # ㅸ 순경음 비읍
+    "ᄬ": "⠐⠘⠘⠶",   # ㅹ 순경음 쌍비읍
+    "ᅗ": "⠐⠙⠶",     # ㆄ 순경음 피읖
+    "ᄛ": "⠐⠐⠶",     # ᄛ 반설경음
+    "ᄔ": "⠐⠉⠉",     # ㅥ 쌍니은        (제21항 각자 병서)
+    "ᅇ": "⠐⠛⠛",     # ㆀ 쌍이응
+    "ᅘ": "⠐⠚⠚",     # ㆅ 쌍히읗
+    "ᄞ": "⠐⠘⠈",     # ㅲ 비읍기역      (제22항 합용 병서)
+    "ᄠ": "⠐⠘⠊",     # ㅳ 비읍디귿
+    "ᄡ": "⠐⠘⠠",     # ㅄ 비읍시옷
+    "ᄧ": "⠐⠘⠨",     # ㅶ 비읍지읒
+    "ᄩ": "⠐⠘⠓",     # ㅷ 비읍티읕
+    "ᄢ": "⠐⠘⠠⠈",   # ㅴ 비읍시옷기역
+    "ᄣ": "⠐⠘⠠⠊",   # ㅵ 비읍시옷디귿
+    "ᄭ": "⠐⠠⠈",     # ㅺ 시옷기역
+    "ᄮ": "⠐⠠⠉",     # ㅻ 시옷니은
+    "ᄯ": "⠐⠠⠊",     # ㅼ 시옷디귿
+    "ᄲ": "⠐⠠⠘",     # ㅽ 시옷비읍
+    "ᄶ": "⠐⠠⠨",     # ㅾ 시옷지읒
+}
+_OLD_JUNG = {         # 옛 모음자 (제25항). ㆇ~ㆌ는 옛 글자표가 아니라 ⠸를 앞세운다.
+    "ᆞ": "⠐⠼",       # ㆍ 아래아
+    "ᆡ": "⠐⠼⠗",     # ㆎ 아래애
+    "ᆈ": "⠸⠬⠜",     # ㆇ 요야
+    "ᆉ": "⠸⠬⠕",     # ㆉ 요이
+    "ᆊ": "⠸⠩⠱",     # ㆊ 유여
+    "ᆍ": "⠸⠩⠕",     # ㆌ 유이
+}
+_OLD_JONG = {         # 받침 (제19·20항)
+    "ᇫ": "⠐⠅",       # ㅿ 반치음
+    "ᇰ": "⠐⠲",       # ㆁ 옛이응
+    "ᇹ": "⠐⠴",       # ㆆ 여린히읗
+    "ᇢ": "⠐⠢⠶",     # ㅱ 순경음 미음
+    "ᇦ": "⠐⠃⠶",     # ㅸ 순경음 비읍
+}
+# 현대 자모의 첫가끝 코드값 — 각각 _CHOSEONG·_JUNGSEONG·_JONGSEONG와 순서가 같다.
+_L0, _L9 = 0x1100, 0x1112
+_V0, _V9 = 0x1161, 0x1175
+_T0, _T9 = 0x11A8, 0x11C2
+_JAMO_RUN_RE = re.compile(r"[\u1100-\u11FF\uA960-\uA97C\uD7B0-\uD7FB]+")
+
+
+def _old_hangul_to_braille(text: str) -> str:
+    """첫가끝 자모로만 조합되는 옛한글을 점자 셀로 바꾼다(규정 제19~25항).
+
+    규정에 점형이 없는 자모가 섞이면 그 런은 **손대지 않고** 종전 경로에 넘긴다.
+    """
+    if not _JAMO_RUN_RE.search(text):
+        return text
+    return _JAMO_RUN_RE.sub(lambda m: _old_run_cells(m.group()) or m.group(), text)
+
+
+def _old_run_cells(run: str) -> str | None:
+    out: list[str] = []
+    for syl in _split_jamo_syllables(run):
+        cells = _old_syllable_cells(syl)
+        if cells is None:
+            return None
+        out.append(cells)
+    return "".join(out)
+
+
+def _split_jamo_syllables(run: str) -> list[list[str]]:
+    """첫가끝 런을 음절로 가른다 — 초성이 나올 때마다 새 음절이 시작된다."""
+    syls: list[list[str]] = []
+    for ch in run:
+        if _is_jamo_cho(ch) or not syls:
+            syls.append([ch])
+        else:
+            syls[-1].append(ch)
+    return syls
+
+
+def _is_jamo_cho(ch: str) -> bool:
+    return 0x1100 <= ord(ch) <= 0x115F or 0xA960 <= ord(ch) <= 0xA97C
+
+
+def _is_jamo_jung(ch: str) -> bool:
+    return 0x1160 <= ord(ch) <= 0x11A7 or 0xD7B0 <= ord(ch) <= 0xD7C6
+
+
+def _is_jamo_jong(ch: str) -> bool:
+    return 0x11A8 <= ord(ch) <= 0x11FF or 0xD7CB <= ord(ch) <= 0xD7FB
+
+
+def _old_syllable_cells(syl: list[str]) -> str | None:
+    cho_l = [c for c in syl if _is_jamo_cho(c)]
+    jung_l = [c for c in syl if _is_jamo_jung(c)]
+    jong_l = [c for c in syl if _is_jamo_jong(c)]
+    if len(cho_l) > 1 or len(jung_l) > 1 or len(jong_l) > 1:
+        return None
+    if cho_l:
+        c = cho_l[0]
+        cho = _CHOSEONG[ord(c) - _L0] if _L0 <= ord(c) <= _L9 else _OLD_CHO.get(c)
+        if cho is None:
+            return None
+    else:
+        cho = ""
+    if not jung_l:
+        return cho
+    v = jung_l[0]
+    t = jong_l[0] if jong_l else ""
+    # 현대 모음·받침이면 braillify에 맡겨 **약자를 살린다** — gold는 `ᄫᅳᆫ`을
+    # ⠐⠘⠶⠵(옛 글자표 ㅸ + 약자 '은')로 적지 옛 ⠪⠒로 풀어 적지 않는다.
+    # 옛 자음자 뒤 'ㅏ'는 약자가 없어 그대로 남는다 — 제24항이 요구하는 그대로다.
+    if _BRAILLIFY_AVAILABLE and _V0 <= ord(v) <= _V9 and (not t or _T0 <= ord(t) <= _T9):
+        code = (_HANGUL_BASE + 11 * _JUNGSEONG_CNT * _JONGSEONG_CNT
+                + (ord(v) - _V0) * _JONGSEONG_CNT + (ord(t) - _T0 + 1 if t else 0))
+        try:
+            return cho + _braillify_lib.translate_to_unicode(chr(code))
+        except Exception:  # noqa: BLE001 — 폴백은 아래 규정 표로
+            pass
+    jung = (_JUNGSEONG[ord(v) - _V0] if _V0 <= ord(v) <= _V9 else _OLD_JUNG.get(v))
+    jong = ("" if not t else
+            _JONGSEONG[ord(t) - _T0 + 1] if _T0 <= ord(t) <= _T9 else _OLD_JONG.get(t))
+    if jung is None or jong is None:
+        return None
+    return cho + jung + jong
+
+
 def _is_hangul(ch: str) -> bool:
     return _HANGUL_BASE <= ord(ch) <= _HANGUL_END
 
@@ -1395,7 +1532,7 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False) -> str:
                 # (뒤의 _apply_book_style·substitute_symbols의 -=⠤ 매핑을 그대로 태운다).
                 clean = _restore_wrap_hyphen(clean)
                 preprocessed = _preprocess_units(_apply_book_style(clean))
-                substituted = substitute_symbols(preprocessed)
+                substituted = _old_hangul_to_braille(substitute_symbols(preprocessed))
                 text_result: list[str] = []
                 _emit_mixed(substituted, text_result, roman_ctx)
                 chunks.append(("t", _collapse_spaces("".join(text_result)),
@@ -1461,7 +1598,7 @@ def _translate_fallback(text: str) -> str:
     result = _FORMULA_RE.sub(_formula_sub, text)
     result = _restore_wrap_hyphen(result)   # 폴백 경로엔 음수 판정이 없다 — 즉시 복원
     result = substitute_tags(result)
-    result = substitute_symbols(result)
+    result = _old_hangul_to_braille(substitute_symbols(result))
     return _braillify_fallback(result)
 
 
