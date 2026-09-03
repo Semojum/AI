@@ -10,7 +10,8 @@ from app.ai.braille.kor_math_rules import convert_latex
 
 
 def _b(t: str) -> str:
-    return convert_latex(t).strip()
+    """앞뒤 여백은 조판 층이라 벗긴다 — 점자 칸(U+2800)도 같이 벗긴다."""
+    return convert_latex(t).strip().strip("⠀")
 
 
 @pytest.mark.parametrize("tex,want", [
