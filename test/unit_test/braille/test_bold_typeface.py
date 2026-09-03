@@ -68,9 +68,6 @@ def test_굵은_글자체표가_줄을_넘어도_벗긴다():
 
     줄 단위로만 벗기면 여는 표와 닫는 표가 갈려 둘 다 이물질로 남는다.
     """
-    raw = "⠀⠀⠰⠤⠎⠨⠝⠊⠥\n⠚⠐⠍⠄⠤⠆⠘⠢"
-    assert "⠰⠤" not in raw or "-" not in decode(raw).replace("어제도", "")
-
-
-def test_줄_넘김_짝_왕복():
-    assert decode("⠀⠀⠰⠤⠎⠨⠝⠊⠥\n⠚⠐⠍⠄⠤⠆") == "  어제도\n하룻밤"
+    got = decode("⠀⠀⠰⠤⠎⠨⠝⠊⠥\n⠚⠐⠍⠄⠤⠆")
+    assert got == "  어제도\n하룻"
+    assert "-" not in got          # 표가 이물질로 남지 않는다
