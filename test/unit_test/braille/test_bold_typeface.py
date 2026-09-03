@@ -84,3 +84,16 @@ def test_로마자표로_시작하는_토큰(raw, want):
 def test_숫자_뒤_단위표는_그대로():
     """`50%`(⠼⠑⠚⠴⠏) — ⠴ 가 토큰 첫 칸이 아니면 단위표다."""
     assert decode("⠼⠑⠚⠴⠏") == "50%"
+
+
+@pytest.mark.parametrize("raw,want", [
+    ("⠶⠿⠁⠶⠦⠄⠠⠛⠰⠼⠁", "㉠("),   # 동그라미 낱자로 시작하면 본문이다
+    ("⠶⠿⠒⠶⠦⠄⠠⠛⠰⠼⠃", "㉡("),
+])
+def test_동그라미_낱자로_시작하면_수식이_아니다(raw, want):
+    """첨자 신호(⠰⠼) 때문에 수식으로 분류돼 ⠶ 가 `{`, ⠿ 가 `∞` 로 읽혔다."""
+    assert decode(raw).startswith(want)
+
+
+def test_동그라미_낱자_단독():
+    assert decode("⠶⠿⠁⠶⠵") == "㉠은"

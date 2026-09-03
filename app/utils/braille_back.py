@@ -375,6 +375,9 @@ def _eng_group_at(s: str, j: int, at_word_start: bool) -> tuple[str, int] | None
 _COMMA_CELL = "⠂"
 _SUPERSCRIPT = "⠘"      # 위첨자표(수학 제18항)
 # 로마 숫자 — 대문자 단어표로 적힌 것만 되돌린다(Ⅰ 은 변수 I 와 셀이 같아 제외).
+# 동그라미 낱자 여는 두 칸(㉠=⠶⠿⠁⠶). ⠶ 는 받침 ㅇ 이라 한글 낱말의 **첫 칸**으로
+# 오지 않고, 뒤 ⠿ 가 온표라 이 두 칸이면 동그라미 문자가 확실하다.
+_CIRCLED_JAMO_OPEN = "⠶⠿"
 _ROMAN_NUM_UNI = {"II": "Ⅱ", "III": "Ⅲ", "IV": "Ⅳ", "VI": "Ⅵ", "VII": "Ⅶ",
                   "VIII": "Ⅷ", "IX": "Ⅸ", "XI": "Ⅺ", "XII": "Ⅻ"}
 
@@ -693,6 +696,11 @@ def _classify_token(tok: str) -> str:
     #   `)a^2` 로 나간다. 대문자표가 뒤따를 때만 본다 — 숫자 뒤 단위표(50%=⠼⠑⠚⠴⠏)와
     #   닫는 괄호는 토큰 **첫 칸**에 안 온다.
     if tok[:1] == _ROMAN_START and tok[1:2] == _CAPITAL:
+        return "TEXT"
+    # ★ 동그라미 문자·낱자(제64항)로 **시작하는** 토큰도 본문이다. 문항 번호·선택지
+    #   표시라 수식이 아니다. `㉠(G_1` (⠶⠿⠁⠶⠦⠄⠠⠛⠰⠼⠁) 이 첨자 신호(⠰⠼) 때문에
+    #   수식으로 분류돼 수식 디코더가 ⠶ 를 `{`, ⠿ 를 `∞` 로 읽었다 — `{∞a{('g_1`.
+    if tok[:2] == _CIRCLED_JAMO_OPEN:
         return "TEXT"
     has_num = _NUMBER_SIGN in tok
     # ★ 닫는 묶음 괄호 ⠾ 만으로는 수식 신호가 아니다 — 한글 `전`(⠨⠾)·`언`(⠶)처럼
