@@ -574,7 +574,7 @@ _CMD_ALIAS = {
     r"\fallingdotseq": "≒", r"\doteq": "≒",
     r"\neg": "¬", r"\lnot": "¬",
     r"\vee": "∨", r"\lor": "∨", r"\wedge": "∧", r"\land": "∧",
-    r"\nmid": "∤", r"\mid": "|",
+    r"\nmid": "∤", r"\mid": "|", r"\|": "‖", r"\Vert": "‖",
     r"\propto": "∝",
     r"\oplus": "⊕", r"\ominus": "⊖", r"\otimes": "⊗", r"\odot": "∙",
     r"\ast": "∗", r"\star": "∗",
@@ -814,7 +814,8 @@ def _normalize_latex_input(latex: str) -> str:
 #   `⠨⠢⠢`의 둘째 칸만 op로 잡혀 앞 공백이 안 지워진다(실측 `⠭⠀⠨⠢⠢⠀⠼⠚`).
 #   제4항 3·5·7·9호 같지않다 계열 · 제9항 비례 ⠐⠂ · 제20항 근사 ⠐⠒⠒.
 # `:`·`≒`는 11e 시점에 아직 원문자다 — 점형으로 바뀌기 전이라 여기서 잡는다.
-_MULTI_TIGHT = "⠨⠒⠒|⠨⠢⠢|⠨⠔⠔|⠨⠲⠲|⠨⠖⠖|⠐⠒⠒|⠐⠂"
+# 제27항 나누어떨어짐(⠳ · ⠨⠳)도 앞뒤를 붙인다 — 규정 예시 `#d3#h`(4|8)에 칸이 없다.
+_MULTI_TIGHT = "⠨⠒⠒|⠨⠢⠢|⠨⠔⠔|⠨⠲⠲|⠨⠖⠖|⠐⠒⠒|⠐⠂|⠨⠳|⠳"
 _TIGHT_OPS_RE = re.compile(
     r"(\S)[ ⠀]*(" + _MULTI_TIGHT +
     r"|(?<![⠈⠸])⠒⠒|(?<![⠈⠸])⠢|(?<![⠈⠸])⠔|×|÷|<|>|≤|≥|≠|±|∓|≒|:)[ ⠀]*(?=(\S))")
@@ -1428,6 +1429,9 @@ _LATEX_SIMPLE: dict[str, str] = {
     # 관계·논리 기호(수학 제32·34·60·61항) — 표에 없어 **통째로 사라지던 것들**.
     # 규정 정답쌍 312건 전수 검사에서 드러났다.
     "\\cong":     "⠈⠔⠒⠒",   # ≅ 물결아래등호 (제32항 @933)
+    "\\underlinemark": "⠠⠤",  # 밑줄표 (제23항 2호 `,-`)
+    "\\simeq":    "⠈⠔⠒",    # ≃ 물결 아래 한 줄 (제31항 @93)
+    "\\approxeq": "⠈⠔⠈⠔⠒",  # ≊ 이중물결 아래 한 줄 (제30항 @9@93)
     "\\nsim":     "⠨⠈⠔",    # ≁ 관계 부정 (제34항 .@9)
     "\\vdash":    "⠸⠒",     # ⊢ (제60항 _3)
     "\\dashv":    "⠈⠸⠒",    # ⊣ (제60항 @_3)
@@ -1632,6 +1636,8 @@ def _stage11c_math_context_symbols(result: str) -> str:
     result = result.replace("□", "⠸⠶").replace("◻", "⠸⠶")
     # 나누어떨어짐(제27항): ∤ = ⠨⠳, 남은 수직바(조건제시·조건부확률·나눔)는 ⠳
     result = result.replace("∤", "⠨⠳")
+    # 노름(제28항): ‖ = ⠳⠳ — 수직바를 둘 적는다. `\|` 가 이 자리로 온다.
+    result = result.replace("‖", "⠳⠳")
     return result.replace("|", _ABS_IND)
 
 
@@ -1752,7 +1758,11 @@ _NOT_RE = re.compile(r"\\not\s*(\\[A-Za-z]+|.)")
 # 없앤다). 우리는 이걸 못 읽어 자릿점이 곱셈점 ⠐ 으로 나갔다(규정 제41항은 ⠂).
 _BRACE_COMMA_RE = re.compile(r"\{\s*,\s*\}")
 # `\overset{\frown}{AB}` — 호(제36항)의 다른 표기. `\overparen` 으로 편다.
+# 노름(제28항) — `\|`·`\Vert` 를 유니코드 ‖ 로 먼저 편다.
+_NORM_RE = re.compile(r"\\(?:\||Vert)")
 _OVERSET_ARC_RE = re.compile(r"\\overset\s*\{\s*\\frown\s*\}\s*\{([^{}]*)\}")
+# 밑줄(제23항 2호) — `\underline{X}` 의 내용을 살리고 뒤에 밑줄표를 붙인다.
+_UNDERLINE_RE = re.compile(r"\\underline\s*\{([^{}]*)\}")
 
 
 def _stage0f_brace_comma(latex: str) -> str:
@@ -1762,6 +1772,11 @@ def _stage0f_brace_comma(latex: str) -> str:
       `\overparen` 계열만 알아서 호 기호 ⠈⠪ 가 통째로 사라졌다.
     """
     latex = _OVERSET_ARC_RE.sub(r"\\overparen{\1}", latex)
+    # 노름 `\|`·`\Vert` → ‖ (제28항). 여기서 안 펴면 여는 쪽이 절댓값 `|` 처리로 새어
+    # `\|x\|` 가 `⠳⠭⠳⠳` 로 나간다(닫는 쪽만 노름이 된다).
+    latex = _NORM_RE.sub("‖", latex)
+    # 밑줄(제23항 2호) — `밑줄( )은 ,-으로 적는다`. 본문 **뒤에** ⠠⠤ 를 붙인다.
+    latex = _UNDERLINE_RE.sub(r"\1\\underlinemark ", latex)
     return _BRACE_COMMA_RE.sub(",", latex)
 
 
