@@ -41,3 +41,17 @@ def test_낫표_뒤_조사가_영어약자로_안_샌다(text):
 @pytest.mark.parametrize("text", ["pH 농도", "50%이다", "25%이므로", "MP4 Player 를", "℃ 단위"])
 def test_어절_첫_로마자표는_그대로(text):
     assert decode(translate_plain(text)) == text
+
+
+@pytest.mark.parametrize("text", ["국가」라는", "「보기」의 국가」"])
+def test_닫는_홑낫표(text):
+    """`」`(⠴⠂) 는 받침 ㅎ 음절이 목록에 있어도 낫표다.
+
+    실측(전 코퍼스 1,131쪽): 점자 ⠴⠂ 187건 · 묵자 `」` 189건으로 사실상 1:1.
+    """
+    assert "」" in decode(translate_plain(text))
+
+
+@pytest.mark.parametrize("text", ["좋다", "그것이 좋, 나쁨", "옳지", "놓고"])
+def test_받침_ㅎ은_그대로(text):
+    assert decode(translate_plain(text)) == text

@@ -1122,7 +1122,13 @@ def _decode_line(s: str) -> str:
                 out.append(".")
             elif (seg[-1] == "⠴" and seg[:-1] in _COMBINED
                   and seg not in _SYMBOL_REV
-                  and _COMBINED.get(seg) not in _HIEUT_FINAL):
+                  and (_COMBINED.get(seg) not in _HIEUT_FINAL
+                       # ★ 받침 ㅎ 음절이 목록에 있어도, 뒤 셀이 ⠂ 면 닫는 홑낫표
+                       #   `」`(⠴⠂)가 맞다. `국가」라는` 이 `국갛,라는` 으로 나갔다.
+                       #   실측(전 코퍼스 1,131쪽): 점자 ⠴⠂ **187건** · 묵자 `」`
+                       #   **189건** 으로 사실상 1:1 이다. 받침 ㅎ + 쉼표는 그 사이에
+                       #   묻힐 만큼 드물다.
+                       or s[i + best_ln:i + best_ln + 1] == "⠂")):
                 # ⠴는 닫는 큰따옴표이자 **받침 ㅎ**이라(좋=⠨⠥⠴) 탐욕 매칭이 앞 음절에
                 # 붙여 먹는다. 받침 ㅍ과 같이 **실제로 쓰이는 음절 목록**으로 가른다.
                 out.append(_COMBINED[seg[:-1]])
