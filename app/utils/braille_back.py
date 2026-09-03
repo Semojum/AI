@@ -975,6 +975,40 @@ def _merge_roman_tokens(tokens: list[str], seps: list[str]) -> tuple[list[str], 
 _NUM_CHO = frozenset((2, 3, 6, 15, 16, 17, 18))     # ㄴ ㄷ ㅁ ㅋ ㅌ ㅍ ㅎ
 
 
+# ── 화학식 대소문자 (과학 점자 제2항) ────────────────────────────────────────
+# 규정은 화학식을 **원소마다 대문자표**(`,h` = ⠠⠓)로 적는데, 수식 디코더가 ⠠ 를 흘려
+# 소문자로 낸다 — `H₂O` → `h_2o` · `SO₄` → `so_4`.
+# ⚠ 무조건 대문자로 바꾸면 안 된다. 한 글자 꼴(`z_1`·`t_1`)은 수학 변수가 대부분이다
+#   — 실측 3,332건 중 묵자가 소문자인 것이 1,707 로 더 많다.
+# **두 글자 이상 + 원소 기호**로 좁히면 52건이고 그중 묵자가 대문자인 것이 38(73%),
+# 소문자는 3(6%)이다(상위 꼴 nh·co·no·hco·ca — 전부 원소 조합).
+_ELEMENTS = frozenset("""
+h he li be b c n o f ne na mg al si p s cl ar k ca sc ti v cr mn fe co ni cu zn
+ga ge as se br kr rb sr y zr nb mo tc ru rh pd ag cd in sn sb te i xe cs ba
+hg pb bi po at rn fr ra u np pu
+""".split())
+_CHEM_RE = re.compile(r"(?<![A-Za-z])([a-z]{2,3})(?=_\d)")
+
+
+def _fix_chemical_case(text: str) -> str:
+    """두 글자 이상 원소 기호 꼴을 대문자로 되돌린다(과학 점자 제2항)."""
+    def _rep(m: "re.Match[str]") -> str:
+        w = m.group(1)
+        # `nh`→N+H, `hco`→H+C+O 처럼 원소로 쪼개지는 것만 본다.
+        for cut in ((1, 1), (1, 2), (2, 1), (1, 1, 1)):
+            if sum(cut) != len(w):
+                continue
+            parts, i = [], 0
+            for n in cut:
+                parts.append(w[i:i + n])
+                i += n
+            if all(x in _ELEMENTS for x in parts):
+                return "".join(x.capitalize() for x in parts)
+        return w
+
+    return _CHEM_RE.sub(_rep, text)
+
+
 def _join_num_hangul(text: str) -> str:
     """숫자와 한글 사이의 **한 칸**을 되붙인다 (제17항 [다만])."""
     def _repl(m: "re.Match[str]") -> str:
@@ -1050,7 +1084,7 @@ def _decode_line_router(line: str, math: bool) -> str:
             pieces.append(_decode_math_token(tok) if is_math[idx] else _decode_line(tok))
         if idx < len(seps):
             pieces.append(" " * len(seps[idx]))
-    return _join_num_hangul(_restore_wrap_parens("".join(pieces)))
+    return _fix_chemical_case(_join_num_hangul(_restore_wrap_parens("".join(pieces))))
 
 
 # 네모 문자 쌍(규정 제64항) — 정방향 translator._TAGS.BOX_CHAR 와 같은 점형이다.
