@@ -1070,7 +1070,12 @@ def _decode_line(s: str) -> str:
         #   (`25%이다.` → `25poi` · `5%이므로` → `5poeow로`).
         if ch == _ROMAN_START and best_ln >= 2 and i == _after_number:
             pass                       # 단위로 읽는다(아래 기호 분기로 떨어진다)
-        elif ch == _ROMAN_START and best_ln >= 2:
+        elif (ch == _ROMAN_START and best_ln >= 2
+              and (i == 0 or s[i - 1] in (_SPACE_CELL, " "))):
+            # ★ 로마자표는 **낱말 앞**에 온다(제29항). 낱말 중간의 ⠴ 는 닫는 낫표·
+            #   따옴표다 — `_merge_roman_tokens`·단축형 판정이 이미 쓰는 원칙이다.
+            #   이 조건이 없으면 "긴 쪽이 이긴다"가 뒤집힌다: `『황명세법』을`
+            #   (…⠴⠆⠮)에서 ⠆=be·⠮=the 로 3셀을 먹어 `『황명세법bethe` 가 나갔다.
             _r = _decode_roman_run(s, i)
             if _r is not None and _r[1] - i > best_ln:
                 out.append(_r[0])
