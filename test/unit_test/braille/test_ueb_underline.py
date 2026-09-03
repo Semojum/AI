@@ -28,3 +28,15 @@ def test_굵게_이탤릭_낱말표는_안_건드린다():
 def test_밑줄_빈칸은_그대로():
     """`⠸⠤`(제73항 밑줄 빈칸)는 별건이다 — 밑줄 하나로 편다."""
     assert decode("⠸⠤") == "_"
+
+
+def test_밑줄_낱말표가_영어_줄_판정을_막지_않는다():
+    """`⠸⠂`(UEB 밑줄 낱말표)가 낱말 런을 끊어 `_english_line`(#482)을 막았다.
+
+    gold 전권 18,892쪽: `⠸⠂` 든 줄 4,197 중 통과가 0 → 표를 벗기면 724.
+    """
+    from app.utils.braille_back import _UEB_UNDERLINE_RE, _english_line
+
+    line = "⠮⠀⠸⠺⠀⠷⠀⠼⠆⠀⠸⠂⠍⠔⠊⠍⠁⠇⠊⠎⠍⠀⠾⠀⠥⠀⠯⠀⠇⠑⠜⠝"
+    assert _english_line(line) is None
+    assert _english_line(_UEB_UNDERLINE_RE.sub("", line)) is not None
