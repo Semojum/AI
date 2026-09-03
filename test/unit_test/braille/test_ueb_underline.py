@@ -28,3 +28,16 @@ def test_굵게_이탤릭_낱말표는_안_건드린다():
 def test_밑줄_빈칸은_그대로():
     """`⠸⠤`(제73항 밑줄 빈칸)는 별건이다 — 밑줄 하나로 편다."""
     assert decode("⠸⠤") == "_"
+
+
+def test_밑줄표를_떼면_영어_줄로_읽힌다():
+    """`_english_line`(제29항 [다만])은 정방향 왕복이 맞아야 영어로 본다.
+
+    밑줄표가 섞이면 왕복이 안 맞아 그 줄이 통째로 한글로 깨졌다. 그래서 이 표는
+    `_COMBINED` 가 아니라 **줄을 쪼개기 전에** 뗀다.
+    """
+    from app.utils.braille_back import _english_line, _strip_typeform_marks
+
+    line = "⠮⠀⠸⠺⠀⠷⠀⠼⠆⠀⠸⠂⠍⠔⠊⠍⠁⠇⠊⠎⠍⠀⠾⠀⠥⠀⠯⠀⠇⠑⠜⠝"
+    assert _english_line(line) is None
+    assert _english_line(_strip_typeform_marks(line)) is not None
