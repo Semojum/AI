@@ -45,3 +45,19 @@ def test_로마자_런_안_위첨자(raw, want):
 def test_한글_초성_ㅂ_비회귀(text):
     """⠘ 는 한글 초성 ㅂ 이기도 하다 — 로마자 런 안에서만 위첨자로 읽는다."""
     assert decode(translate_plain(text)) == text
+
+
+@pytest.mark.parametrize("text", [
+    "전쟁(1840)",
+    "제1차 아편전쟁(1840~1842)",
+    "청프전쟁(1884~1885)",
+    "조약(1842)",
+    "전쟁(가)",
+])
+def test_한글_뒤_괄호_숫자가_수식으로_안_빠진다(text):
+    """닫는 묶음 괄호 ⠾ 는 한글 `전`(⠨⠾)과 겹친다.
+
+    수표 + ⠾ 만으로 MATH 로 분류돼 `전쟁(1840)` 이 `전ρ{(1840)` 으로 깨졌다.
+    묶음 괄호는 짝으로 오므로 여는 ⠷ 를 요구한다.
+    """
+    assert decode(translate_plain(text)) == text
