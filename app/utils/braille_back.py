@@ -191,6 +191,15 @@ if _LC_GREEK_REV != "⠨":
         for k, v in list(_MATH_REV_MULTI.items())
         if k.startswith("⠨") and len(k) == 2 and v in "αβγδεζηθικλμνξοπρστυφχψω"
     })
+# ★ book 모드에서는 **규정 판본(⠨+자음)을 역맵에서 뺀다.** 정방향이 ⠈ 판본만 내므로
+#   ⠨ 판본은 읽을 일이 없는데, 그 셀들이 전부 흔한 한글 음절이다(⠨⠍=자우 · ⠨⠹=자억
+#   · ⠨⠝=자에 …). 실측(전 코퍼스 1,131쪽): ⠨⠍ **10,183건** · ⠨⠹ 8,539 · ⠨⠝ 8,283
+#   출현인데 그 쪽 묵자에 해당 그리스 문자가 있는 것은 **전부 0건**이다.
+#   대문자(⠠⠨x)는 앞서 A/B 로 기각된 이력이 있어(쪽 1,555회 파괴) 손대지 않는다.
+# ★ **수식 경로(_MATH_REV_MULTI)에는 남긴다.** 수식 토큰 안에서는 ⠨ 판본이 실제로
+#   쓰이고, 왕복 데이터셋도 그걸 지킨다. 아래에서 **본문 경로(_SYMBOL_REV/_COMBINED)에서만**
+#   뺀다 — 본문에서 그리스로 읽히는 것이 전부 오검출이기 때문이다.
+
 # 그리스 소문자 토큰(접두+자음, 2셀) — 한글 음절과 겹쳐(π=줘) 단독으론 한글 우선,
 # 수식 토큰에 인접할 때만 수식으로 본다.
 _GREEK_TOKENS = {k for k, v in _MATH_REV_MULTI.items()
@@ -260,6 +269,10 @@ _VOWEL_JAMO_MAX = max(len(k) for k in _VOWEL_JAMO_REV)
 # 낱자 양옆에 올 수 있는 경계 — 칸·줄끝과, 낱자를 나열할 때 쓰는 문장부호들.
 _JAMO_BOUND = frozenset("⠀ \n⠐⠲⠆⠦⠴⠄⠶⠔⠒")
 # 통합 역맵(약어 + 음절 + 기호). 긴 셀 우선 매칭을 위해 최대 길이 기록.
+if _LC_GREEK_REV != "⠨":
+    for _k in [k for k, v in _SYMBOL_REV.items()
+               if len(k) == 2 and k[0] == "⠨" and v in "αβγδεζηθικλμνξοπρστυφχψω"]:
+        _SYMBOL_REV.pop(_k, None)
 _COMBINED: dict[str, str] = {**_SYMBOL_REV, **_SYLLABLE_REV, **_WORD_ABBR}
 # 단독 문장부호(마침표·쉼표·느낌표)도 풀리도록 — 기존 기호 매핑은 덮지 않는다.
 # (⠲는 symbol_table에서 ∋로 먼저 잡힘 → 단독 ∋은 그대로, 어말 마침표는 _decode_line의
