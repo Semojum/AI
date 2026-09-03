@@ -23,3 +23,13 @@ def test_한_글자는_변수라_그대로(text):
     """실측 3,332건 중 묵자가 소문자인 것이 1,707 로 더 많다 — 건드리면 나빠진다."""
     assert "_1" in decode(translate_plain(text)).lower()
     assert "T_1" not in decode(translate_plain(text))
+
+
+@pytest.mark.parametrize("text", ["응이 있다", "반응이 일어난다", "대응이"])
+def test_가역_화살표_셀은_한글이다(text):
+    """⇄(⠪⠶⠕, 제61항)는 한글 `응이` 와 같은 셀이다.
+
+    실측(전 코퍼스 1,131쪽): 이 셀 404건 · 230쪽 중 묵자에 `⇄` 가 있는 쪽 0,
+    `응이` 가 있는 쪽 29. 코퍼스에 화학 가역 반응식이 아예 없다.
+    """
+    assert decode(translate_plain(text)) == text
