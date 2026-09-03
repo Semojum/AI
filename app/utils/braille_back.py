@@ -505,6 +505,11 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
             j += 1
             continue
         if c == _SUBSCRIPT:                          # 첨자표 등 → 근사로 건너뜀
+            # ★ 다만 **닫는 대괄호 ⠰⠴** 는 건너뛰면 안 된다 — ⠰ 만 먹고 남은 ⠴ 가
+            #   닫는 큰따옴표로 떨어져 `[A]` 가 `[A”` 로 나갔다. 진짜 첨자는 뒤에
+            #   수표·글자가 오므로(`A_1`=⠴⠠⠁⠰⠼⠁) 이 조건에 안 걸린다.
+            if s[j + 1:j + 2] == _ROMAN_START:
+                break
             j += 1
             continue
         if c == _COMMA_CELL:
