@@ -772,6 +772,8 @@ def decode(braille: str, *, math: bool = False) -> str:
     math=True면 전체를 수식 구역으로 보고 디코드한다(요소 type이 formula일 때 호출자가 지정).
     기본(False)은 공백 단위 토큰별로 수식/한글을 자동 판별한다(인라인 수식).
     """
+    # 줄을 넘는 짝(굵은 글자체표·한글표)을 먼저 벗긴다 — 아래 줄 분리보다 앞서야 한다.
+    braille = _strip_hangul_indicator(_strip_bold_marks(braille))
     if math and len(braille) >= _MATH_KOR_MIN_CELLS:
         # 한글이 많이 섞인 수식 요소는 전체를 수식으로 보면 깨진다(R2). 자동 판별로 읽는다.
         # ⚠ **짧은 순수 수식은 제외한다.** `π`(⠨⠏)·`θ`(⠨⠹) 같은 두 셀짜리는 자동 판별이
@@ -838,7 +840,10 @@ def _mark_paren_pairs(line: str) -> str:
 # ★ **표시를 벗기고 내용만 낸다.** 태그로 되살리는 쪽은 이미 기각했다(원장 C-102) —
 #   묵자 쪽 `<!강조>` 1,074건과 점자 쪽 드러냄표 394건이 서로 다른 자리를 가리켜
 #   실물 A/B 가 나빠졌다. 여기서는 이물질을 없애는 것까지만 한다.
-_BOLD_PAIR_RE = re.compile(r"⠰⠤((?:(?!⠰⠤|⠤⠆)[\u2800-\u28ff]){1,80})⠤⠆")
+# ★ 짝이 **줄을 넘는다.** 점자책은 32칸 조판이라 강조 구간이 두세 줄에 걸친다.
+#   줄 단위로만 벗기면 여는 표와 닫는 표가 갈려 둘 다 이물질로 남는다(실측: 60쪽
+#   표본에서 `_-` 45건 · `-;` 41건이 그 잔여였다). 그래서 줄을 쪼개기 **전에** 벗긴다.
+_BOLD_PAIR_RE = re.compile(r"⠰⠤((?:(?!⠰⠤|⠤⠆)[\u2800-\u28ff\n ]){1,240})⠤⠆")
 
 
 def _strip_bold_marks(line: str) -> str:
@@ -853,7 +858,7 @@ def _strip_bold_marks(line: str) -> str:
 # (⠸ 가 미해독으로 남고 ⠷ 가 뒤 셀과 붙어 엉뚱한 음절이 됐다).
 # 실측(전 코퍼스 1,131쪽): ⠸⠷ **397** · ⠸⠾ **383**.
 # 감싼 것이 곧 한글 본문이므로 **표만 벗기고 내용을 그대로 낸다.**
-_HANGUL_IND_RE = re.compile(r"⠸⠷((?:(?!⠸⠷|⠸⠾)[\u2800-\u28ff]){0,80})⠸⠾")
+_HANGUL_IND_RE = re.compile(r"⠸⠷((?:(?!⠸⠷|⠸⠾)[\u2800-\u28ff\n ]){0,240})⠸⠾")
 
 
 def _strip_hangul_indicator(line: str) -> str:
@@ -1003,7 +1008,7 @@ def _decode_line_router(line: str, math: bool) -> str:
     # 실측(코퍼스 2,500쪽): 홑 ⠡ 110건이 전부 가계도 교배 기호이고, 약자 '연'으로 쓰인
     # 붙은 ⠡ 는 18,316건으로 공백 조건에서 완전히 갈린다.
     line = _LONE_TIMES_RE.sub("×", line)
-    line = _mark_paren_pairs(_strip_hangul_indicator(_strip_bold_marks(line)))
+    line = _mark_paren_pairs(line)
     parts = re.split(r"([⠀ ]+)", line)              # 공백 런을 분리자로 보존
     tokens, seps = _merge_roman_tokens(parts[0::2], parts[1::2])
     if math:
