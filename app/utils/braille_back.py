@@ -518,7 +518,13 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
             nxt = s[j + 1:j + 2]
             if nxt == _NUMBER_SIGN:
                 num, j = _decode_number(s, j + 1)
-                out.append("^" + num)
+                # `Ca^2+`(⠘⠼⠃⠢) — 숫자 뒤에 부호가 이어진다. 안 읽으면 남은 ⠢ 가
+                # 영어 약자 `en` 으로 새어 `Ca^2en` 이 된다.
+                sign = ""
+                if s[j:j + 1] in ("⠢", "⠔"):
+                    sign = "+" if s[j] == "⠢" else "-"
+                    j += 1
+                out.append("^" + num + sign)
                 continue
             if nxt in ("⠢", "⠔"):
                 out.append("^" + ("+" if nxt == "⠢" else "-"))
@@ -682,6 +688,12 @@ def _classify_token(tok: str) -> str:
     # `tan x`(⠖⠞⠭)가 TEXT 로 떨어져 `∈얼옥` 이 된다.
     if tok[:1] == "⠖" and any(tok.startswith(k) for k in _TRIG_CELLS):
         return "MATH"
+    # ★ 로마자표로 **시작하는** 토큰은 로마자 런이다(제29항 — 로마자표는 낱말 앞).
+    #   수식으로 분류하면 수식 디코더가 ⠴ 를 닫는 괄호로 읽어 `A^2`(⠴⠠⠁⠘⠼⠃)가
+    #   `)a^2` 로 나간다. 대문자표가 뒤따를 때만 본다 — 숫자 뒤 단위표(50%=⠼⠑⠚⠴⠏)와
+    #   닫는 괄호는 토큰 **첫 칸**에 안 온다.
+    if tok[:1] == _ROMAN_START and tok[1:2] == _CAPITAL:
+        return "TEXT"
     has_num = _NUMBER_SIGN in tok
     # ★ 닫는 묶음 괄호 ⠾ 만으로는 수식 신호가 아니다 — 한글 `전`(⠨⠾)·`언`(⠶)처럼
     #   흔한 음절과 겹친다. `전쟁(1840)`(⠨⠾⠨⠗⠶⠦⠄⠼⠁⠓⠙⠚⠠⠴) 이 수표+⠾ 로 MATH 가 돼

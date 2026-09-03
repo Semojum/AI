@@ -71,3 +71,16 @@ def test_굵은_글자체표가_줄을_넘어도_벗긴다():
     got = decode("⠀⠀⠰⠤⠎⠨⠝⠊⠥\n⠚⠐⠍⠄⠤⠆")
     assert got == "  어제도\n하룻"
     assert "-" not in got          # 표가 이물질로 남지 않는다
+
+
+@pytest.mark.parametrize("raw,want", [
+    ("⠴⠠⠁⠘⠼⠃", "A^2"),          # 로마자표로 시작하면 수식이 아니라 로마자 런
+    ("⠴⠠⠉⠁⠘⠼⠃⠢", "Ca^2+"),      # 숫자 위첨자 뒤 부호까지 읽는다
+])
+def test_로마자표로_시작하는_토큰(raw, want):
+    assert decode(raw) == want
+
+
+def test_숫자_뒤_단위표는_그대로():
+    """`50%`(⠼⠑⠚⠴⠏) — ⠴ 가 토큰 첫 칸이 아니면 단위표다."""
+    assert decode("⠼⠑⠚⠴⠏") == "50%"
