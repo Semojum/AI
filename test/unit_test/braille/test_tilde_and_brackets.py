@@ -55,3 +55,14 @@ def test_닫는_홑낫표(text):
 @pytest.mark.parametrize("text", ["좋다", "그것이 좋, 나쁨", "옳지", "놓고"])
 def test_받침_ㅎ은_그대로(text):
     assert decode(translate_plain(text)) == text
+
+
+@pytest.mark.parametrize("text", ["자료 [A]", "자료 [A]와 [B]", "[A]"])
+def test_대괄호_안_로마자(text):
+    """닫는 대괄호 ⠰⠴ 를 로마자 런이 첨자표로 보고 삼켰다(`[A]` → `[A”`)."""
+    assert decode(translate_plain(text)) == text
+
+
+@pytest.mark.parametrize("text", ["(A)를", "자료 [가]", "pH 농도", "MP4 Player 를"])
+def test_로마자_런_비회귀(text):
+    assert decode(translate_plain(text)) == text
