@@ -806,6 +806,25 @@ def _mark_paren_pairs(line: str) -> str:
         lambda m: _PAREN_OPEN_MARK + m.group(1) + _PAREN_CLOSE_MARK, line)
 
 
+# ── 굵은 글자체표 (규정 제56항) ──────────────────────────────────────────────
+# 규정 제56항은 강조를 두 갈래로 적는다.
+#   · 드러냄표·밑줄 → `,-` … `-'` (⠠⠤ … ⠤⠄)
+#   · **굵은 글자**  → `;-` … `-2` (⠰⠤ … ⠤⠆)
+# 역맵에 굵은 쪽이 없어 뜻 없는 ASCII 가 새어 나갔다 — `_-어제도-;`.
+# 실측(전 코퍼스 1,131쪽): ⠰⠤ **992** · ⠤⠆ **993** 으로 완전한 짝이다
+# (드러냄표 쪽은 ⠠⠤ 2,819 · ⠤⠄ 2,657).
+#
+# ★ **표시를 벗기고 내용만 낸다.** 태그로 되살리는 쪽은 이미 기각했다(원장 C-102) —
+#   묵자 쪽 `<!강조>` 1,074건과 점자 쪽 드러냄표 394건이 서로 다른 자리를 가리켜
+#   실물 A/B 가 나빠졌다. 여기서는 이물질을 없애는 것까지만 한다.
+_BOLD_PAIR_RE = re.compile(r"⠰⠤((?:(?!⠰⠤|⠤⠆)[\u2800-\u28ff]){1,80})⠤⠆")
+
+
+def _strip_bold_marks(line: str) -> str:
+    """짝이 맞는 굵은 글자체표를 벗긴다(제56항)."""
+    return _BOLD_PAIR_RE.sub(lambda m: m.group(1), line)
+
+
 def _build_eng_function() -> frozenset[str]:
     """영어 기능어 집합 — 로마자표 없는 영어 줄을 가려낼 때 마지막 증거로 쓴다."""
     from app.ai.braille import eng_braille as _E
@@ -948,7 +967,7 @@ def _decode_line_router(line: str, math: bool) -> str:
     # 실측(코퍼스 2,500쪽): 홑 ⠡ 110건이 전부 가계도 교배 기호이고, 약자 '연'으로 쓰인
     # 붙은 ⠡ 는 18,316건으로 공백 조건에서 완전히 갈린다.
     line = _LONE_TIMES_RE.sub("×", line)
-    line = _mark_paren_pairs(line)
+    line = _mark_paren_pairs(_strip_bold_marks(line))
     parts = re.split(r"([⠀ ]+)", line)              # 공백 런을 분리자로 보존
     tokens, seps = _merge_roman_tokens(parts[0::2], parts[1::2])
     if math:
