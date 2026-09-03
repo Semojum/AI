@@ -17,10 +17,16 @@ class TestNumbers:
 
 class TestRoman:
     def test_로마숫자_II(self):
-        # 로마자표 ⠴ + 대문자단어 ⠠⠠ + ii + 종료표 ⠲ → II
-        assert decode("⠴⠠⠠⠊⠊⠲") == "II"
+        """로마자표 ⠴ + **대문자 단어표** ⠠⠠ + ii → 유니코드 Ⅱ.
+
+        Ⅱ 이상은 대문자 단어표로 적혀 변수 `I` 와 셀이 구분된다.
+        실물 1,180쪽 A/B 좋아짐 72 · 나빠짐 1 로 유니코드 쪽을 채택했다
+        (종전 기대값은 ASCII `II` 였다).
+        """
+        assert decode("⠴⠠⠠⠊⠊⠲") == "Ⅱ"
 
     def test_단독_대문자_I(self):
+        """Ⅰ 은 **단일 대문자표**라 변수 `I` 와 셀이 같다 — 건드리지 않는다."""
         assert decode("⠴⠠⠊⠲") == "I"
 
 
