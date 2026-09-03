@@ -207,6 +207,8 @@ _MATH_MAX = max(len(k) for k in _MATH_REV_MULTI)
 # 수식 여는괄호 ⠷)에 바로 이어질 때만 수식으로 본다. 한글 약자(바=⠘⠣·예=⠌⠣ 등)는
 # 뒤에 모음 셀이 와서 이 패턴에 안 걸리므로 '3반'·'1/2개' 같은 숫자+한글이 오판되지 않는다.
 _MATH_SIGNAL_RE = re.compile(r"[⠘⠰⠜⠻⠌][⠼⠷]")
+# 겹친 관계 기호(「수학 점자」 제4·7항) — 한글과 안 겹치는 것만. 위 주석에 실측 근거.
+_MATH_REL_RE = re.compile(r"⠒⠒|⠢⠢|⠖⠖|⠔⠔")
 _MATH_PAREN_CELLS = ("⠷", "⠾")                           # 수식 괄호(텍스트 괄호와 다름)
 _MATH_PAREN_OPEN = "⠷"                                   # 분류 신호는 **여는 쪽만** 본다
 _BARE_OPS = {"⠡", "⠢", "⠔", "⠒⠒", "⠌⠌"}                 # 단독 토큰 연산자(×+−=÷)
@@ -993,6 +995,20 @@ def _classify_token(tok: str) -> str:
     # ★ 아래아 ㆍ(⠐⠼, 제25항)의 ⠼ 는 수표가 아니다 — 수식 판정에서 뺀다. 안 빼면
     #   `ᄒᆞᆫ` 이 든 토큰이 옆 수식에 딸려 수식 디코더로 가 옛한글 분기를 못 만난다.
     has_num = _NUMBER_SIGN in tok.replace(_ARAEA, "")
+    # ★ **겹친 관계 기호는 수표 없이도 수식 신호다** (「수학 점자」 제4·7항, 2026-09-04).
+    #   `ax=b`(⠁⠭⠒⠒⠃)·`a>b`(⠁⠢⠢⠃)에는 숫자가 없어 `has_num` 이 거짓이라 TEXT 로 떨어졌고,
+    #   그래서 변수가 한글로 읽혔다 — `a옥=b` · `그러므로+b`.
+    #   ★ 셀별로 갈라서 **한글과 안 겹치는 것만** 넣는다(#471 이 ⠳⠷⠔ 를 고른 방식).
+    #   gold 전권 표본 3,149쪽에서 그 셀을 품은 토큰이 지금 '깨끗한 한글'로 풀리는 비율:
+    #       ⠒⠒(=) 0/8,809 = 0.0%   ⠢⠢(>) 0/275 = 0.0%
+    #       ⠖⠖(≤) 2/227 = 0.9%     ⠔⠔(<) 20/604 = 3.3%
+    #     ── 여기까지 넣는다 ──
+    #       ⠲⠲(≥) 91/253 = 36.0%   ⠌(분수선) 42,771/48,650 = 87.9%   ⠡(×) 24,274/26,588 = 91.3%
+    #     ⠲ 는 받침 ㅍ·마침표, ⠌ 는 ㅖ·받침 ㅆ, ⠡ 는 약자 '연'과 겹쳐 넣으면 본문을 먹는다.
+    #   ⚠ **토큰 전체가 등록된 기호면 뺀다** — 기호 자체가 그 점형을 품는다.
+    #     `≲`(⠔⠔⠈⠔)이 ⠔⠔ 때문에 수식으로 가 `<'-` 로 깨졌다(회귀 테스트가 잡았다).
+    if _MATH_REL_RE.search(tok) and len(_symbol_cover(tok)) < len(tok):
+        return "MATH"
     # ★ 닫는 묶음 괄호 ⠾ 만으로는 수식 신호가 아니다 — 한글 `전`(⠨⠾)·`언`(⠶)처럼
     #   흔한 음절과 겹친다. `전쟁(1840)`(⠨⠾⠨⠗⠶⠦⠄⠼⠁⠓⠙⠚⠠⠴) 이 수표+⠾ 로 MATH 가 돼
     #   `전ρ{(1840)` 으로 깨졌다. 묶음 괄호는 짝으로 오므로 **여는 ⠷ 를 요구한다.**
@@ -1007,11 +1023,11 @@ def _classify_token(tok: str) -> str:
     return "NUM" if has_num else "TEXT"
 
 
-def _math_signal_is_inside_symbol(tok: str) -> bool:
-    """토큰의 수식 신호(⠘⠼ 등)가 등록된 기호 시퀀스 안에 들어 있는가."""
+def _symbol_cover(tok: str) -> set[int]:
+    """토큰에서 등록된 기호 시퀀스가 덮는 자리(긴 셀 우선)."""
     covered: set[int] = set()
     i, n = 0, len(tok)
-    while i < n:                                   # 긴 셀 우선으로 기호 구간을 표시
+    while i < n:
         for ln in range(min(_MAX_CELLS, n - i), 1, -1):
             if tok[i:i + ln] in _SYMBOL_REV:
                 covered.update(range(i, i + ln))
@@ -1019,6 +1035,12 @@ def _math_signal_is_inside_symbol(tok: str) -> bool:
                 break
         else:
             i += 1
+    return covered
+
+
+def _math_signal_is_inside_symbol(tok: str) -> bool:
+    """토큰의 수식 신호(⠘⠼ 등)가 등록된 기호 시퀀스 안에 들어 있는가."""
+    covered = _symbol_cover(tok)
     if not covered:
         return False
     for m in _MATH_SIGNAL_RE.finditer(tok):        # 신호가 하나라도 기호 밖이면 진짜 수식
