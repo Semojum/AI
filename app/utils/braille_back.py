@@ -1092,7 +1092,8 @@ def decode(braille: str, *, math: bool = False) -> str:
     기본(False)은 공백 단위 토큰별로 수식/한글을 자동 판별한다(인라인 수식).
     """
     # 줄을 넘는 짝(굵은 글자체표·한글표)을 먼저 벗긴다 — 아래 줄 분리보다 앞서야 한다.
-    braille = _mark_paren_pairs(_strip_hangul_indicator(_strip_bold_marks(braille)))
+    braille = _mark_paren_pairs(
+        _strip_emph_marks(_strip_hangul_indicator(_strip_bold_marks(braille))))
     if math and len(braille) >= _MATH_KOR_MIN_CELLS:
         # 한글이 많이 섞인 수식 요소는 전체를 수식으로 보면 깨진다(R2). 자동 판별로 읽는다.
         # ⚠ **짧은 순수 수식은 제외한다.** `π`(⠨⠏)·`θ`(⠨⠹) 같은 두 셀짜리는 자동 판별이
@@ -1146,7 +1147,9 @@ _PAREN_OPEN_MARK, _PAREN_CLOSE_MARK = "\ufdd2", "\ufdd3"
 #   그래서 개행을 허용하되 **길이 80셀**(32칸 조판에서 두세 줄)로 묶는다 — 굵은 글자체표(240)보다
 #   훨씬 좁다. ⚠ `⠦` 는 받침 ㅌ·물음표·큰따옴표·수식 괄호와, `⠴` 는 로마자표·닫는 큰따옴표와
 #   겹친다(원장 C-100 에서 세 판 다 기각한 셀들이다). **넓히면 오검출도 같이 넓어진다.**
-_PAREN_PAIR_RE = re.compile(r"⠦⠄((?:(?!⠦⠄|⠠⠴)[\u2800-\u28ff\n ]){1,80})⠠⠴")
+#   ⚠ 내용 문자류에 `\ufdd4`(드러냄표를 벗긴 자리)도 넣는다 — 안 넣으면 강조가 낌
+#     괄호가 짝을 못 찾는다.
+_PAREN_PAIR_RE = re.compile(r"⠦⠄((?:(?!⠦⠄|⠠⠴)[\u2800-\u28ff\n \ufdd4]){1,80})⠠⠴")
 
 
 def _mark_paren_pairs(line: str) -> str:
@@ -1175,6 +1178,32 @@ _BOLD_PAIR_RE = re.compile(r"⠰⠤((?:(?!⠰⠤|⠤⠆)[\u2800-\u28ff\n ]){1,24
 def _strip_bold_marks(line: str) -> str:
     """짝이 맞는 굵은 글자체표를 벗긴다(제56항)."""
     return _BOLD_PAIR_RE.sub(lambda m: m.group(1), line)
+
+
+# 드러냄표·밑줄 강조(제56항 앞갈래) — 굵은 글자체표와 **같은 처방**이다.
+# 역맵에 없어 `옳지 -않은-' 것은?` 처럼 이물질이 본문에 남았다(수능 부정 문항이라
+# 뜻이 뒤집히는 자리다). 여는 ⠠⠤ 는 붙임표 `-`, 닫는 ⠤⠄ 는 `-'` 로 낱개 분해됐다.
+#
+# ★ **짝이 맞을 때만** 벗긴다 — ⠠⠤ 는 「수학 점자」 제23항 2호의 밑줄(`,x,-`)과
+#   UEB 줄표로도 쓰이는데, 그 둘은 **닫는 표가 없다.** 짝을 요구하면 저절로 갈린다.
+#   실측(전 코퍼스 18,892쪽): ⠠⠤ 11,242 · ⠤⠄ 10,912 · 짝 **10,864**(짝 없는 여는 표
+#   378건·닫는 표 48건은 종전대로 붙임표로 둔다). 짝은 3,769쪽에 나온다.
+#   ⚠ UEB 타입폼 표시(⠸⠂ 밑줄 낱말 5,474 · ⠸⠄ 밑줄 종료 1,904 · ⠘⠂ 굵게 · ⠨⠂ 이탤릭)와는
+#     셀이 겹치지 않는다 — 짝 안에서 ⠸⠂·⠸⠄ 는 **0건**이다.
+# ★ 굵은 쪽과 같이 줄을 넘는다(짝 10,864 중 3,234건이 줄바꿈을 낀다). 그래서 여기서도
+#   줄을 쪼개기 **전에** 벗긴다.
+# ★ 내용 없는 짝 `⠠⠤⠤⠄` 도 벗긴다({0,240}) — 종전 출력 `(—')` 가 `()` 가 된다.
+# ★ 표를 **그냥 지우면 안 된다.** 표는 토큰 경계이기도 해서, 지우면 뒤 셀이 앞 음절의
+#   받침으로 먹힌다 — `⠠⠤아시아⠤⠄⠦⠄(…` 가 `아시앝'세계` 로 깨졌다(발동 4,196쪽
+#   전수에서 그냥 지우는 쪽이 센티넬보다 나쁜 줄 **325줄·209쪽**). 그래서 **자리에 센티넬을 남기고** 라우터가 그걸 폭 0인 분리자로
+#   쓴다. 유니코드 비문자라 실문서에 나올 수 없다(_mark_paren_pairs 와 같은 수법).
+_EMPH_PAIR_RE = re.compile(r"⠠⠤((?:(?!⠠⠤|⠤⠄)[\u2800-\u28ff\n ]){0,240})⠤⠄")
+_EMPH_MARK = "\ufdd4"      # 표를 벗긴 자리 — 토큰 경계로만 남고 글자는 안 낸다
+
+
+def _strip_emph_marks(line: str) -> str:
+    """짝이 맞는 드러냄표·밑줄표를 벗긴다(제56항)."""
+    return _EMPH_PAIR_RE.sub(lambda m: _EMPH_MARK + m.group(1) + _EMPH_MARK, line)
 
 
 # ── 한글표·한글 종료표 (규정 제39항) ─────────────────────────────────────────
@@ -1394,6 +1423,7 @@ def _decode_line_router(line: str, math: bool) -> str:
     # 여는 쪽과 닫는 쪽을 갈라 놓는다(layout_braille._ATOMIC_SEQS 와 같은 이유).
     # 줄을 쪼개기 전에 통째로 치운다.
     line = line.replace(_BOX_CHAR_OPEN + _SPACE_CELL + _BOX_CHAR_CLOSE, "▯▯")
+    line = _TABLE_BLANK_RE.sub("", line)          # 표의 빈칸 ⠿⠿ — 제73항
     # 도형 반복 틀 — 토큰을 쪼개기 전에 편다(⠸ 와 ⠇ 가 갈려 나가면 못 맞춘다).
     line = _SHAPE_RUN_RE.sub(_shape_run_repl, line)
     # 홑 곱셈표 ⠡ — 「수학 점자」 제2항. 한글 약자 '연'과 점형이 같지만 **앞뒤가 모두
@@ -1402,8 +1432,10 @@ def _decode_line_router(line: str, math: bool) -> str:
     # 붙은 ⠡ 는 18,316건으로 공백 조건에서 완전히 갈린다.
     line = _LONE_TIMES_RE.sub("×", line)
     line = _mark_paren_pairs(line)
-    parts = re.split(r"([⠀ ]+)", line)              # 공백 런을 분리자로 보존
+    # 드러냄표 센티넬도 분리자다 — 폭이 0이라 아래에서 공백을 안 낸다.
+    parts = re.split(r"([⠀ ]+|" + _EMPH_MARK + ")", line)
     tokens, seps = _merge_roman_tokens(parts[0::2], parts[1::2])
+    tokens = [t.replace(_EMPH_MARK, "") for t in tokens]    # 로마자 병합이 되삼킨 것
     if math:
         is_math = [True] * len(tokens)
     else:
@@ -1413,12 +1445,23 @@ def _decode_line_router(line: str, math: bool) -> str:
         if tok:
             pieces.append(_decode_math_token(tok) if is_math[idx] else _decode_line(tok))
         if idx < len(seps):
-            pieces.append(" " * len(seps[idx]))
+            pieces.append("" if seps[idx] == _EMPH_MARK else " " * len(seps[idx]))
     return _fix_chemical_case(_join_num_hangul(_restore_wrap_parens("".join(pieces))))
 
 
 # 네모 문자 쌍(규정 제64항) — 정방향 translator._TAGS.BOX_CHAR 와 같은 점형이다.
 _BOX_CHAR_OPEN, _BOX_CHAR_CLOSE = "⠸⠦", "⠴⠇"
+
+# 표의 빈칸(제73항) — `==`(⠿⠿). 정방향 translator._TAGS.BLANK_TABLE 과 같은 점형이다.
+# 묵자 쪽은 그냥 빈 칸이므로 **아무것도 내지 않는다**(네모 빈칸 ▯▯ 와 다르다 — 저쪽은
+# 묵자에 □ 가 보인다). 역맵에 없어 `옹옹`(약자 '옹' 두 번)으로 읽혀 5×4 표가 통째로
+# 무의미해졌다.
+# ★ **양옆이 경계일 때만.** ⠿ 는 약자 '옹'이자 온표(제8·9항)라 셀만 보면 못 가른다.
+#   실측(전 코퍼스 18,892쪽) ⠿ 런 분포:
+#     len=1 붙음 281,559 · len=1 단독 4,085 · len=2 **단독 4,286(514쪽)** · len=2 붙음 596
+#   단독 ⠿⠿ 표본은 전부 표 안(앞뒤가 표 구분선·글상자 테두리)이었다. 붙은 596건은
+#   `옹`+온표+자모 꼴이 섞여 있어 손대지 않는다.
+_TABLE_BLANK_RE = re.compile(r"(?<![^⠀ ])⠿⠿(?![^⠀ ])")
 
 # 단독으로 쓴 문장 부호 — 규정 제49항 [붙임].
 #   "빈칸 뒤에 문장 부호가 단독으로 쓰여 다른 기호와 혼동될 때에는 그 앞에 _ 을 적고,
