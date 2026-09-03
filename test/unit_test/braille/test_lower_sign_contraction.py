@@ -11,7 +11,7 @@ from app.utils.braille_back import decode
 
 @pytest.mark.parametrize("text,want", [
     ("구간 Ⅲ, Ⅳ", "구간 III, IV"),        # 쉼표가 'ea' 로 새지 않는다
-    ("세포 Ⅰ과 Ⅱ", "세포 I과 II"),
+    ("세포 Ⅰ과 Ⅱ", "세포 I과 Ⅱ"),   # Ⅰ 은 변수 I 와 셀이 같아 ASCII 로 남는다
 ])
 def test_쉼표가_약자로_새지_않는다(text, want):
     assert decode(translate_plain(text)) == want

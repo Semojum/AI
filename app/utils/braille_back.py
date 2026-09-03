@@ -374,6 +374,9 @@ def _eng_group_at(s: str, j: int, at_word_start: bool) -> tuple[str, int] | None
 
 _COMMA_CELL = "⠂"
 _SUPERSCRIPT = "⠘"      # 위첨자표(수학 제18항)
+# 로마 숫자 — 대문자 단어표로 적힌 것만 되돌린다(Ⅰ 은 변수 I 와 셀이 같아 제외).
+_ROMAN_NUM_UNI = {"II": "Ⅱ", "III": "Ⅲ", "IV": "Ⅳ", "VI": "Ⅵ", "VII": "Ⅶ",
+                  "VIII": "Ⅷ", "IX": "Ⅸ", "XI": "Ⅺ", "XII": "Ⅻ"}
 
 
 def _roman_span_ahead(s: str, at: int) -> bool:
@@ -544,7 +547,13 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
         break                                       # 비로마자 셀 → 런 종료
     if not out:
         return None
-    return "".join(out), j
+    txt = "".join(out)
+    # ★ 대문자 **단어표**(⠠⠠)로 적힌 로마 숫자는 유니코드로 되돌린다.
+    #   `Ⅱ` 이상은 ⠠⠠ 로 적히고(⠴⠠⠠⠊⠊), 변수 `I` 와 같은 셀인 `Ⅰ`(⠴⠠⠊, 단일
+    #   대문자표)은 구분이 안 되므로 **건드리지 않는다**.
+    if caps_word and txt in _ROMAN_NUM_UNI:
+        return _ROMAN_NUM_UNI[txt], j
+    return txt, j
 
 
 def _decode_number(s: str, i: int) -> tuple[str, int]:
