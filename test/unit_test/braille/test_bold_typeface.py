@@ -31,3 +31,17 @@ def test_한글표를_벗긴다():
     """
     raw = "⠀⠀⠦⠄⠴⠠⠭⠠⠴⠿⠁⠲⠀⠸⠷⠶⠿⠁⠶⠸⠾⠢⠸⠷⠶⠿⠔⠶⠸⠾⠒⠒"
     assert decode(raw) == "  (X)ㄱ. ㉠+㉢="
+
+
+@pytest.mark.parametrize("raw,want", [
+    ("⠴⠠⠝⠁⠘⠢", "Na^+"),      # 화학 이온 — ⠘⠢ 가 한글 `밤` 과 같은 셀이다
+    ("⠴⠠⠅⠘⠢", "K^+"),
+])
+def test_로마자_런_안_위첨자(raw, want):
+    assert decode(raw) == want
+
+
+@pytest.mark.parametrize("text", ["밤에", "바람", "pH 농도"])
+def test_한글_초성_ㅂ_비회귀(text):
+    """⠘ 는 한글 초성 ㅂ 이기도 하다 — 로마자 런 안에서만 위첨자로 읽는다."""
+    assert decode(translate_plain(text)) == text

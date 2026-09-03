@@ -372,6 +372,7 @@ def _eng_group_at(s: str, j: int, at_word_start: bool) -> tuple[str, int] | None
 
 
 _COMMA_CELL = "⠂"
+_SUPERSCRIPT = "⠘"      # 위첨자표(수학 제18항)
 
 
 def _roman_span_ahead(s: str, at: int) -> bool:
@@ -504,6 +505,22 @@ def _decode_roman_run(s: str, i: int) -> tuple[str, int] | None:
             out.append(ch.upper() if caps_word else ch)
             j += 1
             continue
+        if c == _SUPERSCRIPT and s[i] == _ROMAN_START:
+            # 화학 이온·거듭제곱 — 로마자 런 안의 위첨자표(수학 제18항).
+            # `Na^+`(⠴⠠⠝⠁⠘⠢) 의 ⠘⠢ 가 한글 `밤` 과 같은 셀이라 `Na밤` 으로 나갔다.
+            # 명시적 로마자표로 열린 런 안에서만 본다 — 한글 초성 ㅂ 과 안 겹치게.
+            # 실측(전 코퍼스 1,131쪽): 로마자 런 뒤 위첨자 **321건**
+            # (⠘⠢ 154 · ⠘⠼⠃ 140 · ⠘⠼⠉ 14 · ⠘⠔ 5 …).
+            nxt = s[j + 1:j + 2]
+            if nxt == _NUMBER_SIGN:
+                num, j = _decode_number(s, j + 1)
+                out.append("^" + num)
+                continue
+            if nxt in ("⠢", "⠔"):
+                out.append("^" + ("+" if nxt == "⠢" else "-"))
+                j += 2
+                continue
+            break                                    # 모르는 위첨자 → 런 종료
         if c == _SUBSCRIPT:                          # 첨자표 등 → 근사로 건너뜀
             # ★ 다만 **닫는 대괄호 ⠰⠴** 는 건너뛰면 안 된다 — ⠰ 만 먹고 남은 ⠴ 가
             #   닫는 큰따옴표로 떨어져 `[A]` 가 `[A”` 로 나갔다. 진짜 첨자는 뒤에
