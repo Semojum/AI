@@ -30,6 +30,11 @@ import sys
 from pathlib import Path
 
 from app.ai.braille.symbol_rules import SYMBOL_TABLE
+# 옛한글 점형표(규정 제19~25항)는 정방향이 정본이다 — 역방향은 그 표를 뒤집어 쓴다.
+from app.ai.braille.translator import (
+    _CHOSEONG as _T_CHO, _JONGSEONG as _T_JONG,
+    _OLD_CHO as _T_OLD_CHO, _OLD_JUNG as _T_OLD_JUNG,
+)
 
 _MAP_PATH = Path(__file__).with_name("braille_syllable_map.json")
 
@@ -277,6 +282,139 @@ def _load_special_rev() -> dict:
 
 _SPECIAL_REV = _load_special_rev()
 _SPECIAL_MAX = max((len(k) for k in _SPECIAL_REV), default=0)
+
+
+def _special_at(s: str, i: int) -> tuple[str, int] | None:
+    """s[i] 에서 동그라미 숫자·낱자(제64항)가 시작하면 (글자, 다음 위치).
+
+    ⚠ ⠼+아랫셀은 **로그 밑**(「수학 점자」 제46항 log₂ = ⠸⠼⠆)과 셀이 같다. 앞 칸이
+      ⠸ 면 로그라 펴지 않는다 — 이 가드가 없으면 `log ②` 가 나간다.
+    """
+    if s[i] == _NUMBER_SIGN and i and s[i - 1] == "⠸":
+        return None
+    for ln in range(min(_SPECIAL_MAX, len(s) - i), 0, -1):
+        if s[i:i + ln] in _SPECIAL_REV:
+            return _SPECIAL_REV[s[i:i + ln]], i + ln
+    return None
+
+
+# ── 옛한글 역조립 (「한국 점자 규정」 제19~25항) ─────────────────────────────
+# 정방향 translator._old_syllable_cells 의 역이다 — 점형 표를 그쪽에서 그대로 들여와
+# 두 방향이 갈라지지 않게 한다.
+#
+# ★ 어디까지 펴나 — **묵자 실측이 있는 넉 자만**(2026-09-04). 옛 글자표 ⠐ 는 쉼표·
+#   점 곱셈기호·초성 ㄹ 과 같은 셀이라 표를 통째로 뒤집어 쓰면 본문을 먹는다.
+#   재추출 묵자 1,180쪽 대조(그 셀이 나온 점자 쪽 / 그 쪽 묵자에 그 옛 글자가 있는 쪽):
+#   | 자모 | 셀 | 점자쪽 | 묵자에도 | 판정 |
+#   |---|---|---|---|---|
+#   | ㆍ ᆞ | ⠐⠼   |  28 | **23** | 넣는다 |
+#   | ㆎ ᆡ | ⠐⠼⠗  |  16 |    7   | 넣는다(아래아의 긴 꼴) |
+#   | ㅸ ᄫ | ⠐⠘⠶ |   7 | **6**  | 넣는다 |
+#   | ㅿ ᅀ | ⠐⠨   |  15 | **10** | 넣는다 |
+#   | ㆁ ᅌ | ⠐⠙   |  26 |    1   | **뺀다** — 115건이 쉼표·약자다 |
+#   | ㆆ ᅙ | ⠐⠚   |   3 |    0   | **뺀다** |
+#   | 무음 ㅇ 받침 | ⠐⠶ | 238 | **0** | **뺀다** — 688건 전부 오검출 |
+#   | 방점 거성 ⠸⠂ · 상성 ⠸⠅ | | 2 · 1 | | **뺀다** — 아래 참조 |
+#   | ㆇ~ㆌ(⠸⠬⠜ 등) |  |  0 |  0 | **뺀다** — 전 코퍼스 0건 |
+# ⚠ 아래아 ⠐⠼ 는 **수식 쉼표 + 다음 수의 수표**와 셀이 같다(`4, 1` = ⠼⠙⠐⠼⠁).
+#   전 코퍼스 18,892쪽에 ⠐⠼ 862건 중 **395건이 그 수(120쪽)** 다 — 앞이 수 런이면 뺀다.
+# ⚠ 방점(제27항 거성 ⠸⠂ · 상성 ⠸⠅)은 **넣으면 안 된다.** ⠸⠂ 는 전 코퍼스 5,474건인데
+#   67.9% 가 바로 뒤에 로마자 셀 3개 이상이 붙는다 — `⠸⠂⠎⠁⠙`(sad)·`⠸⠂⠋⠗⠑⠑`(free) 처럼
+#   **UEB 밑줄 낱말표**이지 방점이 아니다. 상성 ⠸⠅ 는 전 코퍼스 7건뿐이다.
+# ⚠ 한계: 옛 받침(ᇫ=⠐⠅ 등)과 겹받침은 안 편다. 실측이 1,180쪽에 1쪽뿐이고, 겹받침
+#   두 칸을 먹으면 닫는 따옴표(⠴⠄)를 삼킨다. 음절 역맵으로 푸는 자리(옛 자음자 + 현대
+#   모음)는 탐욕 매칭이라 드물게 닫는 따옴표를 받침 ㅎ 으로 먹는다(전 코퍼스 282줄에 1건).
+_OLD_CHO_REV = {_T_OLD_CHO[j]: j for j in ("ᄫ", "ᅀ")}
+_OLD_JUNG_REV = {_T_OLD_JUNG[j]: j for j in ("ᆞ", "ᆡ")}
+_OLD_COMPAT = {"ᄫ": "ㅸ", "ᅀ": "ㅿ", "ᆞ": "ㆍ", "ᆡ": "ㆎ"}   # 낱자로 홀로 쓰일 때
+_CHO_CELL_REV = {c: chr(0x1100 + i) for i, c in enumerate(_T_CHO) if c}
+# ★ 옛한글에서는 첫소리 ㅇ 을 ⠛ 로 적는 관행이 있다 — 규정 제21항 쌍이응 ㆀ = ⠐⠛⠛ 이
+#   ⠛=ㅇ 임을 보이고, 정답 도서가 `‘ᄋᆞᆯ’`(⠠⠦⠛⠐⠼⠂⠴⠄)·`‘ᄋᆡ’`·`‘ᄋᆞ로’` 로 그렇게 적는다.
+#   (규정 제25항 예시 `애매한`=⠐⠼⠗⠑⠐⠼⠗⠚⠐⠼⠒ 은 ⠛ 없이 적어 규정↔관행이 갈린다 —
+#    역방향은 둘 다 읽어야 하므로 둘 다 받는다.) 전 코퍼스 ⠛+아래아 21건.
+_CHO_CELL_REV["⠛"] = "ᄋ"
+# 초성 없는 아래아(ᄋᆞ)를 펴도 되는 자리 — **낱말 경계뿐이다.**
+# ⠐⠼ 는 `쉼표/수식 쉼표 + 다음 수의 수표`와 셀이 같아서(각주 번호 `,41` · 수식 `”,2=`)
+# 음절 한복판에서 펴면 수학·문학 책 본문이 깨진다. 전 코퍼스 실측: 초성 없는 자리 221건 중
+# 경계 밖 110건이 전부 수식·각주였고, 경계 안 49건은 전부 중세국어 인용이다.
+_ARAEA_BOUND = frozenset("⠀ \n⠦⠤")
+_JONG_CELL_REV = {c: chr(0x11A7 + i) for i, c in enumerate(_T_JONG) if len(c) == 1}
+_ARAEA = _T_OLD_JUNG["ᆞ"]
+_DIGIT_CELLS = frozenset("⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚")
+_SYL_MAX = max((len(k) for k in _SYLLABLE_REV), default=0)
+_JAMO_V0, _JAMO_T0 = 0x1161, 0x11A7
+
+
+def _in_number_run(s: str, i: int) -> bool:
+    """s[i] 앞이 수표+숫자 런인가 — 그러면 이 ⠐⠼ 는 아래아가 아니라 `쉼표+수표`다."""
+    j = i - 1
+    while j >= 0 and s[j] in _DIGIT_CELLS:
+        j -= 1
+    return 0 <= j < i - 1 and s[j] == _NUMBER_SIGN
+
+
+def _old_jung_at(s: str, i: int) -> tuple[str, int] | None:
+    if s[i:i + 2] == _ARAEA and _in_number_run(s, i):
+        return None
+    for ln in (3, 2):
+        j = _OLD_JUNG_REV.get(s[i:i + ln])
+        if j:
+            return j, i + ln
+    return None
+
+
+def _old_cho_at(s: str, i: int) -> tuple[str, int] | None:
+    for ln in (3, 2):
+        c = _OLD_CHO_REV.get(s[i:i + ln])
+        if c:
+            return c, i + ln
+    return None
+
+
+def _old_tail(s: str, cho: str, at: int) -> tuple[str, int] | None:
+    """초성이 정해진 뒤 — 중성(+받침)을 붙여 첫가끝 음절을 만든다."""
+    jung = _old_jung_at(s, at)
+    if jung:
+        at = jung[1]
+        t = _JONG_CELL_REV.get(s[at:at + 1])
+        if t and not (s[at] == "⠴" and s[at + 1:at + 2] == "⠄"):   # 닫는 작은따옴표
+            return cho + jung[0] + t, at + 1
+        return cho + jung[0], at
+    if cho == "ᄋ":                       # 초성이 없는데 중성도 없으면 옛한글이 아니다
+        return None
+    # 옛 자음자 + 현대 모음 — 정방향이 약자로 적으므로(ᄫᅳᆫ = ⠐⠘⠶⠵) 음절 역맵으로 푼다.
+    for ln in range(min(_SYL_MAX, len(s) - at), 0, -1):
+        syl = _SYLLABLE_REV.get(s[at:at + ln])
+        if syl and len(syl) == 1 and 0xAC00 <= ord(syl) <= 0xD7A3:
+            code = ord(syl) - 0xAC00
+            if code // 588 != 11:        # 정방향이 붙인 ㅇ 초성이 아니면 남의 음절이다
+                break
+            jong = code % 28
+            return (cho + chr(_JAMO_V0 + (code % 588) // 28)
+                    + (chr(_JAMO_T0 + jong) if jong else ""), at + ln)
+    return None
+
+
+def _old_hangul_at(s: str, i: int) -> tuple[str, int] | None:
+    """s[i] 에서 옛한글이 시작하면 (첫가끝 문자열, 다음 위치).
+
+    옛 글자표 ⠐ 가 쉼표·초성 ㄹ 과 같은 셀이라 **양쪽에 조건을 건다** — 옛 자음자는
+    뒤에 모음이 붙어야 하고, 아래아는 수 런 안이면 안 되며, 초성 없는 아래아는
+    낱말 경계에서만 편다.
+    """
+    if s[i] == "⠿":                                  # 자모 단독 표시(제9항 온표) + 옛 글자
+        got = _old_cho_at(s, i + 1) or _old_jung_at(s, i + 1)
+        return (_OLD_COMPAT[got[0]], got[1]) if got else None
+    cho = _old_cho_at(s, i)
+    if cho:
+        return _old_tail(s, cho[0], cho[1])
+    for ln in (2, 1):                                # 현대 초성 + 옛 모음자
+        c = _CHO_CELL_REV.get(s[i:i + ln])
+        if c and _old_jung_at(s, i + ln):
+            return _old_tail(s, c, i + ln)
+    if _old_jung_at(s, i) and (i == 0 or s[i - 1] in _ARAEA_BOUND):
+        return _old_tail(s, "ᄋ", i)                 # 초성 없는 ᄋᆞ — 낱말 경계에서만
+    return None
 
 # 모음 낱자(제7항) — 온표 ⠿ 뒤 모음. **_SPECIAL_REV 에 넣으면 안 된다**: ⠿는 약자 '옹'
 # 이기도 해서 무조건 펴면 `옹알이`(⠿⠣⠂⠕)가 `ㅏㄹ이`로 깨진다. 자음 낱자(㉠=⠿⠁)는
@@ -766,6 +904,17 @@ def _decode_math_token(tok: str) -> str:
             i += 1
             continue
         if c == _NUMBER_SIGN:                       # 수표 → 숫자
+            # ★ 동그라미 숫자(제64항 ①=⠼⠂)는 **토큰 첫 칸일 때만** 편다(2026-09-04).
+            #   선택지 번호가 옆 수식에 딸려 MATH 로 분류되면 여기로 오는데, 종전에는
+            #   ⠂ 를 자릿점 쉼표로 읽어 ①이 `,` 로, ②~⑤가 맨숫자로 떨어졌다
+            #   (`① 8/3 ② 3 ③ 10/3` → `, 3분의8  2 3  3 3분의10`).
+            #   첫 칸으로 한정해 로그 밑(⠸⠼⠆ = log₂)·자릿점 쉼표는 종전대로 둔다.
+            if i == 0:
+                _sp = _special_at(tok, 0)
+                if _sp:
+                    out.append(_sp[0])
+                    i = _sp[1]
+                    continue
             txt, j = _decode_number(tok, i)
             out.append(txt)
             i = j
@@ -841,7 +990,9 @@ def _classify_token(tok: str) -> str:
     #   수식으로 분류돼 수식 디코더가 ⠶ 를 `{`, ⠿ 를 `∞` 로 읽었다 — `{∞a{('g_1`.
     if tok[:2] == _CIRCLED_JAMO_OPEN:
         return "TEXT"
-    has_num = _NUMBER_SIGN in tok
+    # ★ 아래아 ㆍ(⠐⠼, 제25항)의 ⠼ 는 수표가 아니다 — 수식 판정에서 뺀다. 안 빼면
+    #   `ᄒᆞᆫ` 이 든 토큰이 옆 수식에 딸려 수식 디코더로 가 옛한글 분기를 못 만난다.
+    has_num = _NUMBER_SIGN in tok.replace(_ARAEA, "")
     # ★ 닫는 묶음 괄호 ⠾ 만으로는 수식 신호가 아니다 — 한글 `전`(⠨⠾)·`언`(⠶)처럼
     #   흔한 음절과 겹친다. `전쟁(1840)`(⠨⠾⠨⠗⠶⠦⠄⠼⠁⠓⠙⠚⠠⠴) 이 수표+⠾ 로 MATH 가 돼
     #   `전ρ{(1840)` 으로 깨졌다. 묶음 괄호는 짝으로 오므로 **여는 ⠷ 를 요구한다.**
@@ -1376,6 +1527,13 @@ def _decode_line(s: str) -> str:
             out.append("【점역자주】")
             i += 2
             continue
+        # 옛한글(제19~25항) — 아래아·ㅸ·ㅿ. ⠐⠼ 를 쉼표+수표로 쪼개던 자리다
+        # (`ᄋᆞᆯ` → `,①` · `ᄒᆞ` → `하,⟨⠼⟩` · `ㅸ` → `옹,방`).
+        _old = _old_hangul_at(s, i)
+        if _old:
+            out.append(_old[0])
+            i = _old[1]
+            continue
         # 대문자 로마자 처리는 폐기(2026-07-18): ⠠는 한글 음절 구성요소(수=⠠⠍)이기도 해
         # ⠠+알파를 대문자로 보면 정상 한글을 깬다(국수→국M, 따님→I님). roundtrip 회귀.
         # 로마자 대문자는 ⠴…⠲ 로마자 런 안에서만 처리(맥락 있음).
@@ -1394,14 +1552,10 @@ def _decode_line(s: str) -> str:
                 ln = 0
             if ln:
                 continue
-        _sp = 0
-        for ln in range(min(_SPECIAL_MAX, n - i), 0, -1):
-            if s[i:i + ln] in _SPECIAL_REV:
-                _sp = ln
-                break
+        _sp = _special_at(s, i)
         if _sp:
-            out.append(_SPECIAL_REV[s[i:i + _sp]])
-            i += _sp
+            out.append(_sp[0])
+            i = _sp[1]
             continue
         # 수표 숫자 — 동그라미숫자 기호(①=⠼⠉ 등)보다 먼저(평문 숫자가 흔함).
         if ch == _NUMBER_SIGN:
