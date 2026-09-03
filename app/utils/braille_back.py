@@ -46,7 +46,18 @@ _SENT_END = {"⠦": "?", "⠖": "!"}
 # 받침 ㅍ 음절 — ⠲가 마침표인지 받침 ㅍ인지 가른다(높=⠉⠥⠲ vs 노+마침표).
 # 한국어에서 받침 ㅍ이 실제로 쓰이는 음절은 닫힌 집합이라 목록으로 가르는 게 가장 정확하다.
 # (위치로 가르면 닫는 따옴표 앞에서 틀린다 — `나타난다.’` → `나타난닾’`.)
-_PIEUP_FINAL = frozenset("갚겊깊높늪덮릎섶숲싶앞엎옆잎짚")
+_PIEUP_FINAL = frozenset("갚겊깊높늪덮릎섶숲싶앞엎옆잎읊짚")
+# 그중 **낱말 끝에 못 서는 어간**(갚다·깊다·싶다·엎다·짚다·읊다 / 땔섶). 어말·닫는 부호
+# 앞이면 받침 ㅍ이 아니라 **온점**이다 — `있어.`→`있엎` · `밝혀야지.`→`밝혀야짚` 이 이것.
+# 근거는 재추출 묵자 1,362쪽 실측(어말·닫는 부호 앞 자리에서만 셌다):
+#   갚 0회 : `가.` 46   ·   깊 0 : `기.` 5   ·   섶 0 : `서.` 9   ·   싶 0 : `시.` 30
+#   엎 0 : `어.` 174    ·   짚 1 : `지.` 46  ·   읊 0 : `을.` 2
+# 반대로 어말에 실제로 서는 것들은 뺐다 — 앞 24 · 릎 12 · 잎 8 · 숲 7 · 옆 4 · 높 3.
+# ★ `읊` 은 반대 방향 오류였다. 목록에 없어 `읊고`가 `을.고`로 깨졌다(어중 13회).
+#   여기 같이 넣어 어중에서는 `읊`, 어말에서는 `을.` 로 갈리게 한다.
+_PIEUP_STEM_ONLY = frozenset("갚깊섶싶엎읊짚")
+# 받침 ㅋ 음절 — 국어에 `엌`(부엌)·`녘`(동녘) 둘뿐이라 나머지는 전부 느낌표 ⠖ 다.
+_KIEUK_FINAL = frozenset("엌녘")
 
 # 받침에 ㅎ이 든 음절(ㅎ·ㄶ·ㅀ) — ⠴가 **닫는 큰따옴표**인지 받침의 ㅎ인지 가른다
 # (좋=⠨⠥⠴ · 끓 vs 조+”). 받침 ㅍ(_PIEUP_FINAL)과 같은 방식이고 근거도 같다.
@@ -1413,7 +1424,12 @@ def _decode_line(s: str) -> str:
             if seg[-1] == "⠲" and seg in _SYMBOL_REV:
                 out.append(_SYMBOL_REV[seg])
             elif (seg[-1] == "⠲" and seg[:-1] in _COMBINED
-                  and _COMBINED.get(seg) not in _PIEUP_FINAL):
+                  and (_COMBINED.get(seg) not in _PIEUP_FINAL
+                       # ★ 받침 ㅍ 음절이라도 **낱말 끝에 못 서는 어간**이면 온점이다.
+                       #   `있어.` 가 `있엎` 으로, `밝혀야지.` 가 `밝혀야짚` 으로 나갔다.
+                       or (_COMBINED.get(seg) in _PIEUP_STEM_ONLY
+                           and (_final(i + best_ln)
+                                or _closing_follows(s, i + best_ln))))):
                 # ⠲는 마침표이자 **받침 ㅍ**이라(높=⠉⠥⠲) 무조건 분리하면 받침 ㅍ이 든 말이
                 # 전부 깨진다(높다→'노.다' · 앞으로→'아.으로'). 위치로 가르면 닫는 따옴표
                 # 앞에서 또 틀리므로(`나타난다.’`→`나타난닾’`) **실제로 쓰이는 받침 ㅍ 음절**
@@ -1439,8 +1455,24 @@ def _decode_line(s: str) -> str:
                     i += best_ln - 1
                     continue
                 out.append("”")
+            elif (seg[-1] == "⠦" and seg[:-1] in _COMBINED
+                  and s[i + best_ln:i + best_ln + 1] in ("⠄", "⠆")):
+                # ⠦ 는 **받침 ㅌ**(제3항)이자 여는 소괄호 `⠦⠄`·여는 대괄호 `⠦⠆` 의 첫
+                # 셀이다. 짝을 못 찾으면 탐욕 매칭이 앞 음절에 받침으로 붙여 먹는다 —
+                # `구체(` → `구쳍'` · `중도[중]` → `중돝;중]`. 남은 ⠄·⠆ 는 `'`·`;` 로 샜다.
+                # 홀로 선 ⠄·⠆ 는 한국어 음절에 없으므로(닫는 작은따옴표 ⠴⠄ 가드와 같은
+                # 근거) 뒤 셀이 ⠄·⠆ 면 부호가 맞다.
+                out.append(_COMBINED[seg[:-1]])
+                i += best_ln - 1     # 한 칸 물러나 다음 바퀴가 두 셀 부호로 읽게 둔다
+                continue
             elif (seg in _SYLLABLE_REV and seg[-1] in _SENT_END
-                  and seg[:-1] in _COMBINED and _final(i + best_ln)):
+                  and seg[:-1] in _COMBINED
+                  and (_final(i + best_ln)
+                       # ★ 느낌표 ⠖ 는 받침 ㅋ 과 같은 셀인데 받침 ㅋ 음절은 국어에
+                       #   `엌·녘` 둘뿐이다. 닫는 부호 앞이면 부호로 본다 —
+                       #   `하라!”` 가 `랔”`, `…뭐!)` 가 `…뭌)` 로 나갔다.
+                       or (seg[-1] == "⠖" and _COMBINED[seg] not in _KIEUK_FINAL
+                           and _closing_follows(s, i + best_ln)))):
                 # 한글 음절로 오인 흡수된 경우만 분리(요?=⠬⠦) — 기호(「=⠐⠦)는 그대로 둔다.
                 out.append(_COMBINED[seg[:-1]])
                 out.append(_SENT_END[seg[-1]])
