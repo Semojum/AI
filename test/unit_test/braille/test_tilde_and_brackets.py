@@ -24,3 +24,20 @@ def test_왕복(text):
 def test_받침_ㅎ와_대괄호는_그대로(text):
     """⠴ 를 한 칸 물러 읽게 했으니 받침 ㅎ·대괄호가 안 깨지는지 지킨다."""
     assert decode(translate_plain(text)) == text
+
+
+@pytest.mark.parametrize("text", [
+    "『황명세법』을",
+    "『대학』을 읽고",
+])
+def test_낫표_뒤_조사가_영어약자로_안_샌다(text):
+    """제29항 — 로마자표는 낱말 앞에 온다. 낱말 중간 ⠴ 는 닫는 낫표다.
+
+    이 조건이 없으면 `⠴⠆⠮` 가 be+the 로 3셀을 먹어 `『황명세법bethe` 가 나갔다.
+    """
+    assert decode(translate_plain(text)) == text
+
+
+@pytest.mark.parametrize("text", ["pH 농도", "50%이다", "25%이므로", "MP4 Player 를", "℃ 단위"])
+def test_어절_첫_로마자표는_그대로(text):
+    assert decode(translate_plain(text)) == text
