@@ -178,6 +178,7 @@ _MATH_MAX = max(len(k) for k in _MATH_REV_MULTI)
 # 뒤에 모음 셀이 와서 이 패턴에 안 걸리므로 '3반'·'1/2개' 같은 숫자+한글이 오판되지 않는다.
 _MATH_SIGNAL_RE = re.compile(r"[⠘⠰⠜⠻⠌][⠼⠷]")
 _MATH_PAREN_CELLS = ("⠷", "⠾")                           # 수식 괄호(텍스트 괄호와 다름)
+_MATH_PAREN_OPEN = "⠷"                                   # 분류 신호는 **여는 쪽만** 본다
 _BARE_OPS = {"⠡", "⠢", "⠔", "⠒⠒", "⠌⠌"}                 # 단독 토큰 연산자(×+−=÷)
 # 그리스 소문자 접두 관행(2026-07-21): book 모드 정방향은 ⠈x를 낸다(kor_math_rules
 # ._LC_GREEK 주석 참조). 역점역도 같은 판본을 읽어야 왕복이 성립하므로 ⠈x 별칭을 더한다.
@@ -673,7 +674,10 @@ def _classify_token(tok: str) -> str:
     if tok[:1] == "⠖" and any(tok.startswith(k) for k in _TRIG_CELLS):
         return "MATH"
     has_num = _NUMBER_SIGN in tok
-    if has_num and (_MATH_SIGNAL_RE.search(tok) or any(p in tok for p in _MATH_PAREN_CELLS)):
+    # ★ 닫는 묶음 괄호 ⠾ 만으로는 수식 신호가 아니다 — 한글 `전`(⠨⠾)·`언`(⠶)처럼
+    #   흔한 음절과 겹친다. `전쟁(1840)`(⠨⠾⠨⠗⠶⠦⠄⠼⠁⠓⠙⠚⠠⠴) 이 수표+⠾ 로 MATH 가 돼
+    #   `전ρ{(1840)` 으로 깨졌다. 묶음 괄호는 짝으로 오므로 **여는 ⠷ 를 요구한다.**
+    if has_num and (_MATH_SIGNAL_RE.search(tok) or _MATH_PAREN_OPEN in tok):
         # ★ 단위 기호가 수식 신호를 품는다 (2026-08-09). 규정 제68항이 ㎡를 문자 그대로
         #   `m` 위첨자 `2`로 적으므로(`0m^#b` = ⠴⠍⠘⠼⠃) 토큰 안에 ⠘⠼가 들어 있고,
         #   그대로 두면 `2㎡`가 수식으로 분류돼 `2)m^2`로 풀린다.
