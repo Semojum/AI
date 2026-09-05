@@ -1289,6 +1289,26 @@ _ENG_FUNCTION = _build_eng_function()
 # 런을 끊어 낱말 판정을 실패시켰다.
 _ENG_TAIL_PUNCT = {"⠲": ".", "⠂": ",", "⠦": "?", "⠖": "!", "⠆": ";", "⠒": ":"}
 
+# 영어 아포스트로피 축약 꼬리 — 아포스트로피는 3점 ⠄ 한 칸이다(EBAE·UEB 공통).
+# 규정↔관행 대조원장 **R-26**(docs/analysis/규정-관행_대조원장.md) — 규정 모호 → 관행 채택.
+# 「점자 자료 제작 지침」에 영문 축약형 점형이 없어 점역사 회신이 그 자리를 메운다 —
+# "영어 원서 등 영문 표현의 강조나 발음/변음 부호는 UEB 규정을 참고해야 합니다"
+# (braille-source/text/점역사_qna.txt A13).
+# ⠄ 는 로마자 런의 글자가 아니라 `_decode_roman_run` 이 낱말을 끝까지 못 읽고 멈춘다.
+# 그러면 제29항 [다만] 영문 줄 판정(`_english_line`)이 그 낱말 하나 때문에 통째로
+# 무너져 줄 전체가 뜻 없는 한글로 나갔다 —
+#   `⠙⠕⠝⠄⠞ ⠎⠑⠑⠅ ⠑⠍⠏⠇⠕⠽⠰⠞ ⠾ ⠮ ⠉⠕⠍⠏⠁⠝⠽⠲`
+#   → `피엣얼 어마맞 무워사이외철 언 을 니우웍에외.`  (= don't seek employment …)
+# ★ **닫힌 집합**으로 둔다. 영어 축약 꼬리는 이 일곱뿐이고, 여기서 ⠄ 를 일반 문자로
+#   풀면 한글 쪽 ⠦⠄(여는 소괄호)·⠴⠄(닫는 작은따옴표)·⠠⠄ 를 로마자가 삼킨다.
+#   또 `we'll`(⠺⠑⠄⠇⠇)처럼 꼬리를 **낱말 첫머리로 다시 읽으면** 단축형 표에 걸려
+#   `we'little` 이 된다 — 꼬리를 통째로 글자로 붙이는 이 방식은 그 함정도 피한다.
+# 실측(gold 전권 18,892쪽): 이 꼬리 하나로 영어로 읽히게 되는 줄 **1,044**,
+# 기존에 영어로 읽던 줄이 바뀌는 것 **0**, 뒤집히는 책은 영어 교재 12권뿐이다.
+# 긴 것부터 맞춘다(⠄⠧⠑ 가 ⠄⠎ 보다 먼저).
+_ENG_APOSTROPHE = {"⠄⠗⠑": "'re", "⠄⠧⠑": "'ve", "⠄⠇⠇": "'ll",
+                   "⠄⠎": "'s", "⠄⠞": "'t", "⠄⠙": "'d", "⠄⠍": "'m"}
+
 # ── UEB 밑줄 글자체표 (UEB 9.5) ──────────────────────────────────────────────
 # 「점자 자료 제작 지침」에는 영문 강조 점형이 없다. 점역사 회신이 그 자리를 메운다 —
 # "영어 원서 등 영문 표현의 강조나 발음/변음 부호는 UEB 규정을 참고해야 합니다"
@@ -1356,7 +1376,7 @@ def _english_line(line: str) -> str | None:
         while core[:2] in _UEB_BRACKET:              # 낱말 앞 UEB 괄호
             head += _UEB_BRACKET[core[:2]]
             core = core[2:]
-        while core:                                  # 낱말 뒤 — 괄호와 문장부호가 섞인다
+        while core:                                  # 낱말 뒤 — 괄호·문장부호·축약이 섞인다
             if core[-2:] in _UEB_BRACKET:
                 tail = _UEB_BRACKET[core[-2:]] + tail
                 core = core[:-2]
@@ -1364,7 +1384,14 @@ def _english_line(line: str) -> str | None:
                 tail = _ENG_TAIL_PUNCT[core[-1]] + tail
                 core = core[:-1]
             else:
-                break
+                # 아포스트로피 축약 꼬리(`don't`·`we'll`) — 떼야 낱말이 끝까지 읽힌다.
+                for cells, txt in _ENG_APOSTROPHE.items():
+                    if len(core) > len(cells) and core.endswith(cells):
+                        tail = txt + tail
+                        core = core[:-len(cells)]
+                        break
+                else:
+                    break
         if not core:
             return None
         got = _decode_roman_run(_ROMAN_START + core, 0, span_ok=True)
