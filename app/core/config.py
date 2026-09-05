@@ -118,7 +118,9 @@ class Settings(BaseSettings):
     #   곧바로 외부 API 폴백(base_opt.fallback_optimize)으로 간다.
     #   근거 = 1차 PoC 품질 비교에서 HCXT가 탈락(태깅 실문장 48/100 vs claude-sonnet-5 91/100,
     #   실패 47건 중 46건이 본문 훼손. 8초 상한 초과는 0/100이라 "느려서"가 아니라 "틀려서" 탈락).
-    #   ★ 폐기가 아니라 비활성이다 — 모델 파일(models/hcxt·hcxt-gptq)과 아래 배선·서빙
+    #   ★ 폐기가 아니라 비활성이다 — 아래 배선·서빙 스크립트는 그대로 두었다.
+    #     다만 **모델 가중치는 2026-09-06 삭제했다**(64GB, 대표 지시). 재취득 경로는
+    #     model_manager._load_hcxt 주석 참조.  구 주석: 모델 파일(models/hcxt·hcxt-gptq)과 아래 배선·서빙
     #   스크립트는 보존한다. 되살리려면 이 값을 "vllm"으로 바꾸고 vLLM 서버를 띄우면 된다
     #   (기동 인자는 model_manager._load_hcxt 주석 참조).
     # "transformers": 인프로세스 bitsandbytes 4bit(단일 GPU 직렬, 락 필요).

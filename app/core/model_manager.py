@@ -45,9 +45,13 @@ class ModelManager:
     # ── 내부 로더 ─────────────────────────────────────────────────
 
     def _load_hcxt(self) -> None:
-        # ── 되살리는 법 (2026-08-02 비활성) ──────────────────────────
-        # 기본값이 hcxt_backend="off"라 여기서 즉시 빠진다. 모델 파일도 이 배선도 삭제하지
-        # 않았으므로 되살리려면 .env에 HCXT_BACKEND=vllm 을 넣고 vLLM 서버를 띄우면 된다.
+        # ── 되살리는 법 (2026-08-02 비활성 · 2026-09-06 가중치 삭제) ──
+        # 기본값이 hcxt_backend="off"라 여기서 즉시 빠진다. 배선은 그대로 두었으나
+        # ★ **모델 가중치는 2026-09-06 대표 지시로 삭제했다**(models/hcxt 55GB +
+        #   models/hcxt-gptq 9.1GB = 64GB, 디스크 정리). 되살리려면 **먼저 내려받아야 한다**:
+        #     models/hcxt      = naver-hyperclovax/HyperCLOVAX-SEED-Think-14B
+        #     models/hcxt-gptq = 위 모델의 GPTQ 양자화본(HyperCLOVAX-SEED-Think-14B-GPTQ)
+        # 그다음 .env에 HCXT_BACKEND=vllm 을 넣고 vLLM 서버를 띄우면 된다.
         #   vllm serve <models/hcxt-gptq> --served-model-name hcxt --port 8100 \
         #     --trust-remote-code --gpu-memory-utilization 0.86 --max-model-len 4096
         #   (원본 benchmarks/vllm/serve_hcxt_gptq.sh는 위 3개 인자가 빠져 그대로는 안 뜬다.
