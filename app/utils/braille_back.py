@@ -962,6 +962,26 @@ def _decode_math_token(tok: str) -> str:
                 break
         if matched:
             continue
+        # ★ 대문자표를 수식 안에서도 살린다(「수학 점자」 제12항 · 「한글 점자」 제28항 [붙임]).
+        #   규정 예시: `행렬 A와 B에 대하여 AB의 값` = `⠠A⠠B`(제12항) ·
+        #   `∠ABC` = `⠹⠠⠠ABC`(제39항) · `AB̅` = `⠈⠉⠠⠠AB`(제35항 [붙임]).
+        #   종전에는 `⠠`가 _MATH_REV_SINGLE 에서 빈 문자열로 빠져 **뒤 글자가 소문자로**
+        #   나갔다 — `\frac{1}{AB}` 가 `(ab)분의1`, `P(X)` 가 `p(x)`. 로마자 런 경로
+        #   (_decode_roman)는 이미 이렇게 읽는다. 수식 경로만 어긋나 있던 것을 맞춘다.
+        #   ⚠ 뒤가 통째로 한글로 풀리면 대문자표가 아니라 **한글 초성 ㅅ**이다
+        #     (`⠠⠥` = 소). 실측 1쪽에서 `소금물` 이 `U'음물` 로 깨졌다.
+        if c == _CAPITAL and not (
+                i and not _var_follows(tok, i) and _korean_tail(tok, i)):
+            if tok[i + 1:i + 2] == _CAPITAL and tok[i + 2:i + 3] in _ALPHA_REV:
+                i += 2                                # 대문자 단어표 — 로마자 런 전체
+                while i < n and tok[i] in _ALPHA_REV:
+                    out.append(_ALPHA_REV[tok[i]].upper())
+                    i += 1
+                continue
+            if tok[i + 1:i + 2] in _ALPHA_REV:        # 대문자 기호표 — 한 글자
+                out.append(_ALPHA_REV[tok[i + 1]].upper())
+                i += 2
+                continue
         if c in _MATH_REV_SINGLE:                    # 단일 셀 수학 기호
             out.append(_MATH_REV_SINGLE[c])
             i += 1
