@@ -44,6 +44,9 @@ _ROMAN_START = "⠴"           # 로마자표
 _ROMAN_END = "⠲"             # 로마자 종료표 (= 마침표 셀과 동일)
 _CAPITAL = "⠠"               # 대문자 표시 (연속 ⠠⠠ = 대문자 단어)
 _TN_MARKER = "⠠⠄"            # 점역자 주(양끝)
+_CAPS_OPEN = "⠠⠠⠠"           # 대문자 구절표 (제28항 [붙임])
+_CAPS_CLOSE = "⠠⠄"           # 대문자 종료표 — 점역자주표와 같은 셀이다
+_UEB_PUNCT = {"⠂": ",", "⠆": ";", "⠒": ":"}   # 구절 안 문장 부호(제33항)
 _SPACE_CELL = "⠀"            # 점자 공백(U+2800)
 # 어말 문장부호 — 받침 셀과 같은 점형이라(같=⠫⠦) 뒤가 공백/끝일 때만 부호로 본다.
 _SENT_END = {"⠦": "?", "⠖": "!"}
@@ -764,7 +767,26 @@ def _je33_close_at(s: str, j: int) -> bool:
     return nxt != _NUMBER_SIGN and nxt not in _DIGIT_REV and nxt not in _JE33_CLOSE
 
 
-def _roman_span_ahead(s: str, at: int) -> bool:
+_CAPS_BODY = frozenset(set(_ALPHA_REV) | set(_DIGIT_REV) | set("⠼⠰⠘⠂⠆⠒⠠⠀⠢⠔⠲"))
+
+
+def _caps_phrase_at(s: str, i: int) -> bool:
+    """s[i]가 **대문자 구절표**인가 — 줄임표 `……` 와 같은 셀이라 닫는 표까지 본다.
+
+    ⚠ 뒤 셀이 낱자라는 것만으로는 못 가른다. 한글 음절 셀이 알파벳 셀과 겹쳐
+      `……나는 갈매기` 가 `CCZ 갈매기` 로, `[……에 ……을]` 이 `[N ……을]` 로 깨진다.
+      **대문자 종료표 ⠠⠄ 까지 로마자로 읽히는 셀만 있을 때**만 구절로 본다.
+      실측(전권 18,892쪽): ⠠⠠⠠ 뒤가 낱자인 929회 중 이 조건을 통과하는 것 388회·173쪽.
+    """
+    if s[i:i + 3] != _CAPS_OPEN or s[i + 3:i + 4] not in _ALPHA_REV:
+        return False
+    end = s.find(_CAPS_CLOSE, i + 3)
+    if end < 0 or end - (i + 3) > 40:
+        return False
+    return all(c in _CAPS_BODY for c in s[i + 3:end])
+
+
+def _roman_span_ahead(s: str, at: int, *, caps: bool = False) -> bool:
     """`at`부터 로마자 구간이 이어지는가 — **종료표 ⠲가 앞에 실제로 있는지**로 본다.
 
     제35항: 로마자 구간 안 숫자는 구간을 끊지 않는다(`A4`·`MP3`·`V1`). 숫자에서 끊으면
@@ -784,6 +806,11 @@ def _roman_span_ahead(s: str, at: int) -> bool:
         c = s[j]
         if c == _ROMAN_END:
             return seen                      # 종료표를 만났다 = 구간 안이었다
+        # ★ 대문자 구절표가 열려 있으면 **대문자 종료표 ⠠⠄** 가 구간의 끝이다
+        #   (제28항 [붙임]). 구절표는 로마자 종료표 없이 이 표로 닫힌다 —
+        #   `⠠⠠⠠⠊⠂ ⠊⠊⠂ ⠊⠊⠊⠠⠄`(I, II, III) 가 그 꼴이다.
+        if caps and s[j:j + 2] == _CAPS_CLOSE:
+            return seen
         if c in (_SPACE_CELL, " "):
             crossed = True
             j += 1
@@ -837,6 +864,8 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
     n = len(s)
     if s[i] == _ROMAN_START:                       # ⠴ 로마자표
         j = i + 1
+    elif _caps_phrase_at(s, i):
+        j = i                                      # 대문자 구절표 ⠠⠠⠠ (제28항 [붙임])
     elif s[i:i + 2] == _CAPITAL + _CAPITAL and i + 2 < n and s[i + 2] in _ALPHA_REV:
         j = i                                      # 로마자표 없이 대문자 단어(예: TV)
     else:
@@ -858,13 +887,34 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
 
     while j < n:
         c = s[j]
+        # ★ 대문자 구절 안의 문장 부호는 **「통일영어점자」 점형**이다(제33항이 두
+        #   점형이 다르다고 밝힌 그 자리다) — 반점이 ⠐ 가 아니라 ⠂ 다.
+        #   구절이 열려 있을 때만 본다. 안 받으면 `⠠⠠⠠⠊⠂ ⠊⠊⠂ ⠊⠊⠊⠠⠄`(I, II, III)
+        #   가 첫 낱말에서 끊겨 `I, 다달 다다다` 로 나갔다.
+        if caps_phrase and c in _UEB_PUNCT and s[j - 1] != _SUBSCRIPT:
+            out.append(_UEB_PUNCT[c])
+            j += 1
+            continue
+        # ★ 구절 안의 `⠰ + 하단 숫자` 는 아래첨자다(제19항). 1급 점자로 적는 구간이라
+        #   UEB 약자(⠰⠂ = ea)로 읽으면 안 된다 — `R₁C₂O` 가 `REACBBO` 로 나갔다.
+        if (caps_phrase and c == _SUBSCRIPT
+                and s[j + 1:j + 2] in _DROPPED_DIGIT_REV):
+            k = j + 1
+            got = []
+            while k < n and s[k] in _DROPPED_DIGIT_REV:
+                got.append(_DROPPED_DIGIT_REV[s[k]])
+                k += 1
+            out.append("_" + "".join(got))
+            j = k
+            continue
         if c in (_SPACE_CELL, " "):                # 공백 → 원칙은 런 종료
             # 제32항은 로마자표~종료표 **사이**를 한 구간으로 본다(`such tactics`).
             # 그래서 종료표가 실제로 앞에 있으면 공백을 넘어 이어 간다 —
             # `_roman_span_ahead`가 그 증거를 요구하므로 한글을 삼키지 않는다.
             # 증거가 없으면 종전대로 끊는다(⠴는 닫는 따옴표, ⠲는 마침표와 같은 셀이라
             # 구간처럼 보이는 한글 오탐이 정답 도서에 절반이다).
-            if s[i] == _ROMAN_START and _roman_span_ahead(s, j + 1):
+            if ((s[i] == _ROMAN_START or caps_phrase)
+                    and _roman_span_ahead(s, j + 1, caps=caps_phrase)):
                 out.append(" ")
                 caps_word = False          # 대문자 단어표는 낱말 하나까지다
                 j += 1
@@ -1768,10 +1818,16 @@ def _merge_roman_tokens(tokens: list[str], seps: list[str]) -> tuple[list[str], 
         #   **마침표**인데 `_roman_span_ahead` 가 구별을 못 해, `%p` 가 로마자 `pp` 로
         #   읽히고 뒤 한글까지 런에 먹혔다(`1 %p다.` -> `1 pp i`).
         #   실측(전권 18,892쪽): `⠴⠏⠏` 349회·245쪽. 원장 R-27.
-        st = (0 if merged.startswith(_ROMAN_START) and merged not in _UNIT_TABLE_SYM
-              else -1)
-        while (st >= 0 and _ROMAN_END not in merged[st:] and i < len(seps)
-               and _roman_span_ahead("⠀".join(tokens[i + 1:]), 0)):
+        # ★ 대문자 구절표 ⠠⠠⠠ 로 열린 구간도 합친다(제28항 [붙임]). 구절표는 로마자
+        #   종료표가 아니라 **대문자 종료표 ⠠⠄** 로 닫히고, 그 사이가 여러 낱말이다 —
+        #   `⠠⠠⠠⠊⠂ ⠊⠊⠂ ⠊⠊⠊⠠⠄`(I, II, III) 가 `I, 다달 다다다` 로 나갔다.
+        #   실측(전권 18,892쪽): 구절표 967회 중 **416회·188쪽이 빈칸을 넘는다.**
+        caps_run = _caps_phrase_at("⠀".join([merged] + tokens[i + 1:]), 0)
+        st = (0 if (merged.startswith(_ROMAN_START) or caps_run)
+              and merged not in _UNIT_TABLE_SYM else -1)
+        _end = _CAPS_CLOSE if caps_run else _ROMAN_END
+        while (st >= 0 and _end not in merged[st:] and i < len(seps)
+               and _roman_span_ahead("⠀".join(tokens[i + 1:]), 0, caps=caps_run)):
             merged += seps[i] + tokens[i + 1]
             i += 1
         out_t.append(merged)
@@ -2150,6 +2206,13 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
             if s[i:i + ln] in _COMBINED:
                 best_ln = ln
                 break
+        # ★ 대문자 구절표 ⠠⠠⠠ 는 **줄임표 `……` 와 같은 셀**이다(제28항 [붙임] / 제53항).
+        #   긴-셀 매칭이 먼저 먹어 로마자 런이 시작조차 못 했다 —
+        #   `⠠⠠⠠⠊⠂ ⠊⠊⠂ ⠊⠊⠊⠠⠄`(I, II, III)가 `……달 다달 다다다` 로 나갔다.
+        #   **뒤가 글자일 때만** 구절표로 본다(전권 18,892쪽 실측: ⠠⠠⠠ 7,383회 중
+        #   뒤가 글자인 것 967회·491쪽, 나머지 6,416회가 줄임표다).
+        if _caps_phrase_at(s, i):
+            best_ln = 0
         def _final(after: int) -> bool:
             """위치 after가 줄 끝이거나 공백이면 어말(문장부호 분리 판단)."""
             return after >= n or s[after] in (_SPACE_CELL, " ")
