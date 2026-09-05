@@ -733,6 +733,37 @@ _ROMAN_NUM_UNI = {"II": "Ⅱ", "III": "Ⅲ", "IV": "Ⅳ", "VI": "Ⅵ", "VII": "�
                   "VIII": "Ⅷ", "IX": "Ⅸ", "XI": "Ⅺ", "XII": "Ⅻ"}
 
 
+# ⚠ 반점 ⠐ · 쌍점 ⠐⠂ · 쌍반점 ⠰⠆ 는 **여기 넣으면 안 된다.** ⠐ 는 초성 ㄹ 셀이라
+#   한글 낱말 아무 데서나 걸린다 — 전권 A/B 에서 `K^+ 통로가` -> `K^+ hfor로가`,
+#   `음료수` -> `owen료수` 로 한글을 통째로 삼켰다(한글 -8,510자). 그 셋은 로마자
+#   낱말에 **붙어서** 오므로(`KTX⠐`·`WHO⠐⠂`) 런 안에서 이미 끊긴다. 구간을 넘어
+#   이어야 하는 것은 다음 낱말 끝에 오는 줄표·물음표·느낌표뿐이다.
+# ⚠ ⠦ 는 물음표이자 **수식 여는 소괄호**이고 여는 큰따옴표다
+#   (`⠴⠵ ⠠⠏⠦⠼⠚⠖⠖⠠⠵⠖⠖⠵⠴` = `z  P(0≤Z≤z)`), ⠖⠖ 는 ≤ 다. 그대로 받으면
+#   표준정규분포표 머리가 `)z` 로 깨진다 — 뒤 셀로 가른다(`_je33_close_at`).
+_JE33_CLOSE = frozenset("⠦⠖")             # 물음표 · 느낌표 (제33항 [다만])
+_JE33_CLOSE2 = ("⠤⠤",)                    # 줄표 (제33항)
+# ⚠ 제33항 [다만] 의 '? !' 를 **글자로 내지는 않는다.** ⠦ 는 물음표이자 여는 큰따옴표라
+#   (⠦ … ⠴ 짝), 로마자에 붙었다는 것만으로는 못 가른다. 전권 A/B 에서 이 가지가 낸
+#   변화 755조각 중 **516조각이 `"` -> `?` 였고** 짝이 남아 있는 인용부호를 깨뜨렸다
+#   (`쉍bP"a열b”` -> `쉍bP?a열b”`). 구간 판정에만 쓰고 표기는 종전대로 둔다. 원장 R-35.
+
+
+def _je33_close_at(s: str, j: int) -> bool:
+    """s[j]가 제33항으로 로마자 구간을 닫는 문장 부호인가.
+
+    ⠦ 는 물음표·여는 큰따옴표·**수식 여는 소괄호**가 같은 셀이고 ⠖⠖ 는 ≤ 다.
+    뒤 셀로 가른다 — 수표·숫자가 뒤따르면 수식 괄호이지 문장 부호가 아니다.
+    """
+    c = s[j]
+    if s[j:j + 2] in _JE33_CLOSE2:
+        return True
+    if c not in _JE33_CLOSE:
+        return False
+    nxt = s[j + 1:j + 2]
+    return nxt != _NUMBER_SIGN and nxt not in _DIGIT_REV and nxt not in _JE33_CLOSE
+
+
 def _roman_span_ahead(s: str, at: int) -> bool:
     """`at`부터 로마자 구간이 이어지는가 — **종료표 ⠲가 앞에 실제로 있는지**로 본다.
 
@@ -748,11 +779,13 @@ def _roman_span_ahead(s: str, at: int) -> bool:
     n = len(s)
     j = at
     seen = False
+    crossed = False                          # 빈칸을 넘었나 — 제33항 닫힘 판정에 쓴다
     while j < n:
         c = s[j]
         if c == _ROMAN_END:
             return seen                      # 종료표를 만났다 = 구간 안이었다
         if c in (_SPACE_CELL, " "):
+            crossed = True
             j += 1
             continue
         # UEB 문자표 ⠰ + 낱자 — 제32항 "로마자표와 로마자 종료표 사이의 표기는
@@ -763,6 +796,21 @@ def _roman_span_ahead(s: str, at: int) -> bool:
             seen = True
             j += 2
             continue
+        # 제33항 — 「통일영어점자」와 「한글 점자」의 점형이 다른 문장 부호(, : ; ―)가
+        # 로마자와 한글 사이에 나오면 **로마자 종료표를 적지 않는다.** [다만] 점형이 같은
+        # '. ? !' 도 문장 부호 뒤에 종료표를 안 적는다. 즉 이 자리들은 종료표 없이 구간이
+        # 닫히므로, 종료표만 증거로 받으면 규정이 예시한 표기가 통째로 깨진다.
+        #   `Hedy Lamarr―미국의 여배우` -> `Hedy 싹우얘—미국의`
+        #   `What Is A Youth?이다.`     -> `What 떠 a 쇠열억"이다.`
+        # ⚠ 이미 로마자로 읽힌 셀이 하나라도 있을 때(`seen`)만 닫는 것으로 본다.
+        # ⚠ **낱말 하나까지만** 본다(`crossed`). 한글 셀은 로마자로도 읽히므로 빈칸을
+        #   여러 개 넘어 닫는 자리를 찾으면 한글 문장을 통째로 삼킨다 — 전권 A/B 에서
+        #   `ABC 에서 sinA, cosA` -> `ABC nS ffsA, !나a` 로 깨졌다.
+        if seen and _je33_close_at(s, j):
+            if not crossed:
+                return True                   # 낱말 안에서 닫혔다 = 구간이었다
+            j += 2 if s[j:j + 2] in _JE33_CLOSE2 else 1
+            continue                          # 빈칸을 넘었으면 종료표를 계속 요구한다
         if (c in _ALPHA_REV or c in (_CAPITAL, _NUMBER_SIGN) or c in _DIGIT_REV
                 or _eng_group_at(s, j, False) is not None
                 or _eng_group_at(s, j, True) is not None):
