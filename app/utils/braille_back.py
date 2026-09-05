@@ -267,6 +267,41 @@ if _LC_GREEK_REV != "⠨":
 _GREEK_TOKENS = {k for k, v in _MATH_REV_MULTI.items()
                  if len(k) == 2 and k[0] in "⠨⠈" and v in "αβγδεζηθικλμνξοπρστυφχψω"}
 
+# ── 그리스 문자 구간 (규정 제31항 · 원장 R-27) ─────────────────────────────
+# 제31항: "국어 문장 안에 그리스 문자가 나올 때에는 그 앞에 로마자표 ⠴를 적고 그 뒤에
+# 로마자 종료표 ⠲를 적는다." 제30항이 소문자 ⠨+자음 · 대문자 ⠠⠨+자음으로 정한다
+# (ΔΕΛΦΟΙ=⠠⠠⠨⠙⠨⠑⠨⠇⠨⠋⠨⠕⠨⠊ 처럼 대문자 단어표 ⠠⠠ 도 쓴다).
+# ⚠ 본문 역맵에서 ⠨ 판본을 뺀 이유는 위 주석 그대로다 — ⠨⠍=자우 · ⠨⠹=자억처럼
+#   흔한 한글 음절과 셀이 같다. 그래서 여기서는 **로마자표~종료표로 완전히 닫힌
+#   구간이 낱말 앞에 설 때만** 편다. 구간 안에 그리스 말고 아무것도 없어야 한다.
+# 실측(전권 18,892쪽): 이 꼴 342건·168쪽, 그중 낱말 앞 **277건**. 표본은 전부
+#   `⠴⠨⠁⠲⠠⠝⠙⠥⠝⠠⠎`(α세포에서)류다(생명과학 이자 α·β 세포).
+#   낱말 중간 65건은 ⠴가 받침 ㅎ·닫는 따옴표인 한글이라 뺀다(제29항 — 로마자표는
+#   낱말 앞에 온다). 종료표 없는 ⠴+⠨그리스 490건도 근거가 없어 안 건드린다.
+_GREEK_LC_REG = {k[1]: v for k, v in _MATH_REV_MULTI.items()
+                 if len(k) == 2 and k[0] == "⠨" and v in "αβγδεζηθικλμνξοπρστυφχψω"}
+_GREEK_LC_REG.setdefault("⠕", "ο")      # 제30항 표에 있는데 수학 역맵에 빠져 있었다
+_GREEK_UC_REG = {c: v.upper() for c, v in _GREEK_LC_REG.items()}
+_GREEK_SPAN_RE = re.compile(
+    r"⠴(⠠⠠)?((?:⠠?⠨[" + "".join(_GREEK_LC_REG) + r"])+)⠲")
+
+
+def _greek_span_at(s: str, i: int) -> tuple[str, int] | None:
+    """s[i]가 제31항 그리스 구간(⠴…⠲)의 머리면 (문자열, 다음위치)."""
+    m = _GREEK_SPAN_RE.match(s, i)
+    if m is None:
+        return None
+    word_caps = bool(m.group(1))
+    body, out, k = m.group(2), [], 0
+    while k < len(body):
+        up = word_caps
+        if body[k] == "⠠":                  # 낱자 대문자표
+            up = True
+            k += 1
+        out.append((_GREEK_UC_REG if up else _GREEK_LC_REG)[body[k + 1]])
+        k += 2
+    return "".join(out), m.end()
+
 
 def _build_symbol_rev() -> dict[str, str]:
     """symbol_table(문자→점자) 역인덱스. 충돌 시 먼저 등록된 문자 유지."""
@@ -1806,6 +1841,13 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
             out.append("【점역자주】")
             i += 2
             continue
+        # 그리스 문자 구간(제31항) — ⠴…⠲ 로 닫힌 것만, 낱말 앞에서만. 위 주석 참조.
+        if ch == _ROMAN_START and (i == 0 or s[i - 1] in (_SPACE_CELL, " ")):
+            _gk = _greek_span_at(s, i)
+            if _gk is not None:
+                out.append(_gk[0])
+                i = _gk[1]
+                continue
         # 옛한글(제19~25항) — 아래아·ㅸ·ㅿ. ⠐⠼ 를 쉼표+수표로 쪼개던 자리다
         # (`ᄋᆞᆯ` → `,①` · `ᄒᆞ` → `하,⟨⠼⟩` · `ㅸ` → `옹,방`).
         _old = _old_hangul_at(s, i)
