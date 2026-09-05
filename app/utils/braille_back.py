@@ -1312,6 +1312,19 @@ _ENG_TAIL_PUNCT = {"⠲": ".", "⠂": ",", "⠦": "?", "⠖": "!", "⠆": ";", "
 #   도형 반복 틀 `⠸⠶ⁿ⠇`(_SHAPE_RUN_RE)과 제72항 글머리(뒤가 빈칸·줄끝)는 내다보고 뺀다.
 _UEB_UNDERLINE_RE = re.compile(r"⠸(?:[⠆⠄⠂]|⠶(?!⠶*⠇)(?=[^⠀ ]))")
 
+# ── UEB 대괄호·중괄호 (규정 [부록 1] 외국어 점자) ───────────────────────────
+# 규정 [부록 1] 외국어 점자의 기호 일람표가 **대괄호 `[ ]` = `.< .>`(⠨⠣ ⠨⠜) · 중괄호 `{ }` =
+# `_< _>`(⠸⠣ ⠸⠜)** 로 못 박는다. 영어 교재는 이 괄호로 지시문·무대 지시·주석을 묶는다
+# (`[A] Watch the video …` · `[Pause]` · `[Purpose of the Event]`).
+# ★ `_english_line` 은 **낱말 하나라도 못 읽으면 줄 전체를 버린다.** 그래서 이 괄호
+#   두 칸이 줄머리에 붙은 것만으로 영어 지시문 한 줄이 통째로 한글로 깨졌다 —
+#   `[A] Complete the sentences` → `자a쟈 니우워사멀마 을 엄얼_머`.
+# 낱말 가장자리에서만 뗀다. 안쪽은 안 건드린다(⠨⠣ 는 한글 '자', ⠸⠣ 는 별표 ∗ 와
+# 점형이 같아 문맥 없이 떼면 본문을 먹는다 — 「수학 점자」 제15항 4호 별표 `_<`).
+# 실측(gold 전권 18,892쪽 · 1,373,825줄): 뒤집히는 줄 **295 · 책 8**, 전부 영어
+# 교재·부교재다. 한글 책에서 뒤집히는 줄 **0**.
+_UEB_BRACKET = {"⠨⠣": "[", "⠨⠜": "]", "⠸⠣": "{", "⠸⠜": "}"}
+
 
 def _english_line(line: str) -> str | None:
     """줄 전체가 로마자표 없는 영어면 그 텍스트, 아니면 None (제29항 [다만]).
@@ -1339,10 +1352,19 @@ def _english_line(line: str) -> str | None:
             continue
         # 낱말 끝 문장 부호를 떼고 읽는다. 로마자표가 없는 문단이라 ⠲ 는 종료표가
         # 아니라 **마침표**이고, 나머지는 런을 끊어 낱말을 못 읽게 만든다.
-        core, tail = w, ""
-        while core and core[-1] in _ENG_TAIL_PUNCT:
-            tail = _ENG_TAIL_PUNCT[core[-1]] + tail
-            core = core[:-1]
+        core, head, tail = w, "", ""
+        while core[:2] in _UEB_BRACKET:              # 낱말 앞 UEB 괄호
+            head += _UEB_BRACKET[core[:2]]
+            core = core[2:]
+        while core:                                  # 낱말 뒤 — 괄호와 문장부호가 섞인다
+            if core[-2:] in _UEB_BRACKET:
+                tail = _UEB_BRACKET[core[-2:]] + tail
+                core = core[:-2]
+            elif core[-1] in _ENG_TAIL_PUNCT:
+                tail = _ENG_TAIL_PUNCT[core[-1]] + tail
+                core = core[:-1]
+            else:
+                break
         if not core:
             return None
         got = _decode_roman_run(_ROMAN_START + core, 0, span_ok=True)
@@ -1350,9 +1372,9 @@ def _english_line(line: str) -> str | None:
             return None
         if _CAPITAL in core[1:] and core[0] != _CAPITAL:
             mid_cap = True           # 낱말 **중간**의 대문자표 — 영어 표기에 거의 없다
-        out.append(got[0] + tail)
+        out.append(head + got[0] + tail)
     text = " ".join(out)
-    funcs = {w.strip(".,;:?!'").lower() for w in text.split()} & _ENG_FUNCTION
+    funcs = {w.strip(".,;:?!'[]{}").lower() for w in text.split()} & _ENG_FUNCTION
     if _E.translate(text).replace(" ", _SPACE_CELL) == line:
         # 왕복만으로는 모자란다 — 한글 두 낱말이 뜻 없는 알파벳으로 되짚기까지 통과한다
         # (실측 오탐: `우주 그물로` → `dujya Oiu`, 글상자 테두리 → `forggg…`).
