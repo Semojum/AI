@@ -497,7 +497,12 @@ _VOWEL_JAMO_REV = {
 }
 _VOWEL_JAMO_MAX = max(len(k) for k in _VOWEL_JAMO_REV)
 # 낱자 양옆에 올 수 있는 경계 — 칸·줄끝과, 낱자를 나열할 때 쓰는 문장부호들.
-_JAMO_BOUND = frozenset("⠀ \n⠐⠲⠆⠦⠴⠄⠶⠔⠒")
+# ⚠ 소괄호는 이 자리에 오기 전에 _mark_paren_pairs 가 자리표시자로 바꾼다(#477).
+#   원래 셀(⠦⠄·⠠⠴)만 적어 두면 `(ㅘ, ㅙ, ㅝ, ㅞ)` 의 첫·끝 낱자가 안 펴진다.
+_JAMO_BOUND = frozenset("⠀ \n⠐⠲⠆⠦⠴⠄⠶⠔⠒\ufdd2\ufdd3")
+# 뒤에만 붙는 두 칸짜리 표시 — 짝 없는 닫는 소괄호 ⠠⠴ · 점역자주표 ⠠⠄ · 줄임표 ⠠⠠.
+# 셋 다 한글 음절을 시작할 수 없어(⠠ 뒤가 초성이 아니다) 낱자와 헷갈리지 않는다.
+_JAMO_BOUND2 = frozenset(("⠠⠴", "⠠⠄", "⠠⠠"))
 # 통합 역맵(약어 + 음절 + 기호). 긴 셀 우선 매칭을 위해 최대 길이 기록.
 if _LC_GREEK_REV != "⠨":
     for _k in [k for k, v in _SYMBOL_REV.items()
@@ -1865,7 +1870,9 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
         if ch == "⠿" and (i == 0 or s[i - 1] in _JAMO_BOUND):
             for ln in range(min(_VOWEL_JAMO_MAX, n - i), 1, -1):
                 tok = s[i:i + ln]
-                if tok in _VOWEL_JAMO_REV and (i + ln >= n or s[i + ln] in _JAMO_BOUND):
+                if tok in _VOWEL_JAMO_REV and (i + ln >= n
+                                               or s[i + ln] in _JAMO_BOUND
+                                               or s[i + ln:i + ln + 2] in _JAMO_BOUND2):
                     out.append(_VOWEL_JAMO_REV[tok])
                     i += ln
                     break
