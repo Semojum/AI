@@ -1117,6 +1117,11 @@ def _korean_tail(tok: str, at: int) -> str | None:
     return d if _KOR_TAIL_OK.match(d) else None
 
 
+# 줄 단위 선처리가 넣어 두는 글자들 — 점자 셀이 아니라 이미 푼 결과다.
+# 네모 빈칸 ▯(제73항) · 곱셈표 ×(수학 제2항) · 도형 틀 ○□△◇ · 글머리 □(제72항).
+_SENTINELS = "▯×○□△◇"
+
+
 def _decode_math_token(tok: str) -> str:
     """수식 토큰을 수학 의미로 디코드 — 구조·연산자 셀을 ^ _ √ × + 등으로 복원.
 
@@ -1130,6 +1135,20 @@ def _decode_math_token(tok: str) -> str:
         c = tok[i]
         if c in (_SPACE_CELL, " "):                 # 빈칸 — 로마자 구간 병합으로 토큰
             out.append(" ")                         # 안에 들어올 수 있다(⟨2800⟩로 샜다)
+            i += 1
+            continue
+        # 네모 문자 쌍 ⠸⠦…⠴⠇ — 규정 제64항. `_decode_line` 에만 있어
+        # **수식 토큰에서만** 샜다: ⠸ 가 ⟨2838⟩, ⠦⠴ 가 괄호, ⠇ 가 변수 l 로 떨어져
+        # `⠸⠦⠼⠁⠴⠇⠒⠒…` 이 `⟨2838⟩(1)l=…` 이 됐다.
+        # 실측(전권 18,892쪽): 미해독 12,001건 중 ⠸ 8,116 + ▯ 3,488 이 이 한 자리다.
+        if tok[i:i + 2] == _BOX_CHAR_OPEN:
+            j = tok.find(_BOX_CHAR_CLOSE, i + 2)
+            if j > 0:
+                out.append("▯" + _decode_math_token(tok[i + 2:j]) + "▯")
+                i = j + 2
+                continue
+        if c in _SENTINELS:            # 줄 단위 선처리가 넣어 둔 글자 — 그대로 흘린다
+            out.append(c)
             i += 1
             continue
         if c == "⠸" and tok[i + 1:i + 2] in _LOG_NEXT:      # 로그(제46항) — 위 주석 참조
@@ -1962,7 +1981,7 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
         # 줄 단위 선처리가 넣어 둔 글자(네모 빈칸 ▯ · 곱셈표 × · 도형 틀 ○□△◇)는
         # 그대로 흘린다. _mark_paren_pairs 의 센티넬까지 통과시키면 괄호 복원이
         # 깨지므로 좁게 잡는다.
-        if ch in "▯×○□△◇":
+        if ch in _SENTINELS:
             out.append(ch)
             i += 1
             continue
