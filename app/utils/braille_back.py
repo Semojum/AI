@@ -626,6 +626,9 @@ _UNIT_SLASH = "⠸⠌"   # 빗금(제69항 [붙임3]) — 로마자 런 안에�
 # ★ ′(⠴⠤)·″(⠴⠤⠤)·Å(⠴⠡)는 뺐다 — ⠤ 는 붙임표·드러냄표와, ⠴⠡ 는 이미 역맵에서
 #   빠진 자리(2026-09-03 열 종)와 겹쳐 근거가 없다.
 _UNIT_TABLE_SYM = frozenset(("⠴⠏", "⠴⠏⠏", "⠴⠏⠍", "⠴⠙", "⠴⠙⠠⠉", "⠴⠙⠠⠋"))
+# 대문자 구절 안에서 첨자 뒤에 이어질 수 있는 셀 — 글자·대문자표·위첨자표.
+# ⠐(구분표)는 뺐다 — 근거가 되는 조항이 따로 있고(제11·12항) 이 회차 범위 밖이다.
+_CAPS_RUN_NEXT = frozenset("⠘") | set(_ALPHA_REV) | {"⠠"}
 _COPYRIGHT = "⠘⠉"  # 저작권 기호 © — 규정 제71항 `^c`
 _AMPERSAND = "⠈⠯"  # 앰퍼샌드 & — 규정 제71항 `@&`
 
@@ -966,8 +969,13 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
                 #   `H₂O`(⠴⠠⠓⠰⠼⠃⠠⠕)처럼 **대문자표 + 글자**가 이어질 때만 원소가
                 #   더 온다. 대문자표만 보면 점역자주 여는 표 ⠠⠄(제66항)를 먹어
                 #   `CO₂【점역자주】` 가 `CO_2'` 로 나갔다.
-                if caps_phrase and s[j:j + 2] == _CAPITAL + "⠄":
-                    continue                    # 대문자 종료표는 아래 가지가 먹는다
+                # ★ 대문자 구절이 열려 있으면 첨자를 건너서도 이어 간다.
+                #   「과학 점자」 제7항 [붙임 1] 이 "대문자 종료표는 원소 기호열의 맨
+                #   마지막 원소 기호 뒤에, 첨자가 올 경우 그 다음에 표기한다"고 하므로
+                #   구절표와 종료표 **사이는 통째로 한 화학식**이다. 안 이으면 첫
+                #   원소만 읽고 끊긴다 — `C₆H12O₆` 이 `C_6,타_12이_6` 로 나갔다.
+                if caps_phrase and s[j:j + 1] in _CAPS_RUN_NEXT:
+                    continue
                 if s[j:j + 1] != _CAPITAL or s[j + 1:j + 2] not in _ALPHA_REV:
                     break                       # 대문자표 뒤가 글자가 아니면 원소가 아니다
                 continue
@@ -1089,6 +1097,7 @@ def _decode_math_token(tok: str) -> str:
     """
     out: list[str] = []
     i, n = 0, len(tok)
+    caps_phrase = False        # 대문자 구절표 ⠠⠠⠠ … 종료표 ⠠⠄ (제28항 [붙임])
     while i < n:
         c = tok[i]
         if c in (_SPACE_CELL, " "):                 # 빈칸 — 로마자 구간 병합으로 토큰
@@ -1114,6 +1123,22 @@ def _decode_math_token(tok: str) -> str:
             txt, j = _decode_number(tok, i)
             out.append(txt)
             i = j
+            continue
+        # ── 대문자 구절표 (제28항 [붙임]) — 수식 경로 ────────────────────────
+        # #528 이 로마자 구간(`_decode_roman_run`)에 넣은 것과 같은 규정이다. 토큰이
+        # MATH 로 분류되면 이 함수가 읽는데 여기엔 ⠠·⠠⠠ 만 있어(#508) ⠠⠠⠠ 가 빈
+        # 문자열 셋으로 빠졌다 — `(ClONO₂)` 가 `(Clono_2)` 로 나갔다.
+        # ★ **첨자를 건너서도 유지된다.** 화학식은 `⠠⠠⠠ C ⠰⠼6 H ⠰⠼12 O ⠰⠼6 ⠠⠄` 처럼
+        #   대문자 사이에 첨자가 낀다. 단어표(⠠⠠)처럼 글자가 끊기는 자리에서 풀면
+        #   둘째 원소부터 소문자가 된다.
+        # ★ 종료표 ⠠⠄ 는 **구절표가 열려 있을 때만** 먹는다(점역자 주표 제66항과 같은 점형).
+        if caps_phrase and tok[i:i + 2] == _CAPITAL + "⠄":
+            caps_phrase = False
+            i += 2
+            continue
+        if tok[i:i + 3] == _CAPITAL * 3 and tok[i + 3:i + 4] in _ALPHA_REV:
+            caps_phrase = True
+            i += 3
             continue
         matched = False                             # 다중 셀 수학 기호(≠·÷·그리스 등)
         for ln in range(min(_MATH_MAX, n - i), 1, -1):
@@ -1156,7 +1181,7 @@ def _decode_math_token(tok: str) -> str:
             out.append(tail)
             break
         if c in _ALPHA_REV:                          # 변수(로마자)
-            out.append(_ALPHA_REV[c])
+            out.append(_ALPHA_REV[c].upper() if caps_phrase else _ALPHA_REV[c])
             i += 1
             # 관행 제곱 약기: 변수 직후 ⠣ = ^2 (도서 관행, 정방향 book 모드와 대칭.
             #   한글 ㅏ와 충돌하므로 **로마자 직후**로 한정. 2026-07-19)
