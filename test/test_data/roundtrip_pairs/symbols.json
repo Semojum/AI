@@ -1,11 +1,11 @@
 {
   "type": "symbols",
-  "description": "특수기호 (단위·수학·괄호·화살표 등). symbol_table 권위 골드. 점형 충돌(한글·기호·원문자)은 ambiguous로 분리(한글우선 정책). ★2026-08-09: 규정 원문 대조로 12건 정정. grounded=false는 아직 symbol_table 거울(순환)이라는 뜻이다 — 나머지 263건은 규정 근거를 아직 못 붙였다. ★2026-08-09: `_rule_overrides`(rule_trail용 규칙 ID 블록)가 점형으로 새어 들어온 2행 정정. 생성기가 `_`로 시작하는 메타 블록을 안 걸렀다.",
+  "description": "특수기호 (단위·수학·괄호·화살표 등). symbol_table 권위 골드. 점형 충돌(한글·기호·원문자)은 ambiguous로 분리(한글우선 정책). ★2026-08-09: 규정 원문 대조로 12건 정정. grounded=false는 아직 symbol_table 거울(순환)이라는 뜻이다 — 나머지 263건은 규정 근거를 아직 못 붙였다. ★2026-08-09: `_rule_overrides`(rule_trail용 규칙 ID 블록)가 점형으로 새어 들어온 2행 정정. 생성기가 `_`로 시작하는 메타 블록을 안 걸렀다. ★2026-09-06: 로마자 단위 합자(㎝·㎏·㎞…, U+3371~U+33DF)와 µm 을 ambiguous=roman_unit 으로 분리. 규정 제69항이 이것들을 `로마자표 + 낱자 + 종료표`로 적어 같은 철자를 로마자로 적은 것과 점형이 완전히 같다(㎝ = cm = ⠴⠉⠍⠲) — 블라인드 복원 불가. 역맵은 실측 다수인 로마자꼴로 편다(원장 R-27).",
   "split_ratio": "build:test = 7:3 (비모호 기준)",
   "counts": {
-    "build": 101,
-    "test": 48,
-    "ambiguous": 126,
+    "build": 91,
+    "test": 43,
+    "ambiguous": 141,
     "review_excluded": 0
   },
   "pairs": [
@@ -1724,8 +1724,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠴⠅⠛⠲",
       "split": "build",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "roman_unit",
       "source": "symbol_table",
       "grounded": false
     },
@@ -1734,8 +1734,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠴⠠⠍⠠⠓⠵⠲",
       "split": "build",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "roman_unit",
       "source": "규정 용례 96.7㎒",
       "grounded": true
     },
@@ -1744,8 +1744,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠴⠍⠇⠲",
       "split": "build",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "roman_unit",
       "source": "symbol_table",
       "grounded": false
     },
@@ -1754,8 +1754,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠴⠉⠍⠲",
       "split": "build",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "roman_unit",
       "source": "symbol_table",
       "grounded": false
     },
@@ -1764,8 +1764,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠴⠅⠍⠲",
       "split": "build",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "roman_unit",
       "source": "symbol_table",
       "grounded": false
     },
@@ -1774,8 +1774,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠴⠍⠘⠼⠃",
       "split": "build",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "roman_unit",
       "source": "규정 제68항 용례",
       "grounded": true
     },
@@ -1784,8 +1784,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠴⠅⠍⠘⠆",
       "split": "build",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "roman_unit",
       "source": "symbol_table",
       "grounded": false
     },
@@ -2724,8 +2724,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠴⠍⠛⠲",
       "split": "test",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "roman_unit",
       "source": "symbol_table",
       "grounded": false
     },
@@ -2734,8 +2734,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠴⠙⠇⠲",
       "split": "test",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "roman_unit",
       "source": "symbol_table",
       "grounded": false
     },
@@ -2744,8 +2744,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠴⠉⠍⠘⠼⠃",
       "split": "test",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "roman_unit",
       "source": "규정 제68항 용례",
       "grounded": true
     },
@@ -2754,8 +2754,8 @@
       "brf_ascii": null,
       "braille_unicode": "⠴⠓⠁⠲",
       "split": "test",
-      "ambiguous": false,
-      "ambiguous_reason": null,
+      "ambiguous": true,
+      "ambiguous_reason": "roman_unit",
       "source": "symbol_table",
       "grounded": false
     }

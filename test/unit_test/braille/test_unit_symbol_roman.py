@@ -82,3 +82,26 @@ def test_백틱_수식은_그대로_수식으로() -> None:
     """
     for src in ("그림에서 4`f'(a)의 값", "2`f(x)의 값", "값 3`sinh+cosh는"):
         assert translator._UNIT_BACKTICK_RE.search(src) is None, src
+
+
+# ── 역방향(제69항) — 규정 원문 쌍이 기대값이다 (2026-09-06) ──────────────────
+# 출처는 위와 같다: `braille-source/text/규정_텍스트.txt` 2693행~(제69항).
+# 생산 코드의 출력을 기대값으로 쓴 케이스는 없다.
+REV_CASES = [
+    # 제69항 본문 — 로마자로 쓰인 단위는 묵자에서도 로마자다(사각문자 ㎝·㎏ 아님).
+    ("69-rev-cm", "#a0m4cz`#ajj0cm4oi4", "1m는 100cm이다."),
+    ("69-rev-kg", "#g`0kg4!", "7 kg을"),
+    ("69-rev-in", "#a0in4cz`#b4ed0cm4oi4", "1in는 2.54cm이다."),
+    # [붙임1] — μm 은 그리스 접두가 붙고(⠴⠨⠍⠍⠲), 접두 없는 ⠴⠍⠍⠲ 는 mm 이다.
+    ("69-rev-mm", "#a`0mm4oi4", "1 mm이다."),
+    # [붙임3] — 빗금으로 이어진 단위는 한 구간이다. ⠸⠌ 에서 런을 끊으면 안 된다.
+    ("69-rev-slash", "#afj0mg_/dl4", "160mg/dl"),
+    # [붙임2] — 단위표 뒤 한 칸 너머의 ⠲ 는 마침표지 로마자 종료표가 아니다.
+    ("69-rev-pct-p", "#a`0pp`i4", "%p"),
+]
+
+
+@pytest.mark.parametrize("label,brf,expect", REV_CASES, ids=[c[0] for c in REV_CASES])
+def test_규정_제69항_역점역(label: str, brf: str, expect: str) -> None:
+    got = decode(ascii_to_unicode(brf.replace("`", " "), backtick="space"))
+    assert expect in got, f"{label}: 기대 {expect!r} 없음 — {got!r}"
