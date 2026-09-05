@@ -781,10 +781,11 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
     out: list[str] = []
     caps_word = False
     caps_next = False          # 단일 대문자표 ⠠ 를 만난 직후
+    caps_phrase = False        # 대문자 구절표 ⠠⠠⠠ … 종료표 ⠠⠄ (제28항 [붙임])
 
     def _emit(t: str) -> None:
         nonlocal caps_next
-        if caps_word:
+        if caps_word or caps_phrase:
             t = t.upper()
         elif caps_next:
             t = t[:1].upper() + t[1:]
@@ -830,6 +831,26 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
         if c == _ROMAN_END:                        # 종료표 ⠲ → 소비하고 종료
             j += 1
             break
+        # ── 대문자 구절표 (제28항 [붙임]) ──────────────────────────────────
+        # "세 개 이상의 연속된 단어가 모두 대문자일 때에는 첫 단어 앞에 대문자 구절표
+        #  ⠠⠠⠠을 적고, 마지막 단어 뒤에 대문자 종료표 ⠠⠄을 적는다."
+        # 규정 예문 `WELCOME TO KOREA` = `,,,welcome`to`korea,'`.
+        # 종전에는 ⠠⠠⠠ 가 단어표 ⠠⠠ + 기호표 ⠠ 로 갈려 읽혔다. 단어표는 **공백에서
+        # 풀리므로** 둘째 낱말부터 소문자가 됐다 — `FIFO, lru, lfu'.` · `HCo_3^-`.
+        # 구절표는 종료표를 만날 때까지 유지한다.
+        # ★ **로마자 구간 안에서만** 본다. ⠠⠠⠠ 는 줄임표 `……` 로도 쓰인다 —
+        #   전권 18,892쪽 실측 7,383회 중 줄임표가 6,416회이고 구절표는 967회·491쪽뿐이다.
+        #   한글 줄은 이 함수에 안 들어오므로 그 6,416회는 건드리지 않는다.
+        if s[j:j + 3] == _CAPITAL * 3 and s[j + 3:j + 4] in _ALPHA_REV:
+            caps_phrase = True
+            j += 3
+            continue
+        # 대문자 종료표 ⠠⠄ — **구절표가 열려 있을 때만** 소비한다. 같은 점형이
+        # 점역자 주표(제66항 `,'`)라 맥락 없이 먹으면 주석이 사라진다.
+        if caps_phrase and s[j:j + 2] == _CAPITAL + "⠄":
+            caps_phrase = False
+            j += 2
+            continue
         if s[j:j + 2] == _CAPITAL + _CAPITAL:       # 대문자 단어표
             caps_word = True
             j += 2
@@ -945,6 +966,8 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
                 #   `H₂O`(⠴⠠⠓⠰⠼⠃⠠⠕)처럼 **대문자표 + 글자**가 이어질 때만 원소가
                 #   더 온다. 대문자표만 보면 점역자주 여는 표 ⠠⠄(제66항)를 먹어
                 #   `CO₂【점역자주】` 가 `CO_2'` 로 나갔다.
+                if caps_phrase and s[j:j + 2] == _CAPITAL + "⠄":
+                    continue                    # 대문자 종료표는 아래 가지가 먹는다
                 if s[j:j + 1] != _CAPITAL or s[j + 1:j + 2] not in _ALPHA_REV:
                     break                       # 대문자표 뒤가 글자가 아니면 원소가 아니다
                 continue
