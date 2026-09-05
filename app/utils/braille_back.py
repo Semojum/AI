@@ -629,6 +629,11 @@ _UNIT_TABLE_SYM = frozenset(("⠴⠏", "⠴⠏⠏", "⠴⠏⠍", "⠴⠙", "⠴�
 # 대문자 구절 안에서 첨자 뒤에 이어질 수 있는 셀 — 글자·대문자표·위첨자표.
 # ⠐(구분표)는 뺐다 — 근거가 되는 조항이 따로 있고(제11·12항) 이 회차 범위 밖이다.
 _CAPS_RUN_NEXT = frozenset("⠘") | set(_ALPHA_REV) | {"⠠"}
+# UEB 소괄호 ⠐⠣ ⠐⠜ (제32항) — **넣지 않는다.** ⠐⠣ 는 한글 `라` 와 점형이 같아
+# 전권 109,355회 중 81,863회(74.9%)가 깨끗한 한글이다. 열린 런 안으로 좁혀도
+# 전권 A/B 에서 `학문이다.”라고` 가 `학문이다.(고` 로 깨졌다(2026-09-06 실측).
+# 낱말 경계 표시로만 남긴다 — 문자표 ⠰ 가 여는 괄호 뒤에 오는 자리를 가른다.
+_UEB_ROUND = ("⠐⠣", "⠐⠜")
 _COPYRIGHT = "⠘⠉"  # 저작권 기호 © — 규정 제71항 `^c`
 _AMPERSAND = "⠈⠯"  # 앰퍼샌드 & — 규정 제71항 `@&`
 
@@ -750,6 +755,14 @@ def _roman_span_ahead(s: str, at: int) -> bool:
         if c in (_SPACE_CELL, " "):
             j += 1
             continue
+        # UEB 문자표 ⠰ + 낱자 — 제32항 "로마자표와 로마자 종료표 사이의 표기는
+        # 「통일영어점자 규정」에 따라 적는다". 홑 낱자는 낱말표(b=but·c=can)로 읽히지
+        # 않게 문자표를 앞세운다. 규정 예문 `다음 a, b, c의 값` = `0a1 ;b1 ;c4`.
+        # 이 셀을 안 받아 주면 구간이 거기서 끊겨 `a, _b, _나.` 로 나갔다.
+        if c == _SUBSCRIPT and s[j + 1:j + 2] in _ALPHA_REV:
+            seen = True
+            j += 2
+            continue
         if (c in _ALPHA_REV or c in (_CAPITAL, _NUMBER_SIGN) or c in _DIGIT_REV
                 or _eng_group_at(s, j, False) is not None
                 or _eng_group_at(s, j, True) is not None):
@@ -866,6 +879,21 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
             #   조각**에 씌운다 — 낱자든 약자든 같다.
             caps_next = True
             j += 1
+            continue
+        # UEB 문자표 ⠰ + 낱자 — 제32항. 홑 낱자가 낱말표·약자로 읽히지 않게 앞세운다.
+        # ⠰ 는 아래첨자표(제68항)와 점형이 같지만 **뒤 셀로 갈린다** — 수표면 첨자,
+        # 낱자면 문자표다. 안 가르면 `(e)`(⠐⠣⠰⠑⠐⠜)가 UEB 끝글자 약자 `ence` 로 읽혀
+        # `(ence)` 가 나온다.
+        # ⚠ ⠰ 는 UEB **끝글자 약자**의 접두이기도 하다(⠰⠞=ment · ⠰⠑=ence · ⠰⠝=tion).
+        #   그래서 **낱말 첫머리이고 뒤가 홑 낱자일 때만** 문자표로 본다. 안 좁히면
+        #   `employment`(…⠽⠰⠞)가 `employt` 로 깨진다(회귀 테스트가 잡았다).
+        if (c == _SUBSCRIPT and s[i] == _ROMAN_START
+                and s[j + 1:j + 2] in _ALPHA_REV
+                and s[j + 2:j + 3] not in _ALPHA_REV
+                and (j == i + 1 or s[j - 1] in (_SPACE_CELL, " ")
+                     or s[j - 2:j] in _UEB_ROUND)):
+            _emit(_ALPHA_REV[s[j + 1]])
+            j += 2
             continue
         # 영어 약자(er=⠻ · in=⠔ · the=⠮ …)를 낱자보다 먼저 본다. 낱자로 읽으면
         # 여기서 런이 깨져 뒤 낱말이 통째로 한글로 오독된다.
