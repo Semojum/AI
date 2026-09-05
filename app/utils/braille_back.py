@@ -1050,6 +1050,13 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
                 #   마지막 원소 기호 뒤에, 첨자가 올 경우 그 다음에 표기한다"고 하므로
                 #   구절표와 종료표 **사이는 통째로 한 화학식**이다. 안 이으면 첫
                 #   원소만 읽고 끊긴다 — `C₆H12O₆` 이 `C_6,타_12이_6` 로 나갔다.
+                # ★ 아래첨자 뒤에 **이온 전하**가 붙는다 —「과학 점자」 제2항
+                #   "이온은 위 첨자 기호 ^ 뒤에 + 기호는 ⠢, - 기호는 ⠔ 을 적고".
+                #   `SO₄²⁻` = ⠴⠠⠎⠠⠕⠰⠼⠙⠘⠼⠃⠔ 인데 위첨자표에서 런이 끊겨
+                #   ⠘ 가 한글 `바` 로 떨어졌다(`SO_4바2-`).
+                if s[j:j + 2] == _SUPERSCRIPT + _NUMBER_SIGN:
+                    sup, j = _decode_number(s, j + 1)
+                    out.append("^" + sup)
                 if caps_phrase and s[j:j + 1] in _CAPS_RUN_NEXT:
                     continue
                 if s[j:j + 1] != _CAPITAL or s[j + 1:j + 2] not in _ALPHA_REV:
@@ -1170,6 +1177,9 @@ def _korean_tail(tok: str, at: int) -> str | None:
 _SENTINELS = "▯×○□△◇"
 
 
+_SCRIPT_TAIL_RE = re.compile(r"[_^]\d+$")   # 첨자 숫자로 끝났나 (과학 제4항 [붙임 1])
+
+
 def _decode_math_token(tok: str) -> str:
     """수식 토큰을 수학 의미로 디코드 — 구조·연산자 셀을 ^ _ √ × + 등으로 복원.
 
@@ -1243,6 +1253,17 @@ def _decode_math_token(tok: str) -> str:
                 matched = True
                 break
         if matched:
+            continue
+        # ★ **첨자 숫자 뒤의 대문자표** — 「과학 점자」 제4항 [붙임 1].
+        #   원소 기호 뒤에 첨자가 오면 그 다음에도 원소 기호가 이어진다
+        #   (`⠠⠓⠰⠼⠃⠠⠕` = H₂O). 그런데 ⠠⠕ 는 한글 `소` 로도 읽혀 아래 한글 꼬리
+        #   가드에 걸렸고, ⠠ 가 빈 문자열로 빠져 **뒤 원소가 소문자**로 나갔다.
+        #   실측(전권 18,892쪽): `6CO_2 + 6H_2o` 꼴 19회·15쪽.
+        #   첨자 숫자 바로 뒤로 한정한다 — `소금물`(⠠⠥…) 은 그 앞이 첨자가 아니다.
+        if (c == _CAPITAL and tok[i + 1:i + 2] in _ALPHA_REV
+                and _SCRIPT_TAIL_RE.search("".join(out))):
+            out.append(_ALPHA_REV[tok[i + 1]].upper())
+            i += 2
             continue
         # ★ 대문자표를 수식 안에서도 살린다(「수학 점자」 제12항 · 「한글 점자」 제28항 [붙임]).
         #   규정 예시: `행렬 A와 B에 대하여 AB의 값` = `⠠A⠠B`(제12항) ·
