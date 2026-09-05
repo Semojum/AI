@@ -204,6 +204,24 @@ class TestKnownLimits:
         """
         assert _rt("MP4 Player를 샀다") == "MP4 Player를 샀다"
 
+    def test_줄표에서_닫히는_구간을_읽는다(self) -> None:
+        """제33항 — `, : ; ―` 는 로마자 종료표 **없이** 구간을 닫는다.
+
+        종료표만 증거로 요구하면 규정 예문 `Hedy Lamarr―미국의 여배우`가
+        `Hedy 싹우얘—미국의`로 깨진다(둘째 낱말이 문맥을 잃는다).
+        ⠤⠤(줄표)는 UEB 약자 com(⠤)과 첫 셀이 같아 약자 가지보다 먼저 봐야 한다.
+        """
+        got = decode("⠴⠠⠓⠫⠽⠀⠠⠇⠁⠍⠜⠗⠤⠤⠑⠕⠈⠍⠁⠺")
+        assert got.startswith("Hedy Lamarr")
+
+    def test_수식_여는_소괄호를_구간_끝으로_보지_않는다(self) -> None:
+        """⠦ 는 물음표이자 **수식 여는 소괄호**다(`P(0≤Z≤z)`).
+
+        뒤가 수표·숫자면 문장 부호가 아니므로 구간을 닫지 않는다 — 받아 주면
+        표준정규분포표 머리가 `)z`로 깨졌다(전권 실측 13쪽).
+        """
+        assert decode("⠴⠵⠀⠀⠠⠏⠦⠼⠚⠖⠖⠠⠵⠖⠖⠵⠴") == "z  P(0≤Z≤z)"
+
 
 class TestPieupFinalAndWrapParens:
     """받침 ㅍ / 감쌈 붙임표 — 같은 셀이 두 뜻을 갖는 자리 (2026-08-06).
