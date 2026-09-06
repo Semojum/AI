@@ -104,3 +104,15 @@ def test_여는_괄호_뒤_로마자표는_닫는_괄호가_아니다(raw, want)
 ])
 def test_한글_경로_괄호는_그대로(raw, want):
     assert decode(raw) == want
+
+
+@pytest.mark.parametrize("raw,want", [
+    ("⠦⠄⠴⠙⠠⠉⠠⠴", "(℃)"),
+])
+def test_여는_괄호_뒤_도는_로마자표가_아니다(raw, want):
+    """`⠴⠙` 은 도(°, 제50항 `0d`)다 — 로마자표로 먹으면 `(℃)` 가 `(dC)` 로 깨진다.
+
+    A/B 에서 14회·12쪽이 이 자리에 걸렸다. 위 로마자표 분기의 가드가 풀리면
+    이 테스트가 먼저 깨진다.
+    """
+    assert decode(raw) == want
