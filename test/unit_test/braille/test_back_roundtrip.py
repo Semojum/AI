@@ -569,3 +569,38 @@ class TestLetterOpNumber:
     ])
     def test_한글은_그대로(self, raw: str, want: str) -> None:
         assert self._d(raw) == want
+
+
+class TestCapitalFunctionNotation:
+    """대문자 함수·확률 표기 — 「수학 점자」 제63항 `P(B∣A)` = `,P8,B\\,A0`,
+    제64항 `V(p̂)` = `,V8p@@50`.
+
+    함수 게이트가 **소문자 낱자로 시작할 때만** 맞아 앞의 대문자표 ⠠ 에 걸렸다.
+    `P(x)`(⠠⠏⠦⠭⠴)가 초성 ㅅ + 모음 ㅝ + 받침 ㅌ + 약자 `옥` + 닫는 따옴표로 읽혀
+    `쉍옥”` 으로 나갔다. 전권 실측 접두 `⠠낱자⠦…⠴` 1,433회·202쪽 중 놓치던 것이
+    562회·122쪽·90꼴이고, 그 안에 **순한글로 읽히는 꼴이 0종 0회**다.
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠠⠏⠦⠭⠴", "P(x)"),
+        ("⠠⠟⠦⠭⠴", "Q(x)"),
+        ("⠠⠋⠦⠭⠴", "F(x)"),
+        ("⠠⠏⠦⠭⠴⠒⠒⠼⠚", "P(x)=0"),
+        ("⠠⠑⠦⠠⠭⠴", "E(X)"),                    # 괄호 안 대문자표
+        ("⠠⠧⠦⠠⠭⠴⠒⠒⠠⠑⠦⠠⠭⠘⠼⠃⠴", "V(X)=E(X^2)"),
+    ])
+    def test_대문자_함수는_괄호로_읽는다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠑⠦⠣⠉⠥⠴⠈⠥", "맡아놓고"),   # 관행 제곱 ⠣ 는 괄호 안에 안 넣는다
+        ("⠦⠄⠫⠠⠴", "(가)"),
+        ("⠭", "옥"),
+    ])
+    def test_한글은_그대로(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
