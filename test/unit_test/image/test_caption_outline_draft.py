@@ -76,3 +76,36 @@ def test_너무_긴_캡션은_손대지_않는다():
     cap = "그래프: 아주 긴 자료\n" + "\n".join(f"항목{i}: {i}" for i in range(50))
     text = _desc(ChartGraphOpt, cap)
     assert "항목49: 49" in text, text[-80:]
+
+
+def test_한_줄_캡션이면_LLM을_부르지_않는다(monkeypatch) -> None:
+    """캡션이 한 줄이면 그 줄이 완성된 설명이다 — 늘리라고 시키면 지어낸다.
+
+    실측(2026-09-07 · claude-sonnet-5 폴백, 캡션 캐시 사진 56 · 그림 100):
+    캡션 밖 문장을 한 줄도 안 붙인 초안이 사진 1/56 · 그림 16/100 뿐이었고
+    지어낸 줄이 409줄이었다(`사진: 쿠트브 미나르` → "인도에 있는 높고 큰 원기둥
+    모양의 탑이다" 등 넉 줄). gold 는 사진 설명 54건 중 38건이 항목 한 개다.
+    """
+    from app.ai.llm import visual_drafts as vd
+
+    calls: list[str] = []
+
+    async def _fake(prompt, **_kw):
+        calls.append(prompt)
+        return "[개조식]\n지어낸 항목\n[줄글]\n지어낸 줄글", True
+
+    monkeypatch.setattr(vd, "generate_with_retry", _fake)
+    ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
+                           corrected_text="사진: 쿠트브 미나르", structure={})
+    out = asyncio.run(ImageOpt().optimize([ext], "STANDARD"))[0]
+    text = out.drafts[out.selected_idx].text
+    assert calls == [], calls
+    assert _TAG.sub("", text) == "사진: 쿠트브 미나르", text
+
+    # 여러 줄 캡션은 종전대로 — 줄글 안 재료를 LLM 이 채운다.
+    calls.clear()
+    ext2 = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
+                            corrected_text="사진: 술탄 아흐메드 사원\n큰 돔 지붕 주위에 첨탑 여섯 개",
+                            structure={})
+    asyncio.run(ImageOpt().optimize([ext2], "STANDARD"))
+    assert calls, "여러 줄 캡션까지 LLM 을 막으면 줄글 안이 빈다"
