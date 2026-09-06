@@ -727,6 +727,30 @@ def _build_eng_words() -> dict[str, str]:
 _ENG_WORD = _build_eng_words()
 _ENG_WORD_MAX = max((len(k) for k in _ENG_WORD), default=1)
 _ENG_ANY, _ENG_INIT, _ENG_FINAL = _build_eng_reverse()
+
+# ── 점456 첫글자 약자(⠸+낱자) — 한글 디코더가 포기하는 자리에서만 읽는다 ──────────
+# 규정 제7항("한글 점자 이외의 점자는 …「통일영어점자 규정」에 따라 표기") ·
+# 제32항("로마자표와 로마자 종료표 사이의 표기는「통일영어점자 규정」에 따라 적는다")
+#   — braille-source/text/한국 점자 규정_재추출.txt 97~100행 · 1650행.
+# 이 여섯은 제37항의 "풀어 적는" 목록(같은 파일 1795~1866행)에 **없다.** 즉 약자 그대로다.
+#
+# ★ 왜 한글 디코더가 이 자리를 보나 — 제29항 [다만](같은 파일 1507행)이
+#   "문단 전체가 로마자일 때에는 로마자표와 로마자 종료표를 생략할 수 있다"고 한다.
+#   그래서 영어 교재의 영문 단락에는 단서 셀 ⠴ 가 없고, `_english_line` 이 그 줄을
+#   영어로 못 가르면 줄이 통째로 한글 디코더로 넘어온다. 거기에 ⠸ 를 아는 표가
+#   하나도 없어 **미해독 ⟨2838⟩ 로 샜다.**
+#
+# ⚠ `spirit`(⠸⠎)은 **뺀다.** ⠸⠎ 는 한글 음절 **'것'** 이고 전권 18,892쪽에
+#   53,197건·12,354쪽이다(`⠸⠎⠵` = "것은"). _COMBINED 가 먼저 잡아 여기까지 오지 않지만,
+#   한글 책에 `spirit` 이 찍히는 사고는 값이 너무 크다. 나머지 다섯은 역맵 어느 표
+#   (_COMBINED · _SYMBOL_REV · _SYLLABLE_REV)에도 항목이 없어 단독으로 안전하다.
+#
+# ⚠ 한계 — 어떤 책은 ⠸⠓ 를 **하트 ♥** 로 쓴다(`'I♥NY'` → `IhadNY`). 규정에 ♥ 점형이
+#   없어 가릴 근거가 없고, 전권에서 **3건·2쪽**뿐이다. 낱말 첫머리로 좁히는 안은
+#   `⠠⠸⠍`(Many) 처럼 대문자표가 앞선 자리까지 잘라 **깨끗해지는 쪽이 58쪽 줄어**
+#   기각했다(93.2% -> 92.9%). ♥ 는 별건으로 원장에 올린다.
+_ENG_456 = {k: v for k, v in _ENG_INIT.items()
+            if k.startswith("⠸") and v != "spirit"}
 _ENG_MAX = max((len(k) for k in list(_ENG_ANY) + list(_ENG_INIT) + list(_ENG_FINAL)),
                default=1)
 
@@ -2843,6 +2867,11 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
         if os.environ.get("BRAILLE_ALPHA_FALLBACK", "1") == "1" and ch in _ALPHA_REV:
             out.append(_ALPHA_REV[ch])
             i += 1
+            continue
+        # 점456 첫글자 약자 — **모든 표가 실패한 뒤**라 뺏어 갈 자리가 없다(위 _ENG_456).
+        if ch == "⠸" and s[i:i + 2] in _ENG_456:
+            out.append(_ENG_456[s[i:i + 2]])
+            i += 2
             continue
         # 못 푸는 셀 → 코드포인트 표시(정직)
         out.append(f"⟨{ord(ch):04X}⟩")
