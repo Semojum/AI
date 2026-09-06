@@ -779,12 +779,28 @@ async def build_visual_drafts(
         if cap_items:
             struct_outline, cap_head = cap_items, _caption_head(caption)
 
+    # ★ 캡션이 **한 줄이면 그 줄이 이미 완성된 설명이다** — LLM에게 늘리라고 시키지 않는다.
+    #   캡셔너 image 프롬프트가 "그린 대상이 하나면 그 이름만 적으세요. 문장으로 늘리지
+    #   마세요"라고 지시해 놓고, 여기서 그 한 줄을 재료로 "[개조식] 3~5줄"을 시켜 왔다.
+    #   재료가 없으니 모델은 **세상 지식으로 빈자리를 메운다**(2026-09-07 실측, 사진 8건):
+    #     캡션 `사진: 쿠트브 미나르` → 초안 4줄
+    #     "인도 델리에 있는 높고 가느다란 원통형 탑이다 / 여러 층으로 나뉘어 위로 갈수록
+    #      좁아지는 형태이다 / 표면에 세로 홈과 무늬가 새겨져 있다 / 주변에는 낮은 건물과
+    #      유적 터가 함께 자리하고 있다" — 넉 줄 다 캡션에 없는 말이다.
+    #     캡션 `사진: 도장` → "손잡이 부분과 도장 면으로 이루어져 있다" 따위 3줄.
+    #   gold 는 사진 설명 54건 중 38건(70.4%)이 **논리 항목 한 개**이고 글자 수 중앙값이
+    #   39자다(`비파형 동검` · `이와쿠라 사절단의 모습` · `신보`). 늘린 만큼 전부 틀린다.
+    #   ⚠ 캡션이 **아예 없을 때**(제목·원본 글자만)는 종전대로 LLM을 부른다 — 그때는
+    #     LLM 말고 재료가 없다. 여기서 막는 것은 "캡션이 이미 답을 줬는데 더 시키는" 경우다.
+    single_line_caption = bool(caption) and not cap_body
+
     # LLM이 채워야 할 파트: 제목·캡션 다 없으면 제목, 구조 없으면 개조식/줄글.
     need_title = not (title or caption)
     need_outline = struct_outline is None
     need_prose = struct_prose is None
     has_seed = bool(title or caption)
-    use_llm = (routing_tier != "ZERO") and has_seed and (need_title or need_outline or need_prose)
+    use_llm = ((routing_tier != "ZERO") and has_seed and not single_line_caption
+               and (need_title or need_outline or need_prose))
 
     llm_title, llm_outline, llm_prose = "", [], ""
     if use_llm:
