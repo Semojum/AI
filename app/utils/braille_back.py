@@ -235,6 +235,12 @@ _MATH_REV_MULTI.update({"⠸⠰" + c: f"log_{{{v}}}" for c, v in _ALPHA_REV.item
 # 가드보다 먼저 잡는다 — 로그의 밑(`⠸⠰`+낱자)을 잡은 방식과 같다.
 _MATH_REV_MULTI.update({"⠇⠊⠍⠰" + c: f"lim_{{{v}}}" for c, v in _ALPHA_REV.items()})
 _MATH_REV_MULTI["⠇⠊⠍"] = "lim"
+# 여는 소괄호 + 로마자표 — 「과학 점자」 제18항 3호. 화학 반응식의 글자체 괄호는
+# 한글 소괄호 `8' ,0`(⠦⠄ … ⠠⠴)로 적고, 안이 로마자면 로마자표 ⠴ 가 붙는다
+# (규정 예문 `#b,s8'0s,0` = 2S(s)). 수식 경로에 로마자표가 없어 그 ⠴ 가 **닫는
+# 소괄호**로 읽혀 `2S()s)` 가 됐다. 세 칸을 한 덩이로 잡아 여는 괄호 하나만 낸다.
+# 실측(전권 18,892쪽): 수식·수치 토큰 안 1,240회·367쪽. 한글 경로는 이미 맞다.
+_MATH_REV_MULTI["⠦⠄⠴"] = "("
 _MATH_MAX = max(len(k) for k in _MATH_REV_MULTI)
 # 토큰이 수식인지 판정 — 첨자·근호·분수 셀(⠘⠰⠜⠻⠌)이 **수식 피연산자**(수표 ⠼ 또는
 # 수식 여는괄호 ⠷)에 바로 이어질 때만 수식으로 본다. 한글 약자(바=⠘⠣·예=⠌⠣ 등)는
@@ -1312,6 +1318,7 @@ def _paren_close(tok: str, at: int) -> int:
 
 _ANGLE = "⠹"                # 각 기호(수학 제39항) = 한글 약자 `억` 과 같은 셀
 _MATH_COMMA = "⠐"           # 수식 쉼표(제12항 [붙임 1]) = 곱셈점과 같은 셀
+_SCI_AMBIG_ELEMENT = frozenset("⠓⠃⠉⠋⠊")   # H B C F I — 과학 제5항이 ⠐ 를 앞세우는 원소
 _SCRIPT_TAIL_RE = re.compile(r"[_^]\d+$")   # 첨자 숫자로 끝났나 (과학 제4항 [붙임 1])
 
 # ★ 수열 묶음표 — 「수학 점자」 제24항 "수열({aₙ})은 7A;N7으로 적는다". (원장 R-38)
@@ -1429,6 +1436,19 @@ def _decode_math_token(tok: str) -> str:
             out.append("(")
             i += 1
             continue
+        # ★ 여는 소괄호 바로 뒤의 ⠴ 는 **로마자표**다 — 「과학 점자」 제18항 3호가
+        #   화학 반응식의 글자체 괄호를 한글 소괄호 `8' ,0` 로 적고 안이 로마자면
+        #   로마자표를 붙인다(규정 예문 `#b,s8'0s,0` = 2S(s)). 수식 경로엔 로마자표가
+        #   없어 그 ⠴ 가 **닫는 괄호**로 읽혔다 — `2S()s)` · `()cm^3)` · `()H_2O)`.
+        #   줄 단위 선처리가 여는 ⠦⠄ 를 자리표시자로 바꾸므로 그 뒤에서 본다.
+        #   실측(전권 18,892쪽): 수식·수치 토큰 안 1,240회·367쪽. 한글 경로는 이미 맞다.
+        #   ⚠ `⠴⠙` 은 도(°, 제50항 `0d`)다 — `(℃)`(⠦⠄⠴⠙⠠⠉⠠⠴)가 `(dC)` 로 깨진다.
+        #     대문자표가 뒤따르면 도로 남긴다. 뒤가 소문자 런이면 로마자표다(`(degree)`).
+        if (c == _PAREN_CLOSE and out and out[-1] == "("
+                and i and tok[i - 1] == _PAREN_OPEN_MARK
+                and tok[i + 1:i + 3] != "⠙" + _CAPITAL):
+            i += 1
+            continue
         if (c == _PAREN_CLOSE and depth
                 and not (tok[i + 1:i + 2] == "⠙" and out and out[-1][-1:].isdigit())):
             depth -= 1
@@ -1501,6 +1521,17 @@ def _decode_math_token(tok: str) -> str:
         if c == _MATH_COMMA and (i + 1 >= n or tok[i + 1] in (_SPACE_CELL, " ")):
             out.append(",")
             i += 1
+            continue
+        # ★ 대문자 구절 안의 `⠐ + 원소 기호` — 「과학 점자」 제5항.
+        #   "대문자 구절표와 종료표 사이에 있는 H, B, C, F, I의 원소 기호가 숫자 다음에
+        #    붙어 나올 때에는 해당 원소 기호 앞에 `"`을 적는다"(예문 `,,,CH;#C"COOH,'`).
+        #   그 ⠐ 가 곱셈점으로 읽혀 `2H₂O` 가 `2·h_2o` 로 나갔다.
+        #   ⚠ 구절 **안**으로 한정한다. ⠐+원소는 전권 2,814회인데 대부분 반점+한글이고
+        #     (`,타`·`,카`), 구절 안은 코퍼스에 0회다 — 본문 위험이 없다.
+        if (caps_phrase and c == _MATH_COMMA
+                and tok[i + 1:i + 2] in _SCI_AMBIG_ELEMENT):
+            out.append(_ALPHA_REV[tok[i + 1]].upper())
+            i += 2
             continue
         # ★ 정적분 범위 머리(제57항) — ⠮ 는 한글 약자 `을` 이라 **토큰 첫 칸 + ⠰** 로만 본다.
         if i == 0 and tok[:2] == _INTEGRAL + _SUBSCRIPT:
