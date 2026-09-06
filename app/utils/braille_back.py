@@ -1371,6 +1371,31 @@ _MEAN_BAR_RE = re.compile(
     r"⠠([⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵])⠈⠉")
 
 
+# ★ 홑 로마자 문자표 + 종료표 — 「한글 점자」 제32항. (원장 R-48) 도서는 홑 낱자를 `;b4`(⠰⠃⠲)로
+#   적는다. 문자표 ⠰ 는 낱말표·약자 오독을 막고, ⠲ 는 로마자 종료표다. **여는 로마자표 ⠴
+#   가 없어** 로마자 런 판정에 안 걸려 통째로 한글로 떨어졌다 — `A, B, _b.의` · `_나.` · `최.의`.
+#   실측(전권 18,892쪽): 1,937회·687쪽.
+#   ⚠ ⠰ 는 초성 ㅊ 이다. 뒤에 모음 셀이 오면 음절이 되고(춰·체·최·촤·채·처·치) 토큰이
+#     마침표로 끝나면 진짜 한글과 못 가른다 — 실측에서 `줄도 모른 채.` · `처, ‘정조’의`가
+#     걸렸다. 그래서 둘 중 하나일 때만 본다(합쳐 1,505회):
+#       ① ⠰+그 셀이 음절이 안 되는 것(b·c·d·f …) — 1,089회·548쪽
+#       ② 음절이 되더라도 **뒤에 조사가 붙을 때** — 마침표 뒤에 조사가 붙는 한국어는 없다
+#          (`최.의` · `체.에` · `_나.는`). 416회·195쪽
+_LETTER_SIGN_AMBIG = frozenset(c for c in _ALPHA_REV if _SUBSCRIPT + c in _SYLLABLE_REV)
+
+
+def _letter_sign_at(s: str, i: int) -> tuple[str, int] | None:
+    """s[i]가 홑 로마자 문자표 꼴(제32항 `;b4`)이면 (글자, 다음위치)."""
+    if s[i] != _SUBSCRIPT or s[i + 1:i + 2] not in _ALPHA_REV or s[i + 2:i + 3] != _ROMAN_END:
+        return None
+    if i and s[i - 1] not in _JAMO_BOUND:          # 낱말 첫머리에서만
+        return None
+    tail = s[i + 3:i + 4]
+    if s[i + 1] in _LETTER_SIGN_AMBIG and (not tail or tail in _JAMO_BOUND):
+        return None                                # 음절이 되는데 꼬리도 없다 — 한글일 수 있다
+    return _ALPHA_REV[s[i + 1]], i + 3
+
+
 def _mean_bar_at(s: str, i: int) -> tuple[str, int] | None:
     """s[i]가 평균값 기호 꼴(제23항 나)이면 (텍스트, 다음위치)."""
     m = _MEAN_BAR_RE.match(s, i)
@@ -2634,6 +2659,12 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
         if _mb:
             out.append(_mb[0])
             i = _mb[1]
+            continue
+        # 홑 로마자 문자표(제32항 `;b4`) — 같은 이유로 긴-셀 매칭보다 먼저 본다.
+        _ls = _letter_sign_at(s, i)
+        if _ls:
+            out.append(_ls[0])
+            i = _ls[1]
             continue
         # 대문자 로마자 처리는 폐기(2026-07-18): ⠠는 한글 음절 구성요소(수=⠠⠍)이기도 해
         # ⠠+알파를 대문자로 보면 정상 한글을 깬다(국수→국M, 따님→I님). roundtrip 회귀.
