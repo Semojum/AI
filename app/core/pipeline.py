@@ -1819,20 +1819,20 @@ def _number_volume_refs(llm_outputs: list[LLMOutput], page_no: int,
     점자 초안을 다시 점역해 맞춘다(참조 안은 한 줄짜리라 비용이 없다).
     """
     from app.ai.braille.translator import translate_with_breaks
-    from app.ai.llm.visual_drafts import LABELS, VOLREF_IDX, volume_ref_draft
+    from app.ai.llm.visual_drafts import VOLREF_OPTION, volume_ref_draft
 
     bo_by_id = {b.element_id: b for b in (braille_outputs or [])}
     ordinal = 0
     for o in llm_outputs:
         for i, d in enumerate(o.drafts or []):
-            if d.label != LABELS[VOLREF_IDX]:
+            if d.option != VOLREF_OPTION:
                 continue
             ordinal += 1
             nd = volume_ref_draft(d.type_label, f"{page_no}-{ordinal}")
             o.drafts[i] = nd
             bo = bo_by_id.get(o.element_id)
             for j, bd in enumerate(bo.drafts or []) if bo else ():
-                if bd.label != LABELS[VOLREF_IDX]:
+                if bd.option != VOLREF_OPTION:
                     continue
                 lines, breaks = translate_with_breaks(nd.text)
                 bo.drafts[j] = bd.model_copy(update={

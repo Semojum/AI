@@ -24,7 +24,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.ai.llm.visual_drafts import LABELS, VOLREF_IDX
+from app.ai.llm.visual_drafts import VOLREF_OPTION
 from app.core.pipeline import _number_volume_refs
 from app.schemas.content import ExtractedContent
 
@@ -41,7 +41,7 @@ def _visual_outputs(caps: list[str]):
 
 
 def _refs(outs):
-    return [d.text for o in outs for d in (o.drafts or []) if d.label == LABELS[VOLREF_IDX]]
+    return [d.text for o in outs for d in (o.drafts or []) if d.option == VOLREF_OPTION]
 
 
 def test_참조안은_번호를_받는다() -> None:

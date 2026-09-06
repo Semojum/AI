@@ -10,7 +10,7 @@ from uuid import uuid4
 from app.ai.braille.chart_graph_braille import ChartGraphBraille
 from app.ai.braille.layout_braille import LayoutBraille
 from app.ai.llm.chart_graph_opt import ChartGraphOpt, _label
-from app.ai.llm.visual_drafts import LABELS, desc_label
+from app.ai.llm.visual_drafts import omit_label, volref_label, LABELS, desc_label
 from app.schemas.content import ExtractedContent
 from app.schemas.layout import BBoxItem, LayoutResult
 from app.utils.braille_back import decode
@@ -35,8 +35,12 @@ class TestFourDrafts:
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(ChartGraphOpt().optimize([ext], "ZERO"))[0]
         from app.ai.llm.visual_drafts import prose_label
-        assert [d.label for d in opt.drafts] == [
-            LABELS[0], desc_label("차트"), LABELS[2], prose_label("차트")]
+        labels = [d.label for d in opt.drafts]
+        # 생략·참조에는 탐지된 유형이 붙는다(2026-09-06 결재). 값이 아니라 끝 낱말로 본다.
+        assert labels[0].endswith(LABELS[0]) and labels[0] != LABELS[0], labels
+        assert labels[1] == desc_label("차트"), labels
+        assert labels[2].endswith(LABELS[2]) and labels[2] != LABELS[2], labels
+        assert labels[3] == prose_label("차트"), labels
         assert opt.selected_idx == 1                                   # 기본=설명(gold 79.6%)(표 변환)
 
     def test_개조식_데이터_전사(self):

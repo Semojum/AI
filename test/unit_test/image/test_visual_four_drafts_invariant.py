@@ -50,7 +50,7 @@ def _assert_distinct(drafts, *, expect: int | None = None) -> None:
 
 def _assert_omit_only(drafts) -> None:
     """재료가 없으면 생략 한 안만 (2026-08-12 대표 지시)."""
-    assert [d.label for d in drafts] == [vd.LABELS[0]], [d.label for d in drafts]
+    assert [d.label for d in drafts] == [vd.omit_label("그림")], [d.label for d in drafts]
 # 표 렌더 5안 — §3.1.1 (1) 이 정한 세 갈래(정렬 유지·가로 풀어쓰기·번호 체계)에
 # 전치와 테두리 변형을 더한 것이다. 번호 체계는 2026-09-02 신설.
 _EXPECTED_TABLE = 5
@@ -146,7 +146,7 @@ def test_재료가_있으면_세_안이_다_다르다() -> None:
         struct_outline=[(0, "2020년 5,200만 명"), (0, "2021년 5,180만 명")])
     _assert_distinct(drafts, expect=_EXPECTED)
     assert [d.label for d in drafts] == [
-        vd.LABELS[0], vd.desc_label("이미지"), vd.LABELS[2]]
+        vd.omit_label("그림"), vd.desc_label("이미지"), vd.volref_label()]
 
 
 def test_한_낱말_캡션도_세_안_그대로() -> None:
@@ -158,7 +158,7 @@ def test_한_낱말_캡션도_세_안_그대로() -> None:
     drafts = _build(caption="설명")
     _assert_distinct(drafts, expect=_EXPECTED)
     assert [d.label for d in drafts] == [
-        vd.LABELS[0], vd.desc_label("이미지"), vd.LABELS[2]]
+        vd.omit_label("그림"), vd.desc_label("이미지"), vd.volref_label()]
 
 
 def test_표는_렌더_4안_그대로() -> None:
