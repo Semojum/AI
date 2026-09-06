@@ -413,3 +413,30 @@ class TestFunctionNotation:
     ])
     def test_한글_괄호는_그대로(self, raw: str, want: str) -> None:
         assert self._d(raw) == want
+
+class TestRangeUpperLimit:
+    """적분·총합의 범위 — 「수학 점자」 제25항(총합)·제57항(정적분).
+
+    두 조항 다 "범위의 시작은 `;`으로 하고 **끝은 한 칸을 띄어 쓴다**" 라 정한다.
+    위끝이 따로 떨어진 토큰이라 홑 낱자로 서면 한글로 읽혔다 — `Σ_k=1 n` 의 ⠝ 가 `에`.
+    전권 실측: `' ' -> '^'` 872회·141쪽 · `'을' -> '∫'` 799회·119쪽.
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠠⠨⠎⠰⠅⠒⠒⠼⠁⠀⠝", "Σ_k=1^n"),
+        ("⠠⠨⠎⠰⠅⠒⠒⠼⠁⠀⠼⠛", "Σ_k=1^7"),
+        ("⠮⠰⠁⠀⠃", "∫_a^b"),
+        ("⠮⠰⠔⠼⠃⠀⠼⠃", "∫_-2^2"),
+        ("⠮⠰⠨⠁⠀⠨⠃", "∫_α^β"),
+    ])
+    def test_위끝은_앞에_붙는다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    def test_한글은_안_먹는다(self) -> None:
+        """⠮ 는 약자 `을` 이라 홀로 18,156회다. 아래끝까지 범위 꼴이어야 수식으로 본다."""
+        assert self._d("⠮⠰⠍⠁⠉⠡") == "을축년"

@@ -1244,6 +1244,27 @@ def _korean_tail(tok: str, at: int) -> str | None:
 _SENTINELS = "▯×○□△◇|"
 
 
+# ★ 적분·총합의 **범위** — 「수학 점자」 제25항(총합)·제57항(정적분). (원장 R-40)
+#   제25항 "총합(Σ)은 ,.S으로 적되, **범위의 시작은 ;으로 하고 끝은 한 칸을 띄어 쓴다**."
+#   제57항 "정적분은 적분 범위를 ;으로 시작하고 **아래끝, 위끝, 본 식**의 순으로 적되,
+#           아래끝과 위끝 사이, 위끝과 본 식 사이를 한 칸씩 띄어 쓴다."
+#   즉 **위끝이 따로 떨어진 토큰**이다. 그래서 홑 낱자로 서면 한글로 읽혔다 —
+#   `Σ_k=1 n` 의 ⠝ 가 `에`, ⠍ 가 `우`(전권 100회·17쪽·묵자 `^n`).
+#   ⚠ ⠮ 는 한글 약자 `을` 이고 홀로 18,156회 나온다. **범위 시작 ⠰ 가 붙은 머리**로만 본다 —
+#     그 꼴은 전권 797회·119쪽이고 서로 다른 스물이 전부 정적분이다.
+#   ⚠ Σ 셀 ⠠⠨⠎ 도 한글 안에 낀다(`어쩌면` = ⠎⠠⠨⠎⠑⠡). 마찬가지로 머리로만 본다 —
+#     `⠠⠨⠎⠰` 는 전권 273회·38쪽이고 서로 다른 열하나가 전부 총합이다.
+#   ⚠ **토큰 전체**를 받아야 한다. 머리만 보면 한글 `을축년`(⠮⠰⠍⠁⠉⠡)이 걸린다 —
+#     실측에서 그 한 건이 `∫_욱년` 으로 깨졌다. 아래끝은 짧다(부호·수·낱자·그리스 하나).
+_INTEGRAL = "⠮"
+_A_CELLS = "⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵"
+_D_CELLS = "⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚"
+_RANGE_LIMIT = rf"⠔?(?:⠼[{_D_CELLS}]+|⠨?[{_A_CELLS}])"          # 부호 + 수 또는 낱자·그리스
+_RANGE_HEAD_RE = re.compile(
+    rf"^(?:⠮⠰{_RANGE_LIMIT}|⠠⠨⠎⠰[{_A_CELLS}]⠒⠒{_RANGE_LIMIT})$")
+_RANGE_UPPER_RE = re.compile(
+    r"^[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵⠼⠢⠔⠿⠨]+$")   # 낱자·수·부호·∞
+
 _ANGLE = "⠹"                # 각 기호(수학 제39항) = 한글 약자 `억` 과 같은 셀
 _MATH_COMMA = "⠐"           # 수식 쉼표(제12항 [붙임 1]) = 곱셈점과 같은 셀
 _SCRIPT_TAIL_RE = re.compile(r"[_^]\d+$")   # 첨자 숫자로 끝났나 (과학 제4항 [붙임 1])
@@ -1426,6 +1447,11 @@ def _decode_math_token(tok: str) -> str:
             out.append(",")
             i += 1
             continue
+        # ★ 정적분 범위 머리(제57항) — ⠮ 는 한글 약자 `을` 이라 **토큰 첫 칸 + ⠰** 로만 본다.
+        if i == 0 and tok[:2] == _INTEGRAL + _SUBSCRIPT:
+            out.append("∫_")
+            i = 2
+            continue
         # 각 기호(제39항) — ⠹ 는 한글 약자 `억` 과 같은 셀이라 **대문자 단어표가
         # 뒤따를 때만** 본다. 종전에는 `∠BAC=5분의π` 가 `억BAC=5분의π` 로 나갔다
         # (전권 18,892쪽 실측 1,023회·143쪽).
@@ -1553,6 +1579,9 @@ def _classify_token(tok: str) -> str:
         return "MATH"
     # ★ 함수 표기(제45항) — `f(x)` 는 수표도 관계 기호도 없다. 위 _FUNC_RE 주석 참조.
     if _FUNC_RE.match(tok):
+        return "MATH"
+    # ★ 적분·총합 범위 머리(제25·57항) — 수표 없이도 수식이다. 위 _RANGE_HEAD_RE 주석 참조.
+    if _RANGE_HEAD_RE.match(tok):
         return "MATH"
     if has_num and (_MATH_SIGNAL_RE.search(tok) or _MATH_PAREN_OPEN in tok):
         # ★ 단위 기호가 수식 신호를 품는다 (2026-08-09). 규정 제68항이 ㎡를 문자 그대로
@@ -2132,10 +2161,19 @@ def _decode_line_router(line: str, math: bool) -> str:
         is_math = [True] * len(tokens)
     else:
         is_math = _resolve_math_context([_classify_token(t) for t in tokens])
+    # ★ 범위의 **위끝**은 한 칸 뒤의 토큰이다(제25·57항). 앞 토큰이 범위 머리면
+    #   그 자리를 수식으로 읽고 `^` 를 붙인다 — 종전에는 홑 낱자가 한글로 떨어졌다.
+    upper = [idx > 0 and bool(_RANGE_HEAD_RE.match(tokens[idx - 1]))
+             and bool(_RANGE_UPPER_RE.match(tok)) for idx, tok in enumerate(tokens)]
     pieces = []
     for idx, tok in enumerate(tokens):
         if tok:
-            pieces.append(_decode_math_token(tok) if is_math[idx] else _decode_line(tok))
+            if upper[idx]:
+                if pieces:
+                    pieces[-1] = ""                 # 범위와 위끝 사이의 한 칸을 지운다
+                pieces.append("^" + _decode_math_token(tok))
+            else:
+                pieces.append(_decode_math_token(tok) if is_math[idx] else _decode_line(tok))
         if idx < len(seps):
             pieces.append("" if seps[idx] == _EMPH_MARK else " " * len(seps[idx]))
     return _fix_chemical_case(_join_num_hangul(_restore_wrap_parens("".join(pieces))))
