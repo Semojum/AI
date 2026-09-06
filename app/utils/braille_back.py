@@ -1453,6 +1453,34 @@ def _mean_bar_at(s: str, i: int) -> tuple[str, int] | None:
     return ("\u0305" + _ALPHA_REV[m.group(1)].upper(), m.end()) if m else None
 
 
+# ★ 집합 연산 — 「수학 점자」 제61항 5. 합집합 ∪ 는 `+`(⠬), 교집합 ∩ 는 `%`(⠩)로 적되
+#   **그 앞뒤를 한 칸씩 띄어 쓴다.** 그래서 홑 셀이 토큰 하나로 서는데, 그 점형이 한글
+#   약자 `요`(⠬)·`유`(⠩)와 같아 그대로 한글로 나갔다 — `A∩B` 가 `a 유 b` 다.
+#
+#   ⚠ 2026-09-06 아침에 "홑 ⠩·⠬ 는 한글과 겹쳐 못 넣는다"로 한 번 기각했다. 그때는
+#     **양옆을 안 봤다.** 저녁에 전권 18,892쪽에서 양옆으로 갈라 재니 완전히 갈린다.
+#       ⠩  양옆이 대문자표+낱자를 품음  180회·36쪽  전부 수식
+#           그밖                         82회·57쪽  전부 한글 (`유 부인을`·`유 서방은`)
+#       ⠬  양옆이 대문자표+낱자를 품음   62회·23쪽  전부 수식
+#           그밖                        110회·63쪽  전부 한글 (`요 지리적`·`요 장소`)
+#     수식 쪽 274회·40쪽의 서로 다른 180꼴을 전부 눈으로 훑어 한글이 0건임을 확인했다.
+#
+#   그래서 **역맵에 통째로 넣지 않고 양옆이 집합 이름일 때만** 본다.
+#   묵자는 앞뒤를 붙여 적으므로(`A∩B`) 그 두 칸도 같이 지운다.
+_SET_OP = {"⠩": "∩", "⠬": "∪"}
+_SET_NAME_RE = re.compile(r"⠠[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵]")
+
+
+def _set_op_at(tokens: list[str], idx: int) -> str | None:
+    """tokens[idx]가 집합 연산 홑 셀이고 양옆이 집합 이름이면 그 기호."""
+    sym = _SET_OP.get(tokens[idx])
+    if sym is None or idx == 0 or idx + 1 >= len(tokens):
+        return None
+    if _SET_NAME_RE.search(tokens[idx - 1]) and _SET_NAME_RE.search(tokens[idx + 1]):
+        return sym
+    return None
+
+
 _ANGLE = "⠹"                # 각 기호(수학 제39항) = 한글 약자 `억` 과 같은 셀
 _MATH_COMMA = "⠐"           # 수식 쉼표(제12항 [붙임 1]) = 곱셈점과 같은 셀
 _SCI_AMBIG_ELEMENT = frozenset("⠓⠃⠉⠋⠊")   # H B C F I — 과학 제5항이 ⠐ 를 앞세우는 원소
@@ -2520,10 +2548,18 @@ def _decode_line_router(line: str, math: bool) -> str:
     #   그 자리를 수식으로 읽고 `^` 를 붙인다 — 종전에는 홑 낱자가 한글로 떨어졌다.
     upper = [idx > 0 and bool(_RANGE_HEAD_RE.match(tokens[idx - 1]))
              and bool(_RANGE_UPPER_RE.match(tok)) for idx, tok in enumerate(tokens)]
+    # 집합 연산(제61항 5) — 위 _set_op_at 주석 참조. 양옆이 집합 이름일 때만.
+    setop = [_set_op_at(tokens, idx) for idx in range(len(tokens))]
     pieces = []
     for idx, tok in enumerate(tokens):
         if tok:
-            if upper[idx]:
+            if setop[idx]:
+                if pieces:
+                    pieces[-1] = ""                 # 앞의 한 칸을 지운다 — 묵자는 붙인다
+                pieces.append(setop[idx])
+                if idx < len(seps):
+                    seps[idx] = ""                  # 뒤의 한 칸도 지운다
+            elif upper[idx]:
                 if pieces:
                     pieces[-1] = ""                 # 범위와 위끝 사이의 한 칸을 지운다
                 pieces.append("^" + _decode_math_token(tok))
