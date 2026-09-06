@@ -11,7 +11,7 @@ from uuid import uuid4
 from app.ai.braille.cartoon_braille import CartoonBraille
 from app.ai.braille.layout_braille import LayoutBraille
 from app.ai.llm.cartoon_opt import CartoonOpt
-from app.ai.llm.visual_drafts import LABELS, desc_label, prose_label
+from app.ai.llm.visual_drafts import omit_label, volref_label, LABELS, desc_label, prose_label
 from app.schemas.content import ExtractedContent
 from app.schemas.layout import BBoxItem, LayoutResult
 from app.utils.braille_back import decode
@@ -33,7 +33,7 @@ class TestFourDrafts:
         # 재료가 겹쳐 접힌 안이 있을 수 있다(`visual_drafts._dedupe`) — 남은 것은
         # LABELS의 **부분 수열**이고 서로 달라야 한다.
         expected = list(dict.fromkeys(
-            [LABELS[0], desc_label("만화"), LABELS[2], prose_label("만화")]))
+            [omit_label("만화"), desc_label("만화"), volref_label(), prose_label("만화")]))
         assert labels == [x for x in expected if x in labels], labels
         assert len(set(labels)) == len(labels), labels
         assert opt.selected_idx == 1                                   # 기본=설명(gold 79.6%)
@@ -55,7 +55,7 @@ class TestFourDrafts:
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
         labels = [d.label for d in opt.drafts]
         expected = list(dict.fromkeys(
-            [LABELS[0], desc_label("만화"), LABELS[2], prose_label("만화")]))
+            [omit_label("만화"), desc_label("만화"), volref_label(), prose_label("만화")]))
         assert labels == [x for x in expected if x in labels], labels
         assert len(set(labels)) == len(labels) >= 3, labels
         assert "두 컷 만화" in opt.drafts[1].text                      # 캡션 → 짧은 제목
