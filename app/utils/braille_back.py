@@ -2359,6 +2359,42 @@ _BOX_BORDER_RE = re.compile(
     r"[⠿⠖⠓](⠛|⠶|⠒|⠐)\1{3,}(?:[⠀ ](.+?)[⠀ ]\1{3,})?[⠿⠲⠚]")
 
 
+# ── 수식 경계의 두 칸은 점자 조판이다 (「수학 점자」 제11·12항 1호, 과학 제6항) ─────
+# 제11항: "수식과 수학적 표기는 앞뒤를 두 칸씩 띄어 쓴다." **점자에만 있는 칸**이라
+# 묵자로 1:1 옮기면 없던 공백이 샌다 — `⠫⠁⠣⠀⠀⠼⠃⠀⠀⠕⠌⠊⠲` → `각아  2  있다.`
+# 규정 예문 제11항: 묵자 `2⁴⁰은 몇 자리 정수인가?` ↔ 점자 `#b^#dj``z`e:2` (두 칸 + `은`).
+#
+# ★ **묵자에서 읽은 규칙이다.** 재추출 묵자 1,361쪽에서 `$…$` 와 한글이 맞닿는 자리를 셌다.
+#     수식 뒤 → 한글 :  붙임 14,101 (90.7%) · 한 칸 1,446
+#     한글 뒤 → 수식 :  한 칸 13,119 (99.6%) · 붙임 42
+#   묵자는 **뒤는 붙이고 앞은 한 칸**이다(조사·어미가 수식에 붙는다 — 의 2,408 · 에서 1,734 ·
+#   가 986 · 이다 515 …). 그래서 두 칸을 좌우 성격에 따라 0칸·1칸으로 접는다.
+#   ⚠ 되돌릴 수 없는 9.3%: `또는`(189) · `답`(148) · `따라서`(142) 처럼 수식 뒤에 오는
+#     **독립된 낱말**은 묵자가 띄운다. 점자는 그 자리도 똑같이 두 칸이라 갈라낼 단서가 없다.
+#     띄운 어절이 257종의 긴 꼬리라 낱말 목록으로도 못 가른다. 다수(붙임)를 따른다.
+#
+# ★ 가드 — **표를 건드리지 않는다.** 표 조판은 열 항목을 두 칸으로 가른다
+#   (「점자 자료 제작 지침」 2075·2121행). 전권 18,892쪽 실측으로 줄 안 두 칸 자리는
+#   한글→한글 77,175 · 수식→한글 19,549 · 한글→수식 16,236 · 수식→수식 2,412 인데,
+#   **표·정렬은 한글→한글 쪽에 있다.** 한쪽이라도 수식일 때만 접으므로 그 77,175 는
+#   구조적으로 안 건드린다. 수식→수식(가로 정렬된 수식 열)과 줄 가장자리(들여쓰기·
+#   오른쪽 채움)도 그대로 둔다.
+def _print_gap(n: int, idx: int, tokens: list[str], is_math: list[bool]) -> int:
+    """점자 칸 수 → 묵자 공백 수. 수식 경계의 두 칸만 접는다."""
+    if n != 2 or idx + 1 >= len(tokens) or not tokens[idx] or not tokens[idx + 1]:
+        return n
+    if is_math[idx] and not is_math[idx + 1]:
+        # ★ 뒤가 **진짜 한글**일 때만 붙인다. 수식 아님 = 한글이 아니다 — 홑 기호 토큰
+        #   (`⠔` 빼기표 · `⠤` 붙임표)도 여기로 온다. 그걸 붙이면 앞 수식과 한 낱말이 되어
+        #   `_restore_wrap_parens` 가 `-0.34375-` 를 `(0.34375)` 로 바꿔 버린다.
+        #   전권 전수 대조에서 글자가 바뀐 쪽이 딱 이 꼴 2쪽이었다(표의 빈칸 `-` 열).
+        nxt = _decode_line(tokens[idx + 1])[:1]
+        return 0 if "가" <= nxt <= "힣" else n
+    if is_math[idx + 1] and not is_math[idx]:
+        return 1                        # 한글 뒤 수식 — 낱말 사이 한 칸 (묵자 99.6%)
+    return n
+
+
 def _decode_line_router(line: str, math: bool) -> str:
     """줄을 공백 단위로 나눠 수식 토큰은 수학 디코더로, 나머지는 한글 디코더로 라우팅."""
     if not line:
@@ -2437,7 +2473,8 @@ def _decode_line_router(line: str, math: bool) -> str:
             else:
                 pieces.append(_decode_math_token(tok) if is_math[idx] else _decode_line(tok))
         if idx < len(seps):
-            pieces.append("" if seps[idx] == _EMPH_MARK else " " * len(seps[idx]))
+            pieces.append("" if seps[idx] == _EMPH_MARK
+                          else " " * _print_gap(len(seps[idx]), idx, tokens, is_math))
     return _fix_chemical_case(_join_num_hangul(_restore_wrap_parens("".join(pieces))))
 
 
