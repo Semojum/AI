@@ -103,6 +103,33 @@ _DROPPED_DIGIT_REV = {
     "⠖": "6", "⠶": "7", "⠦": "8", "⠔": "9", "⠴": "0",
 }
 
+# ── 사슬 화합물 결합선 (「과학 점자」 제10항 2호 · 원장 R-61) ────────────
+# 규정 재추출본 4507~4509행: "1. 결합선과 원소 기호는 붙여 적는다.  2. 결합선은
+# ;을 먼저 적고 결합선의 수에 따라 단일 결합은 1, 이중 결합은 2, 삼중 결합은 3을
+# 붙여 적는다."  예문 4511~4516행 — `,,,h;1o;1h,'`=H-O-H · `,,,o;2c;2o,'`=O=C=O ·
+# `,,,h;1c;3c;1h,'`=H-C≡C-H (묵자 4511·4513·4515행 · 점자 4512·4514·4516행).
+# ★ 아래첨자(「수학 점자」 제19항 1호 · 3567~3570행)는 **수표를 낀다**(`x;#B`).
+#   그래서 ⠰ 뒤에 하단 숫자가 맨몸으로 오면 첨자가 아니라 결합선이다.
+# ⚠ 범위를 좁힌 근거(전권 18,892쪽 census): 대문자 구절 토큰 7,368개 안에서 이 꼴은
+#   9회·2쪽뿐이고, 그중 8회가 화학 구조식(EBS-E26-002 p0274)이다. 남은 1회는
+#   사전 표제어 `⠠⠠⠠⠕⠊⠰⠆`(쌍반점)인데 **뒤 셀이 원소 기호가 아니라** 걸리지 않는다
+#   — 제10항 1호 "결합선과 원소 기호는 붙여 적는다"를 그대로 조건으로 쓴 것이다.
+# ⚠ 삼중 결합 ⠰⠒ 는 기체 발생 기호 ↑(`;3o`, 과학 제18항 2호 · 4824행)와 두 셀이
+#   같다. 규정이 갈라 준다 — 4831행 예문 `#cso;#b,';3o` 처럼 ↑ 는 **대문자 구절
+#   종료표 `,'` 뒤에** 적으므로 구절 안에서는 만나지 않는다. 전권 census 도 구절 안
+#   ⠰⠒ 가 0회다. 그래서 따로 빼지 않는다.
+_BOND_REV = {"⠂": "-", "⠆": "=", "⠒": "\u2261"}
+
+
+def _bond_at(s: str, i: int):
+    """s[i] 가 결합선(⠰ + 하단 1·2·3 + 원소 기호)이면 (묵자, 다음 위치)."""
+    if s[i:i + 1] != "\u2830" or s[i + 1:i + 2] not in _BOND_REV:
+        return None
+    nxt = s[i + 2:i + 3]
+    if nxt not in _ALPHA_REV and nxt != _CAPITAL:
+        return None
+    return _BOND_REV[s[i + 1]], i + 2
+
 # 단어 약어(braillify) — 음절 분해 불가, 직접 등록. (한글 점자 제3장 단어약어)
 _WORD_ABBR = {
     "⠁⠉": "그러나", "⠁⠒": "그러면", "⠁⠢": "그러므로", "⠁⠝": "그런데",
@@ -999,6 +1026,10 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
             continue
         # ★ 구절 안의 `⠰ + 하단 숫자` 는 아래첨자다(제19항). 1급 점자로 적는 구간이라
         #   UEB 약자(⠰⠂ = ea)로 읽으면 안 된다 — `R₁C₂O` 가 `REACBBO` 로 나갔다.
+        if caps_phrase and (_bond := _bond_at(s, j)):   # 과학 제10항 2호 결합선
+            out.append(_bond[0])
+            j = _bond[1]
+            continue
         if (caps_phrase and c == _SUBSCRIPT
                 and s[j + 1:j + 2] in _DROPPED_DIGIT_REV):
             k = j + 1
@@ -1715,6 +1746,10 @@ def _decode_math_token(tok: str) -> str:
             if tok[i] == _CAPITAL:
                 out.append(_ALPHA_REV[tok[i + 1]].upper())
                 i += 2
+            continue
+        if caps_phrase and (_bond := _bond_at(tok, i)):  # 과학 제10항 2호 결합선
+            out.append(_bond[0])
+            i = _bond[1]
             continue
         matched = False                             # 다중 셀 수학 기호(≠·÷·그리스 등)
         for ln in range(min(_MATH_MAX, n - i), 1, -1):
