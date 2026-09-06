@@ -1470,15 +1470,61 @@ def _mean_bar_at(s: str, i: int) -> tuple[str, int] | None:
 _SET_OP = {"⠩": "∩", "⠬": "∪"}
 _SET_NAME_RE = re.compile(r"⠠[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵]")
 
+# ★ 일반연산 기호 — 「수학 점자」 제15항 (재추출본 3485행 · 원장 R-58)
+#   "일반연산 기호는 다음과 같이 적되, **기호의 앞뒤를 한 칸씩 띄어 쓴다.**"
+#   규정 예문이 그 대비를 그대로 보여 준다 — 묵자 `x⊕y=2x+3y`(3487행)가
+#   점자로는 `x`_5`y33#bx5#cy`(3488행)로 **기호 양옆에 빈칸이 하나씩** 붙는다.
+#   그래서 역방향에서는 그 두 칸을 지워야 묵자가 된다. 집합 연산 ∩·∪(제61항 5)와
+#   같은 부류이고, 그 칸이 토큰을 쪼개는 바람에 **양옆이 한글로 읽히던 것**도 같다
+#   (`x ⊕ y` 가 `옥 ⊕ y`, `P(A ∩ B)=` 가 `쉍a∩B)=`).
+#   등록 셀은 제15항 1~6호다 — 1.⊕ `_5` 2.⊖ `_9` 3.⊗ `_*` 4.∗ `_<` 5.∘ `_0` 6.⦾ `_00`.
+#   ⚠ 7~9호(∙ `_4` · 네모표 `_7` · ∆ `_+`)는 **넣지 않는다.** 전권 18,892쪽 실측에서
+#     그 셋이 홑 토큰으로 서는 자리는 본문이지 수식이 아니었다 —
+#     ⠸⠲ 923건(289쪽)이 전부 글머리표(`(방법) ▲ 1`), ⠸⠬ 80건(63쪽)이 본문
+#     (`문장에는 ▲ 표를`), ⠸⠶ 4건이 글머리 네모(제72항, 이미 _BULLET_RE 가 본다).
+#   ⚠ `_<`(⠸⠣)는 **제33항 2가 왼쪽 세모꼴 ◁ 로도 정한 셀**이고 그쪽 묵자는 칸을 남긴다
+#     (`N ◁ G`, 3713행). 전권 홑 토큰 10회가 전부 이항연산이라 제15항으로 읽는다(원장 R-58).
+_GENERAL_OP = {"⠸⠢": "⊕", "⠸⠔": "⊖", "⠸⠡": "⊗",
+               "⠸⠣": "∗", "⠸⠴": "∘", "⠸⠴⠴": "⦾"}
+# 피연산자인가 — **수식으로 읽었을 때 한글·미해독이 남지 않아야** 한다.
+#   `분의`(제6항 분수)만 예외다 — 그건 우리가 수식을 옮긴 결과지 본문이 아니다.
+#   피연산자에는 **낱자나 숫자가 하나는 있어야** 한다 — 안 그러면 옆 기호끼리 붙는다
+#   (실측 `⑤ F + ⠸⠔ → F^-`, MS-REF-T26-015 p0067).
+#   ⚠ 점역자주표 ⠠⠄ 를 품은 토큰은 뺀다. 수식 피연산자가 주표를 달 일이 없고,
+#     실측에서 점자 부호표(MS-TXT-K2630 p0059)의 `사【점역자주】 ⠸⠡ 사` 한 줄이
+#     양옆 `l` 로 풀려 이 문을 통과했다.
+_NOT_OPERAND_RE = re.compile(r"[가-힣\u3000-\u303f]|⟨|[⠀-⣿]")
+_HAS_ALNUM_RE = re.compile(r"[A-Za-z0-9]")
+_NOTE_MARK = "⠠⠄"
+
+
+def _is_operand(tok: str) -> bool:
+    if not tok or _NOTE_MARK in tok:
+        return False
+    m = _decode_math_token(tok)
+    return (bool(_HAS_ALNUM_RE.search(m))
+            and not _NOT_OPERAND_RE.search(m.replace("분의", "")))
+
 
 def _set_op_at(tokens: list[str], idx: int) -> str | None:
-    """tokens[idx]가 집합 연산 홑 셀이고 양옆이 집합 이름이면 그 기호."""
-    sym = _SET_OP.get(tokens[idx])
-    if sym is None or idx == 0 or idx + 1 >= len(tokens):
+    """tokens[idx]가 연산 기호이고 양옆이 피연산자면 그 기호(제15항 · 제61항 5)."""
+    tok = tokens[idx]
+    if idx == 0 or idx + 1 >= len(tokens):
         return None
-    if _SET_NAME_RE.search(tokens[idx - 1]) and _SET_NAME_RE.search(tokens[idx + 1]):
-        return sym
-    return None
+    prv, nxt = tokens[idx - 1], tokens[idx + 1]
+    if not prv or not nxt:
+        return None
+    sym = _SET_OP.get(tok)
+    if sym is not None:
+        # ⠩·⠬ 는 한글 약자 `유`·`요` 와 같은 셀이라 **양옆이 집합 이름일 때만** 본다.
+        return sym if (_SET_NAME_RE.search(prv) and _SET_NAME_RE.search(nxt)) else None
+    sym = _GENERAL_OP.get(tok)
+    if sym is None:
+        return None
+    # ⠸ 로 여는 두 칸이라 셀 자체는 한글과 안 겹치지만, 표·글상자 그림에서도 홑 토큰으로
+    # 선다. **양옆이 수식으로 온전히 풀릴 때만** 연산자로 본다 — 전권 18,892쪽 실측
+    # 27건 중 16건이 통과하고, 통과한 16건이 전부 제15항 예문 꼴이다.
+    return sym if (_is_operand(prv) and _is_operand(nxt)) else None
 
 
 _ANGLE = "⠹"                # 각 기호(수학 제39항) = 한글 약자 `억` 과 같은 셀
@@ -2548,8 +2594,20 @@ def _decode_line_router(line: str, math: bool) -> str:
     #   그 자리를 수식으로 읽고 `^` 를 붙인다 — 종전에는 홑 낱자가 한글로 떨어졌다.
     upper = [idx > 0 and bool(_RANGE_HEAD_RE.match(tokens[idx - 1]))
              and bool(_RANGE_UPPER_RE.match(tok)) for idx, tok in enumerate(tokens)]
-    # 집합 연산(제61항 5) — 위 _set_op_at 주석 참조. 양옆이 집합 이름일 때만.
+    # 연산 기호(제15항 · 제61항 5) — 위 _set_op_at 주석 참조.
     setop = [_set_op_at(tokens, idx) for idx in range(len(tokens))]
+    # ★ 연산자가 섰다면 양옆은 **피연산자**다. 규정이 그 사이를 한 칸 띄우라 해서
+    #   토큰이 셋으로 쪼개지고, 그 바람에 양옆이 문맥을 잃어 한글로 떨어졌다
+    #   (`x ⊕ y` → `옥 ⊕ y` · `P(A ∩ B)=` → `쉍a∩B)=`). 여기서 수식으로 되돌린다.
+    #   ⚠ **피연산자로 읽히는 쪽만** 켠다. ∩·∪ 는 집합 이름 가드를 통과해도 양옆이
+    #     본문일 때가 있다 — 전권 실측에서 `[시각자료]∪유라시아`·`속이려구,∪자식!` 두 쪽이
+    #     통째로 수식이 되어 `(;O각자·요_)∪유·아시아` 로 깨졌다.
+    for _i, _s in enumerate(setop):
+        if not _s:
+            continue
+        for _j in (_i - 1, _i + 1):
+            if _is_operand(tokens[_j]):
+                is_math[_j] = True
     pieces = []
     for idx, tok in enumerate(tokens):
         if tok:
