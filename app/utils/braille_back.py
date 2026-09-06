@@ -1242,6 +1242,32 @@ _ANGLE = "⠹"                # 각 기호(수학 제39항) = 한글 약자 `억
 _MATH_COMMA = "⠐"           # 수식 쉼표(제12항 [붙임 1]) = 곱셈점과 같은 셀
 _SCRIPT_TAIL_RE = re.compile(r"[_^]\d+$")   # 첨자 숫자로 끝났나 (과학 제4항 [붙임 1])
 
+# ★ 수열 묶음표 — 「수학 점자」 제24항 "수열({aₙ})은 7A;N7으로 적는다". (원장 R-38)
+#   ⠶ 는 여는 중괄호와 닫는 중괄호가 **같은 점형**이라 역맵이 둘 다 `{` 로 편다.
+#   토큰이 ⠶ 로 열고 같은 꼴로 닫으면 짝이 분명하므로 그 자리만 `}` 로 낸다.
+#   ⚠ ⠶ 는 한글 약자 `언`·받침 ㅇ 과 같은 셀이라 **이 꼴 전체가 맞을 때만** 본다.
+#     전권 18,892쪽 실측 202회·50쪽, 서로 다른 꼴 넷이 전부 수열이다
+#     (⠶⠁⠰⠝⠶ 161 · ⠶⠃⠰⠝⠶ 26 · ⠶⠁⠰⠝⠶⠐ 14 · ⠶⠠⠎⠰⠝⠶ 1).
+_BRACE = "⠶"
+_SEQ_BRACE_RE = re.compile(
+    r"⠶(?:⠠?[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵])+"
+    r"⠰[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵]⠶")
+
+
+def _seq_inner(cells: str) -> str:
+    """수열 묶음표 안쪽(제24항) — 대문자표·아래첨자표·낱자만 나온다."""
+    out, i = [], 0
+    while i < len(cells):
+        c = cells[i]
+        if c in (_CAPITAL, _SUBSCRIPT) and cells[i + 1:i + 2] in _ALPHA_REV:
+            ch = _ALPHA_REV[cells[i + 1]]
+            out.append(ch.upper() if c == _CAPITAL else "_" + ch)
+            i += 2
+        else:
+            out.append(_ALPHA_REV.get(c, c))
+            i += 1
+    return "".join(out)
+
 
 def _decode_math_token(tok: str) -> str:
     """수식 토큰을 수학 의미로 디코드 — 구조·연산자 셀을 ^ _ √ × + 등으로 복원.
@@ -1366,6 +1392,24 @@ def _decode_math_token(tok: str) -> str:
             out.append("∠")
             i += 1
             continue
+        # ★ 대문자 구절 안의 `⠰ + 낱자` 는 **UEB 문자표**다(제32항) — 아래첨자가 아니다.
+        #   화학식은 1급 점자 구간이라 낱자가 약어로 읽히는 것을 막으려고 문자표를
+        #   앞세운다(`h`=have · `c`=can). 종전에는 ⠰ 가 `_` 로 빠져 군더더기가 붙었다 —
+        #   `,,,C;#F;H;#AB O;#F`(C₆H₁₂O₆)가 `C_6_H_12O_6` 으로 나갔다(25회·11쪽).
+        #   ⚠ 구절 밖으로 넓히면 안 된다. ⠰+낱자는 초성 ㅊ(체·채·추·치…)과 같은 셀이라
+        #     전권 39,591건 중 93.2%가 한글이고, 수식 토큰 안에서도 득실이 반반이다.
+        if (caps_phrase and c == _SUBSCRIPT
+                and tok[i + 1:i + 2] in _ALPHA_REV):
+            out.append(_ALPHA_REV[tok[i + 1]].upper())
+            i += 2
+            continue
+        # ★ 수열 묶음표(제24항) — 여닫이가 같은 점형이라 **짝이 분명한 이 꼴에서만**
+        #   닫는 쪽을 `}` 로 낸다. 안쪽은 낱자뿐이므로 통째로 읽는다 — 셀마다 흘리면
+        #   `⠠⠎⠰⠝⠶`(Sₙ) 의 꼬리가 한글 `어쳉` 으로 먼저 물린다.
+        if c == _BRACE and (m := _SEQ_BRACE_RE.match(tok, i)):
+            out.append("{" + _seq_inner(m.group(0)[1:-1]) + "}")
+            i = m.end()
+            continue
         if c in _MATH_REV_SINGLE:                    # 단일 셀 수학 기호
             out.append(_MATH_REV_SINGLE[c])
             i += 1
@@ -1374,7 +1418,15 @@ def _decode_math_token(tok: str) -> str:
         #   gold 는 `2분의1이다.` 를 공백 없이 한 토큰으로 적는데, 종전에는 뒤 한글까지
         #   로마자로 읽어 `2분의1oi∋` 가 됐다(⠕⠊=이다 → o,i · ⠲=마침표 → ∋).
         #   꼬리 전체가 한글 음절로 깨끗이 풀릴 때만 넘긴다 — 변수 o·i 를 잃지 않는다.
-        if (i and not _var_follows(tok, i) and (tail := _korean_tail(tok, i))):
+        # ★ 대문자 구절 **안**에서는 한글 꼬리로 넘기지 않는다 — 그 구간은 1급 점자로
+        #   적은 로마자다(제28항 [붙임]). `,,,CH;#C;COOH`(CH₃COOH)의 `⠕⠕⠓` 가
+        #   한글 `이이타` 로 풀려 나갔다.
+        #   ⚠ 도서는 종료표 ⠠⠄ 를 자주 빠뜨려 구절이 토큰 끝까지 열린 채로 남는다.
+        #     그래서 **바로 앞이 글자·숫자일 때만** 막는다 — 닫는 괄호 뒤는 화학식이
+        #     끝난 자리라 한글 조사가 온다(`(C₆H₁₂O₆)으로` 가 `)으·U` 로 깨졌다).
+        if (i and not (caps_phrase and out and out[-1][-1:].isalnum())
+                and not _var_follows(tok, i)
+                and (tail := _korean_tail(tok, i))):
             out.append(tail)
             break
         if c in _ALPHA_REV:                          # 변수(로마자)
@@ -1453,6 +1505,11 @@ def _classify_token(tok: str) -> str:
     # ★ 닫는 묶음 괄호 ⠾ 만으로는 수식 신호가 아니다 — 한글 `전`(⠨⠾)·`언`(⠶)처럼
     #   흔한 음절과 겹친다. `전쟁(1840)`(⠨⠾⠨⠗⠶⠦⠄⠼⠁⠓⠙⠚⠠⠴) 이 수표+⠾ 로 MATH 가 돼
     #   `전ρ{(1840)` 으로 깨졌다. 묶음 괄호는 짝으로 오므로 **여는 ⠷ 를 요구한다.**
+    # ★ 수열 묶음표(제24항)는 수표가 없어도 수식이다 — `{aₙ}`(⠶⠁⠰⠝⠶) 이 TEXT 로
+    #   떨어져 `{a쳉` 으로 나갔다(전권 실측 202회·50쪽). ⠰+낱자만으로 넓히면 안 된다 —
+    #   그 꼴은 초성 ㅊ(체·채·추·치…)이라 전권 39,591건 중 93.2%가 한글이다.
+    if _SEQ_BRACE_RE.match(tok):
+        return "MATH"
     if has_num and (_MATH_SIGNAL_RE.search(tok) or _MATH_PAREN_OPEN in tok):
         # ★ 단위 기호가 수식 신호를 품는다 (2026-08-09). 규정 제68항이 ㎡를 문자 그대로
         #   `m` 위첨자 `2`로 적으므로(`0m^#b` = ⠴⠍⠘⠼⠃) 토큰 안에 ⠘⠼가 들어 있고,
