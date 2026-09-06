@@ -1319,7 +1319,7 @@ def _korean_tail(tok: str, at: int) -> str | None:
 # 줄 단위 선처리가 넣어 두는 글자들 — 점자 셀이 아니라 이미 푼 결과다.
 # 네모 빈칸 ▯(제73항) · 곱셈표 ×(수학 제2항) · 도형 틀 ○□△◇ · 글머리 □(제72항)
 # · 표·그래프 세로선 |.
-_SENTINELS = "▯×○□△◇|"
+_SENTINELS = "▯×○□△◇|〈〉"
 
 
 # ★ 적분·총합의 **범위** — 「수학 점자」 제25항(총합)·제57항(정적분). (원장 R-46)
@@ -1883,8 +1883,8 @@ def decode(braille: str, *, math: bool = False) -> str:
     기본(False)은 공백 단위 토큰별로 수식/한글을 자동 판별한다(인라인 수식).
     """
     # 줄을 넘는 짝(굵은 글자체표·한글표)을 먼저 벗긴다 — 아래 줄 분리보다 앞서야 한다.
-    braille = _mark_paren_pairs(
-        _strip_emph_marks(_strip_hangul_indicator(_strip_bold_marks(braille))))
+    braille = _mark_angle_pairs(_mark_paren_pairs(
+        _strip_emph_marks(_strip_hangul_indicator(_strip_bold_marks(braille)))))
     # ★ **짝을 못 찾은 드러냄표 닫는 표 ⠤⠄ 는 버린다**(제35항). 드러냄표는 글자체를
     #   가리키는 표시라 묵자에 대응 문자가 없다 — 남으면 `-'` 로 샌다.
     #   실측(전권 18,892쪽) 48회·45쪽이고 원인이 셋인데 셋 다 버리는 게 맞다:
@@ -1957,6 +1957,24 @@ def _mark_paren_pairs(line: str) -> str:
     """짝이 맞는 소괄호 셀만 자리표시자로 바꾼다(따옴표와의 충돌 회피)."""
     return _PAREN_PAIR_RE.sub(
         lambda m: _PAREN_OPEN_MARK + m.group(1) + _PAREN_CLOSE_MARK, line)
+
+
+# ── 홑화살괄호 짝 (규정 문장부호표 〈 = ⠐⠶ · 〉 = ⠶⠂) ─────────────────────
+# 닫는 ⠶⠂ 의 ⠶ 는 **받침 ㅇ과 같은 셀**이라 탐욕 매칭이 앞 음절에 붙여 먹고 ⠂ 가
+# 쉼표로 떨어진다 — `결과〉` → `결광,` · `추이〉` → `추잉,` · `포스터〉` → `포스텅,`.
+# 종전 가드는 `_decode_line` 안에 있어 **같은 줄에 여는 〈 가 있을 때만** 부호로 봤다.
+# 점자책이 32칸 조판이라 제목이 두세 줄에 걸치는데 그 짝을 못 봤다.
+# 실측(전권 18,892쪽): 짝 4,886 · 1,768쪽, 그중 **367 이 줄을 넘는다**.
+# 그래서 굵은 글자체표·드러냄표와 같은 처방을 쓴다 — 줄을 쪼개기 **전에** 짝을 찾아
+# 자리표시자로 바꾸고 `_decode_line`·`_decode_math_token` 이 센티넬로 흘린다.
+# ★ **짝이 맞을 때만** 바꾼다. 짝 없는 ⠶⠂ 는 종전대로 받침 ㅇ + 쉼표다(`강,`).
+_ANGLE_PAIR_RE = re.compile(
+    r"⠐⠶((?:(?!⠐⠶|⠶⠂)[\u2800-\u28ff\n \ufdd2\ufdd3\ufdd4]){0,240})⠶⠂")
+
+
+def _mark_angle_pairs(line: str) -> str:
+    """짝이 맞는 홑화살괄호를 글자로 바꾼다(줄을 넘는 짝 포함)."""
+    return _ANGLE_PAIR_RE.sub(lambda m: "〈" + m.group(1) + "〉", line)
 
 
 # ── 굵은 글자체표 (규정 제56항) ──────────────────────────────────────────────
@@ -2751,18 +2769,6 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
                 out.append(_r[0])
                 i = _r[1]
                 continue
-
-        # 닫는 홑화살괄호 ⠶⠂ — 규정 문장부호표(규정_텍스트.txt 2191~2192).
-        # ⠶ 는 **받침 ㅇ과 같은 셀**이라 탐욕 매칭이 앞 음절에 붙여 먹는다(보기〉 → 보깅,).
-        # 다만 `강,`(받침 ㅇ + 쉼표)와 셀이 겹치므로 **앞에 닫히지 않은 〈 가 있을 때만** 부호로 본다.
-        # 실측 dev-2027 900쪽: gold 가 〈보기〉를 702회 쓴다(작은따옴표꼴 0회).
-        if (best_ln >= 2 and s[i + best_ln:i + best_ln + 1] == "⠂"
-                and s[i + best_ln - 1] == "⠶" and s[i:i + best_ln - 1] in _COMBINED
-                and s.count("⠐⠶", 0, i) > "".join(out).count("〉")):
-            out.append(_COMBINED[s[i:i + best_ln - 1]])
-            out.append("〉")
-            i += best_ln + 1
-            continue
 
         # 닫는 작은따옴표 ⠴⠄ — 규정 문장부호표의 `0'`(규정_텍스트.txt 2147~2154).
         # ⠴는 **받침 ㅎ과 같은 셀**이라 탐욕 매칭이 앞 음절에 붙여 먹는다(기’ → 깋').
