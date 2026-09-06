@@ -334,3 +334,38 @@ class TestPieupFinalAndWrapParens:
     @pytest.mark.parametrize("text", ["‘-더-’", "x-5-2"])
     def test_진짜_붙임표는_괄호로_바꾸지_않는다(self, text: str) -> None:
         assert "(" not in self._round(text)
+
+
+class TestSequenceBrace:
+    """수열 묶음표 — 「수학 점자」 제24항 "수열({aₙ})은 7A;N7으로 적는다".
+
+    ⠶ 는 여는 중괄호와 닫는 중괄호가 같은 점형이라 역맵이 둘 다 `{` 로 편다.
+    이 꼴에서만 짝이 분명하므로 닫는 쪽을 `}` 로 낸다.
+    실측(전권 18,892쪽): 202회·50쪽, 서로 다른 꼴 넷이 전부 수열이다.
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠶⠁⠰⠝⠶", "{a_n}"),
+        ("⠶⠃⠰⠝⠶", "{b_n}"),
+        ("⠶⠠⠎⠰⠝⠶", "{S_n}"),      # 대문자표가 안쪽에 낀 꼴
+        ("⠶⠁⠰⠝⠶⠐", "{a_n},"),
+    ])
+    def test_수열은_중괄호로_닫는다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠰⠝⠈⠳⠚⠣⠱⠌⠊⠲", "체결하였다."),
+        ("⠨⠾⠰⠕⠇", "전치사"),
+    ])
+    def test_아래첨자표_뒤_낱자는_한글로_남는다(self, raw: str, want: str) -> None:
+        """⠰+낱자는 초성 ㅊ(체·채·추·치…)과 같은 셀이다.
+
+        전권 실측 39,591건 중 93.2%가 한글이라 첨자로 넓히면 본문을 먹는다 —
+        묶음표 안으로만 한정한 이유다.
+        """
+        assert self._d(raw) == want
