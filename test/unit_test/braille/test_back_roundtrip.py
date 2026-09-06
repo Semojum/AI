@@ -502,3 +502,37 @@ class TestMeanBar:
     ])
     def test_한글은_그대로(self, raw: str, want: str) -> None:
         assert self._d(raw) == want
+
+
+class TestLetterSignTerminator:
+    """홑 로마자 문자표 + 종료표 — 「한글 점자」 제32항. 도서는 `;b4`(⠰⠃⠲)로 적는다.
+
+    여는 로마자표 ⠴ 가 없어 로마자 런 판정에 안 걸려 통째로 한글로 떨어졌다.
+    실측(전권 18,892쪽): 1,937회·687쪽.
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠰⠃⠲⠺", "b의"),
+        ("⠰⠉⠲", "c"),
+        ("⠰⠙⠲", "d"),
+        ("⠰⠽⠲⠺", "y의"),      # 음절이 되지만 마침표 뒤에 조사가 붙는 한국어는 없다
+        ("⠰⠝⠲⠝", "n에"),
+        ("⠁⠐⠀⠰⠃⠲⠐⠀⠰⠉⠲⠝⠀⠊⠗⠚⠣⠱", "a, b, c에 대하여"),
+    ])
+    def test_문자표_낱자는_로마자다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠰⠝⠲", "체."),        # ⠰ 는 초성 ㅊ — 음절이 되고 꼬리가 없으면 손대지 않는다
+        ("⠰⠗⠲", "채."),        # 실측 `줄도 모른 채.`
+        ("⠰⠏⠲", "춰."),
+        ("⠨⠾⠰⠕⠇", "전치사"),
+        ("⠰⠝⠈⠳⠚⠣⠱⠌⠊⠲", "체결하였다."),
+    ])
+    def test_한글은_그대로(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
