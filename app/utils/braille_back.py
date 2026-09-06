@@ -1284,6 +1284,32 @@ _RANGE_HEAD_RE = re.compile(
 _RANGE_UPPER_RE = re.compile(
     r"^[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵⠼⠢⠔⠿⠨]+$")   # 낱자·수·부호·∞
 
+# ★ 순열·조합 — 「수학 점자」 제62항 2~5. (원장 R-41)
+#   "순열(ₙPᵣ)은 ,P(N`R) · 조합(ₙCᵣ)은 ,C(N`R) · 중복순열(ₙΠᵣ)은 ,.P(N`R) ·
+#    중복조합(ₙHᵣ)은 ,H(N`R)으로 적는다." 두 인자는 **묶음 괄호 안에서 한 칸으로 갈린다.**
+#   종전에는 그 한 칸에서 토큰이 끊겨 `,C(#C`#B)`(₃C₂)가 `C(3 2)` 로 나갔다 —
+#   묵자는 `_3C_2` 다. 인자가 낱자면(`,C(N`R)`) 아예 한글로 떨어졌다(`논에 애언`).
+#   ⚠ ⠷ 는 UEB 약자 `of` 다 — `Coffee`(⠠⠉⠷⠋⠑⠑)·`Hoffmann`(⠠⠓⠷⠍⠁⠝⠝)이 같은 머리다.
+#     그래서 **짝 맞는 ⠾ 와 그 안의 한 칸까지** 있어야 본다. 전권 18,892쪽 실측:
+#     머리를 품은 토큰 1,070회·87쪽 중 짝이 없는 열둘이 전부 그 영어 낱말이었다.
+_COMB_LETTER = {"⠉": "C", "⠏": "P", "⠓": "H", "⠨⠏": "Π"}
+_COMB_RE = re.compile(r"⠠(⠨⠏|[⠉⠏⠓])⠷")
+_COMB_FULL_RE = re.compile(r"⠠(?:⠨⠏|[⠉⠏⠓])⠷[^⠾]*[⠀ ][^⠾]*⠾")
+
+
+def _paren_close(tok: str, at: int) -> int:
+    """at 에서 시작해 짝 맞는 묶음 괄호 ⠾ 의 자리(없으면 -1)."""
+    depth = 1
+    for k in range(at, len(tok)):
+        if tok[k] == "⠷":
+            depth += 1
+        elif tok[k] == "⠾":
+            depth -= 1
+            if depth == 0:
+                return k
+    return -1
+
+
 _ANGLE = "⠹"                # 각 기호(수학 제39항) = 한글 약자 `억` 과 같은 셀
 _MATH_COMMA = "⠐"           # 수식 쉼표(제12항 [붙임 1]) = 곱셈점과 같은 셀
 _SCRIPT_TAIL_RE = re.compile(r"[_^]\d+$")   # 첨자 숫자로 끝났나 (과학 제4항 [붙임 1])
@@ -1409,6 +1435,16 @@ def _decode_math_token(tok: str) -> str:
             out.append(")")
             i += 1
             continue
+        # ★ 순열·조합(제62항) — 위 _COMB_RE 주석 참조. 두 인자를 첨자로 편다.
+        if (m := _COMB_RE.match(tok, i)) is not None:
+            j = _paren_close(tok, m.end())
+            sp = tok.find(_SPACE_CELL, m.end(), j) if j > 0 else -1
+            if sp > 0:
+                out.append("_" + _decode_math_token(tok[m.end():sp])
+                           + _COMB_LETTER[m.group(1)]
+                           + "_" + _decode_math_token(tok[sp + 1:j]))
+                i = j + 1
+                continue
         matched = False                             # 다중 셀 수학 기호(≠·÷·그리스 등)
         for ln in range(min(_MATH_MAX, n - i), 1, -1):
             if tok[i:i + ln] in _MATH_REV_MULTI:
@@ -1595,6 +1631,9 @@ def _classify_token(tok: str) -> str:
     #   떨어져 `{a쳉` 으로 나갔다(전권 실측 202회·50쪽). ⠰+낱자만으로 넓히면 안 된다 —
     #   그 꼴은 초성 ㅊ(체·채·추·치…)이라 전권 39,591건 중 93.2%가 한글이다.
     if _SEQ_BRACE_RE.match(tok):
+        return "MATH"
+    # ★ 순열·조합(제62항) — 인자가 낱자면 수표가 없다. 위 _COMB_RE 주석 참조.
+    if _COMB_FULL_RE.search(tok):
         return "MATH"
     # ★ 함수 표기(제45항) — `f(x)` 는 수표도 관계 기호도 없다. 위 _FUNC_RE 주석 참조.
     if _FUNC_RE.match(tok):
@@ -1995,6 +2034,29 @@ def _english_line(line: str) -> str | None:
     return text if len(funcs) >= 2 and not mid_cap else None
 
 
+def _merge_comb_tokens(tokens: list[str], seps: list[str]) -> tuple[list[str], list[str]]:
+    """순열·조합(제62항)의 묶음 괄호가 한 칸에서 끊긴 것을 붙인다."""
+    out_t: list[str] = []
+    out_s: list[str] = []
+    i = 0
+    while i < len(tokens):
+        merged = tokens[i]
+        while True:                              # 겹친 것도 있다(`,H(…) 33 ,C(…)`)
+            m = None
+            for m in _COMB_RE.finditer(merged):
+                pass                             # 마지막 머리부터 본다
+            if not (m and _paren_close(merged, m.end()) < 0 and i < len(seps)
+                    and seps[i].strip(" ") in ("", "⠀", "⠀⠀") and "⠾" in tokens[i + 1]):
+                break
+            merged += _SPACE_CELL + tokens[i + 1]
+            i += 1
+        out_t.append(merged)
+        if i < len(seps):
+            out_s.append(seps[i])
+        i += 1
+    return out_t, out_s
+
+
 def _merge_roman_tokens(tokens: list[str], seps: list[str]) -> tuple[list[str], list[str]]:
     """로마자표로 열린 구간이 공백에서 끊기지 않게 토큰을 합친다(제32항).
 
@@ -2176,6 +2238,9 @@ def _decode_line_router(line: str, math: bool) -> str:
     parts = re.split(r"([⠀ ]+|" + _EMPH_MARK + ")", line)
     tokens, seps = _merge_roman_tokens(parts[0::2], parts[1::2])
     tokens = [t.replace(_EMPH_MARK, "") for t in tokens]    # 로마자 병합이 되삼킨 것
+    # ★ 순열·조합의 두 인자는 묶음 괄호 안에서 **한 칸으로 갈린다**(제62항). 라우터가
+    #   그 칸에서 토큰을 쪼개므로 다시 붙인다 — 짝 맞는 ⠾ 가 다음 토큰에 있을 때만이다.
+    tokens, seps = _merge_comb_tokens(tokens, seps)
     if math:
         is_math = [True] * len(tokens)
     else:

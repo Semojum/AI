@@ -440,3 +440,34 @@ class TestRangeUpperLimit:
     def test_한글은_안_먹는다(self) -> None:
         """⠮ 는 약자 `을` 이라 홀로 18,156회다. 아래끝까지 범위 꼴이어야 수식으로 본다."""
         assert self._d("⠮⠰⠍⠁⠉⠡") == "을축년"
+
+
+class TestPermutationCombination:
+    """순열·조합 — 「수학 점자」 제62항 2~5.
+
+    두 인자가 묶음 괄호 안에서 **한 칸으로 갈린다**(`,C(N`R)`). 라우터가 그 칸에서
+    토큰을 쪼개 `₃C₂` 가 `C(3 2)` 로 나갔다 — 묵자는 `_3C_2` 다.
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠠⠉⠷⠼⠉⠀⠼⠃⠾", "_3C_2"),          # 조합 (제62항 3)
+        ("⠠⠏⠷⠼⠉⠀⠼⠁⠾", "_3P_1"),          # 순열 (제62항 2)
+        ("⠠⠨⠏⠷⠼⠛⠀⠼⠃⠾", "_7Π_2"),        # 중복순열 (제62항 4)
+        ("⠠⠓⠷⠼⠛⠀⠼⠃⠾", "_7H_2"),          # 중복조합 (제62항 5)
+        ("⠠⠉⠷⠝⠀⠗⠾", "_nC_r"),            # 인자가 낱자면 수표가 없다
+        ("⠠⠉⠷⠼⠉⠀⠼⠁⠾⠒⠒⠼⠉", "_3C_1=3"),
+    ])
+    def test_두_인자를_첨자로_편다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠴⠠⠉⠷⠋⠑⠑⠲", "Coffee"),          # ⠷ 는 UEB 약자 `of` — 짝 맞는 ⠾ 를 요구한다
+        ("⠠⠓⠷⠍⠁⠝⠝⠲", "톤욱에에."),
+    ])
+    def test_짝이_없으면_안_본다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
