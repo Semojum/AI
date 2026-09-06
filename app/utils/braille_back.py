@@ -2209,6 +2209,56 @@ _SEP_MARK_RE = re.compile(
     r"(?!.{0,3}⠤)")                                              # ⠤X⠤ 의 여는 쪽이면 비켜난다
 
 
+# ── 유전자형 표기 (「과학 점자」 제23항 + 「수학 점자」 제18항 1호) ─────────────
+# 제18항 1호가 "지수는 위첨자 기호 ^을 적고, 첨자를 구성하는 수, **문자** 또는 수식을
+# 적는다"라 하고 예문이 `aᵏ` = `a^k` 다 — 첨자가 낱자여도 된다. 제23항이 대문자 유전자를
+# 1급 점자로(대문자표 ⠠ · 둘 이상이면 대문자 단어표 ⠠⠠) 적으므로 `X^A` = ⠠⠭⠘⠠⠁ 다.
+# ⚠ 수식 판정(_MATH_SIGNAL_RE)은 첨자 **뒤에 수표 ⠼·묶음괄호 ⠷** 가 와야 신호로 보므로
+#   낱자 첨자는 안 걸린다. 그래서 이 꼴이 통째로 한글로 읽혔다 — `속바a` · `쏙바b옥밥`.
+# ⚠ 게이트를 좁혀야 한다. ⠠ 는 **된소리표**이고 ⠘ 는 **한글 `바`** 다.
+#   전권 18,892쪽 실측:
+#     ⠠[아무 셀]⠘…             537회 — 대부분 한글(`속보로`·`열쇠보다`·`단속보다`)
+#     ⠠[아무 셀]⠘⠠[아무 셀]    171회 — 21회가 한글(`바쁘다`·`바께쯔`·`스바씨보`)
+#     ⠠[로마자]⠘⠠[로마자]      150회·22쪽   ← **여기까지 좁힌다**
+#   그 150회에도 `⠠⠟⠘⠠⠕⠝⠠⠎`(신바시에서)가 하나 섞여 있어, **런 뒤에 낱자가 더
+#   이어지면 뺀다**(?! 조건). 남는 표적이 149회다.
+_GENO_A = "".join(sorted(_ALPHA_REV))
+_GENO_RE = re.compile(
+    rf"(?:⠠⠠[{_GENO_A}]|⠠[{_GENO_A}])⠘⠠[{_GENO_A}]"   # 첫 마디 — 좁힌 게이트
+    rf"(?:⠠?[{_GENO_A}]⠘⠠?[{_GENO_A}])*"              # 이어지는 마디(X^AX^a)
+    rf"(?:⠠?[{_GENO_A}])?"                            # 꼬리 낱자(X^A**Y** · I^A**i**)
+    rf"(?!⠠?[{_GENO_A}])")
+
+
+def _genotype_at(s: str, i: int) -> tuple[str, int] | None:
+    """s[i]가 유전자형 런의 머리면 (텍스트, 다음위치).
+
+    대문자 단어표 ⠠⠠ 는 **밑 문자에만** 걸린다 — 위첨자는 자기 대문자표 ⠠ 로 갈린다.
+    gold 가 `⠠⠠⠭⠘⠠⠁⠭⠘⠁`(X^AX^a)와 `⠠⠠⠭⠘⠠⠁⠭⠘⠠⠁`(X^AX^A)를 **따로** 쓴다.
+    """
+    m = _GENO_RE.match(s, i)
+    if m is None:
+        return None
+    body = m.group(0)
+    up = body.startswith(_CAPITAL * 2)      # 대문자 단어표
+    out, k, sup = [], 2 if up else 0, False
+    while k < len(body):
+        c = body[k]
+        if c == _SUPERSCRIPT:
+            out.append("^")
+            sup = True
+            k += 1
+            continue
+        if c == _CAPITAL:
+            out.append(_ALPHA_REV[body[k + 1]].upper())
+            k += 2
+        else:
+            out.append(_ALPHA_REV[c].upper() if up and not sup else _ALPHA_REV[c])
+            k += 1
+        sup = False
+    return "".join(out), m.end()
+
+
 def _decode_line(s: str, *, sep: bool = True) -> str:
     # 구분표는 **토큰 경계이기도 하다.** 그냥 지우면 뒤 셀이 앞 음절의 받침으로 먹힌다 —
     # `⠣⠤⠌`(아예)가 `았`, `⠟⠺⠤⠌⠨⠕`(인의예지)가 `인읬지`, `⠠⠍⠤⠗⠁`(수액)이 `쉭` 이
@@ -2298,6 +2348,13 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
         if _old:
             out.append(_old[0])
             i = _old[1]
+            continue
+        # 유전자형(X^A · X^bX^b · I^AI^B) — 위 _genotype_at 주석에 규정·게이트 근거.
+        # 긴-셀 매칭보다 **먼저** 봐야 한다(⠠⠭ 가 한글 `속` 으로 먼저 먹힌다).
+        _gt = _genotype_at(s, i)
+        if _gt:
+            out.append(_gt[0])
+            i = _gt[1]
             continue
         # 대문자 로마자 처리는 폐기(2026-07-18): ⠠는 한글 음절 구성요소(수=⠠⠍)이기도 해
         # ⠠+알파를 대문자로 보면 정상 한글을 깬다(국수→국M, 따님→I님). roundtrip 회귀.
