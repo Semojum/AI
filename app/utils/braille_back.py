@@ -42,6 +42,7 @@ _MAP_PATH = Path(__file__).with_name("braille_syllable_map.json")
 _NUMBER_SIGN = "⠼"           # 수표 (뒤 a~j 셀 = 1~0)
 _ROMAN_START = "⠴"           # 로마자표
 _ROMAN_END = "⠲"             # 로마자 종료표 (= 마침표 셀과 동일)
+_TILDE = "⠈⠔"               # 물결표 (제55항 · 문장 부호표 `@9`)
 _CAPITAL = "⠠"               # 대문자 표시 (연속 ⠠⠠ = 대문자 단어)
 _TN_MARKER = "⠠⠄"            # 점역자 주(양끝)
 _CAPS_OPEN = "⠠⠠⠠"           # 대문자 구절표 (제28항 [붙임])
@@ -957,6 +958,7 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
 
     out: list[str] = []
     caps_word = False
+    caps_word_any = False      # 대문자 단어표를 한 번이라도 봤나 — 로마 숫자 되돌림 판정용
     caps_next = False          # 단일 대문자표 ⠠ 를 만난 직후
     caps_phrase = False        # 대문자 구절표 ⠠⠠⠠ … 종료표 ⠠⠄ (제28항 [붙임])
 
@@ -1050,7 +1052,7 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
             j += 2
             continue
         if s[j:j + 2] == _CAPITAL + _CAPITAL:       # 대문자 단어표
-            caps_word = True
+            caps_word = caps_word_any = True
             j += 2
             continue
         if c == _CAPITAL:                           # 단일 대문자표
@@ -1198,6 +1200,19 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
                 continue
             j += 1
             continue
+        if s[j:j + 2] == _TILDE:
+            # ★ 물결표 ⠈⠔ (제55항 · 문장 부호표 `@9`) — 범위 표시 `A~C` 가 그 꼴이다.
+            #   쉼표와 **같은 이유**로 구간을 끊으면 안 된다. 끊기면 뒤의 ⠠⠉(대문자표+C)가
+            #   한글 초성 ㅅ+ㄴ 으로, 종료표 ⠲ 가 마침표로 떨어져 `A~나.에` 가 나왔다.
+            #   조건도 쉼표와 같다 — 명시적 로마자표로 열렸고 종료표가 앞에 있을 때만.
+            #   실측(전권 18,892쪽): 그 꼴 395회·236쪽·47꼴을 전수로 훑었고, 로마자표로
+            #   안 연 것은 하나뿐이다(`작품에서~실제`, 진짜 한글). 로마자표를 요구하면
+            #   394회·235쪽·46꼴이 남고 그 안에 한글이 없다. (원장 R-54)
+            if s[i] == _ROMAN_START and _roman_span_ahead(s, j + 2):
+                out.append("~")
+                caps_word = False              # 대문자 단어표는 낱말 하나까지다
+                j += 2
+                continue
         if c == _COMMA_CELL:
             # 제32항 구간은 **종료표까지**다. `A, B, C`(⠴⠠⠁⠂ ⠠⠃⠂ ⠠⠉⠲)의 쉼표에서
             # 끊으면 둘째·셋째 글자가 문맥을 잃고 한글로 읽힌다(`A, b, 나.`).
@@ -1215,6 +1230,19 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
     txt = "".join(out)
     # ★ 대문자 **단어표**(⠠⠠)로 적힌 로마 숫자는 유니코드로 되돌린다.
     #   `Ⅱ` 이상은 ⠠⠠ 로 적힌다(⠴⠠⠠⠊⠊).
+    # ★ 물결표로 이은 범위는 **조각마다** 되돌린다. 물결표에서 런이 안 끊기게 고치면서
+    #   `Ⅱ~Ⅳ` 가 한 런이 됐는데 통째로는 표에 없어 `II~IV` 로 나갔다(전권 70회·35쪽).
+    #   대문자 단어표는 물결표에서 풀리므로 **한 번이라도 봤는지**로 본다 — 마지막
+    #   상태만 보면 `Ⅲ~V` 가 `III~V` 로 나간다(2회·1쪽). 둘 다 회귀로 남겼다.
+    def _roman_piece(t: str) -> str:
+        if caps_word_any and t in _ROMAN_NUM_UNI:
+            return _ROMAN_NUM_UNI[t]
+        if t == "I" and s[i] == _ROMAN_START and not span_ok:
+            return "Ⅰ"                     # 아래 홑 Ⅰ 가지와 같은 규율 (원장 R-51)
+        return t
+
+    if "~" in txt:
+        return "~".join(_roman_piece(t) for t in txt.split("~")), j
     if caps_word and txt in _ROMAN_NUM_UNI:
         return _ROMAN_NUM_UNI[txt], j
     # ★ 홑 Ⅰ — 제36항이 `Ⅰ` 을 **로마자표 + 대문자표 + i**(`0,i4` = ⠴⠠⠊⠲)로 정한다.
