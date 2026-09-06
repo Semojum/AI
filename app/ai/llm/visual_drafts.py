@@ -45,6 +45,9 @@ from difflib import SequenceMatcher
 import time
 
 from app.ai.llm.base_opt import _DEDUP_MIN_LEN, _norm_for_dedup, decide_tier_timeout, generate_with_retry
+from app.ai.llm.diagram_structure import _MAX_LINES as _CAP_OUTLINE_MAX
+from app.ai.llm.diagram_structure import caption_head as _caption_head
+from app.ai.llm.diagram_structure import caption_outline as _caption_outline
 from app.ai.braille import tag_names as _TAGS
 from app.ai.braille import tn_notices as _TN_NOTICES
 from app.core.config import config
@@ -389,8 +392,18 @@ def _same_gist(a: str, b: str) -> bool:
     na, nb = _gist(a), _gist(b)
     if not (na and nb):
         return False
-    if na == nb or na in nb or nb in na:
+    if na == nb:
         return True
+    # ★ 포함은 **길이가 엇비슷할 때만** 같은 말로 본다(2026-09-07).
+    #   짧은 쪽이 긴 쪽에 들어 있다는 것만으로 지우면 **묶음 머리줄이 사라진다.**
+    #   실측(캡션 1,811건 재생): `중국 국민당군과 중국 공산당군의 병력 변화` 가 머리줄일 때
+    #   계열 머리 `중국 국민당군`·`중국 공산당군` 두 줄이 지워져, 값 여덟 줄이 어느 계열
+    #   것인지 알 수 없게 됐다. 머리줄이 `그래프` 한 낱말이면 '그래프'가 든 항목이 통째로
+    #   날아가기도 했다(`가로축은 연령대 … 나타낸 그래프이다.`).
+    #   0.7 은 이 필터가 원래 잡던 얼굴(제목을 그대로 되풀이한 항목, 길이비 ~1.0)은 그대로
+    #   잡고 묶음 머리줄(길이비 0.35~0.45)은 놓아 준다.
+    if na in nb or nb in na:
+        return min(len(na), len(nb)) / max(len(na), len(nb)) >= 0.7
     if min(len(na), len(nb)) < _GIST_MIN_LEN:
         return False
     # 숫자가 다르면 값이 다른 자료 줄이다 — 닮았어도 지우지 않는다.
@@ -735,6 +748,37 @@ async def build_visual_drafts(
     tier = routing_tier
     _t0 = time.monotonic()   # 시각요소별 4안 생성 소요시간(줄글 LLM 포함) 로깅용
 
+    # ★ 2026-09-07 — **캡션이 이미 개조식이면 그 줄이 골격이다**(무-LLM).
+    #   지침 근거: 「점자 자료 제작 지침」 §6.1.4(4) L3011–3012 "전체 윤곽을 포괄적으로
+    #   설명한 다음 부분을 나누어 단계적으로", (6) L3015–3016 개조식 표현, §6.3.4(2)①
+    #   L3178–3179 "다음 줄에 원본 시각 자료에 포함된 내용을 적는다".
+    #   도서지침 예3-32~3-36(L2554·L2590·L2605·L2627·L2644)은 값을 `항목: 값` 한 줄씩 적는다.
+    #
+    #   왜 지금 넣나 — 앞단이 `struct_outline`(ocr_texts·data_points)을 **한 번도 안 준다**
+    #   (`ocr_texts`·`data_points`·`chart_subtype`·`visual_type_label` 을 쓰는 자리가
+    #   app/ 전체에 읽는 쪽뿐이다). 그래서 이미지·차트 경로는 항상 항목이 비고, 여러 줄
+    #   캡션이 `_tn()`의 `_oneline`에 접혀 **점역자 주 한 줄**로 나갔다.
+    #   실측(캡션 캐시 1,811건을 ZERO로 재생): 캡션은 1,514건(83.6%)이 여러 줄인데
+    #   초안이 여러 줄로 나간 것은 700건뿐이고 **그림 0/529 · 그래프 0/418 · 사진 0/72**다.
+    #   gold 는 시각 자료 블록 991건 중 562건(56.7%)이 3칸 들여쓴 항목 줄을 갖는다
+    #   (선행 2칸 줄 1,688개). 캡셔너 프롬프트는 이미 "'항목: 값' 을 한 줄에 하나씩"·
+    #   "이름표가 다섯이면 다섯 줄"을 시키고 있다 — 그 줄을 우리가 도로 접고 있었다.
+    #   실측 항목 줄 길이는 중앙 18자·3사분위 28자로 gold 항목 줄과 같은 꼴이다.
+    #
+    #   ⚠ 2026-08-08에 같은 갈래를 CER 로 재고 기각한 기록이 아래 `outline_items` 주석에
+    #     있다("3칸 줄 0.0%→1.4%, 정답 3칸 0.0%"). **그 gold 계수가 틀렸다** — 위 1,688줄.
+    #     그리고 이 축은 CER 로 재는 축이 아니다(대표 지시 2026-09-07: 형식 일치로 판정).
+    #   ⚠ `caption_outline` 은 `_MAX_LINES`(40)에서 잘린다 — 골격이 아니라 줄글이라는 뜻의
+    #     폭주 방어다. 그보다 긴 캡션을 올리면 **뒤쪽 데이터 줄이 통째로 사라진다**
+    #     (실측 2건: 종교 분포 56줄에서 14줄, 배지 개체 수 47줄에서 6줄). 값이 사라지는
+    #     것은 한 줄로 붙어 나가는 것보다 나쁘다 — 길면 손대지 않고 종전대로 둔다.
+    cap_head = None
+    cap_body = [ln for ln in caption.split("\n")[1:] if ln.strip()]
+    if struct_outline is None and 0 < len(cap_body) <= _CAP_OUTLINE_MAX:
+        cap_items = _caption_outline(caption, keep_markers=True)
+        if cap_items:
+            struct_outline, cap_head = cap_items, _caption_head(caption)
+
     # LLM이 채워야 할 파트: 제목·캡션 다 없으면 제목, 구조 없으면 개조식/줄글.
     need_title = not (title or caption)
     need_outline = struct_outline is None
@@ -803,8 +847,12 @@ async def build_visual_drafts(
     #   (실측 job_260807160446 p2: 점역자주 안 13줄 + 밖 4줄이 같은 내용).
     #   항목이 있으면 머리줄은 줄이고 세부는 항목이 진다. 항목이 없으면 머리줄이 유일한
     #   내용이므로 그대로 둔다(축약이 곧 정보 손실).
-    outline_desc = caption or llm_title or ""
-    if outline_items:
+    # 캡션 줄을 골격으로 올렸으면 머리줄은 **캡션 첫 줄**이다(나머지는 항목이 진다).
+    outline_desc = (cap_head if cap_head is not None else (caption or llm_title or ""))
+    # ★ 캡션 첫 줄은 **이미 제목**이라 다시 줄이지 않는다. `_shorten` 은 장문 AI 설명을
+    #   제목 자리에 넣을 때 쓰는 것인데, 45자에서 끊으면 `…H와 h의 DNA` 처럼 값이 잘린다
+    #   (실측 58건이 44자 이상). 캡셔너는 첫 줄을 짧게 쓰도록 이미 배선돼 있다.
+    if outline_items and cap_head is None:
         outline_desc = _shorten(outline_desc)
     prose = (struct_prose if struct_prose is not None
              else (llm_prose or caption or title or struct_text))
