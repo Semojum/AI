@@ -1648,6 +1648,8 @@ def _strip_bold_marks(line: str) -> str:
 _EMPH_PAIR_RE = re.compile(r"⠠⠤((?:(?!⠠⠤|⠤⠄)[\u2800-\u28ff\n ]){0,240})⠤⠄")
 _EMPH_CLOSE = "⠤⠄"        # 드러냄표 닫는 표 (제35항)
 _EMPH_MARK = "\ufdd4"      # 표를 벗긴 자리 — 토큰 경계로만 남고 글자는 안 낸다
+_EMPH_IN_NUM_RE = re.compile(
+    r"(?<=[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠼⠸])" + _EMPH_MARK + r"(?=[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚])")
 
 
 def _strip_emph_marks(line: str) -> str:
@@ -1979,6 +1981,10 @@ def _decode_line_router(line: str, math: bool) -> str:
     line = _LONE_TIMES_RE.sub("×", line)
     line = _mark_paren_pairs(line)
     # 드러냄표 센티넬도 분리자다 — 폭이 0이라 아래에서 공백을 안 낸다.
+    # ★ **수 안의 드러냄표는 토큰을 끊지 않는다**(제35항). 센티넬이 경계라
+    #   `47⟦2⟧1조`(⠼⠙⠛⠠⠤⠃⠤⠄⠁⠨⠥)가 세 토큰으로 갈려 뒤 숫자가 수표 문맥을 잃고
+    #   글자로 떨어졌다 — `47ba조`. 숫자 사이의 센티넬만 지운다(실측 89회·36쪽).
+    line = _EMPH_IN_NUM_RE.sub("", line)
     parts = re.split(r"([⠀ ]+|" + _EMPH_MARK + ")", line)
     tokens, seps = _merge_roman_tokens(parts[0::2], parts[1::2])
     tokens = [t.replace(_EMPH_MARK, "") for t in tokens]    # 로마자 병합이 되삼킨 것
