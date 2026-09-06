@@ -610,3 +610,54 @@ class TestCapitalFunctionNotation:
     ])
     def test_한글은_그대로(self, raw: str, want: str) -> None:
         assert self._d(raw) == want
+
+
+class TestRomanTilde:
+    """로마자 구간의 물결표 — 제32항(로마자표 `0` … 종료표 `4` 사이는 통일영어점자) ·
+    제55항 문장 부호표 물결표 `@9`(⠈⠔).
+
+    로마자 런이 물결표를 몰라 거기서 끊겼다. 뒤의 ⠠⠉(대문자표+C)가 한글 초성 ㅅ+ㄴ 으로,
+    종료표 ⠲ 가 마침표로 떨어져 `A~C에` 가 `A~나.에` 로 나갔다. 쉼표(`A, B, C`)는 이미
+    같은 이유로 구간을 안 끊게 돼 있었는데 물결표만 빠져 있었다.
+    전권 실측 395회·236쪽·47꼴을 전수로 훑었고, 로마자표를 요구하면 394회·235쪽·46꼴이
+    남으며 그 안에 한글이 없다.
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠴⠠⠁⠈⠔⠠⠉⠲⠝", "A~C에"),
+        ("⠴⠠⠁⠈⠔⠠⠉⠲⠉⠵", "A~C는"),
+        ("⠴⠠⠁⠈⠔⠠⠙⠲⠺", "A~D의"),
+        ("⠴⠠⠁⠈⠔⠠⠑⠲⠝⠠⠎", "A~E에서"),
+        ("⠴⠠⠊⠈⠔⠠⠧⠲⠐⠮", "Ⅰ~V를"),
+    ])
+    def test_물결표는_로마자_구간을_안_끊는다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        # 로마자표 ⠴ 없이 온 물결표는 한글이다 — 전권에서 이 한 꼴뿐이다
+        ("⠨⠁⠙⠍⠢⠝⠠⠎⠈⠔⠠⠕⠂⠨⠝", "작품에서~실제"),
+        # 종료표가 없으면 구간으로 안 본다(안전한 쪽) — `_roman_span_ahead` 와 같은 규율
+        ("⠴⠠⠋⠈⠔⠠⠍", "F~수"),
+    ])
+    def test_로마자표가_없으면_안_본다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        # 물결표에서 안 끊기게 하면 `Ⅱ~Ⅳ` 가 한 런이 된다 — 로마 숫자 되돌림을
+        # **조각마다** 해야 한다. 안 그러면 `II~IV` 로 나간다(전권 70회·35쪽 되물림).
+        ("⠴⠠⠊⠈⠔⠠⠠⠊⠊⠊⠲", "Ⅰ~Ⅲ"),
+        ("⠴⠠⠠⠊⠊⠈⠔⠠⠠⠊⠧⠲⠉⠵", "Ⅱ~Ⅳ는"),
+        ("⠴⠠⠊⠈⠔⠠⠠⠧⠊⠲⠝", "Ⅰ~Ⅵ에"),
+    ])
+    def test_로마_숫자는_조각마다_되돌린다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    def test_한쪽만_대문자_단어표여도_되돌린다(self) -> None:
+        """`Ⅲ~V` — 물결표에서 대문자 단어표가 풀리므로 마지막 상태만 보면 안 된다.
+        한 번이라도 봤는지로 판정한다(안 그러면 `III~V` 로 나갔다 · 2회·1쪽)."""
+        assert self._d("⠴⠠⠠⠊⠊⠊⠈⠔⠠⠧⠲") == "Ⅲ~V"
