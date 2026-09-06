@@ -1238,6 +1238,7 @@ def _korean_tail(tok: str, at: int) -> str | None:
 _SENTINELS = "▯×○□△◇|"
 
 
+_MATH_COMMA = "⠐"           # 수식 쉼표(제12항 [붙임 1]) = 곱셈점과 같은 셀
 _SCRIPT_TAIL_RE = re.compile(r"[_^]\d+$")   # 첨자 숫자로 끝났나 (과학 제4항 [붙임 1])
 
 
@@ -1346,6 +1347,17 @@ def _decode_math_token(tok: str) -> str:
                 out.append(_ALPHA_REV[tok[i + 1]].upper())
                 i += 2
                 continue
+        # ★ 수식 안의 ⠐ 는 **쉼표이자 곱셈점**이다 — 「수학 점자」 제12항 [붙임 1] 이
+        #   "쉼표는 ⠐ 으로 적고" 라 하고, 곱셈 [붙임] 이 "점으로 표현된 곱셈 기호는
+        #   ⠐ 으로 적는다" 라 한다. 규정 예문이 **띄어쓰기로 갈린다**:
+        #     쉼표   `a⠰⠼⠁⠐ a⠰⠼⠃⠐ a⠰⠼⠉⠐`  (a₁, a₂, a₃, …) — 뒤에 빈칸이 있다
+        #     곱셈점 `⠼⠋⠐⠼⠊`               (6·9)          — 앞뒤가 붙어 있다
+        #   종전에는 둘 다 `·` 로 냈다 — `Ⅲ이 d_1· Ⅳ가 d_4·` 처럼 쉼표 자리가
+        #   가운뎃점으로 나갔다(전권 18,892쪽 실측 7,856회·1,950쪽).
+        if c == _MATH_COMMA and (i + 1 >= n or tok[i + 1] in (_SPACE_CELL, " ")):
+            out.append(",")
+            i += 1
+            continue
         if c in _MATH_REV_SINGLE:                    # 단일 셀 수학 기호
             out.append(_MATH_REV_SINGLE[c])
             i += 1
