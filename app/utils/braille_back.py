@@ -2525,19 +2525,34 @@ _JOSA_ONLY_RE = re.compile(
     r"[.,:;)\]}’”!?]*")
 
 
+# 「한글 점자」 제69항 [붙임 2](재추출본 2719~2721행) — "비로마자 단위 기호는 단위표 0을
+# 앞세워 … 적어 나타내고, **그 뒤에 한글이 나오면 한 칸 띄어 쓴다**."
+# 그 한 칸은 **규정이 넣은 것**이라 묵자에는 없다(2753~2761행 `10%에`·`90°이다`·`100 ℃에서`).
+# 역방향에서 지운다. 원장 R-60.
+#   ⚠ 조사 토큰일 때만이다. 규정은 낱말 사이에도 같은 한 칸을 넣으므로 점자만 보고는
+#     `%이므로`와 `% 이상이`를 못 가른다 — 재추출 묵자 실측 102곳에서 조사 조건이 92%,
+#     "한글이면 무조건" 이 71% 였다. 이온 첨자 규칙(아래)이 쓰는 조건을 그대로 쓴다.
+_UNIT_TAIL_CELLS = tuple(_UNIT_TABLE_SYM)
+_UNIT_TAIL_CHARS = ("℃", "℉", "%p", "‰", "%", "°")
+
+
 def _print_gap(n: int, idx: int, tokens: list[str], is_math: list[bool]) -> int:
-    """점자 칸 수 → 묵자 공백 수. 수식 경계의 두 칸과 이온 첨자 뒤 한 칸만 접는다."""
+    """점자 칸 수 → 묵자 공백 수. 수식 경계의 두 칸과 이온 첨자·단위표 뒤 한 칸만 접는다."""
     if n not in (1, 2) or idx + 1 >= len(tokens) or not tokens[idx] or not tokens[idx + 1]:
         return n
     if n == 1:
-        if not _ION_SUP_RE.search(tokens[idx]) or is_math[idx + 1]:
+        unit = tokens[idx].endswith(_UNIT_TAIL_CELLS)
+        if (not unit and not _ION_SUP_RE.search(tokens[idx])) or is_math[idx + 1]:
             return n
-        # ★ **앞 토큰이 정말 이온으로 풀릴 때만.** ⠘⠢ 는 약자 `밤`이기도 하다 —
+        if not _JOSA_ONLY_RE.fullmatch(_decode_line(tokens[idx + 1])):
+            return n
+        # ★ **앞 토큰이 정말 이온·단위로 풀릴 때만.** ⠘⠢ 는 약자 `밤`이기도 하다 —
         #   `하룻밤 갇힌`·`봄밤 여성`이 셀만 보면 똑같이 걸린다(전권 293곳).
         #   셀 꼴로 좁히는 대신 **낸 글자**를 본다(로마자표로 열리지 않는 `⠠⠍⠛`(Mg)도 잡힌다).
         prev = _decode_math_token(tokens[idx]) if is_math[idx] else _decode_line(tokens[idx])
-        return 0 if (prev[-1:] in ("+", "-")
-                     and _JOSA_ONLY_RE.fullmatch(_decode_line(tokens[idx + 1]))) else n
+        if unit and prev.endswith(_UNIT_TAIL_CHARS):
+            return 0
+        return 0 if prev[-1:] in ("+", "-") else n
     if is_math[idx] and not is_math[idx + 1]:
         # ★ 뒤가 **진짜 한글**일 때만 붙인다. 수식 아님 = 한글이 아니다 — 홑 기호 토큰
         #   (`⠔` 빼기표 · `⠤` 붙임표)도 여기로 온다. 그걸 붙이면 앞 수식과 한 낱말이 되어
