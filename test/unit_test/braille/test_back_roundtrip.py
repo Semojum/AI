@@ -471,3 +471,34 @@ class TestPermutationCombination:
     ])
     def test_짝이_없으면_안_본다(self, raw: str, want: str) -> None:
         assert self._d(raw) == want
+
+
+class TestMeanBar:
+    """평균값 X̄ — 「수학 점자」 제23항 나 "평균값(―)은 @c으로 적되, 편차 기호로도 사용한다".
+
+    기호가 **글자 뒤**에 온다(규정 예문 `X@C`). ⠠⠭ 는 한글 `속`(된소리 ㅅ + 옥)이라
+    본문 토큰에서 `속̅` 으로 나갔다 — 수식 토큰에서는 이미 `X̅` 로 맞았다.
+    자리도 맞춘다: 묵자와 채점기(detex2)는 결합 문자를 앞에 둔다(`̅X`).
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠠⠭⠈⠉", "̅X"),
+        ("⠠⠽⠈⠉", "̅Y"),
+        ("⠠⠭⠈⠉⠐⠂", "̅X:"),
+        ("⠠⠑⠦⠠⠭⠈⠉⠴⠒⠒⠠⠑⠦⠠⠭⠴⠒⠒⠍", "E(̅X)=E(X)=m"),   # 수식 경로도 앞에 둔다
+        ("⠈⠉⠠⠠⠁⠃", "̅AB"),                              # 선분(제35항)은 종전대로
+    ])
+    def test_평균값은_결합문자를_앞에_둔다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠠⠭⠐⠣", "속라"),          # ⠠⠭ 는 한글 `속` — 평균값 기호가 뒤따를 때만 본다
+        ("⠠⠥⠈⠪⠢⠑⠯⠮", "소금물을"),
+    ])
+    def test_한글은_그대로(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
