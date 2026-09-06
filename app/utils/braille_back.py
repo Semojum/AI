@@ -1238,6 +1238,7 @@ def _korean_tail(tok: str, at: int) -> str | None:
 _SENTINELS = "▯×○□△◇|"
 
 
+_ANGLE = "⠹"                # 각 기호(수학 제39항) = 한글 약자 `억` 과 같은 셀
 _MATH_COMMA = "⠐"           # 수식 쉼표(제12항 [붙임 1]) = 곱셈점과 같은 셀
 _SCRIPT_TAIL_RE = re.compile(r"[_^]\d+$")   # 첨자 숫자로 끝났나 (과학 제4항 [붙임 1])
 
@@ -1358,6 +1359,13 @@ def _decode_math_token(tok: str) -> str:
             out.append(",")
             i += 1
             continue
+        # 각 기호(제39항) — ⠹ 는 한글 약자 `억` 과 같은 셀이라 **대문자 단어표가
+        # 뒤따를 때만** 본다. 종전에는 `∠BAC=5분의π` 가 `억BAC=5분의π` 로 나갔다
+        # (전권 18,892쪽 실측 1,023회·143쪽).
+        if c == _ANGLE and tok[i + 1:i + 3] == _CAPITAL * 2 and tok[i + 3:i + 4] in _ALPHA_REV:
+            out.append("∠")
+            i += 1
+            continue
         if c in _MATH_REV_SINGLE:                    # 단일 셀 수학 기호
             out.append(_MATH_REV_SINGLE[c])
             i += 1
@@ -1408,6 +1416,11 @@ def _classify_token(tok: str) -> str:
     # ⠖ 는 한글에서 낱말 첫 칸으로 안 오므로 오탐이 없다 — 이걸 안 보면
     # `tan x`(⠖⠞⠭)가 TEXT 로 떨어져 `∈얼옥` 이 된다.
     if tok[:1] == "⠖" and any(tok.startswith(k) for k in _TRIG_CELLS):
+        return "MATH"
+    # 각 기호 ⠹ + 대문자 단어표 — 「수학 점자」 제39항 `∠ABC` = ⠹⠠⠠ABC.
+    # ⠹ 는 한글 약자 `억` 이라 홀로는 못 가르지만, **뒤가 대문자 단어표 + 낱자**면
+    # 각 기호다(줄임표 ⠠⠠⠠ 는 +3 이 낱자가 아니라 안 걸린다).
+    if tok[:3] == _ANGLE + _CAPITAL * 2 and tok[3:4] in _ALPHA_REV:
         return "MATH"
     # ★ 로마자표로 **시작하는** 토큰은 로마자 런이다(제29항 — 로마자표는 낱말 앞).
     #   수식으로 분류하면 수식 디코더가 ⠴ 를 닫는 괄호로 읽어 `A^2`(⠴⠠⠁⠘⠼⠃)가
