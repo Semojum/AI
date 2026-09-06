@@ -111,3 +111,25 @@ def test_bare_type_word_head_is_stripped():
     # 종류어 뒤에 내용이 있으면 내용만 남는다(종전 동작 유지)
     assert caption_head("개념도: 삼각형 ABC") == "삼각형 ABC"
     assert caption_head("그림: 절벽 아래 돌 더미") == "절벽 아래 돌 더미"
+
+
+def test_circled_hangul_is_a_label_not_a_hierarchy_marker():
+    """원문자 한글 `㉠~㉺`는 위계 표지가 아니라 **개체 이름표**다 — 떼면 안 된다.
+
+    문항이 `㉠이 무엇인가`를 묻기 때문에 그 글자 자체가 내용이다. 실측 근거:
+      · 캡셔너 diagram 프롬프트가 시키는 위계 표지는 `1.` `1)` `①` 셋뿐 — `㉠`은 없다.
+      · 캡션 캐시 1,814건의 줄머리 `㉠` 25줄 중 아래 층이 달린 것 0건(전부 잎).
+      · gold 시각자료 991건 중 115건이 `㉠~㉺`를 담고 있다(55건은 줄머리). 정답은 안 지운다.
+    """
+    st = structure_from_caption("도표: 모식도: 사람 몸의 방어 부위\n㉠ 피부\n㉡ 침\n㉢ 눈물\n㉣ 위벽")
+    assert [n["text"] for n in st["nodes"]] == ["㉠ 피부", "㉡ 침", "㉢ 눈물", "㉣ 위벽"], st
+
+    # 이름표는 같은 층에 나란히 선다 — 앞 줄 밑으로 들어가지 않는다.
+    st2 = structure_from_caption(
+        "도표: 모식도: 생태계 구성 요소 사이의 상호 관계\n"
+        "생태계 안에 비생물적 요인과 생물 군집\n"
+        "㉠ 개체군 A → 비생물적 요인\n㉡ 비생물적 요인 → 개체군 A")
+    assert len(st2["nodes"]) == 3 and not st2["nodes"][0]["children"], st2
+
+    # `①`은 프롬프트가 지정한 3층 표지라 종전대로 뗀다(회귀 가드).
+    assert structure_from_caption(_ORG)["nodes"][0]["children"][1]["children"][0]["text"] == "이부"
