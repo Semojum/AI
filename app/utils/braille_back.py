@@ -2312,6 +2312,7 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
     out: list[str] = []
     i, n = 0, len(s)
     _after_number = -1        # 수표 숫자가 방금 끝난 자리(아래 단위표 가드용)
+    _quoted_roman_end = -1    # 여는 큰따옴표로 연 로마자 런이 끝난 자리(제34항 가드용)
     while i < n:
         ch = s[i]
         # 공백(점자/일반)
@@ -2565,10 +2566,25 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
             i += best_ln
             continue
         # 로마자 런(로마자표 ⠴ 또는 대문자 단어표 ⠠⠠+알파벳) — 단독 ⠴(따옴표)보다 우선
-        roman = _decode_roman_run(s, i)
+        # ★ 제34항 — "로마자가 따옴표나 괄호 등으로 묶일 때에는 로마자 종료표를 적지
+        #   않는다." 그러면 **여는 큰따옴표로 연 구간은 닫는 큰따옴표 ⠴ 로 닫히는데**
+        #   그 셀이 로마자표와 같다. 런이 그 ⠴ 에서 멈추면 여기서 곧바로 새 런이 열려
+        #   닫는 따옴표가 사라지고 뒤 한글이 로마자로 먹혔다 —
+        #       `“much”가`(⠦⠴⠍⠡⠴⠫) -> `"mched`   ·  `“remain”은` -> `"remainz`
+        #       `“EBS”와`            -> `"EBSv `   ·  `“Open”이라고` -> `"Openo라고`
+        # ★ **여는 큰따옴표 ⠦ 로 연 런에만** 건다. 다른 여는 부호는 닫는 쪽이 두 셀이라
+        #   이 자리에 안 온다(‘…’=⠠⠦…⠴⠄ · (…)=⠦⠄…⠠⠴ · 「…」=⠐⠦…⠴⠂).
+        #   좁히지 않으면 멀쩡한 로마자표를 막는다 — `x km/h`(⠴⠰⠭⠴⠅⠍⠸⠌⠓⠲)가
+        #   `x”k우/타.` 로, `(Commonwealth`(⠦⠄⠴⠠⠉⠕⠴⠍⠍…)가 `(Co”우우…` 로 깨졌다.
+        if ch == _ROMAN_START and i == _quoted_roman_end:
+            roman = None
+        else:
+            roman = _decode_roman_run(s, i)
         if roman is not None:
             txt, j = roman
             out.append(txt)
+            if ch == _ROMAN_START and len(out) >= 2 and out[-2] == '"':
+                _quoted_roman_end = j     # 이 자리의 ⠴ 는 닫는 큰따옴표다
             i = j
             continue
         # 어말 ?·!(⠦·⠖) — 단독으로 떨어진 경우 따옴표(") 대신 문장부호로(안녕?=…⠦).
