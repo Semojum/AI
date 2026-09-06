@@ -536,3 +536,36 @@ class TestLetterSignTerminator:
     ])
     def test_한글은_그대로(self, raw: str, want: str) -> None:
         assert self._d(raw) == want
+
+
+class TestLetterOpNumber:
+    """낱자로 시작하는 연산식 — `x-1`(⠭⠔⠼⠁).
+
+    수표는 있지만 수식 신호(첨자 ⠰⠘·묶음괄호 ⠷)가 없어 NUM 으로 떨어지고, 한글 경로가
+    ⠭ 를 `옥`, ⠍⠢ 를 `움`, ⠁ 을 약자 `그러므로` 로 읽었다.
+    실측(전권 18,892쪽) 407회·191쪽 · 159 가지 꼴에 진짜 한글이 하나도 없다.
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠭⠔⠼⠁", "x-1"),
+        ("⠭⠢⠼⠃", "x+2"),
+        ("⠍⠢⠼⠁", "m+1"),
+        ("⠁⠢⠼⠙", "a+4"),
+        ("⠭⠔⠼⠁⠐", "x-1,"),
+    ])
+    def test_낱자_부호_수는_수식이다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠎⠔⠵", "얻은"),      # 부호 뒤에 수표가 없으면 안 본다 — ⠢·⠔ 는 받침이다
+        ("⠉⠢⠵", "남은"),
+        ("⠕⠢⠺⠐⠥", "임의로"),
+        ("⠭", "옥"),           # 단독 ⠭ 는 진짜 한글이다(`옥 같은 얼굴`)
+    ])
+    def test_한글은_그대로(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
