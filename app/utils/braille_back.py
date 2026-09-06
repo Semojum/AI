@@ -229,6 +229,12 @@ _MATH_REV_MULTI.update(
 # 이미 있는 `⠸⠰⠑`(=ln, 제46항 2호 예시 `_;Ex`)는 덮지 않는다.
 _MATH_REV_MULTI.update({"⠸⠰" + c: f"log_{{{v}}}" for c, v in _ALPHA_REV.items()
                         if "⠸⠰" + c not in _MATH_REV_MULTI})
+# 극한 기호(제51항) — "lim는 lim으로 적은 다음 … 변수 앞에 ;을 적고".
+# 셀은 그냥 ⠇⠊⠍ 라 수식 경로에서 낱자로도 풀리지만, `lim;x`(⠇⠊⠍⠰⠭)는 **한글 `사두촉`
+# 으로 깨끗이 풀려** 한글 꼬리 가드가 먼저 물었다(전권 1,538회·179쪽). 표에 박아
+# 가드보다 먼저 잡는다 — 로그의 밑(`⠸⠰`+낱자)을 잡은 방식과 같다.
+_MATH_REV_MULTI.update({"⠇⠊⠍⠰" + c: f"lim_{{{v}}}" for c, v in _ALPHA_REV.items()})
+_MATH_REV_MULTI["⠇⠊⠍"] = "lim"
 _MATH_MAX = max(len(k) for k in _MATH_REV_MULTI)
 # 토큰이 수식인지 판정 — 첨자·근호·분수 셀(⠘⠰⠜⠻⠌)이 **수식 피연산자**(수표 ⠼ 또는
 # 수식 여는괄호 ⠷)에 바로 이어질 때만 수식으로 본다. 한글 약자(바=⠘⠣·예=⠌⠣ 등)는
@@ -1248,6 +1254,19 @@ _SCRIPT_TAIL_RE = re.compile(r"[_^]\d+$")   # 첨자 숫자로 끝났나 (과학
 #   ⚠ ⠶ 는 한글 약자 `언`·받침 ㅇ 과 같은 셀이라 **이 꼴 전체가 맞을 때만** 본다.
 #     전권 18,892쪽 실측 202회·50쪽, 서로 다른 꼴 넷이 전부 수열이다
 #     (⠶⠁⠰⠝⠶ 161 · ⠶⠃⠰⠝⠶ 26 · ⠶⠁⠰⠝⠶⠐ 14 · ⠶⠠⠎⠰⠝⠶ 1).
+# ★ 함수 표기 — 「수학 점자」 제45항 (원장 R-39) "함수는 다음과 같이 적는다. y=f(x) = `Y33F8X0`".
+#   `8`·`0` 은 여는·닫는 소괄호 ⠦·⠴ 다. 수표도 관계 기호도 없어 종전에는 TEXT 로
+#   떨어졌고, ⠦ 가 여는 큰따옴표라 `f(x)` 가 `캍옥”` 으로 나갔다(전권 3,210회·551쪽).
+#   ⚠ ⠦…⠴ 는 전권 76,202회인데 그 대부분이 한글 인용·`(가)`·`(1)` 이다. 그래서
+#     **토큰 첫 칸이 홑 로마자이고 괄호 안이 수식 셀만일 때**로 좁힌다. 그 꼴은
+#     전권 7,066회·767쪽인데 지금 한글이 섞여 나오는 것이 3,144/3,145 로 사실상 전부다.
+#   ⚠ 관행 제곱 ⠣(=ㅏ)와 마침표 ⠲ 는 괄호 안에서 뺐다 — `맡아놓고`(⠑⠦⠣⠉⠥⠴⠈⠥)가 걸린다.
+_FUNC_RE = re.compile(
+    r"^[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵]"
+    r"⠦[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵⠼⠔⠢⠐⠌⠰⠘⠷⠾]+⠴")
+
+_PAREN_OPEN, _PAREN_CLOSE = "⠦", "⠴"   # 소괄호(제45항 `8`·`0`)
+_MATH_COLON = "⠐⠂"                     # 쌍점(「한글 점자」 문장 부호표 `"1`)
 _BRACE = "⠶"
 _SEQ_BRACE_RE = re.compile(
     r"⠶(?:⠠?[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵])+"
@@ -1278,6 +1297,7 @@ def _decode_math_token(tok: str) -> str:
     out: list[str] = []
     i, n = 0, len(tok)
     caps_phrase = False        # 대문자 구절표 ⠠⠠⠠ … 종료표 ⠠⠄ (제28항 [붙임])
+    depth = 0                  # 열려 있는 소괄호 수 — ⠴ 를 ° 보다 먼저 닫는 데 쓴다
     while i < n:
         c = tok[i]
         if c in (_SPACE_CELL, " "):                 # 빈칸 — 로마자 구간 병합으로 토큰
@@ -1334,6 +1354,21 @@ def _decode_math_token(tok: str) -> str:
             caps_phrase = True
             i += 3
             continue
+        # ★ 소괄호 짝(제45항) — 닫는 소괄호 ⠴ 는 **도(°) 의 앞 셀**과 같다(`0d`, 제50항
+        #   예문 `tan90°`). 열린 괄호가 있으면 닫는 쪽이 먼저다. 안 가르면 `f(x)dx`
+        #   (⠋⠦⠭⠴⠙⠭)가 `f(x°x` 로 나간다(전권 164회·85쪽).
+        #   ⚠ 도는 **수 뒤에** 온다 — 앞이 숫자면 종전대로 ° 로 읽어 `f(90°)` 를 지킨다.
+        if c == _PAREN_OPEN:
+            depth += 1
+            out.append("(")
+            i += 1
+            continue
+        if (c == _PAREN_CLOSE and depth
+                and not (tok[i + 1:i + 2] == "⠙" and out and out[-1][-1:].isdigit())):
+            depth -= 1
+            out.append(")")
+            i += 1
+            continue
         matched = False                             # 다중 셀 수학 기호(≠·÷·그리스 등)
         for ln in range(min(_MATH_MAX, n - i), 1, -1):
             if tok[i:i + ln] in _MATH_REV_MULTI:
@@ -1381,6 +1416,12 @@ def _decode_math_token(tok: str) -> str:
         #     곱셈점 `⠼⠋⠐⠼⠊`               (6·9)          — 앞뒤가 붙어 있다
         #   종전에는 둘 다 `·` 로 냈다 — `Ⅲ이 d_1· Ⅳ가 d_4·` 처럼 쉼표 자리가
         #   가운뎃점으로 나갔다(전권 18,892쪽 실측 7,856회·1,950쪽).
+        # ★ 쌍점 ⠐⠂ — 수식 경로에는 없어 `f(x):` 가 `f(x)·,` 로 나갔다(107회·65쪽).
+        #   곱셈점 ⠐ + 낮춘 1 ⠂ 로 갈리던 자리다. 쌍점이 먼저다.
+        if tok[i:i + 2] == _MATH_COLON:
+            out.append(":")
+            i += 2
+            continue
         if c == _MATH_COMMA and (i + 1 >= n or tok[i + 1] in (_SPACE_CELL, " ")):
             out.append(",")
             i += 1
@@ -1509,6 +1550,9 @@ def _classify_token(tok: str) -> str:
     #   떨어져 `{a쳉` 으로 나갔다(전권 실측 202회·50쪽). ⠰+낱자만으로 넓히면 안 된다 —
     #   그 꼴은 초성 ㅊ(체·채·추·치…)이라 전권 39,591건 중 93.2%가 한글이다.
     if _SEQ_BRACE_RE.match(tok):
+        return "MATH"
+    # ★ 함수 표기(제45항) — `f(x)` 는 수표도 관계 기호도 없다. 위 _FUNC_RE 주석 참조.
+    if _FUNC_RE.match(tok):
         return "MATH"
     if has_num and (_MATH_SIGNAL_RE.search(tok) or _MATH_PAREN_OPEN in tok):
         # ★ 단위 기호가 수식 신호를 품는다 (2026-08-09). 규정 제68항이 ㎡를 문자 그대로

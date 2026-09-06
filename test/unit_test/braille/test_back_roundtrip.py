@@ -369,3 +369,47 @@ class TestSequenceBrace:
         묶음표 안으로만 한정한 이유다.
         """
         assert self._d(raw) == want
+
+
+class TestFunctionNotation:
+    """함수 표기 — 「수학 점자」 제45항 `y=f(x)` = `Y33F8X0`.
+
+    `8`·`0` 은 여는·닫는 소괄호 ⠦·⠴ 다. 수표도 관계 기호도 없어 종전에는 TEXT 로
+    떨어졌고, ⠦ 가 여는 큰따옴표라 `f(x)` 가 `캍옥”` 으로 나갔다(전권 3,210회·551쪽).
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠋⠦⠭⠴", "f(x)"),
+        ("⠛⠦⠭⠴", "g(x)"),
+        ("⠧⠦⠞⠴", "v(t)"),
+        ("⠋⠦⠼⠁⠴", "f(1)"),
+        ("⠋⠦⠭⠴⠒⠒⠼⠚", "f(x)=0"),
+    ])
+    def test_함수는_괄호로_읽는다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    def test_쌍점은_곱셈점이_아니다(self) -> None:
+        """⠐⠂ 는 쌍점이다 — 수식 경로에 없어 `f(x)·,` 로 나갔다(107회·65쪽)."""
+        assert self._d("⠋⠦⠭⠴⠐⠂") == "f(x):"
+
+    def test_닫는_괄호가_도보다_먼저다(self) -> None:
+        """°(제50항 `0d`)의 앞 셀이 닫는 소괄호와 같다. 열린 괄호가 있으면 닫는 쪽이 먼저다."""
+        assert self._d("⠋⠦⠭⠴⠙⠭⠢") == "f(x)dx+"
+        assert self._d("⠋⠦⠼⠊⠚⠴⠙⠴") == "f(90°)"      # 도는 수 뒤에 온다
+
+    def test_극한은_표에서_잡는다(self) -> None:
+        """제51항 `lim;x`(⠇⠊⠍⠰⠭)는 한글 `사두촉` 으로 깨끗이 풀려 꼬리 가드가 물었다."""
+        assert self._d("⠋⠦⠭⠴⠒⠒⠇⠊⠍⠰⠭") == "f(x)=lim_{x}"
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠦⠄⠫⠠⠴", "(가)"),
+        ("⠦⠄⠼⠃⠠⠴", "(2)"),
+        ("⠑⠦⠣⠉⠥⠴⠈⠥", "맡아놓고"),   # 괄호 안에 관행 제곱 ⠣ 를 안 넣은 이유
+    ])
+    def test_한글_괄호는_그대로(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
