@@ -613,7 +613,14 @@ def _outline_text_indents(
                 k += 1
                 continue
             j = k
-            while j + 1 < len(lines) and inside[j + 1]:
+            # ★ 장면 줄은 **언제나 제 주표를 연다**(2026-09-08). §5.3.3(1) L2820-2821
+            #   "'장면 1'의 형식으로 5칸에 점역자 주표를 사용하여 적는다" — 만화 제목 주
+            #   (§5.3.1(1) L2811)와 별개 주다. 인접이라는 이유로 머리줄 주에 묶으면 첫
+            #   장면만 흡수되고 둘째부터 갈라져 한 문서에 형식이 둘로 선다.
+            #   ⚠ 장면 줄에서 **시작한** 주는 뒤를 계속 먹는다 — §5.3.3(7)이 "장면 번호와
+            #     함께 점역자 주표 안에 (행동) 설명을 추가한다"고 하므로 그 둘은 한 주다.
+            while (j + 1 < len(lines) and inside[j + 1]
+                   and not _SCENE_LINE.match(lines[j + 1].strip())):
                 j += 1
             lines[k] = f"<!{_TAGS.TN}>{lines[k]}"
             lines[j] = f"{lines[j]}<!/{_TAGS.TN}>"
