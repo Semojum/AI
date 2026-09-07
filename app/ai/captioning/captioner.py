@@ -339,6 +339,91 @@ def _context_block(context: str) -> str:
     return _CONTEXT_BLOCK.format(context=ctx) if ctx else ""
 
 
+# ── 재료 블록 (2026-09-07 대표 지시 "재료는 많이 뽑고, 그 후에 간추려야지") ──────
+#
+# 왜 넣나. 캡셔너가 얇은 캡션 **하나**만 주니, 초안 조립기가 "더 자세한 안"을 내려면
+# 없는 사실을 지어내는 수밖에 없었다. 실물(2026-09-07, `visual_drafts` 주석):
+#   캡션 `사진: 쿠트브 미나르` → 초안 4줄 전부 캡션에 없는 말.
+# 재료와 설명을 갈라, 늘리기를 **관측 단계**에서 하고 줄이기를 초안 단계에서 하게 한다.
+#
+# 규정 근거 — 「점자 자료 제작 지침」 §6.1.4 설명 원칙 여덟 가지가 서로 배타가 아니다.
+#   (4) 단계적 접근  "전체 윤곽을 포괄적으로 설명한 다음 부분을 나누어 단계적으로"
+#   (5) 표 활용      "진술 형태로 설명하는 것보다 표로 제시하는 것이 더 효과적인 경우"
+#   (6) 개조식 표현  "시각적으로 제시된 과정 흐름에 대한 설명은 위계가 있는 개조식 항목으로"
+#   (7) 진술적 설명  "대부분의 시각 자료 설명에 사용하고, **(1)~(4)의 원칙에 따라** 표현한다"
+#   (7)이 스스로 (1)~(4)를 부르므로 (4)는 (5)(6)(7) 어느 쪽과도 같이 선다. 즉 규정은
+#   "윤곽 한 줄 + 부분 여러 줄"을 형식과 무관하게 요구한다 — 재료 목록이 그 '부분'이다.
+#
+# gold 실측(733건, temp/poc/visual_length_census.json)이 같은 말을 한다:
+#   그림 565건이 1줄 164 · 2~3줄 216 · 4줄+ 185 로 **분량이 갈린다**(우리 적중 38%).
+#   나머지 유형은 유형이 곧 분량이다(사진 81.5% 1줄 · 만화 27/27 1줄 진술 ·
+#   지도 92%·그래프 73.5% 개조식). 그림에서만 골라 줄일 재료가 필요하다.
+#
+# ★ 환각이 제일 위험하다. 그래서 재료 규칙의 핵심은 늘리기가 아니라 **"없으면 없다고
+#   하라"**다. `못읽음:` 열쇠말이 그 자리다 — 모델이 "확인 못 함"을 말할 수 있어야
+#   빈자리를 지식으로 메우지 않는다. 규정도 같은 편이다(§6.6.6(3) 추정 연도는 점역자
+#   주로 알린다 · §5.3.3(5) 화자가 불분명하면 이름을 지어내지 말고 '말풍선'이라 적는다).
+#
+# ⚠ **기본 꺼짐**(`CAPTION_MATERIAL` 없으면 프롬프트가 한 글자도 안 바뀐다).
+#   캐시 키가 프롬프트를 물고 있어(`_cache_file`) 켜는 순간 캡션 캐시가 갈린다 —
+#   운영 캐시 3,021건을 살려 두려면 이 스위치는 A/B 때만 켠다.
+_MATERIAL_MARK = "⟦재료⟧"
+_MATERIAL_KEYS = ("글자", "요소", "관계", "축", "수치", "순서", "상황", "대사", "못읽음")
+
+_MATERIAL_BLOCK = """
+
+[재료 목록]
+위 설명을 마친 **다음 줄에** `⟦재료⟧` 를 한 줄로 적고, 그 아래에 이 자료에서 **눈으로
+확인한 사실만** 한 줄에 하나씩 적으십시오. 이것은 점역사가 골라 쓸 재료이지 설명이 아닙니다.
+줄 꼴은 `열쇠말: 사실` 이고, 열쇠말은 다음 아홉 가지만 씁니다.
+  글자: 자료 안에 **적혀 있는 글자 그대로** — 제목·이름표·범례·단위·번호.
+  요소: 보이는 개체와 그 개수.
+  관계: 요소 사이의 연결·화살표·포함·짝. `A → B` 처럼 짧게.
+  축: 가로축·세로축의 이름과 눈금 범위(축이 있을 때만).
+  수치: `항목: 값` 한 줄에 하나. 단위가 있으면 함께.
+  순서: 번호·단계·시간 흐름이 있을 때 그 차례.
+  상황: (만화만) 누가 어디서 무엇을 하는지 **한 줄**.
+  대사: (만화만) `인물: 말` 한 줄씩, 말풍선 글자 그대로.
+  못읽음: 작거나 흐려서 못 읽은 것, 보고도 판단이 안 서는 것.
+
+재료 규칙 — 이것이 가장 중요합니다.
+- **자료에 없는 것은 한 줄도 쓰지 마십시오.** 아는 지식으로 빈자리를 메우지 마십시오.
+- **줄 수를 채우려 하지 마십시오.** 확인한 사실이 둘뿐이면 두 줄로 끝냅니다.
+  재료가 얇은 것은 잘못이 아닙니다. 없는 사실을 지어내는 것만 잘못입니다.
+- 확실하지 않으면 그 줄을 아예 쓰지 말고 `못읽음:` 에 적으십시오.
+- **중요한 것부터 적으십시오.** 점역사는 위에서부터 잘라 씁니다.
+- 위 설명에 이미 쓴 사실도 재료에 다시 적습니다. 재료는 설명의 원천 목록입니다.
+- 재료 줄에는 해석·추세·평가를 쓰지 마십시오. 관측만 적습니다."""
+
+
+def _material_on() -> bool:
+    """재료 블록 스위치. 기본 꺼짐 — 켜면 캡션 캐시 키가 갈린다."""
+    return (os.getenv("CAPTION_MATERIAL", "") or "").strip().lower() in ("1", "true", "on", "yes")
+
+
+def split_material(text: str) -> tuple[str, list[tuple[str, str]]]:
+    """캡션 문자열을 (설명, 재료) 로 가른다.
+
+    재료는 `(열쇠말, 사실)` 목록이고 **모델이 적은 순서 그대로**다 — 중요한 것이 위다.
+    초안 조립기는 위에서부터 필요한 만큼만 잘라 쓴다(분량은 유형이 정한다).
+    재료 블록이 없으면(스위치 꺼짐·구 캡션) `(원문, [])` 이라 호출부가 갈릴 일이 없다.
+
+    ★ 만화가 여기서 갈린다 — gold 는 상황 한 문장만 점역자 주 **안**에 두고 대사는
+      **밖**으로 뺀다(census 27/27). `상황`/`대사` 열쇠말이 그 경계를 재료 단계에서 준다.
+    """
+    head, sep, tail = (text or "").partition(_MATERIAL_MARK)
+    if not sep:
+        return (text or "").strip(), []
+    facts: list[tuple[str, str]] = []
+    for ln in tail.splitlines():
+        ln = ln.strip().lstrip("-·•* ").strip()
+        key, _, val = ln.partition(":")
+        key, val = key.strip(), val.strip()
+        if key in _MATERIAL_KEYS and val:
+            facts.append((key, val))
+    return head.strip(), facts
+
+
 def backend_status() -> dict:
     """캡셔닝 백엔드와 키 유무 (기동 점검·진단용).
 
@@ -414,7 +499,10 @@ def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
     from app.utils.req_log import record_anthropic
     # 계정 분당 상한(요청·토큰). 동시 연결은 이미 caption_slot이 조인다.
     # b64는 원본의 4/3배라 실제 바이트로 환산해 넘긴다.
-    llm_limiter().acquire_sync(estimate_tokens(prompt, len(b64) * 3 // 4), 500)
+    # 재료 블록을 켜면 출력이 설명 + 관측 목록이라 500으로는 잘린다(값이 사라지는 것이
+    # 한 줄로 붙는 것보다 나쁘다). 꺼져 있으면 종전 그대로 500 — 운영 동작 불변.
+    out_cap = 1200 if _material_on() else 500
+    llm_limiter().acquire_sync(estimate_tokens(prompt, len(b64) * 3 // 4), out_cap)
     model = os.getenv("CAPTION_MODEL", "claude-sonnet-5")
     client = anthropic.Anthropic(api_key=config.anthropic_api_key or None, timeout=60.0, max_retries=1)  # 행 방지(2026-07-19 스톨 실측)
     # ★ thinking을 꺼야 한다(2026-08-08 QA 16번 실측). claude-sonnet-5는 `thinking`을 안 주면
@@ -431,7 +519,7 @@ def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
     #   적중은 `usage.cache_read_input_tokens`로 확인한다 — req_log가 집계해 보고한다.
     resp = client.messages.create(
         model=model,
-        max_tokens=500,
+        max_tokens=out_cap,
         thinking={"type": "disabled"},
         system=[{"type": "text", "text": prompt,
                  "cache_control": {"type": "ephemeral"}}],
@@ -449,16 +537,20 @@ def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
     return "".join(b.text for b in resp.content if b.type == "text").strip()
 
 
-_USAGE = {"calls": 0, "in": 0, "out": 0}
+_USAGE = {"calls": 0, "in": 0, "out": 0, "cache_read": 0, "cache_write": 0}
 
 
 def _record_usage(resp) -> None:
+    # 캐시 토큰도 센다 — 프롬프트 캐싱을 켠 뒤로 `in` 만 보면 실제로 오간 토큰이
+    # 안 보인다(적중분은 `input_tokens` 에 안 실린다). 오프라인 배치 보고용.
     u = getattr(resp, "usage", None)
     if not u:
         return
     _USAGE["calls"] += 1
     _USAGE["in"] += getattr(u, "input_tokens", 0) or 0
     _USAGE["out"] += getattr(u, "output_tokens", 0) or 0
+    _USAGE["cache_read"] += getattr(u, "cache_read_input_tokens", 0) or 0
+    _USAGE["cache_write"] += getattr(u, "cache_creation_input_tokens", 0) or 0
 
 
 def usage_report() -> dict:
@@ -698,6 +790,30 @@ def _split_enumerations(text: str) -> str:
     return "\n".join(lines)
 
 
+def _finish(raw: str, image_type: str) -> str:
+    """모델 응답 → 저장할 캡션. 가드·정리는 **설명 부분에만** 건다.
+
+    재료 블록을 가드 사슬에 넣으면 안 된다 —
+      · `_drop_per_speech_narration` 이 `대사:` 앞줄을 대사 지문으로 보고 지운다,
+      · `_split_enumerations` 가 `수치: 1. 2.` 를 쪼갠다,
+      · `_reject_read_text` 가 `글자: 본문: …` 를 글자 읽은 캡션으로 오판해 통째로 버린다.
+    설명이 버려지면 재료도 같이 버린다 — 설명 없는 재료만 남으면 하류가 유형 제시어 없는
+    덩이를 받는다.
+
+    ★ 종전에는 이 사슬이 anthropic 경로에만 있고 openai 경로에는 가드 넷 중 셋
+      (`_strip_situation_head`·`_drop_per_speech_narration`·`_split_enumerations`)이
+      빠져 있었다. 한 자리로 모으면서 같이 붙는다.
+    """
+    head, sep, tail = (raw or "").partition(_MATERIAL_MARK)
+    head = _split_enumerations(_drop_per_speech_narration(_strip_situation_head(
+        _reject_decoration(_reject_read_text(
+            _ensure_type_word(_reject_meta(head.strip()), image_type))))))
+    if not head.strip():
+        return ""
+    body = "\n".join(ln.rstrip() for ln in tail.splitlines() if ln.strip())
+    return f"{head}\n{_MATERIAL_MARK}\n{body}" if sep and body else head
+
+
 def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
     """★ A/B 판정용 캡션 캐시(2026-08-08). `CAPTION_CACHE_DIR`를 줄 때만 동작한다.
 
@@ -754,6 +870,8 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
     Returns Korean description string.
     """
     prompt = _PROMPTS.get(image_type, _PROMPTS["image"]) + _context_block(context)
+    if _material_on():
+        prompt += _MATERIAL_BLOCK
 
     blank = _blank_crop_std(image_path)
     if blank is not None and blank < _BLANK_CROP_STD:
@@ -776,9 +894,7 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
-        text = _split_enumerations(_drop_per_speech_narration(_strip_situation_head(
-            _reject_decoration(_reject_read_text(
-                _ensure_type_word(_reject_meta(_caption_anthropic(b64, mime, prompt)), image_type))))))
+        text = _finish(_caption_anthropic(b64, mime, prompt), image_type)
         # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
         if cache is not None and text.strip():
             cache.write_text(text, encoding="utf-8")
@@ -796,12 +912,11 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
                 ],
             }
         ],
-        max_tokens=500,
+        max_tokens=1200 if _material_on() else 500,
         temperature=0.3,
     )
     record_openai("캡셔닝", "gpt-4o", getattr(resp, "usage", None))
-    text = _reject_decoration(_reject_read_text(
-        _ensure_type_word(_reject_meta(resp.choices[0].message.content.strip()), image_type)))
+    text = _finish(resp.choices[0].message.content, image_type)
     if cache is not None and text.strip():
         cache.write_text(text, encoding="utf-8")
     return text
