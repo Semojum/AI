@@ -19,10 +19,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
 import time
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 from uuid import UUID, uuid4
@@ -38,6 +40,7 @@ from app.utils.req_log import (
     api_summary,
     breakdown_lines,
     elapsed,
+    llm_counter_line,
     set_hcxt_budget,
     stage,
     start_request,
@@ -342,6 +345,66 @@ def _write_txt_result(task: PageTask, extraction: dict) -> None:
     p = _txt_result_path(task)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(extraction, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_extract_stamp(task, extraction)
+
+
+# ── 경계 stamp (재구조화 3-a: **쓰기만**) ──────────────────────────────────
+# 이 경계 파일이 **어느 판의 추출**로 만들어졌는지 옆에 적어 둔다. 읽고 판정해 재파생하는
+# 것은 3-d 다 — 여기서는 아무것도 읽지 않는다(동작 변화 0).
+# ★ 경계 파일 **안에** 넣지 않는다. 넣으면 판이 바뀔 때마다 경계 바이트가 달라져
+#   재현 diff 자(설계 §3-2)가 판 지문을 재는 자로 변한다. 옆 파일로 둔다.
+# ★ 파일명에 `_txt_result` 를 넣지 않는다 — `test/corpus_runner.py:393` 이
+#   `*_txt_result.json` 을 glob 한다. 넣으면 코퍼스 러너가 stamp 를 경계 파일로 읽는다.
+# ★ 커밋 해시가 아니라 **추출 단계 파일들의 내용 해시**다(설계 2-3 "빠진 것 #10").
+#   본문 점역·조판 커밋으로는 값이 안 바뀌어야 재파생이 헛돌지 않는다.
+_EXTRACT_SOURCES = (
+    "app/ai/parser/mineru_runner.py",
+    "app/ai/parser/figure_detect.py",
+    "app/ai/parser/opus_fallback.py",
+    "app/ai/captioning/captioner.py",
+    "app/ai/captioning/classifier.py",
+    "app/ai/builder/result_builder.py",
+)
+# 추출 산출을 가르는 스위치만. 값 자체는 안 싣는다(키가 섞일 수 있다) — 해시만.
+_EXTRACT_ENV = (
+    "FIGURE_DETECT", "FIGDET_MODEL", "DISABLE_LLM_FALLBACK",
+    "CAPTION_BACKEND", "CAPTION_MODEL", "CAPTION_CACHE_DIR",
+    "OPUS_FALLBACK", "MINERU_BIN", "CHAIN_SEQUENTIAL",
+)
+
+
+@lru_cache(maxsize=1)
+def _extract_sha() -> str:
+    h = hashlib.sha256()
+    root = Path(__file__).resolve().parents[2]
+    for rel in _EXTRACT_SOURCES:
+        h.update(rel.encode())
+        try:
+            h.update(hashlib.sha256((root / rel).read_bytes()).digest())
+        except OSError:                 # 배포본에서 파일이 없으면 그 사실을 값에 남긴다
+            h.update(b"?")
+    return h.hexdigest()[:12]
+
+
+def _write_extract_stamp(task: PageTask, extraction: dict) -> None:
+    """경계 파일 옆에 판 지문을 남긴다. 실패해도 쪽은 나가야 한다."""
+    try:
+        from app.core.health_check import prompt_sha
+        env_fp = hashlib.sha256(
+            "|".join(f"{k}={os.environ.get(k, '')}" for k in _EXTRACT_ENV).encode()
+        ).hexdigest()[:12]
+        (_page_dir(task) / "data" / f"{task.page_no:03d}_extract_stamp.json").write_text(
+            json.dumps({
+                "extract_sha": _extract_sha(),
+                "prompt_sha": prompt_sha(),
+                "env_fp": env_fp,
+                "method": extraction.get("meta", {}).get("extraction_method"),
+                "written_at": int(time.time()),
+            }, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:            # noqa: BLE001 — 지문 한 줄이 쪽을 죽이면 안 된다
+        logger.debug("경계 stamp 기록 실패(진행): %s", exc)
 
 
 def _read_txt_result(task: PageTask) -> dict:
@@ -2304,6 +2367,7 @@ async def run(task: PageTask) -> dict:
             result.get("status"), elapsed_ms / 1000, api_summary(), n_braille,
             task.job_id, task.page_no, task.mode,
         )
+        logger.info(llm_counter_line())   # 재구조화 3-a — 끄기 팔 확인은 이 줄의 call=0
         for _line in breakdown_lines():   # 파트별 LLM 사용 내역(디버깅·비용 추적)
             logger.info(_line)
         # 원가는 성공·타임아웃·예외 **셋 다** 싣는다 — 막혔어도 돈은 나갔다.
@@ -2315,6 +2379,7 @@ async def run(task: PageTask) -> dict:
         elapsed_ms = int((time.monotonic() - start) * 1000)
         logger.warning("⛔ BLOCKED(타임아웃) %.1fs · API %s  (job=%s page=%d)",
                        elapsed_ms / 1000, api_summary(), task.job_id, task.page_no)
+        logger.info(llm_counter_line())
         result = _build_timeout_response(task, elapsed_ms)
         # 원가는 성공·타임아웃·예외 **셋 다** 싣는다 — 막혔어도 돈은 나갔다.
         result["usage"] = {**usage_report(), "layout_type": _page_layout_type(result)}

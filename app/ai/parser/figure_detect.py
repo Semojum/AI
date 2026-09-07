@@ -87,6 +87,10 @@ def detect(pdf_data: bytes, page_no: int) -> list[dict]:
                 {"type": "image", "source": {"type": "base64", "media_type": "image/png",
                                              "data": base64.standard_b64encode(png).decode()}},
                 {"type": "text", "text": _ASK}]}])
+        # ★ 이 자리에 기록이 없었다(재구조화 3-a). 그림 회수 호출만 계수기·원가에서
+        #   빠져 "끄기 팔은 call=0" 확인이 이 축에서만 거짓으로 초록이 됐다.
+        from app.utils.req_log import record_anthropic
+        record_anthropic("그림회수", MODEL, getattr(m, "usage", None))
         txt = "".join(b.text for b in m.content if b.type == "text")
         g = re.search(r"\{.*\}", txt, re.DOTALL)
         figs = (json.loads(g.group()) if g else {}).get("figures", []) if g else []

@@ -978,8 +978,11 @@ def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
     같은 라운드를 두 번 돌려 비교할 때 캡션을 고정하고 점역 변경만 보게 하는 장치다.
     운영 기본값은 꺼짐(환경변수 없음) — 운영 동작은 바뀌지 않는다.
     """
-    d = os.getenv("CAPTION_CACHE_DIR")
-    if not d:
+    from app.utils.llm_cache import resolve_dir
+    # ★ 절대경로로 푼다(재구조화 3-a). 러너와 서버의 cwd 가 달라 같은 상대경로가
+    #   두 자리를 가리켰다 — A/B 두 팔이 서로 다른 캐시를 보는 자리였다.
+    p = resolve_dir("CAPTION_CACHE_DIR")
+    if p is None:
         return None
     key = hashlib.sha256(
         b"|".join([raw, image_type.encode(),
@@ -987,7 +990,6 @@ def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
                    os.getenv("CAPTION_MODEL", "claude-sonnet-5").encode(),
                    prompt.encode()])
     ).hexdigest()
-    p = Path(d)
     p.mkdir(parents=True, exist_ok=True)
     return p / f"{key}.txt"
 
@@ -1041,6 +1043,9 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
     b64 = base64.b64encode(raw).decode()
 
     cache = _cache_file(raw, image_type, prompt)
+    if cache is not None:
+        from app.utils.req_log import record_cache
+        record_cache("캡셔닝", cache.exists())
     if cache is not None and cache.exists():
         # ⚠ 캐시는 A/B 결정성 장치이지 **판정 우회로가 아니다.** 가드가 나중에 넓어지면
         #   캐시에 남은 옛 캡션이 그 판정을 통째로 비켜 간다 — 2026-09-07 A/B 에서
