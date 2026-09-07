@@ -89,10 +89,27 @@ def test_trailing_marker_in_the_same_line_is_cut():
 
 
 def test_bare_marker_words_at_both_edges_are_cut():
-    """대괄호 없이 양끝에만 붙는 표지도 뗀다 (2026-09-08 STANDARD 실물)."""
+    """대괄호 없이 양끝에만 붙는 표지도 뗀다 (2026-09-08 STANDARD 실물).
+
+    앞 표지는 `표` 가 붙은 꼴만 뗀다 — 아래 `test_note_starting_with_the_word_start_survives`
+    가 그 반대편(정상 주)을 잡는다.
+    """
     r = ("[점역사주: 표시작, 구분×음료A×음료B의 3항목 4행 표임. 음료B: 24, 0, 0임. 표끝\n"
          "선택: 1")
     assert parse(r) == "구분×음료A×음료B의 3항목 4행 표임. 음료B: 24, 0, 0임."
+
+
+@pytest.mark.parametrize("note", [
+    "시작 지점을 표시함.",
+    "시작점의 값이 0임.",
+    "시작연도 기준 인구 표임.",
+])
+def test_note_starting_with_the_word_start_survives(note):
+    """'시작'으로 시작하는 **정상 주**의 첫 낱말을 먹지 않는다 (2026-09-08 되돌림).
+
+    종전 `^표?\\s*시작` 은 `표` 가 선택이라 "시작 지점을 표시함" 이 "지점을 표시함" 이 됐다.
+    """
+    assert parse(f"[점역사주: {note}\n선택: 1") == note
 
 
 def test_the_word_end_inside_a_sentence_survives():
