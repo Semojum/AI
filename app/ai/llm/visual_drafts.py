@@ -295,8 +295,11 @@ _SPEAKER_LINE = re.compile(
     r"^\s*(?:학생\s*[A-Z가-힣]?|선생님|사회자|연구자|가이드|진행자|기자|아나운서|발표자"
     r"|남학생|여학생|남성|여성|후보자?\s*\d+|[갑을병정무]|교사|손님|점원|의사|환자)\s*[::]")
 
-# 장면 표시 — 원본에 없는 점역자 표시라 저마다 따로 주로 감싼다(§5.3.3(1)).
-_SCENE_LINE = re.compile(r"^장면\s*\d+\s*$")
+# 장면 표시 — 원본에 없는 점역자 표시라 주 **안**이다(§5.3.3(1)).
+# ★ 꼬리를 허용한다(2026-09-08). 종전 `\s*$` 는 `장면 1(현재)` 를 못 잡아 그 줄만 주
+#   밖으로 떨어졌다(대표 QA 실물). `컷` 도 같이 본다 — `cartoon_opt._NUM_CUT_RE` 가
+#   `1컷:` 을 `장면 1` 로 고쳐 적지만, 캡션이 `컷 1` 로 오면 여기까지 온다.
+_SCENE_LINE = re.compile(r"^(?:장면|컷)\s*\d+")
 
 # 만화 대사 줄 — 화자 어휘를 보지 않는다. 만화에서는 조립기가 이미 상황(`<!주>` 자체 감쌈)과
 # 대사를 갈라 넣으므로, `화자: 말` 꼴이면 대사다. `_SPEAKER_LINE` 은 재료 없는 그림·사진
@@ -559,19 +562,28 @@ def _outline_text_indents(
         #   자리인데(NLD-1.2.6), 그림 속 대사는 원본에 있는 말이라 점역자가 지어낸 게
         #   아니다. gold 실측: `화자: 발화` 줄이 주 **밖 49 : 안 21**(70%가 밖).
         #   종전에는 설명 전체를 감싸서 대사까지 주 안에 들어갔다.
-        # 장면 표시(`장면 1`)는 원본 만화에 글자로 없고 점역자가 붙인 것이라 **저마다
-        # 따로** 주로 감싼다(정답 도서 형식). 그 사이 대사는 주 밖 본문이다.
-        for k, ln in enumerate(lines):
-            if k > tn_from and _SCENE_LINE.match(ln.strip()):
-                lines[k] = f"<!{_TAGS.TN}>{ln}<!/{_TAGS.TN}>"
+        # ★ 2026-09-08 — **줄마다 안/밖을 표시만 하고, 태그 짓기는 한 자리에 맡긴다.**
+        #   종전에는 `tn_from`~`tn_to` 한 구간을 감싼 **뒤에** 장면 줄을 또 감쌌다.
+        #   두 손질이 같은 줄에서 겹치면 `<!주>장면 1<!/주><!/주>` 가 된다(중첩·닫는
+        #   태그 둘). 대표 QA 실물이 그 꼴이었다.
+        #   ⚠ 조항이 있는 자리만 주 안으로 옮긴다(대표 지시 2026-09-08 "조항 없는
+        #     자리는 강제하지 말라"). 셋뿐이다:
+        #       · 머리줄(유형 제시어 + 설명)          §6.3.4(1)
+        #       · 장면 표시(`장면 1`)                  §5.3.3(1) — 점역자가 붙인 표시다
+        #       · 조립기가 이미 주로 감싸 보낸 줄      §5.3.3(6)(7) 행동·상황
+        #         (`cartoon_opt._material_items` 가 캡셔너 재료의 `상황` 을 감싼다.
+        #          그건 재료가 밝힌 것이지 우리가 줄 모양으로 짐작한 게 아니다.)
+        #     "대사가 아니면 다 주 안" 으로 넓혔다가 규정 예3-54의 `……` 와 깨진
+        #     장면 표시까지 주 안으로 끌려 들어가 주표위치가 어긋났다(게이트 -1건).
+        inside = [False] * len(lines)
+        pre_tagged = [k for k, ln in enumerate(lines)
+                      if k > tn_from and f"<!{_TAGS.TN}>" in ln]
         # ★ **만화는 첫 대사 줄에서 주표를 닫는다**(2026-09-07). gold 27/27 이 `만화:
         #   <상황 한 문장>` 까지만 주로 닫고 대사는 전부 밖이다. 규정 예 5-5 도 같다
         #   (제작 지침 2846~2861행 역점역 · §5.3.3(5) 2827행 "인물명 … 점역자 주표는
         #   사용하지 않는다"). 그래서 만화 경로는 아래 화자 어휘 화이트리스트를 **안 탄다** —
         #   그 목록은 운영 캡션 204 대사 줄 중 125줄(61.3%)을 못 잡아 대사를 주 안에 남겼고,
         #   gold 자신의 화자(`왕`·`신하`·`앵커`·`남학생 1`)도 미적중이었다.
-        #   ⚠ 꼬리에서 되짚지 않고 **앞에서 첫 대사를 찾는다.** 되짚으면 대사가 여러 줄로
-        #     쪼개져 마지막 줄에 화자표가 없을 때 대사 전체가 주 안으로 되돌아간다.
         #   ⚠ 대사가 한 줄도 없으면 종전대로 둔다 — 그 줄들은 점역사가 쓴 설명이라 주 안이
         #     맞다(실측 92건 중 17건이 대사 없는 만화다).
         if kind == "만화" and any(_SAY_LINE.match(l.strip()) for l in lines[tn_from + 1:]):
@@ -579,13 +591,34 @@ def _outline_text_indents(
                          if _SAY_LINE.match(lines[k].strip())) - 1
         else:
             tn_to = len(lines) - 1
-            while tn_to > tn_from and (
-                    _SPEAKER_LINE.match(lines[tn_to].strip())
-                    or lines[tn_to].startswith(f"<!{_TAGS.TN}>")):
+            while tn_to > tn_from and (_SPEAKER_LINE.match(lines[tn_to].strip())
+                                       or _SCENE_LINE.match(lines[tn_to].strip())
+                                       or tn_to in pre_tagged):
                 tn_to -= 1
-        lines[tn_from] = f"<!{_TAGS.TN}>{lines[tn_from]}"
-        lines[tn_to] = f"{lines[tn_to]}<!/{_TAGS.TN}>"
-    return "\n".join(lines), indents
+        for k in range(tn_from, tn_to + 1):
+            inside[k] = True
+        # 장면 표시·조립기가 감싸 보낸 줄은 구간 밖에 있어도 주 안이다.
+        for k in range(tn_from + 1, len(lines)):
+            if _SCENE_LINE.match(lines[k].strip()) or k in pre_tagged:
+                inside[k] = True
+        lines = [_TAGS.normalize_tn_spans(ln).replace(f"<!{_TAGS.TN}>", "")
+                 .replace(f"<!/{_TAGS.TN}>", "") if inside[k] else ln
+                 for k, ln in enumerate(lines)]   # 겹치지 않게 기존 태그를 걷고 다시 짓는다
+        # 잇닿은 주-안 줄은 **한 덩이**로 감싼다 — §6.3.4(1)이 유형 제시어부터 자료
+        # 내용까지를 한 주표 안에 두라고 하고, NLD-1.2.6 도 "원본과 달라진 내용"을 한
+        # 덩이로 본다. 줄마다 따로 감싸면 32칸 지면에 주표만 늘어난다.
+        k = 0
+        while k < len(lines):
+            if not inside[k]:
+                k += 1
+                continue
+            j = k
+            while j + 1 < len(lines) and inside[j + 1]:
+                j += 1
+            lines[k] = f"<!{_TAGS.TN}>{lines[k]}"
+            lines[j] = f"{lines[j]}<!/{_TAGS.TN}>"
+            k = j + 1
+    return _TAGS.normalize_tn_spans("\n".join(lines)), indents
 
 
 def omission_draft(label: str) -> Draft:

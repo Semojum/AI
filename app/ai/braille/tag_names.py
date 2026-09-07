@@ -102,8 +102,77 @@ def split_indent(line: str) -> tuple[int | None, str]:
     return int(m.group(1)), line[m.end():]
 
 
+# ── 점역자 주 구간 정규화 — **양식은 코드가 정한다**(2026-09-08 대표 지시) ──────────
+#
+# 종전에는 조립기·LLM·상위 경로가 저마다 `<!주>` 를 붙였고, 그 결과가 그대로 나갔다.
+# 대표 QA 실물(배포판 499afac)에서 세 꼴이 한 문서에 섞여 나왔다:
+#     <!주>만화: …            ← 열고
+#     <!주>장면 1<!/주><!/주> ← 안에서 또 열고, 닫는 태그가 둘
+#     장면 1(현재)            ← 아예 안 감싸고
+#     60년 후                 ← 주가 닫힌 뒤 남은 조각
+# 이제 태그는 **여기서만** 짓는다. 들어온 태그는 "이 줄이 주 안이었나"를 읽는 신호로만
+# 쓰고 전부 떼어 낸다. 그래서 위쪽이 무엇을 붙여 보내든 나가는 꼴은 늘 같다:
+#   · 한 겹만 연다(중첩 없음)          · 여는 태그 하나에 닫는 태그 하나
+#   · 잇닿은 주-안 줄은 한 덩이로 묶는다 · 주가 닫힌 뒤 조각이 안 남는다
+# 줄 수는 절대 안 바꾼다 — `indents` 와 줄 단위로 짝지어지는 자리라 어긋나면 조판이 깨진다.
+_TN_OPEN, _TN_CLOSE = f"<!{TN}>", f"<!/{TN}>"
+
+
+_TN_SPLIT_RE = re.compile(r"(<!/?%s>)" % re.escape(TN))
+
+
+def normalize_tn_spans(text: str) -> str:
+    """점역자 주 태그를 **성한 꼴로 고친다.** 자리는 안 옮기고 줄 수도 안 바꾼다.
+
+    고치는 것 넷 — 중첩된 여는 태그를 버리고 · 짝 없는 닫는 태그를 버리고 · 열린 채로
+    끝나면 마지막 내용 줄에서 닫고 · 그래서 여는 하나에 닫는 하나만 남긴다.
+    **어디를 감쌀지는 여기서 안 정한다** — 그건 조립기가 조항을 보고 정할 일이고
+    (§6.3.4(1)·§5.3.3(5)·NLD-1.2.6), 여기는 그 결과가 깨지지 않게만 한다.
+    그래서 `<!주>그림<!/주>:` 처럼 규정이 정한 자리(쌍점 주 밖)는 그대로 지나간다.
+    """
+    if _TN_OPEN not in text and _TN_CLOSE not in text:
+        return text
+    depth = 0
+    out: list[str] = []
+    for ln in text.split("\n"):
+        buf: list[str] = []
+        for part in _TN_SPLIT_RE.split(ln):
+            if part == _TN_OPEN:
+                if depth == 0:                  # 중첩은 버린다 — 한 겹만 연다
+                    depth = 1
+                    buf.append(part)
+            elif part == _TN_CLOSE:
+                if depth == 1:                  # 짝 없는 닫힘은 버린다
+                    depth = 0
+                    buf.append(part)
+            else:
+                buf.append(part)
+        out.append("".join(buf))
+    if depth == 1:                              # 열린 채로 끝났다 — 마지막 내용 줄에서 닫는다
+        for k in range(len(out) - 1, -1, -1):
+            if out[k].strip():
+                out[k] += _TN_CLOSE
+                break
+    return "\n".join(out)
+
+
+def tn_spans_ok(text: str) -> bool:
+    """점역자 주 태그가 성한가 — 짝이 맞고 · 중첩이 없고 · 열린 채로 안 끝나는가."""
+    depth = 0
+    for tok in re.findall(r"<!/?%s>" % re.escape(TN), text):
+        depth += 1 if tok == _TN_OPEN else -1
+        if depth < 0 or depth > 1:
+            return False
+    return depth == 0
+
+
 def apply_indent_tags(text: str, indents: list[int] | None) -> str:
-    """(글, 줄별 앞 빈칸) → 줄머리에 태그를 박은 글. 줄 수가 안 맞으면 원문 그대로."""
+    """(글, 줄별 앞 빈칸) → 줄머리에 태그를 박은 글. 줄 수가 안 맞으면 들여쓰기만 건너뛴다.
+
+    ★ 시각 자료 산출물이 **전부 지나는 한 자리**다(`visual_drafts` 2 · `diagram_opt` 4).
+      점역자 주 양식 강제를 여기 두면 호출부마다 막지 않아도 된다.
+    """
+    text = normalize_tn_spans(text)
     lines = text.split("\n")
     if not indents or len(indents) != len(lines):
         return text
