@@ -2672,6 +2672,24 @@ def _line_head_bullet(line: str) -> str:
     return line
 
 
+def translate_body(text: str) -> tuple[list[str], list[list[int]]]:
+    """본문 요소 하나 → (논리 줄별 점자, 줄별 음절 줄바꿈 offset). **제품·채점기 공용 진입점.**
+
+    S1 진입점 통일(#673). 지금은 `translate_with_breaks(text)` 를 그대로 부르는 껍데기다 —
+    새 규칙은 없다. 이 자리를 따로 둔 이유는 둘이다.
+
+      ① **자와 제품이 같은 것을 보게 한다.** 종전에는 채점기 넷이 `translate_plain` 을 썼는데
+         그건 `force_roman=True` 라 본문을 꼬리말처럼 점역한다(로마자표 ⠴ 강제). 제품 본문은
+         `force_roman=False` 다(`text_braille.py::TextBraille._translate_one`). 고치는 쪽과
+         재는 쪽이 다르면 뒤따르는 A/B 가 무차 판정이 난다.
+      ② 관문 G3(재구조화 설계 §2-2)이 붙을 자리다. 점역기 입력 정화는 여기 한 곳에 둔다.
+
+    ⚠ 시각 초안·중첩 블록·표 셀은 이 함수를 지나지 않는다(`translate_with_breaks` 직접 호출
+      일곱, 설계 §2-2 G1). 그 길은 관문으로 지킨다.
+    """
+    return translate_with_breaks(text)
+
+
 def translate_plain(text: str) -> str:
     """짧은 묵자 → 유니코드 점자 1줄짜리 문자열. `TranslateText` RPC 전용.
 

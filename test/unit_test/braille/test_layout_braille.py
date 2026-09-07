@@ -1072,3 +1072,27 @@ class TestAllDraftsTypeset:
         assert bo.braille_lines == bo.drafts[bo.selected_idx].braille_lines
         # 비선택 초안도 실제로 줄바꿈돼 여러 줄(긴 입력)
         assert len(bo.drafts[1].braille_lines) >= 2
+
+
+class TestRenderPageTextParity:
+    """S1 진입점 통일(#673) — `render_page_text` 는 `layout()` 이 저장하는 것과 같아야 한다.
+
+    `layout()` 에서 `_save` 만 떼어 순수부(`render`)로 갈랐다. 이 테스트가 없으면 나중에
+    둘 중 한쪽에만 조판 규칙이 붙어도 아무도 모른다 — 그러면 자와 제품이 다시 갈린다.
+    """
+
+    def test_저장본과_같다(self, lb, tmp_path) -> None:
+        from app.ai.braille.layout_braille import render_page_text
+
+        e1, e2 = uuid4(), uuid4()
+        lr = _layout((e1, "title", 1, 1), (e2, "text", 2, 0))
+        # ★ 조판은 BrailleOutput 을 **제자리에서** 고친다(braille_lines write-back).
+        #   같은 객체를 두 번 넣으면 가운데 정렬이 두 번 걸린다 — 팔마다 새로 만든다.
+        def _mk():
+            return [_out(["⠠⠠⠙⠝⠁"], e1), _out(["⠫⠉⠊", "⠐⠣⠑"], e2)]
+
+        pages = render_page_text(_mk(), page_no=1, layout_result=lr)
+        lb.layout(_mk(), page_no=1, job_id="parity", layout_result=lr)
+
+        saved = _read_lines(tmp_path, "parity")
+        assert [ln for page in pages for ln in page] == saved
