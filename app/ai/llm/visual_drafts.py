@@ -45,6 +45,7 @@ from difflib import SequenceMatcher
 import time
 
 from app.ai.llm.base_opt import _DEDUP_MIN_LEN, _norm_for_dedup, decide_tier_timeout, generate_with_retry
+from app.ai.captioning.captioner import split_material
 from app.ai.llm.diagram_structure import _MAX_LINES as _CAP_OUTLINE_MAX
 from app.ai.llm.diagram_structure import caption_head as _caption_head
 from app.ai.llm.diagram_structure import caption_outline as _caption_outline
@@ -274,6 +275,11 @@ _SPEAKER_LINE = re.compile(
 
 # 장면 표시 — 원본에 없는 점역자 표시라 저마다 따로 주로 감싼다(§5.3.3(1)).
 _SCENE_LINE = re.compile(r"^장면\s*\d+\s*$")
+
+# 만화 대사 줄 — 화자 어휘를 보지 않는다. 만화에서는 조립기가 이미 상황(`<!주>` 자체 감쌈)과
+# 대사를 갈라 넣으므로, `화자: 말` 꼴이면 대사다. `_SPEAKER_LINE` 은 재료 없는 그림·사진
+# 캡션 폴백에만 남는다(거기서는 `가랑잎벌레: 나뭇잎과 비슷하다` 가 설명 본체라 어휘가 필요하다).
+_SAY_LINE = re.compile(r"^[^:：\s][^:：]{0,19}\s*[:：]\s*\S")
 
 _PREFILL = "[개조식]\n"
 
@@ -526,11 +532,25 @@ def _outline_text_indents(
         for k, ln in enumerate(lines):
             if k > tn_from and _SCENE_LINE.match(ln.strip()):
                 lines[k] = f"<!{_TAGS.TN}>{ln}<!/{_TAGS.TN}>"
-        tn_to = len(lines) - 1
-        while tn_to > tn_from and (
-                _SPEAKER_LINE.match(lines[tn_to].strip())
-                or lines[tn_to].startswith(f"<!{_TAGS.TN}>")):
-            tn_to -= 1
+        # ★ **만화는 첫 대사 줄에서 주표를 닫는다**(2026-09-07). gold 27/27 이 `만화:
+        #   <상황 한 문장>` 까지만 주로 닫고 대사는 전부 밖이다. 규정 예 5-5 도 같다
+        #   (제작 지침 2846~2861행 역점역 · §5.3.3(5) 2827행 "인물명 … 점역자 주표는
+        #   사용하지 않는다"). 그래서 만화 경로는 아래 화자 어휘 화이트리스트를 **안 탄다** —
+        #   그 목록은 운영 캡션 204 대사 줄 중 125줄(61.3%)을 못 잡아 대사를 주 안에 남겼고,
+        #   gold 자신의 화자(`왕`·`신하`·`앵커`·`남학생 1`)도 미적중이었다.
+        #   ⚠ 꼬리에서 되짚지 않고 **앞에서 첫 대사를 찾는다.** 되짚으면 대사가 여러 줄로
+        #     쪼개져 마지막 줄에 화자표가 없을 때 대사 전체가 주 안으로 되돌아간다.
+        #   ⚠ 대사가 한 줄도 없으면 종전대로 둔다 — 그 줄들은 점역사가 쓴 설명이라 주 안이
+        #     맞다(실측 92건 중 17건이 대사 없는 만화다).
+        if kind == "만화" and any(_SAY_LINE.match(l.strip()) for l in lines[tn_from + 1:]):
+            tn_to = next(k for k in range(tn_from + 1, len(lines))
+                         if _SAY_LINE.match(lines[k].strip())) - 1
+        else:
+            tn_to = len(lines) - 1
+            while tn_to > tn_from and (
+                    _SPEAKER_LINE.match(lines[tn_to].strip())
+                    or lines[tn_to].startswith(f"<!{_TAGS.TN}>")):
+                tn_to -= 1
         lines[tn_from] = f"<!{_TAGS.TN}>{lines[tn_from]}"
         lines[tn_to] = f"{lines[tn_to]}<!/{_TAGS.TN}>"
     return "\n".join(lines), indents
@@ -781,7 +801,14 @@ async def build_visual_drafts(
     struct_outline/struct_prose가 오면 그 파트는 rule-based 전사(LLM 미사용). 나머지(제목·개조식·
     줄글 중 빠진 것)만 비ZERO에서 LLM 1회로 채운다.
     """
-    caption = (caption or "").strip()
+    # ★ 재료 블록(#636)을 캡션에서 떼어낸다. 이 한 줄이 없으면 `CAPTION_MATERIAL=1` 일 때
+    #   `⟦재료⟧` 마커와 `글자:`·`못읽음:` 같은 열쇠말이 그대로 점자로 나간다(2026-09-07 실측).
+    #   `split_material` 은 마커가 없으면 원문을 그대로 돌려주므로 스위치가 꺼진 경로는
+    #   한 글자도 안 바뀐다. 여기가 모든 시각 opt 가 지나는 길목이라 한 자리면 된다.
+    #   ⚠ 재료를 **쓰는** 것은 유형별 조립기 몫이다(만화 = `cartoon_opt._material_items`).
+    #     여기서는 새는 것만 막는다 — 쓰지 않는 열쇠말은 초안에 싣지 않는다.
+    caption, _facts = split_material(caption or "")
+    caption = caption.strip()
     title = (title or "").strip()
     tier = routing_tier
     _t0 = time.monotonic()   # 시각요소별 4안 생성 소요시간(줄글 LLM 포함) 로깅용
