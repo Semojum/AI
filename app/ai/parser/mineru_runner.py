@@ -8,6 +8,7 @@ MinerU VLM 백엔드로 PDF 단일 페이지 처리.
         storage/jobs/{job_id}/temp/page_{no:03d}/merged_layout.json
 반환:  merged_layout (list[dict])
 """
+import functools
 import json
 import os
 import re
@@ -455,7 +456,7 @@ def _restore_table_bullets(fitz_page: fitz.Page, bbox: list[float], html: str) -
     layer = _extract_text_native(fitz_page, bbox)
     if not layer or not _BULLET_ANY_RE.search(layer):
         return html
-    if _layer_untrustworthy(layer):
+    if _layer_untrustworthy(layer, fitz_page):
         return html
     keys = _bullet_item_keys(layer)
     if not keys or not all(keys):
@@ -776,7 +777,7 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     if not html or not bbox:
         return html
     layer = _native_text_spaced(fitz_page, bbox)
-    if not layer or _layer_untrustworthy(layer):
+    if not layer or _layer_untrustworthy(layer, fitz_page):
         return html
     # 레이어에는 우리가 붙이는 인라인 태그(<!강조> 등)가 들어 있다 — 대조 전에 걷어낸다.
     layer_ns = re.sub(r"\s+", "", re.sub(r"<!/?[^>]*>", "", layer))
@@ -832,7 +833,36 @@ def _pua_ratio(s: str) -> float:
     return pua / len(s)
 
 
-def _layer_untrustworthy(s: str) -> bool:
+# ── 스캔본에 얹힌 남의 OCR 레이어 (2026-09-08 실측, 결함 G) ──────────────────
+# `정답해설.pdf` 는 지면 전체가 한 장의 스캔 이미지고, 그 위에 **다른 도구가 만든 OCR
+# 텍스트 레이어**가 얹혀 있다(producer=PDFium). 그 OCR 이 기울인 라틴 수식 글자를 한자로
+# 잘못 읽었다 — `h(s)` → `》(s)` · `f` → `乃`·`九` · `x` → `그`. PUA 는 0% 이고 글자가
+# 전부 정상 한자·CJK 부호라 `mangled_glyph_chars` 신호에도 안 걸린다.
+# 실측(1쪽): MinerU 는 `h(s)=2` 를 **제대로** 읽었는데 `_native_override` 가 그 위에
+# 레이어를 덮어써서 95요소 중 8요소가 깨진 채로 나갔다.
+#
+# 가르는 신호: **지면의 90% 이상을 덮는 이미지 한 장**. 스캔본이라는 뜻이고, 그러면
+# 그 위의 글자는 출판사 조판이 아니라 남이 돌린 OCR 이다 — 우리 OCR(MinerU)을 덮을
+# 근거가 없다. 코퍼스 1,251쪽 전수 오탐 **0쪽**(교과서 그림은 최대 3%대), 정답해설은
+# 10/10쪽 전부 1.000. 즉 이 판정은 스캔본에만 닿고 다른 문서의 추출 경로를 안 바꾼다.
+_SCAN_COVER_MIN = 0.90
+
+
+@functools.lru_cache(maxsize=8)
+def _is_scanned_page(fitz_page: fitz.Page) -> bool:
+    """지면 대부분이 한 장의 이미지면 True(= 위의 텍스트는 남의 OCR)."""
+    try:
+        area = (fitz_page.rect.width * fitz_page.rect.height) or 1.0
+        for info in fitz_page.get_image_info():
+            bb = info.get("bbox")
+            if bb and (bb[2] - bb[0]) * (bb[3] - bb[1]) >= _SCAN_COVER_MIN * area:
+                return True
+    except Exception:  # noqa: BLE001
+        pass
+    return False
+
+
+def _layer_untrustworthy(s: str, fitz_page: fitz.Page | None = None) -> bool:
     """텍스트 레이어를 믿으면 안 되는가 — PUA **또는** 글꼴 매핑 거짓말.
 
     ★ 2026-08-09 — 종전엔 PUA 비율만 봤다. 그런데 코퍼스 1,251쪽 중 **753쪽(60.2%)**은
@@ -846,6 +876,8 @@ def _layer_untrustworthy(s: str) -> bool:
       코드포인트"(± ™ £ ¥ ¢ § œ æ ç ß ﬂ Ã ´ ¨ 등)를 신호로 쓰고 전수 1,251쪽에서
       **오탐 0**이었다. 폰트 이름·영폭 글리프·`/Widths` 퇴화도는 전부 분리에 실패해 기각됐다.
     """
+    if fitz_page is not None and _is_scanned_page(fitz_page):
+        return True                 # 스캔본 위의 글자는 남의 OCR — 위 주석 참조
     if not s:
         return False
     if _pua_ratio(s) > _PUA_RATIO_MAX:
@@ -921,7 +953,7 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) 
     if _MATH_FONT_GUARD and _has_math_font(fitz_page, bbox):
         return None                        # 위 _has_math_font 주석 참조
     native = _native_text_spaced(fitz_page, bbox)
-    if not native or _layer_untrustworthy(native):
+    if not native or _layer_untrustworthy(native, fitz_page):
         return None
     base = (mineru_text or "").strip()
     if not base:

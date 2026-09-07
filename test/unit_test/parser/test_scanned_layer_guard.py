@@ -1,0 +1,48 @@
+"""스캔본 위에 얹힌 남의 OCR 텍스트 레이어를 MinerU 결과 위에 덮어쓰지 않는다.
+
+결함 G(2026-09-08) — `정답해설.pdf` 는 지면 전체가 스캔 이미지고 그 위에 다른 도구가 만든
+OCR 레이어가 얹혀 있다. 그 OCR 이 `h(s)` 를 `》(s)` 로, `f` 를 `乃`·`九` 로 잘못 읽었는데
+`_native_override` 가 MinerU 의 올바른 결과를 그 글자로 덮어써서 점역 앞에서 이미 깨졌다.
+PUA 0% · 글자가 전부 정상 한자라 종전 `_layer_untrustworthy` 신호에는 안 걸린다.
+"""
+import sys
+from pathlib import Path
+
+import fitz
+
+sys.path.insert(0, str(Path(__file__).parents[3]))
+
+from app.ai.parser.mineru_runner import (  # noqa: E402
+    _is_scanned_page, _layer_untrustworthy, _native_override,
+)
+
+_GARBLED = "(iv)》(s)=4인 경우 : lim》(Z)=4이므로"   # 남의 OCR 이 낸 글자
+_GOOD = "(iv) h(s)=4 인 경우: lim h(t)=4 이므로"     # MinerU 가 낸 글자
+
+
+def _page(scanned: bool) -> fitz.Page:
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((60, 100), _GARBLED, fontname="china-s", fontsize=11)
+    if scanned:
+        # 지면 전체를 덮는 이미지 한 장 = 스캔본
+        pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 60, 85))
+        pix.clear_with(255)
+        page.insert_image(page.rect, pixmap=pix)
+    return page
+
+
+def test_full_page_image_is_a_scan():
+    assert _is_scanned_page(_page(True)) is True
+    assert _is_scanned_page(_page(False)) is False
+
+
+def test_scan_layer_is_untrustworthy_even_though_glyphs_look_normal():
+    """한자·CJK 부호뿐이라 글리프 신호로는 못 잡는다 — 스캔 신호가 잡아야 한다."""
+    assert _layer_untrustworthy(_GARBLED) is False          # 종전 신호로는 통과한다
+    assert _layer_untrustworthy(_GARBLED, _page(True)) is True
+
+
+def test_native_override_keeps_mineru_text_on_a_scan():
+    bbox = [0, 0, 1000, 1000]        # 0~1000 정규화(요소 전체)
+    assert _native_override(_page(True), bbox, _GOOD) is None   # MinerU 결과 유지
