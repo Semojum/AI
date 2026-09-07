@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from pathlib import Path
 
 from app.utils.logger import get_logger
@@ -70,6 +71,64 @@ def key(*parts: str | bytes) -> str:
         h.update(len(b).to_bytes(8, "big"))
         h.update(b)
     return h.hexdigest()
+
+
+# ── 프롬프트 판 번호 (재구조화 3-c) ───────────────────────────────────────────
+# 열쇠 = `sha256(kind | 입력 | 모델 | prompt_id | 판 번호)`. 프롬프트 **전문은 키에서 뺀다** —
+# 전문 키면 문안을 한 글자만 손봐도 전량 미스라 프롬프트 정리(S2)를 아예 못 한다.
+# 대신 문안을 고친 사람이 여기 번호를 올린다. 안 올리면 지문 게이트가 경고를 낸다.
+#
+# ★★ 이 표의 값은 **열쇠를 만드는 자리 밖으로 나가지 않는다.**
+#     `key_for()` 안에서만 읽는다. **프롬프트 문자열에 절대 넣지 마라.** 모델이 번호를 보면
+#     캡션에 그대로 따라 쓴다 — 2026-09-07 에 프롬프트 문구가 점자로 나간 것과 같은 부류다.
+#     못 본 것은 따라 쓸 수도 없다. 어기면 `test_prompt_ver_leak.py` 가 빨간불을 낸다.
+PROMPT_VER = {
+    "caption": 1,      # app/ai/captioning/captioner.py  _COMMON·_PROMPTS
+    "classify": 1,     # app/ai/captioning/classifier.py SYSTEM_PROMPT
+    "figure": 1,       # app/ai/parser/figure_detect.py  _ASK
+    "order": 1,        # app/ai/parser/llm_order.py      _SYS
+    "visual": 1,       # app/ai/llm/visual_drafts.py
+    "opus": 1,         # app/ai/parser/opus_fallback.py
+    "text": 1,         # app/ai/llm/text_opt.py
+    "formula": 1,      # app/ai/llm/formula_opt.py
+    "table": 1,        # app/ai/llm/table_opt.py
+}
+
+# 지문 게이트(3-c). 위 판 번호가 **어느 문안에 대한 번호였는지** 적어 둔다.
+# 문안을 고치고 번호를 안 올리면 `/health` 가 경고한다(`health_check.prompt_ver_drift`).
+# 번호를 올릴 때 여기 값도 새 값으로 적는다 — 값은 `prompt_sha_by_kind()` 가 준다.
+# ⚠ `_PROMPT_SOURCES` 가 여섯 자리라 게이트도 여섯이다. classify·figure·order 는
+#    프롬프트가 그 모듈 안에만 있어 지문 대상이 아니다(0-c 결정).
+PROMPT_SHA = {
+    "caption": "f87952e49002",
+    "visual": "3fb25cd311f8",
+    "opus": "41bba1c2b41d",
+    "text": "6f2515369797",
+    "formula": "d831be6fa57a",
+    "table": "347b251a5e77",
+}
+
+# 판 번호가 **글로 샜을 때**의 꼴. `#pv3#` — 교과서 본문·캡션에 나올 수 없는 모양으로 잡았다.
+# 맨 숫자(`3`)나 `v3` 로 잡으면 본문의 평범한 숫자를 먹는다. 가드5 가 이 꼴만 지운다.
+VER_TAG_RE = re.compile(r"#pv\d{1,4}#")
+
+
+def ver_tag(kind: str) -> str:
+    """판 번호의 **유일한** 글 꼴. 로그·지문 표시용이지 프롬프트용이 아니다."""
+    return f"#pv{PROMPT_VER.get(kind, 0)}#"
+
+
+def strip_ver_tags(text: str) -> str:
+    """혹시라도 샌 판 번호를 걷는다(가드5 셋째 겹). 그 꼴만 지우고 글자는 남긴다."""
+    return VER_TAG_RE.sub("", text) if text else text
+
+
+def key_for(kind: str, *parts: str | bytes) -> str:
+    """열쇠. **판 번호는 이 함수 안에서만 붙는다** — 부르는 쪽은 번호를 보지 않는다.
+
+    parts 는 설계 §2-3 의 `input_sha | model | prompt_id` 순서로 준다.
+    """
+    return key(kind, *parts, str(PROMPT_VER.get(kind, 0)))
 
 
 def _path(kind: str, k: str) -> Path | None:
