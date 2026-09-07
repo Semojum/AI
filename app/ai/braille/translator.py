@@ -1211,6 +1211,40 @@ _TAG_TOKEN_RE = re.compile(r"<!/?[^>]+>")
 #   하나가 뒤집혀 오므로 문구로는 못 막는다 — 파서가 받아 준다.
 #   태그 꼴일 때만(`</!` + 이름 + `>`) 되돌린다. 본문의 `<` 는 건드리지 않는다.
 _MIRRORED_CLOSE_RE = re.compile(r"</!(?=[^<>]{1,40}>)")
+
+# ★ #667 — 묵자에 남은 **마크업 조각**은 점역 전에 걷는다. 안 걷으면 글자 그대로 점자가
+#   되어 점역사 눈에 뜻 없는 셀 덩이로 보인다. 정답 점자본이 있는 1,180쪽 전수 실측:
+#
+#   · `\unicode{x3299}`  → ⠭⠼⠉⠃⠊⠊ ("x3299")   33건 · 18쪽 (수학 I · 확률과 통계)
+#   · `**1** ①`          → ⠐⠔⠐⠔⠼⠁⠐⠔⠐⠔ ⠼⠂     37쌍 · 4쪽
+#   · `MJB<sup>*</sup>`  → ⠴⠎⠥⠏⠶⠂ ("sup>")     2건 · 1쪽 (문학 p0241)
+#
+#   ⚠ 셋 다 **수식 라우팅보다 먼저** 걷어야 한다 — 뒤에 두면 이미 수식 구간에 먹힌
+#     뒤라 손이 안 닿는다(`sanitize_for_braille` 가 늦게 도는 것과 같은 함정).
+_UNICODE_CMD_RE = re.compile(r"\\unicode\s*\{\s*([^{}]{0,12}?)\s*\}")
+# 짝을 이룬 마크다운 굵게만 뗀다. 짝 없는 `*` 는 **가리기 표시**라 건드리면 안 된다
+# (`2026. **. **.` · `010-*43*-**37` · `(**대,` · `news***@` — 코퍼스 11건 실측).
+_MD_BOLD_RE = re.compile(r"\*\*(?=\S)((?:(?!\*\*).)+?)(?<=\S)\*\*")
+# 인라인 HTML. **여러 글자 이름만** — `<b>`·`<i>`·`<p>` 는 수식의 `a<b>c` 와 겹친다.
+_INLINE_HTML_RE = re.compile(r"</?(?:sup|sub|br|span|em|strong|small|code|font)\s*/?>",
+                             re.IGNORECASE)
+
+
+def _unicode_cmd_repl(m: "re.Match[str]") -> str:
+    """`\\unicode{x24D8}` · `\\unicode{12832}` → 실제 문자. 못 읽으면 버린다."""
+    arg = m.group(1)
+    try:
+        cp = int(arg[1:], 16) if arg[:1] in ("x", "X") else int(arg)
+    except ValueError:
+        return ""          # `x3garbage` 같은 깨진 인자 — 글자로 내보내느니 버리는 게 낫다
+    return chr(cp) if 0 < cp <= 0x10FFFF else ""
+
+
+def _strip_markup_fragments(text: str) -> str:
+    """묵자에 남은 마크업 조각을 걷는다(#667). 멱등 — 두 진입점에 겹쳐 둔다."""
+    text = _UNICODE_CMD_RE.sub(_unicode_cmd_repl, text)
+    text = _MD_BOLD_RE.sub(r"\1", text)
+    return _INLINE_HTML_RE.sub("", text)
 # 이미 경고한 미지 태그(프로세스 수명). 조판이 접두를 수천 번 재점역해 같은 토큰이
 # 수백 줄을 찍는다 — _token_sub 주석 참조.
 _warned_unknown_tags: set[str] = set()
@@ -2351,6 +2385,7 @@ def translate_tagged_text(text: str, *, force_roman: bool = False) -> str:
     # R-72 — 뒤집힌 닫는 태그(`</!이름>`). 여기에도 두는 이유는 `table_braille` 이
     # 이 함수를 **직접** 부르기 때문이다(표 칸 269건 중 14건). 멱등이라 겹쳐도 무해하다.
     text = _MIRRORED_CLOSE_RE.sub("<!/", text)
+    text = _strip_markup_fragments(text)   # #667 마크업 조각
     text = _restore_legacy_glyphs(text)     # 오디코딩 5자(⇂¤‹˘⇨)
     text = _restore_broken_subscripts(text)  # 깨진 아래첨자 ¡™£¢§ → ₁₂₃₄₆ (수식 라우팅 전, r16)
     text = _restore_ion_signs(text)         # 이온 전하 ±— → ⁺⁻ (과학점자 제2항, 아래첨자 복원 뒤)
@@ -2590,6 +2625,7 @@ def translate_with_breaks(text: str, *, force_roman: bool = False) -> tuple[list
     #   한다: 아래 _drop_nonkorean_emphasis·isolate_border_tags·substitute_tags 가 전부
     #   `<!` 앵커로 짝을 세기 때문이다(_MIRRORED_CLOSE_RE 주석 참조).
     text = _MIRRORED_CLOSE_RE.sub("<!/", text)
+    text = _strip_markup_fragments(text)   # #667 마크업 조각
     text = isolate_border_tags(text)
     text = _QNUM_RE.sub(r"\1.", text)
     # ★ '만을\n에서' 소실 구멍·개행 낀 괄호는 줄 단위 관행 정규화가 못 잡는다 —
