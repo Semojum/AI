@@ -49,6 +49,38 @@ class TestPrefixDumpedSidebar:
         assert _orders(items) == before
 
 
+class TestTwoRunSidebar:
+    def test_sidebar_split_in_two_runs_still_deferred(self):
+        # 생명과학 p114 축소판(이슈 #643): 좌측 열에 보충설명(순번 1~4)과 정답(6~8)이
+        # 따로 실려 순번이 두 토막이다. 참고 자료 단이 두 토막이어도 단이므로 후치한다
+        # (「점자 도서 제작 지침」 2장 5, 주종 관계의 다단).
+        side_a = [_box(1, 72, 75, 231, 160), _box(2, 72, 196, 231, 220),
+                  _box(3, 72, 232, 231, 256), _box(4, 72, 278, 231, 330)]
+        main = [_box(5, 264, 60, 897, 520)]
+        side_b = [_box(6, 73, 865, 113, 879), _box(7, 73, 880, 113, 895),
+                  _box(8, 73, 911, 113, 924)]
+        main2 = [_box(9, 260, 600, 897, 700), _box(10, 260, 720, 897, 800)]
+        items = side_a + main + side_b + main2
+        _reorder_columns(items)
+        assert _orders(main + main2) == [1, 2, 3]
+        assert _orders(side_a + side_b) == [4, 5, 6, 7, 8, 9, 10]
+
+    def test_three_runs_not_deferred(self):
+        # 토막이 셋이면 흩어진 라벨과 구분이 안 된다 — 후치하지 않는다.
+        side = [_box(1, 72, 100, 231, 160), _box(2, 72, 170, 231, 230),
+                _box(3, 72, 240, 231, 300),
+                _box(5, 72, 400, 231, 460), _box(6, 72, 470, 231, 530),
+                _box(7, 72, 540, 231, 600),
+                _box(9, 72, 700, 231, 760), _box(10, 72, 770, 231, 830),
+                _box(11, 72, 840, 231, 900)]
+        main = [_box(4, 264, 100, 897, 300), _box(8, 264, 400, 897, 600),
+                _box(12, 264, 700, 897, 900)]
+        items = sorted(side + main, key=lambda b: b.reading_order)
+        _reorder_columns(items)
+        # 후치됐다면 사이드가 통째로 본문 뒤로 간다 — 그러지 않았음을 본다.
+        assert min(b.reading_order for b in side) < min(b.reading_order for b in main)
+
+
 class TestTwoColumnPreserved:
     def test_equal_two_column_page_untouched(self):
         # 대등 2단: MinerU가 좌열 전체 → 우열 전체 순으로 방출(정답과 일치).

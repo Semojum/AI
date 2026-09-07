@@ -939,11 +939,23 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
     deferred: list[list[BBoxItem]] = []
     for cl in sides:
         ranks = sorted(body_rank[id(b)] for b in cl)
-        run = best = 1
+        runs, run = [], 1
         for _a, _c in zip(ranks, ranks[1:]):
-            run = run + 1 if _c == _a + 1 else 1
-            best = max(best, run)
-        contiguous = best == len(ranks) or (best >= 3 and best >= len(ranks) - 1)
+            if _c == _a + 1:
+                run += 1
+            else:
+                runs.append(run); run = 1
+        runs.append(run)
+        best = max(runs)
+        # ★ 참고열이 **두 토막**으로 나오는 쪽이 있다(2026-09-07, 이슈 #643).
+        #   같은 좌측 열에 보충설명(순번 1~9)과 정답(17~19)이 따로 실리면 "한 덩이" 조건이
+        #   깨져 후치가 통째로 막혔다(생명과학 p114: 최장 9 < 12-1 → 순서 무변경).
+        #   규정이 뒤로 미루라는 것은 '참고 자료 단'이고(「점자 도서 제작 지침」 2장 5,
+        #   주종 관계의 다단), 그 단이 두 토막이어도 단이다 — 한 덩이일 것을 요구할 근거가 없다.
+        #   낱개가 본문 사이에 흩어진 열(문항별 포인트 라벨 등, 세계사 p160)은 3 미만
+        #   덩이만 나오므로 종전대로 보존된다.
+        contiguous = (best == len(ranks) or (best >= 3 and best >= len(ranks) - 1)
+                      or (len(runs) == 2 and min(runs) >= 3))
         narrow = (max(b.bbox[2] for b in cl) - min(b.bbox[0] for b in cl)) \
             <= 0.5 * (hull1 - hull0)
         # ★ 요소 하나짜리 클러스터는 '연속 순번'이 공짜로 참이라 이 조건을 못 거른다.
