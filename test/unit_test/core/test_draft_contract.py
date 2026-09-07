@@ -25,7 +25,6 @@ BE·FE 와이어프레임은 대체 초안을 **묵자와 점자를 나란히** 
 from __future__ import annotations
 
 import asyncio
-import json
 import shutil
 from pathlib import Path
 from uuid import uuid4
@@ -33,6 +32,7 @@ from uuid import uuid4
 import pytest
 
 from app.core import pipeline
+from app.schemas.layout import DocumentMeta
 from app.schemas.task import PageTask
 
 AI = Path(__file__).resolve().parents[3]
@@ -41,12 +41,12 @@ TABLE = "구분 | t년 | t+50년\n인구 | 100 | 120\n비율 | 3.2 | 4.1"
 
 def _run(mode: str, content: str = TABLE, etype: str = "table") -> dict:
     job = f"test-draft-{mode}-{uuid4().hex[:6]}"
-    d = AI / f"storage/jobs/{job}/temp/page_001/data/001_txt_result.json"
-    d.parent.mkdir(parents=True, exist_ok=True)
-    d.write_text(json.dumps({
-        "meta": {"job_id": job, "page_no": 1, "extraction_method": "TEXT_NATIVE"},
-        "elements": [{"id": str(uuid4()), "order": 1, "type": etype, "content": content}],
-    }, ensure_ascii=False), encoding="utf-8")
+    # ★ 3-d: 경계 파일 + stamp 를 제품 코드로 깐다(stamp 가 없으면 재파생 갈래로 빠진다).
+    pipeline._write_txt_result(
+        PageTask(job_id=job, page_no=1, mode=mode),
+        {"meta": {"job_id": job, "page_no": 1, "extraction_method": "TEXT_NATIVE"},
+         "elements": [{"id": str(uuid4()), "order": 1, "type": etype, "content": content}]},
+        DocumentMeta(pdf_confidence=1.0, routing_tier="ZERO"))
     try:
         return asyncio.run(pipeline.run(PageTask(job_id=job, page_no=1, mode=mode)))
     finally:

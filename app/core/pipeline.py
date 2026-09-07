@@ -341,11 +341,24 @@ def _txt_result_path(task: PageTask) -> Path:
     return _page_dir(task) / "data" / f"{task.page_no:03d}_txt_result.json"
 
 
-def _write_txt_result(task: PageTask, extraction: dict) -> None:
+def _atomic_write(path: Path, text: str) -> None:
+    """임시 파일에 쓰고 rename. 중간에 죽어도 반쪽짜리 경계 파일이 안 남는다.
+
+    ★ 반쪽 경계 파일은 다음 실행에서 `exists()` 로는 멀쩡해 보이고 `json.loads` 에서
+      터진다 — 그 쪽만 죽는 게 아니라 job 전체가 같은 자리에서 반복해 죽는다.
+    """
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _write_txt_result(task: PageTask, extraction: dict,
+                      doc_meta: DocumentMeta | None = None) -> None:
     p = _txt_result_path(task)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(extraction, ensure_ascii=False, indent=2), encoding="utf-8")
-    _write_extract_stamp(task, extraction)
+    _atomic_write(p, json.dumps(extraction, ensure_ascii=False, indent=2))
+    # 경계 파일이 먼저, stamp 가 나중. 순서를 뒤집으면 stamp 만 남은 자리를 유효로 읽는다.
+    _write_extract_stamp(task, extraction, doc_meta)
 
 
 # ── 경계 stamp (재구조화 3-a: **쓰기만**) ──────────────────────────────────
@@ -386,25 +399,71 @@ def _extract_sha() -> str:
     return h.hexdigest()[:12]
 
 
-def _write_extract_stamp(task: PageTask, extraction: dict) -> None:
-    """경계 파일 옆에 판 지문을 남긴다. 실패해도 쪽은 나가야 한다."""
+# 추출 단계에서 도는 LLM 자리의 판 번호만 싣는다. `visual`·`text`·`formula`·`table` 은
+# **경계 파일 뒤(opt 단계)** 라 경계를 무효로 만들 이유가 없다 — 넣으면 본문 프롬프트를
+# 손볼 때마다 재파생이 돌고 `element_id`(uuid4)가 갈려 점역사 피드백 참조가 끊긴다.
+_EXTRACT_VER_KINDS = ("caption", "classify", "figure", "opus")
+
+
+def _extract_prompt_ver() -> str:
+    from app.utils.llm_cache import PROMPT_VER
+    return ",".join(f"{k}={PROMPT_VER.get(k, 0)}" for k in _EXTRACT_VER_KINDS)
+
+
+def _extract_env_fp() -> str:
+    return hashlib.sha256(
+        "|".join(f"{k}={os.environ.get(k, '')}" for k in _EXTRACT_ENV).encode()
+    ).hexdigest()[:12]
+
+
+def _stamp_path(task: PageTask) -> Path:
+    return _page_dir(task) / "data" / f"{task.page_no:03d}_extract_stamp.json"
+
+
+def _write_extract_stamp(task: PageTask, extraction: dict,
+                         doc_meta: DocumentMeta | None = None) -> None:
+    """경계 파일 옆에 판 지문을 남긴다. 실패해도 쪽은 나가야 한다.
+
+    `doc_meta` 를 같이 싣는 이유(3-d): 재사용 경로에서 티어를 `extraction_method` 로
+    되짚으면 틀린다(원장 `routing-tier-from-run-state`). 만든 자리에서 적어 둔다.
+    """
     try:
         from app.core.health_check import prompt_sha
-        env_fp = hashlib.sha256(
-            "|".join(f"{k}={os.environ.get(k, '')}" for k in _EXTRACT_ENV).encode()
-        ).hexdigest()[:12]
-        (_page_dir(task) / "data" / f"{task.page_no:03d}_extract_stamp.json").write_text(
-            json.dumps({
-                "extract_sha": _extract_sha(),
-                "prompt_sha": prompt_sha(),
-                "env_fp": env_fp,
-                "method": extraction.get("meta", {}).get("extraction_method"),
-                "written_at": int(time.time()),
-            }, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        _atomic_write(_stamp_path(task), json.dumps({
+            "extract_sha": _extract_sha(),
+            "prompt_ver": _extract_prompt_ver(),
+            # 참고용. **판정에 안 쓴다** — `prompt_sha()` 는 opt 단계 프롬프트(visual·text·
+            # formula·table)까지 묶은 값이라 본문 문안만 고쳐도 값이 바뀐다.
+            "prompt_sha": prompt_sha(),
+            "env_fp": _extract_env_fp(),
+            "method": extraction.get("meta", {}).get("extraction_method"),
+            "doc_meta": doc_meta.model_dump() if doc_meta else None,
+            "written_at": int(time.time()),
+        }, ensure_ascii=False, indent=2))
     except Exception as exc:            # noqa: BLE001 — 지문 한 줄이 쪽을 죽이면 안 된다
         logger.debug("경계 stamp 기록 실패(진행): %s", exc)
+
+
+# ── 경계 stamp 읽기 (재구조화 3-d) ────────────────────────────────────────
+# 같은 job 을 다시 돌릴 때 경계 파일을 그대로 쓸지, 추출을 다시 돌릴지 여기서 가른다.
+# 종전에는 "파일이 있으면 쓴다" 뿐이라, 캡션 프롬프트를 고쳐도 그 job 에서는 실행조차
+# 안 됐다(원장 `boundary-file-freezes-captions-too`, 0902 에 두 라운드 무효).
+# ⚠ 판정에 커밋 해시를 쓰지 않는다. 배포마다 재파생하면 `element_id` 가 갈려
+#   점역사 피드백의 요소 참조가 끊긴다(설계 2-3 "빠진 것 #10").
+def _stamp_verdict(task: PageTask) -> tuple[str | None, dict]:
+    """(무효 사유, stamp). 사유가 None 이면 그대로 재사용해도 된다."""
+    try:
+        stamp = json.loads(_stamp_path(task).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "no_stamp", {}
+    for field, live in (("extract_sha", _extract_sha()),
+                        ("prompt_ver", _extract_prompt_ver()),
+                        ("env_fp", _extract_env_fp())):
+        if stamp.get(field) != live:
+            return field, stamp
+    if not stamp.get("doc_meta"):
+        return "no_doc_meta", stamp
+    return None, stamp
 
 
 def _read_txt_result(task: PageTask) -> dict:
@@ -1800,15 +1859,29 @@ async def _run_pipeline(task: PageTask) -> dict:
     # ── mode a, c ──────────────────────────────────────────────────────
     # Phase 1 (현주): 경계 파일이 없으면 현주 추출로 생성. 있으면 그대로 사용.
     with stage("추출") as st:
+        reuse_reason: str | None = "no_boundary"
+        stamp: dict = {}
         if _txt_result_path(task).exists():
+            reuse_reason, stamp = _stamp_verdict(task)
+            # ★ 되돌리는 길. `always` 면 지문 대조를 건너뛰고 옛 동작(있으면 쓴다)으로 돈다.
+            #   단 `doc_meta` 가 없는 옛 경계 파일은 여기서도 다시 뜬다 — 그게 없으면
+            #   티어를 되짚을 수밖에 없고, 되짚으면 틀린다.
+            if (reuse_reason and reuse_reason != "no_doc_meta"
+                    and os.environ.get("BOUNDARY_REUSE") == "always"):
+                reuse_reason = None
+        if reuse_reason is None:
             extraction = _read_txt_result(task)
-            st.note = "캐시 재사용"
+            doc_meta = DocumentMeta(**stamp["doc_meta"])
         else:
+            if reuse_reason != "no_boundary":
+                logger.info("경계 stamp 무효(%s) → 재파생 job=%s page=%d",
+                            reuse_reason, task.job_id, task.page_no)
             doc_meta, extraction = await _extract_with_hyunju(task)
-            _write_txt_result(task, extraction)
+            _write_txt_result(task, extraction, doc_meta)
             _debug_dump(task, "02_doc_meta", doc_meta.model_dump())
         method0 = extraction.get("meta", {}).get("extraction_method", "?")
-        st.note = f"{len(extraction.get('elements', []))}요소 · {method0}"
+        st.note = (f"{len(extraction.get('elements', []))}요소 · {method0} · "
+                   f"{'경계 재사용' if reuse_reason is None else f'재파생({reuse_reason})'}")
 
     # 원본 페이지 크기(경계 meta) → 응답 image_width/height. bbox와 같은 좌표계(2x 픽셀).
     _meta0 = extraction.get("meta", {})
@@ -1816,7 +1889,7 @@ async def _run_pipeline(task: PageTask) -> dict:
     image_height = int(_meta0.get("image_height") or 0)
 
     # Phase 2 (태민): 경계 파일 → 분해 → 6-체인
-    layout_result, ext_map, method = _parse_txt_result(extraction, page_id)
+    layout_result, ext_map, _method = _parse_txt_result(extraction, page_id)
     # 읽기순서 LLM 보정(원장 C-106 · 대표 결재 2026-09-07). 비회전 쪽만 태우고,
     # 실패·순열아님·안전판이면 규칙 순서 그대로 간다. 근거·수치는 llm_order 도크스트링.
     from app.ai.parser import llm_order            # 지연 임포트(anthropic SDK 는 호출 때만)
@@ -1825,10 +1898,10 @@ async def _run_pipeline(task: PageTask) -> dict:
                                     int(_meta0.get("page_rotation") or 0))
         st.note = (f"{'적용' if _lo['applied'] else _lo['reason'] or '건너뜀'}"
                    f" · 이동비율 {_lo['ratio']}")
-    routing_tier = (
-        doc_meta.routing_tier if doc_meta
-        else ("ZERO" if method == "TEXT_NATIVE" else "STANDARD")
-    )
+    # ★ 3-d: `doc_meta` 는 이제 두 갈래 모두에서 채워진다(재사용이면 stamp 에서 읽는다).
+    #   종전의 `extraction_method` 역추론은 지웠다 — 코퍼스 PDF 를 직접 재면 STANDARD 인데
+    #   실제 실행은 아닌 쪽이 있어 티어를 잘못 적었다(원장 `routing-tier-from-run-state`).
+    routing_tier = doc_meta.routing_tier
     include_braille = task.mode == "c"
 
     # 체인 팩토리(라벨 → coroutine). _run_formula_chain만 layout 인자가 없어 시그니처가 달라
