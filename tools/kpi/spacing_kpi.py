@@ -349,7 +349,13 @@ def score_page(ours: str, gold: str) -> dict:
 # ── 쪽 모으기 (fwd_baseline.py 와 동일) ──────────────────────────────────
 _PAGE_ROW = re.compile(r"^[a-z]?\d+\s.*\s\d+\s*$")
 _ANS_HEAD = re.compile(r"정답\s*[:：]|정답과\s*해설|해설\s*[:：]")
-_TAG = re.compile(r"<!/?[^>]{1,40}>")
+# ★ 강조 태그 `<!강조>…<!/강조>` 는 **번역기가 먹는 입력**이다 — 규정 제56항 드러냄표
+#   ⠠⠤ … ⠤⠄(`braille-source/text/규정_텍스트.txt:2467`). 통째로 지우면 그 점형이
+#   **구조적으로 못 나온다.** 재추출 코퍼스의 태그는 강조뿐(여는 1,074·닫는 805 +
+#   뒤집힌 꼴 `</!강조>` 269). 2026-09-08 실측: 태그 있는 314쪽 총편집 248,678 →
+#   247,521(−1,157셀) · 우리 ⠠⠤ 1 → 1,012. 나머지 태그는 종전대로 벗긴다.
+_TAG = re.compile(r"<!(?!/?강조>)/?[^>]{1,40}>")
+_TAG_FLIP = ("</!강조>", "<!/강조>")
 
 
 def iter_pages(ascii_to_unicode, decode):
@@ -363,7 +369,7 @@ def iter_pages(ascii_to_unicode, decode):
         if not os.path.exists(brf):
             continue
         want = "\n".join(e.get("content") or "" for e in d.get("elements") or [])
-        want = _TAG.sub("", want)
+        want = _TAG.sub("", want.replace(*_TAG_FLIP))
         want = "\n".join(l for l in want.split("\n")
                          if l.strip() and not _PAGE_ROW.match(l.strip()))
         if len(want) < 80:
