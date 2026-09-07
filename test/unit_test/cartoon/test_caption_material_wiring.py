@@ -10,6 +10,8 @@
 """
 from __future__ import annotations
 
+import re
+
 import asyncio
 from uuid import uuid4
 
@@ -42,7 +44,10 @@ def test_상황은_주_안_대사는_주_밖():
     out = _desc(_CAP)
     lines = out.split("\n")
     head = next(l for l in lines if "안내자가" in l)
-    assert head.startswith("<!주>") and head.endswith("<!/주>"), head
+    # 머리줄 들여쓰기 태그(`<!2칸>`)는 이 시험의 관심사가 아니다 — 시각 자료 점역자 주
+    # 머리줄은 3칸에서 시작한다(#638, 도서지침 3장 2절 4)). 여기서 보는 것은 **주 안이냐**다.
+    assert re.sub(r"^<!\d+칸>", "", head).startswith("<!주>"), head
+    assert head.endswith("<!/주>"), head
     # 화이트리스트에 없는 화자(`왕`·`학생1`)도 주 밖이다 — 재료가 경계를 이미 그었다.
     for say in ("왕: 이것이 무엇인가?", "학생1: 백제의 금동대향로입니다."):
         ln = next(l for l in lines if say in l)
