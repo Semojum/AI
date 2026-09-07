@@ -46,7 +46,6 @@ import time
 
 from app.ai.llm.base_opt import _DEDUP_MIN_LEN, _norm_for_dedup, decide_tier_timeout, generate_with_retry
 from app.ai.captioning.captioner import split_material
-from app.ai.llm.diagram_structure import _MAX_LINES as _CAP_OUTLINE_MAX
 from app.ai.llm.diagram_structure import caption_head as _caption_head
 from app.ai.llm.diagram_structure import caption_outline as _caption_outline
 from app.ai.braille import tag_names as _TAGS
@@ -815,6 +814,15 @@ def _outline_item(line: str) -> tuple[int, str]:
     return level, body
 
 
+def _visual_draft_llm_on() -> bool:
+    """시각 초안(L8)에서 LLM 을 부를 것인가. `VISUAL_DRAFT_LLM=0` 이면 안 부른다.
+
+    끄면 4안은 캡션·구조 전사(규칙)만으로 채워진다 — 제목·캡션이 다 없는 요소는
+    재료가 없어 '생략' 한 안으로 떨어진다(`_no_material`).
+    """
+    return os.environ.get("VISUAL_DRAFT_LLM", "1") != "0"
+
+
 async def build_visual_drafts(
     ext,
     routing_tier: str,
@@ -866,14 +874,20 @@ async def build_visual_drafts(
     #   ⚠ 2026-08-08에 같은 갈래를 CER 로 재고 기각한 기록이 아래 `outline_items` 주석에
     #     있다("3칸 줄 0.0%→1.4%, 정답 3칸 0.0%"). **그 gold 계수가 틀렸다** — 위 1,688줄.
     #     그리고 이 축은 CER 로 재는 축이 아니다(대표 지시 2026-09-07: 형식 일치로 판정).
-    #   ⚠ `caption_outline` 은 `_MAX_LINES`(40)에서 잘린다 — 골격이 아니라 줄글이라는 뜻의
-    #     폭주 방어다. 그보다 긴 캡션을 올리면 **뒤쪽 데이터 줄이 통째로 사라진다**
-    #     (실측 2건: 종교 분포 56줄에서 14줄, 배지 개체 수 47줄에서 6줄). 값이 사라지는
-    #     것은 한 줄로 붙어 나가는 것보다 나쁘다 — 길면 손대지 않고 종전대로 둔다.
+    #   ★ 2026-09-08(재구조화 4-1) — **줄 수 상한을 걷었다.** 종전에는 본문 41줄부터
+    #     이 갈래를 건너뛰고 LLM 으로 넘겼는데(`_CAP_OUTLINE_MAX`), 프롬프트가
+    #     `[개조식] … 3~5줄`(:253)을 시키므로 **값이 요약돼 사라진다.** 제품 경로
+    #     (`ChartGraphOpt.optimize` · claude-sonnet-5 폴백) 실측:
+    #       · 배지 A~C 개체 수 본문 46줄(값 39개) → 초안 6줄, 값 줄 0개 남음
+    #       · 세계 종교 분포 본문 55줄(값 46개) → 초안 10줄, 값 11개만 남고
+    #         `나이지리아 43.4` 가 '크리스트교가 다수인 국가' 에 들어갔다(56.1 이 이슬람)
+    #     캡션 캐시 3,242건 중 본문 41줄 초과는 **2건(0.062%)** 이라 파급은 그 둘뿐이다.
+    #     `caption_outline` 의 `_MAX_LINES` 는 §6.6 골격 조립의 폭주 방어라 골격 경로에는
+    #     그대로 두고, 전사 경로에서만 `limit=None` 으로 부른다.
     cap_head = None
     cap_body = [ln for ln in caption.split("\n")[1:] if ln.strip()]
-    if struct_outline is None and 0 < len(cap_body) <= _CAP_OUTLINE_MAX:
-        cap_items = _caption_outline(caption, keep_markers=True)
+    if struct_outline is None and cap_body:
+        cap_items = _caption_outline(caption, keep_markers=True, limit=None)
         if cap_items:
             struct_outline, cap_head = cap_items, _caption_head(caption)
 
@@ -901,7 +915,11 @@ async def build_visual_drafts(
     #   '설명(자세히)' 를 만들었다. 둘 다 없애면 그만큼 호출이 준다.
     need_prose = struct_prose is None and prose_label(kind) != desc_label(kind)
     has_seed = bool(title or caption)
-    use_llm = ((routing_tier != "ZERO") and has_seed and not single_line_caption
+    # ★ `VISUAL_DRAFT_LLM=0` 이면 이 단계에서 LLM 을 아예 안 부른다(재구조화 4-1 되돌리기
+    #   손잡이 · 스위치 대장 2026-09-08). **호출 시** 읽으므로 프로세스 env 로 A/B 가 된다.
+    #   기본값 `1` 은 현행 그대로라 끄지 않으면 동작이 안 바뀐다.
+    use_llm = (_visual_draft_llm_on() and (routing_tier != "ZERO")
+               and has_seed and not single_line_caption
                and (need_title or need_outline or need_prose))
 
     llm_title, llm_outline, llm_prose = "", [], ""
