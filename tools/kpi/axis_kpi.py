@@ -118,8 +118,18 @@ T, P, N, R, Y, M, B, V, H, F, U = "TPNRYMBVHF?"
 AXIS_NAME = {
     T: "본문 텍스트(한글 산문)", P: "문장부호", N: "숫자", R: "로마자",
     Y: "기호·단위", M: "수식", B: "표", V: "시각자료(참고)",
-    H: "쪽 furniture(축 아님)", F: "조판 장식(테두리·점선)", U: "미귀속",
+    H: "쪽 furniture(축 아님)", F: "조판 장식(축 아님·아래 ★)", U: "미귀속",
 }
+# ★ F(조판 장식)는 **축이 아니라 gold-only 잔재의 이름표**다. 무수정율은 **구조상 늘 0.0%**다 —
+#   hit 은 `equal` 조각에서만 오르는데 그 자리에는 우리 쪽 축 배열(`axis`)이 붙고, 그 배열에
+#   F 는 절대 안 들어간다(F 는 `replace`/`insert` 의 gold 조각에서만 붙는다). 0.0% 를
+#   "기능이 없다"로 읽으면 안 된다.
+#   게다가 이 자의 `ours` 는 `temp/poc/reextract`(LLM 재추출, **bbox 없음**)를 요소마다
+#   `translate_body` 한 것이라 `pdf_analyzer.tag_boxed_elements`·`LayoutBraille` 를 아예 안 탄다.
+#   테두리는 그 두 단계에서만 나오므로 이 자에서는 원리적으로 한 셀도 안 나온다.
+#   실측 2026-09-08(같은 1,180쪽, 제품 코드 ZERO 경로로 상자 태깅까지 돌림):
+#     gold 1단계 상자 2,195 : 우리 1,644 · 2단계 439 : 119 · 3단계 3 : 8 → 합 67.2%.
+#   즉 제품은 이미 낸다. F 의 gold셀 수는 "제품이 못 내는 양"이 아니라 "이 자가 안 재는 양"이다.
 ELEM_AXIS = {"formula": M, "table": B, "image": V, "caption": V,
              "header_footer": H, "page_number": H}
 SUBSPLIT = ("text", "list_item")
@@ -509,6 +519,9 @@ def cmd_score(cache: str, out: str | None) -> int:
               f"{(tot['hit'][a]/loc*100 if loc else float('nan')):>10.1f}%"
               f"{tot['insL'][a]/g*100:>8.1f}%{tot['over'][a]/g*100:>8.1f}%"
               f"{tot['overL'][a]/g*100:>8.1f}%")
+    print("\n  ★ 조판 장식 행은 축이 아니다 — 이 자는 요소별 translate_body 만 돌려"
+          " 글상자 태깅·layout 을 안 탄다. 무수정율은 구조상 늘 0.0% 이고 제품 실측은"
+          " 67.2%(2026-09-08)다. AXIS_NAME 위 주석 참조.")
     print(f"\n  누락(gold-only) 셀 귀속 근거: "
           + " · ".join(f"{k} {v:,}" for k, v in tot['src'].most_common()))
 
