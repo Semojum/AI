@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import os
 import subprocess
 import time
@@ -63,6 +64,47 @@ def _build_info() -> dict:
         "caption_key": key_present,
         "caption_cache": caption_cache,
     }
+
+
+# ── 이 **요청**이 어느 판이었나 (2026-09-08, 재구조화 0-c) ────────────────────
+# 점역사 피드백은 며칠 뒤에 온다. 그때 "어느 커밋·어느 프롬프트에 대한 말인가"를 되짚을
+# 자리가 요청 로그밖에 없다. `/health` 는 **지금 이 순간** 값이라 지난 요청은 못 되짚는다.
+# ⚠ 프롬프트 본문은 절대 싣지 않는다. 12자 해시만 싣는다.
+_PROMPT_SOURCES = (
+    ("caption", "app.ai.captioning.captioner"),
+    ("visual", "app.ai.llm.visual_drafts"),
+    ("opus", "app.ai.parser.opus_fallback"),
+    ("text", "app.ai.llm.text_opt"),
+    ("formula", "app.ai.llm.formula_opt"),
+    ("table", "app.ai.llm.table_opt"),
+)
+
+
+@lru_cache(maxsize=1)
+def prompt_sha() -> str:
+    """여섯 모듈의 프롬프트 상수를 한 해시로. 하나라도 바뀌면 값이 바뀐다.
+
+    `_build_info()["caption_prompt_sha"]` 는 캡셔너만 본다 — 그건 그대로 두고
+    (배포 확인이 그 값을 쓴다), 요청 로그용으로 여섯 자리를 합친 값을 따로 낸다.
+    """
+    h = hashlib.sha256()
+    for label, name in _PROMPT_SOURCES:
+        h.update(label.encode())
+        try:
+            mod = importlib.import_module(name)
+        except Exception:                   # noqa: BLE001 — 로그 한 줄이 요청을 죽이면 안 된다
+            h.update(b"?")
+            continue
+        for attr in sorted(dir(mod)):
+            if "PROMPT" in attr or attr == "_COMMON":
+                h.update(f"{attr}={getattr(mod, attr, '')!r}".encode())
+    return h.hexdigest()[:12]
+
+
+@lru_cache(maxsize=1)
+def build_stamp() -> str:
+    """요청 로그 한 줄에 싣는 판 지문 — `commit=… prompts=…`."""
+    return f"commit={_build_info().get('commit') or '?'} prompts={prompt_sha()}"
 
 
 def get_health() -> dict:
