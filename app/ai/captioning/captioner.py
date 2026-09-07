@@ -11,14 +11,11 @@ import hashlib
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
 from openai import OpenAI
 from app.core.config import config
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-load_dotenv()
 
 _client: OpenAI | None = None
 
