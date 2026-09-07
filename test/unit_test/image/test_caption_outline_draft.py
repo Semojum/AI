@@ -77,11 +77,65 @@ def test_묶음_머리줄을_지우지_않는다():
     assert "중국 국민당군" in text and "중국 공산당군" in text, text
 
 
-def test_너무_긴_캡션은_손대지_않는다():
-    # `caption_outline` 은 40줄에서 잘린다 — 그보다 길면 뒤쪽 값이 사라지므로 종전대로 둔다.
+def test_긴_캡션도_값을_한_줄씩_싣는다():
+    """본문 41줄이 넘어도 뒤쪽 값 줄이 사라지지 않는다 (재구조화 4-1, 2026-09-08).
+
+    종전에는 `caption_outline` 의 `_MAX_LINES`(40) 때문에 이 갈래를 건너뛰고 LLM 으로
+    넘겼고, 프롬프트가 `[개조식] … 3~5줄` 을 시켜 **값이 요약돼 사라졌다**
+    (제품 실측: 본문 46줄·값 39개 → 초안 6줄·값 0개).
+    """
     cap = "그래프: 아주 긴 자료\n" + "\n".join(f"항목{i}: {i}" for i in range(50))
     text = _desc(ChartGraphOpt, cap)
-    assert "항목49: 49" in text, text[-80:]
+    lines = text.split("\n")
+    assert len(lines) == 51, len(lines)                  # 머리줄 + 항목 50
+    for i in (0, 39, 40, 49):                            # 40줄 문턱 앞뒤를 콕 집어 본다
+        assert f"항목{i}: {i}" in text, (i, text[-120:])
+    assert all(l.startswith("<!2칸>") for l in lines), text[:120]
+
+
+def test_긴_캡션은_LLM을_부르지_않는다(monkeypatch) -> None:
+    # 값이 다 실리므로 요약을 시킬 이유가 없다 — 호출 0 이라야 환각도 0 이다.
+    from app.ai.llm import visual_drafts as vd
+
+    calls: list[str] = []
+
+    async def _fake(prompt, **_kw):
+        calls.append(prompt)
+        return "[개조식]\n지어낸 항목\n[줄글]\n지어낸 줄글", True
+
+    monkeypatch.setattr(vd, "generate_with_retry", _fake)
+    cap = "그래프: 아주 긴 자료\n" + "\n".join(f"항목{i}: {i}" for i in range(50))
+    ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
+                           corrected_text=cap, structure={})
+    out = asyncio.run(ChartGraphOpt().optimize([ext], "STANDARD"))[0]
+    assert calls == [], calls
+    assert "항목49: 49" in out.drafts[out.selected_idx].text
+
+
+def test_VISUAL_DRAFT_LLM_0_이면_안_부른다(monkeypatch) -> None:
+    # 4-1 되돌리기 손잡이. 호출 시 읽으므로 프로세스 env 로 갈린다.
+    from app.ai.llm import visual_drafts as vd
+
+    calls: list[str] = []
+
+    async def _fake(prompt, **_kw):
+        calls.append(prompt)
+        return "[개조식]\n지어낸 항목\n[줄글]\n지어낸 줄글", True
+
+    monkeypatch.setattr(vd, "generate_with_retry", _fake)
+    # 캡션 없이 제목만 → 종전 경로에서는 LLM 을 부르는 자리다.
+    def _run():
+        ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
+                               corrected_text="", structure={"title": "표제만 있는 그림"})
+        return asyncio.run(ImageOpt().optimize([ext], "STANDARD"))[0]
+
+    monkeypatch.delenv("VISUAL_DRAFT_LLM", raising=False)
+    _run()
+    on = len(calls)
+    calls.clear()
+    monkeypatch.setenv("VISUAL_DRAFT_LLM", "0")
+    _run()
+    assert on >= 1 and calls == [], (on, calls)
 
 
 def test_한_줄_캡션이면_LLM을_부르지_않는다(monkeypatch) -> None:

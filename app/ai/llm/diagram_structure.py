@@ -168,7 +168,8 @@ def _level_text(line: str) -> tuple[int, str]:
     return indent // 2, body
 
 
-def caption_outline(caption: str, *, keep_markers: bool = False) -> list[tuple[int, str]]:
+def caption_outline(caption: str, *, keep_markers: bool = False,
+                    limit: int | None = _MAX_LINES) -> list[tuple[int, str]]:
     """캡션 본문(첫 줄 제외) → 개조식 항목 [(level, text)].
 
     첫 줄은 유형 제시어를 단 머리줄이라 점역자 주(§6.3.4(1))가 가져간다 — 여기선 뺀다.
@@ -179,12 +180,19 @@ def caption_outline(caption: str, *, keep_markers: bool = False) -> list[tuple[i
     문항이 묻는 `①` 이 무엇인지 알 수 없다. 도서지침 예3-45 도 `•`·`-` 를 그대로 쓴다.
     이때 위계는 **표지가 지므로** 원문 들여쓰기만 본다(표지로 단을 또 내리면 7칸까지
     밀려 gold(3칸 1,688줄 · 5칸 88줄)에서 멀어진다).
+
+    `limit=None` 은 **줄 수 상한을 안 건다**(2026-09-08, 재구조화 4-1). 기본값
+    `_MAX_LINES`(40)는 §6.6 골격 조립의 폭주 방어다 — "이보다 길면 골격이 아니라
+    줄글" 이라는 판정이라 골격 경로에서는 맞다. 그런데 §6.3.4(2)① **전사** 경로
+    (`keep_markers=True`)에서 같은 상한을 걸면 뒤쪽 **데이터 값 줄이 통째로 사라진다**
+    (실측: 배지 개체 수 본문 46줄 → 40항목 · 세계 종교 분포 본문 55줄 → 40항목,
+    잘리는 꼬리가 `20일: 8`·`불교 1.3` 같은 값 줄이다). 전사에는 상한을 안 건다.
     """
     lines = [ln for ln in (caption or "").split("\n") if ln.strip()]
     if len(lines) < 2:
         return []
     out: list[tuple[int, str]] = []
-    for ln in lines[1:_MAX_LINES + 1]:
+    for ln in (lines[1:] if limit is None else lines[1:limit + 1]):
         if keep_markers:
             lv = (len(ln) - len(ln.lstrip(" \t"))) // 2
             text = _HEAD_RE.sub("", ln.strip()).strip()   # 마크다운 표지만 뗀다
