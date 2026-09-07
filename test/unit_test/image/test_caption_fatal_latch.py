@@ -85,3 +85,37 @@ def test_백엔드_상태에_키값은_안_실린다() -> None:
     assert set(st) == {"backend", "model", "key_env", "key_present"}
     assert isinstance(st["key_present"], bool)
     assert st["backend"] in ("anthropic", "openai") or st["backend"]
+
+
+class TestResetOnNewJob:
+    """잠금은 job 경계에서 풀린다 (2026-09-08, 재구조화 0-e).
+
+    푸는 자리가 없던 시절엔 키가 잠깐 흔들려 한 번 잠기면 서버를 재시작할 때까지
+    **그 뒤 다른 job 까지** 시각 요소가 통째로 '생략'으로 나갔다.
+    """
+
+    @staticmethod
+    def _run(job_id: str, page_no: int = 1):
+        import asyncio
+
+        from app.core import pipeline
+        from app.schemas.task import PageTask
+        task = PageTask(job_id=job_id, page_no=page_no, total_pages=1,
+                        pdf_data=b"", mode="b", source_text="가")
+        asyncio.run(pipeline.run(task))
+
+    def test_다음_job_이_오면_풀린다(self):
+        from app.core import pipeline
+        pipeline._last_job_id = None
+        self._run("job-A")
+        rb._caption_fatal = "AuthenticationError: 401"
+        self._run("job-B")
+        assert rb.caption_fatal_reason() is None
+
+    def test_같은_job_안에서는_안_풀린다(self):
+        from app.core import pipeline
+        pipeline._last_job_id = None
+        self._run("job-A", 1)
+        rb._caption_fatal = "AuthenticationError: 401"
+        self._run("job-A", 2)
+        assert rb.caption_fatal_reason() == "AuthenticationError: 401"

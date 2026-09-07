@@ -2256,9 +2256,28 @@ _DUMMY_ELEM = _DummyElem()
 
 # ── 파이프라인 진입점 ─────────────────────────────────────────────────────
 
+_last_job_id: str | None = None
+
+
 async def run(task: PageTask) -> dict:
     """파이프라인 진입점. 300초 하드 타임아웃 강제."""
     start_request()   # 요청 단위 API 카운터 초기화
+    # 캡셔닝 잠금(`result_builder._caption_fatal`)은 **한 job 안에서** 같은 설정성 오류를
+    # 요소 수만큼 다시 맞지 않으려고 건다. 그런데 푸는 자리가 테스트밖에 없어, 키가 잠깐
+    # 흔들려 한 번 잠기면 **그 뒤 다른 job 까지** 서버를 재시작할 때까지 통째로 '생략'으로
+    # 나갔다. job 이 바뀌면 푼다 — 잠금은 job 안에서 그대로 산다.
+    # ※ 여러 job 이 페이지 단위로 겹쳐 들어오면 이 값이 오가며 쪽마다 한 번씩 풀린다.
+    #   그래도 한 쪽(요소 200개) 안에서는 잠금이 살아 있으므로 원래 목적은 지켜진다.
+    # ※ result_builder 는 openai 를 끌고 온다 — 그게 없는 빠른 게이트 레인에서는 건너뛴다.
+    global _last_job_id
+    if task.job_id != _last_job_id:
+        _last_job_id = task.job_id
+        try:
+            from app.ai.builder.result_builder import reset_caption_fatal
+        except ImportError:
+            pass
+        else:
+            reset_caption_fatal()
     logger.info("━━ job=%s page=%d/%d mode=%s 처리 시작 ━━",
                 task.job_id, task.page_no, task.total_pages, task.mode)
     start = time.monotonic()
