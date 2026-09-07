@@ -2260,9 +2260,15 @@ async def run(task: PageTask) -> dict:
     """파이프라인 진입점. 300초 하드 타임아웃 강제."""
     start_request()   # 요청 단위 API 카운터 초기화
     # 판 지문(0-c) — 점역사 피드백이 며칠 뒤에 올 때 어느 커밋·어느 프롬프트였는지 되짚는 줄.
-    # health_check 는 torch 를 끌고 온다 — 모듈 최상단에서 부르면 pipeline import 가 무거워진다.
-    from app.core.health_check import build_stamp
-    logger.info("판 %s job=%s page=%d", build_stamp(), task.job_id, task.page_no)
+    # ★ health_check 는 model_manager 를 거쳐 torch 를 끌고 온다. 모듈 최상단에서 부르면
+    #   pipeline import 그래프가 바뀌고, torch 없는 빠른 게이트 레인이 통째로 깨진다.
+    #   여기서 늦게 부르고, 그 레인에서는 지문 줄만 건너뛴다(제품 경로엔 torch 가 늘 있다).
+    try:
+        from app.core.health_check import build_stamp
+    except ImportError:
+        pass
+    else:
+        logger.info("판 %s job=%s page=%d", build_stamp(), task.job_id, task.page_no)
     logger.info("━━ job=%s page=%d/%d mode=%s 처리 시작 ━━",
                 task.job_id, task.page_no, task.total_pages, task.mode)
     start = time.monotonic()
