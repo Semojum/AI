@@ -198,3 +198,18 @@ class TestBBoxCoordSpace:
                           "bbox": [10, 20, 30, 40]}],
         }, "p1")
         assert lr.elements[0].bbox == (10, 20, 30, 40)
+
+
+def test_표_묵자는_점역자주가_아니라_선택_초안이다(mode_a):
+    """대표 지적 2026-09-08 ① — 표 화면에 표는 없고 `<!주>…<!/주>` 한 줄만 나갔다.
+
+    표만 `tn_text`가 선택 초안이 아니라 **점역자 주**다(`table_opt` :683·:720).
+    `_print_contents`가 `tn_text`를 먼저 보던 탓에 점자 창에는 격자가 있는데
+    묵자 창에는 주석만 있어 두 창이 다른 말을 했다. 위 계약대로
+    `contents == drafts[selected_idx]`여야 한다.
+    """
+    el = mode_a["text_list"][0]
+    body = el["contents"][0]
+    assert "<!주>" not in body, body
+    assert "인구" in body and "100" in body, body
+    assert body == el["drafts"][el["selected_idx"]]["tn_text"]
