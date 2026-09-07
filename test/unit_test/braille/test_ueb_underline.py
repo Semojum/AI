@@ -40,3 +40,42 @@ def test_밑줄_낱말표가_영어_줄_판정을_막지_않는다():
     line = "⠮⠀⠸⠺⠀⠷⠀⠼⠆⠀⠸⠂⠍⠔⠊⠍⠁⠇⠊⠎⠍⠀⠾⠀⠥⠀⠯⠀⠇⠑⠜⠝"
     assert _english_line(line) is None
     assert _english_line(_UEB_UNDERLINE_RE.sub("", line)) is not None
+
+
+# ── 한·영 혼합 줄의 영어 구간 (제32항 · 원장 R-70) ──────────────────────────
+# 한국어 발문 안에 영어가 섞이면 줄 전체가 `_english_line` 을 통과할 수 없어, 밑줄
+# 구간표가 미해독으로 새고 영어는 뜻 없는 한글로 나갔다. 짝 안쪽만 영어로 읽는다.
+# 실측(gold 전권 18,892쪽): 짝 1,774회·573쪽, 그중 줄을 넘는 짝 1,079회.
+
+def test_혼합_줄의_구간표_안쪽만_영어로_읽는다():
+    """ES-TXT-KA0107/p0028 실물 — `A: Can I get a map?` 의 밑줄 구간."""
+    line = "⠀⠀⠴⠠⠁⠒⠀⠠⠉⠁⠝⠀⠠⠊⠀⠸⠶⠛⠑⠞⠀⠁⠀⠍⠁⠏⠸⠄⠦"
+    out = decode(line)
+    assert "get a map" in out
+    assert "⟨2838⟩" not in out
+
+
+def test_줄을_넘는_구간표도_읽는다():
+    """EBS-E26-006/p0025 실물 — 구간이 두 줄에 걸친다(32칸 조판)."""
+    out = decode("⠀⠀⠼⠚⠙⠀⠑⠕⠦⠨⠯⠀⠰⠟⠀⠴⠸⠶⠩⠁⠅⠑⠎⠀⠥⠀⠞⠕⠀⠮\n⠉⠕⠗⠑⠸⠄⠲")
+    assert "shakes u to the" in out and "core." in out
+    assert "⟨2838⟩" not in out
+
+
+def test_도형_반복_틀은_구간표로_보지_않는다():
+    """`⠸⠶ⁿ⠇`(제57항 [붙임] 계열)은 도형이다 — 안쪽이 통째로 틀이면 영어가 아니다.
+
+    ES-TXT-KA0171 실물 `⠸⠶⠶⠶⠇` + 다음 줄 `⠸⠄`.
+    """
+    assert decode("⠸⠶⠶⠶⠇\n⠀⠀⠸⠄").startswith("□□□")
+
+
+def test_읽을_수_없는_조각에는_표를_새로_붙이지_않는다():
+    """줄을 넘는 짝의 조각이 영어로 안 읽히면 종전 출력을 그대로 둔다.
+
+    조각마다 표를 붙이면 그 ⠸ 가 미해독으로 새어 이물질이 **늘어난다**(첫 판 231줄).
+    """
+    src = "⠀⠀⠸⠶⠈⠼⠂⠱⠕\n⠇⠊⠧⠑⠎⠀⠁⠉⠗⠀⠮⠀⠌⠗⠑⠑⠞⠸⠄⠲"
+    first, second = decode(src).split("\n")
+    assert second == "lives across the street."
+    assert first == decode("⠀⠀⠸⠶⠈⠼⠂⠱⠕")     # 앞줄은 종전 그대로

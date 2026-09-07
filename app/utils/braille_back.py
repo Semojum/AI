@@ -2295,6 +2295,8 @@ def decode(braille: str, *, math: bool = False) -> str:
     #   **⠤⠄ 자리에 아무 글자도 없다.** 종전 출력은 `다행이로다.-'”` 였다.
     #   ⚠ 여는 표(⠠⠤)는 안 버린다 — 된소리표+붙임표와 셀이 같아 378회가 본문이다.
     braille = braille.replace(_EMPH_CLOSE, "")
+    # 줄을 넘는 UEB 밑줄 구간표 짝을 줄마다 다시 감싼다 — 라우터가 줄 단위라야 본다.
+    braille = _rewrap_ueb_spans(braille)
     if math and len(braille) >= _MATH_KOR_MIN_CELLS:
         # 한글이 많이 섞인 수식 요소는 전체를 수식으로 보면 깨진다(R2). 자동 판별로 읽는다.
         # ⚠ **짧은 순수 수식은 제외한다.** `π`(⠨⠏)·`θ`(⠨⠹) 같은 두 셀짜리는 자동 판별이
@@ -2521,7 +2523,70 @@ _ENG_APOSTROPHE = {"⠄⠗⠑": "'re", "⠄⠧⠑": "'ve", "⠄⠇⠇": "'ll",
 #   그래서 벗긴 줄이 `_english_line` 을 통과할 때만 벗긴다. 한글 줄은 그 판정을
 #   구조적으로 통과하지 못하므로(왕복 대조 + 서로 다른 기능어 둘) □ 쪽은 못 건드린다.
 #   도형 반복 틀 `⠸⠶ⁿ⠇`(_SHAPE_RUN_RE)과 제72항 글머리(뒤가 빈칸·줄끝)는 내다보고 뺀다.
-_UEB_UNDERLINE_RE = re.compile(r"⠸(?:[⠆⠄⠂]|⠶(?!⠶*⠇)(?=[^⠀ ]))")
+# ★ 2026-09-07 — 도형 틀 가드를 좁혔다. 종전 `(?!⠶*⠇)` 는 **`l` 로 시작하는 영어**까지
+#   막았다(`⠸⠶⠇⠕⠧⠑` = love). 도형 틀은 그 자체로 한 토큰이므로 ⠇ **뒤에 점자 셀이
+#   더 없을 때만** 틀로 본다. 전권 실측: 이 가드가 막던 짝 22 중 21이 영어였다.
+_UEB_UNDERLINE_RE = re.compile(r"⠸(?:[⠆⠄⠂]|⠶(?!⠶*⠇(?![⠁-⣿]))(?=[^⠀ ]))")
+
+# ── UEB 밑줄 구간표 **짝** — 한·영 혼합 줄의 영어 구간 (원장 R-70) ──────────────
+# 「한글 점자」 제32항(재추출본 1650~1651행): "로마자가 한 낱말이나 문장으로 나올 때에는
+# 로마자표(⠴)를 앞세우고 로마자 종료표(⠲)를 뒤에 적으며 **그 사이는 통일영어점자로 적는다**."
+# 제29항 [다만](1571~1572행)은 문단 전체가 로마자일 때 그 표를 생략할 수 있다고 한다.
+# 영어 교재는 한국어 발문 안의 영어 구간을 로마자표 대신 **UEB 밑줄 구간표**(접두 ⠸ +
+# 구간표 ⠶ … 종료표 ⠄)로 묶는다 — 그것이 곧 "여기부터 여기까지 통일영어점자" 라는
+# 명시 표시다.
+# ⚠ 이 점형은 「한글 점자」 제56항(**2465~2466행**)의 밑줄표 `,- -'`(⠠⠤ … ⠤⠄)가 **아니다.**
+#   제56항은 국어 쪽 강조이고, 여기 ⠸ 접두는 UEB 9.5 의 typeform 이다. 「점자 자료 제작
+#   지침」에 영문 강조 점형이 없어 점역사 회신이 그 자리를 메운다 — "영어 원서 등 영문
+#   표현의 강조나 발음/변음 부호는 UEB 규정을 참고해야 합니다"(점역사_qna.txt A13 ·
+#   원장 R-26). 위 `_UEB_UNDERLINE_RE` 주석과 같은 근거다.
+# ★ 종전에는 이 짝을 **줄 전체가 영어일 때만** 벗겼다(_english_line). 한국어 발문에 영어가
+#   섞인 줄은 그 판정을 통과할 수 없어 표는 미해독으로, 영어는 뜻 없는 한글로 나갔다 —
+#   `밑줄 친 ”⟨2838⟩{설타더 떠 수외 b이잊.` (= 밑줄 친 "This Is My Book.").
+#   그래서 **글상자 테두리(_BOX_BORDER_RE)처럼 줄을 짝에서 쪼개** 안쪽만 영어로 읽고
+#   바깥은 한글로 되풀이해 읽는다.
+# 실측(gold 전권 18,892쪽): 짝 1,774회·573쪽. 그중 줄을 넘는 짝이 1,079회다.
+_UEB_SPAN_RE = re.compile(r"⠸⠶((?:(?!⠸⠶|⠸⠄)[^\n]){1,240}?)⠸⠄")
+# 쪽 단위 짝 — 줄바꿈을 넘는다(32칸 조판이라 영어 구간이 두세 줄에 걸친다).
+_UEB_SPAN_PAGE_RE = re.compile(r"⠸⠶((?:(?!⠸⠶|⠸⠄).){1,240}?)⠸⠄", re.S)
+# 도형 반복 틀 ⠸⠶ⁿ⠇(_SHAPE_RUN_RE)만 빼낸다. ⚠ 여는 표 뒤에 ⠇ 가 온다는 이유만으로 빼면
+# **`l` 로 시작하는 영어**(`let me start`·`less fast than`·`long curly hair`)를 다 잃는다 —
+# 전권 실측으로 가드가 뺀 짝 22 중 **21이 그런 영어**고 도형 틀은 하나뿐이었다
+# (ES-TXT-KA0171 `⠸⠶⠶⠶⠇`). 그래서 **안쪽이 통째로 틀일 때만** 뺀다.
+_SHAPE_RUN_TAIL_RE = re.compile(r"⠶*⠇[⠀ \n]*\Z")
+
+
+def _ueb_span_text(inner: str) -> str | None:
+    """UEB 밑줄 구간표 짝 안쪽을 영어로 읽는다 — 도형 반복 틀이면 영어가 아니다."""
+    if _SHAPE_RUN_TAIL_RE.match(inner):
+        return None
+    return _english_line(inner, evidence=False)
+
+
+def _rewrap_ueb_spans(text: str) -> str:
+    """줄을 넘는 UEB 밑줄 구간표 짝을 **줄마다 다시 감싼다**.
+
+    짝 1,774 중 1,079이 줄을 넘는다. 줄 단위 라우터가 그대로는 못 보므로 여기서
+    `⠸⠶ A ⏎ B ⠸⠄` 를 `⠸⠶A⠸⠄ ⏎ ⠸⠶B⠸⠄` 로 바꾼다. 빈 줄에는 표를 안 붙인다.
+    """
+    def _rep(m: "re.Match[str]") -> str:
+        inner = m.group(1)
+        if "\n" not in inner:
+            return m.group(0)
+        frags = inner.split("\n")
+        out = []
+        for k, fr in enumerate(frags):
+            if fr.strip("⠀ ") and _ueb_span_text(fr) is not None:
+                out.append("⠸⠶" + fr + "⠸⠄")
+            else:
+                # 못 읽는 조각에는 표를 새로 붙이지 않는다 — 붙이면 그 ⠸ 가 그대로
+                # 미해독으로 새어 이물질이 **늘어난다**(첫 판 실측 231줄). 여는 표·닫는
+                # 표를 원래 자리에 그대로 남겨 종전 출력을 보존한다.
+                out.append(("⠸⠶" if k == 0 else "") + fr
+                           + ("⠸⠄" if k == len(frags) - 1 else ""))
+        return "\n".join(out)
+    return _UEB_SPAN_PAGE_RE.sub(_rep, text)
+
 
 # ── UEB 대괄호·중괄호 (규정 [부록 1] 외국어 점자) ───────────────────────────
 # 규정 [부록 1] 외국어 점자의 기호 일람표가 **대괄호 `[ ]` = `.< .>`(⠨⠣ ⠨⠜) · 중괄호 `{ }` =
@@ -2537,8 +2602,13 @@ _UEB_UNDERLINE_RE = re.compile(r"⠸(?:[⠆⠄⠂]|⠶(?!⠶*⠇)(?=[^⠀ ]))")
 _UEB_BRACKET = {"⠨⠣": "[", "⠨⠜": "]", "⠸⠣": "{", "⠸⠜": "}"}
 
 
-def _english_line(line: str) -> str | None:
+def _english_line(line: str, *, evidence: bool = True) -> str | None:
     """줄 전체가 로마자표 없는 영어면 그 텍스트, 아니면 None (제29항 [다만]).
+
+    ★ `evidence=False` 는 **UEB 밑줄 구간표 짝 안쪽**에서만 쓴다(제32항 · 원장 R-70).
+      단서 셀이 하나도 없는 줄에는 아래 증거(왕복 대조·기능어 둘)가 꼭 필요하지만,
+      구간표 짝은 그 자체가 "여기부터 여기까지 통일영어점자" 라는 명시 표시다.
+      그래서 짝 안쪽은 **낱말이 끝까지 읽히는지**만 본다.
 
     제29항 [다만]은 **문단 전체가 로마자일 때 로마자표와 종료표를 생략할 수 있다**고
     한다. 우리 정방향도 그 관행을 따르므로 순수 영어 문단에는 단서 셀이 하나도 없다.
@@ -2553,7 +2623,9 @@ def _english_line(line: str) -> str | None:
     from app.ai.braille import eng_braille as _E
 
     words = line.split(_SPACE_CELL)
-    if sum(1 for w in words if w) < 2:   # 한 낱말은 단서가 너무 약하다(⠎=so ↔ 한글)
+    if evidence and sum(1 for w in words if w) < 2:   # 한 낱말은 단서가 너무 약하다(⠎=so ↔ 한글)
+        return None
+    if not any(words):
         return None
     out: list[str] = []
     mid_cap = False
@@ -2592,6 +2664,8 @@ def _english_line(line: str) -> str | None:
             mid_cap = True           # 낱말 **중간**의 대문자표 — 영어 표기에 거의 없다
         out.append(head + got[0] + tail)
     text = " ".join(out)
+    if not evidence:                 # 구간표 짝 안쪽 — 표가 곧 증거다(제32항)
+        return text
     funcs = {w.strip(".,;:?!'[]{}").lower() for w in text.split()} & _ENG_FUNCTION
     if _E.translate(text).replace(" ", _SPACE_CELL) == line:
         # 왕복만으로는 모자란다 — 한글 두 낱말이 뜻 없는 알파벳으로 되짚기까지 통과한다
@@ -2898,6 +2972,21 @@ def _decode_line_router(line: str, math: bool) -> str:
             eng = _english_line(_UEB_UNDERLINE_RE.sub("", line))
         if eng is not None:          # 로마자표 없는 순수 영어 줄 (제29항 [다만])
             return eng
+        # 한·영 혼합 줄 — UEB 밑줄 구간표 짝 안쪽만 영어로 읽고 바깥은 한글로 읽는다
+        # (제32항 · 원장 R-70). 표가 곧 증거이므로 안쪽은 `evidence=False` 로 본다.
+        spans = [(m, _ueb_span_text(m.group(1)))
+                 for m in _UEB_SPAN_RE.finditer(line)]
+        spans = [(m, t) for m, t in spans if t is not None]
+        if spans:
+            out, last = [], 0
+            for m, t in spans:
+                if m.start() > last:
+                    out.append(_decode_line_router(line[last:m.start()], math))
+                out.append(t)
+                last = m.end()
+            if last < len(line):
+                out.append(_decode_line_router(line[last:], math))
+            return "".join(out)
     # 네모 빈칸 ⠸⠦␣⠴⠇ — 규정 제73항. 가운데가 **공백 셀**이라 아래 토큰 분리가
     # 여는 쪽과 닫는 쪽을 갈라 놓는다(layout_braille._ATOMIC_SEQS 와 같은 이유).
     # 줄을 쪼개기 전에 통째로 치운다.
