@@ -45,10 +45,20 @@ def test_만화는_안이_하나다():
 
 
 def test_그림_사진_그래프는_분량으로_갈린다():
-    """형식이 아니라 분량이다. '문제 풀이용/개념 학습용'은 폐기됐다 — 우리는 문제를 안 본다."""
+    """형식이 아니라 **분량**으로 갈린다 — 그 분량 갈래는 `gist_draft` 가 진다.
+
+    ★ 2026-09-07 — 종전에는 `prose_label` 이 '설명(자세히)' 를 돌려주고 그 안의 내용을
+      LLM `[줄글]` 절로 채웠다. 이름과 내용이 거꾸로였다(실측: '설명' 4줄 vs
+      '설명(자세히)' 1줄, 게다가 캡션에 없는 문장). 지금은 줄글 안을 안 만들고,
+      **설명 안에서 항목만 지운** 간추린 설명을 낸다.
+    """
     for k in ("이미지", "차트", ""):
         assert vd.desc_label(k) == "설명", k
-        assert vd.prose_label(k) == "설명(자세히)", k
+        assert vd.prose_label(k) == vd.desc_label(k), k   # 같은 이름 → 줄글 안을 안 만든다
+    # 분량은 여기서 갈린다 — 항목을 지우기만 하므로 재료에 없는 말이 못 들어간다.
+    d_gist, ind = vd.gist_draft("그림", "", "물의 순환", "이미지")
+    assert d_gist.option == vd.GIST_OPTION and d_gist.label == "간추린 설명"
+    assert len(ind) == 1, ind
 
 
 def test_도표만_줄글이_골격과_갈린다():

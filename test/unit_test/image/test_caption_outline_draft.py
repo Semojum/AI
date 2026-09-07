@@ -102,10 +102,18 @@ def test_한_줄_캡션이면_LLM을_부르지_않는다(monkeypatch) -> None:
     assert calls == [], calls
     assert _TAG.sub("", text) == "사진: 쿠트브 미나르", text
 
-    # 여러 줄 캡션은 종전대로 — 줄글 안 재료를 LLM 이 채운다.
+    # 여러 줄 캡션도 LLM 을 안 부른다(2026-09-07). 캡션 줄이 그대로 골격이 되고,
+    # 짧은 안은 그 골격에서 **항목만 지운** 간추린 설명이다 — 지어낼 자리가 없다.
+    # (종전에는 여기서 LLM 을 불러 '설명(자세히)' 라는 이름의 1줄 줄글을 만들었는데
+    #  설명 안보다 짧았고 캡션에 없는 문장이었다.)
     calls.clear()
     ext2 = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
                             corrected_text="사진: 술탄 아흐메드 사원\n큰 돔 지붕 주위에 첨탑 여섯 개",
                             structure={})
-    asyncio.run(ImageOpt().optimize([ext2], "STANDARD"))
-    assert calls, "여러 줄 캡션까지 LLM 을 막으면 줄글 안이 빈다"
+    out2 = asyncio.run(ImageOpt().optimize([ext2], "STANDARD"))[0]
+    assert calls == [], calls
+    gist = [d for d in out2.drafts if d.option == vd.GIST_OPTION]
+    assert gist, [d.label for d in out2.drafts]
+    body = _TAG.sub("", gist[0].text)
+    assert body == "사진: 술탄 아흐메드 사원", body      # 머리줄 그대로 — 새 말이 없다
+    assert body in _TAG.sub("", out2.drafts[out2.selected_idx].text)

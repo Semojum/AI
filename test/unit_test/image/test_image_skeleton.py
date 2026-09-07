@@ -33,6 +33,9 @@ _STRUCT = {
 }
 
 
+from app.ai.llm import visual_drafts as vd_mod  # noqa: E402
+
+
 class TestFourDrafts:
     def test_안_라벨(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
@@ -46,7 +49,8 @@ class TestFourDrafts:
         assert labels[1] == desc_label("이미지"), labels
         assert labels[2].endswith(LABELS[2]) and labels[2] != LABELS[2], labels
         if len(labels) > 3:
-            assert labels[3] == prose_label("이미지"), labels
+            # 설명 안이 여러 줄이면 **간추린 설명**이 뒤에 선다(2026-09-07).
+            assert labels[3] == vd_mod.GIST_LABEL, labels
         assert len(set(labels)) == len(labels), labels
         assert opt.selected_idx == 1                           # 기본=설명(gold 79.6%)
 

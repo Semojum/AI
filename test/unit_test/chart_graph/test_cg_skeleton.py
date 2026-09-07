@@ -34,13 +34,15 @@ class TestFourDrafts:
     def test_안_라벨(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(ChartGraphOpt().optimize([ext], "ZERO"))[0]
-        from app.ai.llm.visual_drafts import prose_label
+        from app.ai.llm.visual_drafts import GIST_LABEL
         labels = [d.label for d in opt.drafts]
         # 생략·참조에는 탐지된 유형이 붙는다(2026-09-06 결재). 값이 아니라 끝 낱말로 본다.
         assert labels[0].endswith(LABELS[0]) and labels[0] != LABELS[0], labels
         assert labels[1] == desc_label("차트"), labels
         assert labels[2].endswith(LABELS[2]) and labels[2] != LABELS[2], labels
-        assert labels[3] == prose_label("차트"), labels
+        # 종전엔 LLM `[줄글]` 로 만든 '설명(자세히)'였는데 설명 안보다 **짧고** 캡션에
+        # 없는 문장이었다. 지금은 설명 안에서 항목만 지운 간추린 설명이다(2026-09-07).
+        assert labels[3] == GIST_LABEL, labels
         assert opt.selected_idx == 1                                   # 기본=설명(gold 79.6%)(표 변환)
 
     def test_개조식_데이터_전사(self):
