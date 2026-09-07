@@ -2269,7 +2269,15 @@ def _safe_to_unicode(seg: str, _split_eng: bool = True,
 
     parts = _MULTI_SPACE_RE.split(seg)
     if len(parts) > 1:
-        return "".join(_GAP_MARK * len(p) if i % 2 else _safe_to_unicode(p, _split_eng, ctx)
+        # ★ 항목 구분은 **두 칸 고정**이다 — 묵자의 연속 빈칸 길이를 베끼지 않는다.
+        #   「점자 도서 제작 지침」 3장 3절 4)(3)①(선택지 사이)·6)(1)(표의 셀 사이)이
+        #   정한 값은 '두 칸'이고, 묵자의 3~8칸은 인쇄 정렬이지 점자 칸수가 아니다.
+        #   종전에는 `_GAP_MARK * len(p)`로 그대로 옮겨, `01 ②   02 ⑤`(묵자 3칸)가
+        #   점자에서도 3칸이 됐다(gold 2칸). 코퍼스 1,180쪽 실측 — 묵자 줄 안쪽
+        #   연속 빈칸 5,378자리 중 3칸 이상이 3,558자리다.
+        #   ⚠ 점자 들여쓰기는 여기를 안 탄다 — layout_braille 이 점역 **뒤에** 점자
+        #     빈칸(U+2800)으로 붙인다(`_PAD`). 여기 걸리는 연속 빈칸은 묵자 것뿐이다.
+        return "".join(_GAP_MARK * 2 if i % 2 else _safe_to_unicode(p, _split_eng, ctx)
                        for i, p in enumerate(parts))
     if _split_eng and _BRAILLIFY_AVAILABLE:
         split = _split_english(seg, ctx)
