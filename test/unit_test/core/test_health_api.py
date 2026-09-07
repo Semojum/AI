@@ -105,3 +105,37 @@ def test_키가_있으면_경고가_없다(monkeypatch):
     hc._build_info.cache_clear()
     assert "warnings" not in hc.get_health()
     hc._build_info.cache_clear()
+
+
+class TestBuildStamp:
+    """요청 로그 판 지문(재구조화 0-c).
+
+    점역사 피드백은 며칠 뒤에 온다. 그때 "어느 커밋·어느 프롬프트였나"를 되짚을 자리가
+    요청 로그밖에 없다. 지문이 프롬프트를 안 물면 그 줄은 아무것도 못 되짚는다.
+    """
+
+    def test_지문이_여섯_프롬프트를_문다(self, monkeypatch):
+        import app.core.health_check as hc
+        hc.prompt_sha.cache_clear()
+        before = hc.prompt_sha()
+        for mod, attr in (("app.ai.captioning.captioner", "_COMMON"),
+                          ("app.ai.llm.visual_drafts", "_PROMPT"),
+                          ("app.ai.parser.opus_fallback", "_PROMPT"),
+                          ("app.ai.llm.text_opt", "_TAG_PROMPT"),
+                          ("app.ai.llm.formula_opt", "_PROMPT"),
+                          ("app.ai.llm.table_opt", "_PROMPT_TABLE_GRID")):
+            import importlib
+            m = importlib.import_module(mod)
+            with monkeypatch.context() as mp:
+                mp.setattr(m, attr, getattr(m, attr) + "\n#바뀜")
+                hc.prompt_sha.cache_clear()
+                assert hc.prompt_sha() != before, f"{mod}.{attr} 이 지문에 안 들어간다"
+        hc.prompt_sha.cache_clear()
+        assert hc.prompt_sha() == before
+
+    def test_지문에_프롬프트_본문이_안_실린다(self):
+        import app.core.health_check as hc
+        hc.build_stamp.cache_clear()
+        s = hc.build_stamp()
+        assert s.startswith("commit=") and " prompts=" in s
+        assert len(s) < 60 and "당신은" not in s

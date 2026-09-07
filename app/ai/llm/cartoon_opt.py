@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 
+from app.ai.captioning.captioner import split_material
 from app.ai.llm.base_opt import BaseOpt
 from app.ai.braille import tag_names as _TAGS
 from app.ai.llm.visual_drafts import build_visual_drafts, visual_trail
@@ -48,7 +49,9 @@ def _panel_items(structure: dict) -> list[tuple[int, str]]:
             items.append((_LV_SCENE, f"장면 {p.get('order', '')}".strip()))
         scene = (p.get("scene_desc") or p.get("scene_src") or "").strip()
         if scene:
-            items.append((_LV_LINE, scene))                   # §5.3.3(2)(7)
+            # 장면 설정은 점역사가 새로 쓴 말이라 **주 안**이다(§5.3.2(2) 2819행).
+            # 저마다 감싼다 — 사이에 낀 대사는 주 밖 본문이라 한 덩이로 못 묶는다.
+            items.append((_LV_LINE, f"<!{_TAGS.TN}>{scene}<!/{_TAGS.TN}>"))   # §5.3.3(2)(7)
         for d in p.get("dialogues") or []:
             speaker = (d.get("speaker") or "말풍선").strip()   # §6.3.4(3) 화자 불명
             items.append((_LV_LINE, _say(speaker, (d.get("text") or "").strip())))
@@ -71,6 +74,38 @@ _NOT_SPEAKER = {"대사", "말", "내용", "상황", "장면", "설명", "흐름
 _ANON_SAY = {"대사", "말", "말풍선"}
 # 만화 전체를 다시 요약하는 꼬리 줄 — 제목 줄과 겹친다. QA 13번 "내용이 중복됨"의 그 줄.
 _REDUNDANT = {"흐름", "요약", "정리", "전체", "줄거리"}
+
+
+def _material_items(facts: list[tuple[str, str]]) -> tuple[str, list[tuple[int, str]]]:
+    """캡션 재료(`captioner.split_material`) → (상황 한 문장, 개조식 항목).
+
+    배선 규칙 — **주 안 = 점역사가 새로 쓴 말 / 주 밖 = 원본에 이미 있는 말**
+    (NLD-1.2.6 · 제작 지침 §5.3.3(5) 2827행 "인물명 … 점역자 주표는 사용하지 않는다").
+    규정 예 5-5(2846~2861행)를 역점역하면 정답도 상황 문장에서 주표를 닫고 대사는 밖에 둔다.
+    gold 만화 27건 전수도 같다(주 안 상황 1문장 27/27 · 주 밖 대사 26/27).
+
+      `상황` → 주 안. 하나면 머리줄(`만화: …`)이 그 자리다.
+      `대사` → 주 밖. `화자: 말` 그대로.
+      `장면 N` → **`상황` 이 둘 이상일 때만**(§5.3.3(1)). gold 는 0/27 이 한 장면이다.
+      `못읽음`·`없음`·나머지 열쇠말 → 초안에 안 싣는다. 관측 메모지 설명이 아니다.
+    """
+    situ = [v for k, v in facts if k == "상황"]
+    says = [v for k, v in facts if k == "대사"]
+    if not (situ or says):
+        return "", []
+    items: list[tuple[int, str]] = []
+    if len(situ) > 1:                    # 여러 장면 — 장면마다 번호를 달고 머리줄은 유형어만
+        head = ""
+        for n, s in enumerate(situ, start=1):
+            items.append((_LV_SCENE, f"장면 {n}"))              # §5.3.3(1)
+            items.append((_LV_LINE, f"<!{_TAGS.TN}>{s}<!/{_TAGS.TN}>"))
+    else:                                # gold 27/27 이 한 장면 — 상황이 곧 머리줄이다
+        head = situ[0] if situ else ""
+    for d in says:
+        speaker, _, body = d.partition(":")
+        speaker, body = speaker.strip(), body.strip()
+        items.append((_LV_LINE, _say(speaker or "말풍선", body) if body else d.strip()))
+    return head, items
 
 
 def _caption_items(caption: str) -> tuple[str, list[tuple[int, str]]]:
@@ -119,13 +154,22 @@ class CartoonOpt(BaseOpt):
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
         st = ext.structure or {}
         title = (st.get("title") or "").strip()
-        caption = (ext.corrected_text or "").strip()
+        # 재료 블록(#636)은 `base_opt._split_caption_material` 이 이미 떼어 `_facts` 에
+        # 옮겨 두었다(모든 opt 공통 길목). 여기서는 그것을 쓰기만 한다.
+        # ⚠ `_optimize_one` 을 직접 부르는 자리(단위 시험 일부)를 위해 폴백을 남긴다 —
+        #   마커가 없으면 `split_material` 이 원문을 그대로 돌려주므로 값이 안 바뀐다.
+        caption, own = split_material(ext.corrected_text or "")
+        caption = caption.strip()
+        facts = st.get("_facts") or own
         items = _panel_items(st)
 
-        # 구조가 없으면 캡션이 대본 형식인지 본다. 형식이면 그게 곧 §5.3 골격이므로
+        # 구조가 없으면 **재료가 그은 경계**를 먼저 쓴다(상황=주 안 · 대사=주 밖).
+        # 재료가 없으면 종전대로 캡션이 대본 형식인지 본다. 형식이면 그게 곧 §5.3 골격이므로
         # 캡션은 제목 한 줄만 남기고(중복 제거) 항목을 rule-based로 넘긴다.
         if not items:
-            cap_title, cap_items = _caption_items(caption)
+            cap_title, cap_items = _material_items(facts)
+            if not cap_items:
+                cap_title, cap_items = _caption_items(caption)
             if cap_items:
                 # 캡션 제목은 **점역자주 머리줄**로만 간다 — §5.3(1) "'만화'를 5칸에 적고 한 칸
                 # 띈 후 만화 제목". 별도 제목줄로도 세우면 같은 문장이 두 줄이 된다.

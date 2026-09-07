@@ -41,6 +41,23 @@ class TestThinkingDisabled:
             "사고가 켜지면 max_tokens를 사고가 다 먹고 캡션이 빈 문자열로 돌아온다")
 
 
+class TestObserveFirst:
+    """#665 · 원장 B-08 — 공통 머리가 **관측을 금지하고 해석을 시키면** 안 된다.
+
+    「점자 자료 제작 지침」 §6.1.4 는 (2) 핵심에 초점 · (7) **사실에 대한 설명** ·
+    (8) **묘사를 활용**이라 적는다("무엇이 보이는지가 아니다"는 원문에 없다).
+    gold 실측도 관측 89.6% · 해석 2.9%(temp/capobs/goldkind.py, 층화표본 130건 374줄).
+    """
+
+    def test_보이는_것을_금지하지_않는다(self) -> None:
+        assert "무엇이 보이는지가 아닙니다" not in captioner._COMMON, (
+            "관측을 금지하면 남는 것은 추론뿐이라 크롭에 없는 것을 지어낸다")
+
+    def test_확인한_사실을_먼저_시킨다(self) -> None:
+        assert "확인한 사실" in captioner._COMMON      # §6.1.4(7)
+        assert "핵심에 초점" in captioner._COMMON      # §6.1.4(2)
+
+
 class TestGoldDerivedBans:
     """정답 실측에서 빈도 0(또는 1)이라 금지한 어휘가 공통 프롬프트에 남아 있는가."""
 
@@ -132,7 +149,44 @@ class TestUsableByTranslator:
         from app.ai.captioning.captioner import _PROMPTS as PROMPTS
         d = PROMPTS["diagram"]
         assert "같은 문장 틀로 나란히" in d      # 작용 비교형
-        assert "범례는 처음 한 번만" in d        # 가계도
+        # 2026-09-07 뒤집음 — gold 그림 565건 중 범례 7건(1.2%), 우리 1,208건 중 126건(10.4%).
+        # 범례를 옮기는 대신 각 대상을 그 뜻으로 바로 부른다.
+        assert "범례 줄을 쓰지 마세요" in d      # 가계도
+        assert "범례는 처음 한 번만" not in d
+
+    def test_우리만_쓰는_말을_금지한다(self):
+        """gold 가 한 번도 안 쓰는 말은 프롬프트가 막아야 한다(2026-09-07).
+
+        종류어  gold 그림 565건 중 **0건** / 우리 1,208건 중 652건(54.0%)
+        범례    gold 7건(1.2%)            / 우리 126건(10.4%)
+        추세    gold 그래프 34건 중 0건    / 우리(쪽 추출) 16건 중 11건(68.8%)
+        """
+        from app.ai.captioning.captioner import _PROMPTS as PROMPTS
+        from app.ai.parser.opus_fallback import _PROMPT as PAGE
+        assert "종류 이름(모식도" in PROMPTS["diagram"]
+        # 쪽 단위 추출도 같은 것을 시켜야 한다 — 한쪽만 고치면 다른 경로가 옛 동작으로 남는다.
+        assert "종류 이름(모식도" in PAGE
+        assert "대소 관계·추세·해석은 한 글자도" in PAGE
+        assert "값의 대소 관계를" not in PAGE
+
+    def test_줄_길이는_gold_그림_실측이다(self):
+        """구 값(10/18자)은 규정 정본 42구간에서 온 것이라 도서 gold 그림과 안 맞았다.
+
+        gold 그림 논리줄 1,827줄: 중앙 21자 · 3사분위 33자.
+        """
+        from app.ai.captioning.captioner import _COMMON
+        from app.ai.parser.opus_fallback import _PROMPT as PAGE
+        assert "21자(중앙값)~33자(3사분위)" in _COMMON
+        assert "21자(중앙값)~33자(3사분위)" in PAGE
+        assert "10자(중앙값)~18자" not in _COMMON
+
+    def test_만화_상황문은_있음으로_끝낸다(self):
+        """gold 만화 27/27 이 `…있음.` · 우리 92건 중 0건(2026-09-07)."""
+        from app.ai.captioning.captioner import _PROMPTS as PROMPTS, _MATERIAL_BLOCK
+        assert "'…하고 있음.'" in PROMPTS["cartoon"]
+        assert "'…하고 있음.' 으로 끝낸다" in _MATERIAL_BLOCK
+        # 말풍선이 없는데 대사를 지어내는 반대쪽 실패도 같이 막는다(실물 file55).
+        assert "말풍선이 없거나 안이 비어 있으면" in PROMPTS["cartoon"]
 
     def test_그래프는_값을_비우지_않는다(self):
         from app.ai.captioning.captioner import _PROMPTS as PROMPTS

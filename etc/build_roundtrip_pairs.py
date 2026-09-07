@@ -208,6 +208,13 @@ def build_symbols() -> dict:
     brl_count = Counter(b for b in SYMBOL_TABLE.values() if b)
 
     def _amb(sym: str, br: str) -> Optional[str]:
+        # 로마자 단위 합자(㎝·㎏·㎞…, U+3371~U+33DF)와 µm — 규정 제69항이 이것들을
+        # `로마자표 ⠴ + 낱자 + 종료표 ⠲` 로 적으므로, 점형이 **같은 철자를 로마자로 적은
+        # 것과 완전히 같다**(㎝ = cm = ⠴⠉⠍⠲). 점자만으로는 못 가르는 내재 모호다.
+        # 실측으로 어느 쪽이 묵자인지는 갈린다 — 재추출 묵자 1,361쪽에서 로마자꼴 114회
+        # 대 사각문자 1회라 역맵은 로마자로 편다(원장 R-27). 그래서 floor 에서 뺀다.
+        if (len(sym) == 1 and 0x3371 <= ord(sym) <= 0x33DF) or sym in ("µm", "μm"):
+            return "roman_unit"
         if br in _SYLLABLE_REV:      return "hangul"   # 한글 음절과 동일 점형
         if brl_count[br] > 1:        return "symbol"   # 기호끼리 같은 점형
         if br.startswith("⠼"):       return "number"   # 원문자(①) — 숫자와 충돌

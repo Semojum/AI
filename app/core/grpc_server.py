@@ -101,6 +101,8 @@ def _dict_to_text_element(d: dict):
         draft = elem.drafts.add()
         draft.text = dr.get("text", "")
         draft.label = dr.get("label", "")
+        # 안마다 태그가 살아 있는 묵자(2026-09-02) — FE 가 고른 안에 맞춰 위칸을 그린다.
+        draft.tn_text = dr.get("tn_text", "")
         for c in dr.get("contents", []):
             draft.contents.append(c)
     return elem

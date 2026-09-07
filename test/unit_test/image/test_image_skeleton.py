@@ -14,6 +14,7 @@ from app.ai.braille.image_braille import ImageBraille
 from app.ai.braille.layout_braille import LayoutBraille
 from app.ai.llm.image_opt import ImageOpt
 from app.ai.llm.visual_drafts import (
+    omit_label, volref_label,
     LABELS,
     desc_label,
     prose_label,
@@ -32,6 +33,9 @@ _STRUCT = {
 }
 
 
+from app.ai.llm import visual_drafts as vd_mod  # noqa: E402
+
+
 class TestFourDrafts:
     def test_안_라벨(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
@@ -39,9 +43,14 @@ class TestFourDrafts:
         labels = [d.label for d in opt.drafts]
         # 재료가 겹쳐 접힌 안이 있을 수 있다(`visual_drafts._dedupe`) — 남은 것은
         # LABELS의 **부분 수열**이고 서로 달라야 한다.
-        expected = list(dict.fromkeys(
-            [LABELS[0], desc_label("이미지"), LABELS[2], prose_label("이미지")]))
-        assert labels == [x for x in expected if x in labels], labels
+        # 생략·참조 이름에는 **탐지된 유형**이 붙는다(2026-09-06 결재) — 스키마 키가
+        # 아니라 실제 탐지 결과라 값을 못 박지 않고 끝 낱말로 검사한다.
+        assert labels[0].endswith(LABELS[0]) and labels[0] != LABELS[0], labels
+        assert labels[1] == desc_label("이미지"), labels
+        assert labels[2].endswith(LABELS[2]) and labels[2] != LABELS[2], labels
+        if len(labels) > 3:
+            # 설명 안이 여러 줄이면 **간추린 설명**이 뒤에 선다(2026-09-07).
+            assert labels[3] == vd_mod.GIST_LABEL, labels
         assert len(set(labels)) == len(labels), labels
         assert opt.selected_idx == 1                           # 기본=설명(gold 79.6%)
 
@@ -80,7 +89,7 @@ class TestFourDrafts:
         assert "[처리 불가" not in opt.corrected_text
         assert "생략" in opt.corrected_text
         assert opt.selected_idx == 0          # 0안 = 생략
-        assert [d.label for d in opt.drafts] == [LABELS[0]], \
+        assert len(opt.drafts) == 1 and opt.drafts[0].label.endswith(LABELS[0]), \
             "캡셔닝 실패·캡션 없음이면 생략 한 안만 (2026-08-12 대표 지시)"   # 안 개수 유지 — 점역사가 다른 안 선택 가능
 
 

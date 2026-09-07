@@ -24,9 +24,11 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple, Optional
 
+from app.ai.braille.tag_names import split_indent
 from app.ai.braille.kor_math_rules import _NUMBER_INDICATOR, _DIGIT_MAP
 from app.ai.braille.regulations import make_rule
 from app.ai.braille.translator import _BOOK_STYLE  # 도서 관행 스위치(BRAILLE_STYLE)
+from app.ai.braille.symbol_rules import HIDDEN_TO_BULLET as _HIDDEN_TO_BULLET_SRC
 from app.schemas.content import BrailleOutput, RuleApplication
 
 if TYPE_CHECKING:  # 런타임 import 회피 (annotations 지연 평가)
@@ -71,14 +73,10 @@ _RULE_BOX_BORDER = "NLD-1.2.5"     # 글상자 테두리(Step17 emit), tag=box_t
 # ── MCST 제72항 글머리 기호: 숨김표 글리프(_..l, 꼬리 ⠇) → 글머리형(_.., 꼬리 없음) ──
 # ○□△가 list_item 글머리로 쓰이면 숨김표(제49항)가 아니라 글머리형(제72항)이어야 한다.
 # text 체인은 문맥을 몰라 숨김표로 변환·emit하므로 여기서 글리프·rule을 글머리로 정정한다.
-_HIDDEN_TO_BULLET: dict[str, str] = {
-    "⠸⠴⠇": "⠸⠴",  # ○ 숨김표 → 글머리 (제72항 _0=⠸⠴) — 규정=도서 일치(정답 27회)
-    "⠸⠶⠇": "⠸⠶",  # □ → 글머리 (제72항 _7=⠸⠶)
-    "⠸⠬⠇": "⠸⠬",  # △ → 글머리 (제72항 _+=⠸⠬)
-    # ⚠ • 가운뎃점 분기를 지웠다(2026-08-15) — 죽은 분기였다. symbol_table이 점역
-    #   단계에서 •를 먼저 글머리 셀로 바꾸므로 ⠐⠆인 채 여기까지 오지 않는다.
-    #   글머리 점형은 symbol_rules._SYMBOL_BULLET이 정본이다.
-}
+# ⚠ • 가운뎃점 분기는 지웠다(2026-08-15) — 죽은 분기였다. symbol_table이 점역 단계에서
+#   •를 먼저 글머리 셀로 바꾸므로 ⠐⠆인 채 여기까지 오지 않는다.
+# 표 정본은 symbol_rules.HIDDEN_TO_BULLET — translate_plain도 같은 표를 쓴다(2026-09-07).
+_HIDDEN_TO_BULLET = _HIDDEN_TO_BULLET_SRC
 _RULE_BULLET = "MCST-한글-6.14.72"   # 글머리 기호 (제72항)
 _RULE_HIDDEN_SINGLE = "MCST-한글-6.13.49"  # 숨김표 단일(제49항) — list_item 첫머리면 글머리로 정정
 
@@ -480,6 +478,24 @@ class LayoutBraille:
 
         layout_result로 element별 type·reading_order·heading_level을 조회한다.
         조판 rule_trail은 각 BrailleOutput.rule_trail에 in-place 추가(점자 좌표).
+
+        조판 자체는 `render`(순수부)가 하고 여기서는 저장만 한다(S1 진입점 통일 #673).
+        """
+        pages, rate = self.render(braille_outputs, page_no, layout_result=layout_result)
+        self._save(pages, job_id, page_no)
+        return rate
+
+    def render(
+        self,
+        braille_outputs: list[BrailleOutput],
+        page_no: int,
+        *,
+        layout_result: Optional["LayoutResult"] = None,
+    ) -> tuple[list[list[str]], float]:
+        """조판 순수부 — (페이지별 줄 목록, line_overflow_rate). 파일을 쓰지 않는다.
+
+        `layout()` 에서 `_save` 만 떼어 낸 것이다(S1, 코드 이동). 채점기가 `.brf` 를 안 만들고도
+        제품과 **같은 조판 furniture** 를 볼 수 있게 하려고 갈랐다(설계 §3-1 4-4 축).
         """
         meta = self._build_meta(layout_result)
         body, page_line_items = self._partition(braille_outputs, meta)
@@ -509,8 +525,7 @@ class LayoutBraille:
         footer = self._footer_text(body, meta)
         orig_page = self._orig_page_text(page_line_items, meta)
         pages = self._assemble_pages(formatted, footer, orig_page, page_no)
-        self._save(pages, job_id, page_no)
-        return (forced_total / total) if total else 0.0
+        return pages, ((forced_total / total) if total else 0.0)
 
     def _assemble_pages(
         self,
@@ -938,6 +953,13 @@ class LayoutBraille:
         self, bo: BrailleOutput, etype: str, is_heading: bool, hlevel: int
     ) -> int:
         """첫 줄 들여쓰기 칸 수. (조판 서식이므로 rule_trail 미기록 — 태민 정책)."""
+        # ★ `<!N칸>` 태그가 있으면 **그 값이 이긴다**(2026-09-03). mode a 에서 점역사가
+        #   들여쓰기를 손본 결과가 이 태그이고, mode b 로 되돌아올 때 그대로 지켜야 한다.
+        #   종전에는 태그를 아무도 안 읽어(tag_names.split_indent 호출부 0개) mode b 가
+        #   요소 유형만 보고 **전부 2칸**으로 밀어 넣었다 — <!6칸> 제목도 2칸이 됐다.
+        tagged, _ = split_indent(bo.corrected_text or "")
+        if tagged is not None:
+            return tagged
         if is_heading:
             if hlevel >= 3:
                 if _ITEM_HEAD_NUM.match(bo.corrected_text or ""):
@@ -1232,6 +1254,25 @@ class LayoutBraille:
 # 3/5/7칸 들여쓰기, 1단계 제목 가운데 정렬은 지침(NLD 2장2절1·2절2·3절5) 규칙이지 화면
 # 사정이 아니다. FE·BE가 type·heading_level을 보고 재현하려면 규정을 다시 구현해야 하고,
 # 그러면 규칙이 세 벌로 갈라진다. 여기서 점자 공백 셀로 문자열에 직접 박아 내보낸다.
+
+def render_page_text(
+    braille_outputs: list[BrailleOutput],
+    page_no: int,
+    *,
+    layout_result: Optional["LayoutResult"] = None,
+) -> list[list[str]]:
+    """본문 요소들 → 그 쪽의 조판된 점자 줄(페이지별). 파일을 쓰지 않는다.
+
+    S1 진입점 통일(#673). `LayoutBraille().render(...)[0]` 과 같다 — 제품이 `.brf` 로 저장하는
+    것과 **같은 줄**을 돌려주므로, 채점기가 조판 furniture(머리줄·빈 줄·페이지행)를 포함해
+    제품과 같은 것을 볼 수 있다.
+
+    ⚠ 본문 요소만 다룬다. 시각 초안·중첩 블록·별책 참조는 이 길을 안 지난다(설계 §2-5).
+    ⚠ 조판은 `BrailleOutput` 을 **제자리에서** 고친다(braille_lines 를 조판본으로 write-back,
+      rule_trail 재매핑). 같은 객체를 두 번 넣으면 가운데 정렬·들여쓰기가 두 번 걸린다.
+    """
+    return LayoutBraille().render(braille_outputs, page_no, layout_result=layout_result)[0]
+
 
 class FlatElement(NamedTuple):
     """요소 하나의 통 문자열 + 그 좌표계로 옮긴 rule_trail.

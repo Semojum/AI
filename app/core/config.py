@@ -2,8 +2,18 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from dotenv import load_dotenv
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# ── `.env` 로드는 **여기 한 자리**다 (2026-09-08, 재구조화 0-d) ────────────────
+# 종전에는 `captioner.py`·`classifier.py` 두 자리에서 돌았다. 둘 다 지연 import 라
+# `.env` 가 **언제** 읽히는지가 import 순서에 달렸고, 모듈 최상단에서 `os.environ.get`
+# 으로 굳는 스위치가 서른 넘게 있다. 이 모듈은 앱이 무엇을 하든 가장 먼저 import 되므로
+# 여기서 한 번 읽으면 그 뒤 어떤 순서로 import 하든 같은 값을 본다.
+# ⚠ `override=False`(기본)다 — **프로세스 env 가 항상 이긴다.** A/B 는 `.env` 가 아니라
+#   프로세스 env 로 주입한다(`FOO=1 python …`).
+load_dotenv()
 
 # HCXT 추론 백엔드 허용값 — 아래 hcxt_backend 주석 참조.
 _HCXT_BACKENDS = {"off", "transformers", "vllm"}
@@ -118,7 +128,9 @@ class Settings(BaseSettings):
     #   곧바로 외부 API 폴백(base_opt.fallback_optimize)으로 간다.
     #   근거 = 1차 PoC 품질 비교에서 HCXT가 탈락(태깅 실문장 48/100 vs claude-sonnet-5 91/100,
     #   실패 47건 중 46건이 본문 훼손. 8초 상한 초과는 0/100이라 "느려서"가 아니라 "틀려서" 탈락).
-    #   ★ 폐기가 아니라 비활성이다 — 모델 파일(models/hcxt·hcxt-gptq)과 아래 배선·서빙
+    #   ★ 폐기가 아니라 비활성이다 — 아래 배선·서빙 스크립트는 그대로 두었다.
+    #     다만 **모델 가중치는 2026-09-06 삭제했다**(64GB, 대표 지시). 재취득 경로는
+    #     model_manager._load_hcxt 주석 참조.  구 주석: 모델 파일(models/hcxt·hcxt-gptq)과 아래 배선·서빙
     #   스크립트는 보존한다. 되살리려면 이 값을 "vllm"으로 바꾸고 vLLM 서버를 띄우면 된다
     #   (기동 인자는 model_manager._load_hcxt 주석 참조).
     # "transformers": 인프로세스 bitsandbytes 4bit(단일 GPU 직렬, 락 필요).

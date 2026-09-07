@@ -46,15 +46,17 @@ class TestSafeTranslate:
 
 class TestTextBrailleIsolation:
     def test_TextBraille_실패요소_격리(self, monkeypatch):
-        # translate_with_breaks가 'BAD' 포함 텍스트에서 raise하도록 강제(braillify 설치 무관 결정적).
-        real = _tb.translate_with_breaks
+        # translate_body가 'BAD' 포함 텍스트에서 raise하도록 강제(braillify 설치 무관 결정적).
+        # ★ 본문 점역 진입점은 translate_body 다(S1 #673). 이름이 바뀌면 여기도 같이 바꾼다 —
+        #   안 바꾸면 patch 가 아무 데도 안 걸려 격리 자체를 검사하지 못한다.
+        real = _tb.translate_body
 
         def fake(text: str):
             if "BAD" in text:
                 raise ValueError("Invalid character")
             return real(text)
 
-        monkeypatch.setattr(_tb, "translate_with_breaks", fake)
+        monkeypatch.setattr(_tb, "translate_body", fake)
 
         opts = [_opt("안녕하세요"), _opt("BAD글자"), _opt("반갑습니다")]
         out = TextBraille().translate(opts)

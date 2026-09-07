@@ -42,11 +42,27 @@ class TestRomanSymbolCollision:
         """`%`=⠴⠏ 와 로마자표+p 가 같은 셀이라 `pH`가 `%`+미지셀로 깨졌었다."""
         assert _rt(text) == text
 
-    @pytest.mark.parametrize("text", ["25℃ 물", "5㎏ 짐", "3㎝ 길이", "10㎞ 거리",
-                                      "50% 확률", "2㎡ 넓이"])
+    @pytest.mark.parametrize("text", ["25℃ 물", "50% 확률"])
     def test_길이가_같으면_기호가_이긴다(self, text: str) -> None:
-        """℃(⠴⠙⠠⠉)·㎏(⠴⠅⠛⠲)은 로마자로 읽어도 같은 셀 수라 단위 기호로 남는다."""
+        """℃(⠴⠙⠠⠉)는 로마자로 읽어도 같은 셀 수라 단위 기호로 남는다."""
         assert _rt(text) == text
+
+    @pytest.mark.parametrize("text,want", [("5㎏ 짐", "5kg 짐"), ("3㎝ 길이", "3cm 길이"),
+                                           ("10㎞ 거리", "10km 거리"),
+                                           # 제곱 단위는 뒤가 숫자로 끝나 `_join_num_hangul`
+                                           # (제17항 [다만])이 뒤 한글의 칸을 먹는다 —
+                                           # 전권 18,892쪽에서 1건뿐이라 그대로 둔다.
+                                           ("넓이 2㎡", "넓이 2m^2"),
+                                           ("넓이 2㎠", "넓이 2cm^2")])
+    def test_로마자_단위는_로마자로_돌아온다(self, text: str, want: str) -> None:
+        """규정 제69항 — 로마자로 쓰인 단위는 `⠴ + 낱자 + ⠲` 라 사각문자와 점형이 같다.
+
+        어느 쪽으로 펼지는 실측이 정한다: 재추출 묵자 1,361쪽 전수에서 로마자꼴 114회 대
+        사각문자 1회(㎢)이고, 그 셀이 실제로 있는 쪽만 봐도 묵자는 cm 19·kg 5·km 6 …
+        **사각문자 0회**다(원장 R-27). 기호 매칭이 로마자 런을 이기는 성질은 그대로다 —
+        뒤 한글(`짐`·`길이`)이 런에 안 먹혔는지가 이 케이스의 본뜻이다.
+        """
+        assert _rt(text) == want
 
 
 class TestEnglishContractions:
@@ -179,6 +195,45 @@ class TestKnownLimits:
         """⠿는 테두리 셀이자 약자 '옹'이다 — 줄 전체가 테두리 꼴일 때만 표시로 바꾼다."""
         assert _rt(text) == text
 
+    def test_짝_없는_드러냄표_닫는표를_버린다(self) -> None:
+        """제35항 드러냄표는 글자체 표시라 묵자에 대응 문자가 없다.
+
+        여는 표가 앞 쪽에 있거나 줄임표가 바로 앞이면 짝이 안 잡혀 `-'` 로 샜다.
+        묵자 대조(수능특강 문학 p0151): `다행이로다.”` — ⠤⠄ 자리에 글자가 없다.
+        실측 48회·45쪽.
+        """
+        assert decode("⠊⠚⠗⠶⠕⠐⠥⠊⠲⠤⠄⠴") == "다행이로다.”"
+        assert decode("⠠⠤⠈⠥⠨⠕⠤⠄") == "고지"      # 짝이 맞으면 종전대로
+    def test_원본_페이지_변경선을_읽는다(self) -> None:
+        """「점자 자료 제작 지침」 2.4.5 — 1칸부터 붙임표를 채우고 원본 쪽 번호를 오른쪽에 적는다.
+
+        글자가 아니라 조판 표시인데 역맵에 없어 붙임표 런이 줄표로 나오고 뒤 수표가
+        `⟨⠼⟩` 로 샜다. 꼬리가 `⠼⠤`(#-)면 선행 번호와 연결되지 않는다는 표시다.
+        실측 91줄·38쪽.
+        """
+        assert decode("⠤" * 30 + "⠼⠤") == "【원본 페이지 변경선】"
+        assert decode("⠤" * 22 + "⠼⠋⠤⠼⠛") == "【원본 페이지 변경선 6-7】"
+        assert decode("⠤" * 8) == "【표 구분선】"     # 번호 없는 줄은 종전대로
+
+    def test_수식_쉼표와_곱셈점을_가른다(self) -> None:
+        """「수학 점자」 제12항 [붙임 1] 쉼표 = 곱셈 [붙임] 점 곱셈 기호 = 같은 셀 ⠐.
+
+        규정 예문이 **띄어쓰기로 갈린다** — 쉼표는 뒤에 빈칸이 있고(`a₁, a₂, a₃,`),
+        곱셈점은 앞뒤가 붙어 있다(`6·9`). 종전에는 둘 다 `·` 로 내서
+        `Ⅲ이 d_1· Ⅳ가 d_4·` 처럼 쉼표 자리가 가운뎃점으로 나갔다(7,059회·1,380쪽).
+        """
+        assert decode("⠁⠰⠼⠁⠐⠀⠁⠰⠼⠃⠐⠀⠁⠰⠼⠉⠐") == "a_1, a_2, a_3,"
+        assert decode("⠁⠔⠼⠃⠐⠃⠒⠒") == "a-2·b="      # 붙은 것은 곱셈점 그대로
+
+    def test_각_기호를_읽는다(self) -> None:
+        """「수학 점자」 제39항 `∠ABC` = ⠹⠠⠠ABC.
+
+        ⠹ 는 한글 약자 `억` 과 같은 셀이라 **뒤가 대문자 단어표 + 낱자일 때만** 본다.
+        줄임표 ⠠⠠⠠ 는 +3 이 낱자가 아니라 안 걸린다. 실측 1,023회·143쪽.
+        """
+        assert decode("⠹⠠⠠⠃⠁⠉⠒⠒⠼⠑⠌⠨⠏") == "∠BAC=5분의π"
+        assert decode("⠹⠈⠎") == "억거"                # 홀로 선 ⠹ 는 약자 그대로
+
     def test_공백_넘는_구간을_읽는다(self) -> None:
         """제32항 `MP4 Player` — 2026-08-24까지는 못 읽던 한계였다.
 
@@ -187,6 +242,90 @@ class TestKnownLimits:
         (제29항) 닫는 낫표 `』`=⠴⠆를 구간 시작으로 오인하지 않는다.
         """
         assert _rt("MP4 Player를 샀다") == "MP4 Player를 샀다"
+
+    def test_큰_수의_만_단위_구분선을_읽는다(self) -> None:
+        """초등 교재 관행 — 큰 수를 네 자리씩 끊어 보일 때 ⠸ 를 넣는다.
+
+        규정 제41항의 자릿점은 쉼표 ⠂ 라 이건 규정형이 아니다. 안 읽으면 ⠸ 가
+        미해독으로 새고 **뒤 숫자가 수표 문맥을 잃어 글자로** 떨어졌다
+        (`30|6025` → `30⟨2838⟩카합마`). 전권 693회·58쪽.
+        """
+        assert decode("⠼⠉⠚⠸⠋⠚⠃⠑") == "30|6025"
+        assert decode("⠼⠋⠙⠸⠛⠚⠙⠛⠸⠚⠚⠚⠚") == "64|7047|0000"
+        assert decode("⠼⠑⠂⠛⠚⠚") == "5,700"      # 규정 자릿점은 종전대로 쉼표
+
+    def test_수_안의_드러냄표가_수를_끊지_않는다(self) -> None:
+        """제35항 드러냄표는 폭이 0인 표시다 — 수 안에 있으면 토큰이 갈려 뒤가 글자로 샜다.
+
+        `47⟦2⟧1조`(⠼⠙⠛⠠⠤⠃⠤⠄⠁⠨⠥)가 `47ba조` 로 나갔다. 실측 89회·36쪽.
+        """
+        assert decode("⠼⠙⠛⠠⠤⠃⠤⠄⠁⠨⠥") == "4721조"
+        assert decode("⠠⠤⠈⠥⠨⠕⠤⠄") == "고지"     # 한글 드러냄표는 종전대로
+
+    def test_홀로_선_세로선을_읽는다(self) -> None:
+        """표·그래프의 세로선 ⠸ — 글자가 아니라 도형이다.
+
+        역맵에 없어 ⠸ 가 미해독으로 그대로 샜다(전권 726회·57쪽).
+        앞뒤가 모두 경계일 때만 본다 — 붙은 ⠸ 는 두 셀 기호·UEB 약자의 앞 셀이다.
+        """
+        assert decode("⠀⠀⠿⠉⠉⠀⠸⠀⠉⠉⠿").count("|") == 1
+        assert decode("⠸⠎⠕⠢") == "것임"          # 붙은 ⠸ 는 한글 약자 '것'
+
+    def test_대문자_구절표로_열린_구간을_읽는다(self) -> None:
+        """제28항 [붙임] — 구절표 ⠠⠠⠠ … 종료표 ⠠⠄ 사이는 한 구간이다.
+
+        ⠠⠠⠠ 는 줄임표 `……` 와 같은 셀이라 긴-셀 매칭이 먼저 먹어 런이 시작조차
+        못 했다(`……a, _b, _날 _파`). **닫는 표까지 로마자 셀만 있을 때**만 구절로
+        본다 — 뒤가 낱자라는 것만으로 가르면 `……나는 갈매기` 가 `CCZ 갈매기` 로 깨진다.
+        """
+        assert decode("⠠⠠⠠⠊⠂⠀⠊⠊⠂⠀⠊⠊⠊⠠⠄") == "I, II, III"
+        assert decode("⠠⠠⠠⠁⠂⠀⠰⠃⠂⠀⠰⠉⠂⠀⠰⠙⠠⠄") == "A, B, C, D"
+        assert decode("⠠⠠⠠⠓⠉⠕⠰⠼⠉⠘⠔⠠⠄") == "HCO_3^-"
+
+    def test_사슬_화합물_결합선을_읽는다(self) -> None:
+        """「과학 점자」 제10항 2호(규정 재추출본 4507~4509행) — 결합선은 ⠰ 뒤에
+        하단 숫자 1·2·3 을 붙여 단일·이중·삼중 결합을 나타낸다.
+
+        아래첨자(「수학 점자」 제19항 1호 · 3567행)는 **수표를 낀다**(`x;#B`)므로
+        맨몸 하단 숫자는 첨자가 아니다. 종전에는 구절 안 ⠰+하단숫자를 전부
+        첨자로 읽어 `H-O-H` 가 `H_1O_1H` 로 나갔다(전권 EBS-E26-002 p0274
+        `R-C=O` → `R_1C_2O`).
+        """
+        assert decode("⠠⠠⠠⠓⠰⠂⠕⠰⠂⠓⠠⠄") == "H-O-H"          # 규정 4512행
+        assert decode("⠠⠠⠠⠕⠰⠆⠉⠰⠆⠕⠠⠄") == "O=C=O"          # 규정 4514행
+        assert decode("⠠⠠⠠⠓⠰⠂⠉⠰⠒⠉⠰⠂⠓⠠⠄") == "H-C≡C-H"    # 규정 4516행
+        # 첨자(⠰⠼)는 그대로 첨자다 — 같은 구절 안에서 갈린다(규정 4535행)
+        assert decode("⠠⠠⠠⠓⠉⠕⠰⠼⠉⠘⠔⠠⠄") == "HCO_3^-"
+        # 뒤가 원소 기호가 아니면 결합선이 아니다(제10항 1호 "붙여 적는다")
+        assert decode("⠠⠠⠠⠕⠊⠰⠆") != "OI="
+
+    def test_줄임표는_그대로_둔다(self) -> None:
+        """⠠⠠⠠ 뒤에 한글이 오면 줄임표다 — 전권 실측 7,383회 중 6,416회가 이쪽이다."""
+        assert decode("⠠⠠⠠⠉⠉⠵⠀⠫⠂⠑⠗⠈⠕").startswith("……")
+
+    def test_줄표에서_닫히는_구간을_읽는다(self) -> None:
+        """제33항 — `, : ; ―` 는 로마자 종료표 **없이** 구간을 닫는다.
+
+        종료표만 증거로 요구하면 규정 예문 `Hedy Lamarr―미국의 여배우`가
+        `Hedy 싹우얘—미국의`로 깨진다(둘째 낱말이 문맥을 잃는다).
+        ⠤⠤(줄표)는 UEB 약자 com(⠤)과 첫 셀이 같아 약자 가지보다 먼저 봐야 한다.
+        """
+        got = decode("⠴⠠⠓⠫⠽⠀⠠⠇⠁⠍⠜⠗⠤⠤⠑⠕⠈⠍⠁⠺")
+        assert got.startswith("Hedy Lamarr")
+
+    def test_수식_여는_소괄호를_구간_끝으로_보지_않는다(self) -> None:
+        """⠦ 는 물음표이자 **수식 여는 소괄호**다(`P(0≤Z≤z)`).
+
+        뒤가 수표·숫자면 문장 부호가 아니므로 구간을 닫지 않는다 — 받아 주면
+        표준정규분포표 머리가 `)z`로 깨졌다(전권 실측 13쪽).
+
+        ★ 기댓값의 **두 칸이 한 칸으로 줄었다**(_print_gap). 이 줄은 표 머리라 두 칸이
+          열 구분인데, 같은 두 칸이 본문에서는 제11항의 수식 경계다. 점자만 봐서는
+          둘을 못 가른다. 전권 실측으로 표·정렬 근처는 두 칸 자리 38,197 중 299(0.8%)
+          뿐이라 다수 쪽을 따랐다 — 이 줄이 그 0.8%다. 손해는 열 간격이 두 칸에서
+          한 칸으로 좁아지는 것뿐이고, 이 테스트가 지키려는 ⠦ 판정은 그대로다.
+        """
+        assert decode("⠴⠵⠀⠀⠠⠏⠦⠼⠚⠖⠖⠠⠵⠖⠖⠵⠴") == "z P(0≤Z≤z)"
 
 
 class TestPieupFinalAndWrapParens:
@@ -218,3 +357,324 @@ class TestPieupFinalAndWrapParens:
     @pytest.mark.parametrize("text", ["‘-더-’", "x-5-2"])
     def test_진짜_붙임표는_괄호로_바꾸지_않는다(self, text: str) -> None:
         assert "(" not in self._round(text)
+
+
+class TestSequenceBrace:
+    """수열 묶음표 — 「수학 점자」 제24항 "수열({aₙ})은 7A;N7으로 적는다".
+
+    ⠶ 는 여는 중괄호와 닫는 중괄호가 같은 점형이라 역맵이 둘 다 `{` 로 편다.
+    이 꼴에서만 짝이 분명하므로 닫는 쪽을 `}` 로 낸다.
+    실측(전권 18,892쪽): 202회·50쪽, 서로 다른 꼴 넷이 전부 수열이다.
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠶⠁⠰⠝⠶", "{a_n}"),
+        ("⠶⠃⠰⠝⠶", "{b_n}"),
+        ("⠶⠠⠎⠰⠝⠶", "{S_n}"),      # 대문자표가 안쪽에 낀 꼴
+        ("⠶⠁⠰⠝⠶⠐", "{a_n},"),
+    ])
+    def test_수열은_중괄호로_닫는다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠰⠝⠈⠳⠚⠣⠱⠌⠊⠲", "체결하였다."),
+        ("⠨⠾⠰⠕⠇", "전치사"),
+    ])
+    def test_아래첨자표_뒤_낱자는_한글로_남는다(self, raw: str, want: str) -> None:
+        """⠰+낱자는 초성 ㅊ(체·채·추·치…)과 같은 셀이다.
+
+        전권 실측 39,591건 중 93.2%가 한글이라 첨자로 넓히면 본문을 먹는다 —
+        묶음표 안으로만 한정한 이유다.
+        """
+        assert self._d(raw) == want
+
+
+class TestFunctionNotation:
+    """함수 표기 — 「수학 점자」 제45항 `y=f(x)` = `Y33F8X0`.
+
+    `8`·`0` 은 여는·닫는 소괄호 ⠦·⠴ 다. 수표도 관계 기호도 없어 종전에는 TEXT 로
+    떨어졌고, ⠦ 가 여는 큰따옴표라 `f(x)` 가 `캍옥”` 으로 나갔다(전권 3,210회·551쪽).
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠋⠦⠭⠴", "f(x)"),
+        ("⠛⠦⠭⠴", "g(x)"),
+        ("⠧⠦⠞⠴", "v(t)"),
+        ("⠋⠦⠼⠁⠴", "f(1)"),
+        ("⠋⠦⠭⠴⠒⠒⠼⠚", "f(x)=0"),
+    ])
+    def test_함수는_괄호로_읽는다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    def test_쌍점은_곱셈점이_아니다(self) -> None:
+        """⠐⠂ 는 쌍점이다 — 수식 경로에 없어 `f(x)·,` 로 나갔다(107회·65쪽)."""
+        assert self._d("⠋⠦⠭⠴⠐⠂") == "f(x):"
+
+    def test_닫는_괄호가_도보다_먼저다(self) -> None:
+        """°(제50항 `0d`)의 앞 셀이 닫는 소괄호와 같다. 열린 괄호가 있으면 닫는 쪽이 먼저다."""
+        assert self._d("⠋⠦⠭⠴⠙⠭⠢") == "f(x)dx+"
+        assert self._d("⠋⠦⠼⠊⠚⠴⠙⠴") == "f(90°)"      # 도는 수 뒤에 온다
+
+    def test_극한은_표에서_잡는다(self) -> None:
+        """제51항 `lim;x`(⠇⠊⠍⠰⠭)는 한글 `사두촉` 으로 깨끗이 풀려 꼬리 가드가 물었다."""
+        assert self._d("⠋⠦⠭⠴⠒⠒⠇⠊⠍⠰⠭") == "f(x)=lim_{x}"
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠦⠄⠫⠠⠴", "(가)"),
+        ("⠦⠄⠼⠃⠠⠴", "(2)"),
+        ("⠑⠦⠣⠉⠥⠴⠈⠥", "맡아놓고"),   # 괄호 안에 관행 제곱 ⠣ 를 안 넣은 이유
+    ])
+    def test_한글_괄호는_그대로(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+class TestRangeUpperLimit:
+    """적분·총합의 범위 — 「수학 점자」 제25항(총합)·제57항(정적분).
+
+    두 조항 다 "범위의 시작은 `;`으로 하고 **끝은 한 칸을 띄어 쓴다**" 라 정한다.
+    위끝이 따로 떨어진 토큰이라 홑 낱자로 서면 한글로 읽혔다 — `Σ_k=1 n` 의 ⠝ 가 `에`.
+    전권 실측: `' ' -> '^'` 872회·141쪽 · `'을' -> '∫'` 799회·119쪽.
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠠⠨⠎⠰⠅⠒⠒⠼⠁⠀⠝", "Σ_k=1^n"),
+        ("⠠⠨⠎⠰⠅⠒⠒⠼⠁⠀⠼⠛", "Σ_k=1^7"),
+        ("⠮⠰⠁⠀⠃", "∫_a^b"),
+        ("⠮⠰⠔⠼⠃⠀⠼⠃", "∫_-2^2"),
+        ("⠮⠰⠨⠁⠀⠨⠃", "∫_α^β"),
+    ])
+    def test_위끝은_앞에_붙는다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    def test_한글은_안_먹는다(self) -> None:
+        """⠮ 는 약자 `을` 이라 홀로 18,156회다. 아래끝까지 범위 꼴이어야 수식으로 본다."""
+        assert self._d("⠮⠰⠍⠁⠉⠡") == "을축년"
+
+
+class TestPermutationCombination:
+    """순열·조합 — 「수학 점자」 제62항 2~5.
+
+    두 인자가 묶음 괄호 안에서 **한 칸으로 갈린다**(`,C(N`R)`). 라우터가 그 칸에서
+    토큰을 쪼개 `₃C₂` 가 `C(3 2)` 로 나갔다 — 묵자는 `_3C_2` 다.
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠠⠉⠷⠼⠉⠀⠼⠃⠾", "_3C_2"),          # 조합 (제62항 3)
+        ("⠠⠏⠷⠼⠉⠀⠼⠁⠾", "_3P_1"),          # 순열 (제62항 2)
+        ("⠠⠨⠏⠷⠼⠛⠀⠼⠃⠾", "_7Π_2"),        # 중복순열 (제62항 4)
+        ("⠠⠓⠷⠼⠛⠀⠼⠃⠾", "_7H_2"),          # 중복조합 (제62항 5)
+        ("⠠⠉⠷⠝⠀⠗⠾", "_nC_r"),            # 인자가 낱자면 수표가 없다
+        ("⠠⠉⠷⠼⠉⠀⠼⠁⠾⠒⠒⠼⠉", "_3C_1=3"),
+    ])
+    def test_두_인자를_첨자로_편다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠴⠠⠉⠷⠋⠑⠑⠲", "Coffee"),          # ⠷ 는 UEB 약자 `of` — 짝 맞는 ⠾ 를 요구한다
+        ("⠠⠓⠷⠍⠁⠝⠝⠲", "톤욱에에."),
+    ])
+    def test_짝이_없으면_안_본다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+
+class TestMeanBar:
+    """평균값 X̄ — 「수학 점자」 제23항 나 "평균값(―)은 @c으로 적되, 편차 기호로도 사용한다".
+
+    기호가 **글자 뒤**에 온다(규정 예문 `X@C`). ⠠⠭ 는 한글 `속`(된소리 ㅅ + 옥)이라
+    본문 토큰에서 `속̅` 으로 나갔다 — 수식 토큰에서는 이미 `X̅` 로 맞았다.
+    자리도 맞춘다: 묵자와 채점기(detex2)는 결합 문자를 앞에 둔다(`̅X`).
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠠⠭⠈⠉", "̅X"),
+        ("⠠⠽⠈⠉", "̅Y"),
+        ("⠠⠭⠈⠉⠐⠂", "̅X:"),
+        ("⠠⠑⠦⠠⠭⠈⠉⠴⠒⠒⠠⠑⠦⠠⠭⠴⠒⠒⠍", "E(̅X)=E(X)=m"),   # 수식 경로도 앞에 둔다
+        ("⠈⠉⠠⠠⠁⠃", "̅AB"),                              # 선분(제35항)은 종전대로
+    ])
+    def test_평균값은_결합문자를_앞에_둔다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠠⠭⠐⠣", "속라"),          # ⠠⠭ 는 한글 `속` — 평균값 기호가 뒤따를 때만 본다
+        ("⠠⠥⠈⠪⠢⠑⠯⠮", "소금물을"),
+    ])
+    def test_한글은_그대로(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+
+class TestLetterSignTerminator:
+    """홑 로마자 문자표 + 종료표 — 「한글 점자」 제32항. 도서는 `;b4`(⠰⠃⠲)로 적는다.
+
+    여는 로마자표 ⠴ 가 없어 로마자 런 판정에 안 걸려 통째로 한글로 떨어졌다.
+    실측(전권 18,892쪽): 1,937회·687쪽.
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠰⠃⠲⠺", "b의"),
+        ("⠰⠉⠲", "c"),
+        ("⠰⠙⠲", "d"),
+        ("⠰⠽⠲⠺", "y의"),      # 음절이 되지만 마침표 뒤에 조사가 붙는 한국어는 없다
+        ("⠰⠝⠲⠝", "n에"),
+        ("⠁⠐⠀⠰⠃⠲⠐⠀⠰⠉⠲⠝⠀⠊⠗⠚⠣⠱", "a, b, c에 대하여"),
+    ])
+    def test_문자표_낱자는_로마자다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠰⠝⠲", "체."),        # ⠰ 는 초성 ㅊ — 음절이 되고 꼬리가 없으면 손대지 않는다
+        ("⠰⠗⠲", "채."),        # 실측 `줄도 모른 채.`
+        ("⠰⠏⠲", "춰."),
+        ("⠨⠾⠰⠕⠇", "전치사"),
+        ("⠰⠝⠈⠳⠚⠣⠱⠌⠊⠲", "체결하였다."),
+    ])
+    def test_한글은_그대로(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+
+class TestLetterOpNumber:
+    """낱자로 시작하는 연산식 — `x-1`(⠭⠔⠼⠁).
+
+    수표는 있지만 수식 신호(첨자 ⠰⠘·묶음괄호 ⠷)가 없어 NUM 으로 떨어지고, 한글 경로가
+    ⠭ 를 `옥`, ⠍⠢ 를 `움`, ⠁ 을 약자 `그러므로` 로 읽었다.
+    실측(전권 18,892쪽) 407회·191쪽 · 159 가지 꼴에 진짜 한글이 하나도 없다.
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠭⠔⠼⠁", "x-1"),
+        ("⠭⠢⠼⠃", "x+2"),
+        ("⠍⠢⠼⠁", "m+1"),
+        ("⠁⠢⠼⠙", "a+4"),
+        ("⠭⠔⠼⠁⠐", "x-1,"),
+    ])
+    def test_낱자_부호_수는_수식이다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠎⠔⠵", "얻은"),      # 부호 뒤에 수표가 없으면 안 본다 — ⠢·⠔ 는 받침이다
+        ("⠉⠢⠵", "남은"),
+        ("⠕⠢⠺⠐⠥", "임의로"),
+        ("⠭", "옥"),           # 단독 ⠭ 는 진짜 한글이다(`옥 같은 얼굴`)
+    ])
+    def test_한글은_그대로(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+
+class TestCapitalFunctionNotation:
+    """대문자 함수·확률 표기 — 「수학 점자」 제63항 `P(B∣A)` = `,P8,B\\,A0`,
+    제64항 `V(p̂)` = `,V8p@@50`.
+
+    함수 게이트가 **소문자 낱자로 시작할 때만** 맞아 앞의 대문자표 ⠠ 에 걸렸다.
+    `P(x)`(⠠⠏⠦⠭⠴)가 초성 ㅅ + 모음 ㅝ + 받침 ㅌ + 약자 `옥` + 닫는 따옴표로 읽혀
+    `쉍옥”` 으로 나갔다. 전권 실측 접두 `⠠낱자⠦…⠴` 1,433회·202쪽 중 놓치던 것이
+    562회·122쪽·90꼴이고, 그 안에 **순한글로 읽히는 꼴이 0종 0회**다.
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠠⠏⠦⠭⠴", "P(x)"),
+        ("⠠⠟⠦⠭⠴", "Q(x)"),
+        ("⠠⠋⠦⠭⠴", "F(x)"),
+        ("⠠⠏⠦⠭⠴⠒⠒⠼⠚", "P(x)=0"),
+        ("⠠⠑⠦⠠⠭⠴", "E(X)"),                    # 괄호 안 대문자표
+        ("⠠⠧⠦⠠⠭⠴⠒⠒⠠⠑⠦⠠⠭⠘⠼⠃⠴", "V(X)=E(X^2)"),
+    ])
+    def test_대문자_함수는_괄호로_읽는다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠑⠦⠣⠉⠥⠴⠈⠥", "맡아놓고"),   # 관행 제곱 ⠣ 는 괄호 안에 안 넣는다
+        ("⠦⠄⠫⠠⠴", "(가)"),
+        ("⠭", "옥"),
+    ])
+    def test_한글은_그대로(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+
+class TestRomanTilde:
+    """로마자 구간의 물결표 — 제32항(로마자표 `0` … 종료표 `4` 사이는 통일영어점자) ·
+    제55항 문장 부호표 물결표 `@9`(⠈⠔).
+
+    로마자 런이 물결표를 몰라 거기서 끊겼다. 뒤의 ⠠⠉(대문자표+C)가 한글 초성 ㅅ+ㄴ 으로,
+    종료표 ⠲ 가 마침표로 떨어져 `A~C에` 가 `A~나.에` 로 나갔다. 쉼표(`A, B, C`)는 이미
+    같은 이유로 구간을 안 끊게 돼 있었는데 물결표만 빠져 있었다.
+    전권 실측 395회·236쪽·47꼴을 전수로 훑었고, 로마자표를 요구하면 394회·235쪽·46꼴이
+    남으며 그 안에 한글이 없다.
+    """
+
+    @staticmethod
+    def _d(raw: str) -> str:
+        from app.utils.braille_back import decode
+        return decode(raw)
+
+    @pytest.mark.parametrize("raw,want", [
+        ("⠴⠠⠁⠈⠔⠠⠉⠲⠝", "A~C에"),
+        ("⠴⠠⠁⠈⠔⠠⠉⠲⠉⠵", "A~C는"),
+        ("⠴⠠⠁⠈⠔⠠⠙⠲⠺", "A~D의"),
+        ("⠴⠠⠁⠈⠔⠠⠑⠲⠝⠠⠎", "A~E에서"),
+        ("⠴⠠⠊⠈⠔⠠⠧⠲⠐⠮", "Ⅰ~V를"),
+    ])
+    def test_물결표는_로마자_구간을_안_끊는다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        # 로마자표 ⠴ 없이 온 물결표는 한글이다 — 전권에서 이 한 꼴뿐이다
+        ("⠨⠁⠙⠍⠢⠝⠠⠎⠈⠔⠠⠕⠂⠨⠝", "작품에서~실제"),
+        # 종료표가 없으면 구간으로 안 본다(안전한 쪽) — `_roman_span_ahead` 와 같은 규율
+        ("⠴⠠⠋⠈⠔⠠⠍", "F~수"),
+    ])
+    def test_로마자표가_없으면_안_본다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    @pytest.mark.parametrize("raw,want", [
+        # 물결표에서 안 끊기게 하면 `Ⅱ~Ⅳ` 가 한 런이 된다 — 로마 숫자 되돌림을
+        # **조각마다** 해야 한다. 안 그러면 `II~IV` 로 나간다(전권 70회·35쪽 되물림).
+        ("⠴⠠⠊⠈⠔⠠⠠⠊⠊⠊⠲", "Ⅰ~Ⅲ"),
+        ("⠴⠠⠠⠊⠊⠈⠔⠠⠠⠊⠧⠲⠉⠵", "Ⅱ~Ⅳ는"),
+        ("⠴⠠⠊⠈⠔⠠⠠⠧⠊⠲⠝", "Ⅰ~Ⅵ에"),
+    ])
+    def test_로마_숫자는_조각마다_되돌린다(self, raw: str, want: str) -> None:
+        assert self._d(raw) == want
+
+    def test_한쪽만_대문자_단어표여도_되돌린다(self) -> None:
+        """`Ⅲ~V` — 물결표에서 대문자 단어표가 풀리므로 마지막 상태만 보면 안 된다.
+        한 번이라도 봤는지로 판정한다(안 그러면 `III~V` 로 나갔다 · 2회·1쪽)."""
+        assert self._d("⠴⠠⠠⠊⠊⠊⠈⠔⠠⠧⠲") == "Ⅲ~V"

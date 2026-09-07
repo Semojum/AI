@@ -162,8 +162,14 @@ def _structure(ext: ExtractedContent, subtype: str) -> dict:
     (경계 JSON 실측 2026-08-08: structure 0건). 캡션은 이미 위계 줄을 갖고 있으므로
     거기서 만든다 — `diagram_structure` 참조. 못 만들면 {} → 캡션 3안 폴백(종전 동작).
     """
-    if ext.structure:
-        return ext.structure
+    # ★ 밑줄로 시작하는 키는 **opt 가 적어 둔 메모**지 앞단이 준 구조가 아니다
+    #   (`_body_texts` = base_opt 의 본문 중복 표시, `_facts` = 캡션 재료).
+    #   종전에는 `if ext.structure:` 라 그 메모 하나만 있어도 골격 경로가 통째로 꺼졌다 —
+    #   그림 bbox 안에 본문이 든 도표는 §6.6 골격을 못 만들고 캡션 폴백으로 떨어졌다
+    #   (2026-09-07 재료 배선 중에 드러난 잠복 결함).
+    real = {k: v for k, v in (ext.structure or {}).items() if not k.startswith("_")}
+    if real:
+        return real
     return structure_from_caption(ext.corrected_text or "", subtype) or {}
 
 

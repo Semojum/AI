@@ -389,6 +389,79 @@ _ROMAN_CLOSE = "⠲"   # 로마자 종료표
 _CAPS_OPEN = "⠠⠠⠠"  # 대문자 구절표 (제4항)
 _CAPS_CLOSE = "⠠⠄"
 _CAP = "⠠"          # 대문자표
+# ── 「과학 점자」 제4·5항 대문자 구절표 ────────────────────────────────────────
+# 규정(`braille-source/text/한국 점자 규정_재추출.txt:4363`) — "로마자 하나로 된 원소
+# 기호가 **3개 이상 이어** 나올 때에는 대문자 구절표 표기법에 따라 적는다."
+#   4367-4368행  CH₃COOH → `0,,,ch;#c"cooh,'4` = ⠴⠠⠠⠠⠉⠓⠰⠼⠉⠐⠉⠕⠕⠓⠠⠄⠲
+# 제5항(4417-4418행) — "대문자 구절표와 종료표 사이에 있는 H, B, C, F, I의 원소 기호가
+#   **숫자 다음에** 붙어 나올 때에는 해당 원소 기호 앞에 `"`(⠐)을 적는다."
+#   (h·b·c·f·i 는 점형이 1·2·3·6·9 와 같아 수에 먹힌다.)
+#
+# ★ 방아쇠를 좁게 잡는 이유 — 코퍼스 전수 실측(재추출 묵자 1,361쪽).
+#   한 글자 원소 기호는 26자 중 14자(H B C N O F P S K V Y I W U)라 **"3연" 조건만으로는
+#   못 가른다.** 조건만 쓰면 91회/48쪽 발동에 88회가 오발동이다 —
+#   SNS 26 · 기하 각 이름(∠PBC·∠POB) 16 · 유전자형 YBB · MOUNTAIN·COFFEE·WHO·HIV.
+#   여기에 **아래첨자 숫자 보유 + 첨자에 문자 없음 + 모든 글자가 원소 기호**를 더하면
+#   발동 3회/1쪽(전부 진짜 화학식 HCO₃⁻)으로 좁혀지고 오발동 0이다.
+#   (앞서 대문자 **단어표** ⠠⠠ 를 넓게 넣었다가 한글 낱말 1,086건이 깨진 전례가 있다.
+#    구절표는 "원소 기호" 라는 내용 조건이 붙지만 그것만으로는 부족하다는 뜻이다.)
+# ★ gold 전권 18,892쪽 실측 — 규정형 `,,,…,'` 로 적힌 원소 3연 화학식이 **14회 / 10쪽**
+#   (HS-REF-T24-101 화학 참고서 등 3권). 예 `,,,H;#BSO;#D,'`·`,,,CH;#C;COOH,'`.
+#   즉 규정형은 실물에도 있다. 채점 코퍼스(수능특강)에 화학 교과서가 없을 뿐이다.
+_ELEM1 = set("HBCNOFPSKVYIWU")
+_NUM_SIGN = "⠼"
+_CAP_AFTER_NUM = "HBCFI"   # 점형이 1·2·3·6·9 와 같아 수에 먹히는 원소 기호(제5항)
+
+
+def caps_phrase_run(src: str) -> bool:
+    """제4항 방아쇠 — 원소 기호만으로 된 토막에 한 글자 기호가 3연 이상인가."""
+    t = re.sub(r"\\mathrm|\\text|\\rm|[{}$ ]", "", src or "")
+    if not re.search(r"[₀-₉]|_\d", t):            # 아래첨자 숫자가 없으면 화학식이 아니다
+        return False
+    if re.search(r"[_^]\s*\{?\s*[A-Za-z]", t):    # 첨자에 문자 = 유전자형·기하 이름
+        return False
+    # ⚠ 문자 클래스에 연산자를 넣지 말 것. `[_^][0-9+\-]+` 는 `_1+` 의 **더하기까지** 지워
+    #   `N=_9C_1+_9C_2+_9C_4` 를 `N=CCC` 로 접었다. 조합 기호 C 가 3연으로 붙어 방아쇠가
+    #   걸렸고 코퍼스 7조각/3쪽이 깨졌다(#659). 첨자는 숫자만 지운다.
+    body = re.sub(r"[_^]\d+|[₀-₉⁰-⁹⁺⁻·]", "", t)
+    best = cur = 0
+    i = 0
+    while i < len(body):
+        c = body[i]
+        if c.isupper() and i + 1 < len(body) and body[i + 1].islower():
+            if body[i:i + 2] not in _ELEMENTS:
+                return False
+            cur = 0; i += 2; continue
+        if c in _ELEM1:
+            cur += 1; best = max(best, cur); i += 1; continue
+        if c.isalpha():
+            return False                          # 원소 기호가 아닌 글자가 섞였다
+        cur = 0; i += 1
+    return best >= 3
+
+
+def caps_phrase_cells(cells: str, src: str = "") -> str:
+    """대문자표를 걷어내고 구절표로 묶는다 + 제5항 ⠐ 를 넣는다.
+
+    ⚠ 셀만 보고 제5항을 적용하면 안 된다 — `⠉` 는 숫자 3이자 로마자 c 다. 그래서 **원문의
+      기호열과 셀을 나란히 걸어간다**(대문자표·첨자표·수표를 뺀 셀 하나가 원문 기호 하나다).
+    """
+    seq = re.sub(r"\\mathrm|\\text|\\rm|[{}$ _^]", "", src or "")
+    seq = [c for c in seq if c.isalnum()]
+    out: list[str] = []
+    k = 0
+    for c in cells:
+        if c in (_CAP, "⠰", _NUM_SIGN, "⠘"):      # 대문자표·아래첨자표·수표·위첨자표
+            if c != _CAP:
+                out.append(c)
+            continue
+        if (k < len(seq) and seq[k] in _CAP_AFTER_NUM and k and seq[k - 1].isdigit()):
+            out.append("⠐")                        # 제5항 — 수에 먹히는 원소 기호
+        k += 1
+        out.append(c)
+    return _CAPS_OPEN + "".join(out) + _CAPS_CLOSE
+
+
 _CHEM_MARK_RE = re.compile(r"\\mathrm\s*\{|\\xrightarrow|\\longrightarrow|\\rightleftharpoons")
 # 기하 표기 신호 — 점·선분·각·도형 이름도 \mathrm으로 적고 글자가 원소 기호와 겹친다.
 _GEOMETRY_MARK_RE = re.compile(
@@ -567,12 +640,14 @@ _CMD_ALIAS = {
     r"\subset": "⊂", r"\supset": "⊃", r"\cup": "∪", r"\cap": "∩",
     r"\angle": "∠", r"\triangle": "△", r"\square": "□",
     r"\cdots": "⋯", r"\dots": "⋯", r"\ldots": "⋯",
-    r"\bullet": "·", r"\perp": "⊥", r"\parallel": "∥", r"\sslash": "∥",
+    # ★ `\bullet` 은 곱셈점 `·` 이 아니라 **검정동그라미 ∙**(제15항 7호 `_4`)다.
+    #   `·`(제2항 붙임)로 펴면 규정 점형이 달라진다.
+    r"\bullet": "∙", r"\perp": "⊥", r"\parallel": "∥", r"\sslash": "∥",
     r"\circ": "∘",                            # 합성 ∘ (제15항 5호 _0) — 각도 ^∘는 별도 선처리
     r"\fallingdotseq": "≒", r"\doteq": "≒",
     r"\neg": "¬", r"\lnot": "¬",
     r"\vee": "∨", r"\lor": "∨", r"\wedge": "∧", r"\land": "∧",
-    r"\nmid": "∤", r"\mid": "|",
+    r"\nmid": "∤", r"\mid": "|", r"\|": "‖", r"\Vert": "‖",
     r"\propto": "∝",
     r"\oplus": "⊕", r"\ominus": "⊖", r"\otimes": "⊗", r"\odot": "∙",
     r"\ast": "∗", r"\star": "∗",
@@ -808,8 +883,15 @@ def _normalize_latex_input(latex: str) -> str:
 # 화살표(⠒⠕)는 제51항(양쪽 한 칸)이라 제외 — ⠒⠒ 토큰만 정확히 매칭.
 # ⠔·⠢는 관계·연산 접두 뒤(⠈⠔ 관계물결·⠸⠔ ⊖·⠸⠢ ⊕ — 제29·34항 한 칸, 제15항 한 칸)면
 # 뺄셈·덧셈이 아니므로 제외(lookbehind).
+# ★ 여러 칸으로 적는 관계 기호는 **한 칸짜리보다 먼저** 놓는다 — 뒤에 두면
+#   `⠨⠢⠢`의 둘째 칸만 op로 잡혀 앞 공백이 안 지워진다(실측 `⠭⠀⠨⠢⠢⠀⠼⠚`).
+#   제4항 3·5·7·9호 같지않다 계열 · 제9항 비례 ⠐⠂ · 제20항 근사 ⠐⠒⠒.
+# `:`·`≒`는 11e 시점에 아직 원문자다 — 점형으로 바뀌기 전이라 여기서 잡는다.
+# 제27항 나누어떨어짐(⠳ · ⠨⠳)도 앞뒤를 붙인다 — 규정 예시 `#d3#h`(4|8)에 칸이 없다.
+_MULTI_TIGHT = "⠨⠒⠒|⠨⠢⠢|⠨⠔⠔|⠨⠲⠲|⠨⠖⠖|⠐⠒⠒|⠐⠂|⠨⠳|⠳"
 _TIGHT_OPS_RE = re.compile(
-    r"(\S)[ ⠀]*((?<![⠈⠸])⠒⠒|(?<![⠈⠸])⠢|(?<![⠈⠸])⠔|×|÷|<|>|≤|≥|≠|±|∓)[ ⠀]*(?=(\S))")
+    r"(\S)[ ⠀]*(" + _MULTI_TIGHT +
+    r"|(?<![⠈⠸])⠒⠒|(?<![⠈⠸])⠢|(?<![⠈⠸])⠔|×|÷|<|>|≤|≥|≠|±|∓|≒|:)[ ⠀]*(?=(\S))")
 
 
 # ── 비점자 잔류 정화 (2026-07-21, w2c) ──────────────────────────────────────
@@ -909,7 +991,7 @@ _GEOM_CMD_SYMBOL = {"\\angle": "∠", "\\triangle": "△"}
 # ⚠ 한글 가운뎃점(사회·문화)은 건드리면 안 된다 — 실측 14,031건이다. 그래서 양옆이
 #   영숫자·괄호일 때만 붙인다. 실측 공백 낀 붙임 대상 540건(cdot 282·neq 225·equiv 33).
 _ATTACHED_OP_SP_RE = re.compile(
-    r"(?<=[A-Za-z0-9)\]])[ \t]*(\\cdot|\\neq|\\equiv|·|≠|≡)[ \t]*(?=[A-Za-z0-9(\[\\])")
+    r"(?<=[A-Za-z0-9)\]}])[ \t]*(\\cdot|\\neq|\\equiv|·|≠|≡)[ \t]*(?=[A-Za-z0-9(\[{\\])")
 _GREEK_TIGHT_RE = re.compile(r"([α-ωΑ-Ω·])[ \t]+(?=[A-Za-z])")
 # 명령 꼴(`\Delta x`)은 0c 시점에 아직 점형 문자가 아니다. 공백만 지우면 `\Deltax`가 되어
 # 미지 명령으로 사라지므로 유니코드 문자로 바꾸면서 같이 지운다(`\anglePO`와 같은 함정).
@@ -981,13 +1063,25 @@ def _stage0b_nth_root(result: str) -> str:
       선점된다(2026-07-19 정정). 또한 _needs_wrap이 ASCII 괄호를 보고 판정할 수 있는
       **유일한 단계**다(1단계 이후 호출자들은 점형 괄호를 넘기게 된다).
     """
-    def _sqrt_n_replace(m: re.Match) -> str:
-        n_part = convert_latex(m.group(1))
-        inner  = convert_latex(m.group(2))
-        inner_w = _wrap_ins(inner) if _needs_wrap(m.group(2)) else inner
-        return f"{n_part}{_SQRT_N_IND}{inner_w}"
-
-    return _SQRT_N_RE.sub(_sqrt_n_replace, result)
+    # ★ 정규식(`[^{}]*`)으로는 **중첩 중괄호를 못 읽는다** — `\sqrt[3]{x^{3}}` 과
+    #   `\sqrt[m]{\sqrt[n]{a}}` 가 안 잡혀 대괄호가 점형 ⠷⠄…⠠⠾ 로 그대로 나갔다.
+    #   제곱근(_stage2c_sqrt)과 같은 방식으로 괄호를 세어 인자를 떼어 낸다.
+    out: list[str] = []
+    i = 0
+    while i < len(result):
+        if result[i:i + 6] == "\\sqrt[":
+            close = result.find("]", i + 6)
+            if close > 0 and result[close + 1:close + 2] == "{":
+                raw, after = _extract_brace_content(result, close + 1)
+                n_part = convert_latex(result[i + 6:close])
+                inner = convert_latex(raw)
+                out.append(n_part + _SQRT_N_IND
+                           + (_wrap_ins(inner) if _needs_wrap(raw) else inner))
+                i = after
+                continue
+        out.append(result[i])
+        i += 1
+    return "".join(out)
 
 
 def _stage1_math_brackets(result: str) -> str:
@@ -1396,6 +1490,34 @@ _LATEX_SIMPLE: dict[str, str] = {
     "\\leq":      "⠖⠖",   # ≤ (수학 제4항 8호, 폰트 66=⠖⠖ — ⠦는 8 오독이었음)
     "\\geq":      "⠲⠲",   # ≥ (수학 제4항 6호, 폰트 "44"=⠲⠲)
     "\\neq":      _NEQ,   # ≠ (수학 제4항 1호 .33 / 도서 관행 .3 — F4 실측 주석 참조)
+    # 부정 부등호 4종(수학 제4항 3·5·7·9호) — 긍정형 앞에 ⠨(폰트 ".")를 붙인다.
+    # ★ 종전에는 표에 아예 없어 **기호가 통째로 사라졌다**: `x \ngtr 0` → `x0`.
+    #   부등호가 없어지면 식의 뜻이 반대가 되므로 가장 급한 자리였다.
+    "\\ngtr":     "⠨⠢⠢",  # ≯ 보다크지않다 (3호 .55)
+    "\\nless":    "⠨⠔⠔",  # ≮ 보다작지않다 (5호 .99)
+    "\\ngeq":     "⠨⠲⠲",  # ≱ 보다크거나같지않다 (7호 .44)
+    "\\nleq":     "⠨⠖⠖",  # ≰ 보다작거나같지않다 (9호 .66)
+    "\\ngeqslant": "⠨⠲⠲",
+    "\\nleqslant": "⠨⠖⠖",
+    # 관계·논리 기호(수학 제32·34·60·61항) — 표에 없어 **통째로 사라지던 것들**.
+    # 규정 정답쌍 312건 전수 검사에서 드러났다.
+    "\\cong":     "⠈⠔⠒⠒",   # ≅ 물결아래등호 (제32항 @933)
+    "\\underlinemark": "⠠⠤",  # 밑줄표 (제23항 2호 `,-`)
+    "\\simeq":    "⠈⠔⠒",    # ≃ 물결 아래 한 줄 (제31항 @93)
+    "\\approxeq": "⠈⠔⠈⠔⠒",  # ≊ 이중물결 아래 한 줄 (제30항 @9@93)
+    "\\nsim":     "⠨⠈⠔",    # ≁ 관계 부정 (제34항 .@9)
+    "\\vdash":    "⠸⠒",     # ⊢ (제60항 _3)
+    "\\dashv":    "⠈⠸⠒",    # ⊣ (제60항 @_3)
+    "\\models":   "⠘⠸⠒",    # ⊨ (제60항 ^_3)
+    "\\nRightarrow": "⠨⠒⠒⠕",  # ⇏ (제61항 .33O)
+    "\\rightleftarrows": "⠪⠶⠕",  # ⇄ (제61항 [7O)
+    "\\nexists":  "⠨⠨⠢",    # ∄ (제61항 ..5)
+    "\\circledcirc": "⠸⠴⠴",  # ⦾ 겹동그라미 (제15항 6호 _00)
+    "\\rhd":      "⠸⠜",     # ▷ 정규부분군 (제33항 _>)
+    "\\lhd":      "⠸⠣",     # ◁ 정규부분군 (제33항 _<)
+    "\\vartriangleright": "⠸⠜",
+    "\\vartriangleleft":  "⠸⠣",
+    "\\bullet":   "⠸⠲",     # ∙ 검정동그라미 (제15항 7호 _4)
     "\\approx":   "⠈⠔⠈⠔", # ≈ 이중물결 (제29항 @9@9, 앞뒤 한 칸)
     "\\equiv":    "⠶⠶",   # ≡ 합동 (기하 제43항 77=⠶⠶ — ⠛은 폰트 g 오독)
     "\\sim":      "⠈⠔",   # ∼ 관계·분포 (제34항 @9). 닮음 ∽(⠠⠄)는 유니코드 경유
@@ -1557,6 +1679,13 @@ def _stage11c_math_context_symbols(result: str) -> str:
     result = result.replace("∼", "⠈⠔").replace("→", "⠒⠕")
     # ≠: 수식 문맥은 도서 관행 .3(_NEQ 주석 참조) — symbol_table(규정형 .33)보다 먼저 치환.
     result = result.replace("≠", _NEQ)
+    # 부정 부등호 유니코드(제4항 3·5·7·9호) — LaTeX 명령과 같은 점형으로 편다.
+    for _u, _c in (("≯", "⠨⠢⠢"), ("≮", "⠨⠔⠔"), ("≱", "⠨⠲⠲"), ("≰", "⠨⠖⠖"),
+                   ("≅", "⠈⠔⠒⠒"), ("≁", "⠨⠈⠔"), ("⊢", "⠸⠒"), ("⊣", "⠈⠸⠒"),
+                   ("⊨", "⠘⠸⠒"), ("⇏", "⠨⠒⠒⠕"), ("⇄", "⠪⠶⠕"), ("∄", "⠨⠨⠢"),
+                   ("⦾", "⠸⠴⠴"), ("∙", "⠸⠲"), ("▷", "⠸⠜"), ("◁", "⠸⠣"),
+                   ("⊲", "⠸⠣"), ("⊳", "⠸⠜")):
+        result = result.replace(_u, _c)
     result = result.replace("∴", _THEREFORE)
     # 숫자 사이 쉼표(제41항): ⠂로 적고 **뒤 숫자에 수표를 다시 적지 않는다**(제43항).
     # 구현이 제12항 [붙임1]의 *로마자* 나열 쉼표(⠐)를 숫자에까지 적용하던 규정 위반 정정
@@ -1580,6 +1709,8 @@ def _stage11c_math_context_symbols(result: str) -> str:
     result = result.replace("□", "⠸⠶").replace("◻", "⠸⠶")
     # 나누어떨어짐(제27항): ∤ = ⠨⠳, 남은 수직바(조건제시·조건부확률·나눔)는 ⠳
     result = result.replace("∤", "⠨⠳")
+    # 노름(제28항): ‖ = ⠳⠳ — 수직바를 둘 적는다. `\|` 가 이 자리로 온다.
+    result = result.replace("‖", "⠳⠳")
     return result.replace("|", _ABS_IND)
 
 
@@ -1665,6 +1796,116 @@ def _stage15_spaces(result: str) -> str:
     return result.replace(_W2R_ROW_SEP, "⠀⠀")
 
 
+# ── 순환소수·소수점 (수학 점자 제8항) ─────────────────────────────────────────
+# 1호 — 소수점은 ⠲(폰트 "4"). 정수부가 없으면 **수표 뒤 바로 소수점**이다(`.47` = `#4dg`).
+# 2호 — 순환마디는 그 **앞에 ⠈(폰트 "@")를 한 번만** 적는다. 마디가 둘로 떨어져 있어도
+#        여는 자리에만 붙인다(`0.73̇9̇` = `#j4g@ci`).
+# ★ 종전에는 결합 점(U+0307 · U+0308)을 아예 몰라 미지문자로 샜고, 소수점 앞에 수표가
+#   중복으로 붙었다(`.9̇` → `⟨002E⟩#i⟨0307⟩`). 규정 예시 6건이 전부 틀렸다.
+_DOT_ABOVE = "\u0307"
+_RECUR_RE = re.compile(r"(\d)" + _DOT_ABOVE)
+# 자리표시자 — 마지막 단계에서 순환마디 여는 표 ⠈ 로 편다. 숫자 사이에 끼므로
+# 수표 처리를 흔들지 않게 비-ASCII 를 쓴다.
+_RECUR_MARK = "\ue90a"
+# `\not` 자리표시자 — 기호가 점형이 된 뒤 부정표 ⠨ 로 편다.
+_NOT_MARK = "\ue90b"
+
+
+# 정수부 없는 소수(`.47`) — 규정 제8항 1호 예시가 `#4dg` 다. 수표 뒤 바로 소수점이라
+# 0 을 채우면 `#j4dg` 가 되어 어긋난다. 소수점만 점형으로 바꿔 수표 구간에 들여보낸다.
+_BARE_DEC_RE = re.compile(r"(?<![\d.])\.(?=\d)")
+
+
+# LaTeX `\dot{6}` 도 같은 뜻이다 — 결합 문자로 펴서 한 자리에서 받는다.
+_DOT_CMD_RE = re.compile(r"\\dot\{(\d)\}")
+
+
+# `\not X` — 규정은 부정을 **뒤 기호 앞에 ⠨** 를 붙여 나타낸다(제34·60항
+# `A.,RB`·`A.6,A`·`,A.61,M`). LaTeX 은 `\not` 을 앞에 따로 쓰므로 여기서 합친다.
+# 이미 전용 명령이 있는 것(\notin·\nsim·\ngtr …)은 그 표가 먼저 이긴다.
+_NOT_NEG = "⠨"
+_NOT_RE = re.compile(r"\\not\s*(\\[A-Za-z]+|.)")
+
+
+# `5{,}700{,}000` — LaTeX 에서 **자릿점**을 쓰는 표준 표기다(중괄호가 쉼표 뒤 여백을
+# 없앤다). 우리는 이걸 못 읽어 자릿점이 곱셈점 ⠐ 으로 나갔다(규정 제41항은 ⠂).
+_BRACE_COMMA_RE = re.compile(r"\{\s*,\s*\}")
+# `\overset{\frown}{AB}` — 호(제36항)의 다른 표기. `\overparen` 으로 편다.
+# 노름(제28항) — `\|`·`\Vert` 를 유니코드 ‖ 로 먼저 편다.
+_NORM_RE = re.compile(r"\\(?:\||Vert)")
+_OVERSET_ARC_RE = re.compile(r"\\overset\s*\{\s*\\frown\s*\}\s*\{([^{}]*)\}")
+# 밑줄(제23항 2호) — `\underline{X}` 의 내용을 살리고 뒤에 밑줄표를 붙인다.
+_UNDERLINE_RE = re.compile(r"\\underline\s*\{([^{}]*)\}")
+
+
+def _stage0f_brace_comma(latex: str) -> str:
+    r"""0f. `{,}` → 평범한 쉼표. 자릿점 규칙(제41·43항)이 그 뒤를 받는다.
+
+    ★ `\overset{\frown}{AB}` 도 여기서 편다 — 호(제36항)를 이 표기로 쓰는 자료가 있는데
+      `\overparen` 계열만 알아서 호 기호 ⠈⠪ 가 통째로 사라졌다.
+    """
+    latex = _OVERSET_ARC_RE.sub(r"\\overparen{\1}", latex)
+    # 노름 `\|`·`\Vert` → ‖ (제28항). 여기서 안 펴면 여는 쪽이 절댓값 `|` 처리로 새어
+    # `\|x\|` 가 `⠳⠭⠳⠳` 로 나간다(닫는 쪽만 노름이 된다).
+    latex = _NORM_RE.sub("‖", latex)
+    # 밑줄(제23항 2호) — `밑줄( )은 ,-으로 적는다`. 본문 **뒤에** ⠠⠤ 를 붙인다.
+    latex = _UNDERLINE_RE.sub(r"\1\\underlinemark ", latex)
+    return _BRACE_COMMA_RE.sub(",", latex)
+
+
+def _stage0e_not_prefix(latex: str) -> str:
+    r"""0e. `\not X` → 부정표 + X (제34·60항)."""
+    if "\\not" not in latex:
+        return latex
+
+    def _rep(m: re.Match) -> str:
+        return _NOT_MARK + m.group(1)
+
+    return _NOT_RE.sub(_rep, latex)
+
+
+def _stage0d_recurring(latex: str) -> str:
+    r"""0d. 순환소수 — 결합 점을 순환마디 여는 표 ⠈ 로 옮긴다(제8항 2호)."""
+    latex = _DOT_CMD_RE.sub(r"\1" + _DOT_ABOVE, latex)
+    if _DOT_ABOVE not in latex and not _BARE_DEC_RE.search(latex):
+        return latex
+    # 마디의 **첫 숫자 뒤**에 표를 달아 둔다. 앞에 두면 숫자열 사이에 끼어 11단계
+    # 소수점·수표 규칙이 `.`을 못 본다(`0.6̇` → `#j⟨002E⟩@f`). 점형이 다 나온 뒤
+    # `_finish_recurring` 이 그 숫자 **앞**으로 옮긴다.
+    out, opened = [], False
+    for i, ch in enumerate(latex):
+        if ch == _DOT_ABOVE:
+            continue
+        out.append(ch)
+        if latex[i + 1:i + 2] == _DOT_ABOVE and not opened:
+            out.append(_RECUR_MARK)
+            opened = True
+    # 정수부 없는 소수(`.47`)는 수표 뒤 바로 소수점이다(제8항 1호 `#4dg`).
+    # 0 을 채우면 `#j4dg` 가 되어 어긋나므로, 소수점을 여기서 점형으로 낸다.
+    return _BARE_DEC_RE.sub(_NUMBER_INDICATOR + "⠲", "".join(out))
+
+
+# 정수부 없는 소수의 수표 겹침(`#4#dg`) — 소수점 바로 뒤 수표는 같은 수의 이어진
+# 자리라 잉여다(제8항 1호 `#4dg`).
+_DEC_DUP_NUM_RE = re.compile(
+    _NUMBER_INDICATOR + "⠲" + _NUMBER_INDICATOR + r"(?=[⠁-⠚⠈])")
+
+
+def _finish_recurring(result: str) -> str:
+    """자리표시자 → 순환마디 여는 표 ⠈(제8항 2호). 표 앞의 잉여 수표는 지운다."""
+    if _RECUR_MARK not in result:
+        # ★ 순환마디가 없어도 수표 겹침은 걷는다 — 종전에는 여기서 되돌아가
+        #   `.47` 이 `⠼⠲⠼⠙⠛`(수표 둘)로 나갔다.
+        return _DEC_DUP_NUM_RE.sub(_NUMBER_INDICATOR + "⠲", result)
+    # 표가 숫자열을 끊어 **뒤 숫자에 수표가 다시** 붙는다 — 같은 수의 이어진 자리라
+    # 잉여다. 먼저 걷고, 표를 마디 첫 숫자 앞으로 옮긴다(제8항 2호).
+    t = result.replace(_RECUR_MARK + _NUMBER_INDICATOR, _RECUR_MARK)
+    t = re.sub(r"([⠁-⠚])" + _RECUR_MARK, r"⠈\1", t).replace(_RECUR_MARK, "⠈")
+    # 정수부 없는 소수는 위에서 수표+소수점을 직접 냈으므로, 11단계가 뒤 숫자에 붙인
+    # 수표가 겹친다(`#4#dg`). 소수점 바로 뒤 수표만 걷는다.
+    return _DEC_DUP_NUM_RE.sub(_NUMBER_INDICATOR + "⠲", t)
+
+
 def convert_latex(latex: str) -> str:
     r"""LaTeX 수식 문자열 → 점자 BRF.
 
@@ -1735,6 +1976,9 @@ def convert_latex(latex: str) -> str:
     result = _normalize_latex_input(latex)      # 0a. MinerU/마크다운 입력 정규화
 
     result = _stage0c_bare_args(result)             # 0c. 중괄호 없는 한 글자 인자
+    result = _stage0f_brace_comma(result)           # 0f. `{,}` 자릿점 표기(제41항)
+    result = _stage0e_not_prefix(result)            # 0e. \not 부정 접두(제34·60항)
+    result = _stage0d_recurring(result)             # 0d. 순환소수·소수점(제8항)
     result = _stage0b_nth_root(result)              # 0b. \sqrt[n]{} — 대괄호 치환보다 먼저
     result = _stage1_math_brackets(result)          # 1·1a. 수학 괄호 + 병치 닫음표 생략
     result = _stage1b_accents(result)               # 1b. 문자 위 기호
@@ -1754,6 +1998,8 @@ def convert_latex(latex: str) -> str:
     result = _stage10_latex_symbols(result)         # 10. 단순 LaTeX 기호 명령
     result = _stage10x_minus(result)                # 10x. 뺄셈표 (숫자보다 먼저)
     result = _stage11_numbers(result)               # 11·11a. 숫자 + a~j 구분점
+    result = _finish_recurring(result)              # 11a2. 순환마디 표(제8항 2호)
+    result = result.replace(_NOT_MARK, _NOT_NEG)    # 11a3. \not → 부정표 ⠨
     result = _stage11b_arithmetic(result)           # 11b. + =
     result = _stage11c_math_context_symbols(result)  # 11c. 문맥 overload 분기
     result = _tighten_operator_spacing(result)      # 11e. 연산·비교 기호 앞뒤 붙임
@@ -1776,6 +2022,11 @@ def convert_latex(latex: str) -> str:
     #     규정 예문 `0,li1`,na1`,k4`(Li, Na, K)처럼 **식 전체를 한 번** 감싼다.
     #     맨 끝에 두는 이유: 앞 단계들이 로마자·첨자·화살표를 다 만든 뒤라야 감쌀 범위가 확정된다.
     if _is_chem and result:
+        # 제4항 — 원소 기호 3연 이상이면 낱 대문자표를 구절표로 갈아 끼운다.
+        # ⚠ 화학식 판정(_is_chem) 밖으로 넓혀 봤다가 되돌렸다 — 규정쌍 412 -> 410.
+        #   수식 경로의 로마자 토막이 구절표로 끌려간다.
+        if caps_phrase_run(latex):
+            result = caps_phrase_cells(result, latex)
         if not result.startswith(_ROMAN_OPEN):
             result = _ROMAN_OPEN + result
         if not result.endswith(_ROMAN_CLOSE):

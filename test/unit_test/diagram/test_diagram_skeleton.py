@@ -116,7 +116,8 @@ class TestOptimize:
         assert "처리 불가" not in opt.corrected_text
         assert opt.corrected_text.endswith("생략<!/주>")
         from app.ai.llm.visual_drafts import LABELS as _LB, OMIT_IDX as _OI
-        assert [d.label for d in opt.drafts] == [_LB[_OI]]
+        # 이름에 탐지된 유형이 붙는다(2026-09-06 결재). 끝 낱말로 본다.
+        assert len(opt.drafts) == 1 and opt.drafts[0].label.endswith(_LB[_OI])
 
 
 class TestE2E:
@@ -175,7 +176,7 @@ class TestStep17CaptionSource:
         assert f(DESC_IDX, used_llm=True, has_print_caption=True, has_struct=False) == "AI 생성"
         assert f(DESC_IDX, used_llm=False, has_print_caption=True, has_struct=False) == "인쇄 캡션 전사"
         assert f(DESC_IDX, used_llm=True, has_print_caption=True, has_struct=True) == "구조 전사(무-LLM)"
-        assert f(OMIT_IDX, used_llm=False, has_print_caption=False, has_struct=False).startswith("생략")
+        assert "생략" in f(OMIT_IDX, used_llm=False, has_print_caption=False, has_struct=False)
 
     def test_근거_tag는_선택안과_출처(self):
         from app.ai.llm.visual_drafts import DESC_IDX, LABELS, visual_trail

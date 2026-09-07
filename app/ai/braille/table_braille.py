@@ -947,13 +947,45 @@ def print_layout(corrected_text: str, mode: str) -> str:
         for r in rows:
             head, vals = (r[0] if r else ""), [c for c in r[1:] if c]
             out.append(f"{head}  " + "  ".join(vals) if vals else head)
-    else:                                     # table_grid · transposed — 행머리: 값  값
+    else:                                     # table_grid · transposed · linear
         for r in rows:
             head, vals = (r[0] if r else ""), [c or "(빈칸)" for c in r[1:]]
             out.append(f"{head}: " + "  ".join(vals) if vals else head)
     if mode == "transposed":
         out.insert(0, "[점역자 주] 행과 열을 바꾸어 표기함")
-    return "\n".join(out)
+    # ★ 테두리·구분선을 묵자에도 그린다(2026-09-03 대표 지시). 점자 렌더러(_render_grid·
+    #   _render_linear)는 글상자 테두리와 표 구분선을 내는데 묵자 초안만 안 냈다. 그래서
+    #   FE 피커에서 **다섯 안이 죄다 테두리 없는 줄글**로 보였고 `테두리+구분선`·`테두리만`
+    #   이라는 이름과 어긋났다(unfold 와 linear 는 출력이 아예 같았다).
+    #   지침 §3.1.1 — 표는 글상자로 감싸고 머리행 아래에 구분선을 둔다.
+    return "\n".join(_print_frame(out, mode, header=len(rows) > 1))
+
+
+# 묵자 초안에서 표 테두리·구분선을 나타내는 표시. 점자 쪽 【글상자】·【표 구분선】과 짝이다.
+_PRINT_BOX_TOP, _PRINT_BOX_BOTTOM, _PRINT_RULE = "┌", "└", "├"
+
+
+def _print_frame(lines: list[str], mode: str, *, header: bool) -> list[str]:
+    """묵자 초안에 테두리·구분선을 두른다.
+
+    `unfold`(테두리 없음)와 `numbered`(번호 체계)는 지침상 테두리를 두르지 않는다 —
+    표를 풀어 쓰는 형식이라 테두리가 뜻을 갖지 않는다. 나머지 셋은 두른다.
+    """
+    if mode in ("unfold", "numbered") or not lines:
+        return lines
+    body = list(lines)
+    note = None
+    if body and body[0].startswith("[점역자 주]"):
+        note = body.pop(0)                    # 주는 테두리 **밖**이다
+    out = [_PRINT_BOX_TOP]
+    # 구분선은 머리행이 있는 형식에만. `linear`(테두리만)는 이름대로 테두리만 두른다 —
+    # 안 그러면 table_grid 와 출력이 같아져 초안 둘이 겹친다.
+    if header and body and mode != "linear":
+        out += [body[0], _PRINT_RULE] + body[1:]
+    else:
+        out += body
+    out.append(_PRINT_BOX_BOTTOM)
+    return ([note] + out) if note else out
 
 
 def _transpose_text(corrected_text: str) -> str:

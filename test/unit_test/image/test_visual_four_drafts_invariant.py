@@ -28,6 +28,9 @@ import pytest
 from app.ai.llm import visual_drafts as vd
 
 _EXPECTED = 3          # 재료(캡션·제목·원본 글자)가 있을 때의 시각 3안(생략·설명·참조)
+# 설명 안이 **여러 줄**이면 간추린 설명(option 11)이 하나 더 선다(2026-09-07).
+# gold 설명 909건 중 52.9%가 한 줄인데 우리 설명 계열 안은 늘 하나뿐이었다.
+_EXPECTED_WITH_GIST = 4
 # 재료(캡션·제목·원본 글자)가 하나도 없으면 **생략 한 안만** 낸다.
 
 # ★ 2026-08-12 계약 강화 (대표 지시 "4가지 유형 모두 생략으로 나온다").
@@ -50,7 +53,7 @@ def _assert_distinct(drafts, *, expect: int | None = None) -> None:
 
 def _assert_omit_only(drafts) -> None:
     """재료가 없으면 생략 한 안만 (2026-08-12 대표 지시)."""
-    assert [d.label for d in drafts] == [vd.LABELS[0]], [d.label for d in drafts]
+    assert [d.label for d in drafts] == [vd.omit_label("그림")], [d.label for d in drafts]
 # 표 렌더 5안 — §3.1.1 (1) 이 정한 세 갈래(정렬 유지·가로 풀어쓰기·번호 체계)에
 # 전치와 테두리 변형을 더한 것이다. 번호 체계는 2026-09-02 신설.
 _EXPECTED_TABLE = 5
@@ -144,9 +147,12 @@ def test_재료가_있으면_세_안이_다_다르다() -> None:
         caption="막대그래프. 연도별 인구 추이를 보여 준다. "
                 "2020년 5,200만 명에서 2021년 5,180만 명으로 줄었다.",
         struct_outline=[(0, "2020년 5,200만 명"), (0, "2021년 5,180만 명")])
-    _assert_distinct(drafts, expect=_EXPECTED)
+    _assert_distinct(drafts, expect=_EXPECTED_WITH_GIST)
     assert [d.label for d in drafts] == [
-        vd.LABELS[0], vd.desc_label("이미지"), vd.LABELS[2]]
+        vd.omit_label("그림"), vd.desc_label("이미지"), vd.volref_label(), vd.GIST_LABEL]
+    # 간추린 설명은 설명 안의 **머리줄 그대로**다 — 지우기만 하므로 새 말이 없다.
+    assert drafts[3].text.count("\n") == 0
+    assert drafts[3].text.strip("<!주/>") in drafts[1].text
 
 
 def test_한_낱말_캡션도_세_안_그대로() -> None:
@@ -158,7 +164,7 @@ def test_한_낱말_캡션도_세_안_그대로() -> None:
     drafts = _build(caption="설명")
     _assert_distinct(drafts, expect=_EXPECTED)
     assert [d.label for d in drafts] == [
-        vd.LABELS[0], vd.desc_label("이미지"), vd.LABELS[2]]
+        vd.omit_label("그림"), vd.desc_label("이미지"), vd.volref_label()]
 
 
 def test_표는_렌더_4안_그대로() -> None:

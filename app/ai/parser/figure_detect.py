@@ -80,14 +80,27 @@ def detect(pdf_data: bytes, page_no: int) -> list[dict]:
             png = page.get_pixmap(dpi=_DPI).tobytes("png")
         finally:
             doc.close()
-        client = anthropic.Anthropic(api_key=config.anthropic_api_key)
-        m = client.messages.create(
-            model=MODEL, max_tokens=2000,
-            messages=[{"role": "user", "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": "image/png",
-                                             "data": base64.standard_b64encode(png).decode()}},
-                {"type": "text", "text": _ASK}]}])
-        txt = "".join(b.text for b in m.content if b.type == "text")
+        # ★ 캐시 키는 **렌더 픽셀**이다(재구조화 3-b). 쪽 PDF 바이트로 잡으면 fitz 분할
+        #   트레일러 `/ID` 가 매번 달라 같은 책 두 번 올리면 전량 미스다(설계 2-3 깨뜨리기 #10).
+        #   같은 쪽을 같은 DPI 로 그리면 같은 PNG 가 나오므로 그쪽이 진짜 내용주소다.
+        from app.utils import llm_cache
+        k = llm_cache.key("figure", MODEL, _ASK, str(_DPI), png)
+        txt = llm_cache.get("figure", k)
+        if txt is None:
+            client = anthropic.Anthropic(api_key=config.anthropic_api_key)
+            m = client.messages.create(
+                model=MODEL, max_tokens=2000,
+                messages=[{"role": "user", "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                                 "data": base64.standard_b64encode(png).decode()}},
+                    {"type": "text", "text": _ASK}]}])
+            # ★ 이 자리에 기록이 없었다(재구조화 3-a). 그림 회수 호출만 계수기·원가에서
+            #   빠져 "끄기 팔은 call=0" 확인이 이 축에서만 거짓으로 초록이 됐다.
+            from app.utils.req_log import record_anthropic
+            record_anthropic("그림회수", MODEL, getattr(m, "usage", None))
+            txt = "".join(b.text for b in m.content if b.type == "text")
+            llm_cache.put("figure", k, txt)
+        # 파싱·상한은 적중분에도 그대로 건다 — 캐시가 판정 우회로가 되면 안 된다.
         g = re.search(r"\{.*\}", txt, re.DOTALL)
         figs = (json.loads(g.group()) if g else {}).get("figures", []) if g else []
         return [f for f in figs if isinstance(f, dict)][:_MAX_FIGS]

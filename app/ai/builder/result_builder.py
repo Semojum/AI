@@ -447,6 +447,35 @@ def _do_caption_logged(el: dict, context: str = "") -> tuple:
     return content, el_type, ok, subconf
 
 
+# ── 장식 판정 (원장 C-70 후속 · 제작 지침 §6.1.1(4)·§6.3.4(2)②) ────────────────
+# ★ 면적**만으로는** 안 된다 — C-70 이 전수 1,511쪽에서 임계 0.0035 를 기각했다(유물 사진·
+#   문항 인물 삽화가 같은 구간). 그래서 **설명이 하나도 안 나온 것**과 **아주 작은 것**을
+#   함께 요구한다. 설명이 나온 요소는 크기와 무관하게 그대로 살아 있다.
+# ★ 실측(dev·val 8권 100쪽 표본 · 시각요소 77개):
+#     · 조건 충족 5개 — 전부 gold 가 점역자 주를 안 쓴 쪽의 배지·아이콘이었다.
+#     · gold 가 점역자 주를 쓴 쪽에서 걸린 요소 **0개**.
+#   경계 파일 138개(시각요소 360개)에서도 7개가 걸렸고 전부 면적 0.026% 이하였다.
+_DECOR_AREA = 0.002          # 지면의 0.2% — 1167×1474 지면에서 대략 40×40픽셀
+
+
+def _area_ratio(el: dict) -> float | None:
+    """지면 대비 면적비. **좌표계를 아는 자리에서만** 잰다.
+
+    경계 bbox 는 MinerU 경로만 0~1000 정규화이고(2026-07-19 규약) 폴백 경로는 2배 픽셀이라
+    같은 나눗셈을 쓰면 값이 뒤집힌다. 정규화가 확실한 경우(=`bbox_px` 가 따로 있는 경우)만
+    재고, 나머지는 None 을 돌려 판정을 포기한다(요소를 살린다).
+    """
+    if not (el.get("bbox_px") and el.get("bbox")) or len(el["bbox"]) < 4:
+        return None
+    x0, y0, x1, y1 = el["bbox"][:4]
+    return abs(x1 - x0) * abs(y1 - y0) / 1_000_000
+
+
+def _is_decoration(el: dict) -> bool:
+    a = _area_ratio(el)
+    return a is not None and a < _DECOR_AREA
+
+
 def build(
     merged_layout: list[dict],
     job_id: str,
@@ -480,6 +509,15 @@ def build(
         # 있었다는 사실조차 모른다(불변규칙 1 빈 결과 금지). 빈 캡션 + CAPTION_FAILED로
         # 넘기면 opt가 '생략' 표기를 내고 품질검사가 R11로 점역사에게 띄운다.
         if not content.strip() and not caption_failed:
+            continue
+
+        # 단, **장식은 예외다**(원장 C-70 후속). 설명이 하나도 안 나온 아주 작은 시각 요소는
+        # 배지·아이콘·화살표 낱개다. 「점자 자료 제작 지침」 §6.1.1(4)·§6.3.4(2)② 는
+        # "장식 용도이거나 본문 이해에 불필요한 경우에는 생략 여부를 표기하지 않는다"고 한다.
+        # 우리는 그 자리에 `그림 생략`을 내고 있었고, 그건 점역사가 찾아 지워야 할 일감이다.
+        if caption_failed and _is_decoration(el):
+            logger.info("장식 요소 제거(설명 없음·면적 %.4f) id=%s type=%s",
+                        _area_ratio(el) or 0, str(el.get("element_id", ""))[:8], el["type"])
             continue
 
         # element_id를 그대로 사용 (새 UUID 생성 안 함)

@@ -55,6 +55,7 @@ _ATOM = (r"[A-Za-z0-9αβγδεζηθικλμνξπρστυφχψωΑΒΓΔΘΛ�
          + _UNI_SCRIPTS + _UNI_RELATIONS
          + WRAP_HYPHEN_OPEN + WRAP_HYPHEN_CLOSE + "]")
 _SPAN_RE = re.compile(rf"{_ATOM}{{2,}}")
+_ATOM_RE = re.compile(_ATOM)   # 낱글자 판정용(_latex_start)
 # 아래첨자를 지닌 2자 토큰(O₂·t₂ 등 원소·변수)도 수식으로 잡기 위한 신호.
 # 3자 임계는 유지하되 아래첨자만 예외로 2자를 허용한다 — 아래첨자 유니코드는 한글
 # 본문에 안 나오고(코퍼스 실측 0건, r15) 깨진 글리프 정화 후에만 생기므로 오탐이 없다.
@@ -119,7 +120,114 @@ def normalize(span: str) -> str:
 _ENUM_HEAD_RE = re.compile(r"^(\(\s*\d+\s*\)|\d+\s*[.)]|[①-⑳]|[.,])\s*")
 
 
+# ★ `\text{한글}` 이 든 LaTeX 은 **통째로 한 구간**이다(2026-09-03).
+#   _ATOM 에 한글이 없어서 `\text{득표율}` 이 `\text{` 와 `득표율}` 로 갈렸고,
+#   그 결과 수식이 조각나 `\%` · 닫는 중괄호가 그대로 점역되고 `\times` 가 한글 약자
+#   '연'으로 나갔다(실측: `득표율} (\%  concc  득표수  유효 투표수  연100`).
+#   LaTeX 명령이 든 식은 여기서 먼저 통째로 잡아 쪼개지지 않게 한다.
+# ★ 2026-09-07 — 명령 **이름표는 못 쓴다**(원장 R-71). 종전에는 열다섯 개만 적어 뒀는데
+#   코퍼스 1,361쪽의 LaTeX 명령 32,224회를 세니 그 밖의 이름이 절반이다
+#   (\to 1,460 · \overline 1,234 · \cdots 1,033 · \left/\right 각 1,032 · \pi 867 …).
+#   이름표에 없는 명령이 식 **앞머리**에 있으면 구간이 그 뒤에서 시작해, 앞머리가
+#   로마자로 점역돼 나간다 — `\overline{\mathrm{PI}}=…` 가 `⠸⠡⠴⠕⠧⠻⠇⠔⠑⠦⠂`(="\overline{"
+#   열 셀)로 샜다. 신호는 `_STRONG` 이 이미 쓰는 것으로 통일한다(`\[a-zA-Z]{2,}`).
+_LATEX_CMD_RE = re.compile(r"\\[a-zA-Z]{2,}")
+_HANGUL = re.compile(r"[가-힣ㄱ-ㅎㅏ-ㅣ]")
+
+
+def _latex_end(s: str, i: int) -> int:
+    r"""LaTeX 식이 끝나는 자리. **중괄호 깊이 0에서** 한글·줄바꿈·두 칸을 만나면 끊는다.
+
+    ★ 깊이를 세는 이유 — `\text{득표율}` 처럼 **중괄호 안 한글은 식의 일부**라 끊으면
+      안 된다(2026-09-03 주석 참조). 반대로 깊이 0의 한글은 본문이다: 이름표를 넓히면서
+      줄 끝까지 삼키게 두면 `\overline{AB}의 길이는` 의 조사 '의' 까지 수식이 먹어
+      `̅ABW 길이는` 이 된다(실측). 종전 정규식은 열다섯 개 이름에서만 이 손해를 냈다.
+    """
+    depth = 0
+    while i < len(s):
+        ch = s[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth = max(0, depth - 1)
+        elif ch == "\n":
+            break
+        elif depth == 0:
+            if _HANGUL.match(ch) or s.startswith("  ", i):
+                break
+        i += 1
+    return i
+
+
+def _latex_start(s: str, i: int) -> int:
+    r"""식의 **앞머리**. 명령 앞에 붙은 수식 원자까지 거슬러 올라간다.
+
+    ★ 명령 자리에서 곧장 열면 식이 두 동강 난다 — `{}_{n}C_{0},\ … ,\ \cdots` 는
+      강한 신호가 `\cdots` 하나뿐이라, 거기서부터만 감싸면 앞의 조합 기호가 토큰
+      규칙의 강한 신호를 잃어 원문 그대로 나간다(확률과 통계 p0020 실측).
+      뒤(`_latex_end`)와 같은 잣대로 앞도 잡는다: 깊이 0의 한글·두 칸에서 멈춘다.
+    """
+    depth = 0
+    while i > 0:
+        ch = s[i - 1]
+        if ch == "}":
+            depth += 1
+        elif ch == "{":
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            if ch == "\n" or _HANGUL.match(ch) or not _ATOM_RE.match(ch):
+                break
+            if s.startswith("  ", i - 2):
+                break
+        i -= 1
+    return i
+
+
+def _wrap_latex_spans(seg: str) -> str:
+    """LaTeX 명령이 든 구간을 통째로 감싼다. 못 잡으면 아래 토큰 규칙이 이어받는다."""
+    out: list[str] = []
+    i = 0
+    for m in _LATEX_CMD_RE.finditer(seg):
+        if m.start() < i:                      # 앞 구간이 이미 먹은 자리
+            continue
+        start = max(i, _latex_start(seg, m.start()))
+        end = _latex_end(seg, m.start())
+        core = seg[start:end].strip()
+        out.append(seg[i:start])
+        if not core or "<!수식>" in core:
+            out.append(seg[start:end])
+        else:
+            out.append(f"<!수식>{normalize(core)}<!/수식>")
+        i = end
+    out.append(seg[i:])
+    return "".join(out)
+
+
 def _wrap_segment(seg: str) -> str:
+    # LaTeX 명령이 보이면 그쪽을 먼저 통째로 잡는다 — 한글에서 안 끊긴다.
+    if "\\" in seg or "\\text" in seg:
+        wrapped = _wrap_latex_spans(seg)
+        if "<!수식>" in wrapped:
+            # ★ 감싸고 **남은 자리도 토큰 규칙에 넘긴다**(2026-09-07, 원장 R-71).
+            #   종전에는 여기서 곧장 돌려줘, 명령보다 **앞에 놓인 식**이 토큰 규칙을
+            #   못 타고 통째로 원문으로 샜다 — `{}_{n}C_{0}, … , \cdots` 에서
+            #   `\cdots` 부터만 감싸이고 앞의 조합 기호가 `{}_{n}나_{0}` 로 나갔다
+            #   (확률과 통계 p0020 실측). 이름표가 좁던 때에는 `_wrap_latex_spans`
+            #   자체가 아무것도 못 잡아 전부 토큰 규칙으로 갔기에 안 보이던 자리다.
+            out: list[str] = []
+            last = 0
+            for m in _TAGGED_RE.finditer(wrapped):
+                out.append(_wrap_tokens(wrapped[last:m.start()]))
+                out.append(m.group())
+                last = m.end()
+            out.append(_wrap_tokens(wrapped[last:]))
+            return "".join(out)
+    return _wrap_tokens(seg)
+
+
+def _wrap_tokens(seg: str) -> str:
+    """구분자 없는 수식 토큰을 감싼다(강한 신호가 있을 때만)."""
+
     def repl(m: re.Match) -> str:
         span = m.group()
         core = span.strip()

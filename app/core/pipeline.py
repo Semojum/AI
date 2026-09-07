@@ -19,10 +19,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
 import time
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 from uuid import UUID, uuid4
@@ -38,6 +40,7 @@ from app.utils.req_log import (
     api_summary,
     breakdown_lines,
     elapsed,
+    llm_counter_line,
     set_hcxt_budget,
     stage,
     start_request,
@@ -86,7 +89,18 @@ _BOILERPLATE_RES = (
     re.compile(r"^(?:https?://)?www\.[\w-]+(?:\.[\w-]+)+\S*$", re.IGNORECASE),  # URL 단독 요소
     re.compile(r"^EBS$"),                                # 출판사 로고 텍스트
     re.compile(r"^EBS\s*수능특강"),                       # 러닝헤드(과목·단원 접미 포함)
-    re.compile(r"^(?:ⓒ|©|Copyright\b)", re.IGNORECASE),  # 저작권 고지
+    re.compile(r"^(?:©|Copyright\b)", re.IGNORECASE),    # 저작권 고지(라틴 기호)
+    # ⓒ(U+24D2)는 한국 교과서에서 **보기 표시 문자**(ⓐⓑⓒⓓ)로도 쓴다. 종전 패턴
+    # `^(?:ⓒ|©|Copyright\b)`는 그 보기 항목을 고지로 보고 **요소를 통째로 버렸다**
+    # (아래 _parse_txt_result의 `continue`). 점역사가 가장 발견하기 어려운 결함이다 —
+    # ⓐⓑ 다음에 ⓓ가 나오는 것은 묵자와 나란히 놓고 대조해야 보인다.
+    # 실측(코퍼스 1,180쪽·요소 28,083개 전수, 2026-09-07): ⓒ로 시작하는 요소는 **5개뿐이고
+    # 다섯 다 정답 점자책에 있는 본문**(614셀, gold 일치도 0.86~0.98)이다. ⓒ가 진짜 고지를
+    # 잡은 건 **0건**이고, `©`·`Copyright`로 시작하는 요소도 0건이다.
+    # 그래서 ⓒ는 발행처·고지 문구가 같이 있을 때만 고지로 본다(회귀 케이스
+    # "ⓒ EBS 한국교육방송공사"는 그대로 걸린다).
+    re.compile(r"^ⓒ\s*(?=.{0,40}(?:EBS|한국교육방송|All\s*rights|Copyright|무단|저작권))",
+               re.IGNORECASE),
     # 무단복제 금지 고지 — 판권 문구의 한국어 판본. 위 ⓒ 패턴과 같은 부류인데 'EBS 허락없이…'로
     # 시작해 걸리지 않았다. 실측(dev+val 1,131p): 10요소 전부 문장 하나짜리 단독 요소이고
     # 정답 도서 출현 0건. 본문 문장이 우연히 걸리지 않도록 고지문 통째(끝맺음까지)를 요구한다.
@@ -218,6 +232,15 @@ _EXTRACTION_REFUSAL_RES = (
                r"[^.]{0,40}\bOCR\b", re.IGNORECASE),
     # 모델 사과·자기소개 계열(문두 한정)
     re.compile(r"^\s*(?:I'?m\s+sorry|I\s+am\s+sorry|As\s+an\s+AI\b)", re.IGNORECASE),
+    # ★ 한국어 짝(2026-09-03). 위 패턴이 전부 영어라, 한국어로 답하는 모델이 쓴
+    #   해설문은 한 줄도 안 걸려 초안에 그대로 실렸다(FE QA S-7).
+    re.compile(r"(?:읽을\s*수\s*있는|판독\s*가능한|인식(?:할\s*수\s*있는|되는))\s*"
+               r"(?:글자|문자|텍스트|내용)[가이]?\s*(?:없|보이지\s*않)"),
+    re.compile(r"(?:텍스트|글자|내용)[가이]?\s*(?:전혀\s*)?(?:없습니다|없음|보이지\s*않습니다)"),
+    re.compile(r"(?:추출|판독|인식)(?:할\s*수\s*(?:없|가\s*없)|이\s*(?:불가|되지\s*않))"),
+    re.compile(r"^\s*(?:죄송(?:합니다|하지만)|저는\s*(?:AI|인공지능))"),
+    re.compile(r"^\s*이\s*(?:이미지|페이지|지면)에(?:는|서는)?\s*[^.\n]{0,20}"
+               r"(?:없습니다|없음|보이지\s*않습니다)"),
 )
 
 
@@ -322,6 +345,66 @@ def _write_txt_result(task: PageTask, extraction: dict) -> None:
     p = _txt_result_path(task)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(extraction, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_extract_stamp(task, extraction)
+
+
+# ── 경계 stamp (재구조화 3-a: **쓰기만**) ──────────────────────────────────
+# 이 경계 파일이 **어느 판의 추출**로 만들어졌는지 옆에 적어 둔다. 읽고 판정해 재파생하는
+# 것은 3-d 다 — 여기서는 아무것도 읽지 않는다(동작 변화 0).
+# ★ 경계 파일 **안에** 넣지 않는다. 넣으면 판이 바뀔 때마다 경계 바이트가 달라져
+#   재현 diff 자(설계 §3-2)가 판 지문을 재는 자로 변한다. 옆 파일로 둔다.
+# ★ 파일명에 `_txt_result` 를 넣지 않는다 — `test/corpus_runner.py:393` 이
+#   `*_txt_result.json` 을 glob 한다. 넣으면 코퍼스 러너가 stamp 를 경계 파일로 읽는다.
+# ★ 커밋 해시가 아니라 **추출 단계 파일들의 내용 해시**다(설계 2-3 "빠진 것 #10").
+#   본문 점역·조판 커밋으로는 값이 안 바뀌어야 재파생이 헛돌지 않는다.
+_EXTRACT_SOURCES = (
+    "app/ai/parser/mineru_runner.py",
+    "app/ai/parser/figure_detect.py",
+    "app/ai/parser/opus_fallback.py",
+    "app/ai/captioning/captioner.py",
+    "app/ai/captioning/classifier.py",
+    "app/ai/builder/result_builder.py",
+)
+# 추출 산출을 가르는 스위치만. 값 자체는 안 싣는다(키가 섞일 수 있다) — 해시만.
+_EXTRACT_ENV = (
+    "FIGURE_DETECT", "FIGDET_MODEL", "DISABLE_LLM_FALLBACK",
+    "CAPTION_BACKEND", "CAPTION_MODEL", "CAPTION_CACHE_DIR",
+    "OPUS_FALLBACK", "MINERU_BIN", "CHAIN_SEQUENTIAL",
+)
+
+
+@lru_cache(maxsize=1)
+def _extract_sha() -> str:
+    h = hashlib.sha256()
+    root = Path(__file__).resolve().parents[2]
+    for rel in _EXTRACT_SOURCES:
+        h.update(rel.encode())
+        try:
+            h.update(hashlib.sha256((root / rel).read_bytes()).digest())
+        except OSError:                 # 배포본에서 파일이 없으면 그 사실을 값에 남긴다
+            h.update(b"?")
+    return h.hexdigest()[:12]
+
+
+def _write_extract_stamp(task: PageTask, extraction: dict) -> None:
+    """경계 파일 옆에 판 지문을 남긴다. 실패해도 쪽은 나가야 한다."""
+    try:
+        from app.core.health_check import prompt_sha
+        env_fp = hashlib.sha256(
+            "|".join(f"{k}={os.environ.get(k, '')}" for k in _EXTRACT_ENV).encode()
+        ).hexdigest()[:12]
+        (_page_dir(task) / "data" / f"{task.page_no:03d}_extract_stamp.json").write_text(
+            json.dumps({
+                "extract_sha": _extract_sha(),
+                "prompt_sha": prompt_sha(),
+                "env_fp": env_fp,
+                "method": extraction.get("meta", {}).get("extraction_method"),
+                "written_at": int(time.time()),
+            }, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:            # noqa: BLE001 — 지문 한 줄이 쪽을 죽이면 안 된다
+        logger.debug("경계 stamp 기록 실패(진행): %s", exc)
 
 
 def _read_txt_result(task: PageTask) -> dict:
@@ -443,6 +526,48 @@ async def _extract_via_models(
         return elements, w, h, "pixel"
 
 
+def _graft_text(mnr_els: list[dict], llm_els: list[dict]) -> int:
+    """**MinerU 요소를 기준으로 두고** LLM 이 읽은 글자만 갈아 끼운다.
+
+    고급 점역의 몫은 "MinerU 가 한자로 깨뜨리는 글자를 제대로 읽는 것"이지 지면 구조를
+    다시 잡는 것이 아니다(2026-09-03 대표 지시). 그래서 **레이아웃·좌표·읽기순서·유형·
+    캡션 연결은 MinerU 것을 그대로 쓰고** 글자만 바꾼다. 이렇게 해야 bbox 가 보통 경로와
+    똑같이 맞는다.
+
+    ⚠ 종전에는 반대로 했다 — LLM 요소 목록을 기준으로 두고 좌표만 얹었다. 그러면 LLM 이
+      쪼갠 단위와 MinerU 레이아웃이 어긋나 **FE 하이라이트가 글자와 안 맞았다.**
+
+    짝짓기는 정규화한 앞 80자의 유사도(0.45 이상)다. 한 LLM 요소는 한 번만 쓴다.
+    짝을 못 찾은 MinerU 요소는 **원래 글자를 지킨다** — 비우면 내용이 사라진다.
+    """
+    import difflib
+    import re as _re
+
+    def norm(t: str) -> str:
+        return _re.sub(r"[\s\W_]+", "", (t or ""))[:80]
+
+    used: set[int] = set()
+    hit = 0
+    for el in mnr_els:
+        a = norm(el.get("content"))
+        if len(a) < 4:
+            continue
+        best, best_r = -1, 0.45
+        for j, m in enumerate(llm_els):
+            if j in used:
+                continue
+            r = difflib.SequenceMatcher(None, a, norm(m.get("content"))).ratio()
+            if r > best_r:
+                best, best_r = j, r
+        if best >= 0:
+            txt = llm_els[best].get("content") or ""
+            if txt.strip():
+                el["content"] = txt
+                used.add(best)
+                hit += 1
+    return hit
+
+
 async def _fallback_text_layer(task: PageTask, doc_meta: DocumentMeta) -> tuple[list[dict], int, int]:
     """MinerU 실패/타임아웃 폴백: 텍스트레이어가 있으면 PyMuPDF로 본문만 추출.
 
@@ -538,12 +663,26 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     # ZERO 티어(텍스트 레이어가 멀쩡한 쪽)는 그대로 둔다. 거기서는 원본 글자를 그대로
     # 옮기는 편이 정확하고, 고급 점역이 노리는 것은 깨진 지면이다.
     advanced_used = ""
+    mnr: tuple[list[dict], int, int, str] | None = None
     if task.advanced_ai and doc_meta.routing_tier != "ZERO":
         from app.ai.parser import opus_fallback as _llm
         if _llm.advanced_available():
             img = _page_image_path(task)
             if img:
-                els, used = await asyncio.to_thread(_llm.extract_advanced, str(img))
+                # ★ MinerU 를 **끄지 않고 같이 돌린다**(2026-09-03 대표 지시). 고급 점역은
+                #   내용을 잘 읽지만 좌표를 못 준다 — 종전에는 이 경로에서 bbox 가 통째로
+                #   (0,0,0,0) 이라 FE 하이라이트가 아예 안 떴다. LLM 은 API·MinerU 는 GPU 라
+                #   서로 안 막으므로 나란히 돌리면 벽시계는 둘 중 긴 쪽이다.
+                llm_job = asyncio.create_task(
+                    asyncio.to_thread(_llm.extract_advanced, str(img))
+                )
+                mnr_job = asyncio.create_task(_extract_via_models(task, doc_meta))
+                els, used = await llm_job
+                try:
+                    mnr = await mnr_job
+                except Exception as exc:  # noqa: BLE001 — 좌표가 없을 뿐 내용은 살린다
+                    logger.warning("고급 점역 곁의 MinerU 실패(좌표 없이 진행): %s", exc)
+                    mnr = None
                 if els:
                     advanced_used = used
                     logger.info("고급 점역 추출 채택: %s %d요소 (page=%d)",
@@ -552,12 +691,24 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             logger.warning("고급 점역 추출 실패 — MinerU 로 되돌린다 (page=%d)", task.page_no)
 
     if advanced_used:
-        # LLM 추출에는 bbox 가 없다. 좌표계는 ZERO·폴백과 같은 규약("pixel")으로 적어 둔다.
-        method, bbox_space = "LLM_VISION", "pixel"
-        elements = els
-        image_width, image_height = await asyncio.to_thread(
-            _page_size_px, task.pdf_data, task.page_no
-        )
+        method = "LLM_VISION"
+        if mnr and mnr[0]:
+            # ★ **MinerU 가 기준이다**(2026-09-03 대표 지시). 고급 점역의 몫은 MinerU 가
+            #   한자로 깨뜨리는 글자를 제대로 읽는 것이지 지면 구조를 다시 잡는 것이
+            #   아니다. 레이아웃·좌표·읽기순서·유형·캡션 연결을 MinerU 것으로 두고
+            #   글자만 갈아 끼우면 bbox 가 보통 경로와 **똑같이** 맞는다.
+            elements = mnr[0]
+            n = _graft_text(elements, els)
+            image_width, image_height, bbox_space = mnr[1], mnr[2], mnr[3]
+            logger.info("고급 점역 글자 이식 %d/%d 요소 (page=%d)",
+                        n, len(elements), task.page_no)
+        else:
+            # MinerU 가 없으면 LLM 결과를 그대로 쓴다(좌표 없음). 종전 규약을 따른다.
+            elements = els
+            bbox_space = "pixel"
+            image_width, image_height = await asyncio.to_thread(
+                _page_size_px, task.pdf_data, task.page_no
+            )
     elif doc_meta.routing_tier == "ZERO":
         method, bbox_space = "TEXT_NATIVE", "pixel"
         blocks, image_width, image_height = await asyncio.to_thread(
@@ -862,11 +1013,23 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
     deferred: list[list[BBoxItem]] = []
     for cl in sides:
         ranks = sorted(body_rank[id(b)] for b in cl)
-        run = best = 1
+        runs, run = [], 1
         for _a, _c in zip(ranks, ranks[1:]):
-            run = run + 1 if _c == _a + 1 else 1
-            best = max(best, run)
-        contiguous = best == len(ranks) or (best >= 3 and best >= len(ranks) - 1)
+            if _c == _a + 1:
+                run += 1
+            else:
+                runs.append(run); run = 1
+        runs.append(run)
+        best = max(runs)
+        # ★ 참고열이 **두 토막**으로 나오는 쪽이 있다(2026-09-07, 이슈 #643).
+        #   같은 좌측 열에 보충설명(순번 1~9)과 정답(17~19)이 따로 실리면 "한 덩이" 조건이
+        #   깨져 후치가 통째로 막혔다(생명과학 p114: 최장 9 < 12-1 → 순서 무변경).
+        #   규정이 뒤로 미루라는 것은 '참고 자료 단'이고(「점자 도서 제작 지침」 2장 5,
+        #   주종 관계의 다단), 그 단이 두 토막이어도 단이다 — 한 덩이일 것을 요구할 근거가 없다.
+        #   낱개가 본문 사이에 흩어진 열(문항별 포인트 라벨 등, 세계사 p160)은 3 미만
+        #   덩이만 나오므로 종전대로 보존된다.
+        contiguous = (best == len(ranks) or (best >= 3 and best >= len(ranks) - 1)
+                      or (len(runs) == 2 and min(runs) >= 3))
         narrow = (max(b.bbox[2] for b in cl) - min(b.bbox[0] for b in cl)) \
             <= 0.5 * (hull1 - hull0)
         # ★ 요소 하나짜리 클러스터는 '연속 순번'이 공짜로 참이라 이 조건을 못 거른다.
@@ -1654,6 +1817,14 @@ async def _run_pipeline(task: PageTask) -> dict:
 
     # Phase 2 (태민): 경계 파일 → 분해 → 6-체인
     layout_result, ext_map, method = _parse_txt_result(extraction, page_id)
+    # 읽기순서 LLM 보정(원장 C-106 · 대표 결재 2026-09-07). 비회전 쪽만 태우고,
+    # 실패·순열아님·안전판이면 규칙 순서 그대로 간다. 근거·수치는 llm_order 도크스트링.
+    from app.ai.parser import llm_order            # 지연 임포트(anthropic SDK 는 호출 때만)
+    with stage("읽기순서 LLM") as st:
+        _lo = await llm_order.apply(layout_result, ext_map,
+                                    int(_meta0.get("page_rotation") or 0))
+        st.note = (f"{'적용' if _lo['applied'] else _lo['reason'] or '건너뜀'}"
+                   f" · 이동비율 {_lo['ratio']}")
     routing_tier = (
         doc_meta.routing_tier if doc_meta
         else ("ZERO" if method == "TEXT_NATIVE" else "STANDARD")
@@ -1742,20 +1913,20 @@ def _number_volume_refs(llm_outputs: list[LLMOutput], page_no: int,
     점자 초안을 다시 점역해 맞춘다(참조 안은 한 줄짜리라 비용이 없다).
     """
     from app.ai.braille.translator import translate_with_breaks
-    from app.ai.llm.visual_drafts import LABELS, VOLREF_IDX, volume_ref_draft
+    from app.ai.llm.visual_drafts import VOLREF_OPTION, volume_ref_draft
 
     bo_by_id = {b.element_id: b for b in (braille_outputs or [])}
     ordinal = 0
     for o in llm_outputs:
         for i, d in enumerate(o.drafts or []):
-            if d.label != LABELS[VOLREF_IDX]:
+            if d.option != VOLREF_OPTION:
                 continue
             ordinal += 1
             nd = volume_ref_draft(d.type_label, f"{page_no}-{ordinal}")
             o.drafts[i] = nd
             bo = bo_by_id.get(o.element_id)
             for j, bd in enumerate(bo.drafts or []) if bo else ():
-                if bd.label != LABELS[VOLREF_IDX]:
+                if bd.option != VOLREF_OPTION:
                     continue
                 lines, breaks = translate_with_breaks(nd.text)
                 bo.drafts[j] = bd.model_copy(update={
@@ -1794,6 +1965,53 @@ def _selected_lines(bo, flat: dict) -> list[str]:
 # 읽을 글자가 아니다. FE는 이 값을 점자와 나란히 보여 주므로(와이어프레임) 태그가 그대로
 # 노출되면 안 된다. 점자(`contents`)는 손대지 않는다 — 거기선 태그가 이미 마커로 바뀌었다.
 _DRAFT_TAG_RE = re.compile(r"<!/?[^>]*>")
+
+
+def _print_contents(o, mode: str, etype: str, hlevel: int) -> str:
+    """`text_list.contents` 에 실을 묵자 — **들여쓰기 태그를 살려서** 담는다.
+
+    ⚠ 2026-09-02 점검. 들여쓰기가 점자에만 실리고 묵자는 전 유형이 0칸이었다
+    (점자 2칸 570줄·4칸 161줄 대 묵자 0칸 1,102줄). 시각 요소만의 문제가 아니었다.
+
+    · 시각 요소는 `diagram_opt` 가 `corrected_text` 에서 `strip_indent_tags` 로 태그를
+      떼어 담는다. 칸 정보가 `tn_text` 에만 남아 화면에서 사라졌다.
+    · 본문·제목·수식은 애초에 묵자 쪽에 들여쓰기를 다는 자리가 없었다. 판정은
+      `LayoutBraille._first_indent` 하나뿐이고 그건 점자 경로에서만 돈다.
+
+    **공백이 아니라 태그로 싣는다**(대표 지시): 점역사 화면에 `<!2칸>` 이 보여야 하고,
+    그 글을 그대로 mode b 로 되돌리면 점역기가 같은 들여쓰기를 다시 적용한다.
+    공백으로 바꾸면 왕복할 때마다 공백이 쌓이고 태그가 사라진다.
+
+    ⚠ **mode b 는 손대지 않는다.** 계약이 `contents == [원문 그 줄]` 이다 — BE 가 보낸
+    원문을 그대로 돌려주는 자리라 우리가 무엇을 더하면 편집할 때마다 덧붙는다
+    (`test_mode_b_contract`).
+    """
+    src = o.tn_text or ""
+    if "<!" not in src:
+        src = o.corrected_text or ""
+    if mode == "b" or not src.strip():
+        return src
+    if "<!" in src:
+        return src                          # 태그가 이미 있다(시각 요소)
+    first = _first_indent_for(o, etype, hlevel)
+    if first <= 0:
+        return src
+    head, _, rest = src.partition("\n")
+    tagged = f"<!{first}칸>{head}"
+    return tagged + ("\n" + rest if rest else "")
+
+
+def _first_indent_for(o, etype: str, hlevel: int) -> int:
+    """묵자 첫 줄 들여쓰기 칸 수 — **점자 조판과 같은 판정**을 쓴다.
+
+    규칙을 두 벌로 두면 화면과 점자가 갈린다. mode a 는 점역을 안 해 `flat` 이 없으므로
+    `LayoutBraille._first_indent` 를 직접 부른다.
+    """
+    from app.ai.braille.layout_braille import LayoutBraille
+    try:
+        return LayoutBraille()._first_indent(o, etype, hlevel > 0, hlevel)
+    except Exception:                      # noqa: BLE001 — 판정 실패는 0칸으로 둔다
+        return 0
 
 
 def _draft_print_text(text: str) -> str:
@@ -1958,13 +2176,29 @@ def _build_response(
                 "tn_text": o.tn_text or "",
                 "is_blocked": "[처리 불가" in o.corrected_text,
                 "render_mode": o.render_mode,
-                "contents": [o.corrected_text],
+                # ★ 들여쓰기를 실제 공백으로 실어 보낸다(2026-09-02 대표 지적).
+                #   SPEC-INTERFACE §1-0: "조판 규칙(빈 줄·들여쓰기·가운데 정렬)은 AI 가
+                #   `contents` 안에 넣어 보낸다." 그런데 시각 요소의 줄별 들여쓰기는
+                #   `<!2칸>` 태그로 **`tn_text` 에만** 실려 있었다 — `corrected_text` 를
+                #   그대로 담던 이 자리에는 칸 정보가 하나도 없었다.
+                #   mode b 로 넘기면 들여쓰기가 살아나는 것도 그래서다(점역기가 태그를 본다).
+                #   `_draft_print_text` 가 초안에 쓰는 것과 **같은 환산**을 쓴다 —
+                #   태그를 지우지 않고 공백으로 바꾼다.
+                "contents": [_print_contents(
+                    o, task.mode,
+                    elem_by_id.get(o.element_id, _DUMMY_ELEM).type,
+                    getattr(elem_by_id.get(o.element_id), "heading_level", None) or 0)],
                 "rule_trail": [r.model_dump() for r in o.rule_trail],
                 # 시각 요소 대체 초안 — **묵자만** 싣는다 (2026-08-06).
                 # mode a는 점역을 하지 않으므로(include_braille=False) 점자가 없다.
                 # mode c는 여기 묵자와 `braille_text_list`의 묵자+점자를 함께 받는다.
                 "drafts": [
-                    {"text": _draft_print_text(d.text), "label": d.label, "contents": []}
+                    {"text": _draft_print_text(d.text), "label": d.label,
+                     # 태그가 살아 있는 묵자 — 안마다 다르다(2026-09-02 대표 지적).
+                     # 종전에는 요소 하나의 `tn_text` 뿐이라 처음 고른 안의 것만 남았고,
+                     # 점역사가 안을 바꿔도 화면 위칸이 안 바뀌었다.
+                     "tn_text": d.text or "",
+                     "contents": []}
                     for d in (o.drafts or [])
                 ],
                 "selected_idx": o.selected_idx,
@@ -2017,6 +2251,7 @@ def _build_response(
                         # 피커가 초안별 점자를 바로 꺼내 쓸 수 있어야 한다.
                         "text": _draft_print_text(d.text),
                         "label": d.label,
+                        "tn_text": d.text or "",
                         "contents": _draft_contents(
                             braille_by_id.get(o.element_id), d, di, flat
                         ),
@@ -2084,9 +2319,38 @@ _DUMMY_ELEM = _DummyElem()
 
 # ── 파이프라인 진입점 ─────────────────────────────────────────────────────
 
+_last_job_id: str | None = None
+
+
 async def run(task: PageTask) -> dict:
     """파이프라인 진입점. 300초 하드 타임아웃 강제."""
     start_request()   # 요청 단위 API 카운터 초기화
+    # 판 지문(0-c) — 점역사 피드백이 며칠 뒤에 올 때 어느 커밋·어느 프롬프트였는지 되짚는 줄.
+    # ★ health_check 는 model_manager 를 거쳐 torch 를 끌고 온다. 모듈 최상단에서 부르면
+    #   pipeline import 그래프가 바뀌고, torch 없는 빠른 게이트 레인이 통째로 깨진다.
+    #   여기서 늦게 부르고, 그 레인에서는 지문 줄만 건너뛴다(제품 경로엔 torch 가 늘 있다).
+    try:
+        from app.core.health_check import build_stamp
+    except ImportError:
+        pass
+    else:
+        logger.info("판 %s job=%s page=%d", build_stamp(), task.job_id, task.page_no)
+    # 캡셔닝 잠금(`result_builder._caption_fatal`)은 **한 job 안에서** 같은 설정성 오류를
+    # 요소 수만큼 다시 맞지 않으려고 건다. 그런데 푸는 자리가 테스트밖에 없어, 키가 잠깐
+    # 흔들려 한 번 잠기면 **그 뒤 다른 job 까지** 서버를 재시작할 때까지 통째로 '생략'으로
+    # 나갔다. job 이 바뀌면 푼다 — 잠금은 job 안에서 그대로 산다.
+    # ※ 여러 job 이 페이지 단위로 겹쳐 들어오면 이 값이 오가며 쪽마다 한 번씩 풀린다.
+    #   그래도 한 쪽(요소 200개) 안에서는 잠금이 살아 있으므로 원래 목적은 지켜진다.
+    # ※ result_builder 는 openai 를 끌고 온다 — 그게 없는 빠른 게이트 레인에서는 건너뛴다.
+    global _last_job_id
+    if task.job_id != _last_job_id:
+        _last_job_id = task.job_id
+        try:
+            from app.ai.builder.result_builder import reset_caption_fatal
+        except ImportError:
+            pass
+        else:
+            reset_caption_fatal()
     logger.info("━━ job=%s page=%d/%d mode=%s 처리 시작 ━━",
                 task.job_id, task.page_no, task.total_pages, task.mode)
     start = time.monotonic()
@@ -2103,6 +2367,7 @@ async def run(task: PageTask) -> dict:
             result.get("status"), elapsed_ms / 1000, api_summary(), n_braille,
             task.job_id, task.page_no, task.mode,
         )
+        logger.info(llm_counter_line())   # 재구조화 3-a — 끄기 팔 확인은 이 줄의 call=0
         for _line in breakdown_lines():   # 파트별 LLM 사용 내역(디버깅·비용 추적)
             logger.info(_line)
         # 원가는 성공·타임아웃·예외 **셋 다** 싣는다 — 막혔어도 돈은 나갔다.
@@ -2114,6 +2379,7 @@ async def run(task: PageTask) -> dict:
         elapsed_ms = int((time.monotonic() - start) * 1000)
         logger.warning("⛔ BLOCKED(타임아웃) %.1fs · API %s  (job=%s page=%d)",
                        elapsed_ms / 1000, api_summary(), task.job_id, task.page_no)
+        logger.info(llm_counter_line())
         result = _build_timeout_response(task, elapsed_ms)
         # 원가는 성공·타임아웃·예외 **셋 다** 싣는다 — 막혔어도 돈은 나갔다.
         result["usage"] = {**usage_report(), "layout_type": _page_layout_type(result)}

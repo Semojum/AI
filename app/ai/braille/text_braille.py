@@ -13,8 +13,8 @@ from app.ai.braille.translator import (
     blank_marker_spans,
     box_borders_from_source,
     emphasis_marker_spans,
-    translate_with_breaks,
     tn_marker_spans,
+    translate_body,
 )
 from app.schemas.content import BoxBorder, BrailleOutput, LLMOutput, RuleApplication
 
@@ -42,7 +42,7 @@ class TextBraille:
 
     def _translate_one(self, opt: LLMOutput) -> BrailleOutput:
         # 논리 줄 + 음절 줄바꿈 offset. 32칸 줄바꿈은 layout이 수행(NLD-1.2.1).
-        lines, breaks = translate_with_breaks(opt.corrected_text)
+        lines, breaks = translate_body(opt.corrected_text)
         # braille_text_list 기준 = 점자. rule_trail은 **점역사가 판단해야 할 자리**만 기록한다
         # (Step17 2026-08-08 대표 지시 — 종전 "내용 변환만"에서 좁혔다):
         #   ① 우리가 재량으로 넣은 것(점역자 주·글상자·빈칸 태그)

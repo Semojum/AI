@@ -14,7 +14,7 @@ from __future__ import annotations
 from app.ai.braille.nested_block import box_narrative
 from app.ai.llm.base_opt import BaseOpt
 from app.ai.braille import tag_names as _TAGS
-from app.ai.llm.visual_drafts import build_visual_drafts, visual_trail
+from app.ai.llm.visual_drafts import build_visual_drafts, resolve_label, visual_trail
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import ExtractedContent, LLMOutput, RuleApplication
 
@@ -41,9 +41,16 @@ class ImageOpt(BaseOpt):
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
         st = ext.structure or {}
         label = (st.get("visual_type_label") or "그림").strip()
+        # 캡션이 제 유형을 말하면 그 말을 쓴다(§6.3.4(1) L3175–3176 "'사진', '그림' 등과
+        # 같은 시각 자료 유형 제시어"). 캡셔너 image 프롬프트는 2026-08-10부터 찍은 사진이면
+        # `사진: `으로 시작하도록 배선돼 있는데, 여기서 그 말을 버리고 늘 `그림`으로 내보냈다
+        # (`visual_type_label` 을 채우는 자리가 app/ 전체에 없다 — 항상 기본값 `그림`).
+        # 실측: 캡션 캐시 1,814건 중 사진 72건이 전부 `그림: `으로 나갔다. gold 는 991건 중
+        # 사진 77건(7.8%)이 `사진`이다. `chart_graph_opt` 는 이미 같은 방식으로 라벨을 정한다.
         title = (st.get("title") or "").strip()
         ocr = [str(t).strip() for t in (st.get("ocr_texts") or []) if str(t).strip()]
         caption = (st.get("caption_src") or ext.corrected_text or "").strip()
+        label = resolve_label(label, caption, title)
 
         # 캡션·원본글자·제목이 전부 없다(캡셔닝 실패 포함) → 규정상 정답은 '생략' 표기다
         # (§6.3.4(2)②). 실패 문자열("[처리 불가: …]")을 내면 그 한글이 그대로 점자로 찍혀

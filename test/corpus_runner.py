@@ -27,10 +27,10 @@ import time
 import traceback
 from pathlib import Path
 
-# 오프라인 코퍼스 평가는 운영 180s 페이지 예산에 묶일 이유가 없다. 무거운 MinerU 추출이
-# 180s를 넘기면 C7 BLOCKED가 되므로, app 모듈(config 싱글톤) import 전에 기본값을 늘린다.
-# (운영 .env 는 그대로 180s 유지 — 여기서만 env 미설정 시 600s 로 올린다.)
-os.environ.setdefault("PAGE_TIMEOUT_SECONDS", "600")
+# ★ 러너 페이지 예산 = 운영과 같은 180s (S1 #673). 종전 600s 는 러너에서만 통과하고
+# 운영에서는 C7 BLOCKED 가 나는 쪽을 만들어, 코퍼스에서 초록인데 서버에서 빨간 쪽이
+# 지표에 안 잡혔다. 늘려야 할 사정이 있으면 env `PAGE_TIMEOUT_SECONDS` 로 그때만 올린다.
+os.environ.setdefault("PAGE_TIMEOUT_SECONDS", "180")
 
 # 캡션 캐시는 **운영 기본 켬**이다(2026-08-23 대표 결재). 키가 이미지 해시 + 백엔드 +
 # 모델 + 프롬프트라 하나라도 바뀌면 자동 무효고, 같은 모델·같은 프롬프트로 뽑은 결과를
@@ -53,8 +53,9 @@ OUTPUT = TD / "output"
 MANIFEST = TD / "dataset/split_manifest.csv"
 STORAGE = Path("storage/jobs")
 RENDER_DPI = 150
-# 러너 외부 타임아웃. 파이프라인 내부 타임아웃(PAGE_TIMEOUT_SECONDS, 운영 180s)보다 커야 한다.
-# 오프라인 코퍼스 평가는 MinerU 추출이 무거운 페이지에서 180s를 넘길 수 있어 둘 다 늘린다.
+# 러너 외부 타임아웃(하드 킬). 파이프라인 내부 타임아웃(PAGE_TIMEOUT_SECONDS)보다 커야 한다.
+# ★ 내부는 이제 운영과 같은 180s 다(#673, 위 참조). 여기를 늘린다고 내부가 같이 늘지 않는다.
+#   내부가 먼저 C7 로 끊는다. 이 값은 프로세스가 통째로 멈췄을 때의 뒷문일 뿐이다.
 PAGE_TIMEOUT = float(os.environ.get("CORPUS_PAGE_TIMEOUT", "650"))  # 초(파이프라인 내부보다 크게)
 
 
