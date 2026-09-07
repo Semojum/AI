@@ -46,3 +46,13 @@ def test_scan_layer_is_untrustworthy_even_though_glyphs_look_normal():
 def test_native_override_keeps_mineru_text_on_a_scan():
     bbox = [0, 0, 1000, 1000]        # 0~1000 정규화(요소 전체)
     assert _native_override(_page(True), bbox, _GOOD) is None   # MinerU 결과 유지
+
+
+def test_scan_check_is_not_cached_on_the_page_object():
+    """`fitz.Page`를 키로 캐시하면 안 된다 — 파이썬 기본 해시는 객체 id다.
+
+    Page가 수거된 뒤 같은 주소에 다른 Page가 앉으면 캐시가 엉뚱한 답을 주고, 비스캔 쪽이
+    스캔으로(또는 그 반대로) 판정돼 텍스트레이어 우선이 조용히 뒤집힌다. `get_image_info()`는
+    같은 호출부의 `rawdict` 파싱 대비 몇 %라 캐시할 이유도 없다(#721).
+    """
+    assert not hasattr(_is_scanned_page, "cache_info"), "_is_scanned_page 를 캐시하지 말 것"
