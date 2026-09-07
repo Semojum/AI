@@ -32,8 +32,10 @@ class TestFourDrafts:
         labels = [d.label for d in opt.drafts]
         # 재료가 겹쳐 접힌 안이 있을 수 있다(`visual_drafts._dedupe`) — 남은 것은
         # LABELS의 **부분 수열**이고 서로 달라야 한다.
+        from app.ai.llm.visual_drafts import GIST_LABEL
         expected = list(dict.fromkeys(
-            [omit_label("만화"), desc_label("만화"), volref_label(), prose_label("만화")]))
+            [omit_label("만화"), desc_label("만화"), volref_label(),
+             prose_label("만화"), GIST_LABEL]))
         assert labels == [x for x in expected if x in labels], labels
         assert len(set(labels)) == len(labels), labels
         assert opt.selected_idx == 1                                   # 기본=설명(gold 79.6%)
@@ -77,7 +79,7 @@ class TestEndToEnd:
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))
         assert opt[0].line_indents is not None                         # 개조식 골격 들여쓰기
         bo = CartoonBraille().translate(opt)
-        assert 3 <= len(bo[0].drafts) <= len(LABELS)
+        assert 3 <= len(bo[0].drafts) <= len(LABELS) + 1   # +간추린 설명(2026-09-07)
         lr = LayoutResult(page_id="p", elements=[
             BBoxItem(element_id=eid, type="cartoon", bbox=(0, 0, 0, 0), reading_order=1)])
         LayoutBraille().layout(bo, page_no=1, job_id="cartoon", layout_result=lr)

@@ -135,7 +135,13 @@ PROSE_LABEL = "줄글 설명"                     # 도표: 골격과 갈리는 
 # 수식만 적는 게 맞고, 개념이 처음 나오는 자리에서는 "위로 볼록"·"꼭짓점" 같은 성질을 더
 # 적어 주는 게 좋다. 어느 쪽이 맞는지는 **그 문제에 달렸는데 우리는 문제를 안 본다** —
 # 그래서 "문제 풀이용/개념 학습용"으로 이름 짓지 않는다(폐기, 2026-08-25). 분량만 밝힌다.
-DETAIL_LABEL = "설명(자세히)"
+# ★ 2026-09-07 — `DETAIL_LABEL = "설명(자세히)"` 를 없앴다(대표 지시 "분량이 재료에 따라
+#   갈리게"). 이름과 내용이 **거꾸로**였다. 실측(무-LLM 재생 · 캡션 캐시 3,021건):
+#     [2] '설명'       4줄  그림: 물의 순환 / 증발: 바다 → 대기 / 응결: … / 강수: …
+#     [7] '설명(자세히)' 1줄  물은 증발하고 응결하여 다시 지표로 내린다.   ← LLM 이 지어낸 문장
+#   '자세히' 라는 이름을 달고 **더 짧게**, 그것도 캡션에 없는 말로 나갔다. 대신 아래
+#   `간추린 설명`(option 11)을 둔다 — 설명 안에서 **항목을 지우기만** 한 안이라
+#   재료에 없는 말이 들어갈 자리가 구조적으로 없다.
 FAMILY_BOTTOMUP_LABEL = "가계도(상향식)"      # §6.6.4(1)(3)
 
 # 새 안의 option 번호. ★ 기존 1(생략)·2(설명)·6(별책 참조)은 BE·FE 계약이라 그대로 두고
@@ -145,6 +151,17 @@ FAMILY_BOTTOMUP_OPTION = 8
 # 흐름도 관행형(화살표 체인 한 줄) — 규정형과 **나란히** 낸다(대표 결재 2026-08-26).
 FLOW_CHAIN_OPTION = 10
 FLOW_CHAIN_LABEL = "흐름도(화살표)"
+# 간추린 설명 — 설명 안의 **머리줄만** 남긴 안. 「점자 자료 제작 지침」 §6.1.4(4)
+# (sec5_full.txt 298행) "시각 자료의 전체 윤곽을 포괄적으로 설명한 다음 부분을 나누어
+# 단계적으로 설명한다" 의 앞 절이다 — 그 '전체 윤곽' 줄만 남긴다.
+#
+# ★ gold 실측(all_현재엔진.json · 점역자 주 시각자료 블록 1,096건, 그중 설명 909건):
+#     1줄 52.9% · 2~3줄 20.2% · 4~9줄 25.1% · 10줄+ 1.8%   (생략 고지는 따로 17.1%)
+#   유형별로 더 갈린다 — 사진 1줄 63% · 지도 1줄 71% · 그래프 1줄 36%(4~9줄 38%) ·
+#   만화 2~3줄 100%. **절반이 한 줄**인데 우리는 그 한 줄짜리 안을 낼 길이 없었다
+#   (같은 자로 잰 우리 분포: 설명 계열 안이 **100.0% 로 늘 하나**뿐).
+GIST_OPTION = 11
+GIST_LABEL = "간추린 설명"
 
 
 def omit_label(type_label: str) -> str:
@@ -171,12 +188,15 @@ def desc_label(type_key: str) -> str:
 def prose_label(type_key: str) -> str:
     """그 유형의 **둘째 안** 이름.
 
-    도표는 골격(유형명)과 줄글이 형식으로 갈리고, 그림·사진·그래프는 형식이 아니라
-    **분량**으로 갈린다(설명 / 설명(자세히)). 만화는 재료가 갈라 주므로 안이 하나다.
+    도표는 골격(유형명)과 줄글이 **형식**으로 갈린다. 그림·사진·그래프·만화는 형식이
+    하나뿐이라 여기서는 안을 더 만들지 않는다 — 분량 갈래는 `gist_draft`(간추린 설명)가 진다.
+
+    ★ 2026-09-07 — 그림·사진·그래프가 `DETAIL_LABEL`("설명(자세히)")을 받던 것을 없앴다.
+      그 안의 내용은 LLM `[줄글]` 절 한 줄이라 **설명 안보다 짧았고**(위 상수 주석의 실측),
+      게다가 캡션에 없는 문장이었다. 분량을 갈라야지 없는 사실을 지어내면 안 된다.
+      곁따라 **LLM 호출 하나가 준다** — 아래 `need_prose` 가 이 값을 보고 정해진다.
     """
-    if type_key == "만화":
-        return desc_label(type_key)          # 같은 이름 → 아래 게이트가 둘째 안을 안 만든다
-    return PROSE_LABEL if type_key in DESC_LABELS else DETAIL_LABEL
+    return PROSE_LABEL if type_key in DESC_LABELS and type_key != "만화" else desc_label(type_key)
 
 # 개조식 들여쓰기 — **값은 전부 앞 빈칸 수다. 규정의 칸 번호가 아니다.**
 #   규정 "1칸에서 적는다" = 0 · "3칸에서 적는다" = 2 · "5칸에서 적는다" = 4 · "7칸" = 6
@@ -605,6 +625,24 @@ def prose_draft(text: str, type_key: str = "") -> Draft | None:
 
 
 
+def gist_draft(
+    label: str, title: str, desc: str, kind: str = "",
+    body_texts: list[str] | None = None,
+) -> tuple[Draft, list[int]]:
+    """간추린 설명 안 — 설명 안에서 **전사 항목을 뺀 것**. 반환 (Draft, line_indents).
+
+    같은 `_outline_text_indents` 를 `items=[]` 로 부른다. 그래서 이 안의 모든 글자는
+    설명 안이 이미 쓰던 글자다 — **재료에 없는 말이 들어갈 자리가 구조적으로 없다.**
+    (대표 지시 2026-09-07 "재료는 많이 뽑고 그 후에 간추려야지. 환각 현상이 제일 위험한 거야.")
+
+    근거: 「점자 자료 제작 지침」 §6.1.4(4)(sec5_full.txt 298행) "전체 윤곽을 포괄적으로
+    설명한 다음 부분을 나누어 단계적으로", §6.1.4(1) "가능한 적은 수의 단어", (2) "핵심 내용".
+    """
+    text, indents = _outline_text_indents(label, title, desc, [], kind, body_texts)
+    return Draft(option=GIST_OPTION, text=_TAGS.apply_indent_tags(text, indents),
+                 render_mode="narrative", label=GIST_LABEL), indents
+
+
 def _dedupe(drafts: list[Draft], selected_idx: int) -> tuple[list[Draft], int]:
     """문구가 똑같아진 안을 접는다. 반환 (남은 안, 옮겨진 selected_idx).
 
@@ -797,7 +835,11 @@ async def build_visual_drafts(
     # LLM이 채워야 할 파트: 제목·캡션 다 없으면 제목, 구조 없으면 개조식/줄글.
     need_title = not (title or caption)
     need_outline = struct_outline is None
-    need_prose = struct_prose is None
+    # ★ 줄글 안을 **실제로 낼 유형에서만** LLM 에게 시킨다(2026-09-07). 종전에는 유형과
+    #   무관하게 항상 시켰는데, 만화는 `prose_label == desc_label` 이라 그 응답을 통째로
+    #   버렸고(호출만 하고 안은 안 만든다), 그림·차트는 그것으로 잘못 이름 붙인
+    #   '설명(자세히)' 를 만들었다. 둘 다 없애면 그만큼 호출이 준다.
+    need_prose = struct_prose is None and prose_label(kind) != desc_label(kind)
     has_seed = bool(title or caption)
     use_llm = ((routing_tier != "ZERO") and has_seed and not single_line_caption
                and (need_title or need_outline or need_prose))
@@ -870,9 +912,6 @@ async def build_visual_drafts(
     #   (실측 58건이 44자 이상). 캡셔너는 첫 줄을 짧게 쓰도록 이미 배선돼 있다.
     if outline_items and cap_head is None:
         outline_desc = _shorten(outline_desc)
-    prose = (struct_prose if struct_prose is not None
-             else (llm_prose or caption or title or struct_text))
-
     d_omit = omission_draft(label)
     # F23 · 그림 안 본문 글자를 설명에서 뺀다(원장 C-78). `_body_texts` 는
     # `base_opt._mark_body_texts_in_visuals` 가 **요소마다 자기 것만** 담아 둔 값이다
@@ -881,7 +920,7 @@ async def build_visual_drafts(
     d_desc, indents = desc_draft(label, title, outline_desc, outline_items, kind, _body)
     drafts = [d_omit, d_desc, *extra_drafts(label)]
     # 줄글 안은 **뒤에** 붙인다 — 앞 셋의 option 번호·순번이 BE·FE 계약이다.
-    # ★ 재료가 **진짜 줄글일 때만** 붙인다. 위 `prose`의 폴백 사슬(caption·title·struct_text)은
+    # ★ 재료가 **진짜 줄글일 때만** 붙인다. 옛 `prose` 폴백 사슬(caption·title·struct_text)은
     #   설명 안이 쓰는 것과 같은 글이라, 그대로 넣으면 피커에 거의 같은 줄이 두 번 선다
     #   (`_dedupe`는 글자가 완전히 같을 때만 접으므로 라벨 머리글 하나 차이로 안 접힌다).
     #   줄글은 **형식이 다른 안**이지 같은 글의 재탕이 아니다.
@@ -892,7 +931,7 @@ async def build_visual_drafts(
     # ★ 둘째 안을 내는 조건 셋 — 하나라도 어긋나면 **안 만든다**(2026-08-25 대표 지시).
     #   "나눠놓고 다 비슷해서 쓸모없는" 꼴을 막는 게 이 이름 규칙이 기대는 조건이다.
     #   ① 이름이 갈린다        — 같은 이름 두 칸은 무엇이 다른지 알려 주지 못한다
-    #   ② 재료가 진짜 줄글이다  — 위 폴백 사슬(caption·title)은 설명 안이 이미 쓴 글이다
+    #   ② 재료가 진짜 줄글이다  — 옛 폴백 사슬(caption·title)은 설명 안이 이미 쓴 글이다
     #   ③ **글이 실제로 다르다** — `_dedupe` 는 글자가 완전히 같을 때만 접는다. 그것만으로는
     #      부족해서, 공백을 접어 견준 뒤 **설명 안이 이미 품고 있는 글**이면 안 낸다
     #      (자세히에 더 들어갈 내용이 없다는 뜻이다).
@@ -901,6 +940,18 @@ async def build_visual_drafts(
         d_prose = prose_draft(real_prose, kind)
         if d_prose is not None and not _covered_by(d_prose.text, d_desc.text):
             drafts.append(d_prose)
+
+    # 간추린 설명 — **설명 안이 여러 줄일 때만** 붙인다. 한 줄이면 두 안이 같은 글이라
+    # 피커에 같은 줄이 두 번 선다(`_dedupe` 도 접지만 여기서 아예 안 만든다).
+    # gold 설명 909건 중 **52.9%가 한 줄**인데 우리 설명 계열 안은 100.0%가 하나뿐이었다 —
+    # 재료가 넉넉한 자리에서 점역사가 짧은 쪽을 고를 길이 없었다.
+    # ⚠ 머리줄이 **유형 낱말 하나뿐**이면 내지 않는다. 캡션이 `도표: 흐름도` 처럼 유형만
+    #   두 번 말하면 `_strip_dup_type` 이 뒤 낱말을 떼어 머리줄이 `도표` 만 남는다 —
+    #   그 한 줄은 설명이 아니라 이름표라 고를 값이 없다(캡션 캐시 실측으로 확인).
+    d_gist, gist_indents = gist_draft(label, title, outline_desc, kind, _body)
+    _gist_body = " ".join(_TAG_STRIP_RE.sub("", d_gist.text).split())
+    if len(indents) > len(gist_indents) and _gist_body not in ("", label):
+        drafts.append(d_gist)
 
     # 기본은 설명이다. gold 실측에서 설명이 79.6%로 압도한다(생략 12.2% · 참조 8.0%).
     #
