@@ -28,6 +28,7 @@ from app.ai.braille.tag_names import split_indent
 from app.ai.braille.kor_math_rules import _NUMBER_INDICATOR, _DIGIT_MAP
 from app.ai.braille.regulations import make_rule
 from app.ai.braille.translator import _BOOK_STYLE  # 도서 관행 스위치(BRAILLE_STYLE)
+from app.ai.braille.symbol_rules import HIDDEN_TO_BULLET as _HIDDEN_TO_BULLET_SRC
 from app.schemas.content import BrailleOutput, RuleApplication
 
 if TYPE_CHECKING:  # 런타임 import 회피 (annotations 지연 평가)
@@ -72,14 +73,10 @@ _RULE_BOX_BORDER = "NLD-1.2.5"     # 글상자 테두리(Step17 emit), tag=box_t
 # ── MCST 제72항 글머리 기호: 숨김표 글리프(_..l, 꼬리 ⠇) → 글머리형(_.., 꼬리 없음) ──
 # ○□△가 list_item 글머리로 쓰이면 숨김표(제49항)가 아니라 글머리형(제72항)이어야 한다.
 # text 체인은 문맥을 몰라 숨김표로 변환·emit하므로 여기서 글리프·rule을 글머리로 정정한다.
-_HIDDEN_TO_BULLET: dict[str, str] = {
-    "⠸⠴⠇": "⠸⠴",  # ○ 숨김표 → 글머리 (제72항 _0=⠸⠴) — 규정=도서 일치(정답 27회)
-    "⠸⠶⠇": "⠸⠶",  # □ → 글머리 (제72항 _7=⠸⠶)
-    "⠸⠬⠇": "⠸⠬",  # △ → 글머리 (제72항 _+=⠸⠬)
-    # ⚠ • 가운뎃점 분기를 지웠다(2026-08-15) — 죽은 분기였다. symbol_table이 점역
-    #   단계에서 •를 먼저 글머리 셀로 바꾸므로 ⠐⠆인 채 여기까지 오지 않는다.
-    #   글머리 점형은 symbol_rules._SYMBOL_BULLET이 정본이다.
-}
+# ⚠ • 가운뎃점 분기는 지웠다(2026-08-15) — 죽은 분기였다. symbol_table이 점역 단계에서
+#   •를 먼저 글머리 셀로 바꾸므로 ⠐⠆인 채 여기까지 오지 않는다.
+# 표 정본은 symbol_rules.HIDDEN_TO_BULLET — translate_plain도 같은 표를 쓴다(2026-09-07).
+_HIDDEN_TO_BULLET = _HIDDEN_TO_BULLET_SRC
 _RULE_BULLET = "MCST-한글-6.14.72"   # 글머리 기호 (제72항)
 _RULE_HIDDEN_SINGLE = "MCST-한글-6.13.49"  # 숨김표 단일(제49항) — list_item 첫머리면 글머리로 정정
 
