@@ -478,6 +478,24 @@ class LayoutBraille:
 
         layout_result로 element별 type·reading_order·heading_level을 조회한다.
         조판 rule_trail은 각 BrailleOutput.rule_trail에 in-place 추가(점자 좌표).
+
+        조판 자체는 `render`(순수부)가 하고 여기서는 저장만 한다(S1 진입점 통일 #673).
+        """
+        pages, rate = self.render(braille_outputs, page_no, layout_result=layout_result)
+        self._save(pages, job_id, page_no)
+        return rate
+
+    def render(
+        self,
+        braille_outputs: list[BrailleOutput],
+        page_no: int,
+        *,
+        layout_result: Optional["LayoutResult"] = None,
+    ) -> tuple[list[list[str]], float]:
+        """조판 순수부 — (페이지별 줄 목록, line_overflow_rate). 파일을 쓰지 않는다.
+
+        `layout()` 에서 `_save` 만 떼어 낸 것이다(S1, 코드 이동). 채점기가 `.brf` 를 안 만들고도
+        제품과 **같은 조판 furniture** 를 볼 수 있게 하려고 갈랐다(설계 §3-1 4-4 축).
         """
         meta = self._build_meta(layout_result)
         body, page_line_items = self._partition(braille_outputs, meta)
@@ -507,8 +525,7 @@ class LayoutBraille:
         footer = self._footer_text(body, meta)
         orig_page = self._orig_page_text(page_line_items, meta)
         pages = self._assemble_pages(formatted, footer, orig_page, page_no)
-        self._save(pages, job_id, page_no)
-        return (forced_total / total) if total else 0.0
+        return pages, ((forced_total / total) if total else 0.0)
 
     def _assemble_pages(
         self,
@@ -1237,6 +1254,25 @@ class LayoutBraille:
 # 3/5/7칸 들여쓰기, 1단계 제목 가운데 정렬은 지침(NLD 2장2절1·2절2·3절5) 규칙이지 화면
 # 사정이 아니다. FE·BE가 type·heading_level을 보고 재현하려면 규정을 다시 구현해야 하고,
 # 그러면 규칙이 세 벌로 갈라진다. 여기서 점자 공백 셀로 문자열에 직접 박아 내보낸다.
+
+def render_page_text(
+    braille_outputs: list[BrailleOutput],
+    page_no: int,
+    *,
+    layout_result: Optional["LayoutResult"] = None,
+) -> list[list[str]]:
+    """본문 요소들 → 그 쪽의 조판된 점자 줄(페이지별). 파일을 쓰지 않는다.
+
+    S1 진입점 통일(#673). `LayoutBraille().render(...)[0]` 과 같다 — 제품이 `.brf` 로 저장하는
+    것과 **같은 줄**을 돌려주므로, 채점기가 조판 furniture(머리줄·빈 줄·페이지행)를 포함해
+    제품과 같은 것을 볼 수 있다.
+
+    ⚠ 본문 요소만 다룬다. 시각 초안·중첩 블록·별책 참조는 이 길을 안 지난다(설계 §2-5).
+    ⚠ 조판은 `BrailleOutput` 을 **제자리에서** 고친다(braille_lines 를 조판본으로 write-back,
+      rule_trail 재매핑). 같은 객체를 두 번 넣으면 가운데 정렬·들여쓰기가 두 번 걸린다.
+    """
+    return LayoutBraille().render(braille_outputs, page_no, layout_result=layout_result)[0]
+
 
 class FlatElement(NamedTuple):
     """요소 하나의 통 문자열 + 그 좌표계로 옮긴 rule_trail.
