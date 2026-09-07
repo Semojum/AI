@@ -1304,7 +1304,8 @@ _FOLDABLE_TYPES = {"text", "list_item", "caption", "footnote", "sidebar", "title
 
 
 def _fold_full_lines(lines: list[str], pads: list[int],
-                     etype: str = "text") -> tuple[list[int], list[str]]:
+                     etype: str = "text",
+                     src_lines: Optional[list[str]] = None) -> tuple[list[int], list[str]]:
     """꽉 찬 줄 뒤 개행을 점자 공백으로 바꾼다 — 줄은 그대로 두고 **구분자만** 고른다.
 
     `contents`는 조판하지 않은 통 문자열이 계약인데(proto §TextElement.contents) 32칸에
@@ -1318,14 +1319,27 @@ def _fold_full_lines(lines: list[str], pads: list[int],
 
     ⚠ 짧은 줄 뒤 개행은 안 건드린다 — 시행·대사·목록처럼 줄바꿈이 내용인 자리다.
 
+    ⚠ **긴 줄이라도 다음 줄이 항목 머리(①②③·(가)·1.)면 안 접는다.** NLD 3장3절2 4)(3)
+      "선택지는 한 줄에 하나의 선택지 항목을 적는다" — 같은 항의 예외는 "선택지의 내용이
+      짧아 한 줄에 두 개 이상의 선택지를 적을 수 있다면"뿐이라 긴 선택지에는 안 걸린다.
+      선택지는 거의 늘 28칸을 넘으므로 다섯 항목이 통째로 한 줄이 됐다(실측 856칸).
+      `src_lines`는 점역 전 원문 줄 — 점자만 보면 수표+숫자가 일반 숫자와 구분되지 않아
+      `_mark_item_lines`와 같은 근거(원문 줄머리)를 쓴다.
+      오검출은 개행을 하나 더 남기는 쪽이라 손해가 작다 — 실물 910요소 중 10건이 달라졌고
+      그중 2건이 OCR 이 깨진 수식 쪽(`x` 를 `⑦` 로 읽은 자리)이다.
+
     반환: (조정된 pads, 줄 사이 구분자 목록 — 길이 len(lines)-1)
     """
     seps = ["\n"] * max(0, len(lines) - 1)
     if len(lines) < 2 or etype not in _FOLDABLE_TYPES:
         return list(pads), seps
     out_pads = list(pads)
+    src = src_lines if src_lines and len(src_lines) == len(lines) else None
     for i in range(len(lines) - 1):
         width = (pads[i] if i < len(pads) else 0) + len(lines[i])
+        # ★ 항목 머리 줄은 접지 않는다 — NLD 3장3절2 4)(3) "선택지는 한 줄에 하나".
+        if src is not None and _ITEM_HEAD.match(src[i + 1].strip()):
+            continue
         # ★ 테두리 줄은 접지 않는다. 위 `_FOLDABLE_TYPES` 주석이 "글상자는 32칸 줄이
         #   조판 결과가 아니라 구조"라고 적어 뒀는데, 글상자는 **유형이 아니라 줄**이다 —
         #   요소 유형은 `text` 라 그 목록으로는 안 걸러졌다. 그래서 32칸 테두리가 접기
@@ -1427,7 +1441,8 @@ def flatten_elements(
             continue        # 빈 요소는 빈 줄도 만들지 않는다
         etype, _order, hlevel = meta.get(bo.element_id, _DEFAULT_META)
         lines, pads = lb._indent_lines(bo, etype, hlevel)
-        pads, seps = _fold_full_lines(lines, pads, etype)
+        pads, seps = _fold_full_lines(
+            lines, pads, etype, (bo.corrected_text or "").split("\n"))
         before, after = _HEADING_BLANK.get(hlevel, (0, 0))
         if etype in _BLANK_AROUND_TYPES:      # 표·시각자료 위아래(NLD 2장2절2 2)(2)④)
             before, after = max(before, 1), max(after, 1)
