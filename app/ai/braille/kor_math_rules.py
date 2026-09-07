@@ -389,6 +389,76 @@ _ROMAN_CLOSE = "⠲"   # 로마자 종료표
 _CAPS_OPEN = "⠠⠠⠠"  # 대문자 구절표 (제4항)
 _CAPS_CLOSE = "⠠⠄"
 _CAP = "⠠"          # 대문자표
+# ── 「과학 점자」 제4·5항 대문자 구절표 ────────────────────────────────────────
+# 규정(`braille-source/text/한국 점자 규정_재추출.txt:4363`) — "로마자 하나로 된 원소
+# 기호가 **3개 이상 이어** 나올 때에는 대문자 구절표 표기법에 따라 적는다."
+#   4367-4368행  CH₃COOH → `0,,,ch;#c"cooh,'4` = ⠴⠠⠠⠠⠉⠓⠰⠼⠉⠐⠉⠕⠕⠓⠠⠄⠲
+# 제5항(4417-4418행) — "대문자 구절표와 종료표 사이에 있는 H, B, C, F, I의 원소 기호가
+#   **숫자 다음에** 붙어 나올 때에는 해당 원소 기호 앞에 `"`(⠐)을 적는다."
+#   (h·b·c·f·i 는 점형이 1·2·3·6·9 와 같아 수에 먹힌다.)
+#
+# ★ 방아쇠를 좁게 잡는 이유 — 코퍼스 전수 실측(재추출 묵자 1,361쪽).
+#   한 글자 원소 기호는 26자 중 14자(H B C N O F P S K V Y I W U)라 **"3연" 조건만으로는
+#   못 가른다.** 조건만 쓰면 91회/48쪽 발동에 88회가 오발동이다 —
+#   SNS 26 · 기하 각 이름(∠PBC·∠POB) 16 · 유전자형 YBB · MOUNTAIN·COFFEE·WHO·HIV.
+#   여기에 **아래첨자 숫자 보유 + 첨자에 문자 없음 + 모든 글자가 원소 기호**를 더하면
+#   발동 3회/1쪽(전부 진짜 화학식 HCO₃⁻)으로 좁혀지고 오발동 0이다.
+#   (앞서 대문자 **단어표** ⠠⠠ 를 넓게 넣었다가 한글 낱말 1,086건이 깨진 전례가 있다.
+#    구절표는 "원소 기호" 라는 내용 조건이 붙지만 그것만으로는 부족하다는 뜻이다.)
+# ★ gold 전권 18,892쪽 실측 — 규정형 `,,,…,'` 로 적힌 원소 3연 화학식이 **14회 / 10쪽**
+#   (HS-REF-T24-101 화학 참고서 등 3권). 예 `,,,H;#BSO;#D,'`·`,,,CH;#C;COOH,'`.
+#   즉 규정형은 실물에도 있다. 채점 코퍼스(수능특강)에 화학 교과서가 없을 뿐이다.
+_ELEM1 = set("HBCNOFPSKVYIWU")
+_NUM_SIGN = "⠼"
+_CAP_AFTER_NUM = "HBCFI"   # 점형이 1·2·3·6·9 와 같아 수에 먹히는 원소 기호(제5항)
+
+
+def caps_phrase_run(src: str) -> bool:
+    """제4항 방아쇠 — 원소 기호만으로 된 토막에 한 글자 기호가 3연 이상인가."""
+    t = re.sub(r"\\mathrm|\\text|\\rm|[{}$ ]", "", src or "")
+    if not re.search(r"[₀-₉]|_\d", t):            # 아래첨자 숫자가 없으면 화학식이 아니다
+        return False
+    if re.search(r"[_^]\s*\{?\s*[A-Za-z]", t):    # 첨자에 문자 = 유전자형·기하 이름
+        return False
+    body = re.sub(r"[_^][0-9+\-]+|[₀-₉⁰-⁹⁺⁻·]", "", t)
+    best = cur = 0
+    i = 0
+    while i < len(body):
+        c = body[i]
+        if c.isupper() and i + 1 < len(body) and body[i + 1].islower():
+            if body[i:i + 2] not in _ELEMENTS:
+                return False
+            cur = 0; i += 2; continue
+        if c in _ELEM1:
+            cur += 1; best = max(best, cur); i += 1; continue
+        if c.isalpha():
+            return False                          # 원소 기호가 아닌 글자가 섞였다
+        cur = 0; i += 1
+    return best >= 3
+
+
+def caps_phrase_cells(cells: str, src: str = "") -> str:
+    """대문자표를 걷어내고 구절표로 묶는다 + 제5항 ⠐ 를 넣는다.
+
+    ⚠ 셀만 보고 제5항을 적용하면 안 된다 — `⠉` 는 숫자 3이자 로마자 c 다. 그래서 **원문의
+      기호열과 셀을 나란히 걸어간다**(대문자표·첨자표·수표를 뺀 셀 하나가 원문 기호 하나다).
+    """
+    seq = re.sub(r"\\mathrm|\\text|\\rm|[{}$ _^]", "", src or "")
+    seq = [c for c in seq if c.isalnum()]
+    out: list[str] = []
+    k = 0
+    for c in cells:
+        if c in (_CAP, "⠰", _NUM_SIGN, "⠘"):      # 대문자표·아래첨자표·수표·위첨자표
+            if c != _CAP:
+                out.append(c)
+            continue
+        if (k < len(seq) and seq[k] in _CAP_AFTER_NUM and k and seq[k - 1].isdigit()):
+            out.append("⠐")                        # 제5항 — 수에 먹히는 원소 기호
+        k += 1
+        out.append(c)
+    return _CAPS_OPEN + "".join(out) + _CAPS_CLOSE
+
+
 _CHEM_MARK_RE = re.compile(r"\\mathrm\s*\{|\\xrightarrow|\\longrightarrow|\\rightleftharpoons")
 # 기하 표기 신호 — 점·선분·각·도형 이름도 \mathrm으로 적고 글자가 원소 기호와 겹친다.
 _GEOMETRY_MARK_RE = re.compile(
@@ -1949,6 +2019,11 @@ def convert_latex(latex: str) -> str:
     #     규정 예문 `0,li1`,na1`,k4`(Li, Na, K)처럼 **식 전체를 한 번** 감싼다.
     #     맨 끝에 두는 이유: 앞 단계들이 로마자·첨자·화살표를 다 만든 뒤라야 감쌀 범위가 확정된다.
     if _is_chem and result:
+        # 제4항 — 원소 기호 3연 이상이면 낱 대문자표를 구절표로 갈아 끼운다.
+        # ⚠ 화학식 판정(_is_chem) 밖으로 넓혀 봤다가 되돌렸다 — 규정쌍 412 -> 410.
+        #   수식 경로의 로마자 토막이 구절표로 끌려간다.
+        if caps_phrase_run(latex):
+            result = caps_phrase_cells(result, latex)
         if not result.startswith(_ROMAN_OPEN):
             result = _ROMAN_OPEN + result
         if not result.endswith(_ROMAN_CLOSE):
