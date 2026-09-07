@@ -881,10 +881,24 @@ _ROMAN_NUM_UNI = {"II": "Ⅱ", "III": "Ⅲ", "IV": "Ⅳ", "VI": "Ⅵ", "VII": "�
 #   표준정규분포표 머리가 `)z` 로 깨진다 — 뒤 셀로 가른다(`_je33_close_at`).
 _JE33_CLOSE = frozenset("⠦⠖")             # 물음표 · 느낌표 (제33항 [다만])
 _JE33_CLOSE2 = ("⠤⠤",)                    # 줄표 (제33항)
+_HYPHEN_CELL = "⠤"                        # 붙임표 (= 통일영어점자 하이픈 · 제32항)
+# 숫자 바로 뒤에 붙는 영어 접미사 — 복수 `1960s` · 서수 `1st`·`2nd`·`23rd`·`4th`.
+_NUM_SUFFIX = ("s", "st", "nd", "rd", "th")
 # ⚠ 제33항 [다만] 의 '? !' 를 **글자로 내지는 않는다.** ⠦ 는 물음표이자 여는 큰따옴표라
 #   (⠦ … ⠴ 짝), 로마자에 붙었다는 것만으로는 못 가른다. 전권 A/B 에서 이 가지가 낸
 #   변화 755조각 중 **516조각이 `"` -> `?` 였고** 짝이 남아 있는 인용부호를 깨뜨렸다
 #   (`쉍bP"a열b”` -> `쉍bP?a열b”`). 구간 판정에만 쓰고 표기는 종전대로 둔다. 원장 R-35.
+
+
+def _num_suffix_at(s: str, j: int) -> bool:
+    """s[j]부터가 **숫자에 붙는 영어 접미사**인가(제35항 예외) — `1960s`·`23rd`."""
+    for k in (2, 1):
+        seg = s[j:j + k]
+        if len(seg) < k or any(c not in _ALPHA_REV for c in seg):
+            continue
+        if "".join(_ALPHA_REV[c] for c in seg) in _NUM_SUFFIX and s[j + k:j + k + 1] not in _ALPHA_REV:
+            return True
+    return False
 
 
 def _je33_close_at(s: str, j: int) -> bool:
@@ -1112,6 +1126,29 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
                 if span_ok or (s[i] == _ROMAN_START and _roman_span_ahead(s, j + 2)):
                     num, j = _decode_number(s, j)
                     out.append(num)
+                    # ★ 제35항 — **숫자 바로 뒤에 붙은 낱자**가
+                    #   오면 런을 끝낸다. 제35항(재추출본 **1720행**)이 "로마자와 숫자가
+                    #   이어 나올 때에는 **로마자 종료표를 적지 않는다**" 라고 못 박으므로,
+                    #   그 뒤 어딘가에 있는 ⠲ 는 종료표가 아니라 **마침표**다. 그런데
+                    #   `_roman_span_ahead` 는 ⠲ 를 종료표로 보고 구간을 이어 붙여
+                    #   숫자 뒤 한글을 로마자로 읽었다 —
+                    #     `… pyeongchang 2018이다.`(예문 **1746행** `0pye;g*ang #bjahoi4`)
+                    #     -> `… pyeongchang 2018oi`
+                    #   붙은 낱자는 한글이다(`A4용지`·`D-100일`·`2018이다`). 빈칸이 끼면
+                    #   `MP4 Player`(예문 **1737행**)처럼 진짜 로마자가 이어질 수 있으므로
+                    #   **붙어 있을 때만** 끊는다.
+                    #   ⚠ **영어 줄 판정(`span_ok`)에서는 끈다.** 제35항은 로마자와
+                    #     한글이 맞닿는 자리를 말한다. 순수 영문 줄에서는 `1940s` 처럼
+                    #     숫자에 낱자가 붙는 것이 정상이고, 여기서 끊으면 낱말을 끝까지
+                    #     못 읽어 줄 전체가 한글로 떨어진다(회귀 테스트
+                    #     `test_로마자표_없는_영문_줄을_영어로_읽는다` 가 잡았다).
+                    #   ⚠ **숫자에 붙는 영어 접미사는 수의 일부다** — `1960s`·`23rd`.
+                    #     닫힌 집합(복수 s · 서수 st·nd·rd·th)이라 한글과 안 겹친다.
+                    #     첫 판이 이 가드 없이 `the 1960s를` 을 `the 1960엎를` 로,
+                    #     `June 23rd를` 을 `June 23애파.를` 로 깼다(3곳·3쪽).
+                    if (not span_ok and j < n and s[j] in _ALPHA_REV
+                            and not _num_suffix_at(s, j)):
+                        break
                     continue
                 break                              # 뒤가 숫자 셀 → 수표(소비 안 함)
             out.append("ble")
@@ -1302,6 +1339,24 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
                 caps_word = False              # 대문자 단어표는 낱말 하나까지다
                 j += 2
                 continue
+        if c == _HYPHEN_CELL:
+            # ── 제36항 로마 숫자 범위의 붙임표 ────────────────────────────
+            # 제36항(재추출본 **1753행**) 예문 **1793~1794행**
+            #   `그 책의 v-x쪽을 읽어 보세요.` = `@[ ;raw 0v-;x4,.x! o1as ^u,n+4`
+            # 의 `-`(⠤)가 런을 끊어, 뒤의 `;x`(문자표+x)가 한글 `촉` 으로 떨어졌다 —
+            # `v-촉.쪽을`. 제32항이 로마자표와 종료표 **사이**를 「통일영어점자」로
+            # 적으라 하므로 그 구간의 ⠤ 는 하이픈이다.
+            # 조건은 물결표·쉼표와 **같다** — 명시적 로마자표로 열렸고 종료표가 앞에
+            # 있을 때만. 증거를 요구하지 않으면 한글 붙임표를 먹는다.
+            # ★ **⠤ 가 연달아 오면 하이픈이 아니다** — ⠤⠤ 는 줄표(제33항 `_JE33_CLOSE2`)이고,
+            #   길게 이어진 ⠤ 런은 도형·그래프의 가로선이다. 첫 판이 이 가드 없이
+            #   `″————` 를 `com------—-` 로 바꿨다(MS-REF-T26-023 도형 18곳·5쪽).
+            if (s[i] == _ROMAN_START and s[j + 1:j + 2] != _HYPHEN_CELL
+                    and _roman_span_ahead(s, j + 1)):
+                out.append("-")
+                caps_word = False              # 대문자 단어표는 낱말 하나까지다
+                j += 1
+                continue
         if c == _COMMA_CELL:
             # 제32항 구간은 **종료표까지**다. `A, B, C`(⠴⠠⠁⠂ ⠠⠃⠂ ⠠⠉⠲)의 쉼표에서
             # 끊으면 둘째·셋째 글자가 문맥을 잃고 한글로 읽힌다(`A, b, 나.`).
@@ -1330,6 +1385,10 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
             return "Ⅰ"                     # 아래 홑 Ⅰ 가지와 같은 규율 (원장 R-51)
         return t
 
+    # ★ 하이픈도 물결표와 **같다** — `Ⅲ-53`(그림 번호)·`Ⅲ-1`(중단원)이 한 런이 되면서
+    #   통째로는 표에 없어 `III-53` 으로 나갔다(전권 15곳·8쪽). 조각마다 되돌린다.
+    if "-" in txt and caps_word_any:
+        return "-".join(_roman_piece(t) for t in txt.split("-")), j
     if "~" in txt:
         return "~".join(_roman_piece(t) for t in txt.split("~")), j
     if caps_word and txt in _ROMAN_NUM_UNI:
