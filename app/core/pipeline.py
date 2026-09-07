@@ -1754,6 +1754,14 @@ async def _run_pipeline(task: PageTask) -> dict:
 
     # Phase 2 (태민): 경계 파일 → 분해 → 6-체인
     layout_result, ext_map, method = _parse_txt_result(extraction, page_id)
+    # 읽기순서 LLM 보정(원장 C-106 · 대표 결재 2026-09-07). 비회전 쪽만 태우고,
+    # 실패·순열아님·안전판이면 규칙 순서 그대로 간다. 근거·수치는 llm_order 도크스트링.
+    from app.ai.parser import llm_order            # 지연 임포트(anthropic SDK 는 호출 때만)
+    with stage("읽기순서 LLM") as st:
+        _lo = await llm_order.apply(layout_result, ext_map,
+                                    int(_meta0.get("page_rotation") or 0))
+        st.note = (f"{'적용' if _lo['applied'] else _lo['reason'] or '건너뜀'}"
+                   f" · 이동비율 {_lo['ratio']}")
     routing_tier = (
         doc_meta.routing_tier if doc_meta
         else ("ZERO" if method == "TEXT_NATIVE" else "STANDARD")
