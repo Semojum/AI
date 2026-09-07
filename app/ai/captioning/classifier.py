@@ -102,22 +102,28 @@ def _classify_anthropic(b64: str, mime: str):
     """Anthropic 백엔드 분류. logprobs API가 없어 confidence=None을 준다.
     quality_checker는 confidence None이면 R2를 띄우지 않는다(설계된 경로).
 
-    ★ 캡션과 **같은 이미지 해시 캐시**를 쓴다(2026-08-23 대표 결재 ㉯). 시각 요소 하나에
+    ★ 캡션과 **같은 캐시 디렉터리**를 쓰되 `classify/` 하위로 갈라 담는다(3-c).
+      종전에는 라벨 한 단어가 캡션과 **한 자리에 섞여** 있었다 — 3,242건 안에 캡션 1,961 +
+      라벨 1,281 이다. 섞인 채로 옮기거나 쓸어 담으면 라벨이 캡션 자리로 들어가
+      `그림: chart` 가 나온다(실제로 관찰됐다).
+      캐시를 쓰는 이유는 그대로다(2026-08-23 대표 결재 ㉯). 시각 요소 하나에
       API가 두 번 나가는데(분류 + 캡션) 종전에는 캡션만 캐시가 막았다. 분류 응답은 라벨
       한 단어라 캐시가 특히 싸다 — 전 코퍼스 1회 추출 기준 도입가 1.67달러가 빠진다.
-      키에 `image_type="__classify__"`를 줘 캡션 항목과 섞이지 않게 한다.
     ⚠ 프롬프트 캐싱은 여기 못 건다 — `SYSTEM_PROMPT`가 **319토큰**이라 최소 캐시 길이
       1,024에 못 미친다. 표시를 달아도 조용히 캐시되지 않는다.
     """
     import anthropic
     from app.core.limits import estimate_tokens, llm_limiter
     from app.utils.req_log import record_anthropic
-    from app.ai.captioning.captioner import _cache_file
+    from app.ai.captioning.captioner import _cache_file, _cache_new_file
     raw = base64.b64decode(b64)
-    cache = _cache_file(raw, "__classify__", SYSTEM_PROMPT)
-    if cache is not None and cache.exists():
-        label = cache.read_text(encoding="utf-8").strip()
-        return (label, None) if label in LABELS else ("image", 0.0)
+    # 판 번호 열쇠(3-c). 옛 자리는 읽기만 한다 — 이미 쌓인 1,281건을 버리지 않으려고.
+    cache = _cache_new_file("classify", raw, "classify")
+    legacy = _cache_file(raw, "__classify__", SYSTEM_PROMPT)
+    for src in (cache, legacy):
+        if src is not None and src.exists():
+            label = src.read_text(encoding="utf-8").strip()
+            return (label, None) if label in LABELS else ("image", 0.0)
     llm_limiter().acquire_sync(estimate_tokens(SYSTEM_PROMPT, len(b64) * 3 // 4), 10)
     model = os.getenv("CAPTION_MODEL", "claude-sonnet-5")
     client = anthropic.Anthropic(api_key=config.anthropic_api_key or None)
