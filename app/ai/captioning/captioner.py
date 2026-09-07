@@ -985,15 +985,23 @@ def _finish(raw: str, image_type: str) -> str:
     return f"{head}\n{_MATERIAL_MARK}\n{body}" if sep and body else head
 
 
-def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
-    """★ A/B 판정용 캡션 캐시(2026-08-08). `CAPTION_CACHE_DIR`를 줄 때만 동작한다.
+def _cache_model() -> str:
+    """캐시 열쇠에 들어가는 모델 이름. 백엔드가 다르면 같은 그림도 다른 캡션이다."""
+    return (os.getenv("CAPTION_BACKEND", "anthropic") + "/"
+            + os.getenv("CAPTION_MODEL", "claude-sonnet-5"))
 
-    캡셔닝 LLM은 같은 그림에 매번 다른 캡션을 준다(실측 12/12 상이). 그런데
-    `claude-sonnet-5`는 `temperature`를 거부하므로(400) 파라미터로 결정성을 살 수 없다.
-    한편 MinerU가 잘라내는 크롭 이미지는 실행 간 **바이트 동일**하다(실측 285장/94쪽
-    전량 일치). 그래서 이미지 내용 해시로 캡션을 재사용하면 반복 실행이 결정적이 된다.
-    같은 라운드를 두 번 돌려 비교할 때 캡션을 고정하고 점역 변경만 보게 하는 장치다.
-    운영 기본값은 꺼짐(환경변수 없음) — 운영 동작은 바뀌지 않는다.
+
+def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
+    """★ 옛 캐시 자리(전문 키). **읽기 전용**이다 — 새 항목은 여기 안 쓴다.
+
+    2026-08-08 A/B 판정용으로 만든 자리다. 캡셔닝 LLM은 같은 그림에 매번 다른 캡션을
+    준다(실측 12/12 상이). `claude-sonnet-5`는 `temperature`를 거부하므로(400) 파라미터로
+    결정성을 살 수 없다. 한편 MinerU가 잘라내는 크롭 이미지는 실행 간 **바이트 동일**이라
+    (실측 285장/94쪽 전량 일치) 이미지 해시로 캡션을 재사용하면 반복 실행이 결정적이 된다.
+
+    ⚠ 열쇠에 **프롬프트 전문**이 들어간다. 문안을 한 글자만 고쳐도 3,242건이 통째로
+      미스가 됐다 — 프롬프트 정리(S2)를 아예 못 하게 막던 자리다. 새 열쇠는
+      `_cache_new_file()` 이고, 여기는 이미 쌓인 항목을 **버리지 않기 위해서만** 남긴다.
     """
     from app.utils.llm_cache import resolve_dir
     # ★ 절대경로로 푼다(재구조화 3-a). 러너와 서버의 cwd 가 달라 같은 상대경로가
@@ -1009,6 +1017,61 @@ def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
     ).hexdigest()
     p.mkdir(parents=True, exist_ok=True)
     return p / f"{key}.txt"
+
+
+def _cache_new_file(kind: str, raw: bytes, prompt_id: str, context: str = "") -> Path | None:
+    """★ 판 번호 열쇠(재구조화 3-c). `sha256(kind | 입력 | 모델 | prompt_id | 판 번호)`.
+
+    프롬프트 **전문은 키에서 뺐다.** 대신 문안을 고친 사람이 `llm_cache` 의 판 번호 표를
+    올린다(안 올리면 `/health` 지문 게이트가 경고한다). 이래야 문안을 손볼 때마다 전량
+    재캡셔닝을 물지 않는다.
+
+    키에 남긴 것과 뺀 것:
+      · 남김 — 이미지 바이트, 이웃 본문(`context`), 백엔드·모델, `prompt_id`(유형 + 재료
+        스위치). 전부 **입력**이라 값이 갈리면 캡션도 갈려야 한다.
+      · 뺌 — 프롬프트 전문. 판 번호가 대신한다.
+
+    ★ kind 를 **디렉터리로** 가른다. 캡션과 분류 라벨이 한 자리에 섞여 있으면 옮기거나
+      쓸어 담을 때 라벨이 캡션 자리로 들어가 `그림: chart` 가 나온다(실제로 관찰됐다).
+    """
+    from app.utils import llm_cache
+    p = llm_cache.resolve_dir("CAPTION_CACHE_DIR")
+    if p is None:
+        return None
+    input_sha = hashlib.sha256(raw + b"|" + context.encode()).hexdigest()
+    k = llm_cache.key_for(kind, input_sha, _cache_model(), prompt_id)
+    d = p / kind
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{k}.txt"
+
+
+def _cache_read(kind: str, new_path: Path | None, old_path: Path | None,
+                image_type: str) -> str | None:
+    """캐시에서 캡션을 꺼낸다. 없으면 None.
+
+    ★ **히트에도 `_finish` 를 건다**(재구조화 3-c). 종전에는 버리기 가드 하나만 다시
+      태웠다. 그러면 가드를 넓혔을 때 캐시에 남은 옛 캡션이 판정을 통째로 비켜 간다 —
+      2026-09-07 A/B 에서 실제로 그렇게 됐다(넓힌 가드4가 캐시 쪽에서 0건 걸렸다).
+      `_finish` 는 멱등이라(전수 실측 깨짐 0건) 통과본에 한 번 더 걸어도 무해하고,
+      새 가드가 옛 항목에도 즉시 닿는다.
+    """
+    for src in (new_path, old_path):        # 새 자리 → 옛 자리(전문 키) 순
+        if src is not None and src.exists():
+            # 옛 항목 3,242건을 버리지 않으려고 옛 자리도 본다. 판 번호 키로 갈아타면서
+            # 통째로 미스를 내면 A/B 한 판에 재캡셔닝 비용이 그대로 붙는다.
+            return _finish(src.read_text(encoding="utf-8"), image_type)
+    return None
+
+
+def _cache_write(new_path: Path | None, answer: str, finished: str) -> None:
+    """**원응답 raw** 를 새 자리에 담는다. 가드는 읽을 때 다시 건다(설계 2-3 저장 정책).
+
+    가드 판정 결과가 아니라 모델이 준 글을 담아야, 가드를 넓혔을 때 옛 항목에도 닿는다.
+    빈 캡션은 안 담는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
+    """
+    if new_path is None or not (finished or "").strip():
+        return
+    new_path.write_text(answer, encoding="utf-8")
 
 
 # 크롭이 사실상 **빈 자리**이면 캡션을 부르지 않는다 (노션 Review, 2026-08-23).
@@ -1059,25 +1122,23 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
         raw = _maybe_upscale(f.read())   # 캐시 키도 확대본 기준 — 배율이 다르면 캐시가 갈린다
     b64 = base64.b64encode(raw).decode()
 
-    cache = _cache_file(raw, image_type, prompt)
+    prompt_id = image_type + ("+material" if _material_on() else "")
+    cache = _cache_new_file("caption", raw, prompt_id, context)
+    hit = _cache_read("caption", cache, _cache_file(raw, image_type, prompt), image_type)
     if cache is not None:
         from app.utils.req_log import record_cache
-        record_cache("캡셔닝", cache.exists())
-    if cache is not None and cache.exists():
-        # ⚠ 캐시는 A/B 결정성 장치이지 **판정 우회로가 아니다.** 가드가 나중에 넓어지면
-        #   캐시에 남은 옛 캡션이 그 판정을 통째로 비켜 간다 — 2026-09-07 A/B 에서
-        #   실제로 그렇게 됐다(넓힌 가드4가 캐시 쪽에서 한 건도 안 걸렸다).
-        #   되돌릴 수 없는 **버리기 가드만** 다시 태운다(모양 손보는 가드는 이미 걸린 값이다).
-        return _reject_decoration(cache.read_text(encoding="utf-8"))
+        record_cache("캡셔닝", hit is not None)
+    if hit is not None:
+        return hit
 
     ext = Path(image_path).suffix.lstrip(".").lower()
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
-        text = _finish(_caption_anthropic(b64, mime, prompt), image_type)
+        answer = _caption_anthropic(b64, mime, prompt)
+        text = _finish(answer, image_type)
         # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
-        if cache is not None and text.strip():
-            cache.write_text(text, encoding="utf-8")
+        _cache_write(cache, answer, text)
         return text
 
     from app.utils.req_log import record_openai
@@ -1096,7 +1157,7 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
         temperature=0.3,
     )
     record_openai("캡셔닝", "gpt-4o", getattr(resp, "usage", None))
-    text = _finish(resp.choices[0].message.content, image_type)
-    if cache is not None and text.strip():
-        cache.write_text(text, encoding="utf-8")
+    answer = resp.choices[0].message.content
+    text = _finish(answer, image_type)
+    _cache_write(cache, answer, text)
     return text
