@@ -8,7 +8,6 @@ MinerU VLM 백엔드로 PDF 단일 페이지 처리.
         storage/jobs/{job_id}/temp/page_{no:03d}/merged_layout.json
 반환:  merged_layout (list[dict])
 """
-import functools
 import json
 import os
 import re
@@ -848,9 +847,17 @@ def _pua_ratio(s: str) -> float:
 _SCAN_COVER_MIN = 0.90
 
 
-@functools.lru_cache(maxsize=8)
 def _is_scanned_page(fitz_page: fitz.Page) -> bool:
-    """지면 대부분이 한 장의 이미지면 True(= 위의 텍스트는 남의 OCR)."""
+    """지면 대부분이 한 장의 이미지면 True(= 위의 텍스트는 남의 OCR).
+
+    ⚠ **캐시하지 말 것**(2026-09-08). 종전엔 `lru_cache(maxsize=8)`를 `fitz.Page`에
+    걸었는데, 파이썬 기본 해시는 **객체 id**다. 서버가 오래 돌면 Page가 수거된 뒤
+    같은 주소에 다른 Page가 앉아 캐시가 엉뚱한 답을 준다 — 비스캔 쪽이 스캔으로
+    (또는 그 반대로) 판정돼 텍스트레이어 우선이 조용히 뒤집힌다.
+    캐시가 필요하지도 않다. 실측 `get_image_info()` 중앙값 1.7ms(비스캔)·3.7ms(스캔)로,
+    같은 호출부가 이미 치르는 `get_text("rawdict")`(9.9ms·236.8ms)의 17%·1.6%다.
+    쪽당 최악 0.35초(95요소)로 180초 페이지 예산(C7)의 0.2%다.
+    """
     try:
         area = (fitz_page.rect.width * fitz_page.rect.height) or 1.0
         for info in fitz_page.get_image_info():
