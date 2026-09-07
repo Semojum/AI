@@ -125,7 +125,13 @@ ELEM_AXIS = {"formula": M, "table": B, "image": V, "caption": V,
 SUBSPLIT = ("text", "list_item")
 
 _PAGE_ROW = re.compile(r"^[a-z]?\d+\s.*\s\d+\s*$")
-_TAG = re.compile(r"<!/?[^>]{1,40}>")
+# ★ 강조 태그 `<!강조>…<!/강조>` 는 **번역기가 먹는 입력**이다 — 규정 제56항 드러냄표
+#   ⠠⠤ … ⠤⠄(`braille-source/text/규정_텍스트.txt:2467`). 통째로 지우면 그 점형이
+#   **구조적으로 못 나온다.** 재추출 코퍼스의 태그는 강조뿐(여는 1,074·닫는 805 +
+#   뒤집힌 꼴 `</!강조>` 269). 2026-09-08 실측: 태그 있는 314쪽 총편집 248,678 →
+#   247,521(−1,157셀) · 우리 ⠠⠤ 1 → 1,012. 나머지 태그는 종전대로 벗긴다.
+_TAG = re.compile(r"<!(?!/?강조>)/?[^>]{1,40}>")
+_TAG_FLIP = ("</!강조>", "<!/강조>")
 _CELL = re.compile(r"[^⠁-⣿]")
 _MATH = re.compile(r"\$[^$]{1,400}\$")
 _ANS_HEAD = re.compile(r"정답\s*[:：]|정답과\s*해설|해설\s*[:：]")
@@ -167,7 +173,7 @@ def cells(t: str) -> str:
 
 def strip_print(t: str) -> str:
     """우리 태그와 쪽 머리행을 벗긴다 — fwd_baseline·spacing_kpi 와 같은 전처리."""
-    t = _TAG.sub("", t)
+    t = _TAG.sub("", t.replace(*_TAG_FLIP))
     return "\n".join(l for l in t.split("\n")
                      if l.strip() and not _PAGE_ROW.match(l.strip()))
 
