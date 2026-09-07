@@ -1188,6 +1188,15 @@ def _fix_leading_roman(text_orig: str, braille: str) -> str:
 # 형식: 여는 <!이름>, 닫는 <!/이름>. 유일 인식 앵커 <!. 정규식 옵션 슬래시.
 # 매핑은 다대일(태그명 달라도 점자 동일 가능). 미지 태그는 안전 제거(점자화로 안 깨뜨림).
 _TAG_TOKEN_RE = re.compile(r"<!/?[^>]+>")
+# ★ R-72 — 추출 LLM 이 닫는 태그를 뒤집어 `</!이름>` 으로 내보낸다. 앵커가 `<!` 라
+#   태그로 인식되지 않아 **문자열이 그대로 점자화되고**(`</!강조>` → 11셀) 짝을 잃은
+#   여는 태그가 드러냄표 닫는 ⠤⠄(제56항)를 못 찍는다. 재추출 묵자 1,361쪽 전수에서
+#   닫는 태그 1,074건 중 **269건(25.0%)·87쪽**이 이 꼴이었다(정상 805건 · 805+269=1,074).
+#   실행 산출물 `storage/jobs/advopus-5_03/**/text_opt.json` 에도 9회 있다 — 코퍼스만의 일이 아니다.
+#   프롬프트(`opus_fallback._PROMPT`)는 이미 `<!/이름>` 이라고 적어 두었는데도 넷 중
+#   하나가 뒤집혀 오므로 문구로는 못 막는다 — 파서가 받아 준다.
+#   태그 꼴일 때만(`</!` + 이름 + `>`) 되돌린다. 본문의 `<` 는 건드리지 않는다.
+_MIRRORED_CLOSE_RE = re.compile(r"</!(?=[^<>]{1,40}>)")
 # 이미 경고한 미지 태그(프로세스 수명). 조판이 접두를 수천 번 재점역해 같은 토큰이
 # 수백 줄을 찍는다 — _token_sub 주석 참조.
 _warned_unknown_tags: set[str] = set()
@@ -2317,6 +2326,9 @@ def translate_tagged_text(text: str, *, force_roman: bool = False) -> str:
     """<!수식> 태그가 포함된 텍스트를 점자 BRF로 변환."""
     # 레거시 심볼 폰트 복원은 **수식 라우팅보다 먼저** 해야 한다. 뒤에 두면 "x¤ +1>0"이
     # 수식으로 안 잡혀 위첨자표(⠘⠼⠃)로 나가는데, 정답 도서는 제곱을 ⠣로 적는다.
+    # R-72 — 뒤집힌 닫는 태그(`</!이름>`). 여기에도 두는 이유는 `table_braille` 이
+    # 이 함수를 **직접** 부르기 때문이다(표 칸 269건 중 14건). 멱등이라 겹쳐도 무해하다.
+    text = _MIRRORED_CLOSE_RE.sub("<!/", text)
     text = _restore_legacy_glyphs(text)     # 오디코딩 5자(⇂¤‹˘⇨)
     text = _restore_broken_subscripts(text)  # 깨진 아래첨자 ¡™£¢§ → ₁₂₃₄₆ (수식 라우팅 전, r16)
     text = _restore_ion_signs(text)         # 이온 전하 ±— → ⁺⁻ (과학점자 제2항, 아래첨자 복원 뒤)
@@ -2552,6 +2564,10 @@ def translate_with_breaks(text: str, *, force_roman: bool = False) -> tuple[list
     #   룩어헤드가 실패하므로 이중 적용되지 않는다(멱등).
     # ★ 테두리 태그는 제 줄에 홀로 세운다 — 아래 split("\n")이 논리 줄을 만들기 **전**이라야
     #   한 줄에 본문과 테두리가 섞이지 않는다(위 `isolate_border_tags` 주석).
+    # ★ R-72 — 뒤집힌 닫는 태그 `</!이름>` → `<!/이름>`. **모든 태그 처리보다 먼저** 해야
+    #   한다: 아래 _drop_nonkorean_emphasis·isolate_border_tags·substitute_tags 가 전부
+    #   `<!` 앵커로 짝을 세기 때문이다(_MIRRORED_CLOSE_RE 주석 참조).
+    text = _MIRRORED_CLOSE_RE.sub("<!/", text)
     text = isolate_border_tags(text)
     text = _QNUM_RE.sub(r"\1.", text)
     # ★ '만을\n에서' 소실 구멍·개행 낀 괄호는 줄 단위 관행 정규화가 못 잡는다 —
