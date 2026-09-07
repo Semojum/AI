@@ -707,6 +707,76 @@ def _reject_meta(text: str) -> str:
     return "" if (not text or _META_RE.search(text)) else text
 
 
+# ── 가드5 — **AI가 사람에게 말하듯 쓴 줄**을 걷는다 (2026-09-07, 원장 C-71) ─────────
+# 대표 지목 결함. 점자책에 "…옮길 수 없습니다"가 찍히면 점역사는 그 초안 전체를 의심한다.
+# 실측(캡션 캐시 3,054건): 모델은 **못 읽겠다는 변명 한 줄을 맨 앞에 깔고, 빈 줄 뒤에
+# 진짜 설명을 잇는다.**
+#     "만화: 말풍선 대사가 그림에 표시되어 있으나 내용을 읽을 수 없습니다."   ← 이 줄
+#     ""
+#     "만화: 안내원이 '우하량' 표지판 앞에서 학생 무리에게 설명하는 장면"      ← 진짜 설명
+# `_reject_meta`(맨 거부)는 이걸 못 잡는다 — 목적어가 이미지·그림·사진이 아니라 '내용'이고,
+# 뒤에 멀쩡한 설명이 붙어 있어 **통째로 버리면 손해**다. 그래서 **줄 단위로** 걷는다.
+# 실경로 확인(build_visual_drafts→translate_plain): 세 건 모두 점역자 주 안에 그대로 들어가
+# **점자까지 100% 나갔다**. 묵자에서 걸러 주는 층이 없다.
+#
+# ★ 신호는 **연언(連言)**이다 — 존댓말 종결 하나로는 못 가른다.
+#   gold 점역자 주 1,386구간 실측: 존댓말 종결이 **7건(0.51%)** 있다. 0이 아니다.
+#   캡션에도 그림 속 대사("갑: …해야 합니다")가 존댓말로 흔히 나온다 — 그건 원본에 있는
+#   말이라 지우면 안 된다. 그래서 **불능·메타 신호 + 존댓말 종결**이 같은 줄에 있을 때만 건다.
+_AI_VOICE_SIGNAL = re.compile(
+    r"(?:읽을|볼|확인할|판단할|판독할|식별할|확정하기|옮기기|옮길|파악하기|알)\s*수\s*없"
+    r"|(?:확인|판독|식별|확정|파악|옮기기)(?:이|가)?\s*어렵"
+    r"|보이지\s*않아|일치하지\s*않"
+    r"|흐릿|해상도"
+    r"|보이는\s*대로|읽을\s*수\s*있는\s*범위|그대로\s*설명|임의로|추정하여"
+    r"|다음과\s*같습니다"
+)
+# 줄 **끝**이 존댓말이어야 한다. 문장 중간의 '…합니다만'류는 안 본다.
+_HONORIFIC_END = re.compile(r"(?:습니다|합니다|입니다|됩니다)[.。!?\s]*$")
+
+# ★ **대사 줄은 건드리지 않는다**(전수 실측에서 오차단 2건을 잡아 넣은 조건).
+#   AI 말투 줄은 유형 제시어로 열거나('그림:'·'만화:') 말머리가 아예 없다. 반면
+#   '화자: …'는 그림 **안에 있는 말**이라 지우면 원본이 사라진다. 실제로 걸렸던 것:
+#     · "AI: (가)은/는 중국을 통일하고 … 정리하면 다음과 같습니다."  ← 교과서 챗봇 화면 전사
+#     · "을: (읽을 수 없음)…해서는 안 됩니다."                      ← 만화 속 대사
+#   못읽음 자리표시(`_UNREADABLE_LINE`)는 줄 전체가 그것뿐일 때만 걸리므로 이 예외를 안 탄다.
+_TYPE_HEAD = re.compile(r"^\s*(?:그림|만화|도표|사진|그래프|도식|삽화|지도|표|이미지)\s*[:：]")
+_SPEAKER_HEAD = re.compile(r"^\s*[^:：\n]{1,12}\s*[:：]\s*\S")
+
+# 못 읽은 자리를 **대사인 척 채운 줄**. 실측에서 '학생 A/B/C: 읽을 수 없는 기호'가
+# 세 줄씩 나왔다(캐시 4건). 정보가 0인데 점자 셀만 먹는다.
+# ⚠ **낱말이 설명 안에 박힌 것은 살린다** — "네모 안에 읽을 수 없는 글자",
+#   "(이름표는 읽을 수 없음)"은 진짜 묘사다(실측 4건). 그래서 **줄 전체가 그것뿐일 때만** 건다.
+_UNREADABLE_LINE = re.compile(
+    r"^\s*(?:[^:：\n]{1,12}\s*[:：]\s*)?"          # 선택적 '화자:' 말머리
+    r"[(（]?\s*(?:말풍선\s*)?(?:대사\s*)?"
+    r"읽을\s*수\s*없(?:는\s*(?:기호|글자|대사|내용|문자)|음)"
+    r"\s*[)）]?\s*[.。]?\s*$"
+)
+
+
+def _strip_ai_voice(text: str) -> str:
+    """AI가 사람에게 거는 말투 줄·못읽음 자리표시 줄을 **줄 단위로** 걷는다.
+
+    남는 줄이 없으면 빈 문자열 — 캡션 실패와 같은 길(생략 표기)을 탄다. 지어내지 않는다.
+    """
+    if not text:
+        return ""
+    kept, dropped = [], 0
+    for ln in text.splitlines():
+        s = ln.strip()
+        ai_voice = (
+            _AI_VOICE_SIGNAL.search(s) and _HONORIFIC_END.search(s)
+            and not (_SPEAKER_HEAD.match(s) and not _TYPE_HEAD.match(s))
+        )
+        if s and (ai_voice or _UNREADABLE_LINE.match(s)):
+            dropped += 1
+            continue
+        kept.append(ln)
+    if dropped:
+        logger.info("가드5 AI 말투 줄 걷어냄 %d줄", dropped,
+                    extra={"guard": 5, "stage": "캡셔닝", "status": "STRIPPED"})
+    return "\n".join(kept).strip()
 
 # ── 열거 항목은 줄을 나눈다 (2026-08-12 대표 지시) ──────────────────────────
 # 캡셔너는 여러 정보를 **한 줄에 쭉** 이어 쓰는 버릇이 있다:
@@ -807,7 +877,7 @@ def _finish(raw: str, image_type: str) -> str:
     head, sep, tail = (raw or "").partition(_MATERIAL_MARK)
     head = _split_enumerations(_drop_per_speech_narration(_strip_situation_head(
         _reject_decoration(_reject_read_text(
-            _ensure_type_word(_reject_meta(head.strip()), image_type))))))
+            _ensure_type_word(_strip_ai_voice(_reject_meta(head.strip())), image_type))))))
     if not head.strip():
         return ""
     body = "\n".join(ln.rstrip() for ln in tail.splitlines() if ln.strip())
