@@ -28,7 +28,11 @@ from app.ai.braille.kor_math_rules import (convert_latex, digits_to_braille,
                                           caps_phrase_run, caps_phrase_cells)
 from app.ai.braille import eng_braille, inline_math
 from app.ai.braille.constants import WRAP_HYPHEN_CLOSE, WRAP_HYPHEN_OPEN
-from app.ai.braille.symbol_rules import SYMBOL_TABLE, substitute_symbols
+from app.ai.braille.symbol_rules import (
+    HIDDEN_TO_BULLET as _HIDDEN_TO_BULLET,
+    SYMBOL_TABLE,
+    substitute_symbols,
+)
 from app.ai.braille import tag_names as _TAGS
 
 logger = logging.getLogger(__name__)
@@ -2616,6 +2620,22 @@ def translate_with_breaks(text: str, *, force_roman: bool = False) -> tuple[list
     return (lines or [""], breaks or [[]])
 
 
+def _line_head_bullet(line: str) -> str:
+    """줄머리 ○□△ 를 제49항 숨김표형(⠸x⠇)에서 제72항 글머리형(⠸x)으로 되돌린다.
+
+    본문 경로는 `layout_braille._apply_bullet_marker` 가 요소 줄마다 같은 일을 한다
+    (거기서는 rule_trail 도 6.13.49→6.14.72 로 바꿔 단다). `translate_plain` 은 layout 을
+    안 타서 이 정정이 빠져 있었다 — docstring 이 "본문과 같은 경로"라고 쓴 것과 어긋났다.
+
+    ★ 반복 숨김표(⠸⠴⠴⠇ = ○○ 고등학교, 제57항)는 표에 없어 그대로 남는다. 이게 안전판이다 —
+      실측 1,180쪽에서 줄머리 ○□△ 37건 중 19건이 이런 붙어 나오는 진짜 숨김표였다.
+    """
+    for hidden, bullet in _HIDDEN_TO_BULLET.items():
+        if line.startswith(hidden):
+            return bullet + line[len(hidden):]
+    return line
+
+
 def translate_plain(text: str) -> str:
     """짧은 묵자 → 유니코드 점자 1줄짜리 문자열. `TranslateText` RPC 전용.
 
@@ -2632,7 +2652,7 @@ def translate_plain(text: str) -> str:
     # ★ 꼬리말은 한국어 문서의 한 조각이라, 그 안에 한글이 없어도 로마자표 ⠴ 를 붙인다
     #   (제29항). gold 페이지행 실측 4,776 : 542 (89.8%). 본문 경로는 종전 그대로다.
     lines, _ = translate_with_breaks(text, force_roman=True)
-    return "\n".join(lines)
+    return "\n".join(_line_head_bullet(l) for l in lines)
 
 
 # 수식 속 \text{한글}을 한글 점자로 변환하는 훅 등록(P2). kor_math_rules는 translator를
