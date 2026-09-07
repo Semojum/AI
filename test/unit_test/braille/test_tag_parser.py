@@ -47,6 +47,35 @@ class TestPointMarkers:
         assert "<!" not in out and "!>" not in out
 
 
+class TestMirroredCloseTag:
+    """R-72 — 추출 LLM 이 뒤집어 내는 닫는 태그 `</!이름>`.
+
+    재추출 묵자 1,361쪽 전수에서 닫는 태그 1,074건 중 269건(25.0%)·87쪽이 이 꼴이었다.
+    받아 주지 않으면 태그 문자열이 그대로 점자화되고(11셀) 여는 태그가 짝을 잃는다.
+    기대 점형은 한국 점자 규정 제56항(드러냄표 ⠠⠤ … ⠤⠄) 에서 도출한다.
+    """
+
+    @staticmethod
+    def _one(text: str) -> str:
+        return _tr.translate_with_breaks(text)[0][0]
+
+    def test_뒤집힌_닫는태그가_정상형과_같다(self):
+        assert self._one("<!강조>가나다</!강조> 라마") == \
+               self._one("<!강조>가나다<!/강조> 라마")
+
+    def test_제56항_드러냄표_짝이_닫힌다(self):
+        out = self._one("<!강조>가나다</!강조>")
+        assert out.startswith("⠠⠤") and out.endswith("⠤⠄")
+
+    def test_태그_문자열이_점자로_안_나간다(self):
+        # 구버그: `</!강조>` → ⠔⠔⠸⠌⠖⠫⠶⠨⠥⠢⠢ (11셀)
+        assert "⠸⠌⠖" not in self._one("앞 </!강조> 뒤")
+
+    def test_본문_부등호는_안_건드린다(self):
+        # `<` 뒤가 태그 꼴이 아니면 그대로 수학 기호로 간다(제41항 ⠔⠔).
+        assert self._one("5 < 10 이고") == "⠼⠑⠲⠀⠔⠔⠀⠼⠁⠚⠀⠕⠈⠥"
+
+
 class TestBorder:
     """글상자=표 테두리 (NLD-1.2.5). 캡 ⠿, 위 채움 ⠛(=g), 아래 채움 ⠶(=7), 32칸."""
 
