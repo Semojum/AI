@@ -16,6 +16,7 @@ from uuid import uuid4
 import pytest
 
 from app.core import pipeline
+from app.schemas.layout import DocumentMeta
 from app.schemas.task import PageTask
 
 _PAGE = 1
@@ -40,11 +41,13 @@ def _make_extraction() -> dict:
 @pytest.fixture()
 def job(tmp_path_factory):
     job_id = f"test-handoff-{uuid4().hex[:8]}"
-    data_path = Path(f"storage/jobs/{job_id}/temp/page_{_PAGE:03d}/data/{_PAGE:03d}_txt_result.json")
-    data_path.parent.mkdir(parents=True, exist_ok=True)
     extraction = _make_extraction()
     extraction["meta"]["job_id"] = job_id
-    data_path.write_text(json.dumps(extraction, ensure_ascii=False, indent=2), encoding="utf-8")
+    # ★ 3-d: 경계 파일과 stamp 를 **제품 코드로** 깐다. 손으로 파일만 놓으면 stamp 가 없어
+    #   재파생 갈래로 빠지고(빈 pdf_data), 이 픽스처가 재는 것이 통째로 달라진다.
+    pipeline._write_txt_result(
+        PageTask(job_id=job_id, page_no=_PAGE, mode="c"), extraction,
+        DocumentMeta(pdf_confidence=1.0, routing_tier="ZERO"))
     yield job_id, extraction
     shutil.rmtree(Path(f"storage/jobs/{job_id}"), ignore_errors=True)
 

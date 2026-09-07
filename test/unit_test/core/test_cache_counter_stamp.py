@@ -76,3 +76,78 @@ class Test경계stamp:
         before = fp()
         monkeypatch.setenv("FIGURE_DETECT", "0")
         assert fp() != before
+
+
+class Test경계재사용:
+    """재구조화 3-d — stamp 를 읽어 재사용/재파생을 가른다."""
+
+    def _task(self, tmp_path, monkeypatch):
+        from app.schemas.task import PageTask
+        monkeypatch.chdir(tmp_path)
+        return PageTask(job_id="verdictjob", page_no=3, total_pages=1, mode="a",
+                        pdf_data=b"%PDF-1.4\n")
+
+    def _write(self, task, tier="STANDARD"):
+        from app.core import pipeline
+        from app.schemas.layout import DocumentMeta
+        pipeline._write_txt_result(
+            task, {"meta": {"extraction_method": "OCR"}, "elements": []},
+            DocumentMeta(pdf_confidence=0.5, routing_tier=tier, scan_only=True))
+
+    def test_같은_판이면_재사용(self, tmp_path, monkeypatch):
+        from app.core import pipeline
+        task = self._task(tmp_path, monkeypatch)
+        self._write(task)
+        assert pipeline._stamp_verdict(task)[0] is None
+
+    def test_판을_올리면_prompt_ver_무효(self, tmp_path, monkeypatch):
+        from app.core import pipeline
+        from app.utils import llm_cache
+        task = self._task(tmp_path, monkeypatch)
+        self._write(task)
+        monkeypatch.setitem(llm_cache.PROMPT_VER, "caption",
+                            llm_cache.PROMPT_VER["caption"] + 1)
+        assert pipeline._stamp_verdict(task)[0] == "prompt_ver"
+
+    def test_opt단계_판번호는_경계를_안_건드린다(self, tmp_path, monkeypatch):
+        # ★ 이것이 이 단계의 핵심 안전장치다. 본문 프롬프트 판을 올렸다고 재파생하면
+        #   element_id(uuid4)가 갈려 점역사 피드백의 요소 참조가 끊긴다.
+        from app.core import pipeline
+        from app.utils import llm_cache
+        task = self._task(tmp_path, monkeypatch)
+        self._write(task)
+        for kind in ("text", "formula", "table", "visual"):
+            monkeypatch.setitem(llm_cache.PROMPT_VER, kind,
+                                llm_cache.PROMPT_VER[kind] + 1)
+        assert pipeline._stamp_verdict(task)[0] is None
+
+    def test_스위치가_바뀌면_env_fp_무효(self, tmp_path, monkeypatch):
+        from app.core import pipeline
+        task = self._task(tmp_path, monkeypatch)
+        self._write(task)
+        monkeypatch.setenv("FIGURE_DETECT", "0")
+        assert pipeline._stamp_verdict(task)[0] == "env_fp"
+
+    def test_stamp_이_없으면_재파생(self, tmp_path, monkeypatch):
+        from app.core import pipeline
+        task = self._task(tmp_path, monkeypatch)
+        self._write(task)
+        pipeline._stamp_path(task).unlink()
+        assert pipeline._stamp_verdict(task)[0] == "no_stamp"
+
+    def test_doc_meta_가_그대로_돌아온다(self, tmp_path, monkeypatch):
+        from app.core import pipeline
+        from app.schemas.layout import DocumentMeta
+        task = self._task(tmp_path, monkeypatch)
+        self._write(task, tier="QUALITY")
+        dm = DocumentMeta(**pipeline._stamp_verdict(task)[1]["doc_meta"])
+        assert dm.routing_tier == "QUALITY" and dm.scan_only is True
+
+    def test_원자_쓰기라_임시파일이_안_남는다(self, tmp_path, monkeypatch):
+        from app.core import pipeline
+        task = self._task(tmp_path, monkeypatch)
+        self._write(task)
+        d = tmp_path / "storage/jobs/verdictjob/temp/page_003/data"
+        assert not list(d.glob("*.tmp"))
+        assert sorted(f.name for f in d.iterdir()) == [
+            "003_extract_stamp.json", "003_txt_result.json"]
