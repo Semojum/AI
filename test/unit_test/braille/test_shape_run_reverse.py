@@ -38,12 +38,27 @@ def test_도형_개수만큼_편다(cells, expected):
     assert decode(cells) == expected
 
 
-def test_정의_숨김표_제1_제3은_아직_안_편다():
-    """⠔(☆)·⠕(◆)는 실측이 각각 2건·3건뿐이고 ⠕ 는 규정 예시와 어긋난다.
+@pytest.mark.parametrize("cells, expected", [
+    ("⠸⠔⠇", "☆"), ("⠸⠔⠔⠇", "☆☆"), ("⠸⠔⠔⠔⠇", "☆☆☆"),
+    ("⠸⠕⠇", "◆"), ("⠸⠕⠕⠇", "◆◆"),
+])
+def test_정의_숨김표_제1_제3도_편다(cells, expected):
+    """제1·제3 점역자 정의(⠔ ☆ · ⠕ ◆) 반복 틀 (2026-09-07 정정).
 
-    근거 없이 펴지 않고 미지셀로 남긴다 — 뜻이 책마다 다른 '점역자 정의' 자리다.
+    종전 주석의 "실측 2건·3건" 은 gold 로 짝지은 수이지 등장 수가 아니었다.
+    전권 재측정 — ⠸⠔ⁿ⠇(n≥2) 37회·23쪽 · ⠸⠕ⁿ⠇(n≥2) 4회·4쪽이고 전부 미해독
+    쓰레기였다(`⊖-사`·`⟨2838⟩이이사`). 홑 틀 ⠸⠔⠇→☆ · ⠸⠕⠇→◆ 는 이미
+    symbol_table.json 에 있어 바르게 풀렸다 — 반복 틀만 규칙이 없었다.
     """
-    assert "☆" not in decode("⠸⠔⠔⠇")
+    assert decode(cells) == expected
+
+
+def test_숨김표_틀이_뒤_낱말을_안_먹는다():
+    """규정 제57항 예문 `☆☆고등학교` = `_99l@ui[7ja@+` (규정 예문쌍 실패였다).
+
+    틀을 못 잡으면 ⠸ 가 미해독으로 새면서 뒤 낱말까지 먹었다 — `⊖-lυ등학교`.
+    """
+    assert decode(ascii_to_unicode("_99l@ui[7ja@+", backtick="space")) == "☆☆고등학교"
 
 
 @pytest.mark.parametrize("cells, expected", [
