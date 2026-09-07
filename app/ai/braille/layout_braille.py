@@ -1326,7 +1326,15 @@ def _fold_full_lines(lines: list[str], pads: list[int],
     out_pads = list(pads)
     for i in range(len(lines) - 1):
         width = (pads[i] if i < len(pads) else 0) + len(lines[i])
-        if width >= _FULL_LINE_MIN and lines[i + 1].strip():
+        # ★ 테두리 줄은 접지 않는다. 위 `_FOLDABLE_TYPES` 주석이 "글상자는 32칸 줄이
+        #   조판 결과가 아니라 구조"라고 적어 뒀는데, 글상자는 **유형이 아니라 줄**이다 —
+        #   요소 유형은 `text` 라 그 목록으로는 안 걸러졌다. 그래서 32칸 테두리가 접기
+        #   조건(width >= 28)에 그대로 걸려 위 테두리·본문·아래 테두리가 **한 줄 181칸**으로
+        #   붙어 나갔고, BE 가 32칸에서 그냥 자르니 아래 테두리가 문장 끝에 이어 찍혔다
+        #   (대표 지적 2026-09-08 ②).
+        if (width >= _FULL_LINE_MIN and lines[i + 1].strip()
+                and not _is_border_line(lines[i])
+                and not _is_border_line(lines[i + 1])):
             seps[i] = "⠀"
             out_pads[i + 1] = 0
     return out_pads, seps

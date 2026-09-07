@@ -52,3 +52,25 @@ def test_이어_붙는_줄은_들여쓰기를_잃는다():
     lines, pads = ["⠁" * 31, "⠃⠉"], [0, 3]
     pads2, _ = _fold_full_lines(lines, pads)
     assert pads2[1] == 0
+
+
+def test_본문_요소_안_글상자_테두리도_안_접는다():
+    """글상자는 **유형이 아니라 줄**이다 — 요소 유형은 `text`라 _FOLDABLE_TYPES로는 못 거른다.
+
+    2026-09-08 대표 지적 ②. `<!상자>…<!상자끝>`이 든 본문 요소가 통째로 한 줄
+    (위 테두리 32 + 본문 115 + 아래 테두리 32 = 181칸)로 나갔고, BE가 32칸에서
+    그냥 자르니 **아래 테두리가 문장 끝에 이어 찍혔다.**
+    """
+    top = "⠿" + "⠛" * 30 + "⠿"
+    bottom = "⠿" + "⠶" * 30 + "⠿"
+    body = "⠑" * 115
+    lines, pads = [top, body, bottom], [0, 2, 0]
+    _, seps = _fold_full_lines(lines, pads, "text")
+    assert seps == ["\n", "\n"]
+
+
+def test_본문끼리는_그대로_접는다():
+    """테두리 가드가 일반 본문 접기를 막지 않는다(회귀)."""
+    lines, pads = ["⠁" * 31, "⠃" * 31, "⠉⠙"], [0, 0, 0]
+    _, seps = _fold_full_lines(lines, pads, "text")
+    assert seps == ["⠀", "⠀"]

@@ -2059,9 +2059,19 @@ def _print_contents(o, mode: str, etype: str, hlevel: int) -> str:
     원문을 그대로 돌려주는 자리라 우리가 무엇을 더하면 편집할 때마다 덧붙는다
     (`test_mode_b_contract`).
     """
-    src = o.tn_text or ""
-    if "<!" not in src:
-        src = o.corrected_text or ""
+    # 선택 초안이 있으면 **그 초안**이 이 요소의 묵자다 — 점자 창(`_selected_lines`)과 같은
+    # 안을 본다. 시각 요소는 `tn_text` 가 이미 `drafts[selected_idx].text` 라 값이 안 바뀌고
+    # (cartoon_opt:193 · image_opt:73 · chart_graph_opt:107 · diagram_opt:759),
+    # **표만 달라진다**: 표의 `tn_text` 는 선택 초안이 아니라 **점역자 주**여서
+    # (table_opt:683,720) 화면에 표 내용 대신 주석 한 줄만 나갔다(대표 지적 2026-09-08).
+    # 점자 창에는 격자가 있는데 묵자 창에는 주석만 있어 두 창이 다른 말을 했다.
+    _drafts, _idx = (o.drafts or []), (o.selected_idx or 0)
+    if 0 <= _idx < len(_drafts):
+        src = _drafts[_idx].text or ""
+    else:
+        src = o.tn_text or ""
+        if "<!" not in src:
+            src = o.corrected_text or ""
     if mode == "b" or not src.strip():
         return src
     if "<!" in src:
