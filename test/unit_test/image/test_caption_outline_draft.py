@@ -33,8 +33,12 @@ def test_캡션_줄이_개조식_항목이_된다():
                  "그래프: 시간에 따른 개체 수\n가로축: 시간\n세로축: 개체 수(천 마리)\nㄱ: 실선")
     lines = text.split("\n")
     assert len(lines) == 4, text                       # 머리줄 + 항목 셋
-    assert lines[0].startswith("<!주>그래프: 시간에 따른 개체 수"), text
-    assert all(l.startswith("<!2칸>") for l in lines[1:]), text   # §6.3.4(2)① 3칸
+    # ★ 2026-09-07 계약 변경 — 머리줄도 **3칸**이다(`<!2칸>`). 종전에는 머리줄만 들여쓰기
+    #   태그가 없어 1칸으로 나갔는데, 도서지침 3장 2절 4)(1)(2)(L2368·L2384) 가 "3칸에서
+    #   시작하여 점역자 주표 안에 …" 라 못 박고 gold 원본 BRF 전수(시각 머리줄 4,183건)도
+    #   3칸 81.0% · 5칸 18.9% · **1칸 3건(0.07%)** 이다.
+    assert lines[0].startswith("<!2칸><!주>그래프: 시간에 따른 개체 수"), text
+    assert all(l.startswith("<!2칸>") for l in lines[1:]), text   # 항목도 같은 3칸
     assert "세로축: 개체 수(천 마리)" in text          # 값을 흘리지 않는다
 
 
@@ -49,8 +53,9 @@ def test_유형_제시어를_두_번_찍지_않는다():
 
 def test_사진_캡션은_사진으로_나간다():
     # §6.3.4(1) 유형 제시어. 캡셔너 image 프롬프트가 사진이면 `사진: `으로 시작시킨다.
-    assert _desc(ImageOpt, "사진: 파르테논 신전") == "<!주>사진: 파르테논 신전<!/주>"
-    assert _desc(ImageOpt, "그림: 세포 모형") == "<!주>그림: 세포 모형<!/주>"
+    # 머리줄 3칸(`<!2칸>`)은 2026-09-07 계약 — 위 test 주석 참조.
+    assert _desc(ImageOpt, "사진: 파르테논 신전") == "<!2칸><!주>사진: 파르테논 신전<!/주>"
+    assert _desc(ImageOpt, "그림: 세포 모형") == "<!2칸><!주>그림: 세포 모형<!/주>"
 
 
 def test_번호_표지를_떼지_않는다():
@@ -60,7 +65,8 @@ def test_번호_표지를_떼지_않는다():
     for mark in ("① 분수", "② 화분에 꽂힌 꽃", "③ 의자"):
         assert mark in text, text
     # 표지가 위계를 지므로 들여쓰기는 다 같은 3칸이다(gold 3칸 1,688줄 · 5칸 88줄).
-    assert text.count("<!2칸>") == 3 and "<!6칸>" not in text, text
+    # 넷인 것은 머리줄까지 3칸이 됐기 때문이다(2026-09-07 계약).
+    assert text.count("<!2칸>") == 4 and "<!6칸>" not in text, text
 
 
 def test_묶음_머리줄을_지우지_않는다():

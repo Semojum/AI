@@ -54,6 +54,17 @@ class TestOutline:
         assert "x=π/6: 모두 만남" in lines and "x=7π/6: 두 곡선만" in lines
         assert len(indents) == len(lines)
 
+    def test_머리줄은_3칸에서_시작한다(self):
+        """도서지침 3장 2절 4)(1)(2) L2368·L2384 "3칸에서 시작하여 점역자 주표 안에 …".
+
+        값은 **앞 빈칸 수**라 3칸 = 2다. 2026-09-07 이전에는 머리줄만 0(=1칸)이었다.
+        gold 원본 BRF 전수(`corpus/pages/braille` 18,892쪽 · 시각 머리줄 4,183건):
+        3칸 81.0%(3,388) · 5칸 18.9%(791) · **1칸 3건(0.07%)**.
+        ⚠ 2026-08-25 주석의 "0칸 66.4%" 는 **전 코퍼스 모든 줄** 분포이지 머리줄이 아니다.
+        """
+        _, indents = _outline_text_indents("그림", "제목", "설명", [(0, "항목"), (1, "하위")])
+        assert indents == [4, 2, 2, 4]      # 제목 5칸 · 머리줄 3칸 · 항목 3칸 · 하위 5칸
+
     def test_유형_줄은_제목과_같으면_유형어만_남는다(self):
         text, _ = _outline_text_indents("그림", "비파형 동검 사진", "비파형 동검 사진", [])
         lines = _plain(text)
