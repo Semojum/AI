@@ -1002,6 +1002,11 @@ def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
     ⚠ 열쇠에 **프롬프트 전문**이 들어간다. 문안을 한 글자만 고쳐도 3,242건이 통째로
       미스가 됐다 — 프롬프트 정리(S2)를 아예 못 하게 막던 자리다. 새 열쇠는
       `_cache_new_file()` 이고, 여기는 이미 쌓인 항목을 **버리지 않기 위해서만** 남긴다.
+
+    ★ 옛 항목은 캡션 1,961 + 분류 라벨 1,281 이 **한 디렉터리에 섞여** 있었다. kind 로
+      갈라 옮겼으면(`tools/split_caption_cache.py`) 그 하위를 먼저 본다. 디렉터리를 안
+      쓰면 자리만으로는 라벨과 캡션을 구분할 수 없어, 쓸어 담는 스크립트가 라벨을 캡션
+      자리로 넣는다 — `그림: chart` 가 그렇게 나왔다.
     """
     from app.utils.llm_cache import resolve_dir
     # ★ 절대경로로 푼다(재구조화 3-a). 러너와 서버의 cwd 가 달라 같은 상대경로가
@@ -1015,8 +1020,11 @@ def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
                    os.getenv("CAPTION_MODEL", "claude-sonnet-5").encode(),
                    prompt.encode()])
     ).hexdigest()
-    p.mkdir(parents=True, exist_ok=True)
-    return p / f"{key}.txt"
+    # kind 하위(`caption/`·`classify/`)를 먼저 본다 — 옛 항목을 갈라 옮겼으면 거기 있다
+    # (`tools/split_caption_cache.py`). 안 옮겼으면 평평한 뿌리에 그대로 있다.
+    kind = "classify" if image_type == "__classify__" else "caption"
+    split = p / kind / f"{key}.txt"
+    return split if split.exists() else p / f"{key}.txt"
 
 
 def _cache_new_file(kind: str, raw: bytes, prompt_id: str, context: str = "") -> Path | None:
@@ -1045,6 +1053,21 @@ def _cache_new_file(kind: str, raw: bytes, prompt_id: str, context: str = "") ->
     return d / f"{k}.txt"
 
 
+# 분류 라벨의 전체 목록. `classifier.LABELS` 를 여기서 import 하면 순환이라 값만 둔다
+# (`classifier` 가 `captioner` 를 import 한다). 어긋나면 `test_caption_cache_kind` 가 잡는다.
+_CLASSIFY_LABELS = frozenset(("image", "cartoon", "chart", "diagram"))
+
+
+def _kind_matches(kind: str, text: str) -> bool:
+    """이 글이 그 kind 의 것인가. 캡션 자리에서 분류 라벨을 걸러 내는 가드.
+
+    캡션은 유형 제시어로 열고(`그림:`·`만화:`) 라벨은 영어 한 단어다 — 실측 3,242건에서
+    겹치는 항목이 하나도 없다. 자리를 안 갈라도 이 한 줄로 `그림: chart` 를 막는다.
+    """
+    is_label = text.strip() in _CLASSIFY_LABELS
+    return is_label if kind == "classify" else not is_label
+
+
 def _cache_read(kind: str, new_path: Path | None, old_path: Path | None,
                 image_type: str) -> str | None:
     """캐시에서 캡션을 꺼낸다. 없으면 None.
@@ -1059,7 +1082,10 @@ def _cache_read(kind: str, new_path: Path | None, old_path: Path | None,
         if src is not None and src.exists():
             # 옛 항목 3,242건을 버리지 않으려고 옛 자리도 본다. 판 번호 키로 갈아타면서
             # 통째로 미스를 내면 A/B 한 판에 재캡셔닝 비용이 그대로 붙는다.
-            return _finish(src.read_text(encoding="utf-8"), image_type)
+            text = src.read_text(encoding="utf-8")
+            if not _kind_matches(kind, text):
+                continue                    # 분류 라벨을 캡션으로 내보내지 않는다
+            return _finish(text, image_type)
     return None
 
 

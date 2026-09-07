@@ -109,3 +109,39 @@ def test_empty_answer_is_not_cached(cache_dir):
 
 def test_miss_is_none(cache_dir):
     assert captioner._cache_read("caption", _new(), None, "image") is None
+
+
+# ── 옛 캐시 kind 분리 (3-c③) ─────────────────────────────────────────────────
+def test_label_set_matches_the_classifier():
+    """`_CLASSIFY_LABELS` 가 분류기와 어긋나면 가드가 헛돈다(순환 import 라 값을 복사했다)."""
+    from app.ai.captioning.classifier import LABELS
+    assert captioner._CLASSIFY_LABELS == frozenset(LABELS)
+
+
+@pytest.mark.parametrize("text,kind", [
+    ("chart", "classify"), ("diagram", "classify"), ("image\n", "classify"),
+    ("그림: 막대그래프이다.", "caption"), ("만화: 학생이 말한다", "caption"),
+])
+def test_kind_matches(text, kind):
+    other = "caption" if kind == "classify" else "classify"
+    assert captioner._kind_matches(kind, text)
+    assert not captioner._kind_matches(other, text)
+
+
+def test_a_label_is_never_served_as_a_caption(cache_dir):
+    """★ 이걸 안 막으면 초안에 `그림: chart` 가 나온다(실제로 관찰된 현상).
+
+    옛 캐시 3,242건은 캡션 1,961 과 라벨 1,281 이 한 자리에 섞여 있었다.
+    """
+    old = captioner._cache_file(b"img", "image", "옛 프롬프트")
+    old.write_text("chart", encoding="utf-8")
+    assert captioner._cache_read("caption", _new(), old, "image") is None
+
+
+def test_legacy_lookup_finds_the_split_directory(cache_dir):
+    """`tools/split_caption_cache.py` 로 갈라 옮긴 뒤에도 옛 항목을 찾는다."""
+    flat = captioner._cache_file(b"img", "image", "옛 프롬프트")
+    moved = cache_dir / "caption" / flat.name
+    moved.parent.mkdir(parents=True, exist_ok=True)
+    moved.write_text("그림: 갈라 옮긴 옛 캐시본이다.", encoding="utf-8")
+    assert captioner._cache_file(b"img", "image", "옛 프롬프트") == moved
