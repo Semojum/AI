@@ -132,3 +132,16 @@ def test_normalizer_keeps_plain_text_untouched():
     plain = "제목\n본문 한 줄\n또 한 줄"
     assert T.normalize_tn_spans(plain) == plain
     assert T.apply_indent_tags(plain, [4, 0, 0]) == "<!4칸>제목\n본문 한 줄\n또 한 줄"
+
+
+@pytest.mark.parametrize("kind,items", [c for c in CASES if c[0] == "만화"])
+def test_every_scene_marker_opens_its_own_note(kind, items):
+    """장면 번호는 **장면마다 제 주표**다 — §5.3.3(1) L2820-2821.
+
+    만화 제목 주(§5.3.1(1) L2811)와 별개 주라, 인접하다고 머리줄 주에 묶이면 안 된다.
+    묶이면 첫 장면만 흡수되고 둘째부터 갈라져 한 문서에 형식이 둘로 선다.
+    """
+    for line in _render(kind, items).split("\n"):
+        bare = T.split_indent(line)[1]
+        if re.match(r"^(?:장면|컷)\s*\d+", bare.replace(_OPEN, "")):
+            assert bare.startswith(_OPEN), f"장면 줄이 제 주를 안 연다: {line!r}"
