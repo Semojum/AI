@@ -2390,6 +2390,14 @@ def translate_tagged_text(text: str, *, force_roman: bool = False) -> str:
     # 이 함수를 **직접** 부르기 때문이다(표 칸 269건 중 14건). 멱등이라 겹쳐도 무해하다.
     text = _MIRRORED_CLOSE_RE.sub("<!/", text)
     text = _strip_markup_fragments(text)   # #667 마크업 조각
+    # ★ 줄머리 들여쓰기 태그 `<!N칸>` 은 조판 표시지 내용이 아니다 — 수식 라우팅보다
+    #   **먼저** 뗀다(2026-09-08 대표 실행 실물). 뒤에 두면 `inline_math` 가 `<!2칸>` 을
+    #   수식 원자로 삼켜 `<`·`!`·숫자·`>` 가 점형 열 칸으로 찍혀 나갔다:
+    #     `⠔⠔⠖⠼⠃⠀⠋⠒⠀⠀⠢⠢` = "<" + "!" + "2칸" + ">"
+    #   점역사가 편집본을 되돌리는 mode b 에서 매번 났다 — #385 이후 `contents` 에
+    #   이 태그를 실어 보내기 때문이다. 평문 줄에서는 `substitute_tags` 가 미지 태그로
+    #   지우고 있었으므로 그 경로의 동작은 안 바뀐다(같은 결과, 더 이른 자리).
+    text = _TAGS._INDENT_TAG_RE.sub("", text)
     text = _restore_legacy_glyphs(text)     # 오디코딩 5자(⇂¤‹˘⇨)
     text = _restore_broken_subscripts(text)  # 깨진 아래첨자 ¡™£¢§ → ₁₂₃₄₆ (수식 라우팅 전, r16)
     text = _restore_ion_signs(text)         # 이온 전하 ±— → ⁺⁻ (과학점자 제2항, 아래첨자 복원 뒤)

@@ -51,3 +51,55 @@ def test_chat_without_draft_is_not_printed():
 
 def test_empty_response():
     assert parse("   ") == FAIL
+
+
+# ── 구조 표지 줄은 초안이 아니다 (2026-09-08 대표 실행 실물) ──────────────────
+# 대표가 배포판으로 실제 문서를 돌리니 표 자리에 `<!주>표 끝.<!/주>` 한 줄만 나왔다.
+# 원인은 "[점역사주 표 시작]"·"[점역사주: 표 끝]" 같은 **구조 표지**까지 초안 줄로 세서
+# `선택: 2` 가 방식2가 아니라 방식1의 '표 끝' 표지를 가리킨 것이다.
+_TWO_WAYS = """# 표 점역 방식 제안
+## 방식 1: 항목별 나열형
+[점역사주: 이하 표를 각 항목별로 풀어 씀]
+요오드 반응: 옅은 갈색
+[점역사주: 표 끝]
+## 방식 2: 서술형 문장 변환
+[점역사주: 이하 표 내용을 문장으로 서술함]
+[점역사주: 표 끝]
+선택: {n}"""
+
+
+@pytest.mark.parametrize("n,expect", [
+    (1, "이하 표를 각 항목별로 풀어 씀"),
+    (2, "이하 표 내용을 문장으로 서술함"),
+])
+def test_marker_lines_do_not_shift_selection(n, expect):
+    """표지를 빼면 `선택: N` 과 방식 번호가 다시 맞는다."""
+    assert parse(_TWO_WAYS.format(n=n)) == expect
+
+
+def test_marker_only_response_is_not_content():
+    """표지밖에 없으면 '표 끝'을 내용인 척 내보내지 않는다."""
+    assert parse("[점역사주 표 시작]\n[점역사주 표 끝]\n선택: 2") == FAIL
+
+
+def test_trailing_marker_in_the_same_line_is_cut():
+    """주와 표지를 한 줄에 붙여 내도 표지는 인쇄물에 안 나간다 (2026-09-08 실물)."""
+    r = "[점역사주: 이 표는 세 가지 반응과 그 결과 색을 나타냄. [점역사주 끝]\n선택: 1"
+    assert parse(r) == "이 표는 세 가지 반응과 그 결과 색을 나타냄."
+
+
+def test_bare_marker_words_at_both_edges_are_cut():
+    """대괄호 없이 양끝에만 붙는 표지도 뗀다 (2026-09-08 STANDARD 실물)."""
+    r = ("[점역사주: 표시작, 구분×음료A×음료B의 3항목 4행 표임. 음료B: 24, 0, 0임. 표끝\n"
+         "선택: 1")
+    assert parse(r) == "구분×음료A×음료B의 3항목 4행 표임. 음료B: 24, 0, 0임."
+
+
+def test_the_word_end_inside_a_sentence_survives():
+    """본문 중간·다른 뜻의 '끝'은 안 건드린다."""
+    assert parse("[점역사주: 표의 끝 부분에 합계가 있음.\n선택: 1") == "표의 끝 부분에 합계가 있음."
+
+
+def test_leftover_open_marker_word_is_cut():
+    """`[점역사주 시작]` 에서 앞 표지만 떨어져 `시작]` 이 남던 자리 (2026-09-08 실물)."""
+    assert parse("[점역사주 시작] 아래는 표입니다.\n선택: 1") == "아래는 표입니다."
