@@ -568,23 +568,44 @@ def _parse_tn_from_response(response: str) -> str:
             except (ValueError, IndexError):
                 pass
 
-    drafts = [ln for ln in lines if "[점역사주" in ln and not _TN_META_RE.search(ln)]
+    # ★ 2026-09-08 — 구조 표지 줄("[점역사주 표 시작]"·"[점역사주: 표 끝]")은 내용이 아니다.
+    #   종전에는 이것도 초안 줄로 세서 `선택: 2` 가 방식2가 아니라 **방식1의 '표 끝' 표지**를
+    #   가리켰다. 그래서 표 점역자 주가 "표 끝." 한 줄로 나갔다(대표 실행 실물).
+    #   표지를 빼면 방식당 주가 하나씩 남아 `선택: N` 과 번호가 다시 맞는다.
+    drafts = [s for ln in lines
+              if "[점역사주" in ln and not _TN_META_RE.search(ln)
+              for s in [_strip_tn_labels(ln)]
+              if s != _TN_FAIL and not _TN_MARKER_RE.match(s)]
     if not drafts:
         return _TN_FAIL
-
-    picked = drafts[selected_idx] if (selected_idx is not None and 0 <= selected_idx < len(drafts)) else drafts[0]
-    return _strip_tn_labels(picked)
+    if selected_idx is not None and 0 <= selected_idx < len(drafts):
+        return drafts[selected_idx]
+    return drafts[0]
 
 
 # 골라낸 줄에 남는 포장 — 방식 번호와 [점역사주] 표지는 **점역사에게 줄 내용이 아니다.**
 # 종전에는 이것까지 점자로 찍혀 나갔다(실물 "※※[방식1]※※ [점역사주: …]").
 _TN_LABEL_RE = re.compile(r"^[\s*※#\-]*\[?\s*방식\s*[0-9]+\s*\]?[\s*※:.)]*")
-_TN_MARK_RE = re.compile(r"\[\s*점역사주\s*[:\]]\s*")
+# 쌍점 없는 변형("[점역사주 표 시작]")도 벗긴다 — 안 벗기면 표지 판정에 걸리지 않는다.
+_TN_MARK_RE = re.compile(r"\[\s*점역사주\s*[:\]]?\s*")
+# 표 본문의 시작·끝을 알리는 **구조 표지**. 점역사에게 줄 내용이 아니다.
+_TN_MARKER_RE = re.compile(r"^표\s*(?:시작|끝)\s*[.\u3002]?$")
+# 줄 안에 붙어 오는 표지 — 여는 대괄호가 남아 있으면 닫힘 여부와 무관하게 잘라 낸다.
+_TN_TAIL_RE = re.compile(r"\[[^\[\]]{0,12}주\s*(?:끝|시작)")
+# 대괄호 없이 **맨 앞/맨 뒤에만** 붙는 표지("표시작, 구분×…" · "…0, 0임. 표끝").
+# 양끝 고정이라 본문 중간의 "표 끝" 은 안 건드린다 — 실물 2026-09-08 STANDARD 산출.
+_TN_HEAD_WORD_RE = re.compile(r"^표?\s*시작\s*[\],.:·]?\s*")
+_TN_TAIL_WORD_RE = re.compile(r"\s*표\s*끝\s*[.\u3002]?\s*$")
 
 
 def _strip_tn_labels(line: str) -> str:
     s = _TN_LABEL_RE.sub("", line).strip()
     s = _TN_MARK_RE.sub("", s, count=1).strip()
+    # 줄 **안**에 남은 구조 표지부터 뒤는 버린다(2026-09-08 실물). 모델이 주와 표지를
+    # 한 줄에 붙여 내면("…적색으로 나타남. [점역사주 끝]") 위 `count=1` 이 앞의 것만 떼고
+    # 뒤엣것은 그대로 인쇄됐다 — 대표가 본 "표 끝"이 여기서도 샜다.
+    s = _TN_TAIL_RE.split(s)[0].strip()
+    s = _TN_TAIL_WORD_RE.sub("", _TN_HEAD_WORD_RE.sub("", s)).strip()
     return s.rstrip("]").strip() or _TN_FAIL
 
 
