@@ -6,11 +6,8 @@ import math
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
 from openai import OpenAI
 from app.core.config import config
-
-load_dotenv()
 
 _client: OpenAI | None = None
 

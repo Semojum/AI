@@ -2,8 +2,18 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from dotenv import load_dotenv
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# ── `.env` 로드는 **여기 한 자리**다 (2026-09-08, 재구조화 0-d) ────────────────
+# 종전에는 `captioner.py`·`classifier.py` 두 자리에서 돌았다. 둘 다 지연 import 라
+# `.env` 가 **언제** 읽히는지가 import 순서에 달렸고, 모듈 최상단에서 `os.environ.get`
+# 으로 굳는 스위치가 서른 넘게 있다. 이 모듈은 앱이 무엇을 하든 가장 먼저 import 되므로
+# 여기서 한 번 읽으면 그 뒤 어떤 순서로 import 하든 같은 값을 본다.
+# ⚠ `override=False`(기본)다 — **프로세스 env 가 항상 이긴다.** A/B 는 `.env` 가 아니라
+#   프로세스 env 로 주입한다(`FOO=1 python …`).
+load_dotenv()
 
 # HCXT 추론 백엔드 허용값 — 아래 hcxt_backend 주석 참조.
 _HCXT_BACKENDS = {"off", "transformers", "vllm"}
