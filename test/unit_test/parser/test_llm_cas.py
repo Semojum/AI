@@ -69,6 +69,9 @@ class Test순서캐시:
 
     @pytest.mark.asyncio
     async def test_적중분에도_안전판이_걸린다(self, cas, monkeypatch):
+        # 읽기순서 LLM 기본값이 2026-09-08 에 끔으로 바뀌었다(속도). 이 시험은
+        # 켜진 상태의 동작을 보는 것이라 명시로 켠다.
+        monkeypatch.setenv("READING_ORDER_LLM", "1")
         """캐시는 결정성 장치이지 판정 우회로가 아니다."""
         from app.ai.parser import llm_order
 
@@ -87,6 +90,9 @@ class Test순서캐시:
 
     @pytest.mark.asyncio
     async def test_ro_미스는_쪽을_안_죽이고_규칙순서로_간다(self, cas, monkeypatch):
+        # 읽기순서 LLM 기본값이 2026-09-08 에 끔으로 바뀌었다(속도). 이 시험은
+        # 켜진 상태의 동작을 보는 것이라 명시로 켠다.
+        monkeypatch.setenv("READING_ORDER_LLM", "1")
         """`LLM_CACHE_MODE=ro` 팔의 계약 — 외부 호출 0, 쪽은 그대로 나간다."""
         from app.ai.parser import llm_order
 
