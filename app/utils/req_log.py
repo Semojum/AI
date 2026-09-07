@@ -87,6 +87,9 @@ class _ReqStats:
     stages: list[tuple[str, float, str, float]] = field(default_factory=list)
     # 외부 LLM: (파트, 모델) → 누계. 재계산·청구서 대조가 되는 최소 단위다.
     llm: dict[tuple[str, str], _LlmEntry] = field(default_factory=dict)
+    # 우리 **디스크 캐시** 적중/미스: kind → [hit, miss]. 프롬프트 캐시(`_LlmEntry`의
+    # cache_read/write)와 다른 것이다 — 그건 모델 쪽 과금 캐시고 이건 우리가 파일로 든 것.
+    cache: dict[str, list[int]] = field(default_factory=dict)
     t0: float = 0.0                      # 요청 시작 monotonic
     # 벽시계 시작 시각(ms). monotonic은 재시도 구분에 못 쓴다 — 기준점이 프로세스마다 다르다.
     t0_wall_ms: int = 0
@@ -308,6 +311,37 @@ def cache_hit_rate() -> float:
     t = _totals()
     denom = t["prompt_tokens"] + t["cache_read_tokens"] + t["cache_write_tokens"]
     return (t["cache_read_tokens"] / denom) if denom else 0.0
+
+
+def record_cache(kind: str, hit: bool) -> None:
+    """우리 디스크 캐시 한 건(적중/미스). 계수기 한 줄(`llm_counter_line`)이 읽는다."""
+    st = _cur()
+    if st is None:
+        return
+    st.cache.setdefault(kind or "기타", [0, 0])[0 if hit else 1] += 1
+
+
+@_never_raises("")
+def llm_counter_line() -> str:
+    """이번 쪽의 kind별 `call/hit/miss` 한 줄. (재구조화 3-a)
+
+    ★ 이 줄의 용도는 하나다 — **A/B 끄기 팔이 진짜 꺼졌는지**를 `call=0`으로 본다.
+      스위치를 껐다고 믿고 잰 라운드가 실은 안 꺼져 있어 무효가 난 일이 여러 번 있다
+      (원장 "A/B 끄기 팔이 진짜 꺼졌는지 확인하라").
+    ★ 호출도 캐시도 없으면 `call=0 · (없음)`을 찍는다. **줄 자체는 항상 남긴다** —
+      줄이 없는 것과 0인 것을 구별 못 하면 확인이 안 된다.
+    `call`은 실제 외부 LLM 호출 수(`record_*`가 센 것)라 캐시 적중분은 안 센다.
+    """
+    st = _cur()
+    calls: dict[str, int] = {}
+    cache: dict[str, list[int]] = st.cache if st else {}
+    for (kind, _model), e in (st.llm.items() if st else ()):
+        calls[kind] = calls.get(kind, 0) + e.calls
+    parts = []
+    for k in sorted(set(calls) | set(cache)):
+        h, m = cache.get(k, [0, 0])
+        parts.append(f"{k} call={calls.get(k, 0)} hit={h} miss={m}")
+    return f"LLM계수 call={sum(calls.values())} · " + (" · ".join(parts) or "(없음)")
 
 
 def _nanos(usd: float) -> int:
