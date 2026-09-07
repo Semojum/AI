@@ -53,8 +53,9 @@ OUTPUT = TD / "output"
 MANIFEST = TD / "dataset/split_manifest.csv"
 STORAGE = Path("storage/jobs")
 RENDER_DPI = 150
-# 러너 외부 타임아웃. 파이프라인 내부 타임아웃(PAGE_TIMEOUT_SECONDS, 운영 180s)보다 커야 한다.
-# 오프라인 코퍼스 평가는 MinerU 추출이 무거운 페이지에서 180s를 넘길 수 있어 둘 다 늘린다.
+# 러너 외부 타임아웃(하드 킬). 파이프라인 내부 타임아웃(PAGE_TIMEOUT_SECONDS)보다 커야 한다.
+# ★ 내부는 이제 운영과 같은 180s 다(#673, 위 참조). 여기를 늘린다고 내부가 같이 늘지 않는다.
+#   내부가 먼저 C7 로 끊는다. 이 값은 프로세스가 통째로 멈췄을 때의 뒷문일 뿐이다.
 PAGE_TIMEOUT = float(os.environ.get("CORPUS_PAGE_TIMEOUT", "650"))  # 초(파이프라인 내부보다 크게)
 
 
