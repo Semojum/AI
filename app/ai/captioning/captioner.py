@@ -14,6 +14,7 @@ from pathlib import Path
 from openai import OpenAI
 from app.core.config import config
 from app.utils.logger import get_logger
+from app.utils.llm_cache import VER_TAG_RE
 
 logger = get_logger(__name__)
 
@@ -843,11 +844,23 @@ def _strip_ai_voice(text: str) -> str:
     """AI가 사람에게 거는 말투 줄·못읽음 자리표시 줄을 **줄 단위로** 걷는다.
 
     남는 줄이 없으면 빈 문자열 — 캡션 실패와 같은 길(생략 표기)을 탄다. 지어내지 않는다.
+
+    ★ 프롬프트 **판 번호**도 여기서 걷는다(재구조화 3-c 셋째 겹). 번호는 애초에 프롬프트에
+      안 들어가고(`llm_cache` 의 판 번호 표는 열쇠 만드는 함수 안에서만 읽힌다), 들어가면
+      `test_prompt_ver_leak.py` 가 잡는다. 그 둘을 다 뚫어도 여기서 걸린다.
+      **줄을 통째로 버리지 않고 그 꼴만 지운다** — 번호가 본문 사이에 박히면 줄을 버리는
+      쪽이 손해가 크다. 태그뿐인 줄만 없앤다.
+      ⚠ 이 파일에는 판 번호 꼴을 **글자 그대로 적지 마라.** 검사가 파일 전문을 본다.
     """
     if not text:
         return ""
-    kept, dropped = [], 0
+    kept, dropped, vers = [], 0, 0
     for ln in text.splitlines():
+        if VER_TAG_RE.search(ln):
+            ln = VER_TAG_RE.sub("", ln)
+            vers += 1
+            if not ln.strip():                  # 판 번호뿐이던 줄은 남길 게 없다
+                continue
         s = ln.strip()
         ai_voice = (
             _AI_VOICE_SIGNAL.search(s) and _HONORIFIC_END.search(s)
@@ -860,6 +873,10 @@ def _strip_ai_voice(text: str) -> str:
     if dropped:
         logger.info("가드5 AI 말투 줄 걷어냄 %d줄", dropped,
                     extra={"guard": 5, "stage": "캡셔닝", "status": "STRIPPED"})
+    if vers:
+        # 여기까지 왔으면 앞의 두 겹이 뚫린 것이다. 조용히 지우지 않는다.
+        logger.warning("가드5 프롬프트 판 번호가 캡션에 샜다 %d줄 — 프롬프트를 확인하라", vers,
+                       extra={"guard": 5, "stage": "캡셔닝", "status": "STRIPPED"})
     return "\n".join(kept).strip()
 
 # ── 열거 항목은 줄을 나눈다 (2026-08-12 대표 지시) ──────────────────────────

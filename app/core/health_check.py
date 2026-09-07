@@ -80,6 +80,26 @@ _PROMPT_SOURCES = (
 )
 
 
+def _module_prompt_bytes(name: str) -> bytes:
+    """한 모듈의 프롬프트 상수들을 이어 붙인 바이트. 못 읽으면 `b"?"`."""
+    try:
+        mod = importlib.import_module(name)
+    except Exception:                       # noqa: BLE001 — 로그 한 줄이 요청을 죽이면 안 된다
+        return b"?"
+    out = bytearray()
+    for attr in sorted(dir(mod)):
+        if "PROMPT" in attr or attr == "_COMMON":
+            out += f"{attr}={getattr(mod, attr, '')!r}".encode()
+    return bytes(out)
+
+
+@lru_cache(maxsize=1)
+def prompt_sha_by_kind() -> dict:
+    """kind → 프롬프트 12자 해시. 판 번호 지문 게이트(3-c)가 이 값을 본다."""
+    return {label: hashlib.sha256(_module_prompt_bytes(name)).hexdigest()[:12]
+            for label, name in _PROMPT_SOURCES}
+
+
 @lru_cache(maxsize=1)
 def prompt_sha() -> str:
     """여섯 모듈의 프롬프트 상수를 한 해시로. 하나라도 바뀌면 값이 바뀐다.
@@ -90,15 +110,21 @@ def prompt_sha() -> str:
     h = hashlib.sha256()
     for label, name in _PROMPT_SOURCES:
         h.update(label.encode())
-        try:
-            mod = importlib.import_module(name)
-        except Exception:                   # noqa: BLE001 — 로그 한 줄이 요청을 죽이면 안 된다
-            h.update(b"?")
-            continue
-        for attr in sorted(dir(mod)):
-            if "PROMPT" in attr or attr == "_COMMON":
-                h.update(f"{attr}={getattr(mod, attr, '')!r}".encode())
+        h.update(_module_prompt_bytes(name))
     return h.hexdigest()[:12]
+
+
+def prompt_ver_drift() -> list:
+    """★ 지문 게이트(3-c). 문안이 바뀌었는데 판 번호를 안 올린 kind 목록.
+
+    판 번호 키는 "문안이 바뀌면 사람이 번호를 올린다" 는 규율에 기댄다. 규율만 두면
+    잊는다 — 잊으면 **옛 캡션이 새 관측 규칙인 척** 그대로 나온다. 여기서 기계가 센다.
+    번호를 올릴 때 `llm_cache.PROMPT_SHA` 의 값도 같이 새 값으로 적는다.
+    """
+    live = prompt_sha_by_kind()
+    from app.utils.llm_cache import PROMPT_SHA
+    return sorted(k for k, want in PROMPT_SHA.items()
+                  if k in live and live[k] != want)
 
 
 @lru_cache(maxsize=1)
@@ -123,11 +149,18 @@ def get_health() -> dict:
         "build": build,
         "models": status,
     }
+    drift = prompt_ver_drift()
+    if drift:
+        out.setdefault("warnings", []).append(
+            f"프롬프트 문안이 바뀌었는데 판 번호를 안 올렸다: {', '.join(drift)} — "
+            f"`llm_cache.PROMPT_VER` 를 올리고 `PROMPT_SHA` 를 새 값으로 적어라. "
+            f"이대로 두면 옛 캡션이 새 관측 규칙인 척 캐시에서 그대로 나온다."
+        )
     if not build.get("caption_key"):
-        out["warnings"] = [
+        out.setdefault("warnings", []).append(
             f"{build.get('caption_backend')} 키가 없다 — 이 서버의 시각자료는 설명 없이 "
             f"'생략'으로만 나간다(요소 CAPTION_FAILED · 페이지 NEEDS_REVIEW)."
-        ]
+        )
     return out
 
 
