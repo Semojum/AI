@@ -41,6 +41,23 @@ class TestThinkingDisabled:
             "사고가 켜지면 max_tokens를 사고가 다 먹고 캡션이 빈 문자열로 돌아온다")
 
 
+class TestObserveFirst:
+    """#665 · 원장 B-08 — 공통 머리가 **관측을 금지하고 해석을 시키면** 안 된다.
+
+    「점자 자료 제작 지침」 §6.1.4 는 (2) 핵심에 초점 · (7) **사실에 대한 설명** ·
+    (8) **묘사를 활용**이라 적는다("무엇이 보이는지가 아니다"는 원문에 없다).
+    gold 실측도 관측 89.6% · 해석 2.9%(temp/capobs/goldkind.py, 층화표본 130건 374줄).
+    """
+
+    def test_보이는_것을_금지하지_않는다(self) -> None:
+        assert "무엇이 보이는지가 아닙니다" not in captioner._COMMON, (
+            "관측을 금지하면 남는 것은 추론뿐이라 크롭에 없는 것을 지어낸다")
+
+    def test_확인한_사실을_먼저_시킨다(self) -> None:
+        assert "확인한 사실" in captioner._COMMON      # §6.1.4(7)
+        assert "핵심에 초점" in captioner._COMMON      # §6.1.4(2)
+
+
 class TestGoldDerivedBans:
     """정답 실측에서 빈도 0(또는 1)이라 금지한 어휘가 공통 프롬프트에 남아 있는가."""
 
