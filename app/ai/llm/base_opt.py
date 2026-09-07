@@ -362,6 +362,34 @@ _BODY_TYPES = {"text", "list_item", "title"}
 _VISUAL_TYPES = {"image", "diagram", "chart_graph", "cartoon"}
 
 
+def _split_caption_material(extracted) -> None:
+    """캡션 재료 블록(#636)을 요소 본문에서 떼어 `structure['_facts']` 로 옮긴다.
+
+    ★ 왜 여기냐(2026-09-07). #640 이 `visual_drafts.build_visual_drafts` 와 `cartoon_opt`
+      두 곳에서 떼어냈는데, **`build_visual_drafts` 를 안 타는 형제 경로가 남아 있었다** —
+      `diagram_opt` 의 §6.6 골격 경로가 `ext.corrected_text` 를 그대로 읽어
+      `structure_from_caption` 에 넘긴다(그 함수 앞에 "골격 경로는 build_visual_drafts를
+      안 타므로" 라는 주석이 이미 있었다). `chart_graph_opt` 도 같은 얼굴이다.
+      실측(재료 켠 새 캡션 62건): **20건(32.3%) 유출 — 도표 18/20 · 그래프 2/12.**
+      `⟦재료⟧` 마커와 `글자:`·`관계:` 열쇠말이 그대로 점자로 나갔다.
+
+      그래서 **모든 opt 가 반드시 지나는 한 자리**에서 뗀다. 호출부마다 막으면 다음에
+      경로가 하나 더 생길 때 또 샌다.
+
+    마커가 없으면 `split_material` 이 원문을 그대로 돌려주므로 스위치가 꺼진 경로와
+    시각 아닌 요소(글·수식·표)는 한 글자도 안 바뀐다.
+    """
+    from app.ai.captioning.captioner import split_material   # 지연 — 순환 임포트 방지
+    for e in extracted:
+        desc, facts = split_material(e.corrected_text or "")
+        if not facts:
+            continue
+        e.corrected_text = desc
+        st = dict(e.structure or {})
+        st["_facts"] = facts
+        e.structure = st
+
+
 class BaseOpt:
     """opt 공통 진입점. optimize() = 요소별 _optimize_one을 격리 없이 gather."""
 
@@ -371,6 +399,7 @@ class BaseOpt:
         routing_tier: str,
         layout: Optional[LayoutResult] = None,
     ) -> list[LLMOutput]:
+        _split_caption_material(extracted)
         _mark_body_texts_in_visuals(extracted, layout)
         return await asyncio.gather(*[self._optimize_one(e, routing_tier) for e in extracted])
 

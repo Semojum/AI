@@ -154,11 +154,13 @@ class CartoonOpt(BaseOpt):
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
         st = ext.structure or {}
         title = (st.get("title") or "").strip()
-        # ★ 재료 블록(#636)을 먼저 가른다. 안 가르면 `⟦재료⟧` 줄이 `_caption_items` 의
-        #   형식 검사에 걸려 **통째로 포기**하고(실측 3/3), 폴백이 마커와 열쇠말을 그대로
-        #   점자로 내보냈다. 마커가 없으면 원문 그대로라 스위치가 꺼진 경로는 안 바뀐다.
-        caption, facts = split_material(ext.corrected_text or "")
+        # 재료 블록(#636)은 `base_opt._split_caption_material` 이 이미 떼어 `_facts` 에
+        # 옮겨 두었다(모든 opt 공통 길목). 여기서는 그것을 쓰기만 한다.
+        # ⚠ `_optimize_one` 을 직접 부르는 자리(단위 시험 일부)를 위해 폴백을 남긴다 —
+        #   마커가 없으면 `split_material` 이 원문을 그대로 돌려주므로 값이 안 바뀐다.
+        caption, own = split_material(ext.corrected_text or "")
         caption = caption.strip()
+        facts = st.get("_facts") or own
         items = _panel_items(st)
 
         # 구조가 없으면 **재료가 그은 경계**를 먼저 쓴다(상황=주 안 · 대사=주 밖).
