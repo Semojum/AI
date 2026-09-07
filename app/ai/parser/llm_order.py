@@ -74,9 +74,22 @@ def _prompt(items, texts: dict) -> str:
 
 
 def _ask(prompt: str):
+    """(order, 입력토큰, 출력토큰). 캐시에 있으면 부르지 않는다(토큰 0).
+
+    ★ 캐시 키는 **프롬프트 문자열 해시**다(재구조화 3-b). 요소 목록을 직렬화하면
+      `element_id`(uuid4)가 섞여 다른 job 은 항상 미스가 된다. `_prompt` 가 넣는 것은
+      index·bbox·type·본문 120자뿐이라 같은 쪽이면 같은 문자열이 나온다.
+    ★ 원응답 raw 만 담는다 — 순열 검사·안전판은 `apply` 가 적중분에도 그대로 건다.
+    """
     import anthropic
 
+    from app.utils import llm_cache
     from app.utils.req_log import record_anthropic
+
+    k = llm_cache.key("order", MODEL, _SYS, prompt)
+    cached = llm_cache.get("order", k)
+    if cached is not None:
+        return json.loads(cached)["order"], 0, 0
 
     client = anthropic.Anthropic(api_key=config.anthropic_api_key or None)
     resp = client.messages.create(
@@ -90,7 +103,9 @@ def _ask(prompt: str):
     record_anthropic("reading_order", MODEL, getattr(resp, "usage", None))
     txt = next((b.text for b in resp.content if b.type == "text"), "")
     u = getattr(resp, "usage", None)
-    return json.loads(txt)["order"], getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0)
+    order = json.loads(txt)["order"]        # 파싱된 뒤에만 담는다 — 깨진 응답을 굳히지 않는다
+    llm_cache.put("order", k, txt)
+    return order, getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0)
 
 
 def displaced_ratio(items, order: list[int]) -> float:
