@@ -2224,8 +2224,8 @@ def decode(braille: str, *, math: bool = False) -> str:
     # 긴 숫자의 줄 나눔 연결표(제42항)를 먼저 이어 붙인다 — 줄 쪼개기 전이라야 닿는다.
     braille = _NUM_WRAP_RE.sub(r"\1", braille)
     # 줄을 넘는 짝(굵은 글자체표·한글표)을 먼저 벗긴다 — 아래 줄 분리보다 앞서야 한다.
-    braille = _mark_angle_pairs(_mark_paren_pairs(
-        _strip_emph_marks(_strip_hangul_indicator(_strip_bold_marks(braille)))))
+    braille = _mark_angle_pairs(_mark_paren_pairs(_strip_typeface_marks(
+        _strip_emph_marks(_strip_hangul_indicator(_strip_bold_marks(braille))))))
     # ★ **짝을 못 찾은 드러냄표 닫는 표 ⠤⠄ 는 버린다**(제35항). 드러냄표는 글자체를
     #   가리키는 표시라 묵자에 대응 문자가 없다 — 남으면 `-'` 로 샌다.
     #   실측(전권 18,892쪽) 48회·45쪽이고 원인이 셋인데 셋 다 버리는 게 맞다:
@@ -2367,6 +2367,29 @@ _EMPH_IN_NUM_RE = re.compile(
 def _strip_emph_marks(line: str) -> str:
     """짝이 맞는 드러냄표·밑줄표를 벗긴다(제56항)."""
     return _EMPH_PAIR_RE.sub(lambda m: _EMPH_MARK + m.group(1) + _EMPH_MARK, line)
+
+
+# 점역자 정의 글자체표 — 제56항 [붙임](재추출본 **2477~2478행** · 원장 R-68) "색상이나 모양으로
+# 강조된 글자체는 제1점역자 정의 글자체표 `"- -1`(⠐⠤ … ⠤⠂)이나 제2점역자 정의
+# 글자체표 `@- -a`(⠈⠤ … ⠤⠁)으로 묶어 나타낸다." 예문 묵자 2480·2488행 ·
+# 점자 2481~2482·2489~2490행. 위 두 갈래(드러냄표·굵은 글자)와 **같은 처방**이다 —
+# 글자체는 묵자에 대응 문자가 없으므로 표만 벗기고 내용을 그대로 낸다.
+# 역맵에 없어 뜻 없는 ASCII 가 본문에 남았다 — `,-전라북도 전주-,` · `'-15,000원-a`.
+#
+# ★ **짝이 맞을 때만** 벗긴다(여는 표 단독은 로마자표·붙임표와 셀이 같다).
+#   실측(전권 18,892쪽): ⠐⠤ 1,829 · ⠤⠂ 1,950 · 짝 **1,706**(218쪽) ·
+#   ⠈⠤ 68 · ⠤⠁ 526 · 짝 **64**(21쪽).
+# ★ 드러냄표와 같은 이유로 센티넬을 남긴다(그냥 지우면 뒤 셀이 앞 음절의 받침으로 먹힌다).
+_TYPEFACE_PAIR_RE = re.compile(
+    r"⠐⠤((?:(?!⠐⠤|⠤⠂)[\u2800-\u28ff\n ]){0,240})⠤⠂"
+    r"|⠈⠤((?:(?!⠈⠤|⠤⠁)[\u2800-\u28ff\n ]){0,240})⠤⠁")
+
+
+def _strip_typeface_marks(line: str) -> str:
+    """짝이 맞는 점역자 정의 글자체표를 벗긴다(제56항 [붙임])."""
+    return _TYPEFACE_PAIR_RE.sub(
+        lambda m: _EMPH_MARK + (m.group(1) if m.group(1) is not None else m.group(2)) + _EMPH_MARK,
+        line)
 
 
 # ── 한글표·한글 종료표 (규정 제39항) ─────────────────────────────────────────
@@ -2820,6 +2843,14 @@ def _decode_line_router(line: str, math: bool) -> str:
     # 여는 쪽과 닫는 쪽을 갈라 놓는다(layout_braille._ATOMIC_SEQS 와 같은 이유).
     # 줄을 쪼개기 전에 통째로 치운다.
     line = line.replace(_BOX_CHAR_OPEN + _SPACE_CELL + _BOX_CHAR_CLOSE, "▯▯")
+    # 네모 문자 ⠸⠦…⠴⠇ — 규정 제64항(재추출본 **2566~2567행** · 원장 R-68 "네모 문자는 `_8 0l`으로
+    # 묶어 나타낸다", 예문 2577~2584·2591~2593행). 아래 _decode_line 에도 같은 분기가
+    # 있지만 그것은 **토큰 안에서만** 짝을 찾는다. 감싼 내용에 빈칸이 있으면 토큰 분리가
+    # 여는 쪽과 닫는 쪽을 갈라 놓아 ⠸ 가 미해독으로, ⠴⠇ 가 `”사`·`l` 로 샜다 —
+    # `⟨2838⟩"개념 정리”사` · `⟨2838⟩"세포 호흡l`. 그래서 **줄을 쪼개기 전에** 짝을 편다.
+    # 실측(전권 18,892쪽): 짝 11,378 중 토큰 안에서 이미 풀리는 것 10,911 ·
+    # 빈칸을 품어 새던 것 **467회·259쪽**.
+    line = _mark_box_char_pairs(line)
     line = _TABLE_BLANK_RE.sub("", line)          # 표의 빈칸 ⠿⠿ — 제73항
     # ★ 홀로 선 ⠸ 는 **표·그래프의 세로선**이다(가로선 ⠿⠿·⠒ 런과 짝을 이룬다).
     #   글자가 아니라 도형이라 역맵에 없고, ⠸ 가 미해독으로 그대로 샜다 —
@@ -2913,6 +2944,20 @@ def _decode_line_router(line: str, math: bool) -> str:
 
 # 네모 문자 쌍(규정 제64항) — 정방향 translator._TAGS.BOX_CHAR 와 같은 점형이다.
 _BOX_CHAR_OPEN, _BOX_CHAR_CLOSE = "⠸⠦", "⠴⠇"
+# 빈칸을 품은 네모 문자 쌍 — 줄 단위 선처리가 쓴다(_decode_line_router 참조).
+# ★ **빈칸을 품은 것만** 본다. 빈칸이 없는 쌍은 토큰 안에서 이미 바르게 풀리고,
+#   거기에 손대면 되레 깨진다 — 동그라미 숫자(제64항)는 **토큰 첫 칸의 수표**여야
+#   펴지므로 `⠸⠦⠼⠶⠴⠇` 가 `▯⑥▯` 대신 `▯6▯` 이 되고, 제67항 점형표 줄
+#   (`네모 1  ⠸⠦⠼⠁⠴⠇`)은 셀 그 자체를 내는 게 맞는데 `▯⠼⠁▯` 로 바뀐다.
+_BOX_CHAR_PAIR_RE = re.compile(
+    r"⠸⠦((?:(?!⠸⠦|⠴⠇)[\u2800-\u28ff ]){1,120})⠴⠇")
+
+
+def _mark_box_char_pairs(line: str) -> str:
+    """빈칸을 품은 네모 문자 쌍만 자리표시자로 편다(제64항)."""
+    return _BOX_CHAR_PAIR_RE.sub(
+        lambda m: "▯" + m.group(1) + "▯"
+        if (_SPACE_CELL in m.group(1) or " " in m.group(1)) else m.group(0), line)
 
 # 표의 빈칸(제73항) — `==`(⠿⠿). 정방향 translator._TAGS.BLANK_TABLE 과 같은 점형이다.
 # 묵자 쪽은 그냥 빈 칸이므로 **아무것도 내지 않는다**(네모 빈칸 ▯▯ 와 다르다 — 저쪽은
