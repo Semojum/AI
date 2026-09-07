@@ -24,7 +24,8 @@ import collections
 import re
 from functools import lru_cache
 
-from app.ai.braille.kor_math_rules import convert_latex, digits_to_braille
+from app.ai.braille.kor_math_rules import (convert_latex, digits_to_braille,
+                                          caps_phrase_run, caps_phrase_cells)
 from app.ai.braille import eng_braille, inline_math
 from app.ai.braille.constants import WRAP_HYPHEN_CLOSE, WRAP_HYPHEN_OPEN
 from app.ai.braille.symbol_rules import (
@@ -1541,8 +1542,16 @@ def _has_hangul_outside_math(parts: list[str]) -> bool:
                for i in range(0, len(parts), 2))
 
 
-def _inline_sub_braille(b: str) -> str:
-    """인라인 첨자 토큰 점형: 로마자표 ⠴ 접두 + 대문자 구절표 ⠠⠠ → 홑 대문자표 ⠠."""
+def _inline_sub_braille(b: str, src: str = "") -> str:
+    """인라인 첨자 토큰 점형: 로마자표 ⠴ 접두 + 대문자 구절표 ⠠⠠ → 홑 대문자표 ⠠.
+
+    ★ 2026-09-07 — 「과학 점자」 제4항(원문 4363행). **한 글자 원소 기호가 3개 이상 이어**
+      나오는 토막은 낱 대문자표가 아니라 **대문자 구절표** ⠠⠠⠠…⠠⠄ 로 묶고 로마자
+      종료표를 적는다(4367-4368행 `0,,,ch;#c"cooh,'4`). 방아쇠 근거와 오발동 실측은
+      `kor_math_rules.caps_phrase_run` 주석에 있다(코퍼스 1,361쪽 발동 3회·오발동 0).
+    """
+    if src and caps_phrase_run(src):
+        return _ROMAN_START + caps_phrase_cells(b, src) + _ROMAN_END
     return _ROMAN_START + b.replace(_CAPITAL_IND * 2, _CAPITAL_IND)
 
 
@@ -1590,11 +1599,11 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False) -> str:
             part = _restore_wrap_hyphen(part)
             core = part.strip()
             if inline_sub and _INLINE_SUB_TOKEN_RE.match(core):
-                chunks.append(("i", _inline_sub_braille(convert_latex(core)),
+                chunks.append(("i", _inline_sub_braille(convert_latex(core), core),
                                False, False))
             elif inline_sub and (_INLINE_SUB_PAREN_RE.match(core)
                                  or _INLINE_SUB_HYPHEN_RE.match(core)):
-                inner = _inline_sub_braille(convert_latex(core[1:-1]))
+                inner = _inline_sub_braille(convert_latex(core[1:-1]), core[1:-1])
                 chunks.append(("i", _BOOK_HYPHEN + inner + _BOOK_HYPHEN,
                                False, False))
             elif _ION_TOKEN_RE.match(core):
