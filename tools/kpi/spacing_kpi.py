@@ -54,17 +54,23 @@ CER 은 빈칸을 세지 않는다. `code/AI/test/corpus_metrics.py:88-90` 의 `
 읽으려면 같은 자리에서 재야 한다.
   · 묵자 = `temp/poc/reextract/*.json` (Opus 5 재추출, 1,361쪽)
   · 점자 = `corpus/pages/braille/EBS-E26-<bid>/<vol>/<page>.brf`
-  · 쪽 거르기도 fwd_baseline 과 동일 — 태그·페이지행 제거, 80자 미만 제외,
-    점자 쪽에만 해설이 실린 비대칭 쪽 제외.
+  · 쪽 거르기도 fwd_baseline 과 동일 — 태그·페이지행 제거, 80자 미만 제외.
+    **쪽 단위 해설 필터는 S1(#750)에서 뺐다**(아래 변경 이력).
 
 ★ **분모는 재추출 1,361쪽이 아니라 정답본이 있는 1,180쪽이다.** 수학 II·독서·영어듣기·
   세계지리·한국사는 점자본이 없다(근거: `temp/poc/rt_kpi.py` 상단 주석 · `corpus/books.jsonl`).
 
 백틱 규약: 코퍼스 BRF 는 `backtick="cell"`(백틱=⠈), 규정 원문은 `"space"`. 섞지 않는다.
 
+자는 **제품 본문 경로** `translate_body` 다(S1 #750). `translate_plain` 은 꼬리말 경로라
+안 쓴다 — `force_roman=True` 로 로마자표 ⠴ 를 강제해서 제품이 안 내는 답을 gold 와 견준다.
+
 사용:
     code/AI/venv/bin/python tools/kpi/spacing_kpi.py [코드경로] [--out 결과.json]
     code/AI/venv/bin/python tools/kpi/spacing_kpi.py --selftest
+
+    RULER=plain            구 자(translate_plain). 재기준선 대조용이지 기본이 아니다.
+    SPACING_ANSFILTER=1    폐기된 쪽 단위 해설 필터를 되살린다(같은 이유).
 
 ★ 사는 곳 — 정본은 `code/AI/tools/kpi/spacing_kpi.py`(저장소 안이라 PR·CI 를 탄다).
   `V2/tools/kpi/spacing_kpi.py` 는 그리로 가는 심볼릭 링크다. 옆에 있는 `kpi_v2.py` 는
@@ -84,6 +90,27 @@ CER 은 빈칸을 세지 않는다. `code/AI/test/corpus_metrics.py:88-90` 의 `
               짝 못 지은 비율 28.04%(정렬 실패 25.0% + 조판 3.1%)
             ※ 제15항은 **코퍼스에 잴 자리가 0건**이다(홑 토큰 후보 2건은 눈으로 보니
               글머리표 오검출). "결함 없음"이 아니라 "이 코퍼스에 그 조건이 없음"이다.
+
+2026-09-08  **S1 진입점 통일(#750) — 자를 제품 본문 경로로 바꾸고 쪽 단위 해설 필터를 뺐다.**
+            제품 동작은 안 바뀐다(앱이 이 파일을 import 하지 않는다). **자 수치가 바뀐다.**
+
+            재기준선 (같은 코드 `27eec45` · 세 팔을 나란히. 옛 값을 지우지 않는다)
+
+              팔                         쪽     잰 자리     일치율
+              구 자 plain + 필터 켬    1,148  1,764,885   99.4115%   ← 종전 기본
+              plain + 필터 끔          1,180  1,804,924   99.4229%
+              신 자 body + 필터 끔     1,180  1,804,785   99.4234%   ← 지금 기본
+
+              · 쪽 필터를 뺀 몫 +0.0114%p(쪽 +32) · 자를 바꾼 몫 +0.0005%p.
+              · 자 교체가 거의 안 움직이는 이유: 두 자의 차이는 **한글 없는 줄 앞의
+                로마자표 ⠴ 한 셀**뿐인데(제29항, `force_roman=True`), 줄머리 빈칸은
+                조판이라 벗겨 내므로 칸 사이 자리를 만들지도 없애지도 않는다. 그 줄의
+                정렬만 어긋나 **잰 자리가 139개 준다.** 실측 표본 843요소 중 23요소가
+                달랐고 전부 ⠴ 자리였다(`www.ebsi.co.kr` → 구 자 ⠴⠺⠺⠺… / 신 자 ⠺⠺⠺…).
+              · 다른 자에서는 크게 움직인다 — 규정 예문쌍 **59.4% → 60.5%**(+8쌍),
+                정방향 CER 은 1,180쪽 중 **724쪽(61.4%)** 의 출력이 갈린다.
+              · 종전 문서값 99.35% 는 `d1848ce` · 1,147쪽 · 구 자 기준이다. `27eec45` 에서
+                같은 팔로 다시 재면 99.4115% 다(그 사이 제품 수정분).
 
             ※ 확인 중 발견 — `app/utils/braille_back.py:1612` 주석이 집합 연산을
               "제61항 5" 로 적었는데 재추출본 4073행 기준 **제60항 5호**다(제61항은
@@ -348,6 +375,11 @@ def score_page(ours: str, gold: str) -> dict:
 
 # ── 쪽 모으기 (fwd_baseline.py 와 동일) ──────────────────────────────────
 _PAGE_ROW = re.compile(r"^[a-z]?\d+\s.*\s\d+\s*$")
+# ★ 쪽 단위 해설 필터는 **폐기**다(S1 #750, `SPACING_ANSFILTER=1` 로만 되살아난다).
+#   가르는 조건 `gold셀 > 우리셀 * 1.3` 이 "우리가 적게 낸 쪽"을 고르기 때문에, 고치려던
+#   비대칭 편향보다 큰 낙관을 넣는다(정방향 CER 자에서 실측: 제외 33쪽 → 166쪽 · CER
+#   34.17% → 30.87%, `temp/fwd_baseline.py` [2026-09-08] 항). 해설 혼입은 쪽이 아니라
+#   덩이 단위로 갈라야 한다. fwd_baseline 과 같은 자리에서 재려면 여기도 같이 꺼야 한다.
 _ANS_HEAD = re.compile(r"정답\s*[:：]|정답과\s*해설|해설\s*[:：]")
 # ★ 강조 태그 `<!강조>…<!/강조>` 는 **번역기가 먹는 입력**이다 — 규정 제56항 드러냄표
 #   ⠠⠤ … ⠤⠄(`braille-source/text/규정_텍스트.txt:2467`). 통째로 지우면 그 점형이
@@ -381,11 +413,28 @@ def iter_pages(ascii_to_unicode, decode):
         yield BOOKS[bid], m["page"], want, gold, decode, raw
 
 
+def pick_translate(ruler: str):
+    """자 이름 → 점역 함수. S1(#750) 기본은 제품 본문 진입점 `translate_body`.
+
+    `plain` 은 꼬리말 RPC 경로(`force_roman=True`)라 재기준선 대조용으로만 남긴다.
+    ⚠ 두 팔이 **진짜로 갈리는지** 회귀 테스트가 지킨다
+      (`test/unit_test/tools/test_spacing_kpi.py`). 오늘 A/B 한 판이 팔이 안 갈린 채
+      돌아 무효가 됐다 — 스위치가 있어도 안 읽히면 두 출력이 같다.
+    """
+    from app.ai.braille import translator as _T               # noqa: PLC0415
+    if ruler == "plain":
+        return _T.translate_plain
+    return lambda t: "\n".join(_T.translate_body(t)[0])
+
+
 def main(argv: list[str]) -> int:
     ai = AI
-    from app.ai.braille.translator import translate_plain     # noqa: E402
     from app.utils.braille_ascii import ascii_to_unicode      # noqa: E402
     from app.utils.braille_back import decode                 # noqa: E402
+
+    ruler = os.environ.get("RULER", "body")
+    translate = pick_translate(ruler)
+    ans_filter = os.environ.get("SPACING_ANSFILTER", "0") not in ("0", "off")
 
     tot = {"pages": 0, "gold_cells": 0, "sites": 0, "hit": 0, "over2": 0}
     kind: collections.Counter = collections.Counter()
@@ -397,19 +446,21 @@ def main(argv: list[str]) -> int:
 
     for book, page, want, gold, _dec, raw in iter_pages(ascii_to_unicode, decode):
         try:
-            ours = translate_plain(want)
+            ours = translate(want)
         except Exception as exc:                              # noqa: BLE001
             dropped[f"점역 실패: {type(exc).__name__}"] += 1
             continue
-        try:                                                   # 해설 비대칭 쪽 제외
-            dtxt = decode(gold)
-        except Exception:                                      # noqa: BLE001
-            dtxt = ""
-        gc_n = sum(1 for c in gold if "⠁" <= c <= "⣿")
-        oc_n = sum(1 for c in ours if "⠁" <= c <= "⣿")
-        if _ANS_HEAD.search(dtxt) and not _ANS_HEAD.search(want) and gc_n > oc_n * 1.3:
-            dropped["점자 쪽에만 해설(비대칭)"] += 1
-            continue
+        if ans_filter:                                         # 해설 비대칭 쪽 제외(폐기)
+            try:
+                dtxt = decode(gold)
+            except Exception:                                  # noqa: BLE001
+                dtxt = ""
+            gc_n = sum(1 for c in gold if "⠁" <= c <= "⣿")
+            oc_n = sum(1 for c in ours if "⠁" <= c <= "⣿")
+            if (_ANS_HEAD.search(dtxt) and not _ANS_HEAD.search(want)
+                    and gc_n > oc_n * 1.3):
+                dropped["점자 쪽에만 해설(비대칭)"] += 1
+                continue
         r = score_page(ours, gold)
         tot["pages"] += 1
         tot["gold_cells"] += r["gold_cells"]
@@ -433,6 +484,7 @@ def main(argv: list[str]) -> int:
         return 1
     pc = lambda h, n: (h / n * 100) if n else float("nan")     # noqa: E731
     print(f"칸수 일치율   대상 {tot['pages']:,}쪽 / gold {tot['gold_cells']:,}셀   코드 {ai}")
+    print(f"  자 {ruler} · 쪽 해설필터 {'켬(폐기된 구 자)' if ans_filter else '끔(S1 기본)'}")
     print(f"  전체        {pc(tot['hit'], tot['sites']):.2f}%   "
           f"(잰 자리 {tot['sites']:,})")
     print("  조항별            일치율   잰 자리 n / gold 자리 전체  (커버리지)")
@@ -461,7 +513,8 @@ def main(argv: list[str]) -> int:
     print(f"    → 짝 못 지은 비율 {pc(sum(skip.values()), denom):.2f}%")
 
     if "--out" in argv:
-        json.dump({"total": tot, "kind": dict(kind), "skip": dict(skip),
+        json.dump({"ruler": ruler, "ans_filter": ans_filter,
+                   "total": tot, "kind": dict(kind), "skip": dict(skip),
                    "art": {k: dict(v) for k, v in art.items()},
                    "book": {k: dict(v) for k, v in by_book.items()},
                    "dropped": dict(dropped), "pages": rows},
