@@ -258,6 +258,29 @@ def decide_tier_timeout(
 _TRANSIENT_RETRIES = 2
 
 
+# ── 파트별 LLM 끄기 손잡이 (재구조화 0-d · 스위치 대장 2026-09-08) ─────────────
+# 4-2(수식)·4-3(표)·4-4(레이아웃 태깅) A/B 의 **되돌리는 길**이다. 켜기가 기본값이라
+# 끄지 않으면 동작이 안 바뀐다. `os.environ` 을 **부를 때마다** 읽으므로 `.env` 를 고치지
+# 않고 프로세스 env 로 주입한다(`FORMULA_OPT_LLM=0 python …`).
+# ⚠ 모듈 최상단에서 굳히면 안 된다 — 2026-09-03 에 "껐다고 믿었는데 안 꺼진" 라운드가
+#   두 번 무효가 됐고 원인이 둘 다 "값을 언제 읽는가" 였다.
+_PART_LLM_SWITCH = {
+    "수식": "FORMULA_OPT_LLM",   # 4-2 · 끄면 추출 원문(LaTeX)을 그대로 정규화만 한다
+    "표": "TABLE_TN_LLM",        # 4-3 · 끄면 표 점역자주를 규칙(`_table_tn`)으로 짓는다
+    "태깅": "LAYOUT_TAG_LLM",     # 4-4 · 끄면 레이아웃 태그를 안 넣고 원문을 그대로 둔다
+}
+
+
+def part_llm_on(kind: str) -> bool:
+    """이 파트에서 LLM 을 부를 것인가. `<스위치>=0` 이면 안 부른다(기본은 켬 = 현행).
+
+    끄면 그 파트는 **원래 있던 규칙 경로**로 떨어진다. 빈 응답 경로는 이미
+    `DISABLE_LLM_FALLBACK=1` 오프라인 배치가 매일 타는 길이라 새로 만든 갈래가 아니다.
+    """
+    name = _PART_LLM_SWITCH.get(kind)
+    return not name or os.environ.get(name, "1") != "0"
+
+
 async def generate_with_retry(
     prompt: str, *,
     timeout: float, element_id, kind: str,
@@ -274,6 +297,10 @@ async def generate_with_retry(
 
     transform은 HCLOVA X 응답에만 적용한다(폴백 응답은 그대로 — 기존 동작 보존).
     """
+    if not part_llm_on(kind):
+        logger.info("%s LLM 끔(%s=0) → 규칙 경로 id=%s",
+                    kind, _PART_LLM_SWITCH[kind], element_id)
+        return "", False
     attempt = 0
     while True:
         try:

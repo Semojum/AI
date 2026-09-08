@@ -21,6 +21,7 @@ from app.ai.llm.base_opt import (
     fallback_optimize,
     generate_with_retry,
     hcxt_optimize,
+    part_llm_on,
 )
 from app.ai.braille import tag_names as _TAGS
 from app.core.config import config
@@ -117,6 +118,11 @@ def _validate_tagging(original: str, tagged: str) -> bool:
 async def _tag_layout(text: str) -> str:
     """후보 신호가 있으면 LLM으로 레이아웃 태그 삽입(HCXT→검증→GPT-4o→원문)."""
     if not text.strip() or not _TAG_CANDIDATE_RE.search(text):
+        return text
+    # ★ `LAYOUT_TAG_LLM=0` 이면 태그를 안 넣고 원문을 그대로 둔다(재구조화 4-4 되돌리기).
+    #   이 함수는 `generate_with_retry` 를 안 쓰고 HCXT·폴백을 직접 부르므로 여기서 막는다.
+    if not part_llm_on("태깅"):
+        logger.info("태깅 LLM 끔(LAYOUT_TAG_LLM=0) → 원문 유지")
         return text
     prompt = _TAG_PROMPT.format(text=text)
     max_tokens = min(1024, max(128, int(len(text) * 1.6)))
