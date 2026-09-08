@@ -60,6 +60,8 @@ from app.ai.braille import tag_names as _TN
 from app.ai.braille import tn_notices as _TN_NOTICES
 from app.ai.llm.visual_drafts import (
     DESC_IDX,
+    GIST_LABEL,
+    GIST_OPTION,
     FAMILY_BOTTOMUP_LABEL,
     FAMILY_BOTTOMUP_OPTION,
     FLOW_CHAIN_LABEL,
@@ -139,7 +141,7 @@ _BOX_BOTTOM = "<!상자끝><!/상자끝>"  # 글상자 아래 테두리
 _TYPE_LABEL = {
     "concept_map": "개념도", "flowchart": "흐름도",
     "org_chart": "조직도", "family_tree": "가계도", "timeline": "연대표",
-    "form": "양식", "screen_image": "화면 이미지", "slide": "발표용 슬라이드",
+    "form": "양식", "slide": "발표용 슬라이드",   # screen_image 배선 해제 #793
 }
 
 
@@ -149,7 +151,7 @@ _TYPE_LABEL = {
 _SUBTYPE_RULE = {
     "concept_map": "NISE-6.6.1", "flowchart": "NISE-6.6.2", "form": "NISE-6.6.3",
     "family_tree": "NISE-6.6.4", "org_chart": "NISE-6.6.5", "timeline": "NISE-6.6.6",
-    "screen_image": "NISE-6.6.7", "slide": "NISE-6.6.8",
+    "slide": "NISE-6.6.8",
 }
 
 
@@ -468,7 +470,6 @@ _ASSEMBLERS = {
     "family_tree":  (assemble_family_tree,  lambda s: bool(s.get("nodes") or s.get("items"))),
     "timeline":     (assemble_timeline,     lambda s: bool(s.get("events"))),
     "form":         (assemble_form,         lambda s: bool(s.get("items"))),
-    "screen_image": (assemble_screen_image, lambda s: bool(s.get("sections"))),
     "slide":        (assemble_slide,        lambda s: bool(s.get("items") or s.get("note"))),
 }
 
@@ -477,13 +478,26 @@ _TAG_RE = re.compile(r"<!(/?)([^>]+)>")
 
 
 def _skeleton_prose(text: str) -> str:
-    """§6.6 골격 텍스트 → 줄글(태그·글상자 테두리 제거 후 항목을 쉼표로 이음). rule-based."""
-    parts: list[str] = []
+    """§6.6 골격 텍스트 → 줄글(태그·글상자 테두리 제거 후 항목을 쉼표로 이음). rule-based.
+
+    ★ 2026-09-09(#793) — 유형 제시어 줄(`그림:`)을 **항목으로 세지 않고 맨 앞에 붙인다.**
+      종전에는 `…포스터, 그림:, 제목: 저탄소 …` 처럼 줄 가운데에 쌍점만 덩그러니 남았다
+      (캡션 캐시 재생 실물). 「점자 도서 제작 지침」 제3장 제2절 4)(1) L2367-2369 는
+      "점역자 주표 안에 시각 자료 유형을 적고, **쌍점과 원본 자료의 내용을 이어 적는다**"
+      고 한다 — 제시어는 머리말이지 항목이 아니다.
+    """
+    bare_note = _TAG_RE.sub("", _TYPE_NOTE_LINE).strip()
+    head, parts = "", []
     for ln in text.split("\n"):
         clean = _TAG_RE.sub("", ln).strip()
-        if clean and not set(clean) <= {"⠿", " "}:   # 빈 테두리 줄 제외
-            parts.append(clean)
-    return ", ".join(parts)
+        if not clean or set(clean) <= {"⠿", " "}:    # 빈 테두리 줄 제외
+            continue
+        if clean == bare_note:
+            head = clean                              # `그림:` — 머리말로 옮긴다
+            continue
+        parts.append(clean)
+    body = ", ".join(parts)
+    return f"{head} {body}".strip() if head else body
 
 
 # ── 하위유형 후보 매김 (§6.6, 2026-08-25 대표 지시) ──────────────────────────
@@ -731,9 +745,20 @@ class DiagramOpt(BaseOpt):
                     render_mode="narrative",
                     label=_skeleton_label(alt_sub, alt_st)))
                 opt_no += 1
-            # 줄글 설명(§6.1.1(5)) — 골격을 태그·테두리 없이 이은 것. rule-based다.
+            # 줄글 설명(§6.1.4(7) 진술적 설명) — 골격을 태그·테두리 없이 이은 것. rule-based다.
             if (d_prose := prose_draft(_skeleton_prose(skeleton_text), subtype)) is not None:
                 drafts.append(d_prose)
+            # 간추린 설명(§6.1.4(4) "전체 윤곽을 포괄적으로 설명한 다음 부분을 나누어") —
+            # 골격의 **머리 줄만** 남긴 안. `_head_lines` 가 골격에 실제로 쓴 그 줄이라
+            # 재료에 없는 말이 들어갈 자리가 구조적으로 없고, 두 안의 점자도 안 갈린다.
+            # ★ 2026-09-09(#793 · 원장 C-120) — 골격 경로에는 **분량을 줄일 안이 하나도
+            #   없었다**(캡션 캐시 3,251건 재생 실측: 골격 696건 중 0건, 골격 평균 7.8줄).
+            # ⚠ 머리가 유형 제시어 한 줄뿐이면 안 낸다 — `그림:` 만 남아 고를 값이 없다.
+            h_lines, h_ind = _head_lines(structure)
+            if len(skeleton_indents) > len(h_ind) and h_lines != [_TYPE_NOTE_LINE]:
+                drafts.append(Draft(
+                    option=GIST_OPTION, label=GIST_LABEL, render_mode="narrative",
+                    text=_TN.apply_indent_tags("\n".join(h_lines), h_ind)))
             # 골격 경로는 build_visual_drafts를 안 타므로 접기를 여기서 직접 부른다.
             drafts, sel_idx = _dedupe(drafts, DESC_IDX)
             return LLMOutput(

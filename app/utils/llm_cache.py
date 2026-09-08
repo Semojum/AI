@@ -130,7 +130,8 @@ def key(*parts: str | bytes) -> str:
 PROMPT_VER = {
     "caption": 3,      # app/ai/captioning/captioner.py  _COMMON·_PROMPTS
     "classify": 1,     # app/ai/captioning/classifier.py SYSTEM_PROMPT
-    "subtype": 1,      # app/ai/captioning/classifier.py _SUBTYPE_PROMPT (#784 §6.6 세분류)
+    "subtype": 2,      # app/ai/captioning/classifier.py _SUBTYPE_PROMPT
+                       #   (1: #784 §6.6 세분류 · 2: §6.6.7 화면 이미지 제거 #793)
     "figure": 1,       # app/ai/parser/figure_detect.py  _ASK
     "order": 1,        # app/ai/parser/llm_order.py      _SYS
     "visual": 1,       # app/ai/llm/visual_drafts.py

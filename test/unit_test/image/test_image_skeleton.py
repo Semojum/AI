@@ -49,8 +49,8 @@ class TestFourDrafts:
         assert labels[1] == desc_label("이미지"), labels
         assert labels[2].endswith(LABELS[2]) and labels[2] != LABELS[2], labels
         if len(labels) > 3:
-            # 설명 안이 여러 줄이면 **간추린 설명**이 뒤에 선다(2026-09-07).
-            assert labels[3] == vd_mod.GIST_LABEL, labels
+            # 설명 안이 여러 줄이면 **줄글·간추린 설명**이 뒤에 선다(2026-09-07·#793).
+            assert labels[3:] == [vd_mod.PROSE_LABEL, vd_mod.GIST_LABEL], labels
         assert len(set(labels)) == len(labels), labels
         assert opt.selected_idx == 1                           # 기본=설명(gold 79.6%)
 
@@ -102,7 +102,7 @@ class TestEndToEnd:
             "ocr_texts": ["핵"], "caption_src": "둥근 세포 안에 핵이 있다"})
         opt = asyncio.run(ImageOpt().optimize([ext], "ZERO"))
         bo = ImageBraille().translate(opt)
-        assert 3 <= len(bo[0].drafts) <= 4                # 모든 안이 점역됨
+        assert 3 <= len(bo[0].drafts) <= 5                # 모든 안이 점역됨
         lr = LayoutResult(page_id="p", elements=[
             BBoxItem(element_id=eid, type="image", bbox=(0, 0, 0, 0), reading_order=1)])
         LayoutBraille().layout(bo, page_no=1, job_id="img", layout_result=lr)

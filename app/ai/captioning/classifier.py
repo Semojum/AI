@@ -41,10 +41,11 @@ LABELS = ("image", "cartoon", "chart", "diagram")
 #   실측이 아니라 **구조적 보장**이다. 값은 도표에만 한 콜 더 든다(실측 크롭의 약 30%,
 #   콜당 $0.0041 → 전 코퍼스 1회 추출당 약 +$4.5. 캡셔닝 몫 $32 대비 14%).
 #
-#   값 집합은 「점자 자료 제작 지침」 §6.6 의 여덟뿐이다(`diagram_structure.SUBTYPES`).
+#   값 집합은 「점자 자료 제작 지침」 §6.6 의 여덟 중 일곱이다(`diagram_structure.SUBTYPES`).
+#   §6.6.7 화면 이미지는 실물 0건이라 2026-09-09(#793)에 뺐다 — 그 상수 주석 참조.
 #   조항을 못 대는 낱말은 안 만든다.
 #
-# 아래 표가 그 여덟과 조항이다.
+# 아래 표가 그 일곱과 조항이다.
 _SUBTYPE_CLAUSE = {
     "concept_map": "6.6.1",    # 개념도  L3526 "중심 개념에서 하위 개념으로 가지가 뻗어나간"
     "flowchart": "6.6.2",      # 흐름도  L3542 "작업과 처리 순서를 표시"
@@ -52,7 +53,6 @@ _SUBTYPE_CLAUSE = {
     "family_tree": "6.6.4",    # 가계도  L3668 "선조와 후손 간의 연결 관계"
     "org_chart": "6.6.5",      # 조직도  L3722 "조직의 구조나 인적 구성"
     "timeline": "6.6.6",       # 연대표  L3781 "사건을 시간 순서에 따라"
-    "screen_image": "6.6.7",   # 화면 이미지     L3818 "웹페이지의 화면 이미지"
     "slide": "6.6.8",          # 발표용 슬라이드 L3854 "파워포인트나 키노트 등에서 작성된 것"
 }
 
@@ -80,17 +80,17 @@ SYSTEM_PROMPT = (
 #     그 조문에 들어간다. 조문에 없는 배제 규칙은 규정을 좁히는 것이다.
 _SUBTYPE_PROMPT = (
     "This image is a diagram from a Korean school textbook. Answer with exactly one word "
-    "naming what kind of diagram it is. The eight kinds and their definitions come from "
-    "the Korean braille production guideline §6.6:\n"
+    "naming what kind of diagram it is. The seven kinds and their definitions come from "
+    "the Korean braille production guideline §6.6 (§6.6.7 화면 이미지 is out of "
+    "the list on purpose — see diagram_structure.SUBTYPES):\n"
     "- concept_map — a centre concept with branches running out to sub-concepts (§6.6.1)\n"
     "- flowchart — work and processing steps shown in order (§6.6.2)\n"
     "- form — a form carrying blanks to fill in or options to tick (§6.6.3)\n"
     "- family_tree — the connections between ancestors and descendants (§6.6.4)\n"
     "- org_chart — the structure or staffing of an organisation, its ranks and units (§6.6.5)\n"
     "- timeline — events written out in time order (§6.6.6)\n"
-    "- screen_image — the screen of a web page (§6.6.7)\n"
     "- slide — a presentation slide made in PowerPoint or Keynote (§6.6.8)\n"
-    "Answer 'none' only when the picture matches none of those eight definitions. "
+    "Answer 'none' only when the picture matches none of those seven definitions. "
     "Answer with the single word and nothing else."
 )
 
@@ -103,7 +103,7 @@ def _get_client() -> OpenAI:
 
 
 def _parse_subtype(raw: str) -> str:
-    """세분류 콜 응답 → §6.6 하위유형. 여덟 밖이면 ""(골격 미적용 = 캡션·설명 폴백).
+    """세분류 콜 응답 → §6.6 하위유형. 일곱 밖이면 ""(골격 미적용 = 캡션·설명 폴백).
 
     **억지로 배정하지 않는다** — §6.6 밖 자료(지도·벤다이어그램·해부도)에 골격을 씌우면
     위계 없는 자료에 위계 개조식이 붙는다. 그래서 프롬프트가 'none' 을 허용한다.
@@ -128,7 +128,7 @@ def classify_with_confidence(image_path: str) -> tuple[str, float | None, str]:
     confidence = 라벨 토큰들의 logprob 합을 exp한 확률(0~1).
       - 응답이 네 라벨 밖이면 0.0 (형식 이탈 자체가 불확실 신호 → R2 대상)
       - API가 logprobs를 안 주면 None (신뢰도 판단 불가 — 플래그 안 띄움)
-    visual_subtype = 라벨이 'diagram' 일 때 §6.6 하위유형 여덟 중 하나, 아니면 ""
+    visual_subtype = 라벨이 'diagram' 일 때 §6.6 하위유형 일곱 중 하나, 아니면 ""
       (`diagram_structure.SUBTYPES`). 경계 JSON 의 `visual_subtype` 으로 나가
       `diagram_opt._ASSEMBLERS` 가 골격을 세우는 데 쓴다.
     """
@@ -263,7 +263,7 @@ def _subtype(b64: str, mime: str, raw: bytes) -> str:
     record_anthropic("세분류", model, getattr(resp, "usage", None))
     answer = "".join(b.text for b in resp.content if b.type == "text").strip().lower()
     sub = _parse_subtype(answer)
-    # 여덟 밖('none' 포함)도 담는다 — 같은 그림에 같은 질문을 다시 하지 않는다.
+    # 일곱 밖('none' 포함)도 담는다 — 같은 그림에 같은 질문을 다시 하지 않는다.
     # `diagram` 을 앞에 붙이는 것은 `_kind_matches` 가 첫 낱말로 자리를 가르기 때문이다.
     if cache is not None and answer:
         cache.write_text(f"diagram {sub or 'none'}", encoding="utf-8")

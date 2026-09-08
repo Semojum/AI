@@ -47,8 +47,10 @@ _REG = {
     "family_tree": "6.6.4",    # 가계도  L3668
     "org_chart": "6.6.5",      # 조직도  L3722
     "timeline": "6.6.6",       # 연대표  L3781
-    "screen_image": "6.6.7",   # 화면 이미지     L3818
     "slide": "6.6.8",          # 발표용 슬라이드 L3854
+    # ★ §6.6.7 화면 이미지는 **뺐다**(2026-09-09 #793, 대표 지시). 조항은 있지만 실물이
+    #   0건이다(운영 캡션 캐시 3,251건 · 데모 27쪽). 조립기는 남아 있고 배선만 끊었다 —
+    #   `diagram_structure.SUBTYPES` 주석에 되살리는 여섯 자리를 적어 뒀다.
 }
 
 # 유형별 캡션 — **유형어를 한 낱말도 안 쓴다.** 오늘 캡셔너가 실제로 내는 모양이다
@@ -61,16 +63,15 @@ _CAPTIONS = {
     "family_tree": "그림: 유전 형질 조사\n1세대\n- 1: 정상 남자\n- 2: 발현 여자\n2세대\n- 3: 정상 여자",
     "org_chart":   "그림: 고려의 중앙 통치\n1. 국왕\n1) 중서문하성\n1) 상서성",
     "timeline":    "그림: 독립운동\n1919년 3·1 운동\n1920년 청산리 대첩\n1932년 윤봉길 의거",
-    "screen_image": "그림: 국립중앙도서관 첫 화면\n도구 막대\n검색창\n로그인\n본문\n공지 사항",
     "slide":       "그림: 기후 변화 발표\n1. 원인\n1) 온실가스\n2. 대책",
 }
 
 
 class TestRegulationValues:
-    """세분류 값 집합은 §6.6 이 정한 여덟이고, 코드 곳곳의 열쇠가 그것과 같아야 한다."""
+    """세분류 값 집합은 §6.6 여덟 중 배선한 일곱이고, 코드 곳곳의 열쇠가 그것과 같아야 한다."""
 
-    def test_여덟이고_조항이_있다(self):
-        assert len(SUBTYPES) == 8
+    def test_일곱이고_조항이_있다(self):
+        assert len(SUBTYPES) == 7
         assert set(SUBTYPES) == set(_REG), "§6.6 조항을 못 대는 값이 섞였다"
 
     def test_코드_열쇠가_전부_같다(self):
@@ -84,7 +85,7 @@ class TestRegulationValues:
         for sub, clause in _REG.items():
             assert diagram_opt._SUBTYPE_RULE[sub] == f"NISE-{clause}", sub
 
-    def test_세분류_프롬프트가_여덟을_다_말한다(self):
+    def test_세분류_프롬프트가_일곱을_다_말한다(self):
         """★ 프롬프트에서 한 유형을 빼면 그 골격은 다시는 안 선다 — 여기서 잡는다."""
         for sub, clause in _REG.items():
             assert sub in classifier._SUBTYPE_PROMPT, f"{sub} 를 세분류 프롬프트가 안 말한다"
