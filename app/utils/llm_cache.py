@@ -100,7 +100,7 @@ PROMPT_VER = {
 # ⚠ `_PROMPT_SOURCES` 가 여섯 자리라 게이트도 여섯이다. classify·figure·order 는
 #    프롬프트가 그 모듈 안에만 있어 지문 대상이 아니다(0-c 결정).
 PROMPT_SHA = {
-    "caption": "16d29be67efa",
+    "caption": "084a9d7ec2e4",
     "visual": "3fb25cd311f8",
     "opus": "41bba1c2b41d",
     "text": "6f2515369797",
