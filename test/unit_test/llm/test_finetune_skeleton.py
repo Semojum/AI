@@ -24,7 +24,7 @@ from app.ai.llm.finetune.dataset import (
 )
 
 
-def _ex(element_type="image", input_text="원 안에 삼각형", target="[점역사주] 그림: 원 안에 삼각형."):
+def _ex(element_type="text", input_text="안너영", target="안녕"):
     return TrainingExample(element_type=element_type, input_text=input_text, target_text=target)
 
 
@@ -52,9 +52,8 @@ class TestDataFormat:
 
 class TestPromptBuild:
     def test_프롬프트_입력_삽입(self):
-        out = build_prompt(_ex("image", "원 안에 삼각형"))
-        assert "원 안에 삼각형" in out
-        assert "점역 전문가" in out  # 추론과 동일한 역할 프롬프트 재사용
+        out = build_prompt(_ex("text", "안너영"))
+        assert "안너영" in out
 
     def test_유형별_템플릿(self):
         assert "x^2" in build_prompt(_ex("formula", "x^2", "x²"))
@@ -64,20 +63,24 @@ class TestPromptBuild:
         pair = build_chat_pair(_ex())
         roles = [m["role"] for m in pair["messages"]]
         assert roles == ["user", "assistant"]
-        assert pair["messages"][1]["content"] == "[점역사주] 그림: 원 안에 삼각형."
+        assert pair["messages"][1]["content"] == "안녕"
 
     def test_load_sft_dataset(self, tmp_path):
         path = tmp_path / "sft.jsonl"
-        to_jsonl([_ex(), _ex("chart_graph", "막대그래프 2020년 980권", "[점역사주] 막대그래프: ...")], path)
+        to_jsonl([_ex(), _ex("formula", "x^2", "x²")], path)
         ds = load_sft_dataset(path)
         assert len(ds) == 2
         assert all(d["messages"][0]["role"] == "user" for d in ds)
 
-    def test_cartoon_은_프롬프트학습_제외(self):
-        # 만화는 rule-based 골격(§5.3) — 프롬프트 기반 학습 대상이 아니라 명확히 거부.
-        from app.ai.llm.finetune.dataset import build_prompt
+    @pytest.mark.parametrize("etype", ["cartoon", "image", "chart_graph"])
+    def test_규칙조립_유형은_프롬프트학습_제외(self, etype: str):
+        """규칙으로 조립하는 유형은 학습할 프롬프트가 없다 — 명확히 거부한다.
+
+        ★ 2026-09-08(재구조화 5단계) — 만화뿐이던 이 목록에 image·chart_graph 가 들어왔다.
+          시각 4안의 LLM 팔(L8)을 지우면서 `visual_drafts._PROMPT` 가 없어졌기 때문이다.
+        """
         with pytest.raises(ValueError):
-            build_prompt(_ex("cartoon", "두 컷", "..."))
+            build_prompt(_ex(etype, "두 컷", "..."))
 
 
 class TestSeed:

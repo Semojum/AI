@@ -72,7 +72,9 @@ def _build_info() -> dict:
 # ⚠ 프롬프트 본문은 절대 싣지 않는다. 12자 해시만 싣는다.
 _PROMPT_SOURCES = (
     ("caption", "app.ai.captioning.captioner"),
-    ("visual", "app.ai.llm.visual_drafts"),
+    # ★ 2026-09-08(재구조화 5단계) — `visual`(`visual_drafts`)을 뺐다. L8 LLM 팔을
+    #   지우면서 그 모듈에 프롬프트가 하나도 안 남았다. 두면 빈 바이트의 해시가 지문에
+    #   섞여 "안 바뀌는 칸"이 하나 늘 뿐이다.
     ("opus", "app.ai.parser.opus_fallback"),
     ("text", "app.ai.llm.text_opt"),
     ("formula", "app.ai.llm.formula_opt"),
