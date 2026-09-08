@@ -64,7 +64,9 @@ class TestConceptAssemble:
     def test_3단계_개조식_전사(self):
         text, indents = assemble_concept_map(_CONCEPT_3)
         lines = text.split("\n")
-        assert lines[0] == _TYPE_NOTE and indents[0] == 4   # §2.1.8(3) 5칸
+        # 도서지침 3장 2절 4)(1)(2) L2368 유형 제시어 머리줄 "3칸에서 시작" = 빈칸 2
+        # (원장 C-D3 — 종전 §2.1.8(3) 5칸 인용은 "자료 위에 얹는 주"의 자리였다)
+        assert lines[0] == _TYPE_NOTE and indents[0] == 2
         # 중심개념부터 하위로(§6.6.1(2)), 7/5/3칸 = 빈칸 6/4/2
         assert lines[1:] == ["생물", "동물", "포유류", "조류", "식물", "속씨식물"]
         assert indents[1:] == [6, 4, 2, 2, 4, 2]

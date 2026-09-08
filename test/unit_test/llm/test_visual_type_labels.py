@@ -191,8 +191,9 @@ def test_안마다_자기_들여쓰기를_싣는다():
     opt = asyncio.run(DiagramOpt().optimize([ext], "ZERO"))[0]
     from app.ai.braille import tag_names as T
     by = {d.label: T.strip_indent_tags(d.text)[1] for d in opt.drafts}
-    assert by["가계도(하향식)"] == [4, 4, 2, 0, 2, 4]
-    assert by["가계도(상향식)"] == [4, 4, 2, 2, 2, 2]
+    # 둘째 칸(유형 제시어 머리줄)은 3칸 = 빈칸 2 — 도서지침 3장 2절 4)(1) L2368, 원장 C-D3.
+    assert by["가계도(하향식)"] == [4, 2, 2, 0, 2, 4]
+    assert by["가계도(상향식)"] == [4, 2, 2, 2, 2, 2]
     # ★ 줄 수가 6으로 같아 길이 검사로는 못 걸렀다 — 그래서 태그로 옮겼다
     assert len(by["가계도(하향식)"]) == len(by["가계도(상향식)"])
     # 호환 필드는 **선택된 안의 글에 박힌 태그**에서 되읽는다
@@ -212,7 +213,7 @@ def test_점역_뒤에도_안별_들여쓰기가_남는다():
     ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=st)
     bo = DiagramBraille().translate(asyncio.run(DiagramOpt().optimize([ext], "ZERO")))[0]
     from app.ai.braille import tag_names as T
-    assert bo.line_indents == [4, 4, 2, 0, 2, 4]          # 선택 안(하향식)의 값
+    assert bo.line_indents == [4, 2, 2, 0, 2, 4]          # 선택 안(하향식)의 값
     # 점역 결과에 태그 잔재가 남으면 안 된다
     assert not any("칸>" in ln for d in bo.drafts for ln in (d.braille_lines or []))
     assert not any("칸>" in ln for ln in bo.braille_lines)
