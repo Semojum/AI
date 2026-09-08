@@ -10,6 +10,14 @@ import pytest
 from app.utils import llm_cache
 
 
+@pytest.fixture(autouse=True)
+def scope():
+    """캐시는 격리 열쇠가 걸려 있을 때만 돈다(3-e, 대표 결재 "(B) 고객별 격리")."""
+    llm_cache.set_scope("job-A")
+    yield
+    llm_cache.set_scope("")
+
+
 @pytest.fixture
 def cas(tmp_path, monkeypatch):
     monkeypatch.setenv("LLM_CACHE_DIR", str(tmp_path))
@@ -139,14 +147,46 @@ class Test그림회수캐시:
 
 
 class Test모드:
-    def test_켜지_않으면_아무_일도_없다(self, monkeypatch, tmp_path):
-        monkeypatch.delenv("LLM_CACHE_DIR", raising=False)
+    def test_빈_값이면_아무_일도_없다(self, monkeypatch, tmp_path):
+        """3-e 로 기본이 켬이 됐다 — 되돌리는 길은 `.env` 의 `LLM_CACHE_DIR=` 한 줄이다."""
+        monkeypatch.setenv("LLM_CACHE_DIR", "")
         assert llm_cache.root() is None
         assert llm_cache.get("order", "k") is None
         llm_cache.put("order", "k", "x")            # 조용히 아무것도 안 한다
+
+    def test_기본은_켬이다(self, monkeypatch):
+        """운영 기본 켬(3-e). 환경변수를 안 줘도 `Settings.llm_cache_dir` 로 돈다."""
+        monkeypatch.delenv("LLM_CACHE_DIR", raising=False)
+        assert llm_cache.root() is not None
 
     def test_ro_미스는_예외다(self, cas, monkeypatch):
         """A/B 끄기 팔에서 '조용히 호출로 흐르는' 길을 막는다."""
         monkeypatch.setenv("LLM_CACHE_MODE", "ro")
         with pytest.raises(llm_cache.CacheMiss):
             llm_cache.get("order", llm_cache.key("없는키"))
+
+
+class Test고객격리:
+    """대표 결재 2026-09-08 — "같은 책을 다른 유저가 올리면 따로 계산하는 게 맞다"."""
+
+    def test_열쇠가_다르면_자리도_다르다(self, cas):
+        llm_cache.set_scope("고객A")
+        a = llm_cache.key("order", "같은 프롬프트")
+        llm_cache.set_scope("고객B")
+        assert llm_cache.key("order", "같은 프롬프트") != a
+
+    def test_다른_고객은_적중을_못_가져간다(self, cas):
+        llm_cache.set_scope("고객A")
+        k = llm_cache.key("order", "같은 프롬프트")
+        llm_cache.put("order", k, "고객A 응답")
+        assert llm_cache.get("order", k) == "고객A 응답"
+
+        llm_cache.set_scope("고객B")
+        assert llm_cache.get("order", llm_cache.key("order", "같은 프롬프트")) is None
+
+    def test_열쇠가_없으면_캐시를_안_쓴다(self, cas):
+        """fail closed — 컨텍스트가 안 넘어간 자리에서 격리 없이 쓰느니 안 쓴다."""
+        llm_cache.set_scope("")
+        llm_cache.put("order", llm_cache.key("order", "x"), "샐 뻔한 응답")
+        assert llm_cache.get("order", llm_cache.key("order", "x")) is None
+        assert not list(cas.rglob("*.txt"))

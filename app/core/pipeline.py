@@ -36,6 +36,7 @@ from app.schemas.layout import BBoxItem, DocumentMeta, LayoutResult
 from app.schemas.quality import CriticalError, QualityReport
 from app.core.limits import run_braille
 from app.schemas.task import PageTask
+from app.utils import llm_cache
 from app.utils.logger import get_logger
 from app.utils.req_log import (
     api_summary,
@@ -2452,6 +2453,9 @@ _last_job_id: str | None = None
 async def run(task: PageTask) -> dict:
     """파이프라인 진입점. 300초 하드 타임아웃 강제."""
     start_request()   # 요청 단위 API 카운터 초기화
+    # LLM 캐시 격리 열쇠(재구조화 3-e · 대표 결재 "(B) 고객별 격리"). 요청에 고객 식별자가
+    # 없어 지금은 job_id 가 가장 고운 단위다 — BE 가 식별자를 실어 주면 **이 한 줄**만 바꾼다.
+    llm_cache.set_scope(task.job_id)
     # 관문 계수기(재구조화 §2-2)는 **쪽마다** 새로 판다. 여러 쪽이 한 프로세스에서 겹쳐
     # 도는데 전역으로 세면 옆 쪽 발동이 이 쪽 review_flags 에 얹힌다(gates 도크스트링).
     gates.gate_reset()

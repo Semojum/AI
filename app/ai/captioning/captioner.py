@@ -510,8 +510,8 @@ def _context_block(context: str) -> str:
 #   주로 알린다(L3789) · §6.3.4(3) L3183-3184 화자가 불분명하면 '말풍선'이라 적는다).
 #
 # ⚠ **기본 꺼짐**(`CAPTION_MATERIAL` 없으면 프롬프트가 한 글자도 안 바뀐다).
-#   캐시 키가 프롬프트를 물고 있어(`_cache_file`) 켜는 순간 캡션 캐시가 갈린다 —
-#   운영 캐시 3,021건을 살려 두려면 이 스위치는 A/B 때만 켠다.
+#   `prompt_id` 가 `image+material` 로 갈려 열쇠도 갈린다 — 켜는 순간 캡션 캐시가
+#   전량 미스다. 그래서 이 스위치는 A/B 때만 켠다.
 _MATERIAL_MARK = "⟦재료⟧"
 _MATERIAL_KEYS = ("글자", "요소", "관계", "축", "수치", "순서", "상황", "대사",
                   "없음", "못읽음")
@@ -1172,42 +1172,6 @@ def _cache_model() -> str:
             + os.getenv("CAPTION_MODEL", "claude-sonnet-5"))
 
 
-def _cache_file(raw: bytes, image_type: str, prompt: str) -> Path | None:
-    """★ 옛 캐시 자리(전문 키). **읽기 전용**이다 — 새 항목은 여기 안 쓴다.
-
-    2026-08-08 A/B 판정용으로 만든 자리다. 캡셔닝 LLM은 같은 그림에 매번 다른 캡션을
-    준다(실측 12/12 상이). `claude-sonnet-5`는 `temperature`를 거부하므로(400) 파라미터로
-    결정성을 살 수 없다. 한편 MinerU가 잘라내는 크롭 이미지는 실행 간 **바이트 동일**이라
-    (실측 285장/94쪽 전량 일치) 이미지 해시로 캡션을 재사용하면 반복 실행이 결정적이 된다.
-
-    ⚠ 열쇠에 **프롬프트 전문**이 들어간다. 문안을 한 글자만 고쳐도 3,242건이 통째로
-      미스가 됐다 — 프롬프트 정리(S2)를 아예 못 하게 막던 자리다. 새 열쇠는
-      `_cache_new_file()` 이고, 여기는 이미 쌓인 항목을 **버리지 않기 위해서만** 남긴다.
-
-    ★ 옛 항목은 캡션 1,961 + 분류 라벨 1,281 이 **한 디렉터리에 섞여** 있었다. kind 로
-      갈라 옮겼으면(`tools/split_caption_cache.py`) 그 하위를 먼저 본다. 디렉터리를 안
-      쓰면 자리만으로는 라벨과 캡션을 구분할 수 없어, 쓸어 담는 스크립트가 라벨을 캡션
-      자리로 넣는다 — `그림: chart` 가 그렇게 나왔다.
-    """
-    from app.utils.llm_cache import resolve_dir
-    # ★ 절대경로로 푼다(재구조화 3-a). 러너와 서버의 cwd 가 달라 같은 상대경로가
-    #   두 자리를 가리켰다 — A/B 두 팔이 서로 다른 캐시를 보는 자리였다.
-    p = resolve_dir("CAPTION_CACHE_DIR")
-    if p is None:
-        return None
-    key = hashlib.sha256(
-        b"|".join([raw, image_type.encode(),
-                   os.getenv("CAPTION_BACKEND", "anthropic").encode(),
-                   os.getenv("CAPTION_MODEL", "claude-sonnet-5").encode(),
-                   prompt.encode()])
-    ).hexdigest()
-    # kind 하위(`caption/`·`classify/`)를 먼저 본다 — 옛 항목을 갈라 옮겼으면 거기 있다
-    # (`tools/split_caption_cache.py`). 안 옮겼으면 평평한 뿌리에 그대로 있다.
-    kind = "classify" if image_type == "__classify__" else "caption"
-    split = p / kind / f"{key}.txt"
-    return split if split.exists() else p / f"{key}.txt"
-
-
 def _cache_new_file(kind: str, raw: bytes, prompt_id: str, context: str = "") -> Path | None:
     """★ 판 번호 열쇠(재구조화 3-c). `sha256(kind | 입력 | 모델 | prompt_id | 판 번호)`.
 
@@ -1224,6 +1188,8 @@ def _cache_new_file(kind: str, raw: bytes, prompt_id: str, context: str = "") ->
       쓸어 담을 때 라벨이 캡션 자리로 들어가 `그림: chart` 가 나온다(실제로 관찰됐다).
     """
     from app.utils import llm_cache
+    if not llm_cache.scope():       # 격리 열쇠가 없으면 안 쓴다(3-e, fail closed)
+        return None
     p = llm_cache.resolve_dir("CAPTION_CACHE_DIR")
     if p is None:
         return None
@@ -1249,8 +1215,7 @@ def _kind_matches(kind: str, text: str) -> bool:
     return is_label if kind == "classify" else not is_label
 
 
-def _cache_read(kind: str, new_path: Path | None, old_path: Path | None,
-                image_type: str) -> str | None:
+def _cache_read(kind: str, new_path: Path | None, image_type: str) -> str | None:
     """캐시에서 캡션을 꺼낸다. 없으면 None.
 
     ★ **히트에도 관문을 건다**(재구조화 3-c → 2단계에서 `guard_llm_text` 로). 종전에는 버리기 가드 하나만 다시
@@ -1259,15 +1224,12 @@ def _cache_read(kind: str, new_path: Path | None, old_path: Path | None,
       `_finish` 는 멱등이라(전수 실측 깨짐 0건) 통과본에 한 번 더 걸어도 무해하고,
       새 가드가 옛 항목에도 즉시 닿는다.
     """
-    for src in (new_path, old_path):        # 새 자리 → 옛 자리(전문 키) 순
-        if src is not None and src.exists():
-            # 옛 항목 3,242건을 버리지 않으려고 옛 자리도 본다. 판 번호 키로 갈아타면서
-            # 통째로 미스를 내면 A/B 한 판에 재캡셔닝 비용이 그대로 붙는다.
-            text = src.read_text(encoding="utf-8")
-            if not _kind_matches(kind, text):
-                continue                    # 분류 라벨을 캡션으로 내보내지 않는다
-            return guard_llm_text(text, "caption", image_type=image_type)
-    return None
+    if new_path is None or not new_path.exists():
+        return None
+    text = new_path.read_text(encoding="utf-8")
+    if not _kind_matches(kind, text):
+        return None                         # 분류 라벨을 캡션으로 내보내지 않는다
+    return guard_llm_text(text, "caption", image_type=image_type)
 
 
 def _cache_write(new_path: Path | None, answer: str, finished: str) -> None:
@@ -1331,7 +1293,7 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
 
     prompt_id = image_type + ("+material" if _material_on() else "")
     cache = _cache_new_file("caption", raw, prompt_id, context)
-    hit = _cache_read("caption", cache, _cache_file(raw, image_type, prompt), image_type)
+    hit = _cache_read("caption", cache, image_type)
     if cache is not None:
         from app.utils.req_log import record_cache
         record_cache("캡셔닝", hit is not None)
