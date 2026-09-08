@@ -678,3 +678,56 @@ class TestRomanTilde:
         """`Ⅲ~V` — 물결표에서 대문자 단어표가 풀리므로 마지막 상태만 보면 안 된다.
         한 번이라도 봤는지로 판정한다(안 그러면 `III~V` 로 나갔다 · 2회·1쪽)."""
         assert self._d("⠴⠠⠠⠊⠊⠊⠈⠔⠠⠧⠲") == "Ⅲ~V"
+
+
+class TestJongseongVsPunctuation:
+    """어말 ⠦·⠖ — 받침 ㅌ·ㅋ(제3항)과 물음표·느낌표가 같은 셀이다.
+
+    ★ 왜 안 걸렸나: 이 축을 보는 `test_final_punct_greedy.py` 가 **한 방향만**
+      봤다. 부호를 받침으로 먹는 쪽(`구체(`→`구쳍'`)은 ㅌ·ㅋ·ㅍ 다 있는데,
+      진짜 받침을 부호로 읽는 쪽은 ㅍ(`읊고`) 하나뿐이었다. 왕복으로 잰다.
+    """
+
+    @pytest.mark.parametrize("text", [
+        "바깥", "바깥으로", "끝", "끝까지", "밑", "밭", "팥", "숱",
+        "부엌", "부엌에서", "동녘", "밭에서 끝까지", "부엌 바깥",
+    ])
+    def test_받침이_살아서_돌아온다(self, text: str) -> None:
+        assert _rt(text) == text
+
+    @pytest.mark.parametrize("text", ["어떨까?", "그런가?", "왜?", "정말!"])
+    def test_진짜_부호도_그대로_돌아온다(self, text: str) -> None:
+        assert _rt(text) == text
+
+
+class TestMathSignAfterNumber:
+    """수 바로 뒤의 곱셈표 ⠡ · 위첨자 부호 ⠘⠢·⠘⠔ — 한글 약자(연·밤·받)와 같은 셀.
+
+    ★ 왜 안 걸렸나: 곱셈·이온 시험이 전부 **수식으로 이미 분류된 토큰**만 썼다.
+      평문 숫자에 붙은 꼴(`157×48`·`10⁻⁴`·`1⁺`)은 수표만 있어 NUM 으로 떨어지는데
+      그 경로를 아무도 왕복으로 안 봤다.
+    """
+
+    @pytest.mark.parametrize("text", ["2×3", "157×48", "1+2", "3-1", "x=y"])
+    def test_평문_수식이_그대로_돌아온다(self, text: str) -> None:
+        assert _rt(text) == text
+
+    @pytest.mark.parametrize("text,want", [
+        ("10⁻⁴", "10^-4"),          # 위첨자는 `^` 로 편다 — 종전엔 `10받4`
+        ("원자핵이 1+이며", "원자핵이 1^+이며"),   # 이온 가수(과학 제2항) — 종전 `1밤`
+        ("Ca²⁺", "Ca^2+"),
+    ])
+    def test_위첨자_부호가_한글로_안_샌다(self, text: str, want: str) -> None:
+        assert _rt(text) == want
+
+
+class TestBareElementLine:
+    """로마자표 없는 원소 기호 줄 — 「과학 점자」 제1항 예문 `,f1`,cl1`,br1`,i`.
+
+    ★ 왜 안 걸렸나: `test_chemical_case.py` 케이스가 전부 **한 토큰 안에 첨자가
+      붙은** 꼴이라 수식 분류를 탔다. 원소 기호가 낱말로 홀로 서는 제1항 꼴은
+      ⠠+낱자가 한글로도 읽혀(⠠⠉⠇ = `나사`) 통째로 한글이 됐다.
+    """
+
+    def test_화학_반응식_줄이_돌아온다(self) -> None:
+        assert _rt("H, Cl → HCl") == "H, Cl → HCl"

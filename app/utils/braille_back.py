@@ -29,6 +29,7 @@ import re
 import sys
 from pathlib import Path
 
+from app.ai.braille.kor_math_rules import _ELEMENTS as _CHEM_ELEMENTS
 from app.ai.braille.symbol_rules import SYMBOL_TABLE
 # 옛한글 점형표(규정 제19~25항)는 정방향이 정본이다 — 역방향은 그 표를 뒤집어 쓴다.
 from app.ai.braille.translator import (
@@ -68,6 +69,23 @@ _PIEUP_STEM_ONLY = frozenset("갚깊섶싶엎읊짚")
 # 받침 ㅋ 음절 — 국어에 `엌`(부엌)·`녘`(동녘) 둘뿐이라 나머지는 전부 느낌표 ⠖ 다.
 _KIEUK_FINAL = frozenset("엌녘")
 
+# ── 어말 받침 ㅌ·ㅋ (「한국 점자」 제3항 · 재추출본 248~276행) ────────────────────
+# 제3항 표: 받침 ㅌ = `8`(⠦) · 받침 ㅋ = `6`(⠖) 인데 그 두 점형이 그대로 **물음표·
+# 느낌표**다. 받침 ㅍ(⠲)·ㅎ(⠴)은 이미 위 두 목록으로 갈라 놨는데 **ㅌ·ㅋ 은 어말에서
+# 안 갈렸다** — `바깥`→`바까?` · `끝`→`끄?` · `부엌`→`부어!` · `동녘`→`동녀!`.
+# 가르는 법도 근거도 받침 ㅍ·ㅎ 과 같다(재추출 묵자 1,361쪽 어말 실측):
+#   받침 ㅌ  끝 19 · 밭 8 · 밑 7 · 깥 3 · 솥 2 · 숱 1 · 낱 1 · 팥 1   (총 42)
+#   받침 ㅋ  녘 2 · 엌 1
+#   반대쪽(민 음절 + `?`·`!`) 은 523회·77회인데, 겹치는 것은 `까?` 104 · `소?` 10 ·
+#   `나?` 3 뿐이고 받침 ㅋ 쪽은 **겹침 0** 이다(`어!`·`녀!` 가 0회).
+# 그래서 **겹침이 0인 음절만** 목록에 넣는다 — `끄?`·`바?`·`미?`·`수?`·`파?` 도 0회다.
+_TIEUT_FINAL = frozenset("끝밑밭숱팥")
+_JONG_FINAL = _TIEUT_FINAL | _KIEUK_FINAL
+# 겹치는 음절은 **앞 음절**로 가른다. `깥` 이 드는 국어 낱말은 `바깥` 하나뿐이라
+# 앞이 `바` 일 때만 받침 ㅌ 이다 — `어떨까?`·`있을까?`(어말 `까` 앞은 ㄹ 받침)와 안 겹친다.
+# `솥`(민 음절 `소?` 10회)·`낱`(`나?` 3회)은 어말 실측이 각 1~2회뿐이라 넣지 않는다.
+_JONG_PREV = {"깥": "바"}
+
 # 받침에 ㅎ이 든 음절(ㅎ·ㄶ·ㅀ) — ⠴가 **닫는 큰따옴표**인지 받침의 ㅎ인지 가른다
 # (좋=⠨⠥⠴ · 끓 vs 조+”). 받침 ㅍ(_PIEUP_FINAL)과 같은 방식이고 근거도 같다.
 # 목록은 코퍼스 묵자 원문 실측에서 뽑았다 — 재추출한 1,361쪽에 실제로 나온 전수(31종·
@@ -78,6 +96,14 @@ _KIEUK_FINAL = frozenset("엌녘")
 #   받침 ㅍ 목록과 같은 한계이고, 위치로 가르면 더 크게 틀린다(그 함수 주석 참조).
 _HIEUT_FINAL = frozenset(
     "갛겋곯꿇끊끓낳넣놓닳닿떻뚫랗렇많맣빻슳싫쌓않앓얗옳잃잖좋찮")
+
+def _jong_final_ok(syl: str, out: list[str]) -> bool:
+    """어말 ⠦·⠖ 가 문장 부호가 아니라 **받침 ㅌ·ㅋ**(제3항)인가."""
+    if syl in _JONG_FINAL:
+        return True
+    prev = _JONG_PREV.get(syl)
+    return prev is not None and bool(out) and out[-1][-1:] == prev
+
 
 # 알파벳 점형 → 글자 (translator._ALPHA_MAP의 역)
 _ALPHA_REV = {
@@ -278,6 +304,21 @@ _MATH_MAX = max(len(k) for k in _MATH_REV_MULTI)
 # 수식 여는괄호 ⠷)에 바로 이어질 때만 수식으로 본다. 한글 약자(바=⠘⠣·예=⠌⠣ 등)는
 # 뒤에 모음 셀이 와서 이 패턴에 안 걸리므로 '3반'·'1/2개' 같은 숫자+한글이 오판되지 않는다.
 _MATH_SIGNAL_RE = re.compile(r"[⠘⠰⠜⠻⠌][⠼⠷]")
+# ── 수에 바로 붙은 곱셈표·위첨자 부호 (2026-09-09) ──────────────────────────────
+#   · ⠡ = 곱셈 × (「수학 점자」 제2항 · 재추출본 3012행)
+#   · ⠘⠢ = 위첨자 + · ⠘⠔ = 위첨자 −  (「과학 점자」 제2항 · 재추출본 4321행
+#     "이온은 위 첨자 기호 ^ 뒤에 + 기호는 5, - 기호는 9을 적고" · 예문 `,h~5`=H⁺.
+#     같은 꼴이 지수 10⁻⁴ 에도 쓰인다 — 「한글 점자」 제68항 위 첨자.)
+#   셀만 보면 한글 약자(⠡=`연` · ⠘⠢=`밤` · ⠘⠔=`받`)와 겹쳐 홀로는 못 쓴다.
+#   **수표로 연 숫자 바로 뒤일 때만** 본다. 전권 18,892쪽 실측 — 정상 한글은 0회다:
+#     ⠼숫자⠡⠼      3,387회 중 지금 `157연48` 꼴로 새는 것 202회
+#     ⠼숫자⠘⠢/⠘⠔   171회 중 `10받4` 꼴 52회
+#     (`밤`·`받`이 본문일 때는 앞이 수표가 아니다 — `⠘⠔⠣`=받아 처럼 한글이 앞선다.)
+# ⚠ **토큰을 수식으로 승격하지 않는다.** _MATH_SIGNAL_RE 에 넣어 봤더니 `공부하기(1.8×60×8)`
+#   처럼 한글이 붙은 토큰이 통째로 수식 디코더로 가 본문이 깨졌다(`'∞^mj'o(1.8×60×8)`).
+#   이 자리에서 셀 둘만 바꿔 준다.
+_NUM_TIMES = "⠡"
+_NUM_SUPER = {"⠘⠢": "^+", "⠘⠔": "^-"}
 # 겹친 관계 기호(「수학 점자」 제4·7항) — 한글과 안 겹치는 것만. 위 주석에 실측 근거.
 _MATH_REL_RE = re.compile(r"⠒⠒|⠢⠢|⠖⠖|⠔⠔")
 # ⠲⠲(≥)는 받침 ㅍ·마침표와 겹쳐 무조건 신호로는 못 쓴다(전권 표본 36.0%가 본문 한글).
@@ -2945,6 +2986,91 @@ def _print_gap(n: int, idx: int, tokens: list[str], is_math: list[bool]) -> int:
     return n
 
 
+# ── 로마자표 없는 화학식 줄 (「과학 점자」 제1항 · 재추출본 4309~4319행) ──────────
+# 제1항 예문 `F, Cl, Br, I` = `,f1`,cl1`,br1`,i` — 원소 기호만으로 된 줄은 **로마자표
+# 없이 대문자표만** 앞세운다. 그 ⠠+낱자는 한글로도 읽혀(⠠⠉⠇ = `나사` ↔ Cl) 한글
+# 디코더가 통째로 먹었다 — `H, Cl → HCl` 이 `탈 나사 → 타나사` 로 나갔다.
+#
+# ★ 가르는 증거는 **줄 안의 화학 신호**다(_english_line 이 기능어를 증거로 쓰는 자리와
+#   같다). 화살표 ⠒⠕ · 이온 위첨자 ⠘⠢/⠘⠔(제2항 · 4321행) · 첨자 ⠰⠼·⠘⠼(제3항 ·
+#   4349행) 중 하나가 있어야 하고, **줄의 나머지가 전부** 원소 기호와 화학 구두점이라야
+#   한다. 전권 18,892쪽 실측: 줄 전체가 그 꼴인 줄 257개 중 신호가 있는 것 93개인데
+#   **그중 멀쩡한 한글로 읽히는 줄은 0개**다(전부 화학 반응식이고 지금 반쯤 깨져 있다 —
+#   `⠠⠉⠇ ⠢ ⠠⠕⠰⠼⠉ ⠒⠕ ⠠⠉⠇⠠⠕ ⠢ ⠠⠕⠰⠼⠃` 가 `나사 + O_3 → 나사시 + O_2`).
+#   신호가 없는 164줄은 `실시`·`따 서` 같은 본문이라 손대지 않는다.
+_ELEM_SET = frozenset(_CHEM_ELEMENTS)
+_CHEM_GROUP_RE = re.compile(r"⠠([" + _ELEM_UPPER + r"])([" + _ELEM_UPPER + r"])?")
+_CHEM_SIGNAL_RE = re.compile(r"⠒⠕|⠘[⠢⠔]|[⠰⠘]⠼")
+# ★ 첨자만으로는 화학식이라 못 한다 — 순열·조합(제62항 `₄C₃`)·물리 식(`S_1-S_2`)이
+#   같은 꼴이고 그쪽은 수식 디코더가 이미 바르게 읽는다. **두 글자 원소 기호**(Cl·Fe·Mg…)나
+#   **화살표·이온 부호**가 있어야 화학식으로 본다. 전권 실측: 이 조건을 더하면 발동이
+#   57줄 → 28줄로 줄고, 빠지는 29줄은 전부 지금도 옳게 읽히는 수식이다.
+_CHEM_HARD_RE = re.compile(r"⠒⠕|⠘[⠢⠔]")
+# 구두점·수·첨자 — 화학식 줄에 나올 수 있는 것만 닫아 놓는다. 하나라도 벗어나면 본문이다.
+_CHEM_SEP_RE = re.compile(
+    r"(⠒⠕)|⠘(⠢|⠔)|(⠐⠂)|(⠦⠄)|(⠠⠴)|([⠂⠲⠢⠔⠡⠐⠷⠾⠀ ])")
+_CHEM_SEP_TXT = {"⠂": ",", "⠲": ".", "⠢": "+", "⠔": "-", "⠡": "×",
+                 "⠐": "·", "⠷": "(", "⠾": ")", "⠀": " ", " ": " "}
+_CHEM_SCRIPT = {"": "", "⠰": "_", "⠘": "^"}   # 첨자표(제68항) — 뒤에 수표가 온다
+
+
+def _chem_line(line: str) -> str | None:
+    """줄 전체가 로마자표 없는 화학식이면 그 텍스트, 아니면 None (「과학 점자」 제1항)."""
+    if not _CHEM_SIGNAL_RE.search(line):
+        return None
+    out: list[str] = []
+    i, n, groups = 0, len(line), 0
+    hard = bool(_CHEM_HARD_RE.search(line))
+    while i < n:
+        m = _CHEM_GROUP_RE.match(line, i)
+        if m:
+            two = m.group(2)
+            sym = _ALPHA_REV[m.group(1)].upper() + (_ALPHA_REV[two] if two else "")
+            if sym in _ELEM_SET:
+                out.append(sym)
+                hard = hard or len(sym) == 2
+                groups, i = groups + 1, m.end()
+                continue
+            if sym[:1] in _ELEM_SET:     # 둘째 셀은 다음 토막의 것이다(C + l 이 아니라 Cl)
+                out.append(sym[:1])
+                groups, i = groups + 1, m.start() + 2
+                continue
+            return None
+        # 수(첨자 포함) — 본문 경로와 **같은 함수**로 읽는다. 동그라미 번호(①=⠼⠂)와
+        # 소수점·자릿점을 여기서 다시 구현하면 어긋난다(실측: `①` 이 `,` 로 나갔다).
+        script = line[i] if line[i] in ("⠰", "⠘") else ""
+        at = i + len(script)
+        if line[at:at + 1] == _NUMBER_SIGN:
+            sp = _special_at(line, at)
+            if sp and not script:
+                out.append(sp[0])
+                i = sp[1]
+                continue
+            txt, j = _decode_number(line, at)
+            if txt:
+                out.append(_CHEM_SCRIPT[script] + txt)
+                i = j
+                continue
+        m = _CHEM_SEP_RE.match(line, i)
+        if not m:
+            return None
+        arrow, sup, colon, popen, pclose, one = m.groups()
+        if arrow:
+            out.append("→")
+        elif sup:
+            out.append("^" + ("+" if sup == "⠢" else "-"))
+        elif colon:
+            out.append(":")
+        elif popen:
+            out.append("(")
+        elif pclose:
+            out.append(")")
+        else:
+            out.append(_CHEM_SEP_TXT[one])
+        i = m.end()
+    return "".join(out) if groups and hard else None
+
+
 def _decode_line_router(line: str, math: bool) -> str:
     """줄을 공백 단위로 나눠 수식 토큰은 수학 디코더로, 나머지는 한글 디코더로 라우팅."""
     if not line:
@@ -2967,7 +3093,11 @@ def _decode_line_router(line: str, math: bool) -> str:
         if last < len(line):
             out.append(_decode_line_router(line[last:], math))
         return "".join(out)
-    if not math:                     # 수식 줄에 영어 판정을 대면 안 된다 — `a √ b`가
+    if not math:
+        chem = _chem_line(line)      # 로마자표 없는 화학식 줄 (「과학 점자」 제1항)
+        if chem is not None:
+            return chem
+        # 수식 줄에 영어 판정을 대면 안 된다 — `a √ b`가
         eng = _english_line(line)    # `a ar b`로 뒤집힌다(⠜=√ ↔ 영어 약자 ar)
         if eng is None and _UEB_UNDERLINE_RE.search(line):
             # UEB 밑줄 글자체표를 벗겨야 영어로 읽힌다 — 표가 낱말 런을 끊는다.
@@ -3427,6 +3557,17 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
             _after_number = j          # 이 자리 바로 뒤는 단위가 올 수 있다(아래 참조)
             i = j
             continue
+        # ★ 수 바로 뒤의 곱셈표 ⠡ · 위첨자 부호 ⠘⠢·⠘⠔ — 위 _NUM_TIMES 주석에 근거.
+        if i == _after_number:
+            if ch == _NUM_TIMES and s[i + 1:i + 2] == _NUMBER_SIGN:
+                out.append("×")
+                i += 1
+                continue
+            _sup = _NUM_SUPER.get(s[i:i + 2])
+            if _sup:
+                out.append(_sup)
+                i += 2
+                continue
         # 긴 셀 우선 매칭(단위·기호·약어·음절). 단위(℃=⠴⠙…)를 로마자보다 먼저
         # 잡아야 로마자 런이 멀리 있는 마침표 ⠲까지 삼키지 않는다.
         best_ln = 0
@@ -3534,6 +3675,8 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
                 continue
             elif (seg in _SYLLABLE_REV and seg[-1] in _SENT_END
                   and seg[:-1] in _COMBINED
+                  # ★ 어말 ⠦·⠖ 는 **받침 ㅌ·ㅋ**(제3항)이기도 하다. 위 _JONG_FINAL 참조.
+                  and not _jong_final_ok(_COMBINED[seg], out)
                   and (_final(i + best_ln)
                        # ★ 느낌표 ⠖ 는 받침 ㅋ 과 같은 셀인데 받침 ㅋ 음절은 국어에
                        #   `엌·녘` 둘뿐이다. 닫는 부호 앞이면 부호로 본다 —
