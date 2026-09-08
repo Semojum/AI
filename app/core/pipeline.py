@@ -357,7 +357,7 @@ _EXTRACT_SOURCES = (
 _EXTRACT_ENV = (
     "FIGURE_DETECT", "FIGDET_MODEL", "DISABLE_LLM_FALLBACK",
     "CAPTION_BACKEND", "CAPTION_MODEL", "CAPTION_CACHE_DIR",
-    "OPUS_FALLBACK", "MINERU_BIN", "CHAIN_SEQUENTIAL",
+    "MINERU_BIN", "CHAIN_SEQUENTIAL",
 )
 
 
@@ -811,22 +811,9 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
 
     # QA용 쪽 이미지 보관(기본 off — KEEP_PAGE_IMAGE=1로만 켠다, 대표 결정 2026-08-07).
     # 평소에는 처리 후 원본을 안 남긴다(저작권·디스크). QA 기간에만 켜면 bbox·읽기순서·
-    # 표 오분류를 **쪽 위에 겹쳐 눈으로** 볼 수 있다. 렌더는 Opus 폴백과 같은 자리를 쓴다.
+    # 표 오분류를 **쪽 위에 겹쳐 눈으로** 볼 수 있다. 렌더는 고급 점역 추출과 같은 자리를 쓴다.
     if os.environ.get("KEEP_PAGE_IMAGE") == "1":
         _page_image_path(task)
-
-    # Opus 비전 폴백(D-05, 기본 off — OPUS_EXTRACT_FALLBACK=1 opt-in): 추출이 빈약한
-    # 페이지만 claude-opus-4-8이 직접 읽는다. 실측상 저품질 페이지에서만 유효(3~4배),
-    # 중간 품질은 득실 반반이라 빈약 신호(요소 수·글자수)일 때만 트리거.
-    from app.ai.parser import opus_fallback
-    if (not advanced_used) and opus_fallback.enabled() and opus_fallback.is_meager(elements):
-        img = _page_image_path(task)
-        if img:
-            better = await asyncio.to_thread(opus_fallback.extract, str(img))
-            if better and not opus_fallback.is_meager(better):
-                logger.warning("Opus 추출 폴백 채택: %d→%d요소 (page=%d)",
-                               len(elements), len(better), task.page_no)
-                elements, method = better, "OPUS_VISION"
 
     # 줄바꿈으로 쪼개진 텍스트 조각 잇기(#263) — **두 추출 경로가 만나는 자리다.**
     # 한때 mineru_runner 안에 뒀는데 ZERO 티어(TEXT_NATIVE)가 그 경로를 안 타서 절반에

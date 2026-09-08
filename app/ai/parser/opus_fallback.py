@@ -1,8 +1,6 @@
 """LLM 비전 추출 — 쪽 이미지를 모델이 직접 읽어 경계 파일 요소를 만든다.
 
-두 갈래로 쓴다.
-
-**① 고급 점역**(`advanced_ai=true`, 2026-09-01 대표 결정)
+**고급 점역**(`advanced_ai=true`, 2026-09-01 대표 결정)
    MinerU **대신** 이 경로가 지면을 읽는다. 기본은 Sonnet 5, 실패하거나 결과가 빈약하면
    Opus 5로 한 번 더 간다. 실측 근거(수학 정답 해설 10쪽, `temp/reports/0901_모델사다리_전문.html`):
 
@@ -15,9 +13,9 @@
    MinerU 는 한자·가나가 섞여 나온다(`以⑦）`·`軸`·`구-七기가를`). Sonnet 5 는 그게 없고
    값이 Opus 의 절반이라 기본으로 둔다.
 
-**② 빈약 폴백**(D-05, 기본 off — `OPUS_EXTRACT_FALLBACK=1`)
-   고급 점역이 꺼진 보통 경로에서, MinerU 결과가 사실상 비었을 때만 한 번 구제한다.
-   중간 품질 페이지는 득실이 반반이라 교체하지 않는다(2026-07-17 오프라인 실측).
+★ 2026-09-08(재구조화 5단계) — **빈약 폴백(L10)을 지웠다.** 기본 off(`OPUS_EXTRACT_FALLBACK=1`
+opt-in)로 두 달을 뒀는데 켠 적이 없고, 코퍼스 1,131쪽에서 임계 근처가 0쪽이었다
+(설계 §2-1 L10). 되살릴 일이 있으면 `git log -- app/ai/parser/opus_fallback.py` 에 있다.
 
 호출·토큰은 `req_log` 에 모델명과 함께 남는다 — 모델마다 단가가 달라 이름이 없으면 원가가 안 맞는다.
 """
@@ -36,9 +34,6 @@ logger = logging.getLogger(__name__)
 # 고급 점역 기본 모델과, 그게 실패했을 때 한 번 더 갈 모델.
 ADVANCED_MODEL = os.environ.get("ADVANCED_EXTRACT_MODEL", "claude-sonnet-5")
 ADVANCED_FALLBACK_MODEL = os.environ.get("ADVANCED_EXTRACT_FALLBACK_MODEL", "claude-opus-5")
-# 빈약 폴백(②)에서 쓰는 모델. 종전 동작을 그대로 둔다.
-MODEL = os.environ.get("OPUS_EXTRACT_MODEL", "claude-opus-4-8")
-
 # 상한을 넘겨 JSON 이 잘리면 그 쪽이 통째로 날아간다. 실측에서 16,000 으로는 10쪽 중
 # 2쪽이 잘렸다. 큰 상한은 스트리밍으로 받아야 HTTP 타임아웃에 안 걸린다.
 _MAX_TOKENS = int(os.environ.get("ADVANCED_EXTRACT_MAX_TOKENS", "32000"))
@@ -47,11 +42,6 @@ _MAX_TOKENS = int(os.environ.get("ADVANCED_EXTRACT_MAX_TOKENS", "32000"))
 # 실측 60~110초라, 두 번 부르면 점역·조판 시간이 남지 않아 쪽 전체가 BLOCKED 로 죽는다.
 # 되돌아갈 MinerU 는 20~35초라 그쪽이 낫다.
 _ADVANCED_RETRY_BUDGET = float(os.environ.get("ADVANCED_EXTRACT_RETRY_BUDGET", "60"))
-
-# 빈약 판정: 요소가 이만큼도 안 나오거나, 텍스트류 총 글자가 이만큼도 안 되면
-# 페이지를 사실상 못 읽은 것이다(실측: 문제 페이지는 보통 요소 0~3·수십 자).
-_MIN_ELEMENTS = int(os.environ.get("OPUS_FALLBACK_MIN_ELEMENTS", "3"))
-_MIN_TEXT_CHARS = int(os.environ.get("OPUS_FALLBACK_MIN_CHARS", "120"))
 
 # ★ 2026-09-07 — image 지시를 캡셔너(`captioning/captioner.py::_PROMPTS`)와 맞췄다.
 #   두 프롬프트가 같은 자료에 다른 것을 시키고 있었고, 어긋난 세 축이 전부 gold 와
@@ -108,19 +98,19 @@ image(그림·사진·그래프·지도·만화·도표. content 첫 줄에 유�
 강조 구간은 <!강조>…<!/강조>. 흐릿해서 못 읽는 글자는 `□` 하나로 적습니다. JSON 외 출력 금지."""
 
 
-def enabled() -> bool:
-    """빈약 폴백(②)이 켜져 있나. 고급 점역(①)은 요청 플래그로 따로 켠다."""
-    return (os.environ.get("OPUS_EXTRACT_FALLBACK", "0") == "1"
-            and bool(config.anthropic_api_key))
-
-
 def advanced_available() -> bool:
     """고급 점역을 쓸 수 있나 — 키가 있어야 한다."""
     return bool(config.anthropic_api_key)
 
 
+# 빈약 판정: 요소가 이만큼도 안 나오거나, 텍스트류 총 글자가 이만큼도 안 되면
+# 페이지를 사실상 못 읽은 것이다(실측: 문제 페이지는 보통 요소 0~3·수십 자).
+_MIN_ELEMENTS = 3
+_MIN_TEXT_CHARS = 120
+
+
 def is_meager(elements: list[dict]) -> bool:
-    """추출이 빈약한가 — 폴백 트리거 신호."""
+    """추출이 빈약한가 — 고급 점역 2차(Opus 5) 트리거 신호."""
     if len(elements) < _MIN_ELEMENTS:
         return True
     chars = sum(len(e.get("content") or "") for e in elements
@@ -142,10 +132,8 @@ def _parse(txt: str) -> list:
         return json.loads(txt[s:e + 1])
 
 
-def extract(image_path: str, model: str | None = None,
-            label: str = "opus추출") -> list[dict] | None:
+def extract(image_path: str, model: str, label: str = "고급추출") -> list[dict] | None:
     """쪽 이미지 → 경계 파일 형식 elements. 실패 시 None(호출부가 원 추출을 유지한다)."""
-    model = model or MODEL
     try:
         import anthropic
 

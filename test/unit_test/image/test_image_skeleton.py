@@ -70,12 +70,12 @@ class TestFourDrafts:
         assert "6CO2" in opt.drafts[1].text and "C6H12O6" in opt.drafts[1].text   # §6.3.4(2)①
         assert opt.line_indents is not None                    # 개조식 위계 들여쓰기 전달
 
-    def test_장식용_기본_생략(self):
-        ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure={
-            "visual_type_label": "그림", "decorative": True, "caption_src": "장식 클립아트"})
-        opt = asyncio.run(ImageOpt().optimize([ext], "ZERO"))[0]
-        assert opt.selected_idx == 0                            # 장식용 → 기본 생략(§6.3.4(2)②·Q7)
-        assert opt.corrected_text == opt.drafts[0].text
+    # ★ 2026-09-08(재구조화 5단계) — `test_장식용_기본_생략` 을 지웠다. 입력으로 준
+    #   `structure['decorative']` 를 **채우는 자리가 코드에 없어**(코퍼스 1,131쪽 요소
+    #   28,425개 중 `structure` 키 0건) 그 갈래는 제품에서 안 선다. 기본 선택 '생략' 은
+    #   이제 `no_seed` 하나로만 서고, 그것은 아래 `test_캡션_없음_생략표기` 가 잡는다.
+    #   `build_visual_drafts(decorative=True)` 자체의 계약은
+    #   `test_visual_four_drafts_invariant.test_장식용_요소` 가 그대로 지킨다.
 
     def test_캡션_없음_생략표기(self):
         """캡션·구조·제목이 없으면(캡셔닝 실패 포함) 규정상 '생략' 표기가 정답이다(§6.3.4(2)②).
