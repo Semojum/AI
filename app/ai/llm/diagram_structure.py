@@ -249,6 +249,36 @@ def caption_head(caption: str) -> str:
     return ""
 
 
+_GEN_RE = re.compile(r"^제?\s*(\d{1,2})\s*(?:세대|대)(?![가-힣])")
+
+
+def _generation_levels(items: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """가계도 캡션이 평면일 때 줄머리의 'N세대'·'N대'로 세대 수준을 매긴다.
+
+    §6.6.4(2)② "가장 처음 선조는 1칸에 적고, **후손 단계에 따라** 하위 수준으로 갈수록
+    두 칸씩 들여쓰기 한다" — 정답 예6-21 실측도 그렇다(태조 1칸 → 진안대군 3칸 →
+    의평군 5칸 → 문종 7칸). 그런데 캡션은 위계 표지 없이 한 줄씩 평면으로 온다
+    (2026-09-09 실물 4건 `temp/vdemo/demo.json` f01~f04 전부 level 0) — 그래서 세대가
+    전부 같은 칸에 서서 가계도가 목록과 구별되지 않았다(대표 QA 지적 3).
+
+    ⚠ 캡션이 이미 위계를 줬으면(글머리·들여쓰기) 그쪽이 우선이다. 세대 표지가 두 줄
+    미만이면 손대지 않는다 — 표지 없는 가계도(집안별로 적은 것 등)를 억지로 못 접는다.
+    """
+    if any(lv for lv, _ in items):
+        return items
+    gens = [_GEN_RE.match(t) for _lv, t in items]
+    if sum(g is not None for g in gens) < 2:
+        return items
+    first = min(int(g.group(1)) for g in gens if g)
+    out: list[tuple[int, str]] = []
+    level = 0
+    for (_lv, text), g in zip(items, gens):
+        if g:
+            level = max(0, int(g.group(1)) - first)
+        out.append((level, text))
+    return out
+
+
 def _nest(items: list[tuple[int, str]]) -> list[dict]:
     """(level, text) 평면 목록 → nodes 트리. 레벨이 건너뛰어도 가장 가까운 부모에 붙인다."""
     roots: list[dict] = []
@@ -283,7 +313,7 @@ def structure_from_caption(caption: str, subtype: str = "") -> dict | None:
         return {**base, "nodes": _nest(items)}
     if subtype == "family_tree":
         # 상향식 표기(§6.6.4(3))는 캡션만으로 방향을 알 수 없다 — 하향식 기본.
-        return {**base, "mode": "top_down", "nodes": _nest(items)}
+        return {**base, "mode": "top_down", "nodes": _nest(_generation_levels(items))}
     if subtype == "flowchart":
         # §6.6.2(4)①④ 논리 순서 번호 + 상자 한 줄에 하나. 분기(⑤⑥)는 캡션에 없어 생략.
         return {**base, "boxes": [{"no": i, "text": t} for i, (_lv, t) in enumerate(items, 1)]}
@@ -339,6 +369,23 @@ def demo() -> None:
     st4 = structure_from_caption(cap4)
     assert st4["subtype"] == "family_tree" and len(st4["nodes"]) == 2, st4
     assert st4["nodes"][0]["children"][0]["text"] == "1: 정상 남자", st4   # 개체번호는 보존
+
+    # 가계도 캡션이 **평면**으로 와도 줄머리 세대로 위계가 선다(§6.6.4(2)②, #794).
+    cap4b = ("도표: 어떤 유전병에 대한 3대에 걸친 가계도이다.\n"
+             "1세대 1 정상 남자 × 2 유전병 여자 →\n"
+             "2세대 1 정상 여자, 2 유전병 남자\n"
+             "3세대 1 정상 여자, 2 정상 남자\n"
+             "2세대 5 정상 여자 × 6 정상 남자 →\n"
+             "3세대 4 유전병 남자")
+    st4b = structure_from_caption(cap4b, "family_tree")
+    assert len(st4b["nodes"]) == 1, st4b                      # 1세대 하나가 뿌리
+    kids = st4b["nodes"][0]["children"]
+    assert [k["text"][:3] for k in kids] == ["2세대", "2세대"], st4b
+    assert kids[0]["children"][0]["text"].startswith("3세대"), st4b
+    # 세대 표지가 없으면 손대지 않는다 — 억지로 접지 않는다.
+    cap4c = "도표: 두 집안 가계도이다.\n유전병 A 집안: 정상 남자 × 유전병 A 여자\n유전병 B 집안: 정상 남자"
+    st4c = structure_from_caption(cap4c, "family_tree")
+    assert len(st4c["nodes"]) == 2, st4c
 
     # 연표를 한 줄에 쉼표로 몰아 적어 온 경우 — 그래도 사건이 서고, 못 잡은 줄도 안 버린다.
     cap5 = ("도표: 연표. 1911 신해혁명, 1919 5·4운동, 1926 북벌개시.\n"

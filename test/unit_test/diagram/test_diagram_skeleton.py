@@ -282,3 +282,56 @@ class TestFlowChainAlt:
         from app.ai.llm.diagram_opt import _flow_chain_alt
         assert _flow_chain_alt("flowchart", {"boxes": [{"no": "1", "text": "가"}]}) is None
         assert _flow_chain_alt("concept_map", self._ST) is None
+
+
+class TestSummaryHeadLine:
+    """요약 머리줄은 원본 제목 자리가 아니라 유형 제시어 뒤 같은 줄이다(#794).
+
+    「점자 자료 제작 지침」 §6.1.4(4) L3011-3012 · 예6-1 · 도서지침 예3-25.
+    규정 시각자료 예시 전수 25건 중 유형어 줄 **앞 별도 줄**에 요약을 둔 것은 0건이다.
+    """
+
+    def test_요약_문장은_유형어_뒤_같은_줄(self):
+        from app.ai.llm.diagram_opt import assemble_timeline
+        st = {"subtype": "timeline",
+              "title": "사건과 시기가 순서대로 놓여 있다.",
+              "events": [{"date": "1911년", "text": "신해혁명"}]}
+        text, indents = assemble_timeline(st)
+        first = text.split("\n")[0]
+        assert first == f"{_TYPE_NOTE} 사건과 시기가 순서대로 놓여 있다.", first
+        assert indents[0] == 2, indents          # 3칸(도서지침 3장 2절 4)(1) L2368)
+
+    def test_원본_제목은_5칸_제목_줄로_남는다(self):
+        from app.ai.llm.diagram_opt import assemble_flowchart
+        st = {"subtype": "flowchart",
+              "title": "[심화·보충형 교육과정 운영도]",     # 규정 예3-22 실물
+              "boxes": [{"no": "1", "text": "기본과정"}]}
+        text, indents = assemble_flowchart(st)
+        lines = text.split("\n")
+        assert lines[0] == "[심화·보충형 교육과정 운영도]", lines
+        assert indents[0] == 4, indents                     # §6.3.3(1) 5칸
+        assert lines[1] == _TYPE_NOTE, lines
+
+    def test_제목이_없으면_유형어만(self):
+        from app.ai.llm.diagram_opt import assemble_concept_map
+        text, indents = assemble_concept_map({"subtype": "concept_map",
+                                              "nodes": [{"text": "생물"}]})
+        assert text.split("\n")[0] == _TYPE_NOTE, text
+        assert indents[0] == 2, indents
+
+
+class TestFamilyTreeGenerationIndent:
+    """§6.6.4(2)② 하향식 가계도 — 처음 선조 1칸, 세대마다 +2칸(정답 예6-21)."""
+
+    def test_평면_캡션도_세대로_들여쓴다(self):
+        from app.ai.llm.diagram_structure import structure_from_caption
+        from app.ai.llm.diagram_opt import assemble_family_tree
+        cap = ("도표: 어떤 유전병에 대한 3대에 걸친 가계도이다.\n"
+               "1세대 1 정상 남자 × 2 유전병 여자 →\n"
+               "2세대 1 정상 여자, 2 유전병 남자\n"
+               "3세대 1 정상 여자, 2 정상 남자")
+        st = structure_from_caption(cap, "family_tree")
+        text, indents = assemble_family_tree(st)
+        lines = text.split("\n")
+        gen = {ln[:3]: ind for ln, ind in zip(lines, indents) if ln[:1].isdigit()}
+        assert gen == {"1세대": 0, "2세대": 2, "3세대": 4}, (gen, lines)
