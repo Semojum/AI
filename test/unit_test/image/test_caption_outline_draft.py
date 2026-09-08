@@ -194,3 +194,50 @@ def test_한_줄_캡션이면_LLM을_부르지_않는다(monkeypatch) -> None:
     body = _TAG.sub("", gist[0].text)
     assert body == "사진: 술탄 아흐메드 사원", body      # 머리줄 그대로 — 새 말이 없다
     assert body in _TAG.sub("", out2.drafts[out2.selected_idx].text)
+
+
+def test_제품_네_유형에서는_L8_LLM_팔이_아예_안_선다(monkeypatch) -> None:
+    """재구조화 4-1 판정 — L8 의 LLM 팔은 제품 경로에서 **도달 불가**다.
+
+    `use_llm` 의 남은 조건 셋이 넷 다 닫혀 있다.
+      · `need_title`  = `not (title or caption)` — 그런데 `has_seed = bool(caption)` 이라
+                        캡션이 없으면 그 앞에서 이미 막힌다.
+      · `need_outline`= 여러 줄 캡션이면 `caption_outline(limit=None)` 이 반드시 항목을
+                        내므로(빈 줄은 걸러지고 남은 줄은 표지를 떼도 비지 않는다) 거짓.
+                        41줄 상한이 마지막 구멍이었고 #698 이 그것을 닫았다.
+      · `need_prose`  = `prose_label(kind) != desc_label(kind)` — 제품이 넘기는 `kind` 는
+                        `이미지·차트·만화·도표` 넷뿐이고 넷 다 두 값이 같다.
+
+    실측(2026-09-08): 코퍼스 경계 파일 1,131쪽 시각 요소 1,097건 · 캡션 캐시 3,242건을
+    세 유형에 통과시켜 호출 **0회**. 아래 양성 대조가 없으면 이 검사는 헛통과한다.
+    """
+    from app.ai.llm import visual_drafts as vd
+    from app.ai.llm.cartoon_opt import CartoonOpt
+
+    calls: list[str] = []
+
+    async def _fake(prompt, **_kw):
+        calls.append(prompt)
+        return "[제목]\n지어낸 제목\n[개조식]\n지어낸 항목\n[줄글]\n지어낸 줄글", True
+
+    monkeypatch.setattr(vd, "generate_with_retry", _fake)
+    caps = [
+        "",                                              # 재료 없음 → 생략
+        "그림: 한 줄짜리 설명",                            # 한 줄 → 늘리라고 안 시킨다
+        "그림: 여러 줄\n항목: 값\n항목2: 값2",              # 여러 줄 → 규칙 전사
+        "그림: 표지뿐인 줄\n#\n##\n- ",                    # 표지만 남는 줄
+        "그래프: 아주 긴 자료\n" + "\n".join(f"항목{i}: {i}" for i in range(50)),
+    ]
+    for cls in (ImageOpt, ChartGraphOpt, CartoonOpt):
+        for cap in caps:
+            ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
+                                   corrected_text=cap, structure={})
+            asyncio.run(cls().optimize([ext], "STANDARD"))
+    assert calls == [], (len(calls), calls[:1])
+
+    # 양성 대조 — 제품이 안 쓰는 `kind` 를 주면 `need_prose` 가 참이 되어 실제로 부른다.
+    # 이 줄이 통과해야 위의 0 이 "계수기가 죽었다"가 아니라 "팔이 안 선다"는 뜻이 된다.
+    ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, corrected_text="")
+    asyncio.run(vd.build_visual_drafts(ext, "STANDARD", label="개념도", kind="concept_map",
+                                       caption="개념도: 물의 순환\n증발\n응결"))
+    assert len(calls) == 1, calls
