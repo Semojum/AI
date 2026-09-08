@@ -32,9 +32,11 @@ class ReviewFlag(BaseModel):
     R13: TEXT_RISKY_SEGMENT — 본문 중 태그·로마자·숫자가 든 구간(등급 신호, 2026-08-10)
     R14: FONT_MANGLED — 원본 글꼴이 깨져 추출된 요소(결함, 2026-08-10)
     R15: PUA_DROPPED — 글꼴 사설영역 글리프가 점역에서 빠진 쪽(원장 B-09, 2026-08-22)
+    R16: BBOX_MISSING — bbox 가 전부 (0,0,0,0) 인 쪽. 좌표가 죽었다(2026-09-08).
+         `image_width`·`image_height` 는 정상값이라 응답만으로는 알 수 없어 짚어 준다.
     """
 
-    type: str       # R1~R15
+    type: str       # R1~R16
     element_id: str
     message: str
 

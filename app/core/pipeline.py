@@ -561,6 +561,29 @@ async def _extract_via_models(
         return elements, w, h, "pixel"
 
 
+def _graft_sim_min() -> float:
+    """글자 이식 짝짓기 문턱. 되돌리려면 `GRAFT_SIM_MIN=0.45`(**호출 때** 읽는다).
+
+    실측 근거 — `temp/graft/이식률_0908.md` §4·§5. 표본 6쪽 422요소, 실제로 글자가
+    바뀐 309건을 유사도 띠별 10건씩 40건 눈으로 갈라 전체에 환산했다:
+
+        문턱     이식   실제 바뀜   추정 개선   추정 개악
+        0.45     338      309         216         78     ← 종전
+        0.60     304      274         219         44
+        0.75     244      214         206         20     ← 지금
+        0.80     218      188         188         12
+
+    개악은 **전부 r<0.75 에 몰려** 있었다. 그 실물은 본문 단락 90% 삭제(p2#21) ·
+    다른 경우의 문장으로 바꿔치기(p4#4 `4=f(2)…` 를 `6=f(2)…` 로) · 같은 글자가 두 번
+    나가는 중복(p1#45/#46 등 4쌍)이다. 0.75 로 올리면 개선은 216→206 으로 거의 안 잃고
+    개악만 78→20 으로 준다. 더 올리면(0.80) 개선까지 깎인다.
+
+    ⚠ 종전 값 0.45 의 근거는 코드·주석·커밋 메시지 어디에도 없었다. 같은 값이
+      `mineru_runner._SIM_MIN` 에 근거 주석과 함께 있어 그것을 가져다 쓴 것으로 보인다.
+    """
+    return float(os.environ.get("GRAFT_SIM_MIN", "0.75"))
+
+
 def _graft_text(mnr_els: list[dict], llm_els: list[dict]) -> int:
     """**MinerU 요소를 기준으로 두고** LLM 이 읽은 글자만 갈아 끼운다.
 
@@ -572,8 +595,8 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict]) -> int:
     ⚠ 종전에는 반대로 했다 — LLM 요소 목록을 기준으로 두고 좌표만 얹었다. 그러면 LLM 이
       쪼갠 단위와 MinerU 레이아웃이 어긋나 **FE 하이라이트가 글자와 안 맞았다.**
 
-    짝짓기는 정규화한 앞 80자의 유사도(0.45 이상)다. 한 LLM 요소는 한 번만 쓴다.
-    짝을 못 찾은 MinerU 요소는 **원래 글자를 지킨다** — 비우면 내용이 사라진다.
+    짝짓기는 정규화한 앞 80자의 유사도(`GRAFT_SIM_MIN` 이상)다. 한 LLM 요소는 한 번만
+    쓴다. 짝을 못 찾은 MinerU 요소는 **원래 글자를 지킨다** — 비우면 내용이 사라진다.
     """
     import difflib
     import re as _re
@@ -588,11 +611,12 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict]) -> int:
 
     used: set[int] = set()
     hit = 0
+    thr = _graft_sim_min()
     for el in mnr_els:
         a = norm(el.get("content"))
         if len(a) < 4:
             continue
-        best, best_r = -1, 0.45
+        best, best_r = -1, thr
         for j, m in enumerate(llm_els):
             if j in used:
                 continue
@@ -2277,6 +2301,18 @@ def _build_response(
             }
             for e in layout_result.elements
         ]
+        # 좌표가 통째로 죽은 쪽을 응답에 알린다(R16). 고급 점역 곁의 MinerU 가 실패하면
+        # bbox 가 전부 (0,0,0,0) 으로 나가는데 `image_width`·`image_height` 는 정상값이
+        # 그대로 실려, 소비자가 좌표가 무의미하다는 것을 알 방법이 응답 안에 없었다 —
+        # FE 는 모든 상자를 왼쪽 위 한 점에 그린다(실측 88요소 전부 0, 경고는 로그에만).
+        # ⚠ 목록을 비우지는 않는다 — `id` 로 요소를 짝짓는 계약이 깨진다. 표시만 붙인다.
+        if response["bounding_box_list"] and not any(
+                _valid_bbox(e) for e in layout_result.elements):
+            response["quality_report"].setdefault("review_flags", []).append({
+                "type": "R16", "element_id": "page",
+                "message": f"요소 {len(layout_result.elements)}개의 bbox 가 전부 "
+                           "(0,0,0,0) 이다. 좌표가 없으니 하이라이트를 쓰지 말 것",
+            })
     # 원문 목록은 mode b에도 싣는다 (2026-08-06). BE가 원문↔점역을 같은 `id`로 짝지어
     # FE에 줄 단위로 흘려보낸다 — 종전에는 mode b에서 이게 비어 있어 짝짓기가 불가능했다.
     if task.mode in ("a", "b", "c"):

@@ -442,6 +442,36 @@ class TestResponseContract:
         assert ids == [str(img), str(txt)], f"읽기순서 정렬 안 됨: {ids}"
         assert [e["order"] for e in resp["text_list"]] == [1, 2]
 
+    def test_좌표가_통째로_죽으면_R16이_뜬다(self):
+        """MinerU 실패 시 bbox 88개가 전부 (0,0,0,0) 으로 나가는데 image_width·height 는
+        정상값이라, 응답만 봐서는 좌표가 죽은 줄 알 수 없었다(2026-09-08 합성 재현).
+        FE 는 모든 상자를 왼쪽 위 한 점에 그린다. 목록은 비우지 않고 표시만 붙인다."""
+        from app.core.pipeline import _build_response
+        from app.schemas.content import LLMOutput
+        from app.schemas.layout import BBoxItem, LayoutResult
+        from app.schemas.task import PageTask
+
+        ids = [uuid4() for _ in range(3)]
+        llms = [LLMOutput(element_id=i, corrected_text="본문", routing_tier="STANDARD")
+                for i in ids]
+
+        def build(boxes):
+            els = [BBoxItem(element_id=i, type="text", bbox=b, reading_order=n + 1)
+                   for n, (i, b) in enumerate(zip(ids, boxes))]
+            return _build_response(
+                PageTask(job_id="t", page_no=1, mode="c"), "p", None, "STANDARD",
+                1447, 2105, LayoutResult(page_id="p", elements=els), [], llms, [])
+
+        dead = build([(0, 0, 0, 0)] * 3)
+        flags = [f["type"] for f in dead["quality_report"]["review_flags"]]
+        assert "R16" in flags, f"좌표가 죽었는데 안 알린다: {flags}"
+        assert len(dead["bounding_box_list"]) == 3, "목록을 비우면 id 짝짓기가 깨진다"
+        assert dead["image_width"] == 1447   # 크기는 정상값 그대로 — 그래서 신호가 필요하다
+
+        ok = build([(10, 20, 100, 40), (10, 50, 100, 70), (0, 0, 0, 0)])
+        assert "R16" not in [f["type"] for f in ok["quality_report"]["review_flags"]], (
+            "정상 경로에서 떴다")
+
     def test_braille_heading_level_반영(self):
         from app.schemas.content import LLMOutput
         from app.schemas.layout import BBoxItem
