@@ -1574,7 +1574,7 @@ async def _run_image_chain(
 
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
-        from app.ai.braille.image_braille import ImageBraille
+        from app.ai.braille.visual_braille import ImageBraille
         # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
         # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
         braille_outputs = await run_braille(ImageBraille().translate, llm_outputs)
@@ -1600,7 +1600,7 @@ async def _run_cartoon_chain(
 
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
-        from app.ai.braille.cartoon_braille import CartoonBraille
+        from app.ai.braille.visual_braille import CartoonBraille
         # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
         # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
         braille_outputs = await run_braille(CartoonBraille().translate, llm_outputs)
@@ -1626,7 +1626,7 @@ async def _run_chart_graph_chain(
 
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
-        from app.ai.braille.chart_graph_braille import ChartGraphBraille
+        from app.ai.braille.visual_braille import ChartGraphBraille
         # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
         # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
         braille_outputs = await run_braille(ChartGraphBraille().translate, llm_outputs)
@@ -1653,7 +1653,7 @@ async def _run_diagram_chain(
 
     braille_outputs: list[BrailleOutput] = []
     if include_braille and llm_outputs:
-        from app.ai.braille.diagram_braille import DiagramBraille
+        from app.ai.braille.visual_braille import DiagramBraille
         # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
         # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
         braille_outputs = await run_braille(DiagramBraille().translate, llm_outputs)

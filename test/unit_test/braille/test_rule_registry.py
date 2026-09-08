@@ -14,10 +14,9 @@ from uuid import uuid4
 
 import pytest
 
-from app.ai.braille.cartoon_braille import CartoonBraille
-from app.ai.braille.chart_graph_braille import ChartGraphBraille
+from app.ai.braille.visual_braille import CartoonBraille, ChartGraphBraille
 from app.ai.braille.formula_braille import FormulaBraille
-from app.ai.braille.image_braille import ImageBraille
+from app.ai.braille.visual_braille import ImageBraille
 from app.ai.braille.regulations import all_rule_ids, make_rule
 from app.ai.braille.table_braille import TableBraille
 from app.ai.braille.text_braille import TextBraille

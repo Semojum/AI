@@ -205,7 +205,7 @@ def test_점역_뒤에도_안별_들여쓰기가_남는다():
     from uuid import uuid4
     from app.schemas.content import ExtractedContent
     from app.ai.llm.diagram_opt import DiagramOpt
-    from app.ai.braille.diagram_braille import DiagramBraille
+    from app.ai.braille.visual_braille import DiagramBraille
     st = {"subtype": "family_tree", "title": "가계도", "mode": "top_down",
           "nodes": [{"text": "해모수", "children": [
               {"text": "주몽", "children": [{"text": "유리"}]}]}],

@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.ai.braille.cartoon_braille import CartoonBraille
+from app.ai.braille.visual_braille import CartoonBraille
 from app.ai.llm.cartoon_opt import CartoonOpt
 from app.schemas.content import BrailleOutput, ExtractedContent
 

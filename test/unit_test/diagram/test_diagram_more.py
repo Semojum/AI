@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from uuid import uuid4
 
-from app.ai.braille.diagram_braille import DiagramBraille
+from app.ai.braille.visual_braille import DiagramBraille
 from app.ai.braille.layout_braille import LayoutBraille
 from app.ai.llm.diagram_opt import (
     DiagramOpt,
