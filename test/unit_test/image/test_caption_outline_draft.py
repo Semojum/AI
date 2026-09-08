@@ -114,7 +114,30 @@ def test_긴_캡션은_LLM을_부르지_않는다(monkeypatch) -> None:
 
 
 def test_VISUAL_DRAFT_LLM_0_이면_안_부른다(monkeypatch) -> None:
-    # 4-1 되돌리기 손잡이. 호출 시 읽으므로 프로세스 env 로 갈린다.
+    """4-1 되돌리기 손잡이. **호출 시** 읽으므로 프로세스 env 로 갈린다.
+
+    ★ 2026-09-08(재구조화 2단계) — 종전 이 검사는 '캡션 없이 제목만' 을 LLM 을 부르는
+      자리로 썼다. 그 자리가 바로 L8 이 세상 지식으로 넉 줄을 지어내던 구멍이라 막았다
+      (`visual_drafts.has_seed`). 그래서 여기서는 **스위치가 호출 시 읽히는지**를 직접
+      재고, 그 구멍이 실제로 막혔는지는 아래 검사가 맡는다.
+    """
+    from app.ai.llm.visual_drafts import _visual_draft_llm_on
+
+    monkeypatch.delenv("VISUAL_DRAFT_LLM", raising=False)
+    assert _visual_draft_llm_on() is True
+    monkeypatch.setenv("VISUAL_DRAFT_LLM", "0")
+    assert _visual_draft_llm_on() is False
+    monkeypatch.setenv("VISUAL_DRAFT_LLM", "1")
+    assert _visual_draft_llm_on() is True
+
+
+def test_제목만_있으면_LLM을_안_부르고_생략으로_간다(monkeypatch) -> None:
+    """재구조화 2단계 — 관문이 캡션을 걷어내면 열리던 환각 폴백의 입구를 막는다.
+
+    실측(2026-09-07, 판단장부 §2): 캡션이 비고 제목만 남은 요소에서 L8 이
+    `사진: 쿠트브 미나르` → 넉 줄("인도 델리에 있는 …")을 지어냈고 넉 줄 다 자료에 없는 말이다.
+    규정 §6.3.4(2)② 의 정답은 그 자리에서 생략 표기이고, R11 은 품질검사가 세운다.
+    """
     from app.ai.llm import visual_drafts as vd
 
     calls: list[str] = []
@@ -124,19 +147,12 @@ def test_VISUAL_DRAFT_LLM_0_이면_안_부른다(monkeypatch) -> None:
         return "[개조식]\n지어낸 항목\n[줄글]\n지어낸 줄글", True
 
     monkeypatch.setattr(vd, "generate_with_retry", _fake)
-    # 캡션 없이 제목만 → 종전 경로에서는 LLM 을 부르는 자리다.
-    def _run():
-        ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
-                               corrected_text="", structure={"title": "표제만 있는 그림"})
-        return asyncio.run(ImageOpt().optimize([ext], "STANDARD"))[0]
-
     monkeypatch.delenv("VISUAL_DRAFT_LLM", raising=False)
-    _run()
-    on = len(calls)
-    calls.clear()
-    monkeypatch.setenv("VISUAL_DRAFT_LLM", "0")
-    _run()
-    assert on >= 1 and calls == [], (on, calls)
+    ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
+                           corrected_text="", structure={"title": "표제만 있는 그림"})
+    out = asyncio.run(ImageOpt().optimize([ext], "STANDARD"))[0]
+    assert calls == [], calls
+    assert len(out.drafts) == 1 and "생략" in out.drafts[0].text, out.drafts
 
 
 def test_한_줄_캡션이면_LLM을_부르지_않는다(monkeypatch) -> None:

@@ -110,11 +110,19 @@ def detect(pdf_data: bytes, page_no: int) -> list[dict]:
 
 
 def to_elements(figs: list[dict], width: float, height: float, start_order: int) -> list[dict]:
-    """검출 결과 → 경계 요소. bbox는 부르는 쪽 좌표계(width/height)로 환산한다."""
+    """검출 결과 → 경계 요소. bbox는 부르는 쪽 좌표계(width/height)로 환산한다.
+
+    ★ 관문 G1(재구조화 §2-2) — `what` 은 **LLM 이 쓴 설명문**이고 여기서 요소 `content`
+      가 된다. 종전에는 이 길에 관문이 없어, 회수 모델이 "…확인할 수 없습니다" 같은
+      변명을 쓰면 그대로 시각 요소 설명이 됐다. 걷어서 남는 게 없으면 그 요소는 안 낸다
+      (없는 그림을 지어내는 것보다 안 내는 쪽이 낫다 — 회수는 있으면 좋은 것이다).
+    """
     from uuid import uuid4
+
+    from app.ai.captioning.captioner import guard_llm_text   # 지연 — openai SDK
     out: list[dict] = []
     for i, f in enumerate(sorted(figs, key=lambda x: float(x.get("y0") or 0))):
-        what = (f.get("what") or "").strip()
+        what = guard_llm_text((f.get("what") or "").strip(), "figure")
         if not what:
             continue
         try:

@@ -30,6 +30,7 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 from app.core.config import config
+from app.ai import gates
 from app.schemas.content import BrailleOutput, ExtractedContent, LLMOutput
 from app.schemas.layout import BBoxItem, DocumentMeta, LayoutResult
 from app.schemas.quality import CriticalError, QualityReport
@@ -218,38 +219,11 @@ def _is_running_foot(content: str) -> bool:
 # 사라져 점역사가 확인할 단서가 없다. 비우면 R11(IMAGE_TEXT_MISSING)이 떠서
 # "이 자리 원본을 직접 보라"는 신호가 남는다(실측: 두 페이지 모두 status=NEEDS_REVIEW,
 # quality_report.review_flags에 R11, bbox flags=['R11'], 인쇄물에 영문 안내문 0줄).
-_EXTRACTION_REFUSAL_RES = (
-    # '읽을 수 있는 글자가 없다' 계열
-    re.compile(r"\bno\s+(?:discernible|legible|readable|recognizable|visible)\s+"
-               r"(?:text|characters|words|content)", re.IGNORECASE),
-    re.compile(r"\bno\s+text\s+(?:is\s+)?(?:present|visible|detected|found)\b", re.IGNORECASE),
-    # 'OCR 결과가 없다/빈 문자열이다' 계열 — 추출 작업 자체를 자기언급
-    re.compile(r"\bno\s+OCR\s+output\b", re.IGNORECASE),
-    re.compile(r"\bOCR\s+output\s+(?:is|would\s+be|should\s+be)\s+(?:an?\s+)?empty",
-               re.IGNORECASE),
-    re.compile(r"\b(?:cannot|can(?:'|no)t|unable\s+to)\s+(?:be\s+)?"
-               r"(?:generate|generated|extract|extracted|perform|performed|produce|produced)\b"
-               r"[^.]{0,40}\bOCR\b", re.IGNORECASE),
-    # 모델 사과·자기소개 계열(문두 한정)
-    re.compile(r"^\s*(?:I'?m\s+sorry|I\s+am\s+sorry|As\s+an\s+AI\b)", re.IGNORECASE),
-    # ★ 한국어 짝(2026-09-03). 위 패턴이 전부 영어라, 한국어로 답하는 모델이 쓴
-    #   해설문은 한 줄도 안 걸려 초안에 그대로 실렸다(FE QA S-7).
-    re.compile(r"(?:읽을\s*수\s*있는|판독\s*가능한|인식(?:할\s*수\s*있는|되는))\s*"
-               r"(?:글자|문자|텍스트|내용)[가이]?\s*(?:없|보이지\s*않)"),
-    re.compile(r"(?:텍스트|글자|내용)[가이]?\s*(?:전혀\s*)?(?:없습니다|없음|보이지\s*않습니다)"),
-    re.compile(r"(?:추출|판독|인식)(?:할\s*수\s*(?:없|가\s*없)|이\s*(?:불가|되지\s*않))"),
-    re.compile(r"^\s*(?:죄송(?:합니다|하지만)|저는\s*(?:AI|인공지능))"),
-    re.compile(r"^\s*이\s*(?:이미지|페이지|지면)에(?:는|서는)?\s*[^.\n]{0,20}"
-               r"(?:없습니다|없음|보이지\s*않습니다)"),
-)
-
-
-def _is_extraction_refusal(content: str) -> bool:
-    """요소 content가 '추출 모델이 못 읽었다고 쓴 해설문'인가(본문 텍스트가 아님)."""
-    c = re.sub(r"\s+", " ", _HF_TAG_RE.sub("", content or "")).strip()
-    if not c:
-        return False
-    return any(p.search(c) for p in _EXTRACTION_REFUSAL_RES)
+# ★ 2026-09-08(재구조화 2단계) — 정규식 표와 판정은 `app/ai/gates.py` 로 옮겼다(위 import).
+#   관문 G1(`captioner.guard_llm_text`)이 **같은 표**를 봐야 한다(설계 §2-2). captioner 에
+#   두면 pipeline 이 openai 를 무는 모듈을 최상단에서 import 하게 되어 빠른 게이트가 깨진다.
+#   이 자리의 검사(`_parse_txt_result`)는 그대로 둔다.
+_is_extraction_refusal = gates.is_extraction_refusal
 
 
 # ── 응답 빌더 ─────────────────────────────────────────────────────────────
@@ -602,6 +576,11 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict]) -> int:
     import difflib
     import re as _re
 
+    # ★ 관문 G1(재구조화 §2-2) — 갈래 B 가 읽어 온 글자가 요소 `content` 를 덮는 자리다.
+    #   `kind="body"` 는 **거부문 판정만** 한다. 여기 오는 것은 본문 글자라 존댓말 문장이
+    #   정상으로 있고, AI 말투 줄 걷기를 걸면 교과서 문장을 먹는다(guard_llm_text 도크스트링).
+    from app.ai.captioning.captioner import guard_llm_text   # 지연 — openai SDK
+
     def norm(t: str) -> str:
         return _re.sub(r"[\s\W_]+", "", (t or ""))[:80]
 
@@ -619,7 +598,7 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict]) -> int:
             if r > best_r:
                 best, best_r = j, r
         if best >= 0:
-            txt = llm_els[best].get("content") or ""
+            txt = guard_llm_text(llm_els[best].get("content") or "", "body")
             if txt.strip():
                 el["content"] = txt
                 used.add(best)
@@ -1934,6 +1913,12 @@ async def _run_pipeline(task: PageTask) -> dict:
                                     int(_meta0.get("page_rotation") or 0))
         st.note = (f"{'적용' if _lo['applied'] else _lo['reason'] or '건너뜀'}"
                    f" · 이동비율 {_lo['ratio']}")
+        # ★ 관문 G2(재구조화 §2-2) — **기존 검사를 그대로 두고 기록만** 한다.
+        #   `llm_order` 의 순열 검사·안전판은 이미 규칙 순서로 조용히 돌아간다. assert 로
+        #   바꾸면 쪽이 BLOCKED 이고 `-O` 면 검사가 통째로 사라진다(원안 철회).
+        #   LLM 을 부르고도 못 쓴 쪽만 센다 — 안 부른 쪽(꺼짐·회전)은 되돌림이 아니다.
+        if _lo["called"] and not _lo["applied"]:
+            gates.gate_hit("G2", _lo["reason"] or "되돌림")
     # ★ 3-d: `doc_meta` 는 이제 두 갈래 모두에서 채워진다(재사용이면 stamp 에서 읽는다).
     #   종전의 `extraction_method` 역추론은 지웠다 — 코퍼스 PDF 를 직접 재면 STANDARD 인데
     #   실제 실행은 아닌 쪽이 있어 티어를 잘못 적었다(원장 `routing-tier-from-run-state`).
@@ -2416,6 +2401,29 @@ def _build_response(
     except Exception as exc:  # noqa: BLE001 — 등급 실패가 점역 결과를 막지 않는다
         logger.warning("검수 등급 산출 실패(무시): %s", exc)
 
+    # ── 관문 기록 (재구조화 §2-2) ─────────────────────────────────────────
+    # G4 는 **읽기 전용**이다. 최종 셀열에서 허용 문자(점자 블록·공백·개행) 밖이 몇 자
+    # 남았는지 세기만 하고 고치지 않는다 — 여기서 고치면 이 자리가 새 결함의 출처가 된다.
+    # 정방향 이물질 자(`temp/l8/fwd_artifact.py`)와 같은 잣대라 그 수치를 제품 경로에서도
+    # 확인할 수 있다(설계 §5 12: 100% 를 어느 스크립트가 쟀는지 못 찾았다).
+    # ⚠ `is_blocked` 요소는 뺀다. `[처리 불가: …]` 는 **빈 결과 금지**(불변 규칙 1)가 일부러
+    #   남기는 자리표시고 `is_blocked` 가 이미 그 사실을 알린다. 세면 옛 코퍼스 1,131쪽 중
+    #   51쪽(4.51%)이 G4 로 뜨는데 **전부 그 자리표시**였다(2026-09-08 실측). 같은 사실을 두 번
+    #   말하면 진짜 신호(마크업이 셀로 샌 자리)가 그 안에 묻힌다.
+    try:
+        _foreign = gates.count_foreign_cells(
+            c for e in (response.get("braille_text_list") or [])
+            if not e.get("is_blocked") for c in (e.get("contents") or []))
+        if _foreign:
+            gates.gate_hit("G4", "점자밖문자", sum(_foreign.values()))
+            logger.warning("G4 셀열에 점자 밖 문자 %d자 (%s)", sum(_foreign.values()),
+                           ", ".join(f"U+{ord(ch):04X}×{n}" for ch, n in _foreign.most_common(6)))
+        _gflags = gates.gate_flags()
+        if _gflags and "quality_report" in response:
+            response["quality_report"].setdefault("review_flags", []).extend(_gflags)
+    except Exception as exc:  # noqa: BLE001 — 기록 한 줄이 쪽을 죽이면 안 된다
+        logger.warning("관문 기록 실패(무시): %s", exc)
+
     return response
 
 
@@ -2444,6 +2452,9 @@ _last_job_id: str | None = None
 async def run(task: PageTask) -> dict:
     """파이프라인 진입점. 300초 하드 타임아웃 강제."""
     start_request()   # 요청 단위 API 카운터 초기화
+    # 관문 계수기(재구조화 §2-2)는 **쪽마다** 새로 판다. 여러 쪽이 한 프로세스에서 겹쳐
+    # 도는데 전역으로 세면 옆 쪽 발동이 이 쪽 review_flags 에 얹힌다(gates 도크스트링).
+    gates.gate_reset()
     # 판 지문(0-c) — 점역사 피드백이 며칠 뒤에 올 때 어느 커밋·어느 프롬프트였는지 되짚는 줄.
     # ★ health_check 는 model_manager 를 거쳐 torch 를 끌고 온다. 모듈 최상단에서 부르면
     #   pipeline import 그래프가 바뀌고, torch 없는 빠른 게이트 레인이 통째로 깨진다.

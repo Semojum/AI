@@ -34,6 +34,7 @@ from app.ai.braille.symbol_rules import (
     substitute_symbols,
 )
 from app.ai.braille import tag_names as _TAGS
+from app.ai import gates as _gates          # 관문 G3 — 무거운 의존 없음(gates 도크스트링)
 
 logger = logging.getLogger(__name__)
 
@@ -2448,6 +2449,13 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     # R-72 — 뒤집힌 닫는 태그(`</!이름>`). 여기에도 두는 이유는 `table_braille` 이
     # 이 함수를 **직접** 부르기 때문이다(표 칸 269건 중 14건). 멱등이라 겹쳐도 무해하다.
     text = _MIRRORED_CLOSE_RE.sub("<!/", text)
+    # ★ 관문 G3(재구조화 §2-2) — 점역기 입구는 **제거만** 한다. 여기는 요소를 비울 수도
+    #   R11 을 붙일 수도 없는 자리다(`str -> str`). AI 해설문 판정은 G1 몫이라 여기 두지
+    #   않는다. 형식 토큰(`⟦재료⟧`)만 걷는다 — 뒤집힌 태그(R-72, 위)·마크업 조각(#667,
+    #   아래)·PUA(R15)와 같은 성격의 일이고, 자리도 그 사이가 맞다.
+    #   **점역기의 가장 안쪽 진입점**이라 `translate_with_breaks` 일곱 갈래와 표 칸
+    #   직접 호출까지 한 자리로 덮는다.
+    text = _gates.strip_format_tokens(text)
     text = _strip_markup_fragments(text)   # #667 마크업 조각
     # ★ 줄머리 들여쓰기 태그 `<!N칸>` 은 조판 표시지 내용이 아니다 — 수식 라우팅보다
     #   **먼저** 뗀다(2026-09-08 대표 실행 실물). 뒤에 두면 `inline_math` 가 `<!2칸>` 을

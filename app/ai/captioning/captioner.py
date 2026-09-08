@@ -1088,6 +1088,84 @@ def _finish(raw: str, image_type: str) -> str:
     return f"{head}\n{_MATERIAL_MARK}\n{body}" if sep and body else head
 
 
+# ── ★ 관문 G1 (재구조화 설계 §2-2) ────────────────────────────────────────
+# LLM 이 낸 문장이 **요소 필드에 쓰이기 직전** 지나는 한 자리. 종전에는 이 사슬이
+# 캡셔너 미스 경로 한 곳에만 있었고, 캐시 히트·그림 회수·고급 점역 갈래 B·시각 초안
+# 폴백·표 점역자주는 관문 없이 요소 필드로 직행했다. 그래서 같은 결함을 자리마다
+# 따로 기웠다.
+#
+# **새 규칙은 없다.** 지금 있던 `_finish` 사슬과 파이프라인의 추출 거부 정규식
+# (`gates._EXTRACTION_REFUSAL_RES`)을 한 함수로 노출한 것이다.
+#
+# ⚠ **거르는 자리지 다시 쓰는 자리가 아니다.** `kind="caption"` 만 캡션 사슬
+#   (유형 제시어 보정·열거 줄나눔)을 탄다 — 그건 종전 캡션 경로 동작 그대로다.
+#   나머지는 **줄을 통째로 걷어내기만** 하고 남는 줄은 한 글자도 안 바꾼다.
+#   `test/unit_test/braille/test_llm_text_guard.py` 가 이것을 잡는다.
+_AI_VOICE_KINDS = ("figure", "visual_draft", "table_tn")
+# ★ 추출 거부 표(`gates._EXTRACTION_REFUSAL_RES`)를 **어느 단위에 걸 것인가**.
+#   그 표는 요소 `content` 한 덩이(= 글 전체가 변명문)로 검증됐다 —
+#   dev+val 1,131쪽·요소 28,425개에서 검출 2 · 오검출 0.
+#   같은 표를 **캡션 한 덩이**에 걸어 보니 1,961건 중 5건이 걸렸고 **5건 전부 오검출**이었다
+#   (2026-09-08 실측, `temp/gate2/cachediff.txt`). 걸린 꼴이 전부 같다:
+#     `오른쪽 사람 말풍선: 내용 없음` · `없음: 이름표·글자 없음` · `- 사진 안에 이름표·글자 없음`
+#   캡션에서 "글자 없음" 은 **관측**이다("이 그림에는 이름표가 없다"). 요소 content 에서
+#   "텍스트가 없습니다" 는 **변명**이다. 같은 글자, 다른 단위, 반대 뜻이다.
+#   그래서 표는 검증된 단위에서만 쓴다. 캡션·초안·표주는 캡션 사슬
+#   (`_reject_meta`·`_strip_ai_voice`)이 같은 몫을 하고, 그쪽은 캡션 단위로 검증돼 있다.
+_REFUSAL_KINDS = ("body", "figure")
+
+
+def guard_llm_text(text: str, kind: str = "caption", *, image_type: str = "image") -> str:
+    """LLM 문장 → 요소 필드에 쓸 문장. 남는 게 없으면 **빈 문자열**(재시도 없음).
+
+    kind 별로 사슬이 갈리는 이유는 하나다 — **본문에는 존댓말이 정상으로 있다.**
+
+      · `caption`                       캡션 사슬 전체(`_finish`)
+      · `visual_draft`·`table_tn`       AI 말투 줄 걷기
+        (둘 다 사람이 안 쓴 설명문 자리다. 여기서 존댓말 변명 줄은 원본에 없는 말이다)
+      · `figure`                        AI 말투 줄 걷기 + 거부문 판정
+        (짧은 한 구절이라 두 단위가 같다)
+      · `body`                          거부문 판정만
+        (고급 점역이 읽어 온 **본문 글자**다. `다음과 같습니다` 같은 교과서 문장을
+         AI 말투로 오인해 걷으면 본문이 사라진다)
+
+    거부문 표를 어디에 거는지는 위 `_REFUSAL_KINDS` 주석의 실측이 정한다.
+
+    빈 문자열로 돌아간 자리는 R11(IMAGE_TEXT_MISSING)이 세운다 — 요소는 살아 있고
+    점역사에게 "이 자리 원본을 직접 보라"는 신호가 남는다.
+    """
+    from app.ai import gates
+
+    src = text or ""
+    if not gates.guard_on():
+        # ★ 되돌리는 길(`LLM_TEXT_GUARD=0`)은 **이 PR 이 더한 것만** 되돌린다.
+        #   캡션 사슬은 이 PR 이 만든 게 아니라 옮긴 것이라 여기서도 그대로 돈다 —
+        #   안 그러면 손잡이를 내렸을 때 develop 보다 **더 새는** 상태가 된다
+        #   (모델이 쓴 원문이 유형 제시어 보정도 없이 그대로 캡션이 된다).
+        #   손잡이를 내린 자리는 develop 과 바이트로 같아야 한다. 관문 로그도 0이다.
+        return _finish(src, image_type) if kind == "caption" else src
+    if kind == "caption":
+        out = _finish(src, image_type)
+    elif kind in _AI_VOICE_KINDS:
+        out = _strip_ai_voice(_reject_meta(src))
+    else:
+        out = src
+    if kind in _REFUSAL_KINDS and out and gates.is_extraction_refusal(out):
+        out = ""
+    # ★ **줄을 걷어낸 것만** 센다. 캡션 사슬에는 줄 안을 고치는 손질이 섞여 있다 —
+    #   `_ensure_type_word` 는 유형 제시어를 붙이고 `_strip_dup_type_word` 는 겹친 유형
+    #   낱말을 뗀다(실측 1,961건 중 498건, `도표: 흐름도, …` → `도표: …`). 그건 관문이
+    #   걸러 낸 것이 아니라 종전부터 돌던 정규화라, 세면 캡션이 있는 쪽 넷 중 하나에
+    #   G1 플래그가 서서 진짜 신호(변명 줄·거부문)가 그 안에 묻힌다.
+    src_lines = len([ln for ln in src.splitlines() if ln.strip()])
+    out_lines = len([ln for ln in out.splitlines() if ln.strip()])
+    if src_lines and not out_lines:
+        gates.gate_hit("G1", f"{kind}:비움")
+    elif out_lines < src_lines:
+        gates.gate_hit("G1", f"{kind}:걷어냄", src_lines - out_lines)
+    return out
+
+
 def _cache_model() -> str:
     """캐시 열쇠에 들어가는 모델 이름. 백엔드가 다르면 같은 그림도 다른 캡션이다."""
     return (os.getenv("CAPTION_BACKEND", "anthropic") + "/"
@@ -1175,7 +1253,7 @@ def _cache_read(kind: str, new_path: Path | None, old_path: Path | None,
                 image_type: str) -> str | None:
     """캐시에서 캡션을 꺼낸다. 없으면 None.
 
-    ★ **히트에도 `_finish` 를 건다**(재구조화 3-c). 종전에는 버리기 가드 하나만 다시
+    ★ **히트에도 관문을 건다**(재구조화 3-c → 2단계에서 `guard_llm_text` 로). 종전에는 버리기 가드 하나만 다시
       태웠다. 그러면 가드를 넓혔을 때 캐시에 남은 옛 캡션이 판정을 통째로 비켜 간다 —
       2026-09-07 A/B 에서 실제로 그렇게 됐다(넓힌 가드4가 캐시 쪽에서 0건 걸렸다).
       `_finish` 는 멱등이라(전수 실측 깨짐 0건) 통과본에 한 번 더 걸어도 무해하고,
@@ -1188,7 +1266,7 @@ def _cache_read(kind: str, new_path: Path | None, old_path: Path | None,
             text = src.read_text(encoding="utf-8")
             if not _kind_matches(kind, text):
                 continue                    # 분류 라벨을 캡션으로 내보내지 않는다
-            return _finish(text, image_type)
+            return guard_llm_text(text, "caption", image_type=image_type)
     return None
 
 
@@ -1265,7 +1343,7 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
 
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
         answer = _caption_anthropic(b64, mime, prompt)
-        text = _finish(answer, image_type)
+        text = guard_llm_text(answer, "caption", image_type=image_type)
         # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
         _cache_write(cache, answer, text)
         return text
@@ -1287,6 +1365,6 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
     )
     record_openai("캡셔닝", "gpt-4o", getattr(resp, "usage", None))
     answer = resp.choices[0].message.content
-    text = _finish(answer, image_type)
+    text = guard_llm_text(answer, "caption", image_type=image_type)
     _cache_write(cache, answer, text)
     return text
