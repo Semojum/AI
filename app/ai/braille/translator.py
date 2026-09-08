@@ -1060,6 +1060,19 @@ _QNUM_SYMBOL = r"$\\|=+×÷→←⇒⇔↔▶▷"
 _QNUM_NOT_BODY = "0-9①-⑳❶-❿" + "".join(_CIRCLED) + _QNUM_SYMBOL
 # 한 자리 번호만 본다(위 M006). 두 자리·영패딩은 정답이 마침표를 안 찍는다.
 _QNUM_RE = re.compile(rf"^(\d)(?=\s+(?![{_QNUM_NOT_BODY}])\S)")
+# ★ 2026-09-08 일곱째 — **시각 자료 설명·전사는 이 규칙을 아예 안 탄다**(원장 C-41,
+#   `qnum_period=False`). 위 여섯 갈래는 "번호 뒤에 무엇이 오나"로 갈랐지만, 뒤가 한글인
+#   `1 태양을 중심으로 지구가…`(흐름도 개조식 항목)는 본책 단원 번호와 글자로 구분되지
+#   않는다. 가르는 것은 **요소 유형**뿐이다.
+#     · 「점자 자료 제작 지침」 2.4.1 (1) — "**본문의** 번호 체계는 원본 자료의 형태를
+#       따른다"(재추출 892행). 「점자 도서 제작 지침」 7. 1)·4) 도 같다(1247·4198행).
+#       조문이 매어 둔 대상은 *본문*이고, 마침표를 붙이던 관행의 근거도 본책 gold다.
+#     · 「점자 자료 제작 지침」 6.1.4 (6)(재추출 3016행) — "시각적으로 제시된 과정 흐름에
+#       대한 설명은 **위계가 있는 개조식 항목으로 표현한다**". 그 항목 번호는 원본 자료의
+#       번호 체계가 아니라 **점역자가 세운 것**이다(같은 절 머리글: "점역자 주를 통해 시각
+#       자료를 설명할 수 있다"). 원본에 없는 마침표를 만들어 넣을 근거가 여기엔 없다.
+#     · 시각 자료 설명은 우리가 쓴 문장이라 **gold 대응물이 없다**(전 코퍼스 0쌍). 실측으로
+#       뒤집힐 여지가 없으므로 조문과 요소 유형으로 정한다 — 원장 C-41 에 그대로 적었다.
 # 음수·뺄셈표(「한국 점자 규정」 제45항 연산·비교 기호 — 2026-07-27 원문 대조로 '수학 제45항'
 # 표기를 정정. 수학편 제45항은 함수다): 부호 = 뺄셈표 ⠔. symbol_table의 붙임표 -=⠤가
 # 음수 부호까지 삼켜 ①-4가 ⠤⠼⠙(붙임표)로 나가던 것을 바로잡는다(gold ⠔⠼⠙, 수학2 p119).
@@ -1127,7 +1140,7 @@ def _normalize_bogi_markers(text: str) -> str:
         lambda m: m.group(1) + _BOGI_MARK_MAP[m.group(2)] + m.group(3), text)
 
 
-def _apply_book_style(text: str) -> str:
+def _apply_book_style(text: str, *, qnum_period: bool = True) -> str:
     """도서 관행 표기로 원문을 다듬는다(점역 경로 전용 — text_list 원문은 그대로 둔다)."""
     if not _BOOK_STYLE:
         return text
@@ -1137,7 +1150,8 @@ def _apply_book_style(text: str) -> str:
     text = _AE_GEQ_RE.sub("≥", text)   # 괄호→붙임표보다 먼저(인접 판정이 원문 괄호 기준)
     if _BRACKET_BOOK_STYLE:              # 기본 꺼짐 — 대괄호는 규정 제49항 셀 그대로 나간다
         text = _SRC_BRACKET_RE.sub(_src_bracket_repl, text)
-    text = _QNUM_RE.sub(r"\1.", text)
+    if qnum_period:
+        text = _QNUM_RE.sub(r"\1.", text)
     text = _CIRCLED_RE.sub(
         lambda m: (_circled_braille(m.group()) if m.group() in _CIRCLED_PLAIN
                    else _CIRCLED[m.group()]), text)
@@ -1623,7 +1637,8 @@ def _inline_sub_braille(b: str, src: str = "") -> str:
     return _ROMAN_START + b.replace(_CAPITAL_IND * 2, _CAPITAL_IND)
 
 
-def _translate_with_braillify(text: str, *, force_roman: bool = False) -> str:
+def _translate_with_braillify(text: str, *, force_roman: bool = False,
+                              qnum_period: bool = True) -> str:
     parts = _FORMULA_RE.split(text)
     # (종류, 점자, 앞 원문공백, 뒤 원문공백). 종류: "t"=텍스트 "f"=수식 "i"=인라인 첨자 토큰
     chunks: list[tuple[str, str, bool, bool]] = []
@@ -1652,7 +1667,8 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False) -> str:
                 # 음수 판정이 끝났으니 감쌈 자리표시자를 원래 붙임표로 되돌린다
                 # (뒤의 _apply_book_style·substitute_symbols의 -=⠤ 매핑을 그대로 태운다).
                 clean = _restore_wrap_hyphen(clean)
-                preprocessed = _preprocess_units(_apply_book_style(clean))
+                preprocessed = _preprocess_units(
+                    _apply_book_style(clean, qnum_period=qnum_period))
                 substituted = _old_hangul_to_braille(substitute_symbols(preprocessed))
                 text_result: list[str] = []
                 _emit_mixed(substituted, text_result, roman_ctx)
@@ -2424,7 +2440,8 @@ def merge_hidden_runs(braille: str) -> str:
         lambda m: "⠸" + m.group(2) * (len(m.group(0)) // 3) + "⠇", braille)
 
 
-def translate_tagged_text(text: str, *, force_roman: bool = False) -> str:
+def translate_tagged_text(text: str, *, force_roman: bool = False,
+                          qnum_period: bool = True) -> str:
     """<!수식> 태그가 포함된 텍스트를 점자 BRF로 변환."""
     # 레거시 심볼 폰트 복원은 **수식 라우팅보다 먼저** 해야 한다. 뒤에 두면 "x¤ +1>0"이
     # 수식으로 안 잡혀 위첨자표(⠘⠼⠃)로 나가는데, 정답 도서는 제곱을 ⠣로 적는다.
@@ -2473,7 +2490,8 @@ def translate_tagged_text(text: str, *, force_roman: bool = False) -> str:
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     text = sanitize_for_braille(text)        # PUA·제어문자 정화(요소 전체 소실 방지)
     if _BRAILLIFY_AVAILABLE:
-        return merge_hidden_runs(_translate_with_braillify(text, force_roman=force_roman))
+        return merge_hidden_runs(_translate_with_braillify(
+            text, force_roman=force_roman, qnum_period=qnum_period))
     return merge_hidden_runs(_translate_fallback(text))
 
 
@@ -2661,7 +2679,8 @@ def emphasis_marker_spans(
     return spans
 
 
-def translate_with_breaks(text: str, *, force_roman: bool = False) -> tuple[list[str], list[list[int]]]:
+def translate_with_breaks(text: str, *, force_roman: bool = False,
+                          qnum_period: bool = True) -> tuple[list[str], list[list[int]]]:
     """텍스트 → (논리 줄별 점자, 줄별 음절 줄바꿈 offset). 32칸 분리는 layout이 수행.
 
     원문 개행(\\n)으로만 논리 줄을 나눈다(하드 32분리 폐기 — 음절·지시부호·마커를
@@ -2681,7 +2700,8 @@ def translate_with_breaks(text: str, *, force_roman: bool = False) -> tuple[list
     text = _MIRRORED_CLOSE_RE.sub("<!/", text)
     text = _strip_markup_fragments(text)   # #667 마크업 조각
     text = isolate_border_tags(text)
-    text = _QNUM_RE.sub(r"\1.", text)
+    if qnum_period:
+        text = _QNUM_RE.sub(r"\1.", text)
     # ★ '만을\n에서' 소실 구멍·개행 낀 괄호는 줄 단위 관행 정규화가 못 잡는다 —
     #   요소 전체 수준에서 선적용(이 개행은 원문 구조가 아니라 추출 산물).
     text = _BOGI_GAP_RE.sub(r"\1 ‘보기’\2", text)
@@ -2700,7 +2720,8 @@ def translate_with_breaks(text: str, *, force_roman: bool = False) -> tuple[list
     lines: list[str] = []
     breaks: list[list[int]] = []
     for src_line in text.split("\n"):
-        braille = translate_tagged_text(src_line, force_roman=force_roman)
+        braille = translate_tagged_text(src_line, force_roman=force_roman,
+                                        qnum_period=qnum_period)
         lines.append(braille)
         breaks.append(_break_offsets(src_line, braille))
     return (lines or [""], breaks or [[]])
@@ -2735,9 +2756,18 @@ def translate_body(text: str) -> tuple[list[str], list[list[int]]]:
       ② 관문 G3(재구조화 설계 §2-2)이 붙을 자리다. 점역기 입력 정화는 여기 한 곳에 둔다.
 
     ⚠ 시각 초안·중첩 블록·표 셀은 이 함수를 지나지 않는다(`translate_with_breaks` 직접 호출
-      일곱, 설계 §2-2 G1). 그 길은 관문으로 지킨다.
+      일곱, 설계 §2-2 G1). 그 길은 관문으로 지킨다. 시각 쪽 진입점은 `translate_visual`.
     """
     return translate_with_breaks(text)
+
+
+def translate_visual(text: str) -> tuple[list[str], list[list[int]]]:
+    """시각 자료 설명·전사 하나 → (논리 줄별 점자, 줄별 offset). **시각 요소 공용 진입점.**
+
+    `translate_body` 와 다른 점은 하나뿐이다 — 항목 번호 마침표 관행(_QNUM_RE)을 끈다.
+    근거는 위 `_QNUM_RE` 주석(지침 2.4.1(1)·6.1.4(6), 원장 C-41).
+    """
+    return translate_with_breaks(text, qnum_period=False)
 
 
 def translate_plain(text: str) -> str:
