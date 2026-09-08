@@ -1504,7 +1504,8 @@ async def _run_text_chain(
     _write_stage(task, "text", "text_ocr.json", extracted)
 
     from app.ai.llm.text_opt import TextOpt
-    llm_outputs = await TextOpt().optimize(extracted, routing_tier, layout)
+    # 고급 점역(`advanced_ai`)은 여기서 넘긴다 — 본문 OCR 교정 LLM 은 그 요청에서만 돈다(#770).
+    llm_outputs = await TextOpt(task.advanced_ai).optimize(extracted, routing_tier, layout)
     _write_stage(task, "text", "text_opt.json", llm_outputs)
 
     braille_outputs: list[BrailleOutput] = []

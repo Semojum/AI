@@ -323,8 +323,16 @@ async def generate_with_retry(
     N배 낭비할 뿐이다(1페이지 요소 수십 개 직렬화 → 페이지 타임아웃의 주범이었다).
     일시적 예외(OOM 순간 등)만 소수 재시도한다.
 
-    transform은 HCLOVA X 응답에만 적용한다(폴백 응답은 그대로 — 기존 동작 보존).
+    ★ transform 은 **폴백 응답에도 건다**(#768, 2026-09-08). 종전에는 HCXT 응답에만 걸었는데
+      운영은 `hcxt_backend='off'` 라 **모든 호출이 폴백**이다 — 즉 배포판에서 transform 이
+      사실상 한 번도 안 걸렸다. transform 이 하는 일이 모델 해설문·프리필 스캐폴드·
+      코드펜스·`$$` 걷기라, 안 걸리면 모델이 쓴 문장이 요소 필드로 그대로 들어간다
+      (val 생물 p035 — 「수식의 내용을 살펴보면… 교정합니다」 가 통째로 점역돼 나갔고
+      그 쪽 CER 이 50.40 → 59.75% 로 나빠졌다).
     """
+    def _done(resp: str, used_fb: bool) -> tuple[str, bool]:
+        return (transform(resp) if transform else resp), used_fb
+
     if not part_llm_on(kind):
         logger.info("%s LLM 끔(%s=0) → 규칙 경로 id=%s",
                     kind, _PART_LLM_SWITCH[kind], element_id)
@@ -335,7 +343,7 @@ async def generate_with_retry(
             resp = await hcxt_optimize(
                 prompt, timeout, prefill=prefill, max_new_tokens=max_new_tokens, kind=kind
             )
-            return (transform(resp) if transform else resp), False
+            return _done(resp, False)
         except (asyncio.TimeoutError, HcxtBudgetExceeded, HcxtDisabled) as exc:
             # 느린 추론/예산 소진/비활성은 재시도 금지 → 곧바로 폴백(락 점유 시간 최소화).
             if isinstance(exc, HcxtDisabled):
@@ -345,14 +353,14 @@ async def generate_with_retry(
                 reason = "예산 소진" if isinstance(exc, HcxtBudgetExceeded) else "타임아웃"
                 logger.warning("HyperCLOVA X %s %s → 즉시 FALLBACK id=%s", kind, reason, element_id)
             resp = await fallback_optimize(prompt, max_tokens=fallback_max_tokens, kind=kind)
-            return resp, True
+            return _done(resp, True)
         except Exception as exc:
             attempt += 1
             logger.warning("HyperCLOVA X %s 실패 #%d id=%s: %s", kind, attempt, element_id, exc)
             if attempt > _TRANSIENT_RETRIES:
                 logger.warning("FALLBACK 전환 id=%s", element_id)
                 resp = await fallback_optimize(prompt, max_tokens=fallback_max_tokens, kind=kind)
-                return resp, True
+                return _done(resp, True)
 
 
 
