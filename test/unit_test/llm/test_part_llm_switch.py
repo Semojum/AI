@@ -1,7 +1,7 @@
 """파트별 LLM 끄기 손잡이 (재구조화 0-d · 스위치 대장 2026-09-08).
 
 4단계 A/B 의 되돌리는 길이다. 확인할 것 셋:
-  1. **기본은 켬** — 스위치를 안 주면 현행 그대로 LLM 을 부른다(동작 변화 0).
+  1. **기본값은 대장대로** — A/B 가 끝난 파트(태깅 #754 · 표 #755)는 규칙이 기본이다.
   2. **끄면 호출이 0** — 0/1 로 갈리는 것을 호출 계수로 본다.
   3. **호출 시 읽는다** — import 때 굳으면 프로세스 중간에 바꿔도 안 먹고,
      "껐다고 믿었는데 안 꺼진" 무효 라운드가 난다(2026-09-03 두 번).
@@ -21,6 +21,14 @@ class TestPartLlmOn:
         for k in _PART_LLM_SWITCH:
             assert part_llm_on(k) is (_PART_LLM_DEFAULT.get(k, "1") != "0")
         assert _PART_LLM_DEFAULT["태깅"] == "0"      # 4-4 판정(#754)
+        assert _PART_LLM_DEFAULT["표"] == "0"        # 4-3 판정(#755)
+
+    def test_표는_규칙이_기본(self, monkeypatch):
+        """#755 (4-3) — 표 tn 은 점자에 안 실린다. 되돌리는 길은 `TABLE_TN_LLM=1`."""
+        monkeypatch.delenv("TABLE_TN_LLM", raising=False)
+        assert part_llm_on("표") is False
+        monkeypatch.setenv("TABLE_TN_LLM", "1")
+        assert part_llm_on("표") is True
 
     def test_0_이면_끔(self, monkeypatch):
         for kind, name in _PART_LLM_SWITCH.items():
@@ -62,7 +70,7 @@ class TestGenerateWithRetryGate:
 
     @pytest.mark.parametrize("kind", sorted(k for k in _PART_LLM_SWITCH if k != "태깅"))
     def test_켜면_호출_1(self, kind, monkeypatch):
-        monkeypatch.delenv(_PART_LLM_SWITCH[kind], raising=False)
+        monkeypatch.setenv(_PART_LLM_SWITCH[kind], "1")
         out, calls = self._run(kind, monkeypatch)
         assert out == ("LLM 이 낸 글", False)
         assert calls == [kind]
