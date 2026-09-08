@@ -64,6 +64,23 @@ class TestQuestionNumberPeriod:
         lines, _ = translate_with_breaks("16")
         assert _PERIOD not in lines[0], f"쪽번호에 마침표: {lines[0]}"
 
+    def test_번호_뒤가_기호면_항목번호가_아니다(self):
+        """수식 시작·화살표 뒤 숫자는 항목 번호가 아니다(원장 C-41, 2026-09-08).
+
+        gold 전수 대조에서 손해 0 · 이득 dev 74. 눈검사 `수학 I ans p0009`.
+        """
+        for src in (r"6 $|\log_{a} a^{2}|=2$", "2 → 추분(9월 20일경)", "5 → 하지로 순환"):
+            assert not _QNUM_RE.search(src), f"기호 뒤인데 발동한다: {src}"
+
+    def test_번호_뒤가_낱말이면_종전대로_찍는다(self):
+        """회귀 방어 — gold 가 마침표를 찍는 쪽(본책 단원 소제목·발문)은 건드리지 않는다.
+
+        `(`·`[`·`<` 는 일부러 남겨 뒀다(근거 없음 = 끄지 않는다).
+        """
+        for src in ("1 동아시아의 과거와 현재", "3 (가) 황제에 대한 설명으로 옳은 것은?",
+                    "6 <!강조>근대적 생활 방식의 확산<!/강조>", "1 [26008-0001]"):
+            assert _QNUM_RE.search(src), f"낱말 뒤인데 안 찍는다: {src}"
+
 
 class TestWrapHyphenPlaceholder:
     """괄호가 음수 부호로 재해석되면 안 된다.
