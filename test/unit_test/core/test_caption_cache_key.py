@@ -4,14 +4,25 @@
 확인하는 것 넷:
   · 프롬프트 문안을 고쳐도 열쇠가 안 갈린다(그게 이 단계의 목적이다)
   · 입력·모델·유형·판 번호가 갈리면 열쇠도 갈린다
-  · 옛 자리(전문 키) 항목을 여전히 읽는다 — 3,242건을 버리지 않는다
-  · **히트에도 `_finish` 를 건다** — 새 가드가 옛 캐시본에도 닿는다
+  · **격리 열쇠가 갈리면 자리도 갈린다** — 다른 고객은 캐시를 안 나눠 쓴다(3-e)
+  · **히트에도 가드를 건다** — 새 가드가 캐시본에도 닿는다
+
+★ 옛 자리(전문 키) 읽기는 2026-09-08 에 없앴다. 그 열쇠에는 격리 열쇠가 없어 고객 사이에
+  샌다(대표 결재 "(B) 고객별 격리"). 캐시는 여기서부터 새로 쌓는다.
 """
 
 import pytest
 
 from app.ai.captioning import captioner
 from app.utils import llm_cache
+
+
+@pytest.fixture(autouse=True)
+def scope():
+    """캐시는 격리 열쇠가 걸려 있을 때만 돈다(3-e)."""
+    llm_cache.set_scope("job-A")
+    yield
+    llm_cache.set_scope("")
 
 
 @pytest.fixture
@@ -30,12 +41,25 @@ def test_off_when_no_dir(monkeypatch):
     assert _new() is None
 
 
-def test_prompt_text_no_longer_splits_the_key(cache_dir):
+def test_prompt_text_no_longer_splits_the_key(cache_dir, monkeypatch):
     """문안을 고쳐도 열쇠는 그대로 — 전량 미스를 물지 않는다."""
-    a = captioner._cache_file(b"img", "image", "프롬프트 첫 판")
-    b = captioner._cache_file(b"img", "image", "프롬프트 둘째 판")
-    assert a != b                                   # 옛 열쇠는 갈렸다
-    assert _new() == _new()                         # 새 열쇠는 문안을 안 본다
+    base = _new()
+    monkeypatch.setattr(captioner, "_PROMPTS", {**captioner._PROMPTS, "image": "딴 문안"})
+    assert _new() == base
+
+
+# ── 격리 열쇠 (3-e · 대표 결재 "(B) 고객별 격리") ────────────────────────────
+def test_scope_splits_the_key(cache_dir):
+    """같은 그림이라도 고객(지금은 job)이 다르면 다른 자리다."""
+    a = _new()
+    llm_cache.set_scope("job-B")
+    assert _new() != a
+
+
+def test_no_scope_disables_the_cache(cache_dir):
+    """열쇠가 없으면 격리 없는 자리를 쓰느니 캐시를 안 쓴다(fail closed)."""
+    llm_cache.set_scope("")
+    assert _new() is None
 
 
 @pytest.mark.parametrize("kw", [
@@ -81,24 +105,18 @@ def test_caption_and_label_go_to_different_directories(cache_dir):
 _AI_VOICE = "그림: 막대그래프이다.\n해상도가 낮아 축의 값은 읽을 수 없습니다."
 
 
-def test_legacy_entry_is_still_found(cache_dir):
-    old = captioner._cache_file(b"img", "image", "옛 프롬프트")
-    old.write_text("그림: 옛 캐시본이다.", encoding="utf-8")
-    assert captioner._cache_read("caption", _new(), old, "image") == "그림: 옛 캐시본이다."
-
-
 def test_guard_runs_on_a_cache_hit(cache_dir):
-    """★ 히트에도 `_finish`. 옛 캐시본이 새 가드를 비켜 가지 않는다."""
-    old = captioner._cache_file(b"img", "image", "옛 프롬프트")
-    old.write_text(_AI_VOICE, encoding="utf-8")
-    assert captioner._cache_read("caption", _new(), old, "image") == "그림: 막대그래프이다."
+    """★ 히트에도 가드. 캐시본이 새 가드를 비켜 가지 않는다."""
+    p = _new()
+    p.write_text(_AI_VOICE, encoding="utf-8")
+    assert captioner._cache_read("caption", p, "image") == "그림: 막대그래프이다."
 
 
 def test_guard_runs_on_a_new_entry_too(cache_dir):
     p = _new()
     captioner._cache_write(p, _AI_VOICE, captioner._finish(_AI_VOICE, "image"))
     assert p.read_text(encoding="utf-8") == _AI_VOICE          # 담기는 것은 원응답 raw
-    assert captioner._cache_read("caption", p, None, "image") == "그림: 막대그래프이다."
+    assert captioner._cache_read("caption", p, "image") == "그림: 막대그래프이다."
 
 
 def test_empty_answer_is_not_cached(cache_dir):
@@ -108,7 +126,7 @@ def test_empty_answer_is_not_cached(cache_dir):
 
 
 def test_miss_is_none(cache_dir):
-    assert captioner._cache_read("caption", _new(), None, "image") is None
+    assert captioner._cache_read("caption", _new(), "image") is None
 
 
 # ── 옛 캐시 kind 분리 (3-c③) ─────────────────────────────────────────────────
@@ -129,19 +147,7 @@ def test_kind_matches(text, kind):
 
 
 def test_a_label_is_never_served_as_a_caption(cache_dir):
-    """★ 이걸 안 막으면 초안에 `그림: chart` 가 나온다(실제로 관찰된 현상).
-
-    옛 캐시 3,242건은 캡션 1,961 과 라벨 1,281 이 한 자리에 섞여 있었다.
-    """
-    old = captioner._cache_file(b"img", "image", "옛 프롬프트")
-    old.write_text("chart", encoding="utf-8")
-    assert captioner._cache_read("caption", _new(), old, "image") is None
-
-
-def test_legacy_lookup_finds_the_split_directory(cache_dir):
-    """`tools/split_caption_cache.py` 로 갈라 옮긴 뒤에도 옛 항목을 찾는다."""
-    flat = captioner._cache_file(b"img", "image", "옛 프롬프트")
-    moved = cache_dir / "caption" / flat.name
-    moved.parent.mkdir(parents=True, exist_ok=True)
-    moved.write_text("그림: 갈라 옮긴 옛 캐시본이다.", encoding="utf-8")
-    assert captioner._cache_file(b"img", "image", "옛 프롬프트") == moved
+    """★ 이걸 안 막으면 초안에 `그림: chart` 가 나온다(실제로 관찰된 현상)."""
+    p = _new()
+    p.write_text("chart", encoding="utf-8")
+    assert captioner._cache_read("caption", p, "image") is None
