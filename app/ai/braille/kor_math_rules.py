@@ -792,8 +792,12 @@ def _normalize_latex_input(latex: str) -> str:
                    lambda m: "⠤⠼" + _DIGIT_MAP[m.group(1)] + "⠤", s)
     # 각도 ^{\circ}·^\circ → °(제50항 예시 0d=⠴⠙, 단위) — \circ(합성 ∘) 별칭보다 먼저.
     s = re.sub(r"\^\s*(?:\{\s*\\circ\s*\}|\\circ)", "°", s)
-    # 적분 명령 보호: \iint·\int을 유니코드로 먼저 — \in 별칭이 \int를 ∈t로 깨는 것 방지.
+    # 적분 명령 보호: \iint·\oint·\int을 유니코드로 먼저 — \in 별칭이 \int를 ∈t로
+    # 깨는 것을 막고, 1e단계(제57·58·59항 범위)가 유니코드로만 매칭하므로 \oint도 여기서
+    # 바꾼다. 없으면 \oint_C 가 1e를 못 타고 일반 아래첨자로 빠져 제59항 구분 칸이 없고,
+    # 위끝이 있으면 위첨자표 ⠘가 잘못 붙는다.
     s = re.sub(r"\\iint(?![a-zA-Z])", "∬", s)
+    s = re.sub(r"\\oint(?![a-zA-Z])", "∮", s)
     s = re.sub(r"\\int(?![a-zA-Z])", "∫", s)
     # 함수 위 문자 화살표(제45항 [붙임]): \xrightarrow{f} → f 3o (문자를 화살표 앞에)
     s = re.sub(r"\\xrightarrow\s*(?:\[[^\]]*\])?\s*\{([^{}]*)\}", r" \1⠒⠕ ", s)

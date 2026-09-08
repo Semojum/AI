@@ -327,6 +327,13 @@
       "item": "제58항 이중적분"
     },
     {
+      "rule_id": "MCST-수학-6.59",
+      "latex": "\\oint_{C}f(z)dz",
+      "brf_ascii": ");,C`F8Z0DZ",
+      "braille_unicode": "⠾⠰⠠⠉⠀⠋⠦⠵⠴⠙⠵",
+      "item": "제59항 선적분"
+    },
+    {
       "rule_id": "MCST-수학-2.15",
       "latex": "x ⊗ y",
       "brf_ascii": "x`_*`y",
