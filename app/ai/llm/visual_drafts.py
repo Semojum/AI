@@ -504,10 +504,7 @@ def _outline_text_indents(
     title = (title or "").strip()
     desc = (desc or "").strip()
     desc = _strip_dup_type(desc, label)
-    # §5.3.1(1) L2811 만화는 유형 낱말 뒤 "한 칸 띈 후" 제목 — 쌍점을 안 쓴다.
-    # 나머지 시각 자료는 도서지침 3장 2절 4)(1) L2368 "쌍점과 원본 자료의 내용을 이어 적는다".
-    sep = " " if kind == "만화" else ": "
-    head = f"{label}{sep}{desc}" if (desc and not _same_gist(desc, title)) else label
+    head = f"{label}: {desc}" if (desc and not _same_gist(desc, title)) else label
     if _WRAP_STYLE == "box":
         # box(A/B): 블록 전체를 글상자로 — 제목은 위 테두리 안(NLD-1.2.5), 유형/설명은 첫 줄.
         lines.append(f"<!상자>{title}<!/상자>"); indents.append(0)
@@ -537,8 +534,16 @@ def _outline_text_indents(
         #   로 주표를 닫고 그 뒤에 쌍점이 온다. gold 관행은 반대(주 안 97.4%)지만 조항이
         #   명확하므로 규정을 따른다(대표 지시 2026-07-29·2026-09-08).
         #   `diagram_opt` 골격 8종은 처음부터 이 꼴이었다 — 이제 두 갈래가 한 꼴이 된다.
+        # ★ **만화만 예외로 설명까지 주 안이다**(원장 C-D6, 대표 지시 2026-09-08).
+        #   조문(자료지침 §5.3.1(1) L2811 "한 칸 띈 후")은 **원본에 만화 제목이 있을 때**를
+        #   말한다. 우리가 그 자리에 넣는 것은 제목이 아니라 §5.3.1(2)의 **장면 설정 설명**이라
+        #   조문이 다루는 자리가 아니다. 게다가 조문과 예시가 갈린다 — 같은 지침 예5-4·5-5 는
+        #   `,'만화"1`(쌍점·주 안), 도서지침 예3-53 도 쌍점을 쓴다. gold 도 10/11 이 쌍점·주 안.
+        #   조문↔예시가 갈리면 "규정이 모호" 쪽이고 그때는 관행을 따른다(대표 지시 2026-07-29).
+        #   ⚠ 되돌리지 말 것 — 조문 한 줄만 읽고 쌍점을 뺐다가 이 주석대로 되돌렸다.
         head_line = _oneline(head)
-        head_line = f"<!{_TAGS.TN}>{label}<!/{_TAGS.TN}>" + head_line[len(label):]
+        head_line = (f"<!{_TAGS.TN}>{head_line}<!/{_TAGS.TN}>" if kind == "만화"
+                     else f"<!{_TAGS.TN}>{label}<!/{_TAGS.TN}>" + head_line[len(label):])
         lines.append(head_line)
         indents.append(_CARTOON_HEAD_BASE if kind == "만화" else _OUTLINE_BASE)
         tn_from = len(lines) - 1        # 머리줄 자리(장면 표시 감쌀 때 기준점)
