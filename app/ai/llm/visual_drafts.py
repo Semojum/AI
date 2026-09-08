@@ -45,7 +45,7 @@ from difflib import SequenceMatcher
 import time
 
 from app.ai.llm.base_opt import _DEDUP_MIN_LEN, _norm_for_dedup, decide_tier_timeout, generate_with_retry
-from app.ai.captioning.captioner import split_material
+from app.ai.captioning.captioner import guard_llm_text, split_material
 from app.ai.llm.diagram_structure import caption_head as _caption_head
 from app.ai.llm.diagram_structure import caption_outline as _caption_outline
 from app.ai.braille import tag_names as _TAGS
@@ -948,7 +948,13 @@ async def build_visual_drafts(
     #   버렸고(호출만 하고 안은 안 만든다), 그림·차트는 그것으로 잘못 이름 붙인
     #   '설명(자세히)' 를 만들었다. 둘 다 없애면 그만큼 호출이 준다.
     need_prose = struct_prose is None and prose_label(kind) != desc_label(kind)
-    has_seed = bool(title or caption)
+    # ★ 2026-09-08(재구조화 2단계) — **제목만 있는 자리에서는 LLM 을 안 부른다.**
+    #   종전 `has_seed = bool(title or caption)` 은 캡션이 비어도 제목만 있으면 참이라,
+    #   L8 이 재료 없이 세상 지식으로 넉 줄을 지어냈다(아래 `single_line_caption` 주석의
+    #   '쿠트브 미나르' 와 같은 얼굴, 재료는 그보다도 얇다). 관문 G1 이 캡션을 걷어내면
+    #   그 조건이 **더 자주** 열리므로 관문과 같은 PR 에서 막는다(설계 §2-2).
+    #   제목은 자료의 이름표지 설명이 아니다 — 규정 §6.3.4(2)② 의 생략 표기로 간다.
+    has_seed = bool(caption)
     # ★ `VISUAL_DRAFT_LLM=0` 이면 이 단계에서 LLM 을 아예 안 부른다(재구조화 4-1 되돌리기
     #   손잡이 · 스위치 대장 2026-09-08). **호출 시** 읽으므로 프로세스 env 로 A/B 가 된다.
     #   기본값 `1` 은 현행 그대로라 끄지 않으면 동작이 안 바뀐다.
@@ -993,7 +999,16 @@ async def build_visual_drafts(
             )
             tier = "FALLBACK" if used_fb else t2
             sec = _parse_sections(response)
-            llm_title, llm_outline, llm_prose = sec["제목"], sec["개조식"], sec["줄글"]
+            # ★ 관문 G1(재구조화 §2-2) — L8 산출이 초안 텍스트가 되기 직전 한 자리.
+            #   이 길은 경계 파일 **뒤**(opt 단계)라 `_parse_txt_result` 의 검사가 못 본다.
+            #   `_finish` 사슬 중 **걷어내기만** 건다(유형 제시어 보정은 조립기 몫이다).
+            llm_title = guard_llm_text(sec["제목"], "visual_draft")
+            llm_prose = guard_llm_text(sec["줄글"], "visual_draft")
+            llm_outline = []
+            for _lv, _item in sec["개조식"]:
+                _kept = guard_llm_text(_item, "visual_draft")
+                if _kept:
+                    llm_outline.append((_lv, _kept))
         except Exception as exc:  # noqa: BLE001 — 4안 보장이 개별 추론 실패보다 우선
             logger.warning("    4안 LLM 실패(폴백으로 계속) %s %s: %s: %s",
                            kind, str(ext.element_id)[:8], type(exc).__name__, exc)
@@ -1084,8 +1099,15 @@ async def build_visual_drafts(
     #   여섯 개를 다 읽고서야 고를 게 없다는 걸 안다. 규정상 정답도 생략 표기다(§6.3.4(2)②).
     #   ⚠ 이 자리가 자주 나오면 그건 **캡셔닝이 실패하고 있다는 신호**지 초안 문제가 아니다.
     #     경계 파일의 CAPTION_FAILED와 품질검사 R11이 그 사실을 따로 알린다.
-    if _no_material(caption, title, struct_text, struct_prose or "",
+    #   ★ 2026-09-08(재구조화 2단계) — **`title` 을 재료에서 뺐다.** 제목은 자료의
+    #     이름표지 설명이 아니다. 제목만 남은 자리에서 종전에는 설명 안이 제목 한 줄로
+    #     서고 그 아래를 L8 이 세상 지식으로 채웠다(위 `has_seed` 주석). LLM 을 껐으니
+    #     남는 것은 이름표 한 줄인데, 규정 §6.3.4(2)② 의 정답은 그 자리에서 생략 표기다.
+    #     제목은 5칸 제목줄로 이미 지면에 서 있다 — 점역자 주에 한 번 더 적을 값이 아니다.
+    if _no_material(caption, struct_text, struct_prose or "",
                     llm_title, llm_prose, " ".join(t for _l, t in (llm_outline or []))):
+        if title:
+            logger.info("    4안 제목만 → 생략 표기(R11) %s %s", kind, str(ext.element_id)[:8])
         return [d_omit], 0, None, tier, caption_source(
             OMIT_IDX, used_llm=False, has_print_caption=False, has_struct=False)
 

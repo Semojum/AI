@@ -19,6 +19,7 @@ from typing import Optional
 from app.ai.braille.nested_block import box_narrative
 from app.ai.braille.regulations import make_rule
 from app.ai.braille.table_braille import build_table_tags, parse_table_tags, print_layout
+from app.ai.captioning.captioner import guard_llm_text
 from app.ai.llm.base_opt import BaseOpt, decide_tier_timeout, generate_with_retry
 from app.ai.llm.draft_utils import ensure_tn_prefix
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
@@ -773,6 +774,13 @@ class TableOpt(BaseOpt):
 
         if response:
             parsed = _parse_tn_from_response(response)
+            # ★ 관문 G1(재구조화 §2-2) — 표 점역자주는 LLM 이 쓴 문장이 그대로 FE
+            #   「대체 텍스트 선택」 칸과 점자에 실리는 자리다. 걷어서 남는 게 없으면
+            #   빈 주를 내지 않고 **규칙 문안**으로 돌아간다 — 여기는 재료가 있다.
+            if not parsed.startswith("[처리 불가"):
+                parsed = guard_llm_text(parsed, "table_tn")
+            if not parsed:
+                parsed = _table_tn(table_tags, table_text)
             # 처리불가 플레이스홀더는 TN 태그로 감싸지 않는다
             tn_text = parsed if parsed.startswith("[처리 불가") else ensure_tn_prefix(parsed)
         else:
