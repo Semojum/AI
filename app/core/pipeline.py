@@ -561,6 +561,21 @@ async def _extract_via_models(
         return elements, w, h, "pixel"
 
 
+# 이식 짝짓기 관문 — 근거는 `_graft_text` 도크스트링(temp/graft/빠짐없이_0909.md 실측).
+# 갈아 끼울 글자는 원래 글자의 이만큼은 돼야 한다. **길이**로 본다 — 글자가 깨진 것은
+# 길이를 안 줄이지만 문장이 통째로 빠지면 줄어든다. 닮은 정도로 재면 많이 깨진 요소,
+# 곧 우리가 고쳐야 할 바로 그 요소가 관문에 걸린다.
+_GRAFT_KEEP = 0.85
+_GRAFT_COVER = 0.9     # 2패스 '담김' — MinerU 글자가 LLM 글자 안에 이만큼 들어 있으면
+_GRAFT_PREFIX = 0.55   # 그때도 앞머리는 이만큼 닮아야 한다(다른 문장에 붙는 것 막기)
+_GRAFT_HEAD = 24       # 앞머리로 보는 글자 수
+_GRAFT_LOOSE_MIN = 12  # 2패스 '담김'을 걸 최소 길이 — 짧은 토막은 아무 문장에나 들어간다
+# LLM 이 그림을 설명한 줄. 본문 요소에 이것이 붙으면 지면에 없던 말이 나간다.
+_GRAFT_CAPTION_HEADS = ("그림:", "그래프:", "도식:", "표:", "사진:", "지도:")
+_GRAFT_DUP = 0.8       # 이웃 요소 글자를 이만큼 머금으면 같은 말이 두 번 나간다
+_GRAFT_DUP_LEN = 5     # 그 판정을 걸 이웃 글자의 최소 길이
+
+
 def _graft_sim_min() -> float:
     """글자 이식 짝짓기 문턱. 되돌리려면 `GRAFT_SIM_MIN=0.45`(**호출 때** 읽는다).
 
@@ -590,13 +605,30 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict]) -> int:
     고급 점역의 몫은 "MinerU 가 한자로 깨뜨리는 글자를 제대로 읽는 것"이지 지면 구조를
     다시 잡는 것이 아니다(2026-09-03 대표 지시). 그래서 **레이아웃·좌표·읽기순서·유형·
     캡션 연결은 MinerU 것을 그대로 쓰고** 글자만 바꾼다. 이렇게 해야 bbox 가 보통 경로와
-    똑같이 맞는다.
+    똑같이 맞는다. 짝을 못 찾은 MinerU 요소는 **원래 글자를 지킨다.**
 
     ⚠ 종전에는 반대로 했다 — LLM 요소 목록을 기준으로 두고 좌표만 얹었다. 그러면 LLM 이
       쪼갠 단위와 MinerU 레이아웃이 어긋나 **FE 하이라이트가 글자와 안 맞았다.**
 
-    짝짓기는 정규화한 앞 80자의 유사도(`GRAFT_SIM_MIN` 이상)다. 한 LLM 요소는 한 번만
-    쓴다. 짝을 못 찾은 MinerU 요소는 **원래 글자를 지킨다** — 비우면 내용이 사라진다.
+    짝짓기는 네 가지로 짠다. 근거는 `temp/graft/빠짐없이_0909.md` — 6쪽 422요소에서
+    **눈으로 센 깨진 요소 125건**을 놓고 잰 실측이다(온전히 고쳐진 것 30→45건).
+
+      1. **LaTeX 제어어를 걷고 견준다.** MinerU 는 같은 수식을 `\overline {{AH _ {1}}}`
+         처럼 장황하게 뱉어 `\overline{AH_1}` 과의 유사도가 깎였다. 수식이 빽빽한 5·6쪽이
+         이것 하나로 갈렸다.
+      2. **앞머리로 짝을 고른다.** MinerU 가 지면 열 줄을 한 요소로 뭉치는 일이 잦다
+         (2쪽은 38요소 대 LLM 83요소). 뭉친 쪽 전문과 견주면 길이 차로 점수가 깎여
+         짝이 안 잡힌다. 그래서 LLM 요소가 짧으면 **MinerU 글자의 같은 길이 앞머리**와 견준다.
+      3. **이어 붙인다.** 한 MinerU 요소에 LLM 요소 여럿이 걸리면 뒤따르는 것을 붙여
+         가며 유사도가 오르는 동안 이어 붙인다. 첫 줄만 갈아 끼워 **단락의 90%가
+         사라지던** 개악이 여기서 없어진다.
+      4. **2패스.** 1패스는 엄격히, 2패스는 남은 것끼리 '담김'(MinerU 글자가 LLM 글자
+         안에 거의 다 들어 있고 앞머리도 같음)까지 받는다. `실수 k의 최,` 처럼 **잘린**
+         요소가 여기서 붙는다. 순서를 뒤집으면 멀쩡한 짝이 잘린 요소에 먼저 먹힌다.
+
+    관문 셋 — **글자 수가 줄면 안 되고**(`_GRAFT_KEEP`), **이웃 요소 글자를 통째로
+    머금으면 안 되고**(같은 말이 두 번 나간다), **그림을 설명한 LLM 줄은 본문에 안 붙인다**
+    (`_GRAFT_CAPTION_HEADS`). 실측에서 삭제 9→0 · 중복 7→3 이다.
     """
     import difflib
     import re as _re
@@ -607,28 +639,94 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict]) -> int:
     from app.ai.captioning.captioner import guard_llm_text   # 지연 — openai SDK
 
     def norm(t: str) -> str:
-        return _re.sub(r"[\s\W_]+", "", (t or ""))[:80]
+        """LaTeX 제어어를 걷고 남은 글자만. 같은 수식을 같은 것으로 보게 한다."""
+        return _re.sub(r"[\s\W_]+", "", _re.sub(r"\\[a-zA-Z]+", " ", t or ""))
 
-    used: set[int] = set()
-    hit = 0
+    def ratio(a: str, b: str) -> float:
+        return difflib.SequenceMatcher(None, a, b).ratio()
+
+    def covered(a: str, b: str) -> float:
+        """a 가 b 안에 얼마나 들어 있나(0~1)."""
+        if not a:
+            return 0.0
+        blocks = difflib.SequenceMatcher(None, a, b).get_matching_blocks()
+        return sum(x.size for x in blocks) / len(a)
+
     thr = _graft_sim_min()
-    for el in mnr_els:
-        a = norm(el.get("content"))
-        if len(a) < 4:
-            continue
-        best, best_r = -1, thr
-        for j, m in enumerate(llm_els):
-            if j in used:
+    nl = [norm(m.get("content")) for m in llm_els]
+    nm = [norm(el.get("content")) for el in mnr_els]
+    cap = [(m.get("content") or "").lstrip().startswith(_GRAFT_CAPTION_HEADS) for m in llm_els]
+    out: list[str | None] = [None] * len(mnr_els)
+    used: set[int] = set()
+
+    def swallows_neighbour(i: int, txt: str) -> bool:
+        """이웃 요소 글자를 **새로** 머금었나. MinerU 가 원래 두 벌 갖고 있던 건 통과."""
+        t = norm(txt)
+        for k in range(max(0, i - 4), min(len(mnr_els), i + 5)):
+            if k == i:
                 continue
-            r = difflib.SequenceMatcher(None, a, norm(m.get("content"))).ratio()
-            if r > best_r:
-                best, best_r = j, r
-        if best >= 0:
-            txt = guard_llm_text(llm_els[best].get("content") or "", "body")
-            if txt.strip():
-                el["content"] = txt
-                used.add(best)
-                hit += 1
+            # 쪽번호·문제번호는 두 글자만 겹쳐도 두 번 읽힌다(`정답 및 해설 199` + `199`).
+            if len(nm[k]) < (2 if nm[k].isdigit() else _GRAFT_DUP_LEN):
+                continue
+            if covered(nm[k], t) >= _GRAFT_DUP and covered(nm[k], nm[i]) < _GRAFT_DUP:
+                return True
+        return False
+
+    def score(a: str, b: str, loose: bool) -> float:
+        if len(b) < len(a):                       # 뭉친 요소 — 앞머리끼리 견준다
+            return ratio(a[:len(b)], b)
+        r = ratio(a, b)
+        if loose and len(a) >= _GRAFT_LOOSE_MIN:  # 잘린 요소 — 담김으로 본다
+            k = min(_GRAFT_HEAD, len(a))
+            if covered(a, b) >= _GRAFT_COVER and ratio(a[:k], b[:k]) >= _GRAFT_PREFIX:
+                r = max(r, covered(a, b))
+        return r
+
+    for loose in (False, True):
+        for i, el in enumerate(mnr_els):
+            if out[i] is not None:
+                continue
+            a = nm[i]
+            if len(a) < 4:
+                continue
+            best, best_r = -1, thr
+            for j, b in enumerate(nl):
+                if j in used or len(b) < 4 or cap[j]:
+                    continue
+                r = score(a, b, loose)
+                if r > best_r:
+                    best, best_r = j, r
+            if best < 0:
+                continue
+            span, acc, cur = [best], nl[best], ratio(a, nl[best])
+            j = best + 1
+            while j < len(nl) and j not in used and not cap[j]:
+                nxt = ratio(a, acc + nl[j])
+                if nxt <= cur:
+                    break
+                cur, acc = nxt, acc + nl[j]
+                span.append(j)
+                j += 1
+            if len(acc) < _GRAFT_KEEP * len(a):   # 바꾸면 글자 수가 준다 — 손대지 않는다
+                continue
+            kept = [(k, t) for k in span
+                    if (t := guard_llm_text(llm_els[k].get("content") or "", "body").strip())]
+            if not kept:
+                continue
+            txt = "\n".join(t for _, t in kept)
+            while len(kept) > 1 and swallows_neighbour(i, txt):
+                kept.pop()                        # 남의 글자를 먹었으면 꼬리를 자른다
+                txt = "\n".join(t for _, t in kept)
+            if swallows_neighbour(i, txt):        # 같은 말이 두 번 나간다 — 손대지 않는다
+                continue
+            out[i] = txt
+            used.update(k for k, _ in kept)
+
+    hit = 0
+    for i, txt in enumerate(out):
+        if txt is not None:
+            mnr_els[i]["content"] = txt
+            hit += 1
     return hit
 
 

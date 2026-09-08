@@ -21,10 +21,26 @@ def test_좌표와_유형은_MinerU_것이_남는다():
     assert mnr[0]["type"] == "text" and mnr[0]["id"] == "m1"
 
 
-def test_안_닮은_짝은_문턱이_막는다(monkeypatch):
-    """개악은 유사도 0.75 아래에 몰려 있다 — 본문 삭제·바꿔치기·중복(이식률_0908 §4).
+def test_그림_설명은_본문에_안_붙는다():
+    """LLM 이 그림을 설명한 줄이 본문 요소를 덮으면 지면에 없던 말이 나간다(3쪽 실측)."""
+    mnr = [{"type": "text", "content": "My Top Secret", "bbox": [0, 0, 9, 9]}]
+    llm = [{"type": "image", "content": "그림: My Top Secret 코너의 인물 아이콘"}]
+    assert _graft_text(mnr, llm) == 0
+    assert mnr[0]["content"] == "My Top Secret"
 
-    0.45 로는 이 짝이 붙어 뒤 문장이 통째로 사라졌다. 되돌리는 길은 `GRAFT_SIM_MIN`.
+
+def test_많이_깨진_요소도_길이가_같으면_붙는다():
+    """내용 감소 관문은 **길이**로 잰다 — 닮은 정도로 재면 많이 깨진 요소가 걸린다."""
+    mnr = [{"type": "text", "content": "가나다라마바사아자차카타파하", "bbox": [0, 0, 9, 9]}]
+    llm = [{"type": "text", "content": "가나다라마바사아자차카타파하"}]
+    assert _graft_text(mnr, llm) == 1
+
+
+def test_짧은_짝으로_긴_본문을_덮지_않는다(monkeypatch):
+    """개악의 첫째는 **본문 삭제**였다 — 열 줄짜리 단락이 첫 줄 하나로 줄었다.
+
+    이제는 문턱과 무관하게 관문이 막는다. 갈아 끼운 글자가 원래 글자를 `_GRAFT_KEEP`
+    만큼 덮지 못하면 손대지 않는다. 문턱을 0.45 로 내려도 마찬가지다.
     """
     def run():
         mnr = [{"type": "text", "content": "이 문단은 앞 문장이 있고 뒤에 긴 설명이 더 붙는다",
@@ -36,7 +52,68 @@ def test_안_닮은_짝은_문턱이_막는다(monkeypatch):
 
     monkeypatch.setenv("GRAFT_SIM_MIN", "0.45")
     hit, mnr = run()
-    assert hit == 1, "스위치를 내려도 안 붙으면 되돌리는 길이 없다"
+    assert hit == 0 and mnr[0]["content"].endswith("더 붙는다"), "문턱을 내려도 본문은 안 지운다"
+
+
+def test_문턱_스위치는_살아_있다(monkeypatch):
+    """되돌리는 길(`GRAFT_SIM_MIN`)이 실제로 먹는지 — 길이가 같고 덜 닮은 짝으로 본다."""
+    def run():
+        mnr = [{"type": "text", "content": "가나다라마바사아자차카타", "bbox": [0, 0, 9, 9]}]
+        return _graft_text(mnr, [{"type": "text", "content": "가나다라마바사아영영영영"}]), mnr
+
+    assert run()[0] == 0
+    monkeypatch.setenv("GRAFT_SIM_MIN", "0.45")
+    assert run()[0] == 1, "스위치를 내려도 안 붙으면 되돌리는 길이 없다"
+
+
+def test_LaTeX_장황함이_짝을_가리지_않는다():
+    """MinerU 는 같은 수식을 훨씬 장황한 LaTeX 로 뱉는다(5·6쪽이 이것 하나로 갈렸다)."""
+    mnr = [{"type": "formula", "bbox": [0, 0, 9, 9],
+            "content": r"\overline {{\mathrm{AH} _ {1}}} = \sqrt {1 7 - 1} = 4 \text {或}"}]
+    llm = [{"type": "formula", "content": r"\overline{AH_1}=\sqrt{17-1}=4\text{야}"}]
+    assert _graft_text(mnr, llm) == 1
+    assert "或" not in mnr[0]["content"]
+
+
+def test_뭉친_요소에_LLM_여럿을_이어_붙인다():
+    """MinerU 가 지면 여러 줄을 한 요소로 뭉치면 LLM 요소 여럿이 그 하나에 걸린다.
+
+    첫 줄만 갈아 끼우면 나머지가 사라진다 — 2쪽 (ii)·(iii) 단락이 그렇게 잘렸다.
+    """
+    mnr = [{"type": "text", "bbox": [0, 0, 9, 9],
+            "content": "첫째 줄은 여기까지다 둘째 줄은 이렇게 이어진다 셋째 줄로 끝난다"}]
+    llm = [{"type": "text", "content": "첫째 줄은 여기까지다"},
+           {"type": "text", "content": "둘째 줄은 이렇게 이어진다"},
+           {"type": "text", "content": "셋째 줄로 끝난다"}]
+    assert _graft_text(mnr, llm) == 1
+    for want in ("첫째 줄", "둘째 줄", "셋째 줄"):
+        assert want in mnr[0]["content"], mnr[0]["content"]
+
+
+def test_잘린_요소는_2패스에서_붙는다():
+    """`실수 k의 최,` 처럼 뒤가 날아간 요소 — 앞머리가 같고 LLM 이 더 길면 받는다."""
+    mnr = [{"type": "text", "content": "실수 k의 최, 이므로 그림과 같이", "bbox": [0, 0, 9, 9]}]
+    llm = [{"type": "text", "content": "실수 k의 최댓값이 f'(√2)이므로 그림과 같이"}]
+    assert _graft_text(mnr, llm) == 1
+    assert "최댓값이" in mnr[0]["content"]
+
+
+def test_이웃_글자를_머금으면_손대지_않는다():
+    """제목 요소에 이웃의 `[정답률 88%]` 를 덧붙이면 같은 말이 두 번 나간다."""
+    mnr = [{"type": "title", "content": "정답 ③ *이항정리-다항식", "bbox": [0, 0, 9, 9]},
+           {"type": "text", "content": "[정답률 88%]", "bbox": [0, 20, 9, 29]}]
+    llm = [{"type": "title", "content": "정답 ③ *이항정리-다항식 [정답률 88%]"}]
+    assert _graft_text(mnr, llm) == 0
+    assert mnr[0]["content"] == "정답 ③ *이항정리-다항식"
+
+
+def test_MinerU_가_원래_두_벌_갖고_있으면_통과():
+    """중복 관문은 **우리가 만든** 중복만 막는다 — 원래 있던 것까지 막으면 고칠 길이 없다."""
+    mnr = [{"type": "text", "content": "같은 문장이 두 번 있다 같은 문장이 두 번 있다",
+            "bbox": [0, 0, 9, 9]},
+           {"type": "text", "content": "같은 문장이 두 번 있다", "bbox": [0, 20, 9, 29]}]
+    llm = [{"type": "text", "content": "같은 문장이 두 번 있다 같은 문장이 두 번 있다"}]
+    assert _graft_text(mnr, llm) == 1
 
 
 def test_요소_개수는_MinerU_를_따른다():
