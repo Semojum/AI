@@ -8,6 +8,7 @@ MinerU VLM 백엔드로 PDF 단일 페이지 처리.
         storage/jobs/{job_id}/temp/page_{no:03d}/merged_layout.json
 반환:  merged_layout (list[dict])
 """
+import io
 import json
 import os
 import re
@@ -15,10 +16,12 @@ import shutil
 import subprocess
 import sys
 import uuid
+import zipfile
 from difflib import SequenceMatcher
 from pathlib import Path
 
 import fitz
+import requests
 
 from app.utils.logger import get_logger
 
@@ -151,6 +154,58 @@ class MineruTimeout(RuntimeError):
 _MINERU_RETRIES = int(os.environ.get("MINERU_RETRIES", "1"))
 
 
+def _post_mineru_api(api_url: str, pdf_path: Path, out_dir: Path, page_idx: int,
+                     backend: str, effort: str | None, timeout: float | None) -> None:
+    """상주 mineru-api 에 **직접** POST 하고 결과 zip 을 out_dir 에 푼다.
+
+    ★ 2026-09-08 — `mineru` CLI 에 `--api-url` 을 줘도 CLI 가 하는 일은 이것뿐이다
+      (`mineru/cli/client.py:run_orchestrated_cli` — 폼데이터를 만들어 올리고 결과 zip 을
+      `safe_extract_zip` 으로 푼다. 쪽을 잘라 보내지도 않는다). 그런데 그 CLI 를 **쪽마다 새
+      프로세스로** 띄우느라 순수 import 만 2.9초가 든다. 실제 VLM 추론은 1.1초다.
+      폼데이터는 CLI 기본값과 **한 자도 다르지 않게** 맞췄다 — 추출 결과가 바뀌면 안 된다.
+
+    `zipfile.extractall` 은 3.6.2 부터 멤버 이름에서 절대경로·`..` 를 걷어낸다. CLI 의
+    `safe_extract_zip` 은 그걸 예외로 올릴 뿐이라 안전성은 같다.
+    """
+    data = [
+        ("lang_list", "ch"),
+        ("backend", backend),
+        ("effort", effort or "medium"),
+        ("parse_method", "auto"),
+        ("formula_enable", "true"),
+        ("table_enable", "true"),
+        ("image_analysis", "true"),
+        ("return_md", "true"),
+        ("return_middle_json", "true"),
+        ("return_model_output", "true"),
+        ("return_content_list", "true"),
+        ("return_images", "true"),
+        ("response_format_zip", "true"),
+        ("return_original_file", "true"),
+        ("client_side_output_generation", "false"),
+        ("start_page_id", str(page_idx)),
+        ("end_page_id", str(page_idx)),
+    ]
+    try:
+        with open(pdf_path, "rb") as fh:
+            resp = requests.post(
+                f"{api_url.rstrip('/')}/file_parse", data=data,
+                files={"files": (pdf_path.name, fh, "application/pdf")},
+                timeout=timeout)
+    except requests.Timeout as exc:
+        raise MineruTimeout(
+            f"MinerU 추출 타임아웃 (>{timeout}s, page_idx={page_idx}) — 텍스트레이어 폴백 대상"
+        ) from exc
+    except requests.RequestException as exc:      # 연결 끊김 등 — 재시도 대상(CLI 실패와 같은 층)
+        raise RuntimeError(f"MinerU API 호출 실패 (page_idx={page_idx}): {exc}") from exc
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"MinerU API 실패 (status={resp.status_code}, page_idx={page_idx}): {resp.text[:300]}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        zf.extractall(out_dir)
+
+
 def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | None = None) -> None:
     # MinerU는 별도 env에 설치(transformers 버전 충돌 회피). bare 'mineru'가 PATH에
     # 없을 수 있어 MINERU_BIN으로 실행 파일 경로를 덮어쓸 수 있게 한다(GCP는 심볼릭).
@@ -158,7 +213,6 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | N
     # 한 번만 덮어쓸 수 있게 한다(엔진 A/B에 쓴다).
     from app.core.config import config as _cfg
     mineru_bin = os.environ.get("MINERU_BIN") or _cfg.mineru_bin or "mineru"
-    _announce_engine(mineru_bin)
     cmd = [
         mineru_bin, "-p", str(pdf_path), "-o", str(out_dir),
         "-s", str(page_idx), "-e", str(page_idx),   # 도착 PDF 내 0-based 인덱스
@@ -194,6 +248,15 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | N
     effort = os.environ.get("MINERU_EFFORT", "medium" if "hybrid" in backend else None)
     if effort in ("medium", "high"):
         cmd += ["--effort", effort]
+    # 상주 서버가 있으면 CLI 를 건너뛰고 그 서버를 직접 친다(쪽당 CLI 기동 2.9초 제거).
+    # 서버가 없으면(CI·서버 미기동) api_url 이 None 이라 아래 CLI 로 그대로 떨어진다.
+    # 되돌리는 길: MINERU_CLIENT=cli — 스위치 대장 참조.
+    if api_url and os.environ.get("MINERU_CLIENT", "api").lower() != "cli":
+        _post_mineru_api(api_url, pdf_path, out_dir, page_idx, backend, effort, timeout)
+        return
+    # CLI 를 실제로 띄우는 자리에서만 엔진을 알린다 — API 경로에서 알리면 `MINERU_BIN` 추정을
+    # 서버 엔진으로 오독한다(2026-09-08 동시성 오판이 정확히 그 오독이었다).
+    _announce_engine(mineru_bin)
     try:
         # timeout: 페이지 예산(C7)을 MinerU가 다 태우기 전에 서브프로세스를 끊는다(C9).
         # 초과 시 subprocess가 프로세스를 kill하므로 고아 프로세스가 남지 않는다.

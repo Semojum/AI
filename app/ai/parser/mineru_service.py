@@ -16,11 +16,13 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import re
 import signal
 import shutil
 import subprocess
 import threading
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -55,6 +57,53 @@ def _mineru_api_bin() -> str:
     return "mineru-api"
 
 
+# 물려받은 서버의 엔진을 **실측**해 둔 값. 못 봤으면 None.
+_server_engine_vllm: bool | None = None
+
+
+def _exe_of_local_port(port: int) -> Path | None:
+    """그 포트를 듣는 로컬 프로세스의 실행 파일. 못 보면 None(`ss` 없는 배치 등)."""
+    try:
+        out = subprocess.run(["ss", "-ltnp"], capture_output=True, text=True, timeout=3).stdout
+    except Exception:  # noqa: BLE001
+        return None
+    for line in out.splitlines():
+        if f":{port} " not in line:
+            continue
+        m = re.search(r"pid=(\d+)", line)
+        if m:
+            try:
+                return Path(os.readlink(f"/proc/{m.group(1)}/exe"))
+            except OSError:
+                return None
+    return None
+
+
+def _probe_server_engine(url: str) -> None:
+    """남이 띄워 둔 서버의 엔진을 **그 서버 프로세스의 실행 파일**로 확인해 기억한다.
+
+    ★ 2026-09-08 — `MINERU_BIN` 은 **CLI** 가 어느 env 인지만 말한다. 추론을 하는 것은
+      서버 프로세스라 둘이 다를 수 있고, 실제로 달랐다: `MINERU_BIN` 이
+      `envs/mineru`(vllm 없음)를 가리키는데 :30000 에 떠 있는 서버는
+      `envs/mnr_vllm/bin/mineru-api` 였다. 그 어긋남 때문에 vLLM 서버를 쓰면서도
+      `concurrency()` 가 transformers 로 오판해 동시 요청을 2→1 로 조였다
+      (실측 처리량 1,080 → 716 쪽/h).
+
+    원격 서버는 우리가 볼 수 없으니 종전대로 `MINERU_BIN` 추정에 맡긴다
+    (그때도 `MINERU_ENGINE` 으로 손수 못 박을 수 있다).
+    """
+    global _server_engine_vllm
+    parts = urllib.parse.urlsplit(url)
+    if parts.hostname not in ("127.0.0.1", "localhost", "::1") or not parts.port:
+        return
+    exe = _exe_of_local_port(parts.port)
+    if exe is None:
+        return
+    _server_engine_vllm = exe.with_name("vllm").exists()
+    logger.info("MinerU 서버 실행 파일 %s → 엔진 %s", exe,
+                "vLLM" if _server_engine_vllm else "transformers(추정)")
+
+
 def _engine_is_vllm() -> bool:
     """MinerU가 vLLM 엔진으로 도는가.
 
@@ -70,6 +119,8 @@ def _engine_is_vllm() -> bool:
     forced = os.environ.get("MINERU_ENGINE", "").strip().lower()
     if forced:                       # 운영 탈출구 — 우리 추정이 틀린 배치에서 손으로 못 박는다
         return forced.startswith("vllm")
+    if _server_engine_vllm is not None:
+        return _server_engine_vllm   # 실제로 추론하는 프로세스가 MINERU_BIN 추정을 이긴다
     mb = os.environ.get("MINERU_BIN") or config.mineru_bin
     if mb:
         return Path(mb).with_name("vllm").exists()
@@ -202,6 +253,8 @@ def ensure_started(wait: float = 240.0) -> str | None:
         _url = ext.rstrip("/")
         ok = _health(_url)
         logger.info("MinerU 외부 서비스 %s (health=%s)", _url, ok)
+        if ok:
+            _probe_server_engine(_url)
         return _url if ok else None
 
     if os.environ.get("MINERU_PERSISTENT", "1") == "0":
@@ -211,6 +264,7 @@ def ensure_started(wait: float = 240.0) -> str | None:
     if _health(url):                       # 이미 떠 있으면 재사용
         _url = url
         logger.info("MinerU 영구 서비스 재사용: %s", url)
+        _probe_server_engine(url)          # 남이 띄운 서버다 — MINERU_BIN 이 아니라 그놈을 본다
         _warn_if_unsafe_reuse(url)
         return url
 
