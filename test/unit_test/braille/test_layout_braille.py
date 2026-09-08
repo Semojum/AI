@@ -525,6 +525,19 @@ class TestLayoutBody:
         assert body[ti - 1] == ""    # 표 위 빈 줄
         assert body[ti + 1] == ""    # 표 아래 빈 줄
 
+    def test_만화_앞뒤_빈줄(self, lb) -> None:
+        """「점자 자료 제작 지침」 §5.3.1(3) "만화의 앞뒤에 빈 줄을 두어 다른 본문과 구분한다".
+
+        gold 실측도 같다(만화 점역자주 머리줄 11건 중 쪽머리·글상자 안을 뺀 것):
+        앞 빈 줄 6/7 · 뒤 빈 줄 5/5. 글상자 빈 줄(관행이 규정과 갈리는 축)과 달리
+        이 축은 규정과 gold가 같은 쪽이다.
+        """
+        formatted = [(0, "text", ["⠁⠁"]), (0, "cartoon", ["⠍⠍"]), (0, "text", ["⠃⠃"])]
+        body = [l for page in lb._assemble_pages(formatted, "", "", 1) for l in page]
+        ci = body.index("⠍⠍")
+        assert body[ci - 1] == ""    # 만화 앞 빈 줄
+        assert body[ci + 1] == ""    # 만화 뒤 빈 줄
+
     def test_글상자_빈_줄_위에_요소_빈_줄이_또_얹히지_않는다(self, lb) -> None:
         """`_expand_box_borders`가 el_lines 안에 박은 빈 줄도 병합 대상이다.
 
