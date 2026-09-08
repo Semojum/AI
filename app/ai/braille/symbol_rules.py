@@ -7,7 +7,7 @@ braillify 설치 환경에서는 preprocess/postprocess 플레이스홀더 방�
   preprocess()  : 특수기호 → \x00SYM_{idx}\x00 플레이스홀더 치환 (braillify가 건드리지 않음)
   postprocess() : 플레이스홀더 → 점자 기호 복원
 braillify 미설치 폴백에서는 substitute_symbols()로 직접 치환한다.
-  (폴백 _braillify_fallback은 점자 Unicode를 그대로 통과시키므로 안전)
+  (braillify 는 점자 Unicode 를 그대로 통과시키므로 안전)
 """
 
 from __future__ import annotations
@@ -266,7 +266,7 @@ def postprocess(text: str, symbol_map: dict[str, str]) -> str:
 def substitute_symbols(text: str) -> str:
     """SYMBOL_TABLE 기반 특수기호 점자 직접 치환 (폴백 전용).
 
-    braillify 미설치 폴백(_braillify_fallback)은 점자 Unicode를 pass-through하므로
+    braillify 는 점자 Unicode 를 pass-through 하므로
     직접 치환해도 이중 변환이 발생하지 않는다.
     braillify 설치 환경에서는 preprocess/postprocess를 사용할 것.
     """

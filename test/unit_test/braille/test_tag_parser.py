@@ -100,8 +100,8 @@ class TestBorder:
         out = substitute_tags("<!상자>범례<!상자>")
         assert len(out) == 32
 
-    @pytest.mark.skipif(not _tr._BRAILLIFY_AVAILABLE,
-                        reason="braillify 필요 — testdata_complex.txt 정본 점자 대조")
+    # ★ 2026-09-08(재구조화 5단계) — `skipif(not _BRAILLIFY_AVAILABLE)` 를 뗐다.
+    #   braillify 미설치는 이제 기동 오류라 "없어서 건너뛴다" 는 상태가 없다.
     def test_위테두리_범례_testdata_정본대조(self):
         # testdata_complex.txt 60행 (글상자 범례 위 테두리, 태민 정본)
         expect = "⠿⠛⠛⠛⠛⠀⠘⠎⠢⠐⠌⠀⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠛⠿"

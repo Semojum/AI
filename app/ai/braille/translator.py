@@ -38,15 +38,12 @@ from app.ai import gates as _gates          # 관문 G3 — 무거운 의존 없
 
 logger = logging.getLogger(__name__)
 
-try:
-    import braillify as _braillify_lib
-    _BRAILLIFY_AVAILABLE = True
-except ImportError:
-    _BRAILLIFY_AVAILABLE = False
-    logger.warning(
-        "braillify 미설치 — 폴백 자모 분해 모드로 동작한다. 자모 점형은 규정값으로 "
-        "교정됐으나 약자·약어가 빠져 규정 비준수다. 운영 출력에는 braillify가 필수."
-    )
+# ★ 2026-09-08(재구조화 5단계) — **미설치는 기동 오류다.** 종전에는 경고 한 줄을 찍고
+#   폴백 자모 분해 모드로 계속 돌았다. 그 모드는 약자·약어가 빠져 **규정 비준수 점자**를
+#   내는데 겉으로는 성공한 응답이라, 환경 하나가 조용히 산출을 가르는 자리였다
+#   (설계 §2-1 "결정론 단계의 환경 결합 제거").
+#   설치: `pip install braillify==2.0.1` — 판은 `requirements-ai.txt` 가 고정한다.
+import braillify as _braillify_lib
 
 # ── 한글 자모 점자 테이블 ──────────────────────────────────────────────────
 # 규정 제1·2항(braillify 실측 검증). 된소리표 = ⠠(제2항 ',') — 옛 폴백 ⠐는 오류.
@@ -277,14 +274,6 @@ _HANGUL_SYL_RE   = re.compile(r"[가-힣]")        # 완성형 한글 음절
 _LATIN_CHAR_RE   = re.compile(r"[A-Za-z]")       # 로마자 낱글자(줄 문맥 비율 계산용)
 
 
-def _syllable_to_braille(syl: str) -> str:
-    code = ord(syl) - _HANGUL_BASE
-    jong = code % _JONGSEONG_CNT
-    jung = (code // _JONGSEONG_CNT) % _JUNGSEONG_CNT
-    cho  = code // _JONGSEONG_CNT // _JUNGSEONG_CNT
-    return _CHOSEONG[cho] + _JUNGSEONG[jung] + _JONGSEONG[jong]
-
-
 # ── 옛한글(중세 국어) — 규정 제3장 「옛 글자」 제19~25항 ────────────────────
 # 국어 교재의 중세 국어 지문은 옛 자모가 섞여 **완성형으로 조합되지 않는다**
 # (`ᄒᆞ야` = ᄒ + ᆞ + 야). braillify는 첫가끝 자모를 거부하고, _safe_to_unicode의
@@ -407,7 +396,7 @@ def _old_syllable_cells(syl: list[str]) -> str | None:
     # 현대 모음·받침이면 braillify에 맡겨 **약자를 살린다** — gold는 `ᄫᅳᆫ`을
     # ⠐⠘⠶⠵(옛 글자표 ㅸ + 약자 '은')로 적지 옛 ⠪⠒로 풀어 적지 않는다.
     # 옛 자음자 뒤 'ㅏ'는 약자가 없어 그대로 남는다 — 제24항이 요구하는 그대로다.
-    if _BRAILLIFY_AVAILABLE and _V0 <= ord(v) <= _V9 and (not t or _T0 <= ord(t) <= _T9):
+    if _V0 <= ord(v) <= _V9 and (not t or _T0 <= ord(t) <= _T9):
         code = (_HANGUL_BASE + 11 * _JUNGSEONG_CNT * _JONGSEONG_CNT
                 + (ord(v) - _V0) * _JONGSEONG_CNT + (ord(t) - _T0 + 1 if t else 0))
         try:
@@ -426,50 +415,9 @@ def _is_hangul(ch: str) -> bool:
     return _HANGUL_BASE <= ord(ch) <= _HANGUL_END
 
 
-def _english_run(run: str) -> str:
-    cells = []
-    for ch in run:
-        if ch.isupper():
-            cells.append(_CAPITAL_IND)
-            cells.append(_ALPHA_MAP.get(ch.lower(), ch))
-        else:
-            cells.append(_ALPHA_MAP.get(ch, ch))
-    return _ROMAN_START + "".join(cells) + _ROMAN_END
-
-
-def _braillify_fallback(text: str) -> str:
-    """braillify 미설치 시 폴백 — 기본 자모 분해만 처리 (약자·약어 미지원)."""
-    result = []
-    i = 0
-    while i < len(text):
-        ch = text[i]
-        if _is_hangul(ch):
-            result.append(_syllable_to_braille(ch))
-            i += 1
-        elif ch.isdigit() or (ch == "-" and i + 1 < len(text) and text[i + 1].isdigit()):
-            m = _NUMBER_RE.match(text, i)
-            if m:
-                result.append(digits_to_braille(m.group()))
-                i = m.end()
-            else:
-                result.append(ch); i += 1
-        elif ch.isalpha():
-            m = _ALPHA_RUN_RE.match(text, i)
-            if m:
-                result.append(_english_run(m.group()))
-                i = m.end()
-            else:
-                result.append(ch); i += 1
-        else:
-            result.append(ch); i += 1
-    return "".join(result)
-
-
 def _braillify(text: str) -> str:
     """태그 없는 순수 텍스트 → 점자 변환 (외부 직접 호출용 래퍼)."""
-    if _BRAILLIFY_AVAILABLE:
-        return _safe_to_unicode(text).replace(_GAP_MARK, "⠀")
-    return _braillify_fallback(text)
+    return _safe_to_unicode(text).replace(_GAP_MARK, "⠀")
 
 
 # ── 로마자표 ⠴ 줄 문맥 (제29항) ───────────────────────────────────────────────
@@ -1728,18 +1676,6 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
     return braille
 
 
-def _translate_fallback(text: str) -> str:
-    # braillify 미설치 시: 수식→convert_latex, 기호→substitute_symbols, 나머지→폴백
-    def _formula_sub(m: re.Match) -> str:
-        return convert_latex(m.group(1))
-
-    result = _FORMULA_RE.sub(_formula_sub, text)
-    result = _restore_wrap_hyphen(result)   # 폴백 경로엔 음수 판정이 없다 — 즉시 복원
-    result = substitute_tags(result)
-    result = _old_hangul_to_braille(substitute_symbols(result))
-    return _braillify_fallback(result)
-
-
 # braillify가 거부하는 문자: PUA(사설영역)·비공백 제어문자.
 # 한컴/HWP 수식 폰트는 수식 글리프를 PUA(U+E000~)로 인코딩 → PyMuPDF가 매핑 없는
 # raw 코드포인트로 추출한다. 한 글자라도 braillify에 들어가면 "Invalid symbol character"
@@ -2330,7 +2266,7 @@ def _safe_to_unicode(seg: str, _split_eng: bool = True,
         #     빈칸(U+2800)으로 붙인다(`_PAD`). 여기 걸리는 연속 빈칸은 묵자 것뿐이다.
         return "".join(_GAP_MARK * 2 if i % 2 else _safe_to_unicode(p, _split_eng, ctx)
                        for i, p in enumerate(parts))
-    if _split_eng and _BRAILLIFY_AVAILABLE:
+    if _split_eng:
         split = _split_english(seg, ctx)
         if split is not None:
             return split
@@ -2497,10 +2433,8 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
         text = _book_roman_to_cells(text)   # 로마 숫자 섹션번호 → 낱자 점형(도서 관행, 수식 밖만)
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     text = sanitize_for_braille(text)        # PUA·제어문자 정화(요소 전체 소실 방지)
-    if _BRAILLIFY_AVAILABLE:
-        return merge_hidden_runs(_translate_with_braillify(
-            text, force_roman=force_roman, qnum_period=qnum_period))
-    return merge_hidden_runs(_translate_fallback(text))
+    return merge_hidden_runs(_translate_with_braillify(
+        text, force_roman=force_roman, qnum_period=qnum_period))
 
 
 # ── 음절 단위 줄바꿈 지점 산출 (NLD-1.2.1) ──────────────────────────────────
