@@ -19,6 +19,7 @@ message BrailleRequest {
   string mode        = 5;   // "a" | "b" | "c"
   string source_text = 6;   // mode b 전용
   bool   advanced_ai = 7;   // 고급 점역 — MinerU 대신 LLM 이 지면을 직접 읽는다
+  string customer_id = 8;   // LLM 캐시 격리 단위. 빈 값이면 job_id 로 대체(고객 사이엔 절대 안 샌다)
 }
 
 message TranslateTextRequest {
@@ -105,6 +106,8 @@ message ProcessingMeta {
   float  pdf_layer_confidence = 2;   // PDF 텍스트 레이어 신뢰도
   string routing_tier_used    = 3;   // ZERO|STANDARD|QUALITY|FALLBACK
   bool   scan_only            = 4;   // 텍스트 레이어 없는 스캔본
+  bool   caption_disabled     = 5;   // 시각자료 설명을 끄고(SEMOJUM_NO_CAPTION=1) 돈 산출물. 시각 축 측정 금지
+  bool   advanced_ai_applied  = 6;   // 고급 점역이 실제로 반영됨. 요청이 켜도 ZERO 티어·모델 부재면 false
 }
 
 message Draft {                     // 시각 6안(기본 selected_idx=2 개조식)·표 4안. 개수 하드코딩 금지
@@ -135,6 +138,8 @@ message TextElement {
   repeated RuleTrail rule_trail      = 14;   // 적용된 규정 목록
   repeated Draft     drafts          = 15;   // 시각 요소 대체 초안. 텍스트·수식은 빈 배열
   int32              selected_idx    = 16;   // 기본 초안 번호 (0-based)
+  string             review_grade    = 17;   // 검수 등급 HIGH|MEDIUM|LOW. 점자 요소만, 원문은 ""
+  float              round_trip      = 18;   // 역점역 왕복 일치도 0~1. 못 재면 0
 }
 
 // ── 사용량 ──────────────────────────────────────────────────────

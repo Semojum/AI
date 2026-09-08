@@ -34,6 +34,9 @@ def _dict_to_processing_meta(d: dict):
     meta.pdf_layer_confidence = d.get("pdf_layer_confidence", 0.0)
     meta.routing_tier_used = d.get("routing_tier_used", "")
     meta.scan_only = d.get("scan_only", False)
+    # 아래 둘은 pipeline이 이미 만들어 두고도 여기서 안 실려 버려지던 값이다.
+    meta.caption_disabled = d.get("caption_disabled", False)
+    meta.advanced_ai_applied = d.get("advanced_ai_applied", False)
     return meta
 
 
@@ -66,6 +69,10 @@ def _dict_to_text_element(d: dict):
     elem.visual_subtype = d.get("visual_subtype", "")
     elem.subtype_confidence = d.get("subtype_confidence", 0.0)
     elem.latex_string = d.get("latex_string", "")
+    # 요소별 검수 신호(`ai/quality/confidence.annotate`). 점역 요소에만 붙는다 —
+    # 원문(text_list)에는 없어 기본값("" / 0.0)으로 나간다.
+    elem.review_grade = d.get("review_grade", "")
+    elem.round_trip = d.get("round_trip", 0.0)
     for c in d.get("contents", []):
         elem.contents.append(c)
     for rt in d.get("rule_trail", []):

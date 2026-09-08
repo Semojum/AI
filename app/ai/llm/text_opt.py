@@ -278,6 +278,9 @@ class TextOpt(BaseOpt):
 
     def __init__(self, advanced_ai: bool = False) -> None:
         self.advanced_ai = bool(advanced_ai)
+        # 본문 OCR 교정 LLM 이 실제로 돌았는가. `_run_text_chain` 이 읽어
+        # 응답 `processing_meta.advanced_ai_applied` 로 올린다.
+        self.used_llm = False
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
         text = ext.corrected_text or ""
@@ -300,6 +303,7 @@ class TextOpt(BaseOpt):
 
         # 입력 텍스트 길이 기반 max_new_tokens: 한글 1자 ≈ 1~2토큰, 여유분 30% 추가
         max_new_tokens = min(512, max(64, int(len(text) * 1.3)))
+        self.used_llm = True
         response, used_fb = await generate_with_retry(
             _PROMPT_QUALITY.format(text=text),
             timeout=config.hcxt_quality_timeout_seconds, element_id=ext.element_id, kind="텍스트",

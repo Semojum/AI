@@ -1492,7 +1492,10 @@ async def _run_text_chain(
 
     from app.ai.llm.text_opt import TextOpt
     # 고급 점역(`advanced_ai`)은 여기서 넘긴다 — 본문 OCR 교정 LLM 은 그 요청에서만 돈다(#770).
-    llm_outputs = await TextOpt(task.advanced_ai).optimize(extracted, routing_tier, layout)
+    _opt = TextOpt(task.advanced_ai)
+    llm_outputs = await _opt.optimize(extracted, routing_tier, layout)
+    if _opt.used_llm:                      # 본문 OCR 교정 LLM 이 실제로 돈 요청이다
+        task.advanced_ai_applied = True
     _write_stage(task, "text", "text_opt.json", llm_outputs)
 
     braille_outputs: list[BrailleOutput] = []
@@ -1886,6 +1889,11 @@ async def _run_pipeline(task: PageTask) -> dict:
         method0 = extraction.get("meta", {}).get("extraction_method", "?")
         st.note = (f"{len(extraction.get('elements', []))}요소 · {method0} · "
                    f"{'경계 재사용' if reuse_reason is None else f'재파생({reuse_reason})'}")
+    # 고급 점역이 **실제로** 이 응답에 들어갔는가. 요청이 켜도 ZERO 티어·모델 부재·추출
+    # 실패면 MinerU 로 되돌아가 여기가 LLM_VISION 이 아니다. 경계 재사용본이 LLM_VISION
+    # 이면 켠다 — 이번 호출에서 LLM 을 안 불렀어도 응답 내용은 고급 점역 것이다.
+    if method0 == "LLM_VISION":
+        task.advanced_ai_applied = True
 
     # 원본 페이지 크기(경계 meta) → 응답 image_width/height. bbox와 같은 좌표계(2x 픽셀).
     _meta0 = extraction.get("meta", {})
@@ -2233,6 +2241,8 @@ def _build_response(
             "scan_only": doc_meta.scan_only if doc_meta else False,
             # 캡셔닝을 끄고 돈 산출물이면 박아 둔다 — 이걸로 시각 축을 재면 안 된다.
             "caption_disabled": os.getenv("SEMOJUM_NO_CAPTION") == "1",
+            # 요청 advanced_ai 가 아니라 실제 사용 여부다(위 두 자리에서 켠다).
+            "advanced_ai_applied": bool(task.advanced_ai_applied),
         },
         "quality_report": quality_report.model_dump(),
     }
@@ -2441,9 +2451,10 @@ _last_job_id: str | None = None
 async def run(task: PageTask) -> dict:
     """파이프라인 진입점. 300초 하드 타임아웃 강제."""
     start_request()   # 요청 단위 API 카운터 초기화
-    # LLM 캐시 격리 열쇠(재구조화 3-e · 대표 결재 "(B) 고객별 격리"). 요청에 고객 식별자가
-    # 없어 지금은 job_id 가 가장 고운 단위다 — BE 가 식별자를 실어 주면 **이 한 줄**만 바꾼다.
-    llm_cache.set_scope(task.job_id)
+    # LLM 캐시 격리 열쇠(재구조화 3-e · 대표 결재 "(B) 고객별 격리").
+    # BE 가 `BrailleRequest.customer_id` 를 실어 주면 고객 단위로 가른다. 안 실으면
+    # 종전대로 job_id — job 격리는 고객 격리보다 좁으므로 결재를 어기지 않는다.
+    llm_cache.set_scope(task.customer_id or task.job_id)
     # 관문 계수기(재구조화 §2-2)는 **쪽마다** 새로 판다. 여러 쪽이 한 프로세스에서 겹쳐
     # 도는데 전역으로 세면 옆 쪽 발동이 이 쪽 review_flags 에 얹힌다(gates 도크스트링).
     gates.gate_reset()
