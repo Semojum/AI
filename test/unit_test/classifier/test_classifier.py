@@ -170,26 +170,27 @@ class TestClassifyWithConfidence:
             return classifier.classify_with_confidence(str(img))
 
     def test_confidence_from_logprob(self, tmp_path) -> None:
-        label, conf = self._run(tmp_path, self._mock_resp("chart", [("chart", -0.05)]))
-        assert label == "chart"
+        label, conf, sub = self._run(tmp_path, self._mock_resp("chart", [("chart", -0.05)]))
+        assert label == "chart" and sub == ""
         assert conf == pytest.approx(math.exp(-0.05))
 
     def test_multi_token_logprobs_summed(self, tmp_path) -> None:
         # 공백 스캐폴드 토큰은 제외, 라벨 토큰 logprob은 합산
         resp = self._mock_resp("cartoon", [("\n", -0.9), ("car", -0.2), ("toon", -0.1)])
-        label, conf = self._run(tmp_path, resp)
+        label, conf, _sub = self._run(tmp_path, resp)
         assert label == "cartoon"
         assert conf == pytest.approx(math.exp(-0.3))
 
     def test_invalid_label_zero_confidence(self, tmp_path) -> None:
         # 세 라벨 밖 응답 = 형식 이탈 → image 폴백 + 신뢰도 0.0 (R2 대상)
-        label, conf = self._run(tmp_path, self._mock_resp("photograph", [("photograph", -0.1)]))
-        assert label == "image"
+        label, conf, sub = self._run(tmp_path,
+                                     self._mock_resp("photograph", [("photograph", -0.1)]))
+        assert label == "image" and sub == ""
         assert conf == 0.0
 
     def test_missing_logprobs_returns_none(self, tmp_path) -> None:
-        label, conf = self._run(tmp_path, self._mock_resp("image", None))
-        assert label == "image"
+        label, conf, sub = self._run(tmp_path, self._mock_resp("image", None))
+        assert label == "image" and sub == ""
         assert conf is None
 
     def test_classify_wrapper_returns_label_only(self, tmp_path) -> None:
