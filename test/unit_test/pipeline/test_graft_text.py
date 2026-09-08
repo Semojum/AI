@@ -7,6 +7,8 @@
 ⚠ 종전에는 반대로 했다(LLM 목록 기준 + 좌표만 얹기). 그러면 LLM 이 쪼갠 단위와 MinerU
   레이아웃이 어긋나 FE 하이라이트가 글자와 안 맞았다.
 """
+import pytest
+
 from app.core.pipeline import _graft_text
 
 
@@ -143,3 +145,78 @@ def test_한_LLM_요소를_둘이_나눠_쓰지_않는다():
            {"type": "text", "content": "같은 문장이다", "bbox": [0, 20, 9, 29]}]
     llm = [{"type": "text", "content": "같은 문장이다"}]
     assert _graft_text(mnr, llm) == 1
+
+
+# ── MinerU 가 통째로 빠뜨린 줄 회수(`_recover_missing`) ─────────────────────────
+# 실측 근거: `temp/graft/누락회수_0909.md`. 요소가 아예 없으면 갈아 끼울 자리가 없어
+# 짝짓기로는 못 고친다(눈으로 센 30건). 짝 못 찾은 LLM 줄만 보면 6쪽에 153건이 걸려
+# 다섯 배가 헛것이라, **지면에서 요소가 안 덮은 잉크**를 같이 봐야 판정이 선다.
+
+def _page(tmp_path, lines, cover):
+    """줄 세 개짜리 가짜 지면. `cover` 에 든 줄만 MinerU bbox 가 덮는다."""
+    cv2 = pytest.importorskip("cv2")
+    np = pytest.importorskip("numpy")
+    h, w = 1200, 900                      # 실제 쪽 렌더 크기 — 문턱이 지면 높이 비율이라 필요하다
+    img = np.full((h, w, 3), 255, np.uint8)
+    boxes = []
+    for k in range(lines):
+        y = 100 + k * 200
+        cv2.putText(img, "ABCDEFGHIJKLMNO", (80, y + 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 0), 3)
+        if k in cover:
+            boxes.append([80, round(y / h * 1000), 800, round((y + 55) / h * 1000)])
+    p = tmp_path / "page.png"
+    cv2.imwrite(str(p), img)
+    return str(p), boxes
+
+
+def test_빈_구역에_짝_못_찾은_줄을_세운다(tmp_path):
+    img, boxes = _page(tmp_path, 3, cover=[0, 2])       # 가운데 줄이 요소로 안 잡혔다
+    mnr = [{"type": "text", "content": "첫째 줄입니다 여기는", "bbox": boxes[0]},
+           {"type": "text", "content": "셋째 줄입니다 여기는", "bbox": boxes[1]}]
+    llm = [{"type": "text", "content": "첫째 줄입니다 여기는"},
+           {"type": "text", "content": "빠진 가운데 줄입니다"},
+           {"type": "text", "content": "셋째 줄입니다 여기는"}]
+    _graft_text(mnr, llm, img)
+    assert [e["content"] for e in mnr] == [
+        "첫째 줄입니다 여기는", "빠진 가운데 줄입니다", "셋째 줄입니다 여기는"]
+    assert mnr[1]["flags"] == ["ADVANCED_RECOVERED"]
+    assert mnr[1]["bbox"][1] > mnr[0]["bbox"][1]        # 실제 그 줄 자리를 잡았다
+    assert [e["reading_order"] for e in mnr] == [0, 1, 2]
+
+
+def test_지면에_잉크가_없으면_안_세운다(tmp_path):
+    """짝만 못 찾았을 뿐 MinerU 가 다른 꼴로 갖고 있는 것 — 세우면 같은 말이 두 번 나간다."""
+    img, boxes = _page(tmp_path, 2, cover=[0, 1])       # 지면이 요소로 다 덮였다
+    mnr = [{"type": "text", "content": "첫째 줄입니다 여기는", "bbox": boxes[0]},
+           {"type": "text", "content": "둘째 줄입니다 여기는", "bbox": boxes[1]}]
+    llm = [{"type": "text", "content": "첫째 줄입니다 여기는"},
+           {"type": "text", "content": "\\overline{AB} 같은 다른 꼴"},
+           {"type": "text", "content": "둘째 줄입니다 여기는"}]
+    _graft_text(mnr, llm, img)
+    assert len(mnr) == 2
+
+
+def test_지면_이미지가_없으면_회수를_안_한다(tmp_path):
+    """평상 경로(`img_path=None`)는 종전 그대로 — 요소 수가 안 는다."""
+    img, boxes = _page(tmp_path, 3, cover=[0, 2])
+    mnr = [{"type": "text", "content": "첫째 줄입니다 여기는", "bbox": boxes[0]},
+           {"type": "text", "content": "셋째 줄입니다 여기는", "bbox": boxes[1]}]
+    llm = [{"type": "text", "content": "첫째 줄입니다 여기는"},
+           {"type": "text", "content": "빠진 가운데 줄입니다"},
+           {"type": "text", "content": "셋째 줄입니다 여기는"}]
+    _graft_text(mnr, llm)
+    assert len(mnr) == 2
+
+
+def test_단을_넘은_자리에는_안_세운다(tmp_path):
+    """앞뒤 요소가 단을 넘으면 둘을 감싼 사각이 지면 절반이라 **남의 구멍**이 걸린다.
+
+    실측(p4)에서 꼬리말과 코너 제목이 왼쪽 단 본문 구멍으로 들어갔다. 구역은 앞뒤 요소
+    **사이에 끼어** 있고 같은 단이어야 한다.
+    """
+    from app.core.pipeline import _gap_fits
+    left_gap = [90, 500, 350, 512]
+    assert _gap_fits(left_gap, [90, 480, 350, 495], [90, 520, 350, 535])   # 같은 단, 사이에 낌
+    assert not _gap_fits(left_gap, [520, 20, 560, 40], [520, 50, 900, 70])  # 오른쪽 단
+    assert not _gap_fits(left_gap, [90, 600, 350, 615], [90, 700, 350, 715])  # 앞 요소가 아래

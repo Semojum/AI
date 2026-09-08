@@ -574,6 +574,14 @@ _GRAFT_LOOSE_MIN = 12  # 2패스 '담김'을 걸 최소 길이 — 짧은 토막
 _GRAFT_CAPTION_HEADS = ("그림:", "그래프:", "도식:", "표:", "사진:", "지도:")
 _GRAFT_DUP = 0.8       # 이웃 요소 글자를 이만큼 머금으면 같은 말이 두 번 나간다
 _GRAFT_DUP_LEN = 5     # 그 판정을 걸 이웃 글자의 최소 길이
+# 빈 구역 회수(`_page_gaps`) 문턱. 전부 지면 높이에 대한 비율이라 dpi 를 안 탄다.
+_GAP_PAD = 0.002       # MinerU bbox 를 이만큼 부풀려 덮는다(글자 삐침 여유)
+_GAP_INK = 30          # 배경보다 이만큼 어두우면 잉크
+_GAP_MIN_INK = 7e-5    # 구역이 지면 넓이의 이만큼은 잉크여야 한다
+_RECOVER_SPAN = 6      # 짝 잡힌 앞뒤 요소가 이보다 벌어지면 자리를 못 잡는다
+_RECOVER_FIT = 3.0     # 구역 넓이로 셈한 글자 수의 이 배까지만 세운다
+_RECOVER_COL = 0.3     # 구역이 앞뒤 요소 중 하나와 가로로 이만큼 겹쳐야 한다(단 넘음 막기)
+_RECOVER_TOL = 5       # 앞뒤 요소와 구역 사이에 이만큼(지면 0.5%)은 넘나들어도 낀 것으로 본다
 
 
 def _graft_sim_min() -> float:
@@ -599,7 +607,211 @@ def _graft_sim_min() -> float:
     return float(os.environ.get("GRAFT_SIM_MIN", "0.75"))
 
 
-def _graft_text(mnr_els: list[dict], llm_els: list[dict]) -> int:
+def _page_gaps(img_path, bboxes: list) -> list[list[int]]:
+    """지면에서 **어떤 MinerU 요소도 안 덮은 채 글자가 있는** 구역. norm1000 사각으로 돌려준다.
+
+    MinerU 가 지면의 줄을 통째로 안 뽑으면 갈아 끼울 자리가 없어 `_graft_text` 로는 못
+    고친다(실측 30건 = 못 고친 것의 가장 큰 덩어리, `temp/graft/빠짐없이_0909.md` §5-가).
+    글자로만 짝을 지으면 "MinerU 에 없다"는 판정이 안 서서 헛것이 다섯 배 나왔다.
+    **좌표는 안 쓰고 있었다** — 요소들의 bbox 를 지면에 깔면 남는 빈 자리가 곧 그 자리다.
+
+    잉크는 배경(중간값 흐림)보다 어두운 픽셀로 본다. 색 채움 상자는 흐림값도 같이
+    내려가 안 걸리고, 긴 가로·세로 줄(테두리·밑줄·점선)은 글자가 아니라 걷어 낸다.
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:                       # 이미지 도구가 없으면 회수만 건너뛴다
+        return []
+    im = cv2.imread(str(img_path))
+    if im is None:
+        return []
+    h, w = im.shape[:2]
+    g = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
+    ink = (cv2.subtract(cv2.medianBlur(g, int(h * 0.011) | 1), g) > _GAP_INK).astype(np.uint8)
+    ln = max(3, int(h * 0.041))
+    ink = cv2.subtract(ink, cv2.bitwise_or(
+        cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((1, ln), np.uint8)),
+        cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((ln, 1), np.uint8))))
+
+    pad = max(2, int(h * _GAP_PAD))
+    cov = np.zeros((h, w), np.uint8)
+    for b in bboxes:
+        if not (isinstance(b, (list, tuple)) and len(b) == 4):
+            continue
+        cv2.rectangle(cov, (int(b[0] / 1000 * w) - pad, int(b[1] / 1000 * h) - pad),
+                      (int(b[2] / 1000 * w) + pad, int(b[3] / 1000 * h) + pad), 1, -1)
+    res = cv2.bitwise_and(ink, 1 - cov)
+
+    # 낱자를 줄로 잇고(가로), 붙은 줄끼리 살짝 묶는다(세로).
+    box = cv2.dilate(res, np.ones((3, max(3, int(h * 0.015))), np.uint8))
+    box = cv2.dilate(box, np.ones((max(3, int(h * 0.003)), 1), np.uint8))
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(box, 8)
+    out = []
+    for i in range(1, n):
+        x, y, bw, bh, _ = stats[i]
+        if bh < h * 0.006 or bw < h * 0.010:
+            continue
+        if int(res[y:y + bh, x:x + bw][lab[y:y + bh, x:x + bw] == i].sum()) < h * w * _GAP_MIN_INK:
+            continue
+        out.append([round(x / w * 1000), round(y / h * 1000),
+                    round((x + bw) / w * 1000), round((y + bh) / h * 1000)])
+    out.sort(key=lambda b: (b[1], b[0]))
+    return out
+
+
+def _gap_fits(gap: list[int], above: list[int], below: list[int]) -> bool:
+    """빈 구역이 앞뒤 요소 **사이에 끼어** 있고 같은 단인가.
+
+    둘을 감싼 사각과 겹치기만 하면 된다고 하면, 앞뒤 요소가 단을 넘을 때 그 사각이 지면
+    절반이 되어 **남의 구멍에 남의 글자**가 들어간다(실측 p4 두 건: 꼬리말·코너 제목).
+    """
+    gw = max(1, gap[2] - gap[0])
+    return (above[3] - _RECOVER_TOL <= gap[1] and gap[3] <= below[1] + _RECOVER_TOL
+            and any((min(box[2], gap[2]) - max(box[0], gap[0])) / gw >= _RECOVER_COL
+                    for box in (above, below)))
+
+
+def _gap_capacity(gap: list[int], per_char: float, fallback: int) -> float:
+    """구역에 들어갈 글자 수. `per_char` 는 그 쪽에서 잰 글자 한 자의 넓이."""
+    return (gap[2] - gap[0]) * (gap[3] - gap[1]) / per_char if per_char else fallback
+
+
+def _recover_missing(mnr_els: list[dict], llm_els: list[dict],
+                     at: dict[int, int], img_path) -> int:
+    """MinerU 가 통째로 빠뜨린 줄을 **빈 구역 자리에** 새 요소로 세운다.
+
+    못 고친 것 중 가장 큰 덩어리가 "요소가 아예 없다"였다(실측 30건, `temp/graft/
+    빠짐없이_0909.md` §5-가). 갈아 끼울 자리가 없으니 `_graft_text` 로는 닿지 않는다.
+
+    관문이 둘이라 헛것이 안 선다.
+
+      ① **짝을 못 찾은 LLM 줄**만 후보다. 이것만 쓰면 안 된다 — MinerU 가 같은 내용을
+         다른 LaTeX 로 갖고 있어 "없다"는 판정이 안 서고, 앞 갈래에서 6쪽에 153건이
+         걸렸다(실제 누락 30건, 다섯 배가 헛것).
+      ② **지면 그 자리에 잉크가 있는데 요소가 없어야** 한다(`_page_gaps`). 종전에는
+         좌표를 아예 안 봤다. 요소들의 bbox 를 지면에 깔면 남는 빈 자리가 곧 누락 자리다.
+
+    자리는 **읽기순서**로 잡는다. 짝 못 찾은 줄의 덩어리 앞뒤로 짝이 잡힌 LLM 줄이 있으면
+    그 둘이 붙은 MinerU 요소 `a`·`b` 사이가 들어갈 자리다(`_RECOVER_SPAN` 이내). 구역은
+    그 둘 **사이에 끼어** 있고 **같은 단**이어야 한다 — 겹치기만 하면 된다고 하면 앞뒤
+    요소가 단을 넘을 때 남의 구멍에 남의 글자가 들어간다(실측 p4 두 건). bbox 는 그 구역을
+    그대로 쓴다 — 지면에서 실제로 글자가 있던 자리다.
+
+    덧관문 둘. **이웃이 이미 가진 말**이면 두 번 나가므로 안 세우고(양방향으로 본다),
+    **구역에 안 들어갈 분량**이면 안 세운다(쪽마다 글자 넓이를 재서 견준다). 뒤엣것이
+    없으면 12줄짜리 표가 한 줄 자리에 들어간다(p2 실측).
+
+    실측(`temp/graft/누락회수_0909.md`): 6쪽에서 8개를 세워 **전부 지면에 실제로 있는
+    글자**였고(눈으로 확인), 눈으로 센 누락 30건 중 10건을 되살렸다. 기계 계측 삭제·중복은
+    끄고 켠 두 팔이 같다(삭제 0 · 중복 6).
+    """
+    boxes = [e.get("bbox") for e in mnr_els]
+    gaps = _page_gaps(img_path, boxes)
+    if not gaps:
+        return 0
+
+    import difflib
+    import re as _re
+    from app.ai.captioning.captioner import guard_llm_text
+
+    def norm(t: str) -> str:
+        return _re.sub(r"[\s\W_]+", "", _re.sub(r"\\[a-zA-Z]+", " ", t or ""))
+
+    def ok(b) -> bool:
+        return isinstance(b, (list, tuple)) and len(b) == 4 and b[2] > b[0] and b[3] > b[1]
+
+    def covered(a: str, b: str) -> float:
+        if not a:
+            return 0.0
+        return sum(x.size for x in
+                   difflib.SequenceMatcher(None, a, b).get_matching_blocks()) / len(a)
+
+    nm = [norm(e.get("content")) for e in mnr_els]
+    # 쪽마다 글자 한 자가 차지하는 넓이(norm1000²). 짝이 잡힌 요소들로 잰다 — dpi·판형 무관.
+    per = sorted((boxes[i][2] - boxes[i][0]) * (boxes[i][3] - boxes[i][1]) / len(nm[i])
+                 for i in set(at.values()) if ok(boxes[i]) and nm[i])
+    per_char = per[len(per) // 2] if per else 0.0
+
+    def eligible(j: int) -> bool:
+        c = llm_els[j].get("content") or ""
+        return len(norm(c)) >= 4 and not c.lstrip().startswith(_GRAFT_CAPTION_HEADS)
+
+    runs, cur = [], []            # 짝 못 찾은 LLM 줄의 연속 덩어리
+    for j in range(len(llm_els)):
+        if j not in at and eligible(j):
+            cur.append(j)
+            continue
+        if cur:
+            runs.append(cur)
+        cur = []
+    if cur:
+        runs.append(cur)
+
+    plan: list[tuple[int, list[int], str]] = []
+    taken: list[list[int]] = []
+    for run in runs:
+        lo = max((j for j in at if j < run[0]), default=None)
+        hi = min((j for j in at if j > run[-1]), default=None)
+        if lo is None or hi is None:
+            continue              # 쪽 앞뒤 끝 — 자리를 못 잡는다
+        a, b = at[lo], at[hi]
+        if not (0 <= a < b <= a + _RECOVER_SPAN):
+            continue              # 읽기순서가 어긋났거나 사이가 너무 벌어졌다
+        if not (ok(boxes[a]) and ok(boxes[b])):
+            continue
+        got = [g for g in gaps if g not in taken and _gap_fits(g, boxes[a], boxes[b])]
+        if not got:
+            continue              # 지면 그 자리에 남은 잉크가 없다 — 누락이 아니다
+        txt = "\n".join(t for j in run
+                         if (t := guard_llm_text(llm_els[j].get("content") or "", "body").strip()))
+        nt = norm(txt)
+        if not nt:
+            continue
+        # 구역 여럿이 걸리면 **글자 수에 가장 맞는 하나**만 쓴다. 다 합치면 그림까지 감싸
+        # bbox 가 지면 한 뭉텅이가 된다(p3 실측) — 나머지 구역은 다른 덩어리 몫으로 남긴다.
+        bb = min(got, key=lambda g: abs(_gap_capacity(g, per_char, len(nt)) - len(nt)))
+        if len(nt) > _RECOVER_FIT * _gap_capacity(bb, per_char, len(nt)):
+            continue              # 그 구역에 들어갈 분량이 아니다
+        # 구역이 글자보다 높으면 위에서부터 쓸 줄 수만큼만 잡는다 — 안 그러면 MinerU 가
+        # 크게 빠뜨린 자리에서 bbox 가 그림까지 감싼다(p3 실측).
+        if per_char:
+            ch = per_char ** 0.5                      # 글자 한 자의 한 변
+            n = max(1, -(-round(len(nt) * ch) // max(bb[2] - bb[0], 1)))
+            bb = [bb[0], bb[1], bb[2], min(bb[3], bb[1] + max(round(n * ch), 1))]
+        if any(nm[k] and len(nm[k]) >= _GRAFT_DUP_LEN
+               and max(covered(nm[k], nt), covered(nt, nm[k])) >= _GRAFT_DUP
+               for k in range(max(0, a - 2), min(len(mnr_els), b + 3))):
+            continue              # 이웃이 이미 가진 말 — 두 번 나간다
+        pos = a + 1               # 사이에 낀 요소보다 위면 그 앞에 세운다
+        while pos < b and ok(boxes[pos]) and boxes[pos][3] <= bb[1]:
+            pos += 1
+        plan.append((pos, bb, txt))
+        taken.append(bb)
+
+    import uuid
+    for pos, bb, txt in sorted(plan, key=lambda p: -p[0]):
+        src = mnr_els[max(pos - 1, 0)] if mnr_els else {}
+        mnr_els.insert(pos, {
+            "element_id": str(uuid.uuid4()),
+            "type": "text",
+            "bbox": bb,
+            "content": txt,
+            "page_width": src.get("page_width"),
+            "page_height": src.get("page_height"),
+            "image_path": None,
+            "heading_level": None,
+            "caption_ref": None,
+            "flags": ["ADVANCED_RECOVERED"],
+        })
+    for k, e in enumerate(mnr_els):          # 읽기순서를 새로 매긴다
+        e["reading_order"] = k
+        if "order" in e:
+            e["order"] = k
+    return len(plan)
+
+
+def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
     """**MinerU 요소를 기준으로 두고** LLM 이 읽은 글자만 갈아 끼운다.
 
     고급 점역의 몫은 "MinerU 가 한자로 깨뜨리는 글자를 제대로 읽는 것"이지 지면 구조를
@@ -658,6 +870,7 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict]) -> int:
     cap = [(m.get("content") or "").lstrip().startswith(_GRAFT_CAPTION_HEADS) for m in llm_els]
     out: list[str | None] = [None] * len(mnr_els)
     used: set[int] = set()
+    at: dict[int, int] = {}          # LLM 줄 → 붙은 MinerU 요소. 회수 때 자리를 잡는 데 쓴다.
 
     def swallows_neighbour(i: int, txt: str) -> bool:
         """이웃 요소 글자를 **새로** 머금었나. MinerU 가 원래 두 벌 갖고 있던 건 통과."""
@@ -721,12 +934,17 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict]) -> int:
                 continue
             out[i] = txt
             used.update(k for k, _ in kept)
+            at.update({k: i for k, _ in kept})
 
     hit = 0
     for i, txt in enumerate(out):
         if txt is not None:
             mnr_els[i]["content"] = txt
             hit += 1
+    if img_path:
+        n = _recover_missing(mnr_els, llm_els, at, img_path)
+        if n:
+            logger.info("빈 구역에 빠진 요소 %d개 회수", n)
     return hit
 
 
@@ -876,7 +1094,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             #   아니다. 레이아웃·좌표·읽기순서·유형·캡션 연결을 MinerU 것으로 두고
             #   글자만 갈아 끼우면 bbox 가 보통 경로와 **똑같이** 맞는다.
             elements = mnr[0]
-            n = _graft_text(elements, els)
+            n = _graft_text(elements, els, img)
             image_width, image_height, bbox_space = mnr[1], mnr[2], mnr[3]
             logger.info("고급 점역 글자 이식 %d/%d 요소 (page=%d)",
                         n, len(elements), task.page_no)
