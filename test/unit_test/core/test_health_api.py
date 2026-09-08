@@ -114,12 +114,12 @@ class TestBuildStamp:
     요청 로그밖에 없다. 지문이 프롬프트를 안 물면 그 줄은 아무것도 못 되짚는다.
     """
 
-    def test_지문이_여섯_프롬프트를_문다(self, monkeypatch):
+    def test_지문이_다섯_프롬프트를_문다(self, monkeypatch):
+        # ★ 2026-09-08(재구조화 5단계) — `visual_drafts._PROMPT` 가 빠졌다(L8 LLM 팔 삭제).
         import app.core.health_check as hc
         hc.prompt_sha.cache_clear()
         before = hc.prompt_sha()
         for mod, attr in (("app.ai.captioning.captioner", "_COMMON"),
-                          ("app.ai.llm.visual_drafts", "_PROMPT"),
                           ("app.ai.parser.opus_fallback", "_PROMPT"),
                           ("app.ai.llm.text_opt", "_TAG_PROMPT"),
                           ("app.ai.llm.formula_opt", "_PROMPT"),

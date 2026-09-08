@@ -179,10 +179,12 @@ class TestStep17CaptionSource:
         from app.ai.llm.visual_drafts import OMIT_IDX, DESC_IDX, caption_source
 
         f = caption_source
-        assert f(DESC_IDX, used_llm=True, has_print_caption=True, has_struct=False) == "AI 생성"
-        assert f(DESC_IDX, used_llm=False, has_print_caption=True, has_struct=False) == "인쇄 캡션 전사"
-        assert f(DESC_IDX, used_llm=True, has_print_caption=True, has_struct=True) == "구조 전사(무-LLM)"
-        assert "생략" in f(OMIT_IDX, used_llm=False, has_print_caption=False, has_struct=False)
+        # ★ 2026-09-08(재구조화 5단계) — `used_llm` 인자를 뺐다. L8 LLM 팔이 없어져
+        #   4안 출처는 '구조 전사 / 인쇄 캡션 전사 / 제목 전사 / 생략' 넷뿐이다.
+        assert f(DESC_IDX, has_print_caption=True, has_struct=False) == "인쇄 캡션 전사"
+        assert f(DESC_IDX, has_print_caption=False, has_struct=False) == "제목 전사"
+        assert f(DESC_IDX, has_print_caption=True, has_struct=True) == "구조 전사(무-LLM)"
+        assert "생략" in f(OMIT_IDX, has_print_caption=False, has_struct=False)
 
     def test_근거_tag는_선택안과_출처(self):
         from app.ai.llm.visual_drafts import DESC_IDX, LABELS, visual_trail
