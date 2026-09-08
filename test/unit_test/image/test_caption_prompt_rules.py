@@ -225,7 +225,7 @@ class TestLabelAndSceneRules:
     @pytest.mark.parametrize("answer", [
         "학교에 다니고 있다", "화가가 된다", "큐레이터",            # 예3-24 (5쪽)
         "석가 상", "왕관을 씌워", "율령을 반포", "칼을 들고",        # 예6-7 (4쪽)
-        "최외각 전자", "전자 껍질", "양성자(+17)",                 # 예6-1 (3쪽)
+        "최외각 전자", "그 다음 껍질에 전자 8개", "양성자(+17)",     # 예6-1 (3쪽)
         "탄산 약수", "토론회",                                    # 예5-5·5-4 (1·2쪽)
         "퍼킨스", "계단 옆에", "북반구",                           # 예3-26·3-27·3-25 (7·8·6쪽)
     ])
@@ -233,3 +233,27 @@ class TestLabelAndSceneRules:
         from app.ai.captioning.captioner import _COMMON, _PROMPTS, _CONTEXT_BLOCK, _MATERIAL_BLOCK
         for text in [_COMMON, _CONTEXT_BLOCK, _MATERIAL_BLOCK, *_PROMPTS.values()]:
             assert answer not in text, f"시험 답 {answer!r} 이 프롬프트에 있다 — 과적합"
+
+
+class TestSentenceFormRules:
+    """#734 후속(2026-09-08 대표 재대조) — 완결 문장·수치 우선·윤곽 머리줄·유형어 1회."""
+
+    def test_전사_항목은_완결_문장(self):
+        from app.ai.captioning.captioner import _COMMON
+        assert "완결된 문장으로 쓰고 마침표로 끝냅니다" in _COMMON
+
+    def test_수치가_길이를_이긴다(self):
+        from app.ai.captioning.captioner import _COMMON
+        assert "수치가 이깁니다" in _COMMON and "층마다 각각" in _COMMON
+
+    def test_머리줄은_항목_압축이_아니다(self):
+        from app.ai.captioning.captioner import _COMMON, _PROMPTS
+        assert "항목 압축" in _COMMON and "사슬('A … + B … → C')을 첫 줄로" in _PROMPTS["diagram"]
+
+    def test_유형어_두_번은_후처리로_뗀다(self):
+        from app.ai.captioning.captioner import _finish
+        assert _finish("그림: 개념도. 불교 수용: 절하고 있다.", "diagram").startswith("그림: 불교 수용")
+        assert _finish("그림: 구조도, 두 원자가 결합한다.\nH: 전자 1개", "diagram") == "그림: 두 원자가 결합한다.\nH: 전자 1개"
+        # 그래프의 종류어와 구분 부호 없는 제목은 그대로
+        assert _finish("그래프: 비율 그래프, 갑국", "chart") == "그래프: 비율 그래프, 갑국"
+        assert _finish("그림: 개념도 학습 활동", "image") == "그림: 개념도 학습 활동"
