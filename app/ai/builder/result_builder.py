@@ -269,6 +269,94 @@ def _move_trailing_qnum(ordered: list[dict]) -> None:
         nxt["content"] = f"{m.group(1)}\n{(nxt.get('content') or '').lstrip()}"
 
 
+# ── 그림 안 글자가 본문 첫 줄에 제목처럼 앉던 것 (원장 C-40 후속) ─────────────
+# MinerU 는 시각 자료 **안에** 인쇄된 글자(만화 칸 제목·모식도 이름표·말풍선)를 별도
+# text 요소로도 내보낸다. 그 자리가 읽기 순서 앞이면 쪽 첫 줄에 제목처럼 앉는다
+# (실측 `테스트_이미지.pdf` 5쪽: 만화 다섯째 칸 제목 "60년 후"가 본문 발문보다 먼저 나옴).
+# 점역사가 보기에 그림 설명과 본문이 뒤섞인다.
+#
+# 「점자 자료 제작 지침」 §6.3.2 는 시각 자료 구성 요소의 배치 순서를 정하고,
+# §6.3.4(2)① 은 "원본 시각 자료에 포함된 내용은 (점역자 주) 다음 줄에 적는다"고 한다.
+# 즉 그림 안 글자는 **그 시각 요소 블록에 속한다** — 본문 흐름 앞머리에 놓일 자리가 아니다.
+#
+# ★ **옮기기만 한다. 지우지 않는다.**
+#   처음엔 "설명문이 이미 그 글자를 담고 있으니 빼도 된다"고 보고 지우는 판을 만들어
+#   전 코퍼스 A/B 를 돌렸는데 **양쪽 다 악화**했다(같은 커밋·같은 작업대, 두 팔 차이는
+#   경계 파일뿐):
+#       dev  덩이누락 12,401 → 12,445 (+44셀) · 총 편집 54,296 → 54,322 (+26셀)
+#       val  덩이누락 62,295 → 62,413 (+118셀) · 총 편집 261,737 → 261,868 (+131셀)
+#   이유는 눈으로 확인했다 — **gold 가 그 이름표를 본문 글자로도 싣는다.**
+#   dev 생물 p002 실측: '근육 세포'·'근육 조직'·'소화계' 의 점형이 gold 에 그대로 있다.
+#   설명문 블록의 점자는 점역자 주 안에 다른 문안으로 나가므로 그 자리를 대신 못 집는다.
+#   "중복이니 지워도 안전"은 **원문 층에서만 참이고 점자 출력 층에서는 거짓**이었다.
+#
+# ★ 그래서 조건은 그대로 두고 동작만 바꿨다(옮기기). 요소 수가 보존되므로 덩이누락은
+#   구조적으로 늘 수 없다. 전 코퍼스 A/B 실측: 순서가 바뀐 쪽 15, 점자가 바뀐 쪽 9.
+#       dev  덩이누락 ±0 · 총 편집 ±0
+#       val  덩이누락 ±0 · 총 편집 +5셀(261,737 → 261,742 · 0.002%)
+#   CER 은 블록 정렬 경로가 순서를 정규화해 **읽기 순서 축을 거의 못 본다**(블록 이동
+#   1,403 → 1,398). 이 축의 판정은 CER 이 아니라 "그림 안 글자가 쪽 머리에 앉는가"다.
+#
+# ★ 조건을 둘 다 거는 이유(겹침 + 설명문 중복): 겹침만 보면 전 코퍼스 1,131쪽에서 49건이
+#   걸리는데 그 안에 진짜 본문 문단이 섞여 있다(생물 p181 "질소는 대기에서 주로 …",
+#   사회문화 p015 "ㄴ. (나)에 …"). 그것까지 옮기면 본문 순서가 망가진다.
+#   중복 조건까지 걸면 18쪽·31건이고 전원이 그림 안 이름표·축 라벨·말풍선이다.
+_INFIG_COVER = 0.95        # 텍스트 넓이의 이만큼이 시각 요소 안이면 '그림 안 글자'
+_INFIG_MIN_CHARS = 2       # 한 글자는 설명문에 우연히 들어 있다
+
+
+def _cover_ratio(inner: list, outer: list) -> float:
+    """inner 넓이 중 outer 와 겹치는 비율(0~1)."""
+    ix = max(0.0, min(inner[2], outer[2]) - max(inner[0], outer[0]))
+    iy = max(0.0, min(inner[3], outer[3]) - max(inner[1], outer[1]))
+    a = abs(inner[2] - inner[0]) * abs(inner[3] - inner[1])
+    return (ix * iy) / a if a > 0 else 0.0
+
+
+def _squash(text: str) -> str:
+    """태그·공백을 지운 비교용 문자열."""
+    return re.sub(r"\s+", "", re.sub(r"<![^>]*>", "", text or ""))
+
+
+def _move_infigure_text(elements: list[dict]) -> list[dict]:
+    """시각 요소 안에 있고 그 설명문이 이미 담고 있는 텍스트 요소를 그 시각 요소 뒤로 옮긴다."""
+    visuals = [e for e in elements
+               if e["type"] in _VISUAL_TYPES and e.get("bbox") and len(e["bbox"]) == 4]
+    if not visuals:
+        return elements
+    moved: dict[int, list[dict]] = {}
+    kept = []
+    for el in elements:
+        bb = el.get("bbox")
+        if el["type"] in _VISUAL_TYPES or not bb or len(bb) != 4:
+            kept.append(el)
+            continue
+        inner = _squash(el.get("content"))
+        if len(inner) < _INFIG_MIN_CHARS:
+            kept.append(el)
+            continue
+        host = next((v for v in visuals
+                     if _cover_ratio(bb, v["bbox"]) >= _INFIG_COVER
+                     and inner in _squash(v.get("content"))), None)
+        if host is None:
+            kept.append(el)
+            continue
+        moved.setdefault(id(host), []).append(el)
+        logger.info("그림 안 글자를 시각 요소 뒤로 id=%s type=%s host=%s text=%r",
+                    str(el.get("id", ""))[:8], el["type"], str(host.get("id", ""))[:8],
+                    (el.get("content") or "")[:30])
+    if not moved:
+        return elements
+    out = []
+    for el in kept:
+        out.append(el)
+        out.extend(moved.pop(id(el), ()))
+    out.extend(e for group in moved.values() for e in group)   # 호스트가 빠진 경우
+    for i, el in enumerate(out, start=1):
+        el["order"] = i
+    return out
+
+
 _CAPTIONABLE = _VISUAL_TYPES | {"table"}   # 캡션이 가리킬 수 있는 시각요소
 
 
@@ -561,6 +649,7 @@ def build(
 
         order += 1
 
+    elements = _move_infigure_text(elements)
     _link_captions(elements)
 
     # 페이지 크기(2x 렌더 픽셀) — 요소들이 공유. bbox와 같은 좌표계로 BE/FE 매핑용.
