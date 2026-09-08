@@ -654,7 +654,7 @@ def _maybe_upscale(raw: bytes) -> bytes:
 
 # 백엔드 전환 — CAPTION_BACKEND로 고른다(기본 anthropic). 모델은 CAPTION_MODEL.
 #   예: CAPTION_BACKEND=openai CAPTION_MODEL=gpt-4o
-def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
+def _caption_anthropic(b64: str, mime: str, prompt: str, tail: str = "") -> str:
     import anthropic
     from app.core.limits import estimate_tokens, llm_limiter
     from app.utils.req_log import record_anthropic
@@ -663,7 +663,7 @@ def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
     # 재료 블록을 켜면 출력이 설명 + 관측 목록이라 500으로는 잘린다(값이 사라지는 것이
     # 한 줄로 붙는 것보다 나쁘다). 꺼져 있으면 종전 그대로 500 — 운영 동작 불변.
     out_cap = 1200 if _material_on() else 500
-    llm_limiter().acquire_sync(estimate_tokens(prompt, len(b64) * 3 // 4), out_cap)
+    llm_limiter().acquire_sync(estimate_tokens(prompt + tail, len(b64) * 3 // 4), out_cap)
     model = os.getenv("CAPTION_MODEL", "claude-sonnet-5")
     client = anthropic.Anthropic(api_key=config.anthropic_api_key or None, timeout=60.0, max_retries=1)  # 행 방지(2026-07-19 스톨 실측)
     # ★ thinking을 꺼야 한다(2026-08-08 QA 16번 실측). claude-sonnet-5는 `thinking`을 안 주면
@@ -678,12 +678,24 @@ def _caption_anthropic(b64: str, mime: str, prompt: str) -> str:
     #   적중률이 구조적으로 0이다. 캡션 프롬프트는 유형별로 고정이고 1,784~3,041자
     #   (= 최소 캐시 길이 1,024토큰을 넘는다)라, system으로 올리면 4종 모두 캐시에 얹힌다.
     #   적중은 `usage.cache_read_input_tokens`로 확인한다 — req_log가 집계해 보고한다.
+    # ★★ 그런데 **경계 자리가 틀려 있었다**(2026-09-08 감사 1번, #760). 요소마다 다른
+    #   이웃 본문(`_context_block`)을 같은 블록 **안**에 이어 붙여 `cache_control` 을 그
+    #   끝에 걸었다 — 접두가 매번 달라져 적중이 구조적으로 0이다. 실측 8호출에
+    #   `cache_read=0 · cache_write=52,620`. 쓰기는 정가의 1.25배라, 못 읽는 캐시는
+    #   **캐싱을 아예 안 쓰는 것보다 25% 비싸다.**
+    #   그래서 `system` 을 둘로 가른다 — 유형별 고정 프롬프트만 첫 블록(캐시 경계)이고,
+    #   이웃 본문·재료 블록은 경계 **뒤** 두 번째 블록이다. 이어 붙인 글자는 종전과
+    #   한 글자도 다르지 않다(`prompt + tail` = 옛 `prompt`). 그래서 캐시 판 번호는
+    #   안 올린다 — 번호는 **문안이 바뀔 때** 올리는 것이고, 여기는 블록 경계만 옮겼다.
+    system = [{"type": "text", "text": prompt,
+               "cache_control": {"type": "ephemeral"}}]
+    if tail:
+        system.append({"type": "text", "text": tail})
     resp = client.messages.create(
         model=model,
         max_tokens=out_cap,
         thinking={"type": "disabled"},
-        system=[{"type": "text", "text": prompt,
-                 "cache_control": {"type": "ephemeral"}}],
+        system=system,
         messages=[{
             "role": "user",
             "content": [
@@ -1274,9 +1286,11 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
     context: 그 그림 옆 본문(있으면). 무엇을 쓸지 고르는 근거로만 쓴다 — 위 `_CONTEXT_BLOCK` 참조.
     Returns Korean description string.
     """
-    prompt = _PROMPTS.get(image_type, _PROMPTS["image"]) + _context_block(context)
-    if _material_on():
-        prompt += _MATERIAL_BLOCK
+    # 캐시 경계에서 가른다(#760) — `head` 는 유형별 고정(캐시에 얹는다), `tail` 은
+    # 요소마다 달라지는 것. 이어 붙인 `prompt` 는 종전과 같은 글자라 캐시 열쇠도 그대로다.
+    head = _PROMPTS.get(image_type, _PROMPTS["image"])
+    tail = _context_block(context) + (_MATERIAL_BLOCK if _material_on() else "")
+    prompt = head + tail
 
     blank = _blank_crop_std(image_path)
     if blank is not None and blank < _BLANK_CROP_STD:
@@ -1304,7 +1318,7 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
-        answer = _caption_anthropic(b64, mime, prompt)
+        answer = _caption_anthropic(b64, mime, head, tail)
         text = guard_llm_text(answer, "caption", image_type=image_type)
         # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
         _cache_write(cache, answer, text)

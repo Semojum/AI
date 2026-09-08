@@ -86,3 +86,48 @@ def test_빈_본문은_건너뛴다():
            {"type": "text", "content": "진짜 발문"},
            {"type": "image", "content": ""}]
     assert _neighbor_text(els, 2) == "진짜 발문"
+
+
+# ── 프롬프트 캐시 경계 (#760, 2026-09-08 감사 1번) ─────────────────────────────
+# 캐시는 **접두 일치**다. 요소마다 달라지는 이웃 본문이 `cache_control` 블록 **안**에
+# 있으면 접두가 매번 깨져 적중이 구조적으로 0이 된다(실측 8호출 cache_read=0 ·
+# cache_write=52,620). 쓰기는 정가의 1.25배라 못 읽는 캐시는 안 쓰느니만 못하다.
+# 아래 두 줄이 그 경계를 지킨다 — 깨지면 조용히 비용만 25% 는다.
+
+def _sent_system(head: str, tail: str) -> list:
+    """`_caption_anthropic` 이 실제로 보내는 `system` 블록을 잡아 온다."""
+    from unittest.mock import MagicMock, patch
+
+    resp = MagicMock()
+    resp.content = []
+    resp.usage = None
+    client = MagicMock()
+    client.messages.create.return_value = resp
+    with patch("anthropic.Anthropic", return_value=client):
+        captioner._caption_anthropic("QUJD", "image/jpeg", head, tail)
+    return client.messages.create.call_args.kwargs["system"]
+
+
+def test_캐시_경계_뒤에_이웃_본문이_온다():
+    head = captioner._PROMPTS["image"]
+    tail = captioner._context_block("쌓은 블록은 모두 몇 개인가?")
+    blocks = _sent_system(head, tail)
+    assert len(blocks) == 2
+    assert blocks[0]["text"] == head
+    assert blocks[0]["cache_control"] == {"type": "ephemeral"}   # 고정분만 캐시에 얹는다
+    assert "cache_control" not in blocks[1]                      # 변하는 것은 경계 밖
+    assert "몇 개인가?" in blocks[1]["text"]
+    assert "몇 개인가?" not in blocks[0]["text"]                 # ★ 접두를 더럽히지 않는다
+
+
+def test_모델이_보는_글자는_종전과_같다():
+    """블록만 갈랐지 문안은 안 건드렸다 — 그래서 캐시 판 번호를 안 올린다."""
+    head = captioner._PROMPTS["cartoon"]
+    tail = captioner._context_block("이 만화의 상황은?")
+    assert "".join(b["text"] for b in _sent_system(head, tail)) == head + tail
+
+
+def test_문맥이_없으면_블록도_하나다():
+    """옛 동작 그대로 — 이웃 본문이 없으면 보내는 꼴이 종전과 완전히 같다."""
+    blocks = _sent_system(captioner._PROMPTS["image"], "")
+    assert len(blocks) == 1 and blocks[0]["cache_control"] == {"type": "ephemeral"}
