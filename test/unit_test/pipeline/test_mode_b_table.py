@@ -94,3 +94,34 @@ class TestRenderMode:
     def test_태그가_없으면_종전_추론(self):
         from app.ai.llm.table_opt import _infer_render_mode
         assert _infer_render_mode(None, "그냥 문장이다") == "narrative"
+
+
+class TestPrintFrameSegments:
+    """묵자 테두리 블록(`┌ ├ └`)이 표 세그먼트로 들어오는가 (#723).
+
+    점역사가 mode c 로 받은 묵자를 고쳐 되돌리면 이 형식이 올라온다. 텍스트 줄로
+    떨어지면 점역기가 테두리 글자를 몰라 줄이 0셀이 되고 소실 가드가
+    `[처리 불가: 점역 불가 문자 ┌]` 를 찍었다(대표 지적 2026-09-08).
+    """
+
+    FRAME = ("┌\n"
+             "후보: 득표수  득표율\n"
+             "├\n"
+             "가 후보: 3,420  40.0\n"
+             "└")
+
+    def _segs(self, src):
+        from app.ai.braille.table_braille import parse_print_frames
+        return _mode_b_segments(parse_print_frames(src))
+
+    def test_테두리_블록은_표_요소_하나다(self):
+        segs = self._segs(self.FRAME)
+        assert [s[1] for s in segs] == ["table"]
+        assert "<!표>" in segs[0][2] and "┌" not in segs[0][2]
+
+    def test_앞뒤_본문은_그대로_글줄이다(self):
+        segs = self._segs("앞 문장\n" + self.FRAME + "\n뒤 문장")
+        assert [s[1] for s in segs] == ["text", "table", "text"]
+
+    def test_테두리가_없으면_종전과_같다(self):
+        assert self._segs("한 줄\n두 줄") == [(1, "text", "한 줄"), (2, "text", "두 줄")]

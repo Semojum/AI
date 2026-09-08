@@ -988,6 +988,51 @@ def _print_frame(lines: list[str], mode: str, *, header: bool) -> list[str]:
     return ([note] + out) if note else out
 
 
+# ── 묵자 테두리 되읽기(mode b) ────────────────────────────────────────────────
+# 점역사가 mode c 로 받은 묵자를 고쳐 되돌리면 위 `_print_frame` 이 그린 `┌ ├ └` 가
+# 그대로 올라온다. 점역기는 이 글자를 모르고 조용히 버려서, 테두리 줄이 통째로 0셀이
+# 되고 소실 가드가 `[처리 불가: 점역 불가 문자 ┌]` 를 찍었다(대표 지적 2026-09-08).
+# 우리가 쓴 형식은 우리가 읽는다 — 태그로 되돌려 mode c 와 같은 표 체인에 태운다.
+_PRINT_FRAME_RE = re.compile(
+    rf"^{_PRINT_BOX_TOP}[^\S\n]*\n(.*?)\n[^\S\n]*{_PRINT_BOX_BOTTOM}[^\S\n]*$",
+    re.DOTALL | re.MULTILINE)
+_PRINT_COL_GAP_RE = re.compile(r"[ \t]{2,}")
+# 짝이 깨진 테두리 글자(점역사가 위·아래 한쪽만 지운 경우). 블록으로 못 읽으므로
+# 표로 되살릴 수 없다 — 글자만 지운다. 내용이 없는 줄이라 잃는 게 없고, 남겨 두면
+# 그 줄이 통째로 0셀이 돼 다시 `[처리 불가]` 가 된다.
+_PRINT_FRAME_STRAY_RE = re.compile(
+    rf"^[{_PRINT_BOX_TOP}{_PRINT_BOX_BOTTOM}{_PRINT_RULE}][^\S\n]*(\n|$)", re.MULTILINE)
+
+
+def _print_frame_row(line: str) -> list[str]:
+    """묵자 초안 한 줄 → 셀 목록. `print_layout` 이 쓴 구분을 되짚는다.
+
+    · 격자·전치: `행머리: 값  값` — 행머리는 `": "` 로, 값 사이는 두 칸으로 갈린다.
+    · 선형:      `값  값  값`    — 두 칸만.
+    `(빈칸)` 은 `print_layout` 이 빈 셀 자리에 쓴 표시라 빈 셀로 되돌린다(§3.1.3(9)).
+
+    ponytail: 셀 안에 `": "` 나 두 칸이 들어 있으면 가르는 자리가 어긋난다. 칸 정보를
+    안 잃으려면 FE 가 편집분을 `<!칸>` 으로 실어 보내야 한다(계약 변경 — pm 보고 대상).
+    """
+    head, sep, rest = line.strip().partition(": ")
+    cells = ([head] + _PRINT_COL_GAP_RE.split(rest)) if sep \
+        else _PRINT_COL_GAP_RE.split(line.strip())
+    return ["" if c.strip() == "(빈칸)" else c.strip() for c in cells]
+
+
+def parse_print_frames(src: str) -> str:
+    """묵자 표 테두리 블록(`┌ … └`)을 `<!표>` 태그 형식으로 되돌린다. 없으면 원문 그대로."""
+    if not src or _PRINT_BOX_TOP not in src:
+        return src
+
+    def _sub(m: "re.Match") -> str:
+        rows = [_print_frame_row(ln) for ln in m.group(1).splitlines()
+                if ln.strip() and ln.strip() != _PRINT_RULE]
+        return build_table_tags(rows) if rows else m.group(0)
+
+    return _PRINT_FRAME_STRAY_RE.sub("", _PRINT_FRAME_RE.sub(_sub, src))
+
+
 def _transpose_text(corrected_text: str) -> str:
     """'|' 구분 표 텍스트의 행↔열을 바꾼다."""
     rows = [[c.strip() for c in ln.split("|")] for ln in corrected_text.splitlines() if ln.strip()]
