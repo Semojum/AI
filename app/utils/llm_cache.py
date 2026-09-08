@@ -83,7 +83,7 @@ def key(*parts: str | bytes) -> str:
 #     캡션에 그대로 따라 쓴다 — 2026-09-07 에 프롬프트 문구가 점자로 나간 것과 같은 부류다.
 #     못 본 것은 따라 쓸 수도 없다. 어기면 `test_prompt_ver_leak.py` 가 빨간불을 낸다.
 PROMPT_VER = {
-    "caption": 1,      # app/ai/captioning/captioner.py  _COMMON·_PROMPTS
+    "caption": 2,      # app/ai/captioning/captioner.py  _COMMON·_PROMPTS
     "classify": 1,     # app/ai/captioning/classifier.py SYSTEM_PROMPT
     "figure": 1,       # app/ai/parser/figure_detect.py  _ASK
     "order": 1,        # app/ai/parser/llm_order.py      _SYS
@@ -100,7 +100,7 @@ PROMPT_VER = {
 # ⚠ `_PROMPT_SOURCES` 가 여섯 자리라 게이트도 여섯이다. classify·figure·order 는
 #    프롬프트가 그 모듈 안에만 있어 지문 대상이 아니다(0-c 결정).
 PROMPT_SHA = {
-    "caption": "f87952e49002",
+    "caption": "16d29be67efa",
     "visual": "3fb25cd311f8",
     "opus": "41bba1c2b41d",
     "text": "6f2515369797",
