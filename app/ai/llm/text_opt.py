@@ -115,15 +115,58 @@ def _validate_tagging(original: str, tagged: str) -> bool:
     return _content_sig(original) == _content_sig(tagged)
 
 
+# ── 규칙 팔 (재구조화 4-4) ──────────────────────────────────────────────────
+# 밑줄 빈칸 `____` → `<!밑줄>`. 「한국 점자 규정」 제73항이 1:1로 못 박아 둔 치환이라
+# 물어볼 것이 없다(표의 빈칸 `<!빈칸>`과 **다른 기호**다). 밑줄 이음은 그 자체가
+# "채워 넣어야 할" 자리라 조문 조건이 글자에서 바로 선다 — 조항 예시 `고성__` 이 그 꼴이다.
+#
+# ★ **네모 문자 `□` 는 여기서 태그하지 않는다** (원장 C-87). 제73항의 조건은 "**채워 넣어야 할** 빈칸"
+#   인데 글자 `□` 하나로는 그 조건이 안 선다. 조항 예시(재추출 2922~2945행)의 네모 빈칸도
+#   묵자에서는 **그려진 네모**라 글자 `□` 로 안 들어온다 — 그건 벡터 검출
+#   (`pdf_analyzer.tag_char_boxes`, 제64항 네모 문자)이 잡는 자리다.
+#   글자로 들어오는 `□` 는 실물에서 기호 인용(`기호 '□'는 남자를 의미한다`)·범례
+#   (`□ 기초 대사량, ▨ 생장`)·가림(`김□□ 기자`)이었다. 실측(2027 dev·val 822쪽 전수):
+#   gold 가 네모 빈칸 점형을 쓴 쪽은 2곳(16개)인데 **두 팔 다 그 쪽에서는 하나도 못 냈고**,
+#   엉뚱한 쪽에 LLM 팔 121개·치환 팔 142개를 냈다. 초과만 있고 적중은 0이다.
+#
+# 글상자 표지에는 판단이 낀다. 그 판단도 조문이 아니라 **한 줄 규칙**이다 —
+# 「점자 도서 제작 지침」 제1장 5. 2)(4)②([예 1-11] `<보 기>` → 위 테두리 7칸 제목)는
+# **표지가 제 줄에 홀로 선 꼴**을 싣는다. 표지 뒤에 조사·서술이 붙으면 그것은 본문 속
+# 참조지 상자가 아니다(`<보기>에서 고른 것은?`). 그래서 "첫 줄 전체가 표지"로 가른다.
+#
+# ★ 표지만 있고 뒤에 내용이 없는 요소는 **감싸지 않는다.** 상자 몸통이 다른 요소에 있어
+#   요소 단위 태깅으로는 못 닿는다 — 감싸면 내용 없는 테두리 두 줄만 나간다. 그 자리는
+#   `pdf_analyzer.tag_boxed_elements`(벡터 사각형, 같은 조항)가 요소를 넘어 묶는다.
+# ★ 이미 테두리 태그가 붙은 요소는 건드리지 않는다(위 벡터 검출과 겹치면 테두리가 겹친다).
+_BLANK_RULE_RE = re.compile(r"_{3,}")
+_BOX_LABEL_LINE_RE = re.compile(
+    r"^\s*[<〈【\[]\s*(?:%s)[\s\d]*[>〉】\]]\s*$"
+    % "|".join(r"\s*".join(w) for w in _TAG_LABEL_WORDS)
+)
+
+
+def _tag_by_rule(text: str) -> str:
+    """규정이 정한 자리만 태그한다. LLM 호출 없음 — 같은 글이면 늘 같은 답이다."""
+    out = _BLANK_RULE_RE.sub(f"<!{_TAGS.BLANK_RULE}>", text)
+    lines = out.split("\n")
+    if (f"<!{_TAGS.BOX_TOP}" not in out
+            and _BOX_LABEL_LINE_RE.match(lines[0])
+            and any(ln.strip() for ln in lines[1:])):
+        lines[0] = f"<!{_TAGS.BOX_TOP}>{lines[0].strip()}<!/{_TAGS.BOX_TOP}>"
+        lines.append(f"<!{_TAGS.BOX_BOTTOM}><!/{_TAGS.BOX_BOTTOM}>")
+        out = "\n".join(lines)
+    # 관문은 LLM 팔과 같은 것을 쓴다(설계 2-1 L9 "관문 `_validate_tagging` 은 유지").
+    return out if _validate_tagging(text, out) else text
+
+
 async def _tag_layout(text: str) -> str:
     """후보 신호가 있으면 LLM으로 레이아웃 태그 삽입(HCXT→검증→GPT-4o→원문)."""
     if not text.strip() or not _TAG_CANDIDATE_RE.search(text):
         return text
-    # ★ `LAYOUT_TAG_LLM=0` 이면 태그를 안 넣고 원문을 그대로 둔다(재구조화 4-4 되돌리기).
-    #   이 함수는 `generate_with_retry` 를 안 쓰고 HCXT·폴백을 직접 부르므로 여기서 막는다.
+    # ★ 규칙 팔이 **기본**이다(재구조화 4-4 판정). `LAYOUT_TAG_LLM=1` 이 되돌리는 길이다.
+    #   이 함수는 `generate_with_retry` 를 안 쓰고 HCXT·폴백을 직접 부르므로 여기서 가른다.
     if not part_llm_on("태깅"):
-        logger.info("태깅 LLM 끔(LAYOUT_TAG_LLM=0) → 원문 유지")
-        return text
+        return _tag_by_rule(text)
     prompt = _TAG_PROMPT.format(text=text)
     max_tokens = min(1024, max(128, int(len(text) * 1.6)))
 
