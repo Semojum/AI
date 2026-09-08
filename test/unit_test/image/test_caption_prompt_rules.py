@@ -193,3 +193,43 @@ class TestUsableByTranslator:
         c = PROMPTS["chart"]
         assert "값을 비우지 마세요" in c
         assert "등간격 눈금을 처음부터 끝까지 나열하지는" in c
+
+
+class TestLabelAndSceneRules:
+    """#734 (2026-09-08) — 칸마다 그 칸의 내용, 이름표가 줄머리, 해석과 환각의 경계.
+
+    ★ 과적합 가드가 핵심이다. 대표가 준 모범 답안(테스트_이미지.pdf 8쪽 = 규정 예5-4·5-5·
+      6-1·6-7·3-23~3-27)의 **문장이 프롬프트에 들어가면 그 문서만 좋아진다.** 규칙은 넣되
+      시험 답은 넣지 않는다 — 여기서 그 답의 낱말이 프롬프트 어디에도 없음을 못 박는다.
+    """
+
+    def test_칸마다_이름표와_그_칸의_내용(self):
+        from app.ai.captioning.captioner import _COMMON
+        assert "이름표: 그 칸에서 누가 무엇을 하는가" in _COMMON
+        assert "③보다 이 규칙이 먼저" in _COMMON
+
+    def test_같은_문장_되풀이_금지(self):
+        from app.ai.captioning.captioner import _COMMON
+        assert "같은 문장을 줄만 바꿔 되풀이하지 마세요" in _COMMON
+
+    def test_해석과_환각의_경계가_예로_박혀_있다(self):
+        from app.ai.captioning.captioner import _COMMON
+        assert "그 근거가 그림 안에 있는가" in _COMMON
+        assert "예3-20" in _COMMON              # 시험 문서 밖 규정 예시
+        assert "그림에 없는 것은 쓰지 마세요" in _COMMON   # 환각 방어는 그대로
+
+    def test_도표_번호는_층_표시일_뿐_내용은_이름표(self):
+        from app.ai.captioning.captioner import _PROMPTS
+        assert "이름 없는 항목만 번호로 부릅니다" in _PROMPTS["diagram"]
+
+    @pytest.mark.parametrize("answer", [
+        "학교에 다니고 있다", "화가가 된다", "큐레이터",            # 예3-24 (5쪽)
+        "석가 상", "왕관을 씌워", "율령을 반포", "칼을 들고",        # 예6-7 (4쪽)
+        "최외각 전자", "전자 껍질", "양성자(+17)",                 # 예6-1 (3쪽)
+        "탄산 약수", "토론회",                                    # 예5-5·5-4 (1·2쪽)
+        "퍼킨스", "계단 옆에", "북반구",                           # 예3-26·3-27·3-25 (7·8·6쪽)
+    ])
+    def test_시험_문서의_답이_프롬프트에_없다(self, answer):
+        from app.ai.captioning.captioner import _COMMON, _PROMPTS, _CONTEXT_BLOCK, _MATERIAL_BLOCK
+        for text in [_COMMON, _CONTEXT_BLOCK, _MATERIAL_BLOCK, *_PROMPTS.values()]:
+            assert answer not in text, f"시험 답 {answer!r} 이 프롬프트에 있다 — 과적합"
