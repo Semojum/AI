@@ -332,6 +332,18 @@ _BRACED_OP_RE = re.compile(r"\{\s*([-+=<>*/])\s*\}")
 # 폭을 넓히면 의미 있는 간격까지 삼킨다. 쉼표는 절대 넘지 않는다(아래 사용처 주석 참조).
 _SPACED_DIGITS_RE = re.compile(r"\d(?: \d)+")
 
+# MinerU 가 **부호와 수 사이**에 넣은 칸(`x = - 24`). 「한국 점자 규정」 제45항은 수식
+# 안 연산 기호를 붙여 적고(예시 `9-3=6` → #i9#c33#f), 앞뒤를 한 칸씩 띄우는 것은
+# **한글 사이에 나올 때뿐**이다(제46항). gold 실측: 수학2 p002 `x = -24` ↔ ⠭⠒⠒⠔⠼⠃⠙.
+# ⚠ 부호 자리(식 첫머리·관계 기호·여는 괄호·쉼표·행렬 셀 구분 뒤)에서만 지운다.
+#   이항 뺄셈 `x ^ {2} - 3` 의 칸은 이미 뒤 단계가 알아서 지우므로 건드리지 않는다
+#   (실측: `x ^ {2} - 3` → ⠭⠘⠼⠃⠔⠼⠉ 로 이미 붙는다. 범위를 넓히면 헛일이거나 손해다).
+_SIGN_REL = ("leq|geq|neq|le|ge|ne|approx|equiv|sim|simeq|doteq|fallingdotseq|"
+             "to|rightarrow|Rightarrow|longrightarrow|iff|pm|mp|cdot|times|div")
+_SIGN_GAP_RE = re.compile(
+    r"(^|[=<>\u2264\u2265\u2260(\[,&]|\\(?:" + _SIGN_REL + r")(?![A-Za-z]))"
+    r"(\s*)([-\u2212+\u00b1])[ \t]+(?=[\d.])")
+
 _CODE_FENCE_RE = re.compile(r"```[a-zA-Z]*\n?|```")        # ```latex … ``` 펜스
 _MATH_DELIM_RE = re.compile(r"\${1,2}")                    # $$ … $$ / $ … $
 _CMD_BRACE_SP_RE = re.compile(r"(\\[a-zA-Z]+)\s+(?=[{[(])")  # \frac { → \frac{
@@ -342,7 +354,14 @@ _CMD_BRACE_SP_RE = re.compile(r"(\\[a-zA-Z]+)\s+(?=[{[(])")  # \frac { → \frac
 # ★ 명령은 절대 건드리지 않는다 — `\sin x`를 붙이면 `\sinx`가 되어 미지 명령으로
 #   통째로 사라진다(`\anglePO`와 같은 함정). 그래서 왼쪽이 **닫는 중괄호**이거나
 #   **역슬래시가 하나도 없는 영숫자 그룹 안**일 때만 붙인다.
-_TOKEN_SP_AFTER_BRACE_RE = re.compile(r"\}[ \t]+(?=[A-Za-z0-9])")
+_TOKEN_SP_AFTER_BRACE_RE = re.compile(r"\}[ \t]+(?=[A-Za-z0-9(\[])")
+# 낱자 변수끼리의 토큰 칸(`3 a x` · `m m` · `\frac {d y}{d x}`). 「수학 점자」 제12항
+# [붙임 2] "두 개 이상의 로마자 곱은 수학적 표기에 따른다"(예시 AB → ⠠⠁⠠⠃, 칸 없음)라
+# 이 칸은 점자에 실리면 안 된다. 위 중괄호 규칙과 같은 산물이고 같은 가드를 쓴다 —
+# **왼쪽이 명령 꼬리(역슬래시+글자)면 건드리지 않는다**(`\sin x` → `\sinx` 함정).
+# 첨자 뒤(`\log_a x`)도 뺀다 — 밑과 진수가 붙으면 제46항 로그 판정이 갈린다.
+_TOKEN_SP_LETTERS_RE = re.compile(
+    r"(?<![\\A-Za-z_^])([A-Za-z])[ \t]+(?=[A-Za-z](?![A-Za-z]))")
 _TOKEN_SP_IN_GROUP_RE = re.compile(r"\{[A-Za-z0-9]+(?:[ \t]+[A-Za-z0-9]+)+\}")
 # 첨자 _ ^ 양쪽 공백 제거: a _ {i} → a_{i}, } ^{∞} → }^{∞} (첨자가 본체에 붙도록)
 _SUBSUP_SP_RE = re.compile(r"\s*([_^])\s*")
@@ -777,10 +796,15 @@ def _normalize_latex_input(latex: str) -> str:
     # ⚠ 아래 행렬(_mat_repl)·연립식(_sys_repl) 평탄화보다 **먼저** 와야 한다. 그 뒤에는
     #   셀 구분자 &가 공백으로 바뀌어, 서로 다른 칸의 숫자가 한 수로 붙어 버린다.
     s = _SPACED_DIGITS_RE.sub(lambda m: m.group(0).replace(" ", ""), s)
+    s = _SIGN_GAP_RE.sub(r"\1\2\3", s)
     # 괄호 안쪽과 쉼표 앞의 공백도 MinerU가 넣은 것이다: `( x )` → `(x)`, `α , β` → `α, β`.
     # 이 단계는 원문 LaTeX의 군더더기 공백만 지운다 — 제51·57항의 구조 칸은 뒤 단계에서
     # 따로 넣으므로 영향받지 않는다.
     s = re.sub(r"(?<=[(\[])\s+|\s+(?=[)\]])", "", s)
+    # 집합 묶음표 `\{ … \}` 안쪽 칸도 같은 산물이다. 「한국 점자 규정」 제54항
+    # "닫는 따옴표와 닫는 괄호 앞은 붙여 쓴다" — 위 줄이 ( [ ) ] 만 봐서 이스케이프한
+    # 중괄호를 놓쳤다: `\{1, 2 \}` → ⠶⠼⠁⠐⠀⠼⠃**⠀**⠶ (닫기 앞에 빈칸 한 개).
+    s = re.sub(r"(?<=\\\{)[ \t]+|[ \t]+(?=\\\})", "", s)
     s = re.sub(r"\s+(?=[,;])", "", s)
     s = s.replace("\r", " ").replace("\n", " ")
     s = _SPACING_CMD_RE.sub(" ", s)
@@ -791,7 +815,7 @@ def _normalize_latex_input(latex: str) -> str:
         s = re.sub(r"^\s*\(\s*(\d)\s*\)(?=\s+\S)",
                    lambda m: "⠤⠼" + _DIGIT_MAP[m.group(1)] + "⠤", s)
     # 각도 ^{\circ}·^\circ → °(제50항 예시 0d=⠴⠙, 단위) — \circ(합성 ∘) 별칭보다 먼저.
-    s = re.sub(r"\^\s*(?:\{\s*\\circ\s*\}|\\circ)", "°", s)
+    s = re.sub(r"\s*\^\s*(?:\{\s*\\circ\s*\}|\\circ)", "°", s)
     # 적분 명령 보호: \iint·\oint·\int을 유니코드로 먼저 — \in 별칭이 \int를 ∈t로
     # 깨는 것을 막고, 1e단계(제57·58·59항 범위)가 유니코드로만 매칭하므로 \oint도 여기서
     # 바꾼다. 없으면 \oint_C 가 1e를 못 타고 일반 아래첨자로 빠져 제59항 구분 칸이 없고,
@@ -1046,6 +1070,7 @@ def _stage0c_bare_args(latex: str) -> str:
     """중괄호 없는 한 글자 인자·기호 뒤 공백·겹중괄호를 정규화한다."""
     latex = _collapse_redundant_braces(latex)
     latex = _TOKEN_SP_AFTER_BRACE_RE.sub("}", latex)
+    latex = _TOKEN_SP_LETTERS_RE.sub(r"\1", latex)
     latex = _TOKEN_SP_IN_GROUP_RE.sub(lambda m: re.sub(r"[ \t]+", "", m.group(0)), latex)
     latex = _GREEK_CMD_TIGHT_RE.sub(
         lambda m: _GREEK_CMD_MAP.get(m.group(1), m.group(1)), latex)
