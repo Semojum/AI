@@ -34,9 +34,8 @@ def _dict_to_processing_meta(d: dict):
     meta.pdf_layer_confidence = d.get("pdf_layer_confidence", 0.0)
     meta.routing_tier_used = d.get("routing_tier_used", "")
     meta.scan_only = d.get("scan_only", False)
-    # 아래 둘은 pipeline이 이미 만들어 두고도 여기서 안 실려 버려지던 값이다.
+    # pipeline이 이미 만들어 두고도 여기서 안 실려 버려지던 값이다.
     meta.caption_disabled = d.get("caption_disabled", False)
-    meta.advanced_ai_applied = d.get("advanced_ai_applied", False)
     return meta
 
 

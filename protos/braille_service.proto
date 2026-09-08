@@ -19,7 +19,11 @@ message BrailleRequest {
   string mode        = 5;   // "a" | "b" | "c"
   string source_text = 6;   // mode b 전용
   bool   advanced_ai = 7;   // 고급 점역 — MinerU 대신 LLM 이 지면을 직접 읽는다
-  string customer_id = 8;   // LLM 캐시 격리 단위. 빈 값이면 job_id 로 대체(고객 사이엔 절대 안 샌다)
+  // 8 은 `customer_id` 였다(2026-09-08 철회). LLM 캐시 격리는 `job_id` 단위로 돈다 —
+  // 고객 사이엔 이미 안 샌다. 고객 식별자는 같은 고객이 같은 책을 **다른 job_id 로**
+  // 다시 올릴 때만 이득인데, BE 가 업로드마다 새 job_id 를 발급하는지 아직 모른다.
+  // 새로 발급한다는 답이 오면 이 번호를 되살린다.
+  reserved 8;
 }
 
 message TranslateTextRequest {
@@ -107,7 +111,11 @@ message ProcessingMeta {
   string routing_tier_used    = 3;   // ZERO|STANDARD|QUALITY|FALLBACK
   bool   scan_only            = 4;   // 텍스트 레이어 없는 스캔본
   bool   caption_disabled     = 5;   // 시각자료 설명을 끄고(SEMOJUM_NO_CAPTION=1) 돈 산출물. 시각 축 측정 금지
-  bool   advanced_ai_applied  = 6;   // 고급 점역이 실제로 반영됨. 요청이 켜도 ZERO 티어·모델 부재면 false
+                                     // BE·FE 는 안 읽어도 된다 — 우리가 요청 로그로 본다.
+  // 6 은 `advanced_ai_applied` 였다(2026-09-08 철회). "켰는데 안 돌았다" 는 보고할
+  // 상태가 아니라 **결함**이라, 필드로 알리지 않고 그 자리에서 실패로 알린다
+  // (`docs/DECISIONS.md` 「고급 점역의 정의」). 쉬운 지면에서 안 도는 것은 정상이다.
+  reserved 6;
 }
 
 message Draft {                     // 시각 6안(기본 selected_idx=2 개조식)·표 4안. 개수 하드코딩 금지
@@ -138,6 +146,7 @@ message TextElement {
   repeated RuleTrail rule_trail      = 14;   // 적용된 규정 목록
   repeated Draft     drafts          = 15;   // 시각 요소 대체 초안. 텍스트·수식은 빈 배열
   int32              selected_idx    = 16;   // 기본 초안 번호 (0-based)
+  // 아래 둘은 BE·FE 가 안 읽어도 된다 — 쪽 단위 요약을 우리 요청 로그로 본다(#788).
   string             review_grade    = 17;   // 검수 등급 "high"|"medium"|"low"(소문자). 점자 요소만, 원문은 ""
   float              round_trip      = 18;   // 역점역 왕복 일치도 0~1. 못 재면 0
 }

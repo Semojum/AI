@@ -61,10 +61,15 @@ class CacheMiss(RuntimeError):
 # 그래서 열쇠는 **내용 해시만으로는 안 된다.** 내용 해시만 쓰면 같은 교과서를 올린 두 고객이
 # 서로의 캡션·회수·순서 응답을 나눠 쓴다 — 결재와 정반대다.
 #
-# 열쇠는 `BrailleRequest.customer_id`(8, 2026-09-08 신설) 다. **BE 가 안 보내면 `job_id`** 로
-#   되돌아간다(`pipeline.run`) — job 격리는 고객 격리보다 좁으므로 결재를 어기지 않는다
-#   (고객 사이엔 절대 안 샌다). 대신 안 보내는 동안은 같은 고객이 같은 책을 **다시 올리면**
-#   새 job 이라 미스다. `customer_id` 를 보내기 시작하면 그 재호출이 사라진다.
+# ⚠ **AI 서버에는 고객 식별자가 안 들어온다**(2026-09-08 진입점 실측).
+#   `braille_service.proto` `BrailleRequest` = job_id·page_no·total_pages·pdf_data·mode·
+#   source_text·advanced_ai 일곱뿐이고, gRPC 메타데이터도 안 읽는다(`grpc_server.py`).
+#   그래서 지금 쓸 수 있는 **가장 고운 격리 단위가 `job_id`** 다. job 격리는 고객 격리보다
+#   좁으므로 결재를 어기지 않는다(고객 사이에 절대 안 샌다).
+#   ※ 한때 `customer_id`(필드 8)를 받았는데 **되돌렸다**(#788, 대표 지시). 그 필드가 이득을
+#     주는 경우는 같은 고객이 같은 책을 **다른 job_id 로** 다시 올릴 때 하나뿐인데, BE 가
+#     업로드마다 새 job_id 를 발급하는지를 확인하지 않고 계약부터 늘렸다. 번호 8 은
+#     `reserved` 로 비워 뒀다 — "새로 발급한다" 는 답이 오면 그때 되살린다.
 #
 # ★ 비어 있으면 **캐시를 끈다**(fail closed). 컨텍스트가 스레드로 안 넘어간 자리에서
 #   조용히 격리 없는 열쇠를 쓰느니, 그 자리만 캐시를 안 쓰는 쪽이 안전하다.
@@ -129,7 +134,7 @@ PROMPT_VER = {
     "order": 1,        # app/ai/parser/llm_order.py      _SYS
     "visual": 1,       # app/ai/llm/visual_drafts.py
     "opus": 1,         # app/ai/parser/opus_fallback.py
-    "text": 2,         # app/ai/llm/text_opt.py  (2: 자간 벌린 표지 #732)
+    "text": 3,         # app/ai/llm/text_opt.py  (3: 본문 OCR 교정 프롬프트 삭제 #788)
     "formula": 1,      # app/ai/llm/formula_opt.py
     "table": 1,        # app/ai/llm/table_opt.py
 }
@@ -143,7 +148,7 @@ PROMPT_SHA = {
     "caption": "14a5a098f5fe",
     "visual": "3fb25cd311f8",
     "opus": "41bba1c2b41d",
-    "text": "12762f03fa65",
+    "text": "baa6a31f4221",
     "formula": "d831be6fa57a",
     "table": "347b251a5e77",
 }

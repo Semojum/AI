@@ -24,7 +24,7 @@ from app.ai.llm.finetune.dataset import (
 )
 
 
-def _ex(element_type="text", input_text="안너영", target="안녕"):
+def _ex(element_type="formula", input_text="x^2", target="x²"):
     return TrainingExample(element_type=element_type, input_text=input_text, target_text=target)
 
 
@@ -52,8 +52,8 @@ class TestDataFormat:
 
 class TestPromptBuild:
     def test_프롬프트_입력_삽입(self):
-        out = build_prompt(_ex("text", "안너영"))
-        assert "안너영" in out
+        out = build_prompt(_ex("formula", "x^2"))
+        assert "x^2" in out
 
     def test_유형별_템플릿(self):
         assert "x^2" in build_prompt(_ex("formula", "x^2", "x²"))
@@ -63,21 +63,23 @@ class TestPromptBuild:
         pair = build_chat_pair(_ex())
         roles = [m["role"] for m in pair["messages"]]
         assert roles == ["user", "assistant"]
-        assert pair["messages"][1]["content"] == "안녕"
+        assert pair["messages"][1]["content"] == "x²"
 
     def test_load_sft_dataset(self, tmp_path):
         path = tmp_path / "sft.jsonl"
-        to_jsonl([_ex(), _ex("formula", "x^2", "x²")], path)
+        to_jsonl([_ex(), _ex("table", "셀1 | 셀2", "[점역사주] 표")], path)
         ds = load_sft_dataset(path)
         assert len(ds) == 2
         assert all(d["messages"][0]["role"] == "user" for d in ds)
 
-    @pytest.mark.parametrize("etype", ["cartoon", "image", "chart_graph"])
+    @pytest.mark.parametrize("etype", ["cartoon", "image", "chart_graph", "text"])
     def test_규칙조립_유형은_프롬프트학습_제외(self, etype: str):
         """규칙으로 조립하는 유형은 학습할 프롬프트가 없다 — 명확히 거부한다.
 
         ★ 2026-09-08(재구조화 5단계) — 만화뿐이던 이 목록에 image·chart_graph 가 들어왔다.
           시각 4안의 LLM 팔(L8)을 지우면서 `visual_drafts._PROMPT` 가 없어졌기 때문이다.
+        ★ 2026-09-08(#788) — **`text` 도 들어왔다.** 본문 OCR 교정 LLM 을 갈래째 지우면서
+          `text_opt._PROMPT_QUALITY` 가 없어졌다. 본문은 이제 추출 원문을 그대로 옮긴다.
         """
         with pytest.raises(ValueError):
             build_prompt(_ex(etype, "두 컷", "..."))

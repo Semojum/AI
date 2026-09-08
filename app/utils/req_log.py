@@ -344,6 +344,31 @@ def llm_counter_line() -> str:
     return f"LLM계수 call={sum(calls.values())} · " + (" · ".join(parts) or "(없음)")
 
 
+@_never_raises("")
+def review_signal_line(elements: list[dict]) -> str:
+    """이번 쪽 검수 신호(`review_grade`·`round_trip`) **쪽 단위 요약** 한 줄. (#788)
+
+    ★ 이 값들은 요소마다 계산하고 매 쪽 버려 왔다. BE·FE 는 안 읽기로 했으므로
+      (대표 지시 2026-09-08 — "버그 나면 AI 서버 로그를 보면 된다") 우리가 여기서 본다.
+    ★ **요소마다 한 줄씩 찍지 않는다.** 한 쪽에 요소가 수십~200개라 그러면 로그가
+      통째로 못 쓰게 된다. 등급별 개수와 왕복 일치도 최저 세 개만 남긴다 —
+      "이 쪽 어디부터 볼까"에 답하는 데 그거면 된다.
+    ★ 요소가 없어도 줄은 남긴다. 줄이 없는 것과 0인 것을 구별 못 하면 확인이 안 된다.
+    """
+    grades: dict[str, int] = {}
+    rts: list[float] = []
+    for el in elements or ():
+        grades[el.get("review_grade") or "-"] = grades.get(el.get("review_grade") or "-", 0) + 1
+        rt = el.get("round_trip")
+        if isinstance(rt, (int, float)):
+            rts.append(float(rt))
+    rts.sort()
+    worst = " ".join(f"{v:.2f}" for v in rts[:3])
+    return (f"검수신호 요소={sum(grades.values())} · "
+            + (" ".join(f"{g}={n}" for g, n in sorted(grades.items())) or "(없음)")
+            + (f" · 왕복최저 {worst} (측정 {len(rts)})" if rts else " · 왕복 미측정"))
+
+
 def _nanos(usd: float) -> int:
     """USD → 나노(1e-9) 정수. proto가 정수로 받는 이유는 부동소수 누적 오차 때문이다."""
     return round(usd * 1_000_000_000)
