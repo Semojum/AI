@@ -43,6 +43,7 @@ from app.utils.req_log import (
     breakdown_lines,
     elapsed,
     llm_counter_line,
+    review_signal_line,
     set_hcxt_budget,
     stage,
     start_request,
@@ -699,15 +700,21 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     # bbox 좌표계는 경로마다 다르다("pixel" = 2x 렌더 픽셀 / "norm1000" = 0~1000 정규화).
     # 추출한 자리에서 한 번 정하고 meta에 적어 둔다 — 소비자가 다른 필드로 유추하면 안 된다.
     # 고급 점역(요청 advanced_ai) — MinerU 대신 LLM 이 쪽 이미지를 직접 읽는다.
-    # ZERO 티어(텍스트 레이어가 멀쩡한 쪽)는 그대로 둔다. 거기서는 원본 글자를 그대로
-    # 옮기는 편이 정확하고, 고급 점역이 노리는 것은 깨진 지면이다.
+    # ★ **티어로 건너뛰지 않는다**(2026-09-08 대표 정정). 종전에는 ZERO 티어(텍스트 레이어가
+    #   멀쩡한 쪽)를 빼고 돌렸는데, "이 쪽은 이미 깨끗하니 안 해도 된다" 는 **우리 판단이지
+    #   고객 판단이 아니다.** 켜면 쉬운 쪽이든 어려운 쪽이든 모든 쪽을 LLM 이 읽는다.
     advanced_used = ""
+    advanced_why = ""          # 고급 점역이 안 돈 이유. 아래에서 실패로 알린다.
     mnr: tuple[list[dict], int, int, str] | None = None
-    if task.advanced_ai and doc_meta.routing_tier != "ZERO":
+    if task.advanced_ai:
         from app.ai.parser import opus_fallback as _llm
-        if _llm.advanced_available():
+        if not _llm.advanced_available():
+            advanced_why = "모델 키가 없다(ANTHROPIC_API_KEY)"
+        else:
             img = _page_image_path(task)
-            if img:
+            if not img:
+                advanced_why = "지면 이미지를 못 만들었다"
+            else:
                 # ★ MinerU 를 **끄지 않고 같이 돌린다**(2026-09-03 대표 지시). 고급 점역은
                 #   내용을 잘 읽지만 좌표를 못 준다 — 종전에는 이 경로에서 bbox 가 통째로
                 #   (0,0,0,0) 이라 FE 하이라이트가 아예 안 떴다. LLM 은 API·MinerU 는 GPU 라
@@ -726,8 +733,18 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                     advanced_used = used
                     logger.info("고급 점역 추출 채택: %s %d요소 (page=%d)",
                                 used, len(els), task.page_no)
+                else:
+                    advanced_why = "두 모델 다 지면을 못 읽었다"
+        # ★ 유료 옵션은 **조용히 실패하면 안 된다**(대표 결정 2026-09-08 「고급 점역의 정의」).
+        #   여기까지 왔다는 것은 어려운 지면(티어 != ZERO)이라 이 옵션이 **걸리는 자리**인데
+        #   못 돌았다는 뜻이다. 종전에는 경고 한 줄 찍고 MinerU 로 되돌아가, 값을 치른 것과
+        #   다른 것이 **멀쩡한 척** 나갔다. 새 체계를 만들지 않고 예외로 알린다 — `run()` 이
+        #   `status="BLOCKED"` + `CriticalError(C1)` 로 옮긴다.
+        #   ⚠ **티어를 안 가린다.** 켜면 늘 도는 옵션이라 안 돈 경우는 전부 결함이다.
         if not advanced_used:
-            logger.warning("고급 점역 추출 실패 — MinerU 로 되돌린다 (page=%d)", task.page_no)
+            raise RuntimeError(
+                f"고급 점역을 쓸 수 없다: {advanced_why or '알 수 없는 이유'} "
+                f"(page={task.page_no}, 티어={doc_meta.routing_tier})")
 
     if advanced_used:
         method = "LLM_VISION"
@@ -1491,11 +1508,7 @@ async def _run_text_chain(
     _write_stage(task, "text", "text_ocr.json", extracted)
 
     from app.ai.llm.text_opt import TextOpt
-    # 고급 점역(`advanced_ai`)은 여기서 넘긴다 — 본문 OCR 교정 LLM 은 그 요청에서만 돈다(#770).
-    _opt = TextOpt(task.advanced_ai)
-    llm_outputs = await _opt.optimize(extracted, routing_tier, layout)
-    if _opt.used_llm:                      # 본문 OCR 교정 LLM 이 실제로 돈 요청이다
-        task.advanced_ai_applied = True
+    llm_outputs = await TextOpt().optimize(extracted, routing_tier, layout)
     _write_stage(task, "text", "text_opt.json", llm_outputs)
 
     braille_outputs: list[BrailleOutput] = []
@@ -1879,7 +1892,14 @@ async def _run_pipeline(task: PageTask) -> dict:
         if reuse_reason is None:
             extraction = _read_txt_result(task)
             doc_meta = DocumentMeta(**stamp["doc_meta"])
-        else:
+            # ★ 경계 지문(`_stamp_verdict`)은 코드·프롬프트·env 만 본다. **요청마다 달라지는
+            #   `advanced_ai` 는 거기 없다** — 그래서 MinerU 로 만든 경계가 고급 점역 요청에
+            #   그대로 재사용됐다. 유료 옵션이 조용히 안 도는 두 번째 자리다(#788).
+            #   원하는 추출(LLM_VISION)이 아니면 재파생한다.
+            if (task.advanced_ai
+                    and extraction.get("meta", {}).get("extraction_method") != "LLM_VISION"):
+                reuse_reason = "advanced_ai"
+        if reuse_reason is not None:
             if reuse_reason != "no_boundary":
                 logger.info("경계 stamp 무효(%s) → 재파생 job=%s page=%d",
                             reuse_reason, task.job_id, task.page_no)
@@ -1889,11 +1909,6 @@ async def _run_pipeline(task: PageTask) -> dict:
         method0 = extraction.get("meta", {}).get("extraction_method", "?")
         st.note = (f"{len(extraction.get('elements', []))}요소 · {method0} · "
                    f"{'경계 재사용' if reuse_reason is None else f'재파생({reuse_reason})'}")
-    # 고급 점역이 **실제로** 이 응답에 들어갔는가. 요청이 켜도 ZERO 티어·모델 부재·추출
-    # 실패면 MinerU 로 되돌아가 여기가 LLM_VISION 이 아니다. 경계 재사용본이 LLM_VISION
-    # 이면 켠다 — 이번 호출에서 LLM 을 안 불렀어도 응답 내용은 고급 점역 것이다.
-    if method0 == "LLM_VISION":
-        task.advanced_ai_applied = True
 
     # 원본 페이지 크기(경계 meta) → 응답 image_width/height. bbox와 같은 좌표계(2x 픽셀).
     _meta0 = extraction.get("meta", {})
@@ -2241,8 +2256,6 @@ def _build_response(
             "scan_only": doc_meta.scan_only if doc_meta else False,
             # 캡셔닝을 끄고 돈 산출물이면 박아 둔다 — 이걸로 시각 축을 재면 안 된다.
             "caption_disabled": os.getenv("SEMOJUM_NO_CAPTION") == "1",
-            # 요청 advanced_ai 가 아니라 실제 사용 여부다(위 두 자리에서 켠다).
-            "advanced_ai_applied": bool(task.advanced_ai_applied),
         },
         "quality_report": quality_report.model_dump(),
     }
@@ -2452,9 +2465,9 @@ async def run(task: PageTask) -> dict:
     """파이프라인 진입점. 300초 하드 타임아웃 강제."""
     start_request()   # 요청 단위 API 카운터 초기화
     # LLM 캐시 격리 열쇠(재구조화 3-e · 대표 결재 "(B) 고객별 격리").
-    # BE 가 `BrailleRequest.customer_id` 를 실어 주면 고객 단위로 가른다. 안 실으면
-    # 종전대로 job_id — job 격리는 고객 격리보다 좁으므로 결재를 어기지 않는다.
-    llm_cache.set_scope(task.customer_id or task.job_id)
+    # 요청에 고객 식별자는 없다 — `job_id` 가 지금 쓸 수 있는 가장 고운 단위이고,
+    # job 격리는 고객 격리보다 좁으므로 결재를 어기지 않는다(고객 사이엔 안 샌다).
+    llm_cache.set_scope(task.job_id)
     # 관문 계수기(재구조화 §2-2)는 **쪽마다** 새로 판다. 여러 쪽이 한 프로세스에서 겹쳐
     # 도는데 전역으로 세면 옆 쪽 발동이 이 쪽 review_flags 에 얹힌다(gates 도크스트링).
     gates.gate_reset()
@@ -2501,6 +2514,15 @@ async def run(task: PageTask) -> dict:
             task.job_id, task.page_no, task.mode,
         )
         logger.info(llm_counter_line())   # 재구조화 3-a — 끄기 팔 확인은 이 줄의 call=0
+        # 요소별 검수 신호는 **쪽 단위 요약 한 줄**로만 남긴다(#788). BE·FE 가 안 읽기로
+        # 했으므로 우리가 여기서 본다 — 요소마다 찍으면 쪽당 수십 줄이라 로그가 못 쓰게 된다.
+        logger.info(review_signal_line(result.get("braille_text_list") or []))
+        # 캡셔닝이 꺼진 채 **멀쩡한 척** 나가는 응답을 우리가 알아야 한다(#788).
+        # 이 산출물로 시각 축을 재면 안 된다 — 설명이 통째로 빠져 있다.
+        if (result.get("processing_meta") or {}).get("caption_disabled"):
+            logger.warning("⚠ 캡셔닝 꺼짐(SEMOJUM_NO_CAPTION=1) — 시각자료 설명 없는 "
+                           "산출물이다. 시각 축 측정 금지 (job=%s page=%d)",
+                           task.job_id, task.page_no)
         for _line in breakdown_lines():   # 파트별 LLM 사용 내역(디버깅·비용 추적)
             logger.info(_line)
         # 원가는 성공·타임아웃·예외 **셋 다** 싣는다 — 막혔어도 돈은 나갔다.

@@ -1,26 +1,27 @@
 """PART 4-2 — 텍스트 점역 최적화 (HyperCLOVA X SEED Think 14B INT4, GPU 1).
 
-ZERO     → LLM 호출 없음 (텍스트 그대로 반환)
-STANDARD → LLM 호출 없음 (OCR 품질 충분 — 교정 불필요)
-QUALITY  → 고급 점역(`advanced_ai=true`)일 때만 LLM OCR 교정 (#770). 아니면 원문 그대로
-FALLBACK → GPT-4o API, 45초 제한 (3회 연속 실패 후)
+**본문을 LLM 이 다시 쓰는 일은 없다.** 티어와 무관하게 추출 원문을 그대로 옮긴다.
 
-공통 추론·폴백·재시도는 base_opt — 여기서는 텍스트에 최적화된 프롬프트·후처리만 정의한다.
-추출 텍스트는 rule-based로 그대로 옮기는 것이 원칙이므로, LLM은 **사용자가 고급 점역을
-고른 요청**의 저신뢰 스캔에서만 OCR 오류 교정에 개입한다(내용 재작성 금지, #770).
+대표 결정 2026-09-08 「고급 점역의 정의」 — 고급 점역은 **추출 옵션**이다. 어려운 지면은
+LLM 이 **애초에 읽으므로** 뒤에서 본문을 고칠 자리가 없다. 저화질 스캔(QUALITY 티어)의
+OCR '교정' 단계는 그래서 없앴다(#788, `5a1ce49` 의 절반을 되돌린 것).
+  · 남기면 **텍스트 층이 깨끗한 쪽에서도 LLM 이 멀쩡한 본문을 다시 쓴다.** 같은 문서가
+    매번 달라지고 모델 해설문이 점자로 나간다(수식 쪽 실측 2건 #766).
+  · 저화질이라도 추출 원문 그대로 내보낸다. 틀린 자리는 점역사가 고친다.
+
+여기 남은 LLM 은 **레이아웃 태깅** 하나뿐이다(`_tag_layout` — 점역자주·테두리·빈칸).
+그건 본문을 다시 쓰는 것이 아니라 점역 직전에 태그를 꽂는 일이다.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import re
 import time
 
 from app.ai.llm.base_opt import (
     BaseOpt,
     fallback_optimize,
-    generate_with_retry,
     hcxt_optimize,
     part_llm_on,
 )
@@ -206,127 +207,21 @@ def _min_trail(text: str) -> list[RuleApplication]:
     return []
 
 
-# ── 본문 OCR 교정 LLM: 고급 점역 안에서만 (#770 · 2026-09-08 대표 지시) ──────────
-# 대표가 LLM 을 부르는 자리를 셋으로 못 박았다(`docs/DECISIONS.md` 2026-09-08):
-# 시각자료 · MinerU 폴백 · **고급 점역**. 저화질 스캔(QUALITY 티어)이라는 이유만으로
-# 본문을 LLM 이 다시 쓰는 일은 그 셋에 없다 — 사용자가 고르지 않은 자리에서 본문이 바뀌면
-# 같은 문서가 매번 달라지고, 모델 해설문이 점자로 나간다(수식 쪽 실측 2건 #766).
-# 고급 점역이 꺼져 있으면 저화질도 **추출 원문 그대로** 내보낸다. 점역사가 고친다.
-_TEXT_OCR_LLM_DEFAULT = "advanced"
-
-
-def _text_ocr_llm_on(advanced_ai: bool) -> bool:
-    """저화질 본문을 LLM 에게 다시 쓰게 할 것인가. 기본은 고급 점역을 고른 요청에서만.
-
-    되돌리는 길(스위치 대장 `TEXT_OCR_LLM`):
-      · `1` — 종전 동작. 고급 점역과 무관하게 QUALITY 티어면 부른다.
-      · `0` — 고급 점역에서도 안 부른다(본문 LLM 전면 차단).
-      · 그 밖(기본 `advanced`) — `advanced_ai=true` 일 때만 부른다.
-
-    ⚠ **호출 시** 읽는다. 모듈 최상단에서 굳히면 프로세스 env 로 주는 A/B 가 안 먹는다
-      (원장 `ab-off-arm-must-be-truly-off`, 2026-09-03 에 하루 두 번 무효가 났다).
-    """
-    mode = os.environ.get("TEXT_OCR_LLM", _TEXT_OCR_LLM_DEFAULT)
-    if mode == "1":
-        return True
-    if mode == "0":
-        return False
-    return bool(advanced_ai)
-
-
-# QUALITY 티어(저신뢰 스캔)에서만 호출 — OCR 오류 교정. 프롬프트 잔재('신뢰도/입력/출력'
-# 라벨)가 출력에 새지 않도록 라벨을 넣지 않고 결과만 받도록 지시한다(누출 버그 방지).
-_PROMPT_QUALITY = """다음 텍스트의 OCR 오류(깨진 글자·잘못된 띄어쓰기·오인식)만 교정해 교정된 텍스트만 출력하세요. 설명·머리말·따옴표 없이 결과만.
-
-{text}"""
-
-# 답변을 `교정된 텍스트: `로 프리필 — Think 모델이 "원본 텍스트에서 오류를 발견했습니다…" 식
-# 설명을 늘어놓지 않고 곧바로 교정문을 내도록 시작을 강제(시각 opt 프리필과 동일 기법).
-# 프리필 스캐폴드는 _extract에서 제거하므로 최종 출력엔 라벨이 남지 않는다.
-_PREFILL = "교정된 텍스트: "
-
-# 모델이 프롬프트 라벨을 복창한 경우 선두에서 제거(방어적 후처리).
-_ARTIFACT_RE = re.compile(r"^\s*(신뢰도|입력|출력|교정(된)?\s*텍스트|결과)\s*[:：].*$")
-
-
-def _clean_output(text: str) -> str:
-    """LLM 출력에서 프롬프트 잔재(선두 라벨 줄)·감싼 따옴표 제거."""
-    raw = text or ""
-    lines = raw.splitlines()
-    while lines and (not lines[0].strip() or _ARTIFACT_RE.match(lines[0])):
-        lines.pop(0)
-    cleaned = "\n".join(lines).strip().strip("\"'`「」“”").strip()
-    return cleaned or raw.strip()
-
-
-def _extract(resp: str) -> str:
-    """프리필 스캐폴드만 제거하고 본문은 그대로 둔다(여러 줄 교정문 보존).
-
-    프리필이 이미 설명 머리말을 억제하므로 첫 줄만 자르지 않는다 — 여러 문장/줄로 된
-    교정 텍스트가 잘려 소실되는 것을 막는다. 선두 라벨·따옴표는 _clean_output이 정리.
-    """
-    t = resp[len(_PREFILL):] if resp.startswith(_PREFILL) else resp
-    return _clean_output(t)
-
-
 class TextOpt(BaseOpt):
-    """ExtractedContent 목록 → LLMOutput 목록.
-
-    `advanced_ai` 는 요청(`PageTask.advanced_ai`)에서 온다 — `pipeline._run_text_chain` 이
-    생성자로 넘긴다. 본문 OCR 교정 LLM 은 그 값이 참일 때만 돈다(#770).
-    """
-
-    def __init__(self, advanced_ai: bool = False) -> None:
-        self.advanced_ai = bool(advanced_ai)
-        # 본문 OCR 교정 LLM 이 실제로 돌았는가. `_run_text_chain` 이 읽어
-        # 응답 `processing_meta.advanced_ai_applied` 로 올린다.
-        self.used_llm = False
+    """ExtractedContent 목록 → LLMOutput 목록. **본문에 LLM 을 안 부른다.**"""
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
-        text = ext.corrected_text or ""
         start = time.monotonic()
-
-        # ZERO / STANDARD Tier: OCR 교정은 생략(품질 충분) — 텍스트 원문 보존.
-        # QUALITY(저화질 스캔)라도 **고급 점역을 고른 요청에서만** 교정한다(#770).
-        if (routing_tier in ("ZERO", "STANDARD")
-                or ext.ocr_confidence >= config.ocr_confidence_threshold
-                or not _text_ocr_llm_on(self.advanced_ai)):
-            tagged = await _tag_layout(text)  # 레이아웃 태깅(점역자주·테두리·빈칸)
-            return LLMOutput(
-                element_id=ext.element_id,
-                corrected_text=tagged,
-                render_mode="text_only",
-                routing_tier=routing_tier if routing_tier in ("ZERO", "STANDARD") else "STANDARD",
-                processing_time_ms=int((time.monotonic() - start) * 1000),
-                rule_trail=_min_trail(tagged),
-            )
-
-        # 입력 텍스트 길이 기반 max_new_tokens: 한글 1자 ≈ 1~2토큰, 여유분 30% 추가
-        max_new_tokens = min(512, max(64, int(len(text) * 1.3)))
-        self.used_llm = True
-        response, used_fb = await generate_with_retry(
-            _PROMPT_QUALITY.format(text=text),
-            timeout=config.hcxt_quality_timeout_seconds, element_id=ext.element_id, kind="텍스트",
-            prefill=_PREFILL, max_new_tokens=max_new_tokens, fallback_max_tokens=1024,
-            transform=_extract,
-        )
-        tier = "FALLBACK" if used_fb else "QUALITY"
-
-        # ★ 관문 G1(#768) — 모델이 본문 대신 해설문을 쓰면 그 자리는 **원문으로 되돌린다**.
-        #   `kind="body"` 는 추출 거부문 판정만 건다. AI 말투 줄 걷기는 안 건다 —
-        #   본문에는 존댓말이 정상으로 있어 교과서 문장을 먹는다(`guard_llm_text` 도크스트링).
-        #   그 표는 요소 content 한 덩이 단위로 검증됐고(dev+val 1,131쪽·28,425요소,
-        #   검출 2·오검출 0), 여기 들어오는 것이 바로 그 단위다.
-        from app.ai.captioning.captioner import guard_llm_text   # 지연 — openai SDK
-        response = guard_llm_text(response, "body")
-
-        corrected = await _tag_layout(response or text)  # OCR 교정 후 레이아웃 태깅
-        elapsed_ms = int((time.monotonic() - start) * 1000)
+        # 티어를 안 가린다 — QUALITY(저화질 스캔)도 추출 원문 그대로다(#788).
+        # 어려운 지면은 고급 점역이 **추출에서** 읽는다. 여기서 다시 쓸 것이 없다.
+        tagged = await _tag_layout(ext.corrected_text or "")  # 태깅(점역자주·테두리·빈칸)
         return LLMOutput(
             element_id=ext.element_id,
-            corrected_text=corrected,
+            corrected_text=tagged,
             render_mode="text_only",
-            routing_tier=tier,
-            processing_time_ms=elapsed_ms,
-            rule_trail=_min_trail(corrected),
+            # QUALITY 가 STANDARD 로 나가는 것은 종전 무-LLM 갈래 그대로다 — 이 값은
+            # "이 요소에 LLM 이 걸렸나" 를 뜻해 왔고, 이제 본문에는 영영 안 걸린다.
+            routing_tier=routing_tier if routing_tier in ("ZERO", "STANDARD") else "STANDARD",
+            processing_time_ms=int((time.monotonic() - start) * 1000),
+            rule_trail=_min_trail(tagged),
         )

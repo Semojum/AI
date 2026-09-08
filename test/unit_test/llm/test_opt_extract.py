@@ -1,31 +1,14 @@
-"""opt 프리필 후처리 _extract 회귀 — 여러 줄 본문 보존 + 프리필 스캐폴드 제거.
+"""opt 프리필 후처리 _extract 회귀 — 여러 줄 수식 보존 + 프리필 스캐폴드 제거.
 
-리뷰 #1/#3: _extract가 첫 줄만 취해 여러 줄 교정문/수식이 잘려 소실되던 회귀 방지.
+리뷰 #1/#3: _extract가 첫 줄만 취해 여러 줄 수식이 잘려 소실되던 회귀 방지.
+
+※ 텍스트 몫(`text_opt._extract`)은 없어졌다 — 본문 OCR 교정 LLM 을 갈래째 지웠다(#788,
+  대표 결정 「고급 점역의 정의」). 프리필도 후처리도 부를 자리가 없다. 수식 몫만 남는다.
 """
 from __future__ import annotations
 
 from app.ai.llm.formula_opt import _PREFILL as FP
 from app.ai.llm.formula_opt import _extract as formula_extract
-from app.ai.llm.text_opt import _PREFILL as TP
-from app.ai.llm.text_opt import _extract as text_extract
-
-
-class TestTextExtract:
-    def test_여러줄_보존(self):
-        out = text_extract(TP + "첫째 문장 교정.\n둘째 문장 교정.")
-        assert "첫째 문장 교정." in out and "둘째 문장 교정." in out
-
-    def test_프리필_제거(self):
-        out = text_extract(TP + "물의 어는점은 0℃이다.")
-        assert not out.startswith(TP)
-        assert out == "물의 어는점은 0℃이다."
-
-    def test_빈_응답_안전(self):
-        assert text_extract(TP) == ""
-
-    def test_프리필_없는_폴백_응답도_처리(self):
-        # FALLBACK(GPT-4o) 응답은 프리필이 없다 — 그대로 정리만.
-        assert text_extract("교정된 한 줄.") == "교정된 한 줄."
 
 
 class TestFormulaExtract:
