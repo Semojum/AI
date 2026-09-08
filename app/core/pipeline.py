@@ -1806,7 +1806,12 @@ async def _run_pipeline(task: PageTask) -> dict:
         #     (NLD 2장2절2 "3칸에서 시작"). 대신 `order`에 **원본 줄 번호**를 그대로 실어
         #     BE가 빈 줄이 어디였는지 알 수 있게 한다(번호가 건너뛴다).
         #   · id는 `text_list`와 `braille_text_list`가 같다 — 그게 짝짓기의 열쇠다.
-        src_lines = _mode_b_segments(_mode_b_html_tables_to_tags(task.source_text or ""))
+        # 표 되읽기 두 갈래: BE 가 hwp·docx 에서 보낸 HTML `<table>` 과, 점역사가 우리
+        # 묵자 초안을 고쳐 되돌린 테두리 블록(`┌ ├ └`). 둘 다 `<!표>` 태그로 옮겨
+        # 같은 표 체인에 태운다 — 안 그러면 테두리 줄이 `[처리 불가]` 로 찍힌다(#723).
+        from app.ai.braille.table_braille import parse_print_frames
+        _src = parse_print_frames(_mode_b_html_tables_to_tags(task.source_text or ""))
+        src_lines = _mode_b_segments(_src)
         if not src_lines:                       # 내용이 없으면 빈 응답(빈 결과 금지 규칙은
             src_lines = [(1, "text", task.source_text or "")]   # 플레이스홀더가 담당)
         line_ids = [uuid4() for _ in src_lines]
