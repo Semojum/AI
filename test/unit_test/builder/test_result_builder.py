@@ -282,3 +282,72 @@ def test_caption_with_a_visual_is_left_alone():
     _link_captions(els)
     assert els[0]["content"] == "▲ 참호전"
     assert els[0]["caption_ref"] == "i1"
+
+
+def test_infigure_label_moves_behind_its_figure():
+    """그림 안 글자는 그 시각 요소 뒤로 간다 — 쪽 첫 줄에 제목처럼 앉지 않는다.
+
+    실물: `테스트_이미지.pdf` 5쪽. MinerU 가 만화 다섯째 칸 제목 '60년 후'를 별도 text
+    요소로도 내보내 **쪽 첫 줄**에 앉았다(본문 발문보다 앞). 「점자 자료 제작 지침」
+    §6.3.2·§6.3.4(2)① 상 그림 안 글자는 시각 요소 블록에 속한다.
+
+    ★ 지우지 않는다. gold 는 이 이름표를 본문 글자로도 싣고 있어(dev 생물 p002 실측:
+      '근육 세포'·'근육 조직'·'소화계' 가 gold 에 그대로 있다) 빼면 덩이누락이 는다.
+    """
+    from app.ai.builder.result_builder import _move_infigure_text
+
+    els = [
+        {"id": "t1", "order": 1, "type": "text", "content": "60년 후",
+         "bbox": [854, 138, 934, 198]},
+        {"id": "t2", "order": 2, "type": "text",
+         "content": "나의 인생 과정은 어떻게 전개될까?", "bbox": [0, 3, 370, 75]},
+        {"id": "v1", "order": 3, "type": "cartoon",
+         "content": "그림: 인생 시기별 모습\n현재: 학생\n60년 후: 지팡이 짚은 노년 남녀",
+         "bbox": [5, 116, 988, 769]},
+    ]
+    out = _move_infigure_text(els)
+    assert [e["id"] for e in out] == ["t2", "v1", "t1"]
+    assert [e["order"] for e in out] == [1, 2, 3]
+
+
+def test_infigure_text_missing_from_caption_keeps_its_place():
+    """설명문에 없는 글자는 그림 안에 있어도 순서를 안 건드린다."""
+    from app.ai.builder.result_builder import _move_infigure_text
+
+    els = [
+        {"id": "t1", "order": 1, "type": "text",
+         "content": "질소는 대기에서 주로 질소기체로 존재한다.", "bbox": [766, 161, 924, 221]},
+        {"id": "v1", "order": 2, "type": "image",
+         "content": "그림: 질소 순환 모식도", "bbox": [410, 130, 970, 330]},
+    ]
+    assert [e["id"] for e in _move_infigure_text(els)] == ["t1", "v1"]
+
+
+def test_text_outside_the_figure_keeps_its_place():
+    """그림 밖 본문은 글자가 설명문과 겹쳐도 손대지 않는다."""
+    from app.ai.builder.result_builder import _move_infigure_text
+
+    els = [
+        {"id": "t1", "order": 1, "type": "text", "content": "현재",
+         "bbox": [0, 900, 100, 950]},
+        {"id": "v1", "order": 2, "type": "cartoon", "content": "그림: 현재 모습",
+         "bbox": [5, 116, 988, 769]},
+    ]
+    assert [e["id"] for e in _move_infigure_text(els)] == ["t1", "v1"]
+
+
+def test_infigure_move_never_loses_an_element():
+    """요소 수는 어떤 경우에도 보존된다 — 덩이누락을 늘리지 않는다는 계약."""
+    from app.ai.builder.result_builder import _move_infigure_text
+
+    els = [
+        {"id": "a", "order": 1, "type": "text", "content": "이자", "bbox": [10, 10, 20, 20]},
+        {"id": "b", "order": 2, "type": "text", "content": "쓸개", "bbox": [30, 10, 40, 20]},
+        {"id": "v", "order": 3, "type": "image", "content": "그림: 이자 쓸개 모식도",
+         "bbox": [0, 0, 100, 100]},
+        {"id": "c", "order": 4, "type": "text", "content": "본문", "bbox": [0, 500, 100, 520]},
+    ]
+    out = _move_infigure_text(els)
+    assert len(out) == len(els)
+    assert {e["id"] for e in out} == {"a", "b", "v", "c"}
+    assert [e["id"] for e in out] == ["v", "a", "b", "c"]
