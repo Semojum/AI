@@ -32,7 +32,8 @@ class TestStructuredInput:
         assert "연도 | 권수" in text and "2020 | 980" in text   # 셀 값 전사(rule-based)
 
     def test_render_mode_추론(self):
-        assert _infer_render_mode(_CELLS) == "linear"            # 2열 → 선형
+        # 2열도 격자다(#793 대표 지시 · §3.1.1(1)① 정렬 형태 유지). 되돌림 스위치 TABLE_TWO_COL=linear
+        assert _infer_render_mode(_CELLS) == "table_grid"
         grid = {"cells": _CELLS["cells"] + [{"row": 0, "col": 2, "text": "비고"}]}
         # 3열 이상 = 격자형 (2026-08-06 판정 번복 — 원장 C-01a).
         # gold dev-2027 테두리 표 445개 중 383개(86%)가 격자 '행제목: 값' 형식이다.
@@ -48,7 +49,7 @@ class TestOptimize:
     def test_구조화입력_render_mode_결정(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, table_structure=_CELLS)
         opt = asyncio.run(TableOpt().optimize([ext], "ZERO"))[0]
-        assert opt.render_mode == "linear"
+        assert opt.render_mode == "table_grid"          # 2열 기본이 격자다(#793)
         assert "2020" in opt.corrected_text and "980" in opt.corrected_text
 
     def test_격자_3안_테두리(self):

@@ -47,8 +47,15 @@ SUBTYPES: tuple[str, ...] = (
     "family_tree",   # §6.6.4 가계도
     "org_chart",     # §6.6.5 조직도
     "timeline",      # §6.6.6 연대표
-    "screen_image",  # §6.6.7 화면 이미지
     "slide",         # §6.6.8 발표용 슬라이드
+    # ★ 2026-09-09(#793 · 원장 C-119) — §6.6.7 `screen_image`(화면 이미지)를 **뺐다**(대표 지시
+    #   "'화면 이미지' 유형은 없어도 될 것 같아"). 실물이 0건이다: 운영 캡션 캐시
+    #   3,251건 · 데모 실행 27쪽 어디에도 이 유형으로 선 자료가 없다.
+    #   조항(§6.6.7)은 남아 있으므로 조립기 `diagram_opt.assemble_screen_image` 와
+    #   `structure_from_caption` 의 `screen_image` 갈래는 **지우지 않고 배선만 끊었다.**
+    #   다시 켜려면 여기 · `_SUBTYPE_WORDS` · `classifier._SUBTYPE_CLAUSE`/`_SUBTYPE_PROMPT` ·
+    #   `diagram_opt.{_TYPE_LABEL,_SUBTYPE_RULE,_ASSEMBLERS}` · `visual_drafts.DESC_LABELS`
+    #   여섯 자리에 값을 도로 넣으면 된다.
 )
 
 # 첫 줄 유형어 → §6.6 하위유형. 순서 = 판정 우선순위(구체적인 말 먼저).
@@ -68,8 +75,6 @@ _SUBTYPE_WORDS: tuple[tuple[str, str], ...] = (
     ("흐름도", "flowchart"),
     ("순서도", "flowchart"),
     ("공정도", "flowchart"),
-    ("화면 이미지", "screen_image"),
-    ("화면이미지", "screen_image"),
     ("발표용 슬라이드", "slide"),
     ("슬라이드", "slide"),
     ("양식", "form"),

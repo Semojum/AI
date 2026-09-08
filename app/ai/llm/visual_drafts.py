@@ -125,7 +125,6 @@ DESC_LABELS = {
     "family_tree":  "가계도(하향식)",   # §6.6.4(1) — 방식이 둘로 갈리는 유일한 유형
     "timeline":     "연대표",           # §6.6.6
     "form":         "양식",             # §6.6.3
-    "screen_image": "화면 이미지",      # §6.6.7
     "slide":        "발표용 슬라이드",  # §6.6.8
     "만화":         "만화",             # §5.3 — 한 장면이면 장면 설정, 여러 장면이면 대사.
                                         #   재료가 가르니 이름은 하나다.
@@ -205,15 +204,23 @@ def desc_label(type_key: str) -> str:
 def prose_label(type_key: str) -> str:
     """그 유형의 **둘째 안** 이름.
 
-    도표는 골격(유형명)과 줄글이 **형식**으로 갈린다. 그림·사진·그래프·만화는 형식이
-    하나뿐이라 여기서는 안을 더 만들지 않는다 — 분량 갈래는 `gist_draft`(간추린 설명)가 진다.
-
     ★ 2026-09-07 — 그림·사진·그래프가 `DETAIL_LABEL`("설명(자세히)")을 받던 것을 없앴다.
       그 안의 내용은 LLM `[줄글]` 절 한 줄이라 **설명 안보다 짧았고**(위 상수 주석의 실측),
       게다가 캡션에 없는 문장이었다. 분량을 갈라야지 없는 사실을 지어내면 안 된다.
-      곁따라 **LLM 호출 하나가 준다** — 아래 `need_prose` 가 이 값을 보고 정해진다.
+
+    ★ 2026-09-09(#793 · 원장 C-120) — **도표 밖에도 줄글을 낸다.** 종전에는 `type_key in DESC_LABELS`
+      라 그림·사진·그래프가 개조식 한 형식뿐이었는데, 조항이 반대로 말한다:
+      「점자 자료 제작 지침」 §6.1.4 **(7) 진술적 설명** "사실에 대한 설명을 문장 형식으로
+      진술한다. **대부분의 시각 자료 설명에 사용**하고" — 줄글이 오히려 다수 형식이고,
+      (6) 개조식은 "시각적으로 제시된 **과정 흐름**" 자리로 한정된다.
+      글자는 `build_visual_drafts` 가 **설명 안이 쓰는 그 재료**를 이어 만들므로 새 말이
+      섞이지 않고, 재료가 같으면 `_covered_by` 가 접는다(2026-09-07 실패와 갈리는 지점).
+
+    ⚠ 만화만 뺀다. §5.3.3(1)(2)가 장면 5칸·대사 3칸으로 **줄 배치를 못 박아** 한 줄
+      줄글이 조항 위반이 된다. `desc_label("만화") == "만화"` 라 여기서 같은 값이 나오면
+      호출부의 "이름이 갈릴 때만" 조건이 안을 안 만든다.
     """
-    return PROSE_LABEL if type_key in DESC_LABELS and type_key != "만화" else desc_label(type_key)
+    return desc_label(type_key) if type_key == "만화" else PROSE_LABEL
 
 # 개조식 들여쓰기 — **값은 전부 앞 빈칸 수다. 규정의 칸 번호가 아니다.**
 #   규정 "1칸에서 적는다" = 0 · "3칸에서 적는다" = 2 · "5칸에서 적는다" = 4 · "7칸" = 6
@@ -644,7 +651,12 @@ def desc_draft(
 
 
 def prose_draft(text: str, type_key: str = "") -> Draft | None:
-    """줄글 설명 안(§6.1.1(5)). 낼 글이 없으면 None.
+    """줄글 설명 안(§6.1.4(7) 진술적 설명). 낼 글이 없으면 None.
+
+    ★ 2026-09-09 인용 정정 — 종전 주석은 근거로 §6.1.1(5)를 댔는데 그 조항은
+      "시각 자료의 **유형 및 기능**에 따른 표현 형식" 표(그래프·지도 × 필수/보충/장식)라
+      줄글과 무관하다. 줄글의 조항은 §6.1.4(7) "사실에 대한 설명을 문장 형식으로 진술한다.
+      대부분의 시각 자료 설명에 사용하고, (1)~(4)의 원칙에 따라 표현한다" 다.
 
     ★ 2026-08-25 — 종전에는 줄글 재료(`struct_prose`·LLM `[줄글]` 절)를 만들어 놓고
       **아무 데도 안 썼다.** 2026-08-20에 6안을 3안으로 줄이며 '줄글' 칸이 사라졌는데
@@ -676,6 +688,7 @@ def gist_draft(
     text, indents = _outline_text_indents(label, title, desc, [], kind, body_texts)
     return Draft(option=GIST_OPTION, text=_TAGS.apply_indent_tags(text, indents),
                  render_mode="narrative", label=GIST_LABEL), indents
+
 
 
 def _dedupe(drafts: list[Draft], selected_idx: int) -> tuple[list[Draft], int]:
@@ -894,7 +907,21 @@ async def build_visual_drafts(
     #   ③ **글이 실제로 다르다** — `_dedupe` 는 글자가 완전히 같을 때만 접는다. 그것만으로는
     #      부족해서, 공백을 접어 견준 뒤 **설명 안이 이미 품고 있는 글**이면 안 낸다
     #      (자세히에 더 들어갈 내용이 없다는 뜻이다).
-    real_prose = struct_prose or ""
+    # ★ 2026-09-09(#793) — 줄글 재료가 따로 없으면 **설명 안이 쓰는 그 재료를 잇는다.**
+    #   글자가 전부 설명 안에 이미 있던 것이라 새 말이 들어갈 자리가 구조적으로 없다
+    #   (`gist_draft` 와 같은 안전장치다). 종전에는 `struct_prose` 가 있는 자리(차트 ZERO)
+    #   에서만 줄글이 섰고 제품 경로에서는 도표 골격 말고 어디에도 안 섰다.
+    #   조항: §6.1.4(7) "사실에 대한 설명을 문장 형식으로 진술한다. 대부분의 시각 자료
+    #   설명에 사용" · (6) 개조식은 "과정 흐름" 자리로 한정.
+    #   ⚠ 유형 제시어(`사진:`)를 앞에 단다 — §6.3.4(1) "유형 제시어가 없더라도 점역자
+    #     주표를 사용하여 시각 자료 유형을 표기한다". 안 달면 설명 안에는 있는 유형이
+    #     줄글 안에서만 사라진다(실물: 설명 `사진: 해바라기꽃` ↔ 줄글 `해바라기꽃, …`).
+    #   ⚠ 머리글 재료는 `_strip_dup_type` 을 먼저 태운다 — 설명 안이 쓰는 것과 같은 값이라야
+    #     한다. 안 태우면 캡션이 이미 `그림: …` 인 자리에서 `그림: 그림: …` 로 두 번 나간다.
+    _joined = ", ".join(
+        t.strip() for t in [_strip_dup_type(outline_desc, label),
+                            *(t for _lv, t in outline_items)] if (t or "").strip())
+    real_prose = struct_prose or (f"{label}: {_joined}" if _joined else "")
     if prose_label(kind) != desc_label(kind):
         d_prose = prose_draft(real_prose, kind)
         if d_prose is not None and not _covered_by(d_prose.text, d_desc.text):

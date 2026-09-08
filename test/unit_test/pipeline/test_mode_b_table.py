@@ -56,28 +56,29 @@ class TestCellCloseTag:
 class TestRenderMode:
     """`<!표>` 태그로 직접 들어오면 열 수를 태그에서 세야 한다 — HTML도 파이프도 아니다."""
 
-    @pytest.mark.parametrize("cols,expected", [(2, "linear"), (3, "table_grid")])
+    @pytest.mark.parametrize("cols,expected", [(2, "table_grid"), (3, "table_grid")])
     def test_열_수로_갈린다(self, cols, expected):
         from app.ai.llm.table_opt import _infer_render_mode
         cells = "".join(f"<!칸>c{i}<!/칸>" for i in range(cols))
         assert _infer_render_mode(None, f"<!표><!행>{cells}<!/행><!/표>") == expected
 
-    def test_2열_스위치_기본은_풀어쓰기(self, monkeypatch):
-        """기본값은 종전 그대로 `linear` 다 — 스위치를 켜야 격자로 간다(원장 C-30).
+    def test_2열_기본은_테두리_구분선(self, monkeypatch):
+        """기본값은 `table_grid` 다 — 되돌리려면 `TABLE_TWO_COL=linear`(원장 C-30 닫음).
 
         2026-08-29 실측: 우리가 `linear` 를 고른 표 167개 중 **166개가 "2열이라서"** 이고,
         그 쪽에서 gold 는 행 구분선을 81개 쓰는데 우리는 23개뿐이다(= gold 는 격자를 쓴다).
-        근거는 섰지만 표 배치는 초안 넷 중 무엇을 고르냐를 바꾸는 축이라 기본을 안 뒤집는다.
+        2026-09-09(#793) 대표 지시 "표는 기본 선택안이 테두리와 구분선이 있는 유형이어야
+        해" 로 뒤집었다. 조항도 §3.1.1(1)① 정렬 형태 유지가 먼저다.
         """
         from app.ai.llm.table_opt import _infer_render_mode, two_col_mode
         two = "<!칸>a<!/칸><!칸>b<!/칸>"
         tbl = f"<!표><!행>{two}<!/행><!/표>"
         monkeypatch.delenv("TABLE_TWO_COL", raising=False)
-        assert two_col_mode() == "linear"
-        assert _infer_render_mode(None, tbl) == "linear"
-        monkeypatch.setenv("TABLE_TWO_COL", "grid")
         assert two_col_mode() == "table_grid"
         assert _infer_render_mode(None, tbl) == "table_grid"
+        monkeypatch.setenv("TABLE_TWO_COL", "linear")
+        assert two_col_mode() == "linear"
+        assert _infer_render_mode(None, tbl) == "linear"
 
     def test_3열은_스위치와_무관하게_격자(self, monkeypatch):
         """스위치는 **2열에만** 건다. 3열 이상은 이미 격자라 안 건드린다."""

@@ -26,7 +26,6 @@ def test_subtype_words():
         "도표: 19세기 유럽 연표": "timeline",
         "도표: 세포 구조도": "concept_map",
         "도표: 지원서 양식": "form",
-        "도표: 프로그램 화면 이미지": "screen_image",
         "도표: 발표용 슬라이드": "slide",
         "도표: 몽골 제국 최대 영역 지도": "",      # §6.6에 골격 없음 → 캡션 폴백
     }
@@ -76,8 +75,12 @@ def test_opt_dispatches_skeleton_from_caption():
     assert "황제" in out.corrected_text.split("\n")[3]
 
 
-def test_all_eight_skeletons_reachable():
-    """골격 8종 전부가 캡션에서 만들어진 structure로 발동한다."""
+def test_all_wired_skeletons_reachable():
+    """배선한 골격 7종 전부가 캡션에서 만들어진 structure로 발동한다.
+
+    ★ §6.6.7 화면 이미지는 2026-09-09(#793)에 배선을 끊었다 — 조립기는 남아 있고
+      `test_diagram_more.TestScreenImage` 가 그 함수를 직접 지킨다.
+    """
     caps = {
         "concept_map": "도표: 세포 개념도\n핵\n- 인\n세포질",
         "flowchart": "도표: 처리 흐름도\n입력\n판정\n출력",
@@ -85,7 +88,6 @@ def test_all_eight_skeletons_reachable():
         "family_tree": "도표: 가계도\n1세대\n- 1: 남자",
         "timeline": "도표: 연대표\n1919년 3·1 운동\n1920년 청산리 대첩",
         "form": "도표: 신청 양식\n이름\n생년월일",
-        "screen_image": "도표: 화면 이미지\n도구 막대\n- 저장\n본문",
         "slide": "도표: 발표용 슬라이드\n제목\n- 요점",
     }
     for sub, cap in caps.items():

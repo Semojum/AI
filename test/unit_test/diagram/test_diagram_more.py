@@ -17,7 +17,7 @@ from app.ai.llm.diagram_opt import (
     assemble_form, assemble_screen_image, assemble_slide,
     _hier_indent, _group_timeline,
 )
-from app.schemas.content import ExtractedContent
+from app.schemas.content import ExtractedContent, LLMOutput
 from app.schemas.layout import BBoxItem, LayoutResult
 from app.utils.braille_back import decode
 
@@ -166,7 +166,7 @@ class TestOptimizeRouting:
     def test_각_하위유형_라우팅(self):
         for st, needle in [(_ORG, "대표"), (_FAM_DOWN, "할아버지"), (_FAM_UP, "외할머니"),
                            (_TIMELINE, "조선 건국"), (_FORM, "이름:"),
-                           (_SCREEN, "주 메뉴"), (_SLIDE, "개요")]:
+                           (_SLIDE, "개요")]:   # _SCREEN 은 배선 해제(#793)
             ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=st)
             opt = asyncio.run(DiagramOpt().optimize([ext], "ZERO"))[0]
             assert opt.render_mode == "narrative"
@@ -201,12 +201,16 @@ class TestE2E:
         assert leaf.startswith("⠀" * 4) and not leaf.startswith("⠀" * 5)
 
     def test_화면이미지_글상자_재렌더(self, tmp_path, monkeypatch):
+        """★ 2026-09-09(#793) — `DiagramOpt` 배선을 끊었으므로 **조립기를 직접** 태운다.
+
+        조항(§6.6.7)이 남아 있어 조립기도 남겼다. 되살릴 때 이 회귀가 살아 있어야 한다.
+        """
         monkeypatch.chdir(tmp_path)
         eid = uuid4()
-        ext = ExtractedContent(element_id=eid, ocr_confidence=1.0, structure=_SCREEN)
-        bo = DiagramBraille().translate(asyncio.run(DiagramOpt().optimize([ext], "ZERO")))
-        # 글상자 위/아래 테두리가 box_borders로 수집됨(layout이 재렌더)
-        assert any(b.kind for b in bo[0].box_borders)
+        text, indents = assemble_screen_image(_SCREEN)
+        bo = DiagramBraille().translate([LLMOutput(
+            element_id=eid, corrected_text=text, render_mode="narrative",
+            routing_tier="ZERO", processing_time_ms=0, line_indents=indents)])
         lr = LayoutResult(page_id="p", elements=[
             BBoxItem(element_id=eid, type="diagram", bbox=(0, 0, 0, 0), reading_order=1)])
         LayoutBraille().layout(bo, page_no=1, job_id="sc", layout_result=lr)
