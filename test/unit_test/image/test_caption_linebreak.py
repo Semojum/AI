@@ -40,9 +40,23 @@ class TestSplit:
 
 
 def test_개조식이_실제로_항목이_된다() -> None:
-    """줄이 나뉘어야 개조식 2안이 항목을 갖는다 — 이 배선이 이 수정의 목적이다."""
-    from app.ai.llm.visual_drafts import _parse_sections
+    """줄이 나뉘어야 개조식 2안이 항목을 갖는다 — 이 배선이 이 수정의 목적이다.
+
+    ★ 2026-09-08(재구조화 5단계) — 종전에는 `_parse_sections`(LLM 응답 파서)로 쟀는데
+      그 팔이 없어졌다. 지금 개조식 항목을 만드는 자리는 규칙 전사다. 제품 경로
+      (`build_visual_drafts`)로 재서 초안 줄이 실제로 나뉘는지 본다.
+    """
+    import asyncio
+    from uuid import uuid4
+
+    from app.ai.llm import visual_drafts as vd
+    from app.schemas.content import ExtractedContent
 
     cap = split("그림: 1. 광개토대왕릉비의 모습이다 2. 장수왕비의 모습이다")
-    sec = _parse_sections("[개조식]\n" + cap)
-    assert len(sec["개조식"]) >= 2, sec["개조식"]
+    assert cap.count("\n") == 1, cap
+    ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0)
+    drafts, sel, _ind, _tier, _src = asyncio.run(
+        vd.build_visual_drafts(ext, "ZERO", label="그림", caption=cap, kind="이미지"))
+    body = drafts[sel].text
+    assert "광개토대왕릉비" in body and "장수왕비" in body, body
+    assert body.count("\n") >= 1, body           # 한 줄로 뭉치지 않았다

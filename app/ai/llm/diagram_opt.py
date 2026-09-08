@@ -759,14 +759,11 @@ class DiagramOpt(BaseOpt):
                 drafts=[omission_draft(label)],
                 selected_idx=0,
             )
-        # ★ 외부 LLM 호출에 **후보 목록**을 넘긴다(대표 지시). 종전에는 유형을 하나로
-        #   못 박아 보내서, 우리가 잘못 고른 유형이 그대로 프롬프트의 전제가 됐다.
-        #   ⚠ 후보는 **프롬프트에만** 넘긴다. 점역자주에 찍히는 유형 낱말은 하나여야 한다 —
-        #     한때 label 에 실었더니 출력에 `개념도 또는 가계도:` 가 그대로 나갔다.
-        cand_names = [_TYPE_LABEL.get(k, "도표") for k, _v in cands]
+        # ★ 2026-09-08(재구조화 5단계) — 유형 **후보 목록**을 같이 넘기던 인자를 뺐다.
+        #   그 값은 L8 LLM 프롬프트에만 실렸는데(`_prompt_label`), 그 팔이 없어졌다.
+        #   점역자주에 찍히는 유형 낱말은 `label` 하나 그대로다.
         drafts, selected_idx, line_indents, tier, cap_src = await build_visual_drafts(
             ext, routing_tier, label=label, caption=cap, kind="도표",
-            candidates=cand_names,
         )
         return LLMOutput(
             element_id=ext.element_id,

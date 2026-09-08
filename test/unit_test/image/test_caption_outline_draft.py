@@ -94,150 +94,55 @@ def test_긴_캡션도_값을_한_줄씩_싣는다():
     assert all(l.startswith("<!2칸>") for l in lines), text[:120]
 
 
-def test_긴_캡션은_LLM을_부르지_않는다(monkeypatch) -> None:
-    # 값이 다 실리므로 요약을 시킬 이유가 없다 — 호출 0 이라야 환각도 0 이다.
-    from app.ai.llm import visual_drafts as vd
-
-    calls: list[str] = []
-
-    async def _fake(prompt, **_kw):
-        calls.append(prompt)
-        return "[개조식]\n지어낸 항목\n[줄글]\n지어낸 줄글", True
-
-    monkeypatch.setattr(vd, "generate_with_retry", _fake)
+# ★ 2026-09-08(재구조화 5단계) — 아래 다섯 검사는 원래 `vd.generate_with_retry` 를
+#   계수 스텁으로 갈아 끼우고 "호출 0회" 를 단언했다. **그 팔을 지웠으므로** 스텁을
+#   걸 자리가 없다. 팔이 정말 없는지는 `test_opt_prompts.test_시각_4안에는_프롬프트가_없다`
+#   가 잡고, 여기서는 그 자리를 대신 채운 **규칙 전사의 결과**만 남긴다 — 값이 다 실리는가,
+#   제목만 있으면 생략으로 가는가, 한 줄 캡션에 없는 말이 안 붙는가.
+def test_긴_캡션은_값을_다_싣는다() -> None:
+    """값이 다 실리므로 요약을 시킬 이유가 없다 — #698 이 41줄 상한을 걷은 이유다."""
     cap = "그래프: 아주 긴 자료\n" + "\n".join(f"항목{i}: {i}" for i in range(50))
     ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
                            corrected_text=cap, structure={})
     out = asyncio.run(ChartGraphOpt().optimize([ext], "STANDARD"))[0]
-    assert calls == [], calls
     assert "항목49: 49" in out.drafts[out.selected_idx].text
 
 
-def test_VISUAL_DRAFT_LLM_0_이면_안_부른다(monkeypatch) -> None:
-    """4-1 되돌리기 손잡이. **호출 시** 읽으므로 프로세스 env 로 갈린다.
-
-    ★ 2026-09-08(재구조화 2단계) — 종전 이 검사는 '캡션 없이 제목만' 을 LLM 을 부르는
-      자리로 썼다. 그 자리가 바로 L8 이 세상 지식으로 넉 줄을 지어내던 구멍이라 막았다
-      (`visual_drafts.has_seed`). 그래서 여기서는 **스위치가 호출 시 읽히는지**를 직접
-      재고, 그 구멍이 실제로 막혔는지는 아래 검사가 맡는다.
-    """
-    from app.ai.llm.visual_drafts import _visual_draft_llm_on
-
-    monkeypatch.delenv("VISUAL_DRAFT_LLM", raising=False)
-    assert _visual_draft_llm_on() is True
-    monkeypatch.setenv("VISUAL_DRAFT_LLM", "0")
-    assert _visual_draft_llm_on() is False
-    monkeypatch.setenv("VISUAL_DRAFT_LLM", "1")
-    assert _visual_draft_llm_on() is True
-
-
-def test_제목만_있으면_LLM을_안_부르고_생략으로_간다(monkeypatch) -> None:
-    """재구조화 2단계 — 관문이 캡션을 걷어내면 열리던 환각 폴백의 입구를 막는다.
+def test_제목만_있으면_생략으로_간다() -> None:
+    """재구조화 2단계 — 관문이 캡션을 걷어내면 열리던 환각 폴백의 입구를 막았다.
 
     실측(2026-09-07, 판단장부 §2): 캡션이 비고 제목만 남은 요소에서 L8 이
     `사진: 쿠트브 미나르` → 넉 줄("인도 델리에 있는 …")을 지어냈고 넉 줄 다 자료에 없는 말이다.
     규정 §6.3.4(2)② 의 정답은 그 자리에서 생략 표기이고, R11 은 품질검사가 세운다.
     """
-    from app.ai.llm import visual_drafts as vd
-
-    calls: list[str] = []
-
-    async def _fake(prompt, **_kw):
-        calls.append(prompt)
-        return "[개조식]\n지어낸 항목\n[줄글]\n지어낸 줄글", True
-
-    monkeypatch.setattr(vd, "generate_with_retry", _fake)
-    monkeypatch.delenv("VISUAL_DRAFT_LLM", raising=False)
     ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
                            corrected_text="", structure={"title": "표제만 있는 그림"})
     out = asyncio.run(ImageOpt().optimize([ext], "STANDARD"))[0]
-    assert calls == [], calls
     assert len(out.drafts) == 1 and "생략" in out.drafts[0].text, out.drafts
 
 
-def test_한_줄_캡션이면_LLM을_부르지_않는다(monkeypatch) -> None:
-    """캡션이 한 줄이면 그 줄이 완성된 설명이다 — 늘리라고 시키면 지어낸다.
+def test_캡션에_없는_말이_안_붙는다() -> None:
+    """캡션이 한 줄이면 그 줄이 완성된 설명이다 — 늘리면 지어낸다.
 
     실측(2026-09-07 · claude-sonnet-5 폴백, 캡션 캐시 사진 56 · 그림 100):
     캡션 밖 문장을 한 줄도 안 붙인 초안이 사진 1/56 · 그림 16/100 뿐이었고
-    지어낸 줄이 409줄이었다(`사진: 쿠트브 미나르` → "인도에 있는 높고 큰 원기둥
-    모양의 탑이다" 등 넉 줄). gold 는 사진 설명 54건 중 38건이 항목 한 개다.
+    지어낸 줄이 409줄이었다. gold 는 사진 설명 54건 중 38건이 항목 한 개다.
     """
     from app.ai.llm import visual_drafts as vd
 
-    calls: list[str] = []
-
-    async def _fake(prompt, **_kw):
-        calls.append(prompt)
-        return "[개조식]\n지어낸 항목\n[줄글]\n지어낸 줄글", True
-
-    monkeypatch.setattr(vd, "generate_with_retry", _fake)
     ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
                            corrected_text="사진: 쿠트브 미나르", structure={})
     out = asyncio.run(ImageOpt().optimize([ext], "STANDARD"))[0]
-    text = out.drafts[out.selected_idx].text
-    assert calls == [], calls
-    assert _TAG.sub("", text) == "사진: 쿠트브 미나르", text
+    assert _TAG.sub("", out.drafts[out.selected_idx].text) == "사진: 쿠트브 미나르"
 
-    # 여러 줄 캡션도 LLM 을 안 부른다(2026-09-07). 캡션 줄이 그대로 골격이 되고,
-    # 짧은 안은 그 골격에서 **항목만 지운** 간추린 설명이다 — 지어낼 자리가 없다.
-    # (종전에는 여기서 LLM 을 불러 '설명(자세히)' 라는 이름의 1줄 줄글을 만들었는데
-    #  설명 안보다 짧았고 캡션에 없는 문장이었다.)
-    calls.clear()
+    # 여러 줄 캡션도 캡션 줄이 그대로 골격이 되고, 짧은 안은 그 골격에서 **항목만 지운**
+    # 간추린 설명이다 — 지어낼 자리가 없다.
     ext2 = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
                             corrected_text="사진: 술탄 아흐메드 사원\n큰 돔 지붕 주위에 첨탑 여섯 개",
                             structure={})
     out2 = asyncio.run(ImageOpt().optimize([ext2], "STANDARD"))[0]
-    assert calls == [], calls
     gist = [d for d in out2.drafts if d.option == vd.GIST_OPTION]
     assert gist, [d.label for d in out2.drafts]
     body = _TAG.sub("", gist[0].text)
     assert body == "사진: 술탄 아흐메드 사원", body      # 머리줄 그대로 — 새 말이 없다
     assert body in _TAG.sub("", out2.drafts[out2.selected_idx].text)
-
-
-def test_제품_네_유형에서는_L8_LLM_팔이_아예_안_선다(monkeypatch) -> None:
-    """재구조화 4-1 판정 — L8 의 LLM 팔은 제품 경로에서 **도달 불가**다.
-
-    `use_llm` 의 남은 조건 셋이 넷 다 닫혀 있다.
-      · `need_title`  = `not (title or caption)` — 그런데 `has_seed = bool(caption)` 이라
-                        캡션이 없으면 그 앞에서 이미 막힌다.
-      · `need_outline`= 여러 줄 캡션이면 `caption_outline(limit=None)` 이 반드시 항목을
-                        내므로(빈 줄은 걸러지고 남은 줄은 표지를 떼도 비지 않는다) 거짓.
-                        41줄 상한이 마지막 구멍이었고 #698 이 그것을 닫았다.
-      · `need_prose`  = `prose_label(kind) != desc_label(kind)` — 제품이 넘기는 `kind` 는
-                        `이미지·차트·만화·도표` 넷뿐이고 넷 다 두 값이 같다.
-
-    실측(2026-09-08): 코퍼스 경계 파일 1,131쪽 시각 요소 1,097건 · 캡션 캐시 3,242건을
-    세 유형에 통과시켜 호출 **0회**. 아래 양성 대조가 없으면 이 검사는 헛통과한다.
-    """
-    from app.ai.llm import visual_drafts as vd
-    from app.ai.llm.cartoon_opt import CartoonOpt
-
-    calls: list[str] = []
-
-    async def _fake(prompt, **_kw):
-        calls.append(prompt)
-        return "[제목]\n지어낸 제목\n[개조식]\n지어낸 항목\n[줄글]\n지어낸 줄글", True
-
-    monkeypatch.setattr(vd, "generate_with_retry", _fake)
-    caps = [
-        "",                                              # 재료 없음 → 생략
-        "그림: 한 줄짜리 설명",                            # 한 줄 → 늘리라고 안 시킨다
-        "그림: 여러 줄\n항목: 값\n항목2: 값2",              # 여러 줄 → 규칙 전사
-        "그림: 표지뿐인 줄\n#\n##\n- ",                    # 표지만 남는 줄
-        "그래프: 아주 긴 자료\n" + "\n".join(f"항목{i}: {i}" for i in range(50)),
-    ]
-    for cls in (ImageOpt, ChartGraphOpt, CartoonOpt):
-        for cap in caps:
-            ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
-                                   corrected_text=cap, structure={})
-            asyncio.run(cls().optimize([ext], "STANDARD"))
-    assert calls == [], (len(calls), calls[:1])
-
-    # 양성 대조 — 제품이 안 쓰는 `kind` 를 주면 `need_prose` 가 참이 되어 실제로 부른다.
-    # 이 줄이 통과해야 위의 0 이 "계수기가 죽었다"가 아니라 "팔이 안 선다"는 뜻이 된다.
-    ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, corrected_text="")
-    asyncio.run(vd.build_visual_drafts(ext, "STANDARD", label="개념도", kind="concept_map",
-                                       caption="개념도: 물의 순환\n증발\n응결"))
-    assert len(calls) == 1, calls

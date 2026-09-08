@@ -99,34 +99,9 @@ class TestAlwaysFourWithoutLLM:
         _assert_distinct(_build(kind=kind, caption="막대그래프. 연도별 인구 추이. 2020년 5,200만 명, 2021년 5,180만 명."))
 
 
-class TestAlwaysFourWhenLLMMisbehaves:
-    """LLM이 죽거나 형식을 어겨도 3안 — 과거 1안 사고의 회귀 가드."""
-
-    def _with_llm(self, monkeypatch: pytest.MonkeyPatch, reply):
-        """LLM 응답을 주입한다. 실제 심볼은 `generate_with_retry`(모듈 네임스페이스에 import돼 있다)."""
-        async def _fake(*_a, **_kw):
-            if isinstance(reply, Exception):
-                raise reply
-            return reply, False          # (응답, 폴백 사용 여부)
-        monkeypatch.setattr(vd, "generate_with_retry", _fake)
-        # 비ZERO + seed 있음 → LLM 경로 진입
-        return _build(routing_tier="STANDARD", caption="원본 캡션 문장.")
-
-    def test_LLM이_빈_문자열(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _assert_distinct(self._with_llm(monkeypatch, ""))
-
-    def test_LLM이_형식을_어김(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """구 사고 재현 — 섹션 표지 없이 한 덩어리로 답하는 경우."""
-        _assert_distinct(self._with_llm(monkeypatch, "그냥 줄글로만 답한다 방식 구분 없이"))
-
-    def test_LLM이_한_섹션만(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _assert_distinct(self._with_llm(monkeypatch, "[개조식]\n- 항목 하나"))
-
-    def test_LLM이_예외를_던짐(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _assert_distinct(self._with_llm(monkeypatch, RuntimeError("추론 실패")))
-
-    def test_LLM이_None(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _assert_distinct(self._with_llm(monkeypatch, None))
+# ★ 2026-09-08(재구조화 5단계) — `TestAlwaysFourWhenLLMMisbehaves` 다섯을 지웠다.
+#   LLM 이 죽거나 형식을 어길 때의 회귀 가드였는데, 시각 4안의 LLM 팔(L8) 자체가
+#   없어졌다. 4안이 늘 서는지는 위 `TestAlwaysThreeDrafts` 가 재료 축으로 그대로 지킨다.
 
 
 def test_초안_라벨이_모두_구별된다() -> None:

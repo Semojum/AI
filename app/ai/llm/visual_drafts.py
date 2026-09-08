@@ -45,13 +45,12 @@ import re
 from difflib import SequenceMatcher
 import time
 
-from app.ai.llm.base_opt import _DEDUP_MIN_LEN, _norm_for_dedup, decide_tier_timeout, generate_with_retry
-from app.ai.captioning.captioner import guard_llm_text, split_material
+from app.ai.llm.base_opt import _DEDUP_MIN_LEN, _norm_for_dedup
+from app.ai.captioning.captioner import split_material
 from app.ai.llm.diagram_structure import caption_head as _caption_head
 from app.ai.llm.diagram_structure import caption_outline as _caption_outline
 from app.ai.braille import tag_names as _TAGS
 from app.ai.braille import tn_notices as _TN_NOTICES
-from app.core.config import config
 from app.schemas.content import Draft
 from app.utils.logger import get_logger
 
@@ -248,52 +247,6 @@ _CARTOON_HEAD_BASE = 4    # 자료지침 §5.3.1(1) L2811 만화 머리줄 "5칸
 _OUTLINE_STEP = 2         # 하위 단계마다 +2칸
 _NOTE_INDENT = 2          # 형식 안내 점역자 주 3칸 (정본 예6-19·6-22·6-23·6-24)
 
-# 최적화 프롬프트 — GPT-4o가 만든 캡션(묘사)을 HCXT가 점자 초안용으로 '다듬는다'(재생성 금지).
-# 짧은 제목은 캡션 첫 문장(rule-based)이라 LLM은 개조식·줄글 두 형식만 담당 → 토큰↓·속도↑.
-_PROMPT = """당신은 시각장애 학생용 점자 교과서 점역 전문가입니다.
-아래 '설명'은 한 시각자료({label})에 대한 묘사입니다. 이 설명을 점자 초안용으로 **다듬어**
-두 형식으로만 출력하세요. 설명에 없는 정보·수치·추측을 새로 만들지 말고, 주어진 내용만 간결히
-재구성합니다. "그림은/이미지는"으로 시작하지 마세요. 아래 태그를 각각 한 번씩만 출력합니다.
-
-[개조식] 핵심을 위계 있는 개조식으로. 큰 항목은 줄 맨 앞, 하위 항목은 앞에 "- ". 3~5줄.
-[줄글] 1~3문장으로 간결히.
-
-점자 독자를 위한 규칙 — 어기면 그만큼 점역사가 지웁니다.
-1. **결론을 맨 앞에** 한 문장으로 쓰세요. 점자는 훑어보기가 어려워 되돌아가지 못합니다.
-2. **같은 내용을 두 번 쓰지 마세요.** 좌우·A/B가 같은 구조면 "같은 장치 둘"처럼 한 번만 쓰고
-   다른 점만 적습니다. 끝에 '공통 구성'을 또 붙이지 마세요.
-3. **색·음영·장식은 쓰지 마세요.** 진한 음영/중간 음영, 별표·아이콘·버튼(최소화·닫기),
-   테두리 모양은 문제 풀이에 안 쓰입니다. 그 자체가 정보일 때만 예외입니다.
-4. **그림에 없는 설명을 덧붙이지 마세요.** 기관의 기능, 배경 지식, 일반론은 본문 몫입니다.
-5. **한 면이 32칸 25줄입니다.** 설명이 길수록 학생이 읽을 본문이 줄어듭니다. 짧게 쓰세요.
-6. **완결된 문장으로 쓰세요.** `원자핵 1+, 전자 1개` 같은 명사 나열이 아니라
-   `중심에 양성자(+1)가 있고 바깥에 최외각 전자 1개가 있다`처럼 씁니다. 점자는 조사가
-   없으면 관계가 안 보입니다.
-7. **자료 전체가 무엇인지 한 줄로 먼저** 쓰고, 그다음 항목을 적습니다.
-   (예: `지구가 태양을 중심으로 1년 주기로 공전한다.` → 절기별 줄)
-8. **놓인 자리를 밝히세요.** `분수대`가 아니라 `계단 옆에 작은 분수가 있다`처럼
-   무엇 옆·위·앞인지 적습니다. 점자 독자는 그림을 못 보므로 위치가 곧 그림입니다.
-9. **사람은 그림에서 읽히는 특징으로 부르세요**(남학생·여학생·왼쪽 사람).
-   특징이 없으면 `후보자 1·후보자 2`처럼 번호를 **끝까지 일관되게** 씁니다.
-   같은 자료 안에서 `학생1`과 `사회자`를 섞지 마세요.
-10. **여러 항목을 늘어놓을 때는 번호를 붙이세요**(1·2·3). 점자에서 항목 경계가 보입니다.
-11. **들여쓰기 태그(`<!2칸>` 등)를 쓰지 마세요.** 들여쓰기는 조판이 합니다.
-
-설명: {caption}"""
-
-def _prompt_label(label: str, candidates: list[str] | None) -> str:
-    """프롬프트에 쓸 유형 표기. 후보가 여럿이면 그대로 알려 준다(대표 지시 2026-08-25).
-
-    ⚠ **출력에 찍히는 유형 낱말이 아니다.** 점역자주에는 유형이 하나로 나가야 한다.
-      우리가 유형을 하나로 못 박아 보내면 잘못 고른 유형이 프롬프트의 전제가 되어,
-      모델이 그 전제에 맞춰 없는 구조를 지어낸다.
-    """
-    names = [c for c in (candidates or []) if c]
-    if len(names) <= 1:
-        return label
-    return f"{label}(후보: {' · '.join(names)})"
-
-
 # 그림 속 대사 줄 — 점역자 주 **밖**으로 나간다(gold 실측 밖 49 : 안 21).
 # 화자표는 실제 화자 어휘일 때만 본다 — `가랑잎벌레: …` 같은 이름:설명 줄까지 빼면
 # 설명 본체가 주 밖으로 새어 나간다.
@@ -311,11 +264,6 @@ _SCENE_LINE = re.compile(r"^(?:장면|컷)\s*\d+")
 # 대사를 갈라 넣으므로, `화자: 말` 꼴이면 대사다. `_SPEAKER_LINE` 은 재료 없는 그림·사진
 # 캡션 폴백에만 남는다(거기서는 `가랑잎벌레: 나뭇잎과 비슷하다` 가 설명 본체라 어휘가 필요하다).
 _SAY_LINE = re.compile(r"^[^:：\s][^:：]{0,19}\s*[:：]\s*\S")
-
-_PREFILL = "[개조식]\n"
-
-_SECTION_RE = re.compile(r"\[(제목|개조식|줄글)\]\s*(.*)")
-
 
 _TYPE_DUP_RE = None  # 지연 컴파일
 
@@ -806,58 +754,6 @@ def volume_ref_draft(label: str, ref: str = "") -> Draft:
                  label=body, type_label=label)
 
 
-def _parse_sections(response: str) -> dict[str, object]:
-    """LLM 응답 → {제목:str, 개조식:list[(level,text)], 줄글:str}."""
-    title = ""
-    outline: list[tuple[int, str]] = []
-    prose_lines: list[str] = []
-    cur = None
-    for raw in (response or "").splitlines():
-        line = raw.rstrip()
-        m = _SECTION_RE.match(line.strip())
-        if m:
-            cur = m.group(1)
-            rest = m.group(2).strip()
-            if cur == "제목" and rest:
-                title = rest
-            elif cur == "개조식" and rest:
-                outline.append(_outline_item(rest))
-            elif cur == "줄글" and rest:
-                prose_lines.append(rest)
-            continue
-        if not line.strip():
-            continue
-        if cur == "개조식":
-            outline.append(_outline_item(line))
-        elif cur == "줄글":
-            prose_lines.append(line.strip())
-        elif cur == "제목" and not title:
-            title = line.strip()
-    return {"제목": title, "개조식": outline, "줄글": " ".join(prose_lines).strip()}
-
-
-def _outline_item(line: str) -> tuple[int, str]:
-    """개조식 한 줄 → (level, text). 선행 공백/'- '로 위계 판정."""
-    indent = len(line) - len(line.lstrip(" \t"))
-    body = line.strip()
-    level = 0
-    if body.startswith(("- ", "* ", "· ")):
-        body = body[2:].strip()
-        level = 1
-    elif indent >= 2:
-        level = 1
-    return level, body
-
-
-def _visual_draft_llm_on() -> bool:
-    """시각 초안(L8)에서 LLM 을 부를 것인가. `VISUAL_DRAFT_LLM=0` 이면 안 부른다.
-
-    끄면 4안은 캡션·구조 전사(규칙)만으로 채워진다 — 제목·캡션이 다 없는 요소는
-    재료가 없어 '생략' 한 안으로 떨어진다(`_no_material`).
-    """
-    return os.environ.get("VISUAL_DRAFT_LLM", "1") != "0"
-
-
 async def build_visual_drafts(
     ext,
     routing_tier: str,
@@ -869,7 +765,6 @@ async def build_visual_drafts(
     struct_outline: list[tuple[int, str]] | None = None,
     struct_prose: str | None = None,
     decorative: bool = False,
-    candidates: list[str] | None = None,
 ) -> tuple[list[Draft], int, list[int] | None, str]:
     """4안(생략·제목·개조식·줄글) 생성. 반환 (drafts, selected_idx, line_indents, tier).
 
@@ -941,79 +836,15 @@ async def build_visual_drafts(
     #     LLM 말고 재료가 없다. 여기서 막는 것은 "캡션이 이미 답을 줬는데 더 시키는" 경우다.
     single_line_caption = bool(caption) and not cap_body
 
-    # LLM이 채워야 할 파트: 제목·캡션 다 없으면 제목, 구조 없으면 개조식/줄글.
-    need_title = not (title or caption)
-    need_outline = struct_outline is None
-    # ★ 줄글 안을 **실제로 낼 유형에서만** LLM 에게 시킨다(2026-09-07). 종전에는 유형과
-    #   무관하게 항상 시켰는데, 만화는 `prose_label == desc_label` 이라 그 응답을 통째로
-    #   버렸고(호출만 하고 안은 안 만든다), 그림·차트는 그것으로 잘못 이름 붙인
-    #   '설명(자세히)' 를 만들었다. 둘 다 없애면 그만큼 호출이 준다.
-    need_prose = struct_prose is None and prose_label(kind) != desc_label(kind)
-    # ★ 2026-09-08(재구조화 2단계) — **제목만 있는 자리에서는 LLM 을 안 부른다.**
-    #   종전 `has_seed = bool(title or caption)` 은 캡션이 비어도 제목만 있으면 참이라,
-    #   L8 이 재료 없이 세상 지식으로 넉 줄을 지어냈다(아래 `single_line_caption` 주석의
-    #   '쿠트브 미나르' 와 같은 얼굴, 재료는 그보다도 얇다). 관문 G1 이 캡션을 걷어내면
-    #   그 조건이 **더 자주** 열리므로 관문과 같은 PR 에서 막는다(설계 §2-2).
-    #   제목은 자료의 이름표지 설명이 아니다 — 규정 §6.3.4(2)② 의 생략 표기로 간다.
-    has_seed = bool(caption)
-    # ★ `VISUAL_DRAFT_LLM=0` 이면 이 단계에서 LLM 을 아예 안 부른다(재구조화 4-1 되돌리기
-    #   손잡이 · 스위치 대장 2026-09-08). **호출 시** 읽으므로 프로세스 env 로 A/B 가 된다.
-    #   기본값 `1` 은 현행 그대로라 끄지 않으면 동작이 안 바뀐다.
-    use_llm = (_visual_draft_llm_on() and (routing_tier != "ZERO")
-               and has_seed and not single_line_caption
-               and (need_title or need_outline or need_prose))
-
-    llm_title, llm_outline, llm_prose = "", [], ""
-    if use_llm:
-        # 시각 최적화는 캡션 재구성(무거운 생성) → QUALITY 상한을 쓴다(요소당 상한이지만 페이지
-        # 누적 예산이 총량을 막으므로 안전). 티어 라벨은 신뢰도 기준(decide_tier_timeout).
-        t2, _ = decide_tier_timeout(ext.ocr_confidence)
-        timeout = config.hcxt_quality_timeout_seconds
-        # 출력은 [개조식]+[줄글] 두 섹션을 한 번에 담는다 → 캡션의 0.9배(구 180 상한)로는
-        # 위계 개조식이 예산을 먹고 줄글이 문장 중간에 잘렸다(A/B에서 확인). 두 섹션 합계를
-        # 고려해 캡션의 ~1.6배로 잡고 상한을 320으로 올린다(vLLM 46tok/s면 ~7s, QUALITY 상한 내).
-        src = caption or title
-        mnt = min(320, max(140, int(len(src) * 1.6)))
-        # 폴백(Claude)만 예산을 따로 잡는다. HCXT 쪽 mnt는 A/B로 맞춘 값인 데다
-        # vLLM 46tok/s × QUALITY 상한 14초에 묶여 있어 올리면 타임아웃이 늘고
-        # **폴백이 더 자주 도는** 역효과가 난다. 폴백은 그 제약이 없다.
-        #   실측(2026-08-17): LLM이 개조식·줄글을 실제로 다르게 쓴 요소 683건에서
-        #   산출/캡션 비가 중앙 2.46 · p90 4.65다. 계수 1.6은 그보다 작아
-        #   **66.5%가 예산을 넘었다.** 넘으면 절이 문장 중간에 잘리고, 잘린 응답은
-        #   파싱에 실패해 캡션 폴백으로 떨어진다(4안이 서로 같아지는 얼굴).
-        #   한국어 산문은 0.97 문자/토큰이라(count_tokens 실측) 토큰≈문자로 잡는다.
-        #   p90 산출 507자를 덮도록 계수 2.6 · 상한 640 · 바닥 240으로 둔다.
-        # ★ max_tokens는 **천장이지 예약이 아니다** — 과금은 실제 생성분이라
-        #   올려도 안 잘리던 호출의 비용은 그대로다. 늘어나는 건 잘리던 꼬리뿐이다.
-        fb_mnt = min(640, max(240, int(len(src) * 2.6)))
-        # ★ 4안 보장(D-02)은 **예외까지** 막아야 한다. generate_with_retry는 자체 재시도·폴백을
-        #   갖지만 그게 모두 실패하면 예외를 올린다. 종전에는 그 예외가 여기서 안 잡혀 위로
-        #   전파됐고, isolation이 요소를 통째로 플레이스홀더로 만들어 **drafts가 0개**가 됐다
-        #   (= BE에 "대체 텍스트 1개"로 보이는 실제 경로). 캡션 폴백은 "응답이 이상할 때"만
-        #   막았지 "예외"는 못 막았다. 2026-07-28 회귀 테스트로 재현해 확인.
-        #   여기서 삼키면 llm_* 가 빈 채로 남고 아래 캡션·구조 폴백이 4안을 채운다.
-        try:
-            response, used_fb = await generate_with_retry(
-                _PROMPT.format(label=_prompt_label(label, candidates), caption=src),
-                timeout=timeout, element_id=ext.element_id, kind=kind,
-                prefill=_PREFILL, max_new_tokens=mnt, fallback_max_tokens=fb_mnt,
-            )
-            tier = "FALLBACK" if used_fb else t2
-            sec = _parse_sections(response)
-            # ★ 관문 G1(재구조화 §2-2) — L8 산출이 초안 텍스트가 되기 직전 한 자리.
-            #   이 길은 경계 파일 **뒤**(opt 단계)라 `_parse_txt_result` 의 검사가 못 본다.
-            #   `_finish` 사슬 중 **걷어내기만** 건다(유형 제시어 보정은 조립기 몫이다).
-            llm_title = guard_llm_text(sec["제목"], "visual_draft")
-            llm_prose = guard_llm_text(sec["줄글"], "visual_draft")
-            llm_outline = []
-            for _lv, _item in sec["개조식"]:
-                _kept = guard_llm_text(_item, "visual_draft")
-                if _kept:
-                    llm_outline.append((_lv, _kept))
-        except Exception as exc:  # noqa: BLE001 — 4안 보장이 개별 추론 실패보다 우선
-            logger.warning("    4안 LLM 실패(폴백으로 계속) %s %s: %s: %s",
-                           kind, str(ext.element_id)[:8], type(exc).__name__, exc)
-            tier = "FALLBACK"
+    # ★ 2026-09-08(재구조화 5단계) — **L8 의 LLM 팔을 지웠다.** 4-1 이 제품 진입점
+    #   (`ImageOpt`·`ChartGraphOpt`·`CartoonOpt.optimize`)에 계수 스텁을 박아 재 보니
+    #   코퍼스 경계 1,131쪽·시각 요소 1,097건에서 **0회**, 캡션 캐시 3,242건 × 3유형
+    #   9,726회 통과에서도 **0회**였다(양성 대조 `kind="concept_map"` 1회로 계수기 생존
+    #   확인). `use_llm` 의 조건이 넷 다 닫혔기 때문이다 — `need_title` 은 `has_seed`
+    #   가 먼저 막고, `need_outline` 은 여러 줄 캡션에서 `caption_outline(limit=None)`
+    #   이 반드시 항목을 내므로 거짓이며(41줄 상한이 마지막 구멍이었고 #698 이 닫았다),
+    #   `need_prose` 는 제품이 넘기는 kind 넷에서 `prose_label == desc_label` 이라 거짓이다.
+    #   되살릴 일이 있으면 `git log -- app/ai/llm/visual_drafts.py` 에 프롬프트째 있다.
 
     # 그림 안에서 뽑아 낸 원본 글자(struct_outline). 종전에는 **개조식에만** 넘어가서,
     # 캡션이 없고 원본 글자만 있는 그림에서 개조식만 살고 짧은 제목·줄글은 빈손이 됐다
@@ -1021,7 +852,7 @@ async def build_visual_drafts(
     struct_text = " ".join(t for _lv, t in (struct_outline or []) if t).strip()
 
     # 개조식: 5칸 제목줄 = 구조적 표제(title), 점역자주 설명 = 캡션/생성 설명.
-    outline_items = struct_outline if struct_outline is not None else llm_outline
+    outline_items = struct_outline or []
     # ※ 항목이 비면 캡션 여러 줄이 `_tn()`의 `_oneline`에 접혀 한 줄 점역자주가 된다
     #   (실측 diagram 127건 중 109건). 캡션 줄을 그대로 개조식 항목으로 올리는 안(갈래 A)을
     #   2026-08-08 dev-2027 200쪽에서 재 봤으나 **CER·시각자료 축이 한 셀도 안 움직였고**
@@ -1034,7 +865,7 @@ async def build_visual_drafts(
     #   항목이 있으면 머리줄은 줄이고 세부는 항목이 진다. 항목이 없으면 머리줄이 유일한
     #   내용이므로 그대로 둔다(축약이 곧 정보 손실).
     # 캡션 줄을 골격으로 올렸으면 머리줄은 **캡션 첫 줄**이다(나머지는 항목이 진다).
-    outline_desc = (cap_head if cap_head is not None else (caption or llm_title or ""))
+    outline_desc = (cap_head if cap_head is not None else caption)
     # ★ 캡션 첫 줄은 **이미 제목**이라 다시 줄이지 않는다. `_shorten` 은 장문 AI 설명을
     #   제목 자리에 넣을 때 쓰는 것인데, 45자에서 끊으면 `…H와 h의 DNA` 처럼 값이 잘린다
     #   (실측 58건이 44자 이상). 캡셔너는 첫 줄을 짧게 쓰도록 이미 배선돼 있다.
@@ -1063,7 +894,7 @@ async def build_visual_drafts(
     #   ③ **글이 실제로 다르다** — `_dedupe` 는 글자가 완전히 같을 때만 접는다. 그것만으로는
     #      부족해서, 공백을 접어 견준 뒤 **설명 안이 이미 품고 있는 글**이면 안 낸다
     #      (자세히에 더 들어갈 내용이 없다는 뜻이다).
-    real_prose = struct_prose if struct_prose is not None else llm_prose
+    real_prose = struct_prose or ""
     if prose_label(kind) != desc_label(kind):
         d_prose = prose_draft(real_prose, kind)
         if d_prose is not None and not _covered_by(d_prose.text, d_desc.text):
@@ -1091,7 +922,7 @@ async def build_visual_drafts(
     #   규정 §6.1.1(3) 의 생략 대상은 ①본문에서 충분히 설명한 것 ②장식 ③불필요한 것이지
     #   캡션이 없는 것이 아니다. 재료가 **아무것도** 없으면 아래 `_no_material` 가 생략 한
     #   안만 내므로 그 경우는 그대로 걸러진다.
-    has_material = bool(struct_outline or struct_prose or llm_outline or llm_prose)
+    has_material = bool(struct_outline or struct_prose)
     selected_idx = OMIT_IDX if (decorative and not has_material) else DESC_IDX
 
     # ★ 재료가 하나도 없으면 **생략 한 안만** 낸다 (2026-08-12 대표 지시).
@@ -1105,21 +936,19 @@ async def build_visual_drafts(
     #     서고 그 아래를 L8 이 세상 지식으로 채웠다(위 `has_seed` 주석). LLM 을 껐으니
     #     남는 것은 이름표 한 줄인데, 규정 §6.3.4(2)② 의 정답은 그 자리에서 생략 표기다.
     #     제목은 5칸 제목줄로 이미 지면에 서 있다 — 점역자 주에 한 번 더 적을 값이 아니다.
-    if _no_material(caption, struct_text, struct_prose or "",
-                    llm_title, llm_prose, " ".join(t for _l, t in (llm_outline or []))):
+    if _no_material(caption, struct_text, struct_prose or ""):
         if title:
             logger.info("    4안 제목만 → 생략 표기(R11) %s %s", kind, str(ext.element_id)[:8])
         return [d_omit], 0, None, tier, caption_source(
-            OMIT_IDX, used_llm=False, has_print_caption=False, has_struct=False)
+            OMIT_IDX, has_print_caption=False, has_struct=False)
 
     # 재료가 조금이라도 있으면 6안을 내되, 문구가 똑같아진 안은 접는다.
     drafts, selected_idx = _dedupe(drafts, selected_idx)
     line_indents = indents if drafts[selected_idx] is d_desc else None
-    logger.info("    4안 %s %s: %.1fs (tier=%s%s)", kind, str(ext.element_id)[:8],
-                time.monotonic() - _t0, tier, ", LLM" if use_llm else "")
+    logger.info("    4안 %s %s: %.1fs (tier=%s)", kind, str(ext.element_id)[:8],
+                time.monotonic() - _t0, tier)
     return drafts, selected_idx, line_indents, tier, caption_source(
-        selected_idx, used_llm=bool(llm_title or llm_outline or llm_prose),
-        has_print_caption=bool(caption), has_struct=struct_outline is not None,
+        selected_idx, has_print_caption=bool(caption), has_struct=struct_outline is not None,
     )
 
 
@@ -1137,7 +966,7 @@ def visual_trail(rule_id: str, drafts: list[Draft], selected_idx: int, source: s
 
 
 def caption_source(
-    selected_idx: int, *, used_llm: bool, has_print_caption: bool, has_struct: bool
+    selected_idx: int, *, has_print_caption: bool, has_struct: bool
 ) -> str:
     """선택된 대체텍스트가 **어디서 왔는지** 한 마디로 (Step17, 2026-08-08 대표 지시).
 
@@ -1149,6 +978,4 @@ def caption_source(
         return "생략(장식용 판정)"
     if has_struct:
         return "구조 전사(무-LLM)"
-    if used_llm:
-        return "AI 생성"
     return "인쇄 캡션 전사" if has_print_caption else "제목 전사"

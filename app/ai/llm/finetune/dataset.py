@@ -24,19 +24,14 @@ def _registry() -> dict[str, tuple[str, str]]:
     if _REGISTRY_CACHE:
         return _REGISTRY_CACHE
     # cartoon은 rule-based 골격 조립(§5.3)이라 프롬프트 기반 학습 대상이 아니다 — 레지스트리 제외.
-    # image·chart_graph의 설명문(개조식·줄글)은 공통 visual_drafts 프롬프트를 쓴다({label} 선치환).
-    from app.ai.llm import (
-        formula_opt,
-        table_opt,
-        text_opt,
-        visual_drafts,
-    )
+    # ★ 2026-09-08(재구조화 5단계) — **image·chart_graph 도 뺐다.** 시각 4안의 LLM 팔(L8)을
+    #   지우면서 `visual_drafts._PROMPT` 가 없어졌다. 두 유형은 이제 만화와 같은 처지다 —
+    #   설명문을 규칙(캡션 전사·§6.6 골격)으로 조립하므로 학습할 프롬프트가 없다.
+    from app.ai.llm import formula_opt, table_opt, text_opt
     _REGISTRY_CACHE.update({
         "text":        (text_opt._PROMPT_QUALITY, "text"),
         "formula":     (formula_opt._PROMPT, "latex"),
         "table":       (table_opt._PROMPT_TABLE_GRID, "table_text"),
-        "image":       (visual_drafts._PROMPT.replace("{label}", "그림"), "caption"),
-        "chart_graph": (visual_drafts._PROMPT.replace("{label}", "그래프"), "caption"),
     })
     return _REGISTRY_CACHE
 

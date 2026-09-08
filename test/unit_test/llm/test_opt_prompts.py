@@ -3,14 +3,13 @@ import pytest
 
 
 class TestPromptFormat:
-    def test_visual_drafts_prompt_formats(self):
-        # 시각자료 4안 공통 프롬프트는 {label}·{caption}을 받는다(KeyError 나면 실패).
-        from app.ai.llm.visual_drafts import _PROMPT, _PREFILL
-        out = _PROMPT.format(label="그림", caption="원 안에 삼각형")
-        assert "원 안에 삼각형" in out and "그림" in out
-        assert _PREFILL.startswith("[개조식]")   # 최적화 프롬프트: 개조식·줄글만 LLM 담당
+    def test_시각_4안에는_프롬프트가_없다(self):
+        """L8 LLM 팔은 2026-09-08 재구조화 5단계에서 지웠다 — 4안은 규칙 전사뿐이다."""
+        from app.ai.llm import visual_drafts as vd
+        assert not [n for n in dir(vd) if "PROMPT" in n], dir(vd)
+        assert not hasattr(vd, "generate_with_retry")
 
-    @pytest.mark.parametrize("mod", ["text_opt", "table_opt", "chart_graph_opt", "visual_drafts"])
+    @pytest.mark.parametrize("mod", ["text_opt", "table_opt", "chart_graph_opt"])
     def test_other_opt_prompts_format(self, mod):
         import importlib
         m = importlib.import_module(f"app.ai.llm.{mod}")
