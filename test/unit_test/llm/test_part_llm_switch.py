@@ -1,7 +1,8 @@
 """파트별 LLM 끄기 손잡이 (재구조화 0-d · 스위치 대장 2026-09-08).
 
 4단계 A/B 의 되돌리는 길이다. 확인할 것 셋:
-  1. **기본값은 대장대로** — A/B 가 끝난 파트(태깅 #754 · 표 #755)는 규칙이 기본이다.
+  1. **기본값은 대장대로** — A/B 가 끝난 파트(태깅 #754 · 표 #755 · 수식 #766)는
+     규칙이 기본이다.
   2. **끄면 호출이 0** — 0/1 로 갈리는 것을 호출 계수로 본다.
   3. **호출 시 읽는다** — import 때 굳으면 프로세스 중간에 바꿔도 안 먹고,
      "껐다고 믿었는데 안 꺼진" 무효 라운드가 난다(2026-09-03 두 번).
@@ -22,6 +23,14 @@ class TestPartLlmOn:
             assert part_llm_on(k) is (_PART_LLM_DEFAULT.get(k, "1") != "0")
         assert _PART_LLM_DEFAULT["태깅"] == "0"      # 4-4 판정(#754)
         assert _PART_LLM_DEFAULT["표"] == "0"        # 4-3 판정(#755)
+        assert _PART_LLM_DEFAULT["수식"] == "0"      # 4-2 판정(#766)
+
+    def test_수식은_규칙이_기본(self, monkeypatch):
+        """#766 (4-2) — LLM 팔이 모델 해설문을 점역해 내보낸다. 되돌리는 길 `FORMULA_OPT_LLM=1`."""
+        monkeypatch.delenv("FORMULA_OPT_LLM", raising=False)
+        assert part_llm_on("수식") is False
+        monkeypatch.setenv("FORMULA_OPT_LLM", "1")
+        assert part_llm_on("수식") is True
 
     def test_표는_규칙이_기본(self, monkeypatch):
         """#755 (4-3) — 표 tn 은 점자에 안 실린다. 되돌리는 길은 `TABLE_TN_LLM=1`."""
@@ -155,3 +164,48 @@ class TestTagByRule:
     def test_관문을_통과하지_못하면_원문(self, monkeypatch):
         monkeypatch.setattr(self.text_opt, "_validate_tagging", lambda *_: False)
         assert self.text_opt._tag_by_rule("빈칸 ____ 하나") == "빈칸 ____ 하나"
+
+
+class Test계수기_양성대조:
+    """`LLM계수 … call=0` 을 끄기 팔의 증거로 쓰려면 **셀 줄 알아야** 한다.
+
+    ⚠ `llm_counter_line()` 은 요청 컨텍스트(`start_request()`) 밖에서 **언제나**
+      `call=0` 을 돌려준다(`req_log._cur()` 가 None). 그래서 재구조화 A/B 하네스가
+      `pipeline.run()` 바깥에서 이 줄을 찍으면 두 팔 모두 `call=0` 인 **거짓 초록**이
+      뜬다(2026-09-08 4-2 회차에서 실제로 떴다). 켜기 팔이 `수식 call=1` 을 찍는 것을
+      같은 자리에서 먼저 보여 두고, 그 다음에 끄기 팔의 `call=0` 을 믿는다.
+    """
+
+    def _run(self, monkeypatch):
+        """실제 폴백 자리에 계수기를 부르는 대역을 끼운다(`_fallback_call` 과 같은 자리)."""
+        from app.ai.llm import base_opt
+        from app.utils import req_log
+
+        called = []
+
+        async def _spy(prompt, *, max_tokens=300, kind="요소"):
+            called.append(kind)
+            req_log.record_llm(kind, "claude-sonnet-5", 10, 5)
+            return "교정된 LaTeX: x^{2}"
+
+        monkeypatch.setattr(base_opt, "hcxt_optimize", _spy)
+        monkeypatch.setattr(base_opt, "fallback_optimize", _spy)
+        req_log.start_request()
+        out = asyncio.run(base_opt.generate_with_retry(
+            "프롬프트", timeout=1.0, element_id="e1", kind="수식"))
+        return out, called, req_log.llm_counter_line()
+
+    def test_켜면_수식_call_1_이_찍힌다(self, monkeypatch):
+        """양성 대조 — 계수기가 살아 있다는 증거."""
+        monkeypatch.setenv("FORMULA_OPT_LLM", "1")
+        out, called, line = self._run(monkeypatch)
+        assert called == ["수식"]
+        assert out[0] == "교정된 LaTeX: x^{2}"
+        assert "call=1" in line and "수식 call=1" in line
+
+    def test_기본값이면_call_0_이고_호출도_0(self, monkeypatch):
+        monkeypatch.delenv("FORMULA_OPT_LLM", raising=False)
+        out, called, line = self._run(monkeypatch)
+        assert called == []
+        assert out == ("", False)
+        assert line.startswith("LLM계수 call=0")
