@@ -70,3 +70,9 @@ class TestDmodeB상자경계:
     def test_표지_뒤가_빈_줄이면_안_묶는다(self):
         assert [s[2] for s in _mode_b_segments("<보기>\n\n딴 문단이다.")] == [
             "<보기>", "딴 문단이다."]
+
+    def test_빈_줄_없는_원고가_통째로_한_요소가_되지_않는다(self):
+        src = "<보기>\n" + "\n".join(f"{i}번째 줄이다." for i in range(60))
+        segs = _mode_b_segments(src)
+        assert segs[0][2].count("\n") + 1 == 31, "표지 + 30줄에서 끊겨야 한다"
+        assert len(segs) == 31

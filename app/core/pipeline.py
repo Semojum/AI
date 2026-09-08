@@ -1771,6 +1771,7 @@ def _mode_b_html_tables_to_tags(src: str) -> str:
 # 괄호로 묶인 표지만 든 줄(`<보기>` · `[자료1]` · 〈보기 1〉) — mode b 글상자의 여는 줄.
 # 조사·서술이 붙으면(`<보기>의 ㄱ에…`) 참조지 표지가 아니므로 줄 전체가 표지여야 한다.
 _MODE_B_BOX_LABEL_RE = re.compile(r"^[<〈【\[][^<>〈〉【】\[\]]{1,20}[>〉】\]]$")
+_MODE_B_BOX_MAX_LINES = 30
 
 
 def _mode_b_segments(src: str) -> list[tuple[int, str, str]]:
@@ -1796,11 +1797,12 @@ def _mode_b_segments(src: str) -> list[tuple[int, str, str]]:
                 i += 1
                 continue
             # ponytail: 평문에는 테두리가 없어 빈 줄이 유일한 상자 끝 신호다.
-            # 빈 줄 없이 이어지는 원고는 문단 끝까지 한 상자로 본다.
+            # 빈 줄이 한 줄도 없는 원고에서 통째로 한 요소가 되지 않게 줄 수로도 끊는다
+            # (점자 한 면이 25줄이라 32칸 이전의 평문 30줄이면 이미 두 면을 넘는다).
             if (_MODE_B_BOX_LABEL_RE.match(raw[i].strip())
                     and i + 1 < len(raw) and raw[i + 1].strip()):
-                j = i + 1
-                while j < len(raw) and raw[j].strip():
+                j, stop = i + 1, min(len(raw), i + 1 + _MODE_B_BOX_MAX_LINES)
+                while j < stop and raw[j].strip():
                     j += 1
                 out.append((base + i, "text", "\n".join(raw[i:j])))
                 i = j
