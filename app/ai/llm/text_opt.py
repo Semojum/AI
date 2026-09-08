@@ -2,17 +2,18 @@
 
 ZERO     → LLM 호출 없음 (텍스트 그대로 반환)
 STANDARD → LLM 호출 없음 (OCR 품질 충분 — 교정 불필요)
-QUALITY  → HyperCLOVA X, 90초 제한 (저신뢰 스캔 OCR 오류 교정만)
+QUALITY  → 고급 점역(`advanced_ai=true`)일 때만 LLM OCR 교정 (#770). 아니면 원문 그대로
 FALLBACK → GPT-4o API, 45초 제한 (3회 연속 실패 후)
 
 공통 추론·폴백·재시도는 base_opt — 여기서는 텍스트에 최적화된 프롬프트·후처리만 정의한다.
-추출 텍스트는 rule-based로 그대로 옮기는 것이 원칙이므로, LLM은 저신뢰 스캔의 OCR 오류
-교정에만 개입한다(내용 재작성·교정 금지).
+추출 텍스트는 rule-based로 그대로 옮기는 것이 원칙이므로, LLM은 **사용자가 고급 점역을
+고른 요청**의 저신뢰 스캔에서만 OCR 오류 교정에 개입한다(내용 재작성 금지, #770).
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 
@@ -204,6 +205,35 @@ def _min_trail(text: str) -> list[RuleApplication]:
     """
     return []
 
+
+# ── 본문 OCR 교정 LLM: 고급 점역 안에서만 (#770 · 2026-09-08 대표 지시) ──────────
+# 대표가 LLM 을 부르는 자리를 셋으로 못 박았다(`docs/DECISIONS.md` 2026-09-08):
+# 시각자료 · MinerU 폴백 · **고급 점역**. 저화질 스캔(QUALITY 티어)이라는 이유만으로
+# 본문을 LLM 이 다시 쓰는 일은 그 셋에 없다 — 사용자가 고르지 않은 자리에서 본문이 바뀌면
+# 같은 문서가 매번 달라지고, 모델 해설문이 점자로 나간다(수식 쪽 실측 2건 #766).
+# 고급 점역이 꺼져 있으면 저화질도 **추출 원문 그대로** 내보낸다. 점역사가 고친다.
+_TEXT_OCR_LLM_DEFAULT = "advanced"
+
+
+def _text_ocr_llm_on(advanced_ai: bool) -> bool:
+    """저화질 본문을 LLM 에게 다시 쓰게 할 것인가. 기본은 고급 점역을 고른 요청에서만.
+
+    되돌리는 길(스위치 대장 `TEXT_OCR_LLM`):
+      · `1` — 종전 동작. 고급 점역과 무관하게 QUALITY 티어면 부른다.
+      · `0` — 고급 점역에서도 안 부른다(본문 LLM 전면 차단).
+      · 그 밖(기본 `advanced`) — `advanced_ai=true` 일 때만 부른다.
+
+    ⚠ **호출 시** 읽는다. 모듈 최상단에서 굳히면 프로세스 env 로 주는 A/B 가 안 먹는다
+      (원장 `ab-off-arm-must-be-truly-off`, 2026-09-03 에 하루 두 번 무효가 났다).
+    """
+    mode = os.environ.get("TEXT_OCR_LLM", _TEXT_OCR_LLM_DEFAULT)
+    if mode == "1":
+        return True
+    if mode == "0":
+        return False
+    return bool(advanced_ai)
+
+
 # QUALITY 티어(저신뢰 스캔)에서만 호출 — OCR 오류 교정. 프롬프트 잔재('신뢰도/입력/출력'
 # 라벨)가 출력에 새지 않도록 라벨을 넣지 않고 결과만 받도록 지시한다(누출 버그 방지).
 _PROMPT_QUALITY = """다음 텍스트의 OCR 오류(깨진 글자·잘못된 띄어쓰기·오인식)만 교정해 교정된 텍스트만 출력하세요. 설명·머리말·따옴표 없이 결과만.
@@ -240,15 +270,24 @@ def _extract(resp: str) -> str:
 
 
 class TextOpt(BaseOpt):
-    """ExtractedContent 목록 → LLMOutput 목록."""
+    """ExtractedContent 목록 → LLMOutput 목록.
+
+    `advanced_ai` 는 요청(`PageTask.advanced_ai`)에서 온다 — `pipeline._run_text_chain` 이
+    생성자로 넘긴다. 본문 OCR 교정 LLM 은 그 값이 참일 때만 돈다(#770).
+    """
+
+    def __init__(self, advanced_ai: bool = False) -> None:
+        self.advanced_ai = bool(advanced_ai)
 
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
         text = ext.corrected_text or ""
         start = time.monotonic()
 
         # ZERO / STANDARD Tier: OCR 교정은 생략(품질 충분) — 텍스트 원문 보존.
-        # HCXT OCR 교정은 QUALITY(신뢰도 < threshold, 저화질 스캔)에서만.
-        if routing_tier in ("ZERO", "STANDARD") or ext.ocr_confidence >= config.ocr_confidence_threshold:
+        # QUALITY(저화질 스캔)라도 **고급 점역을 고른 요청에서만** 교정한다(#770).
+        if (routing_tier in ("ZERO", "STANDARD")
+                or ext.ocr_confidence >= config.ocr_confidence_threshold
+                or not _text_ocr_llm_on(self.advanced_ai)):
             tagged = await _tag_layout(text)  # 레이아웃 태깅(점역자주·테두리·빈칸)
             return LLMOutput(
                 element_id=ext.element_id,
@@ -268,6 +307,14 @@ class TextOpt(BaseOpt):
             transform=_extract,
         )
         tier = "FALLBACK" if used_fb else "QUALITY"
+
+        # ★ 관문 G1(#768) — 모델이 본문 대신 해설문을 쓰면 그 자리는 **원문으로 되돌린다**.
+        #   `kind="body"` 는 추출 거부문 판정만 건다. AI 말투 줄 걷기는 안 건다 —
+        #   본문에는 존댓말이 정상으로 있어 교과서 문장을 먹는다(`guard_llm_text` 도크스트링).
+        #   그 표는 요소 content 한 덩이 단위로 검증됐고(dev+val 1,131쪽·28,425요소,
+        #   검출 2·오검출 0), 여기 들어오는 것이 바로 그 단위다.
+        from app.ai.captioning.captioner import guard_llm_text   # 지연 — openai SDK
+        response = guard_llm_text(response, "body")
 
         corrected = await _tag_layout(response or text)  # OCR 교정 후 레이아웃 태깅
         elapsed_ms = int((time.monotonic() - start) * 1000)

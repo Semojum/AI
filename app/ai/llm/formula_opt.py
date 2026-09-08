@@ -93,10 +93,12 @@ _JAMO_ALIAS = [(re.compile(r"\\neg\s*\."), "ㄱ."),
 
 
 # 블록 수식 구분자 `$$…$$`(QA 11번, 2026-08-08). 종전에는 _extract에서만 지웠는데,
-# _extract는 **HCLOVA X 응답에만** 걸린다(base_opt.generate_with_retry의 transform은
-# 폴백 응답을 통과시킨다). 그래서 실제 운영에서는 세 갈래로 새어 나갔다:
+# ★ 2026-09-08(#768): `transform` 은 이제 **폴백 응답에도** 걸린다. 아래 세 갈래 중
+#   가운뎃줄이 그래서 막혔다 — 남은 두 갈래(원문 통과) 때문에 이 정규화는 그대로 둔다.
+# _extract는 종전에 **HCLOVA X 응답에만** 걸렸고(base_opt.generate_with_retry의 transform이
+# 폴백 응답을 통과시켰다), 그래서 실제 운영에서는 세 갈래로 새어 나갔다:
 #   ZERO 티어      → _normalize(raw)로 MinerU 원문을 그대로 통과
-#   GPT-4o 폴백    → 응답에 `$$`가 있어도 transform 미적용
+#   GPT-4o 폴백    → 응답에 `$$`가 있어도 transform 미적용 (#768 로 막힘)
 #   LLM 실패       → `response or raw`의 raw 쪽
 # 대표님 QA 10 job 전부 FALLBACK이라 `$$\n…\n$$`가 편집창까지 그대로 갔다.
 # _normalize는 네 갈래가 **모두** 지나는 유일한 지점이라 여기서 한 번 지운다.
