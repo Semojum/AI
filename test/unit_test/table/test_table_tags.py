@@ -45,3 +45,34 @@ class TestRenderEquivalence:
     def test_빈셀_보존(self):
         rows = [["a", "", "c"]]
         assert parse_table_tags(build_table_tags(rows)) == rows
+
+
+class TestPrintDraftsFromTags:
+    """mode b(태그 원문)에서도 묵자 초안 다섯 안이 선다 (2026-09-08).
+
+    「대체 텍스트 선택」 모달의 피커가 `text_list[].drafts` 를 쓴다. 점역사가 고친 글을
+    되돌리면 원문에 `<!표>` 구조 태그만 있고 파이프가 없어, `"|" in table_text` 만 보던
+    `_print_drafts` 가 빈 목록을 냈다 — 고를 안이 없었다. 점자 쪽(`table_braille`)은
+    자기 초안을 따로 만들어 5개였으므로 두 목록이 갈렸고 `selected_idx` 도 어긋났다.
+    """
+
+    def test_태그_원문도_다섯_안을_낸다(self) -> None:
+        from app.ai.llm.table_opt import _print_drafts
+
+        drafts, sel = _print_drafts(build_table_tags(ROWS), "table_grid")
+        assert len(drafts) == 5, f"초안이 5개가 아니다: {len(drafts)}"
+        assert sel == 1, f"기본 선택이 table_grid(1)가 아니다: {sel}"
+
+    def test_태그와_파이프가_같은_초안을_낸다(self) -> None:
+        """한 길로 모은다 — 태그로 오든 파이프로 오든 묵자 초안이 같아야 한다."""
+        from app.ai.llm.table_opt import _print_drafts
+
+        pipe = "\n".join(" | ".join(r) for r in ROWS)
+        a, sa = _print_drafts(build_table_tags(ROWS), "unfold")
+        b, sb = _print_drafts(pipe, "unfold")
+        assert (sa, [d.text for d in a]) == (sb, [d.text for d in b])
+
+    def test_표가_아니면_초안을_안_만든다(self) -> None:
+        from app.ai.llm.table_opt import _print_drafts
+
+        assert _print_drafts("그냥 줄글이다.", "narrative") == ([], 0)

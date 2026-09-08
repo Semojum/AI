@@ -672,6 +672,14 @@ def _print_drafts(table_text: str, render_mode: str) -> tuple[list[Draft], int]:
     5안 = §3.1.1 (1) 세 갈래(정렬 유지·가로 풀어쓰기·번호 체계) + 전치 + 테두리 변형.
     번호 체계는 2026-09-02 신설 — 점자 쪽(table_braille) 초안과 개수·순서가 같아야 한다.
     """
+    # ★ 2026-09-08 — `<!표>` 태그로 들어오는 mode b 도 초안을 세운다.
+    #   mode b 원문(점역사가 고쳐 되돌린 글)에는 파이프가 없고 구조 태그만 있다.
+    #   `"|" in table_text` 만 보던 종전 코드는 여기서 빈 목록을 내, 「대체 텍스트 선택」
+    #   모달의 다섯 안 피커가 **고를 안 없이** 떴다(점자 쪽 초안은 table_braille 가 따로
+    #   만들어 5개였다 — 두 목록이 갈렸고 selected_idx 도 0 대 1 로 어긋났다).
+    #   `_infer_render_mode` 는 이미 태그 갈래를 보고 있다. 같은 자리를 맞춰 준다.
+    if rows := parse_table_tags(table_text or ""):
+        table_text = "\n".join(" | ".join(r) for r in rows)   # table_braille 와 같은 환산
     if "|" not in (table_text or ""):
         return [], 0
     drafts = [Draft(option=n, text=print_layout(table_text, m), render_mode=m, label=lb)
