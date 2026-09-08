@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.ai.braille.chart_graph_braille import ChartGraphBraille
+from app.ai.braille.visual_braille import ChartGraphBraille
 from app.ai.llm.chart_graph_opt import ChartGraphOpt
 from app.schemas.content import BrailleOutput, ExtractedContent
 

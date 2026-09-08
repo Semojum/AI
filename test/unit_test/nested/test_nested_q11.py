@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from uuid import uuid4
 
-from app.ai.braille.image_braille import ImageBraille
+from app.ai.braille.visual_braille import ImageBraille
 from app.ai.braille.layout_braille import LayoutBraille
 from app.ai.braille.nested_block import box_narrative
 from app.ai.braille.table_braille import TableBraille

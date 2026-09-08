@@ -817,9 +817,7 @@ class TestBoxBorderBBPG125:
     def test_image_cartoon_chart_box_borders_채움(self) -> None:
         import uuid
 
-        from app.ai.braille.cartoon_braille import CartoonBraille
-        from app.ai.braille.chart_graph_braille import ChartGraphBraille
-        from app.ai.braille.image_braille import ImageBraille
+        from app.ai.braille.visual_braille import CartoonBraille, ChartGraphBraille, ImageBraille
         from app.schemas.content import LLMOutput
 
         src = "<!상자>설명<!/상자>\n내용\n<!상자끝><!/상자끝>"
@@ -954,7 +952,7 @@ class TestPostLayoutCoords:
         # write-back으로 본문이 조판되면 선택 초안도 같이 동기화돼야 한다(긴 narrative=줄바꿈 발생).
         import uuid
 
-        from app.ai.braille.image_braille import ImageBraille
+        from app.ai.braille.visual_braille import ImageBraille
         from app.schemas.content import Draft, LLMOutput
 
         long_text = "그림은 큰 원 안에 작은 삼각형이 있고 그 아래 설명 문구가 길게 이어진다"
@@ -1061,7 +1059,7 @@ class TestAllDraftsTypeset:
     def test_모든_초안_32칸이하(self, lb) -> None:
         import uuid
 
-        from app.ai.braille.image_braille import ImageBraille
+        from app.ai.braille.visual_braille import ImageBraille
         from app.schemas.content import Draft, LLMOutput
 
         long1 = "원 안에 작은 삼각형이 있는 그림이 매우 길게 설명되어 여러 줄에 걸친 상황 묘사"

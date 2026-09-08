@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.ai.braille.image_braille import ImageBraille
+from app.ai.braille.visual_braille import ImageBraille
 from app.ai.llm.image_opt import ImageOpt
 from app.schemas.content import BrailleOutput, ExtractedContent
 

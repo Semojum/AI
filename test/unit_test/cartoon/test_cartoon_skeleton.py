@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 from uuid import uuid4
 
-from app.ai.braille.cartoon_braille import CartoonBraille
+from app.ai.braille.visual_braille import CartoonBraille
 from app.ai.braille.layout_braille import LayoutBraille
 from app.ai.llm.cartoon_opt import CartoonOpt
 from app.ai.llm.visual_drafts import omit_label, volref_label, LABELS, desc_label, prose_label

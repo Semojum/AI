@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 from uuid import uuid4
 
-from app.ai.braille.chart_graph_braille import ChartGraphBraille
+from app.ai.braille.visual_braille import ChartGraphBraille
 from app.ai.braille.layout_braille import LayoutBraille
 from app.ai.llm.chart_graph_opt import ChartGraphOpt, _label
 from app.ai.llm.visual_drafts import omit_label, volref_label, LABELS, desc_label
