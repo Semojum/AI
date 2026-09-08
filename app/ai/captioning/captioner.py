@@ -687,6 +687,10 @@ def _caption_anthropic(b64: str, mime: str, prompt: str, tail: str = "") -> str:
     #   이웃 본문·재료 블록은 경계 **뒤** 두 번째 블록이다. 이어 붙인 글자는 종전과
     #   한 글자도 다르지 않다(`prompt + tail` = 옛 `prompt`). 그래서 캐시 판 번호는
     #   안 올린다 — 번호는 **문안이 바뀔 때** 올리는 것이고, 여기는 블록 경계만 옮겼다.
+    # ★ temperature 는 넣지 마라 — claude-sonnet-5 는 이 인자를 거절한다(2026-09-08 실측,
+    #   400 `temperature` is deprecated for this model). 캡션 온도를 0 으로 낮추자는 요청이
+    #   와도 이 경로엔 손댈 자리가 없다. 회차간 흔들림(같은 설정 2회: 사실 141↔146개·
+    #   줄 수 95↔104)은 모델 고정 샘플링에서 오는 것이라 인자로 못 줄인다.
     system = [{"type": "text", "text": prompt,
                "cache_control": {"type": "ephemeral"}}]
     if tail:
@@ -1337,7 +1341,9 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
             }
         ],
         max_tokens=1200 if _material_on() else 500,
-        temperature=0.3,
+        # 캡션은 묘사 과제다 — 창작 여지가 필요 없다. 분류기(classifier.py)·본문
+        # 폴백(base_opt.py)과 같은 0으로 맞춘다(2026-09-08 대표 지시).
+        temperature=0,
     )
     record_openai("캡셔닝", "gpt-4o", getattr(resp, "usage", None))
     answer = resp.choices[0].message.content
