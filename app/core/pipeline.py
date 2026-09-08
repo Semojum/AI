@@ -1768,17 +1768,48 @@ def _mode_b_html_tables_to_tags(src: str) -> str:
     return _MODE_B_HTML_TABLE_RE.sub(_sub, src)
 
 
+# 괄호로 묶인 표지만 든 줄(`<보기>` · `[자료1]` · 〈보기 1〉) — mode b 글상자의 여는 줄.
+# 조사·서술이 붙으면(`<보기>의 ㄱ에…`) 참조지 표지가 아니므로 줄 전체가 표지여야 한다.
+_MODE_B_BOX_LABEL_RE = re.compile(r"^[<〈【\[][^<>〈〉【】\[\]]{1,20}[>〉】\]]$")
+_MODE_B_BOX_MAX_LINES = 30
+
+
 def _mode_b_segments(src: str) -> list[tuple[int, str, str]]:
     """mode b source_text → [(원본 줄 번호, 요소 유형, 텍스트)].
 
     `<!표>…<!/표>`는 여러 줄에 걸쳐도 **요소 하나**로 묶어 표 체인에 보낸다. 줄 단위로
     쪼개면 `<!행>`만 든 조각이 생겨 표 구조가 복원 불가능해진다. 나머지는 종전대로
     줄 하나 = 요소 하나(빈 줄은 요소를 만들지 않고 번호만 건너뛴다 — 2026-08-06).
+
+    글상자도 표와 같은 자리다(#732 D · 표는 #724). 표지 줄을 제 요소로 떼면 태깅 LLM이
+    **그 줄 하나만** 보고 `<!상자>표지<!/상자>` + `<!상자끝>`을 같은 요소 안에 내므로
+    위·아래 테두리가 붙어 나오고 본문이 상자 밖으로 떨어진다 — 상자가 늘 빈다.
+    표지 줄부터 다음 빈 줄 앞까지를 요소 하나로 묶어 LLM이 상자의 끝을 보게 한다.
+    (mode c는 `pdf_analyzer`의 벡터 테두리 검출이 요소를 가로질러 닫으므로 이 병이 없다.)
     """
     def _lines(a: int, b: int) -> list[tuple[int, str, str]]:
         base = src.count("\n", 0, a) + 1
-        return [(base + i, "text", ln)
-                for i, ln in enumerate(src[a:b].split("\n")) if ln.strip()]
+        raw = src[a:b].split("\n")
+        out: list[tuple[int, str, str]] = []
+        i = 0
+        while i < len(raw):
+            if not raw[i].strip():
+                i += 1
+                continue
+            # ponytail: 평문에는 테두리가 없어 빈 줄이 유일한 상자 끝 신호다.
+            # 빈 줄이 한 줄도 없는 원고에서 통째로 한 요소가 되지 않게 줄 수로도 끊는다
+            # (점자 한 면이 25줄이라 32칸 이전의 평문 30줄이면 이미 두 면을 넘는다).
+            if (_MODE_B_BOX_LABEL_RE.match(raw[i].strip())
+                    and i + 1 < len(raw) and raw[i + 1].strip()):
+                j, stop = i + 1, min(len(raw), i + 1 + _MODE_B_BOX_MAX_LINES)
+                while j < stop and raw[j].strip():
+                    j += 1
+                out.append((base + i, "text", "\n".join(raw[i:j])))
+                i = j
+                continue
+            out.append((base + i, "text", raw[i]))
+            i += 1
+        return out
 
     segs: list[tuple[int, str, str]] = []
     pos = 0

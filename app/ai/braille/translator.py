@@ -1352,6 +1352,28 @@ _BORDER_ANY_RE = re.compile(
 _BORDER_KIND = {_TAGS.BOX_TOP: "top", _TAGS.BOX_BOTTOM: "bottom"}
 
 
+def _braillify_box_title(raw: str) -> str:
+    """글상자 제목을 점자로. 본문과 같은 문장부호로 적고 자간 벌림은 되붙인다(원장 C-31 · #732 C).
+
+    · `<보기>` 는 **부등호가 아니라 홑화살괄호**다.
+      「한국 점자 규정」 문장부호표(`한국 점자 규정_재추출.txt` 2186~2193행)
+        여는 홑화살괄호 `"7`=⠐⠶ · 닫는 홑화살괄호 `71`=⠶⠂.
+      「점자 도서 제작 지침」[예 1-11](`점자 도서 제작 지침_재추출.txt` 423~429행)
+        글상자 제목 `<보 기>` → ``=gggg`"7^u@o71`gggggggggggggggg=`` = ⠿⠛⠛⠛⠛ ⠐⠶보기⠶⠂ ⠛…⠿.
+      같은 지침 [예 1-13](458·464행) `<눈길>` → `"7cg@o171` 도 같다.
+      본문 경로는 `_ANGLE_LABEL_RE` 가 이미 그렇게 바꾸는데 제목 경로만 그 앞을 안 지나가서,
+      한 쪽 안에서 같은 낱말이 `⠔⠔보기⠢⠢`(보다작다…보다크다) 와 `⠐⠶보기⠶⠂` 두 모양으로 나갔다.
+    · 위 [예 1-11]은 자간 벌린 `<보 기>` 를 `보기`(붙여)로 적는다 — 원본 자간 조판이지
+      띄어쓰기가 아니다. 조각이 **전부 한 글자**일 때만 되붙인다(`자료 1` · `보기 1` 은 그대로).
+      # ponytail: 낱자 나열이 진짜 제목인 경우(`ㄱ ㄴ ㄷ`)는 함께 붙는다. 실물에서 본 적 없다.
+    """
+    core = raw.strip("<>〈〉[]【】「」 ")
+    parts = core.split()
+    if len(parts) > 1 and all(len(x) == 1 for x in parts):
+        raw = raw.replace(core, "".join(parts), 1)
+    return _braillify(_ANGLE_LABEL_RE.sub(r"〈\1〉", raw))
+
+
 def isolate_border_tags(text: str) -> str:
     """글상자 테두리 태그 쌍을 **제 줄에 홀로** 세운다(빈 줄은 만들지 않는다).
 
@@ -1395,7 +1417,7 @@ def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
         kind = _BORDER_KIND[m.group(1)]
         level = int(m.group(2)) if m.group(2) else 1
         title_raw = (m.group(3) or "").strip()
-        title = _braillify(title_raw) if (kind == "top" and title_raw) else ""
+        title = _braillify_box_title(title_raw) if (kind == "top" and title_raw) else ""
         out.append((kind, level, title))
     return out
 
@@ -1515,7 +1537,7 @@ def substitute_tags(text: str) -> str:
     # 1) 테두리 쌍 (중간 제목 가능) → 32칸 줄(위치 마커). 위계는 box_borders로 layout이 재렌더.
     for name, pat in _BORDER_PAIR_RE.items():
         text = pat.sub(
-            lambda m, n=name: _border_line(n, _braillify(m.group(2).strip())), text
+            lambda m, n=name: _border_line(n, _braillify_box_title(m.group(2).strip())), text
         )
 
     # 2) 단일·대칭 인라인 마커 + 미지 태그 제거

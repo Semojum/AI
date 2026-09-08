@@ -89,7 +89,7 @@ PROMPT_VER = {
     "order": 1,        # app/ai/parser/llm_order.py      _SYS
     "visual": 1,       # app/ai/llm/visual_drafts.py
     "opus": 1,         # app/ai/parser/opus_fallback.py
-    "text": 1,         # app/ai/llm/text_opt.py
+    "text": 2,         # app/ai/llm/text_opt.py  (2: 자간 벌린 표지 #732)
     "formula": 1,      # app/ai/llm/formula_opt.py
     "table": 1,        # app/ai/llm/table_opt.py
 }
@@ -103,7 +103,7 @@ PROMPT_SHA = {
     "caption": "f87952e49002",
     "visual": "3fb25cd311f8",
     "opus": "41bba1c2b41d",
-    "text": "6f2515369797",
+    "text": "12762f03fa65",
     "formula": "d831be6fa57a",
     "table": "347b251a5e77",
 }
