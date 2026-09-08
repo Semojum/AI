@@ -20,6 +20,7 @@ except Exception:  # noqa: BLE001 — 무엇이 없든 건너뛴다
                 allow_module_level=True)
 
 from app.ai.llm.table_opt import _parse_tn_from_response as parse  # noqa: E402
+from app.ai.llm.table_opt import _table_tn  # noqa: E402
 
 FAIL = "[처리 불가: 표 점역사주 생성 실패]"
 
@@ -120,3 +121,44 @@ def test_the_word_end_inside_a_sentence_survives():
 def test_leftover_open_marker_word_is_cut():
     """`[점역사주 시작]` 에서 앞 표지만 떨어져 `시작]` 이 남던 자리 (2026-09-08 실물)."""
     assert parse("[점역사주 시작] 아래는 표입니다.\n선택: 1") == "아래는 표입니다."
+
+
+# ── 폴백 점역자 주에 기계 태그가 새면 안 된다 (2026-09-08 대표 화면 캡처) ──────
+# 「대체 텍스트 선택」의 '시각 요소 설명(점역자 주)' 칸에 `표. <!표>\n<!행><!칸>후보…`
+# 가 그대로 떴다. mode b 는 원문에 이미 표 구조 태그가 붙어 오는데, 폴백이 그 글을
+# 80자에서 잘라 덤프했다 — 태그 한가운데(`<!칸`)에서 끊겨 있었다.
+_TAGGED = ("<!표>\n"
+           "<!행><!칸>후보<!칸>득표수(표)<!칸>득표율(%)<!/행>\n"
+           "<!행><!칸>가 후보<!칸>3,420<!칸>40.0<!/행>\n"
+           "<!행><!칸>나 후보<!칸>2,907<!칸>34.0<!/행>\n"
+           "<!행><!칸>다 후보<!칸>2,223<!칸>26.0<!/행>\n"
+           "<!행><!칸>유효 투표 합계<!칸>8,550<!칸>100.0<!/행>\n"
+           "<!/표>")
+
+
+def test_fallback_tn_is_human_text_not_tags():
+    """대표가 본 그 표 — 태그 덤프가 아니라 크기를 적은 한 문장."""
+    assert _table_tn(_TAGGED, _TAGGED) == "표. 3항목 5행 표임."
+
+
+def test_fallback_tn_counts_from_pipe_text():
+    """mode a/c 는 파이프 격자로 온다 — 태그로 옮긴 뒤 같은 문장이 나와야 한다."""
+    from app.ai.braille.table_braille import build_table_tags
+    grid = [["후보", "득표수(표)", "득표율(%)"], ["가 후보", "3,420", "40.0"]]
+    text = "\n".join(" | ".join(r) for r in grid)
+    assert _table_tn(build_table_tags(grid), text) == "표. 3항목 2행 표임."
+
+
+def test_fallback_tn_never_leaks_machine_tags():
+    for tag in ("<!표>", "<!행>", "<!칸>", "<!/"):
+        assert tag not in _table_tn(_TAGGED, _TAGGED)
+
+
+def test_ungridded_table_is_clipped_at_a_word_boundary():
+    """격자로 못 읽는 표만 원문을 싣는다 — 태그를 떼고 낱말째로 자른다."""
+    src = "<!강조>선거<!/강조> 결과를 " + "정리한 자료임 " * 20
+    out = _table_tn(src, src)
+    assert "<!" not in out
+    assert out.startswith("표. 선거 결과를 정리한 자료임")
+    assert out.endswith(" …")
+    assert not out.rstrip(" …").endswith("정리한")   # 낱말 한가운데서 끊지 않는다
