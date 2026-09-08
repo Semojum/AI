@@ -1224,11 +1224,15 @@ _CLASSIFY_LABELS = frozenset(("image", "cartoon", "chart", "diagram"))
 def _kind_matches(kind: str, text: str) -> bool:
     """이 글이 그 kind 의 것인가. 캡션 자리에서 분류 라벨을 걸러 내는 가드.
 
-    캡션은 유형 제시어로 열고(`그림:`·`만화:`) 라벨은 영어 한 단어다 — 실측 3,242건에서
-    겹치는 항목이 하나도 없다. 자리를 안 갈라도 이 한 줄로 `그림: chart` 를 막는다.
+    캡션은 유형 제시어로 열고(`그림:`·`만화:`) 라벨은 영어다 — 실측 3,242건에서 겹치는
+    항목이 하나도 없다. 자리를 안 갈라도 이 한 줄로 `그림: chart` 를 막는다.
+
+    ★ 2026-09-08(#784) — 분류 응답이 `diagram flowchart` 처럼 **두 낱말**이 될 수 있어
+      첫 낱말로 본다. 통째로 비교하면 세분류가 붙은 순간 분류 캐시가 전량 미스가 되고,
+      호출이 그림 수만큼 다시 나간다(전 코퍼스 1회 추출 기준 1.67달러).
     """
-    is_label = text.strip() in _CLASSIFY_LABELS
-    return is_label if kind == "classify" else not is_label
+    is_label = (text.strip().split() or [""])[0] in _CLASSIFY_LABELS
+    return is_label if kind in ("classify", "subtype") else not is_label
 
 
 def _cache_read(kind: str, new_path: Path | None, image_type: str) -> str | None:

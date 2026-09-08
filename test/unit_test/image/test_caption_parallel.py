@@ -42,7 +42,7 @@ class TestCaptionMapping:
         def fake(el, context=""):
             idx = int(el["element_id"][1:])
             time.sleep((6 - idx) * 0.01)
-            return f"CAP-{el['element_id']}", el["type"], True, None
+            return f"CAP-{el['element_id']}", el["type"], True, None, ""
 
         els = [_el(i) for i in range(6)]
         with patch.object(rb, "_do_caption", side_effect=fake):
@@ -52,7 +52,7 @@ class TestCaptionMapping:
 
     def test_읽기_순서가_보존된다(self) -> None:
         with patch.object(rb, "_do_caption",
-                          side_effect=lambda el, context="": (f"C{el['element_id']}", el["type"], True, None)):
+                          side_effect=lambda el, context="": (f"C{el['element_id']}", el["type"], True, None, "")):
             out = _build([_el(i) for i in range(5)])
         orders = [e["order"] for e in out["elements"]]
         assert orders == sorted(orders), "order가 병렬 완료 순서에 오염되면 안 된다"
@@ -60,7 +60,7 @@ class TestCaptionMapping:
     def test_텍스트_요소는_캡셔닝하지_않는다(self) -> None:
         els = [_el(0, "image"), {**_el(1, "text"), "content": "본문"}]
         with patch.object(rb, "_do_caption",
-                          side_effect=lambda el, context="": ("CAP", el["type"], True, None)) as m:
+                          side_effect=lambda el, context="": ("CAP", el["type"], True, None, "")) as m:
             out = _build(els)
         assert m.call_count == 1
         assert {e["content"] for e in out["elements"]} == {"CAP", "본문"}
@@ -73,7 +73,7 @@ class TestIsolation:
         def fake(el, context=""):
             if el["element_id"] == "e02":
                 raise RuntimeError("boom")
-            return f"CAP-{el['element_id']}", el["type"], True, None
+            return f"CAP-{el['element_id']}", el["type"], True, None, ""
 
         with patch.object(rb, "_do_caption", side_effect=fake):
             out = _build([_el(i) for i in range(5)])
@@ -85,7 +85,7 @@ class TestIsolation:
         def fake(el, context=""):
             if el["element_id"] == "e01":
                 raise RuntimeError("boom")
-            return "CAP", el["type"], True, None
+            return "CAP", el["type"], True, None, ""
 
         with patch.object(rb, "_do_caption", side_effect=fake):
             out = _build([_el(i) for i in range(3)])
@@ -95,7 +95,7 @@ class TestIsolation:
     def test_캡셔닝_실패_요소도_남는다(self) -> None:
         """예외가 아니라 ok=False로 돌아온 경우."""
         with patch.object(rb, "_do_caption",
-                          side_effect=lambda el, context="": ("", el["type"], False, None)):
+                          side_effect=lambda el, context="": ("", el["type"], False, None, "")):
             out = _build([_el(0)])
         assert len(out["elements"]) == 1
         assert "CAPTION_FAILED" in out["elements"][0]["flags"]
@@ -107,7 +107,7 @@ class TestCallCount:
     @pytest.mark.parametrize("n", [1, 2, 5, 11])
     def test_시각요소_수만큼만_호출한다(self, n: int) -> None:
         with patch.object(rb, "_do_caption",
-                          side_effect=lambda el, context="": ("CAP", el["type"], True, None)) as m:
+                          side_effect=lambda el, context="": ("CAP", el["type"], True, None, "")) as m:
             _build([_el(i) for i in range(n)])
         assert m.call_count == n
 
@@ -120,7 +120,7 @@ class TestCallCount:
 
     def test_동시_1로_제한해도_결과가_같다(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """CAPTION_CONCURRENCY=1은 종전 직렬 동작 — 결과가 동일해야 한다."""
-        side = lambda el, context="": (f"CAP-{el['element_id']}", el["type"], True, None)  # noqa: E731
+        side = lambda el, context="": (f"CAP-{el['element_id']}", el["type"], True, None, "")  # noqa: E731
         with patch.object(rb, "_do_caption", side_effect=side):
             par = _build([_el(i) for i in range(4)])
         monkeypatch.setenv("CAPTION_CONCURRENCY", "1")
@@ -133,7 +133,7 @@ class TestCallCount:
 def test_동시_처리가_직렬보다_빠르다() -> None:
     """실제로 겹쳐 도는지 확인 — 이 테스트가 깨지면 병렬화가 무력화된 것이다."""
     delay = 0.05
-    side = lambda el: (time.sleep(delay), ("CAP", el["type"], True, None))[1]  # noqa: E731
+    side = lambda el: (time.sleep(delay), ("CAP", el["type"], True, None, ""))[1]  # noqa: E731
     n = 8
     with patch.object(rb, "_do_caption", side_effect=side):
         t0 = time.monotonic()

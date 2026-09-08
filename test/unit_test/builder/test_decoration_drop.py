@@ -46,7 +46,7 @@ def test_장식만_빠진다(tmp_path, monkeypatch, bbox, failed, kept):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(rb, "_caption_all",
                         lambda els: {id(e): ("" if failed else "그림: 실험 장치",
-                                             "image", not failed, None) for e in els})
+                                             "image", not failed, None, "") for e in els})
     res = rb.build([_el(bbox)], "job-decor", 1, "OCR")
     assert len(res["elements"]) == kept
     if kept and failed:

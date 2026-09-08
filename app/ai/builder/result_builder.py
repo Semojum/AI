@@ -129,14 +129,16 @@ def reset_caption_fatal() -> None:
     _caption_fatal = None
 
 
-def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | None]:
-    """(캡션, 확정 타입, 성공여부, 세분류 신뢰도).
+def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | None, str]:
+    """(캡션, 확정 타입, 성공여부, 세분류 신뢰도, §6.6 세분류).
 
     ★ 실패 문자열을 본문으로 흘리지 않는다. 예전에는 "[캡셔닝 실패]"를 content로 반환해
     그 다섯 글자가 그대로 점자로 찍혀 학생에게 나갔다(품질검사도 못 잡아 COMPLETED 처리).
     실패는 빈 캡션 + 성공여부 False로만 알리고, 하위 opt가 규정상 '생략' 표기(§6.3.4(2)②)를
     내며 품질검사가 R11로 점역사에게 띄운다.
     세분류 신뢰도(logprob 기반)는 경계 JSON의 subtype_confidence로 나가 R2 판정에 쓰인다.
+    §6.6 세분류는 분류 콜이 직접 준 낱말이고(#784) 경계 JSON의 visual_subtype로 나가
+    `diagram_opt._ASSEMBLERS` 가 골격을 세우는 데 쓴다. 캡션 문안과 무관하다.
     """
     global _caption_fatal
     img_path = el.get("image_path")
@@ -151,12 +153,12 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
     # 실제로 그 오독으로 두 세션이 몇 시간을 썼다(2026-08-16). 조용히 건너뛴다.
     if os.environ.get("DISABLE_LLM_FALLBACK") == "1":
         logger.debug("캡셔닝 건너뜀(DISABLE_LLM_FALLBACK=1) id=%s", eid)
-        return "", original_type, False, None
+        return "", original_type, False, None, ""
 
     # 설정성 오류로 이미 잠겼으면 API를 다시 두드리지 않는다 — 같은 실패를 요소 수만큼
     # 반복해 봐야 시간만 버린다(200요소 페이지면 재시도 포함 600회).
     if _caption_fatal:
-        return "", original_type, False, None
+        return "", original_type, False, None, ""
 
     # 가드3 — 텍스트 요소와 자리가 거의 같은 시각 요소는 **글자를 그림으로 잡은 것**이다
     # (원장 C-40 부록). 캡션을 부르지 않는다. 판정은 `mineru_runner._mark_text_lookalikes`.
@@ -166,11 +168,11 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
                     el.get("job_id", "?"), el.get("page_no", "?"), eid, iou,
                     extra={"job_id": el.get("job_id"), "page": el.get("page_no"),
                            "guard": 3, "iou": iou, "stage": "캡셔닝", "status": "SKIPPED"})
-        return "", original_type, False, None
+        return "", original_type, False, None, ""
 
     if not img_path or not Path(img_path).exists():
         logger.warning("캡셔닝 불가 — 이미지 경로 없음 id=%s path=%r", eid, img_path)
-        return "", original_type, False, None
+        return "", original_type, False, None, ""
 
     # ★ 캡셔닝 끄기 스위치(2026-08-22 대표 지시 — API 크레딧 절약).
     #   기호 층 A/B는 캡션이 결과에 영향이 없는데도 재추출 한 번에 20~30달러가 나갔다.
@@ -180,12 +182,12 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
     #      (pipeline의 processing_meta.caption_disabled).
     if os.getenv("SEMOJUM_NO_CAPTION") == "1":
         logger.info("캡셔닝 꺼짐(SEMOJUM_NO_CAPTION=1) — 생략 처리 id=%s", eid)
-        return "", original_type, False, None
+        return "", original_type, False, None, ""
 
     last: Exception | None = None
     for attempt in range(_CAPTION_RETRIES + 1):
         try:
-            image_type, subconf = classify_with_confidence(img_path)
+            image_type, subconf, vsub = classify_with_confidence(img_path)
             mapped_type = _CLASSIFY_TYPE_MAP.get(image_type, "image")
             text = caption(img_path, image_type, context=context)
             # ★ 예외 없이 **빈 캡션**이 오는 길이 있다(모델이 거부하거나 빈 응답을 줌).
@@ -196,8 +198,8 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
             #   빈 응답은 성공이 아니다. 실패로 돌려 요소를 살린다(불변규칙 1).
             if not text.strip():
                 logger.error("캡셔닝 빈 응답 id=%s type=%s — 요소는 살린다", eid, image_type)
-                return "", mapped_type, False, subconf
-            return text, mapped_type, True, subconf
+                return "", mapped_type, False, subconf, vsub
+            return text, mapped_type, True, subconf, vsub
         except Exception as exc:  # noqa: BLE001 — 요소 격리(불변규칙 3)
             last = exc
             name = type(exc).__name__
@@ -213,7 +215,7 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
 
     # 삼키지 않는다 — 원인(쿼터 소진·인증 실패 등)이 로그에 남아야 운영에서 추적된다.
     logger.error("캡셔닝 실패 id=%s: %s: %s", eid, type(last).__name__, last)
-    return "", original_type, False, None
+    return "", original_type, False, None, ""
 
 
 def _render_page(pdf_path: str, page_no: int) -> Image.Image:
@@ -494,7 +496,7 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
                     out[id(el)] = fut.result()
                 except Exception as exc:  # noqa: BLE001 — 요소 격리(불변규칙 3)
                     logger.warning("    캡셔닝 예외 %s: %s", str(el.get("element_id", ""))[:8], exc)
-                    out[id(el)] = ("", el["type"], False, None)
+                    out[id(el)] = ("", el["type"], False, None, "")
     ok_n = sum(1 for v in out.values() if v[2])
     logger.info("  캡셔닝 %d개 중 %d개 성공 · 동시 %d — %.1fs",
                 len(vis), ok_n, workers, time.monotonic() - t0)
@@ -529,10 +531,10 @@ def _do_caption_logged(el: dict, context: str = "") -> tuple:
 
     with caption_slot():
         t = time.monotonic()
-        content, el_type, ok, subconf = _do_caption(el, context)
+        content, el_type, ok, subconf, vsub = _do_caption(el, context)
         logger.info("    캡셔닝 %s(%s→%s) %.1fs%s", str(el.get("element_id", ""))[:8],
                     el["type"], el_type, time.monotonic() - t, "" if ok else " [실패]")
-    return content, el_type, ok, subconf
+    return content, el_type, ok, subconf, vsub
 
 
 # ── 장식 판정 (원장 C-70 후속 · 제작 지침 §6.1.1(4)·§6.3.4(2)②) ────────────────
@@ -586,8 +588,9 @@ def build(
     for el in ordered:
         caption_failed = False
         subconf: float | None = None
+        vsub = ""
         if el["type"] in _VISUAL_TYPES:
-            content, el_type, ok, subconf = cap_results[id(el)]
+            content, el_type, ok, subconf, vsub = cap_results[id(el)]
             caption_failed = not ok
         else:
             content = el.get("content", "")
@@ -635,13 +638,16 @@ def build(
             entry["heading_level"] = el["heading_level"]
         if subconf is not None:
             entry["subtype_confidence"] = subconf
-        # 도표 세분류(§6.6 8종) — 분류기는 'diagram' 넉 자까지만 낸다. 캡션 첫 줄이 유형어를
-        # 달고 오므로(캡셔너 diagram 프롬프트) 거기서 읽어 경계 JSON에 싣는다. 이 칸이
-        # 비어 있어서 pipeline._parse_txt_result → diagram_opt._ASSEMBLERS가 한 번도 안 돌았다.
+        # 도표 세분류(§6.6 8종) — **분류 콜이 직접 준 낱말**이다(2026-09-08 #784).
+        # 종전에는 캡션 첫 줄의 유형어를 정규식으로 되읽었다. 그 사슬이 캡션 프롬프트
+        # 변경(#646·#734)으로 끊겨 `visual_subtype` 이 20/20 빈칸이 됐고,
+        # `diagram_opt._ASSEMBLERS` 의 §6.6 골격 8종이 **한 번도 안 돌았다**.
+        # 캡션 파서는 폴백으로만 남긴다 — 분류 콜이 세분류를 못 내면(§6.6 밖 자료거나
+        # 옛 캐시) 캡션이 유형어를 말한 경우에 한해 건진다.
         if el_type == "diagram":
-            vsub = subtype_from_caption(content)
-            if vsub:
-                entry["visual_subtype"] = vsub
+            sub = vsub or subtype_from_caption(content)
+            if sub:
+                entry["visual_subtype"] = sub
         elements.append(entry)
 
         if debug:

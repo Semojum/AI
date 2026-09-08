@@ -119,7 +119,7 @@ def test_image_captioning_result(monkeypatch):
     )
     monkeypatch.setattr(
         "app.ai.builder.result_builder.classify_with_confidence",
-        lambda img_path: ("image", 0.99),
+        lambda img_path: ("image", 0.99, ""),
     )
 
     from app.ai.builder.result_builder import build
@@ -202,7 +202,7 @@ class TestEmptyCaptionKeepsElement:
 
     def test_빈_캡션이어도_요소가_남는다(self, monkeypatch):
         import app.ai.builder.result_builder as rb
-        monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("cartoon", 0.9))
+        monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("cartoon", 0.9, ""))
         monkeypatch.setattr(rb, "caption", lambda p, t, context="": "   ")
         monkeypatch.setattr(rb.Path, "exists", lambda self: True)
         res = _build([self._img()], "t_emptycap", 1, "OCR")
@@ -213,7 +213,7 @@ class TestEmptyCaptionKeepsElement:
 
     def test_정상_캡션은_그대로(self, monkeypatch):
         import app.ai.builder.result_builder as rb
-        monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("cartoon", 0.9))
+        monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("cartoon", 0.9, ""))
         monkeypatch.setattr(rb, "caption", lambda p, t, context="": "만화: 후보 토론회")
         monkeypatch.setattr(rb.Path, "exists", lambda self: True)
         res = _build([self._img()], "t_okcap", 1, "OCR")
@@ -236,20 +236,30 @@ class TestDiagramSubtypeOnBoundary:
         el["image_path"] = "/tmp/none.jpg"
         return el
 
-    def _run(self, monkeypatch, cap, job):
+    def _run(self, monkeypatch, cap, job, sub=""):
         import app.ai.builder.result_builder as rb
-        monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("diagram", 0.9))
+        monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("diagram", 0.9, sub))
         monkeypatch.setattr(rb, "caption", lambda p, t, context="": cap)
         monkeypatch.setattr(rb.Path, "exists", lambda self: True)
         return _build([self._img()], job, 1, "OCR")["elements"][0]
 
-    def test_유형어가_있으면_세분류를_싣는다(self, monkeypatch):
-        el = self._run(monkeypatch, "도표: 고려 중앙 통치 조직도\n1. 황제\n1) 3성", "t_vsub1")
+    def test_분류_콜이_준_세분류를_싣는다(self, monkeypatch):
+        """★ 정본 경로(#784) — 캡션에 유형어가 **하나도 없어도** 실려야 한다.
+
+        오늘 캡션이 실제로 그렇다. `_TYPE_WORD["diagram"]` 이 '그림' 이고 프롬프트가
+        종류 이름을 금지하며 `_strip_dup_type_word` 가 남은 낱말을 뗀다.
+        """
+        el = self._run(monkeypatch, "그림: 고려 중앙 통치\n1. 황제\n1) 3성", "t_vsub1",
+                       sub="org_chart")
         assert el["type"] == "diagram"
         assert el["visual_subtype"] == "org_chart"
 
-    def test_유형어가_없으면_칸을_비운다(self, monkeypatch):
-        el = self._run(monkeypatch, "도표: 몽골 제국 최대 영역 지도\n중앙아시아", "t_vsub2")
+    def test_분류가_세분류를_안_주면_캡션_폴백(self, monkeypatch):
+        el = self._run(monkeypatch, "도표: 고려 중앙 통치 조직도\n1. 황제\n1) 3성", "t_vsub1b")
+        assert el["visual_subtype"] == "org_chart"
+
+    def test_어느_쪽도_없으면_칸을_비운다(self, monkeypatch):
+        el = self._run(monkeypatch, "그림: 몽골 제국 최대 영역 지도\n중앙아시아", "t_vsub2")
         assert "visual_subtype" not in el      # §6.6에 골격 없는 유형 → 캡션 폴백
 
 
