@@ -47,7 +47,6 @@ def test_프롬프트에_붙는다():
     from unittest.mock import patch
     with patch.object(captioner, "_caption_anthropic", return_value="그림: 블록") as m, \
          patch.object(captioner, "_blank_crop_std", return_value=None), \
-         patch.object(captioner, "_cache_file", return_value=None), \
          patch("builtins.open", create=True):
         pass
     # 프롬프트 조립만 확인한다(외부 호출 없이)

@@ -115,16 +115,14 @@ def _classify_anthropic(b64: str, mime: str):
     import anthropic
     from app.core.limits import estimate_tokens, llm_limiter
     from app.utils.req_log import record_anthropic
-    from app.ai.captioning.captioner import _cache_file, _cache_new_file, _kind_matches
+    from app.ai.captioning.captioner import _cache_new_file, _kind_matches
     raw = base64.b64decode(b64)
-    # 판 번호 열쇠(3-c). 옛 자리는 읽기만 한다 — 이미 쌓인 1,281건을 버리지 않으려고.
+    # 판 번호 열쇠(3-c) + 격리 열쇠(3-e). 옛 자리(전문 키)는 2026-09-08 에 없앴다 —
+    # 열쇠에 고객이 안 들어가 고객 사이에 샌다. 캐시는 여기서부터 새로 쌓는다(대표 결정).
     cache = _cache_new_file("classify", raw, "classify")
-    legacy = _cache_file(raw, "__classify__", SYSTEM_PROMPT)
-    for src in (cache, legacy):
-        if src is not None and src.exists():
-            label = src.read_text(encoding="utf-8").strip()
-            if not _kind_matches("classify", label):
-                continue            # 캡션이 라벨 자리에 있으면 없는 셈 친다
+    if cache is not None and cache.exists():
+        label = cache.read_text(encoding="utf-8").strip()
+        if _kind_matches("classify", label):   # 캡션이 라벨 자리에 있으면 없는 셈 친다
             return (label, None) if label in LABELS else ("image", 0.0)
     llm_limiter().acquire_sync(estimate_tokens(SYSTEM_PROMPT, len(b64) * 3 // 4), 10)
     model = os.getenv("CAPTION_MODEL", "claude-sonnet-5")

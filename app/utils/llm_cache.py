@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import os
 import re
@@ -24,8 +25,13 @@ def resolve_dir(env_name: str, default: str | None = None) -> Path | None:
 
     상대경로는 저장소 루트(`code/AI`) 기준으로 푼다. `cwd` 기준이 아니다 — `cwd` 로 풀면
     진입점마다 다른 자리를 보게 되어 고치려던 문제가 그대로 남는다.
+
+    ★ **빈 문자열은 "끔"이다**(재구조화 3-e). 기본값이 생긴 뒤로는 `LLM_CACHE_DIR=` 한 줄이
+      되돌리는 길이라, 빈 값을 기본값으로 되돌리면 그 길이 막힌다.
     """
-    raw = os.environ.get(env_name) or default
+    raw = os.environ.get(env_name)
+    if raw is None:
+        raw = default
     if not raw:
         return None
     p = Path(raw).expanduser()
@@ -49,13 +55,47 @@ class CacheMiss(RuntimeError):
     """`LLM_CACHE_MODE=ro` 인데 캐시에 없다. 부르는 쪽이 잡아 규칙 경로로 간다."""
 
 
+# ── 격리 열쇠 (재구조화 3-e · 대표 결재 2026-09-08 "(B) 고객별 격리") ─────────
+# > "운영 서버는 B가 맞아. 같은 책을 다른 유저가 올리면 따로 계산하는 게 맞지."
+#
+# 그래서 열쇠는 **내용 해시만으로는 안 된다.** 내용 해시만 쓰면 같은 교과서를 올린 두 고객이
+# 서로의 캡션·회수·순서 응답을 나눠 쓴다 — 결재와 정반대다.
+#
+# ⚠ **AI 서버에는 고객 식별자가 안 들어온다**(2026-09-08 진입점 실측).
+#   `braille_service.proto` `BrailleRequest` = job_id·page_no·total_pages·pdf_data·mode·
+#   source_text·advanced_ai 일곱뿐이고, gRPC 메타데이터도 안 읽는다(`grpc_server.py`).
+#   그래서 지금 쓸 수 있는 **가장 고운 격리 단위가 `job_id`** 다. job 격리는 고객 격리보다
+#   좁으므로 결재를 어기지 않는다(고객 사이에 절대 안 샌다). 대신 같은 고객이 같은 책을
+#   **다시 올리면** 새 job 이라 미스다 — 그 자리는 BE 계약(요청에 고객 식별자 한 칸)이
+#   생겨야 풀린다. 그때 고칠 곳은 아래 `set_scope` 호출부 한 줄이다.
+#
+# ★ 비어 있으면 **캐시를 끈다**(fail closed). 컨텍스트가 스레드로 안 넘어간 자리에서
+#   조용히 격리 없는 열쇠를 쓰느니, 그 자리만 캐시를 안 쓰는 쪽이 안전하다.
+_scope: contextvars.ContextVar[str] = contextvars.ContextVar("llm_cache_scope", default="")
+
+
+def set_scope(value: str) -> None:
+    """이 요청의 격리 열쇠를 건다. 파이프라인 진입점(`pipeline.run`)이 부른다."""
+    _scope.set((value or "").strip())
+
+
+def scope() -> str:
+    """지금 걸린 격리 열쇠. 비면 캐시를 안 쓴다."""
+    return _scope.get()
+
+
 def _mode() -> str:
     return os.environ.get("LLM_CACHE_MODE", "rw").strip().lower()
 
 
 def root() -> Path | None:
-    """`cas/llm` 뿌리. `LLM_CACHE_DIR` 이 없으면 None = 캐시 끔."""
-    d = resolve_dir("LLM_CACHE_DIR")
+    """`cas/llm` 뿌리. `LLM_CACHE_DIR` 이 **빈 값**이면 None = 캐시 끔.
+
+    ★ 기본값은 `Settings.llm_cache_dir`(재구조화 3-e, 운영 기본 켬)에서 온다. 되돌리는 길은
+      `.env` 에 `LLM_CACHE_DIR=` 한 줄이다.
+    """
+    from app.core.config import config      # 지연 import — 모듈 최상단이면 순환이다
+    d = resolve_dir("LLM_CACHE_DIR", config.llm_cache_dir)
     return (d / "cas" / "llm") if d else None
 
 
@@ -64,9 +104,12 @@ def key(*parts: str | bytes) -> str:
 
     ⚠ 요소 목록을 직렬화해 키로 쓰면 안 된다 — `element_id` 가 uuid4 라 다른 job 은
       **항상 미스**다. 프롬프트 문자열처럼 내용만 든 것으로 잡는다(설계 2-3 깨뜨리기 #4).
+
+    ★ 맨 앞에 **격리 열쇠**가 붙는다(3-e). 그래서 같은 내용이라도 다른 고객(지금은 다른 job)
+      이면 다른 열쇠다.
     """
     h = hashlib.sha256()
-    for part in parts:
+    for part in (_scope.get(), *parts):
         b = part if isinstance(part, bytes) else str(part).encode()
         h.update(len(b).to_bytes(8, "big"))
         h.update(b)
@@ -132,6 +175,8 @@ def key_for(kind: str, *parts: str | bytes) -> str:
 
 
 def _path(kind: str, k: str) -> Path | None:
+    if not _scope.get():        # 격리 열쇠가 없으면 안 쓴다(3-e, fail closed)
+        return None
     r = root()
     return (r / kind / f"{k}.txt") if r else None
 
@@ -176,10 +221,21 @@ def _demo() -> None:
 
     import tempfile
     with tempfile.TemporaryDirectory() as d:
-        os.environ.pop("LLM_CACHE_DIR", None)
+        os.environ["LLM_CACHE_DIR"] = ""                            # 빈 값 = 끔(되돌리는 길)
         os.environ.pop("LLM_CACHE_MODE", None)
-        assert get("order", key("a")) is None and root() is None   # 안 켜면 아무 일도 없다
+        set_scope("job1")
+        assert get("order", key("a")) is None and root() is None
         os.environ["LLM_CACHE_DIR"] = d
+
+        # 격리 — 열쇠가 없으면 캐시를 안 쓰고, 열쇠가 다르면 다른 자리다
+        set_scope("")
+        assert _path("order", key("a")) is None
+        set_scope("job1")
+        k1 = key("order", "같은입력")
+        set_scope("job2")
+        assert key("order", "같은입력") != k1                        # 다른 고객 = 다른 열쇠
+        set_scope("job1")
+
         k = key("order", "m", "sys", "prompt")
         assert get("order", k) is None
         put("order", k, '{"order": [1, 0]}')
@@ -195,6 +251,7 @@ def _demo() -> None:
         os.environ["LLM_CACHE_MODE"] = "off"
         assert get("order", k) is None                              # off 는 적중도 안 준다
         os.environ.pop("LLM_CACHE_MODE"), os.environ.pop("LLM_CACHE_DIR")
+        set_scope("")
     print("ok")
 
 
