@@ -11,13 +11,32 @@ from app.core.pipeline import _graft_text
 
 
 def test_좌표와_유형은_MinerU_것이_남는다():
-    mnr = [{"type": "text", "content": "以⑦） 軸 구-七기가를", "bbox": [10, 10, 200, 20],
+    # 실물 꼴 — MinerU 가 '또'를 한자 '且'로, '구'를 '求'로 깨뜨린다(p1#75 실측).
+    mnr = [{"type": "text", "content": "且, E(X^2)=a+5에서 값을 求하면", "bbox": [10, 10, 200, 20],
             "id": "m1", "order": 0}]
-    llm = [{"type": "title", "content": "이것은 축 구조 기가를"}]
+    llm = [{"type": "title", "content": "또, E(X^2)=a+5에서 값을 구하면"}]
     assert _graft_text(mnr, llm) == 1
-    assert mnr[0]["content"] == "이것은 축 구조 기가를"   # 글자만 바뀐다
+    assert mnr[0]["content"] == "또, E(X^2)=a+5에서 값을 구하면"   # 글자만 바뀐다
     assert mnr[0]["bbox"] == [10, 10, 200, 20]          # 좌표는 그대로
     assert mnr[0]["type"] == "text" and mnr[0]["id"] == "m1"
+
+
+def test_안_닮은_짝은_문턱이_막는다(monkeypatch):
+    """개악은 유사도 0.75 아래에 몰려 있다 — 본문 삭제·바꿔치기·중복(이식률_0908 §4).
+
+    0.45 로는 이 짝이 붙어 뒤 문장이 통째로 사라졌다. 되돌리는 길은 `GRAFT_SIM_MIN`.
+    """
+    def run():
+        mnr = [{"type": "text", "content": "이 문단은 앞 문장이 있고 뒤에 긴 설명이 더 붙는다",
+                "bbox": [0, 0, 9, 9]}]
+        return _graft_text(mnr, [{"type": "text", "content": "이 문단은 앞 문장이 있고"}]), mnr
+
+    hit, mnr = run()
+    assert hit == 0 and mnr[0]["content"].endswith("더 붙는다"), mnr
+
+    monkeypatch.setenv("GRAFT_SIM_MIN", "0.45")
+    hit, mnr = run()
+    assert hit == 1, "스위치를 내려도 안 붙으면 되돌리는 길이 없다"
 
 
 def test_요소_개수는_MinerU_를_따른다():
