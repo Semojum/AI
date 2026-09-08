@@ -10,14 +10,23 @@ import asyncio
 
 import pytest
 
-from app.ai.llm.base_opt import _PART_LLM_SWITCH, part_llm_on
+from app.ai.llm.base_opt import _PART_LLM_DEFAULT, _PART_LLM_SWITCH, part_llm_on
 
 
 class TestPartLlmOn:
-    def test_기본은_켬(self, monkeypatch):
+    def test_기본값은_대장대로(self, monkeypatch):
+        """스위치를 안 주면 `_PART_LLM_DEFAULT` 대로. A/B 가 끝난 자리만 규칙이 기본이다."""
         for name in _PART_LLM_SWITCH.values():
             monkeypatch.delenv(name, raising=False)
-        assert all(part_llm_on(k) for k in _PART_LLM_SWITCH)
+        for kind in _PART_LLM_SWITCH:
+            assert part_llm_on(kind) is (_PART_LLM_DEFAULT.get(kind, "1") != "0")
+
+    def test_표는_규칙이_기본(self, monkeypatch):
+        """#755 (4-3) — 표 tn 은 점자에 안 실린다. 되돌리는 길은 `TABLE_TN_LLM=1`."""
+        monkeypatch.delenv("TABLE_TN_LLM", raising=False)
+        assert part_llm_on("표") is False
+        monkeypatch.setenv("TABLE_TN_LLM", "1")
+        assert part_llm_on("표") is True
 
     def test_0_이면_끔(self, monkeypatch):
         for kind, name in _PART_LLM_SWITCH.items():
@@ -59,7 +68,7 @@ class TestGenerateWithRetryGate:
 
     @pytest.mark.parametrize("kind", sorted(k for k in _PART_LLM_SWITCH if k != "태깅"))
     def test_켜면_호출_1(self, kind, monkeypatch):
-        monkeypatch.delenv(_PART_LLM_SWITCH[kind], raising=False)
+        monkeypatch.setenv(_PART_LLM_SWITCH[kind], "1")
         out, calls = self._run(kind, monkeypatch)
         assert out == ("LLM 이 낸 글", False)
         assert calls == [kind]

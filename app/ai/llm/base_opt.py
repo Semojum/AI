@@ -270,15 +270,32 @@ _PART_LLM_SWITCH = {
     "태깅": "LAYOUT_TAG_LLM",     # 4-4 · 끄면 레이아웃 태그를 안 넣고 원문을 그대로 둔다
 }
 
+# A/B 가 끝나 **규칙이 기본**이 된 자리. 안 적힌 파트는 켬(현행)이다.
+#
+# 표(#755 · 재구조화 4-3) — 표의 `tn_text` 는 점자에도 묵자에도 안 실린다.
+#   · 점자: `table_braille` 이 tn 을 쓰는 갈래는 `parsed_rows is None and "|" not in text`
+#     하나인데(`table_braille.py:1082`), `_table_tags` 가 본문이 있는 한 언제나 구조 태그를
+#     돌려줘 그 갈래가 열리지 않는다(1열 표도 2026-08-29 N031 수정으로 격자로 간다).
+#   · 묵자: `pipeline._print_src` 는 초안이 있으면 선택 초안을 쓰고 tn 은 초안이 없을 때만
+#     본다(`pipeline.py:2108`).
+#   실측(dev·val 경계 1,131쪽 전수 · 표 406개 · 같은 커밋 두 팔): 406/406 이 초안 5안을 갖고
+#   **두 팔의 점자가 406/406 바이트 동일**하다. 남는 효과는 FE 「대체 텍스트 선택」 화면 문구
+#   하나뿐인데, 그 문구가 LLM 팔에서 126/406(31.0%) 이 손볼 자리였다 — 처리 불가 10 ·
+#   프롬프트 표지·마크다운 유출 37 · 문장 미종결 96 · 우리 처리 절차 1인칭 12(합집합).
+#   규칙 팔은 406/406 이 `표. N항목 M행 표임.` 형식을 지킨다.
+#   되돌리는 길은 `TABLE_TN_LLM=1`.
+_PART_LLM_DEFAULT = {"표": "0"}
+
 
 def part_llm_on(kind: str) -> bool:
-    """이 파트에서 LLM 을 부를 것인가. `<스위치>=0` 이면 안 부른다(기본은 켬 = 현행).
+    """이 파트에서 LLM 을 부를 것인가. `<스위치>=0` 이면 안 부른다.
 
-    끄면 그 파트는 **원래 있던 규칙 경로**로 떨어진다. 빈 응답 경로는 이미
-    `DISABLE_LLM_FALLBACK=1` 오프라인 배치가 매일 타는 길이라 새로 만든 갈래가 아니다.
+    기본값은 `_PART_LLM_DEFAULT`(안 적힌 파트는 켬). 끄면 그 파트는 **원래 있던 규칙
+    경로**로 떨어진다. 빈 응답 경로는 이미 `DISABLE_LLM_FALLBACK=1` 오프라인 배치가
+    매일 타는 길이라 새로 만든 갈래가 아니다.
     """
     name = _PART_LLM_SWITCH.get(kind)
-    return not name or os.environ.get(name, "1") != "0"
+    return not name or os.environ.get(name, _PART_LLM_DEFAULT.get(kind, "1")) != "0"
 
 
 async def generate_with_retry(
