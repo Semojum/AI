@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from app.ai.braille.translator import box_borders_from_source, translate_with_breaks
+from app.ai.braille.translator import box_borders_from_source, translate_visual
 from app.schemas.content import BoxBorder, BrailleOutput
 
 
@@ -48,7 +48,7 @@ def append_nested(bo: BrailleOutput, nested_text: Optional[str]) -> None:
     """
     if not nested_text:
         return
-    n_lines, n_breaks = translate_with_breaks(nested_text)
+    n_lines, n_breaks = translate_visual(nested_text)   # 중첩도 시각 설명이다(C-41)
 
     def _aligned_breaks(breaks: list, base_len: int) -> list:
         """break_points를 braille_lines 길이에 맞춰 패딩한 뒤 중첩 줄 offset을 잇는다.

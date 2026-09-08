@@ -12,7 +12,7 @@ from app.ai.braille.regulations import make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import (
     box_borders_from_source,
-    translate_with_breaks,
+    translate_visual,
     tn_marker_spans,
 )
 from app.schemas.content import BoxBorder, BrailleOutput, LLMOutput, RuleApplication
@@ -47,7 +47,7 @@ def _to_braille(text: str) -> tuple[list[str], list[list[int]]]:
     """논리 줄 + 음절 줄바꿈 offset. 32칸 줄바꿈은 layout(NLD-1.2.1)."""
     if text.startswith("[처리 불가"):
         return [text], [[]]
-    return translate_with_breaks(text)
+    return translate_visual(text)   # 시각 설명은 항목 번호 마침표 관행을 안 탄다(C-41)
 
 
 def _match_indents(line_indents, lines):

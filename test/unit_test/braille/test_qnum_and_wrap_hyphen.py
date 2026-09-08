@@ -11,7 +11,12 @@
 """
 from __future__ import annotations
 
-from app.ai.braille.translator import _QNUM_RE, translate_with_breaks
+from app.ai.braille.translator import (
+    _QNUM_RE,
+    translate_body,
+    translate_visual,
+    translate_with_breaks,
+)
 
 _PERIOD = "⠲"
 _HYPHEN = "⠤"
@@ -80,6 +85,33 @@ class TestQuestionNumberPeriod:
         for src in ("1 동아시아의 과거와 현재", "3 (가) 황제에 대한 설명으로 옳은 것은?",
                     "6 <!강조>근대적 생활 방식의 확산<!/강조>", "1 [26008-0001]"):
             assert _QNUM_RE.search(src), f"낱말 뒤인데 안 찍는다: {src}"
+
+
+class TestVisualItemNumber:
+    """시각 자료 설명·전사는 항목 번호 마침표 관행을 아예 안 탄다(원장 C-41).
+
+    근거: 「점자 자료 제작 지침」 2.4.1 (1) "**본문의** 번호 체계는 원본 자료의 형태를
+    따른다"(재추출 892행) · 6.1.4 (6) "과정 흐름에 대한 설명은 위계가 있는 개조식
+    항목으로 표현한다"(3016행) — 그 항목 번호는 점역자가 세운 것이라 본책 단원 번호가
+    아니다. 시각 자료 설명에는 대응 gold 가 없어 요소 유형으로만 가른다.
+    """
+
+    def test_시각_설명은_마침표를_안_찍는다(self):
+        for src in ("1 태양을 중심으로 지구가 공전한다",
+                    "2 중앙 집권 체제가 확립되었다"):
+            lines, _ = translate_visual(src)
+            assert _PERIOD not in lines[0][:4], f"시각 설명에 온점: {lines[0]}"
+
+    def test_본문은_종전대로_찍는다(self):
+        """본문 경로는 gold 가 마침표를 찍는 쪽이라 건드리지 않는다."""
+        lines, _ = translate_body("1 태양을 중심으로 지구가 공전한다")
+        assert lines[0].startswith("⠼⠁" + _PERIOD), f"본문 마침표 손상: {lines[0]}"
+
+    def test_끄는_것은_번호_마침표뿐(self):
+        """다른 관행(괄호 감쌈 등)까지 같이 꺼지면 안 된다."""
+        body, _ = translate_body("보기 (가) 를 보자")
+        visual, _ = translate_visual("보기 (가) 를 보자")
+        assert body[0] == visual[0], f"번호 마침표 밖까지 갈렸다: {body[0]} vs {visual[0]}"
 
 
 class TestWrapHyphenPlaceholder:
