@@ -271,14 +271,22 @@ _PART_LLM_SWITCH = {
 }
 
 
-def part_llm_on(kind: str) -> bool:
-    """이 파트에서 LLM 을 부를 것인가. `<스위치>=0` 이면 안 부른다(기본은 켬 = 현행).
+# A/B 가 끝난 파트는 **규칙이 기본**이다. LLM 팔은 되돌리는 길로만 남긴다.
+# 태깅(L9) — 재구조화 4-4(#754). 2027 코퍼스 dev·val 822쪽 전수에서 LLM 팔이 낸 태그는
+#   네모 빈칸 121개(정답 적중 0 · 전부 초과) · 글상자 6개(그중 4개가 빈 상자)였다.
+#   규칙 팔은 초과 0 이고 호출도 0 이다.
+_PART_LLM_DEFAULT = {"태깅": "0"}
 
-    끄면 그 파트는 **원래 있던 규칙 경로**로 떨어진다. 빈 응답 경로는 이미
+
+def part_llm_on(kind: str) -> bool:
+    """이 파트에서 LLM 을 부를 것인가. `<스위치>=0` 이면 안 부른다.
+
+    기본은 켬이되, A/B 로 규칙이 이긴 파트는 `_PART_LLM_DEFAULT` 가 끔으로 뒤집는다.
+    끄면 그 파트는 **규칙 경로**로 떨어진다. 빈 응답 경로는 이미
     `DISABLE_LLM_FALLBACK=1` 오프라인 배치가 매일 타는 길이라 새로 만든 갈래가 아니다.
     """
     name = _PART_LLM_SWITCH.get(kind)
-    return not name or os.environ.get(name, "1") != "0"
+    return not name or os.environ.get(name, _PART_LLM_DEFAULT.get(kind, "1")) != "0"
 
 
 async def generate_with_retry(
