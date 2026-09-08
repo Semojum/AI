@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import textwrap
 import time
 from html import unescape as _html_unescape
 from typing import Optional
@@ -633,6 +634,38 @@ _TABLE_DRAFT_MODES = [
 ]
 
 
+# ── 폴백 점역자 주 ───────────────────────────────────────────────────────────
+# ★ 2026-09-08 — 종전에는 `f"표. {table_text[:80]}"` 로 **점역 직전 텍스트를 그대로 덤프**했다.
+#   `tn_text` 는 FE 「대체 텍스트 선택」의 '시각 요소 설명(점역자 주)' 칸에 그대로 실리는
+#   **사람이 읽는 자리**인데, mode b(점역사가 고친 글을 되돌리는 경로)에서는 원문에 이미
+#   `<!표><!행><!칸>` 구조 태그가 붙어 있어 그 기계 태그가 화면에 그대로 떴다.
+#   게다가 80자에서 잘려 `<!칸` 처럼 태그 한가운데가 끊겼다(대표 화면 캡처, 실물 재현됨).
+#
+#   무엇을 대신 적을 것인가 — **표 크기만** 적는다. 「점자 자료 제작 지침」 3장은 표에
+#   점역자 주를 의무로 달지 않는다(제목 5칸 + 테두리가 정본 형식이고, 주는 전치·번호 삽입
+#   처럼 **우리가 임의로 고친 것**을 알릴 때만 단다 — `braille/tn_notices.py` 참조).
+#   그래서 여기 문구는 규정 문구가 아니라 화면 표시용 요약이다. 첫 행을 '열 항목'이라
+#   단정하는 것처럼 **틀릴 수 있는 말은 쓰지 않는다**(2열 표는 첫 행이 제목이 아니다).
+#   칸 수는 태그에서 그대로 세므로 표가 무엇이든 맞다.
+#
+#   말꼴은 **LLM 이 실제로 내는 것과 같게** 맞춘다 — 실물 응답이 "구분×음료A×음료B의
+#   3항목 4행 표임." 이다(`test_table_tn_guard.py`). 폴백만 다른 말투를 쓰면 점역사가
+#   같은 화면에서 두 가지 문체를 보게 된다. 말끝 '-임'도 정본 말투와 같다(tn_notices).
+_TN_TAG_RE = re.compile(r"<!/?[^>]*>")
+_TN_CLIP = 80
+
+
+def _table_tn(table_tags: str, table_text: str) -> str:
+    """표 폴백 점역자 주(LLM 없음·응답 없음). 기계 태그를 사람 말로 바꿔 낸다."""
+    grid = parse_table_tags(table_tags)
+    if grid:
+        return f"표. {max(len(r) for r in grid)}항목 {len(grid)}행 표임."
+    # 격자로 못 읽는 표만 원문을 요약해 싣는다. 태그를 떼고 **낱말 경계**에서 자른다
+    # (textwrap.shorten — 공백을 정규화하고 넘치면 낱말째로 버린다).
+    body = textwrap.shorten(_TN_TAG_RE.sub("", table_text), width=_TN_CLIP, placeholder=" …")
+    return f"표. {body}"
+
+
 def _print_drafts(table_text: str, render_mode: str) -> tuple[list[Draft], int]:
     """표 묵자 초안 5안 + 기본 선택 번호. `|`가 없으면(비정형) 초안을 만들지 않는다.
 
@@ -699,7 +732,7 @@ class TableOpt(BaseOpt):
         table_tags = _table_tags(ext.table_structure, table_text)
 
         if routing_tier == "ZERO":
-            tn = ensure_tn_prefix(f"표. {table_text[:100]}")  # <!주>…<!/주>
+            tn = ensure_tn_prefix(_table_tn(table_tags, table_text))  # <!주>…<!/주>
             return LLMOutput(
                 element_id=ext.element_id,
                 corrected_text=table_tags,
@@ -735,7 +768,7 @@ class TableOpt(BaseOpt):
             # 처리불가 플레이스홀더는 TN 태그로 감싸지 않는다
             tn_text = parsed if parsed.startswith("[처리 불가") else ensure_tn_prefix(parsed)
         else:
-            tn_text = ensure_tn_prefix(f"표. {table_text[:80]}")
+            tn_text = ensure_tn_prefix(_table_tn(table_tags, table_text))
         elapsed_ms = int((time.monotonic() - start) * 1000)
         return LLMOutput(
             element_id=ext.element_id,
