@@ -4,8 +4,10 @@
 공통 로직은 visual_drafts.build_visual_drafts. 여기서는 이미지 구조(구성요소·원본 글자)를
 개조식 항목으로 넘기고(rule-based 전사, §6.3.4(2)①), 캡션이 없으면 LLM이 설명을 채운다.
 
-⚠ 아래 `decorative` 인자는 **지금 발화하지 않는다.** `st['decorative']`를 채우는 자리가
-  코드 전체에 없어 항상 None이고, 남은 경로 `no_seed`는 캡셔닝이 성공하면 안 걸린다.
+★ 2026-09-08(재구조화 5단계) — `st['decorative']` 를 읽던 자리를 지웠다. 채우는 쪽이
+  코드 전체에 없어 항상 None 이었고(코퍼스 경계 1,131쪽 요소 28,425개에 `structure` 키
+  자체가 0건), `bool(None) or no_seed` 는 `no_seed` 와 같다. 형제 경로
+  (`chart_graph_opt`·`cartoon_opt`)는 처음부터 `no_seed` 만 넘긴다.
   즉 기본 선택은 사실상 항상 '설명'이다. 자세한 것은 visual_drafts 모듈 docstring.
 """
 
@@ -62,7 +64,7 @@ class ImageOpt(BaseOpt):
         drafts, selected_idx, line_indents, tier, cap_src = await build_visual_drafts(
             ext, routing_tier, label=label, title=title, caption=caption, kind="이미지",
             struct_outline=struct_outline,
-            decorative=bool(st.get("decorative")) or no_seed,   # 시드 없음 → 기본 선택 '생략'
+            decorative=no_seed,          # 시드 없음 → 기본 선택 '생략'
         )
         return LLMOutput(
             element_id=ext.element_id,

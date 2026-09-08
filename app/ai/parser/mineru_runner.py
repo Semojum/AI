@@ -1275,8 +1275,11 @@ def run(
         #   꼬리말을 적을지 말지는 **규정↔관행이 갈려 자문 대기**다(§2.1.2 는 적으라 하는데
         #   gold 는 91.4%를 안 적는다 · 25,382셀). 그래서 **판정은 미루고 신호만 남긴다.**
         raw_footer = item_type == "footer"
-        if mapped_type == "image" and item.get("sub_type") == "flowchart":
-            mapped_type = "chart_graph"
+        # ★ 2026-09-08(재구조화 5단계) — `sub_type == "flowchart"` → `chart_graph` 승격을
+        #   지웠다. **한 번도 안 걸렸고 방향도 틀렸다.** MinerU 가 주는 `sub_type` 은
+        #   `text`·`text_image` 둘뿐이고(실측 raw content_list 528쪽·항목 8,087개 중
+        #   `flowchart` 0건 · 4-6 회차 192/192 에서도 0건), 흐름도는 `chart_graph` 가 아니라
+        #   `diagram` 이 맡는다(`diagram_opt` §6.6 골격).
         # 인쇄 캡션이 있는 시각자료는 생성 설명(GPT-4o+점역자주) 대신 인쇄 캡션을 그대로
         # plain text(caption)로 방출한다 — 정답 점역 컨벤션 정렬(rule-based vs generation 분리).
         # 캡션 없는 도식만 생성 경로로 남긴다.

@@ -170,14 +170,6 @@ def _tn_transpose_line() -> str:
     return _PAD * _ROW_INDENT + _translate(_TN_SRC)
 
 
-def _title_line(title: str) -> str:
-    """표 제목(전사) → 5칸에서 시작(앞 빈칸 4)하는 점자 줄 (§3 5)(1)).
-
-    layout이 폭을 건드리지 않도록 공백을 직접 적는다.
-    """
-    return _PAD * _TITLE_INDENT + _translate(title)
-
-
 def _border_line() -> str:
     return _BORDER * _COLS
 
@@ -1067,13 +1059,6 @@ class TableBraille:
         if parsed_rows is not None:
             text = "\n".join(" | ".join(r) for r in parsed_rows)
 
-        # 표 제목(전사) — §3 5): 위 테두리 앞에 5칸 들여 한 줄. 없으면 None.
-        title_br = _title_line(opt.table_title) if opt.table_title else None
-
-        def _wt(lines: list[str]) -> list[str]:
-            """제목 줄을 표 위에 먼저 붙인다(§3 5)(2))."""
-            return ([title_br] + lines) if title_br else lines
-
         if parsed_rows is None and "|" not in text:  # 비정형 → TN 단일안
             # ★ `parsed_rows is None` 을 같이 본다(2026-08-29, N031). `<!표>` 태그가 있어도
             #   **1열**이면 `" | ".join(["한 칸"])` 이 파이프를 안 남겨 여기서 TN 으로 새어
@@ -1081,9 +1066,6 @@ class TableBraille:
             #   태그가 파싱됐으면 열이 하나여도 격자 렌더러로 보낸다.
             tn = opt.tn_text or text
             lines, breaks = translate_with_breaks(tn)  # 음절 줄바꿈(NLD-1.2.1)
-            lines = _wt(lines)
-            if title_br:                      # 제목 줄은 음절 줄바꿈 대상 아님(단일 줄)
-                breaks = [[]] + breaks
             bo = BrailleOutput(
                 element_id=opt.element_id,
                 braille_lines=lines,
@@ -1094,14 +1076,14 @@ class TableBraille:
             return bo
 
         # 표 유형별 레이아웃 (셀 값 동일, 조판만 다름). 기본=풀어쓰기(NLD-3.1.2 원칙).
-        unfold_lines = _wt(_render_unfold(text))
-        grid_lines = _wt(_render_grid(text))
+        unfold_lines = _render_unfold(text)
+        grid_lines = _render_grid(text)
         # 전치 초안도 점역자 주를 태그로 낸다 — 옛 구현은 _translate(_TN_TRANSPOSE)라
         # 양끝 마커 ⠠⠄가 빠져 '그냥 한 줄 문장'으로 나갔고 rule_trail도 안 잡혔다.
-        transposed_lines = _wt([_tn_transpose_line()] + _render_grid(_transpose_text(text)))
-        linear_lines = _wt(_render_linear(text))
+        transposed_lines = [_tn_transpose_line()] + _render_grid(_transpose_text(text))
+        linear_lines = _render_linear(text)
         # §3.1.1 (1)③ 번호 체계 — 열 항목이 문장인 표의 정본 형식(2026-09-02 신설).
-        numbered_lines = _wt(_render_numbered(text))
+        numbered_lines = _render_numbered(text)
         # 자동 경로가 전치했으면 그 점역자 주가 출력에 실린다 → 태그를 트레일 원본에 얹어
         # NLD-1.2.6이 emit되게 한다(_base_trail은 원본에 태그가 있을 때만 emit).
         unfold_src = text + ("\n" + _TN_SRC if any(_TN_SRC_MARK in ln for ln in unfold_lines) else "")

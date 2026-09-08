@@ -14,7 +14,7 @@ from app.ai.braille.table_braille import TableBraille
 # 지침 §3.1(예3-4·3-6) 표 테두리 — 위 ⠿⠛…⠿ / 아래 ⠿⠶…⠿ (2026-07-19 지침형 정정)
 _TBL_TOP = "⠿" + "⠛" * 30 + "⠿"
 _TBL_BOT = "⠿" + "⠶" * 30 + "⠿"
-from app.ai.llm.table_opt import TableOpt, _table_to_text, _infer_render_mode, _table_title
+from app.ai.llm.table_opt import TableOpt, _table_to_text, _infer_render_mode
 from app.schemas.content import ExtractedContent
 
 _CELLS = {
@@ -82,51 +82,10 @@ class TestOptimize:
             importlib.reload(tb)
 
 
-class TestTitle:
-    """표 제목 5칸 — 도서 제작 지침 제3장 5)(1)·(2)."""
-
-    def test_제목_전사(self):
-        ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
-                               table_structure={**_CELLS, "title": "연도별 발행 권수"})
-        assert _table_title(ext) == "연도별 발행 권수"          # title 전사(rule-based)
-        # structure 쪽에 있어도 인식
-        ext2 = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
-                                table_structure=_CELLS, structure={"title": "표 제목"})
-        assert _table_title(ext2) == "표 제목"
-        # 없으면 None(기존 동작 보존)
-        assert _table_title(ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
-                                             table_structure=_CELLS)) is None
-
-    def test_제목_opt_전달(self):
-        ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
-                               table_structure={**_CELLS, "title": "연도별 발행 권수"})
-        opt = asyncio.run(TableOpt().optimize([ext], "ZERO"))[0]
-        assert opt.table_title == "연도별 발행 권수"
-
-    def test_제목_5칸_위테두리_앞(self):
-        grid = {"cells": _CELLS["cells"] + [{"row": 0, "col": 2, "text": "비고"},
-                                            {"row": 1, "col": 2, "text": "a"},
-                                            {"row": 2, "col": 2, "text": "b"}],
-                "title": "연도별 발행 권수"}
-        ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, table_structure=grid)
-        opt = asyncio.run(TableOpt().optimize([ext], "ZERO"))
-        bo = TableBraille().translate(opt)[0]
-        lines = bo.drafts[1].braille_lines                     # 격자형(테두리 있는 대안)
-        # 제목 줄이 위 테두리보다 먼저(§3 5)(2)), **5칸에서 시작 = 앞 빈칸 4**(§3 5)(1)).
-        # ★ 2026-08-10 정정(원장 C-21) — 종전 단언은 앞 빈칸 5였다. 지침 자체의 BRF
-        #   예3-1이 백틱 4개로 시작하고(도서지침 §3), 예3-5·3-9·3-2·자료지침 예3-4와
-        #   코퍼스 `〈표 N〉` 6/6도 모두 앞 빈칸 4다.
-        assert lines[0].startswith("⠀" * 4) and not lines[0].startswith("⠀" * 5)
-        assert lines[0].strip() and not _is_border(lines[0])
-        # 제목 다음 줄이 위 테두리다(§3 5)(2) — 제목이 테두리 **앞**).
-        assert lines[1] == _TBL_TOP
-
-    def test_제목_없으면_기존동작(self):
-        ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, table_structure=_CELLS)
-        opt = asyncio.run(TableOpt().optimize([ext], "ZERO"))
-        bo = TableBraille().translate(opt)[0]
-        # 제목이 없으면 격자형 첫 줄이 곧 위 테두리다.
-        assert bo.drafts[1].braille_lines[0] == _TBL_TOP
+# ★ 2026-09-08(재구조화 5단계) — `TestTitle` 넷을 지웠다. `_table_title` 이 읽던
+#   `table_structure['title']`·`structure['title']` 을 **채우는 자리가 코드에 없어**
+#   실동작에서 한 번도 안 돌았다(코퍼스 경계 1,131쪽 표 406개 중 `table_structure` 키
+#   자체가 0건). 제목을 주는 입력이 생기면 그때 다시 세운다.
 
 
 def _is_border(line: str) -> bool:
