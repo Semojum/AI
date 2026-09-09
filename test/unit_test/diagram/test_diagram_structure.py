@@ -71,8 +71,11 @@ def test_opt_dispatches_skeleton_from_caption():
     ext = ExtractedContent(element_id=uuid4(), corrected_text=_ORG, ocr_confidence=1.0)
     out = asyncio.run(DiagramOpt().optimize([ext], "ZERO"))[0]
     assert "<!주>그림<!/주>" in out.corrected_text
-    assert out.line_indents[3:] == [0, 2, 4, 4, 2, 4]
-    assert "황제" in out.corrected_text.split("\n")[3]
+    # 캡션 첫 줄('고려 중앙 통치 조직도')은 점역자가 쓴 글이라 §6.3.3(1) 제목 자리(5칸)가
+    # 아니라 유형 제시어 뒤 같은 줄로 간다(#794 · §6.3.4(2)① L3177-3179).
+    assert out.corrected_text.split("\n")[0].endswith(": 고려 중앙 통치 조직도")
+    assert out.line_indents[2:] == [0, 2, 4, 4, 2, 4]
+    assert "황제" in out.corrected_text.split("\n")[2]
 
 
 def test_all_wired_skeletons_reachable():
