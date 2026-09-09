@@ -25,6 +25,7 @@ import base64
 import json
 import logging
 import os
+import re
 import time
 
 from app.core.config import config
@@ -98,6 +99,99 @@ image(그림·사진·그래프·지도·만화·도표. content 첫 줄에 유�
 강조 구간은 <!강조>…<!/강조>. 흐릿해서 못 읽는 글자는 `□` 하나로 적습니다. JSON 외 출력 금지."""
 
 
+# ── 이름표를 동그라미 기호로 잘못 적은 자리 되묻기 ────────────────────────────
+# 지면 이름표(㉠·㉡·①)를 모델이 **수식 문맥에서만** 동그라미 기호로 적는다. 같은 글자를
+# 본문 요소에서는 실측 205/205 로 맞히므로 그런 쪽의 출력은 **스스로 어긋난다** — 본문은
+# `㉠에서` 라고 쓰면서 수식은 `\bigcirc` 라고 쓴다. 그 어긋남이 되물을 신호다.
+#
+# ★ **쪽을 통째로 다시 읽지 않는다.** 재추출은 실측 46~290초(Sonnet)·107~119초(Opus)라
+#   쪽 예산 180초(C7)를 넘겨 BLOCKED 로 죽인다. 어긋난 자리만 되물으면 2~7초·$0.017 이고,
+#   고쳐지는 값은 같다. 같은 모델을 다시 굴리는 것도 실측 17벌 중 6벌만 깨끗해 값이 안 난다.
+#
+# 실측(수학 정답해설 6쪽 × 10벌 = 60쪽읽기, `temp/graft/재시도_0909.md`):
+#   · 신호가 뜬 쪽읽기 8건에 담긴 동그라미 기호 32개가 **전수 이름표 오독**(정밀도 32/32)
+#   · 신호가 안 뜬 52건에서 이 오독이 난 적 **0건**
+#   · 되묻기 69벌에서 **틀린 이름표 0**. 한 쪽에 ㉠ 셋·㉡ 하나가 섞인 자리도 갈라 냈다 —
+#     본문 글자로 미루어 채우는 규칙으로는 이 ㉡ 을 못 맞힌다(문제마다 ㉠ 부터 다시 매긴다).
+_CIRCLED_LABEL = re.compile(r"[\u2460-\u2473\u24b6-\u24e9\u3260-\u326e]")
+_CIRCLE_GLYPH = re.compile(r"\\bigcirc|[○◯]")
+# 끄는 스위치. 0 이면 종전대로 둔다.
+_RELABEL = os.environ.get("ADVANCED_EXTRACT_RELABEL", "1") != "0"
+# 되묻기 상한 — 쪽마다 딱 한 번. 늘리지 말 것(쪽 예산 180초).
+_RELABEL_MAX_TOKENS = 2000
+_RELABEL_ASK = """이 지면에서 아래 자리에 적힌 **이름표**를 그대로 옮겨 적으세요.
+이름표는 동그라미 안에 글자가 든 기호입니다(㉠ ㉡ ㉢ ㉣ ① ② ③).
+
+{items}
+
+JSON 배열만 출력합니다. 자리 수만큼, 순서대로, 이름표 한 글자씩.
+예: ["㉠", "㉡", "㉠"]  ·  동그라미가 아니라 진짜 도형이면 "" 로 둡니다."""
+
+
+def self_contradicts(elements: list[dict]) -> bool:
+    """쪽이 스스로 어긋나 있나 — 같은 이름표를 어디선 글자로, 어디선 동그라미 기호로 적었다."""
+    txt = "".join(e.get("content") or "" for e in elements)
+    return bool(_CIRCLE_GLYPH.search(txt)) and bool(_CIRCLED_LABEL.search(txt))
+
+
+def relabel_circles(elements: list[dict], image_path: str) -> int:
+    """어긋난 자리의 이름표를 되물어 고친다. 고친 개수를 준다(못 고치면 0, 원본 유지)."""
+    if not _RELABEL or not elements or not self_contradicts(elements):
+        return 0
+    spots = [(i, m.start()) for i, e in enumerate(elements)
+             for m in _CIRCLE_GLYPH.finditer(e.get("content") or "")]
+    try:
+        import anthropic
+
+        from app.utils.req_log import record_anthropic
+        items = "\n".join(
+            f"{k + 1}. …{(elements[i].get('content') or '')[max(0, at - 70):at + 10]}"
+            for k, (i, at) in enumerate(spots))
+        client = anthropic.Anthropic(api_key=config.anthropic_api_key or None,
+                                     timeout=60.0, max_retries=1)
+        b64 = base64.b64encode(open(image_path, "rb").read()).decode()
+        resp = client.messages.create(
+            model=ADVANCED_MODEL, max_tokens=_RELABEL_MAX_TOKENS,
+            messages=[{"role": "user", "content": [
+                {"type": "image",
+                 "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
+                {"type": "text", "text": _RELABEL_ASK.format(items=items)},
+            ]}])
+        record_anthropic("이름표되묻기", ADVANCED_MODEL, getattr(resp, "usage", None))
+        txt = "".join(b.text for b in resp.content if b.type == "text")
+    except Exception as exc:  # noqa: BLE001 — 못 되물으면 원본 그대로 둔다
+        logger.warning("이름표 되묻기 실패: %s", exc)
+        return 0
+    try:
+        got = _parse(txt)
+    except Exception:  # noqa: BLE001
+        got = None
+    if not isinstance(got, list) or len(got) != len(spots):
+        # JSON 이 아니어도 답은 이름표 나열이다 — 글자만 훑어 개수가 맞을 때만 쓴다.
+        # 실측: 배열이 잘리거나 산문으로 오는 판이 있고(진입점 실행 3벌 중 1벌), 그때
+        # `_parse` 는 통째로 죽는다. 개수가 어긋나면 그대로 둔다 — 자리가 밀리면
+        # 엉뚱한 이름표를 박는데 그건 `○` 보다 나쁘다.
+        scraped = _CIRCLED_LABEL.findall(txt)
+        if len(scraped) != len(spots):
+            logger.warning("이름표 되묻기 개수 불일치(자리 %d · 답 %r) — 그대로 둔다",
+                           len(spots), txt[:160])
+            return 0
+        got = scraped
+    fixed = 0
+    # 뒤에서부터 갈아 끼운다 — 앞자리를 먼저 바꾸면 뒷자리 위치가 밀린다.
+    for (i, at), lab in sorted(zip(spots, got), key=lambda x: x[0], reverse=True):
+        if not isinstance(lab, str) or not _CIRCLED_LABEL.fullmatch(lab.strip()):
+            continue                     # 빈 답 = 진짜 도형. 손대지 않는다
+        c = elements[i]["content"]
+        m = _CIRCLE_GLYPH.match(c, at)
+        if not m:
+            continue
+        elements[i]["content"] = c[:at] + lab.strip() + c[m.end():]
+        fixed += 1
+    logger.info("이름표 되묻기 %d/%d 자리 고침", fixed, len(spots))
+    return fixed
+
+
 def advanced_available() -> bool:
     """고급 점역을 쓸 수 있나 — 키가 있어야 한다."""
     return bool(config.anthropic_api_key)
@@ -122,7 +216,10 @@ def _parse(txt: str) -> list:
     """모델 응답 → JSON 배열. 코드펜스와 앞뒤 군더더기를 걷어 낸다."""
     txt = txt.strip()
     if txt.startswith("```"):
-        txt = txt.split("\n", 1)[1].rsplit("```", 1)[0]
+        # 줄바꿈 없는 한 줄 펜스(```[...]```)도 온다 — [1] 로 집으면 IndexError 가 나서
+        # 멀쩡한 답이 통째로 버려진다(되묻기 실측 12벌 중 2벌). [-1] 이면 그대로 흘러가
+        # 아래 대괄호 잘라내기가 받는다.
+        txt = txt.split("\n", 1)[-1].rsplit("```", 1)[0]
     try:
         return json.loads(txt)
     except json.JSONDecodeError:
@@ -178,6 +275,7 @@ def extract_advanced(image_path: str) -> tuple[list[dict] | None, str]:
     t0 = time.monotonic()
     els = extract(image_path, ADVANCED_MODEL, "고급추출")
     if els and not is_meager(els):
+        relabel_circles(els, image_path)
         return els, ADVANCED_MODEL
     spent = time.monotonic() - t0
     if spent > _ADVANCED_RETRY_BUDGET:
@@ -190,6 +288,7 @@ def extract_advanced(image_path: str) -> tuple[list[dict] | None, str]:
                    ADVANCED_MODEL, "빈약" if els else "실패", ADVANCED_FALLBACK_MODEL)
     better = extract(image_path, ADVANCED_FALLBACK_MODEL, "고급추출")
     if better and not is_meager(better):
+        relabel_circles(better, image_path)
         return better, ADVANCED_FALLBACK_MODEL
     # 2차도 빈약하면 그나마 나온 쪽을 준다. 둘 다 없으면 호출부가 MinerU 로 간다.
     return (better or els or None), (ADVANCED_FALLBACK_MODEL if better else
