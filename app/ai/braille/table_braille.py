@@ -487,15 +487,26 @@ def _record_lines(grid: list[list[str]]) -> list[str]:
     return out
 
 
+# §3.3.3 (1) 2단계 번호 체계 — 「점자 자료 제작 지침」 재추출 2153~2154행 "가. 나. 다. ……"
+_L2_MARKS = "가나다라마바사아자차카타파하"
+
+
 def _render_numbered(corrected_text: str) -> list[str]:
     """지침 §3.1.1 (1)③ — 번호 체계를 활용하여 풀어 적는다.
 
     규정 원문: "열 항목이 여러 단어와 문장으로 되어 있어 가로로 풀어 적을 경우 표를
     이해하기 어렵다면 번호 체계를 활용하여 풀어 적는다."
 
-    형식은 규정이 정한 번호 체계를 그대로 쓴다(§3.3.2 (2) 위계 표기와 같은 갈래):
-    행마다 `1. 행제목` 을 3칸에서 적고, 그 아래 열마다 `1) 열제목: 값` 을 5칸에서 적는다.
-    번호는 **우리가 새로 매기는 것이 아니라** 규정이 요구하는 위계 표시다.
+    형식은 §3.3.3 이 정한 그대로 쓴다.
+      · (1) 번호 체계  1단계 `1. 2. 3.` · **2단계 `가. 나. 다.`** · 3단계 `1) 2) 3)`
+            「점자 자료 제작 지침」 재추출 2149~2156행
+      · (2) 항목 표기  "번호 체계를 적용한 항목마다 **줄을 바꾸어** 적는다"  같은 파일 2157행
+      · 들여쓰기       예 3-9 실물(같은 파일 2216~2232행)이 1단계 6칸 · 2단계 4칸 ·
+                       항목 2칸이다. §3.3.2(2) "상위 행 제목은 5칸, 최상위는 7칸"과 같은
+                       방향으로 **위계가 높을수록 깊게** 들여쓴다.
+
+    ⚠ 2026-09-10 이전에는 2단계 자리에 3단계 기호 `1)` 을 쓰고 값을 쌍점으로 같은 줄에
+      붙였다(`1) 열제목: 값`). (1)의 단계 대응과 (2)의 줄바꿈을 둘 다 어겼다.
 
     ⚠ 이 렌더러는 §3.1.1 의 **판정 순서 셋째**다 — ①정렬 유지 ②가로 풀어쓰기 로
       안 될 때만 온다. 판정은 `table_opt._infer_render_mode` 가 한다.
@@ -509,14 +520,20 @@ def _render_numbered(corrected_text: str) -> list[str]:
     for i, row in enumerate(grid[1:], start=1):
         rh = row[0].strip()
         out.extend(_wrap_row(_translate(f"{i}. {rh}") if rh else _translate(f"{i}."),
-                             first_indent=2, cont_indent=4))
+                             first_indent=6, cont_indent=8))
         for j, cell in enumerate(row[1:], start=1):
             name = heads[j].strip() if j < len(heads) else ""
             val = cell.strip()
             if not val:
                 continue
-            body = f"{j}) {name}: {val}" if name else f"{j}) {val}"
-            out.extend(_wrap_row(_translate(body), first_indent=4, cont_indent=6))
+            mark = _L2_MARKS[(j - 1) % len(_L2_MARKS)]
+            if name:
+                out.extend(_wrap_row(_translate(f"{mark}. {name}"),
+                                     first_indent=4, cont_indent=6))
+                out.extend(_wrap_row(_translate(val), first_indent=2, cont_indent=4))
+            else:
+                out.extend(_wrap_row(_translate(f"{mark}. {val}"),
+                                     first_indent=4, cont_indent=6))
     out.append(_TBL_BOT)
     return out
 
@@ -928,6 +945,8 @@ def print_layout(corrected_text: str, mode: str) -> str:
         return corrected_text
     out: list[str] = []
     if mode == "numbered":                    # §3.1.1 (1)③ 번호 체계
+        # 번호 체계·줄 나눔은 점자 쪽(`_render_numbered`)과 **같아야 한다** — 피커가
+        # 묵자와 점자를 나란히 보이므로 어긋나면 점역사가 다른 안을 보고 고른다.
         heads = rows[0]
         for i, r in enumerate(rows[1:], start=1):
             out.append(f"{i}. {r[0].strip()}" if r and r[0].strip() else f"{i}.")
@@ -936,7 +955,12 @@ def print_layout(corrected_text: str, mode: str) -> str:
                 if not v:
                     continue
                 nm = heads[j].strip() if j < len(heads) else ""
-                out.append(("  " + (f"{j}) {nm}: {v}" if nm else f"{j}) {v}")))
+                mark = _L2_MARKS[(j - 1) % len(_L2_MARKS)]
+                if nm:
+                    out.append(f"  {mark}. {nm}")
+                    out.append(f"    {v}")
+                else:
+                    out.append(f"  {mark}. {v}")
         return "\n".join(out)
     if mode == "linear":                      # 키  값 (2열 표)
         for r in rows:
