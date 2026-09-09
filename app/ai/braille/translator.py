@@ -242,6 +242,14 @@ _COMMA_DIGIT_RE  = re.compile(r"(?<![0-9][,.])(?<=[,.])(?=\d)")
 #   ⚠ lookbehind 를 **두 글자**로 본다. `(?<!\d)(?<=,)` 로 쓰면 둘 다 "바로 앞 한 글자"를
 #     보는데 `,` 는 숫자가 아니라 부정 lookbehind 가 **항상 참**이 되어 자릿점까지 끊긴다
 #     (`1,000원` → ⠼⠁⠐⠼⠚⠚⠚). 처음 그렇게 썼다가 검증에서 잡았다.
+# ★ 나열 쉼표 뒤 빈칸에서도 끊는다(2026-09-10). 「한국 점자 규정」 제41항(원문
+#   `한국 점자 규정_재추출.txt:1939`)은 "숫자 사이에 **붙어 나오는** 쉼표와 자릿점"만
+#   ⠂ 로 적으라 한다. braillify 2.0.0 은 '붙어'를 안 보고 빈칸 너머 숫자까지 자릿점으로
+#   삼켜 `1274, 1281` 이 ⠼⠁⠃⠛⠙**⠂**⠀⠼⠁⠃⠓⠁ 로 나갔다 — 자릿점이라면서 빈칸과
+#   수표가 다시 붙는 자기모순이다(제43항 원문 1956행: 자릿점이면 뒤 숫자에 수표를
+#   다시 적지 않는다). 쉼표까지만 따로 넘기면 braillify 가 제49항 쉼표 ⠐ 로 낸다.
+#   실측 자리 — 구판 dev 48 · val 142 · 2027 코퍼스 718.
+_NUM_LIST_COMMA_RE = re.compile(r"(?<=\d,)(?=\s)")
 _GAP_MARK        = "\x01"
 # ★ 2026-09-06 — 칸을 넣는 자리를 **소문자 a~j 로만** 좁혔다.
 #   그 칸의 존재 이유는 하나다: 수표로 열린 수 뒤에 오는 글자의 셀이 숫자 셀과 같아
@@ -2253,6 +2261,16 @@ def _safe_to_unicode(seg: str, _split_eng: bool = True,
     if _COMMA_DIGIT_RE.search(seg):
         return "".join(_safe_to_unicode(part, _split_eng, ctx)
                        for part in _COMMA_DIGIT_RE.split(seg) if part)
+    # 제41항 — 숫자 사이 쉼표는 **붙어 나올 때만** 자릿점 ⠂ 다(위 _NUM_LIST_COMMA_RE 주석).
+    # ⚠ **영문 구간은 건드리지 않는다.** 영어 점자 쉼표가 ⠂(2점)라 그쪽은 현행이 이미 맞다 —
+    #   gold 실측 `On January 10, 1992,` → ⠽⠼⠁⠚**⠂**⠼⠁⠊⠊⠃**⠂** (외국어 val p007).
+    #   가드 둘을 같이 둔다: `_split_eng=False` 는 `_braillify_korean` 경로, 곧 **로마자 구간
+    #   안의 숫자 조각**이라는 뜻이고(제32항 — 로마자표 사이 숫자는 구간 내부다), 세그에
+    #   로마자가 남아 있는 경우는 영어 분리가 안 걸린 자리다. 이 가드를 빼면 val 3자리가
+    #   한글 쉼표 ⠐ 로 뒤집혔다(A/B 실측).
+    if _split_eng and _NUM_LIST_COMMA_RE.search(seg) and not _LATIN_CHAR_RE.search(seg):
+        return "".join(_safe_to_unicode(part, _split_eng, ctx)
+                       for part in _NUM_LIST_COMMA_RE.split(seg) if part)
 
     parts = _MULTI_SPACE_RE.split(seg)
     if len(parts) > 1:
@@ -2547,6 +2565,33 @@ def _restore_ascii_single_quotes(text: str) -> str:
     return "".join(out)
 
 
+# ── 직선 큰따옴표 " 의 여닫이 (제49항, 2026-09-10) ────────────────────────────
+# 「한국 점자 규정」 제49항 문장부호표(`한국 점자 규정_재추출.txt` 2148~2149행)는
+#   여는 큰따옴표 “ = `8`(⠦) · 닫는 큰따옴표 ” = `0`(⠴) 로 둘을 갈라 놓았다.
+# symbol_table 은 기호 하나에 값 하나라 직선 `"` 를 담지 못해 `"` 가 아예 없었고,
+# braillify 가 직선 `"` 를 **늘 여는 쪽 ⠦** 으로 냈다. 그래서 닫는 자리가 전부 틀렸다:
+#   `그는 "그렇다"고` → ⠦⠈⠪⠐⠎**⠴**⠊⠦⠈⠥ 여야 하는데 ⠦…**⠦**⠈⠥ 로 나갔다.
+#   `있소?"` 는 ⠦⠴ 대신 **⠦⠦** — 물음표 ⠦ 가 둘 찍힌 꼴이라 읽는 쪽이 틀리게 읽는다.
+# 묵자 원본에는 곡선 따옴표가 있다(코퍼스 인쇄 PDF 실측 “ ” 만 · 직선 0). 추출(MinerU·
+# Opus)이 평탄화해 오는 것이라 **점역 층 한 곳에서** 되돌린다 — 추출기가 둘이다.
+# 판정은 여는 부호 다음이냐 아니냐 하나로 족하다(짝을 세지 않으므로 한쪽이 빠져도 안전).
+# 실측 자리 — 구판 dev 17 · val 190 · 2027 코퍼스 243(닫는 쪽만). 수식 구간 안 0건.
+_DQ_OPEN_AFTER = "([{〔「『〈《‘“"
+
+
+def _restore_ascii_double_quotes(text: str) -> str:
+    """추출이 평탄화한 ASCII " 를 여는 “ · 닫는 ” 으로 되돌린다(제49항)."""
+    if '"' not in text:
+        return text
+    out = list(text)
+    for i, ch in enumerate(text):
+        if ch != '"':
+            continue
+        prev = text[i - 1] if i else ""
+        out[i] = "“" if (not prev or prev.isspace() or prev in _DQ_OPEN_AFTER) else "”"
+    return "".join(out)
+
+
 # ── 아포스트로피 ’ ↔ 닫는 작은따옴표 ’ (원장 C-19, 2026-08-09) ────────────────
 # 같은 묵자 글자가 조항 둘로 갈린다.
 #   제49항 닫는 작은따옴표 ’ = `0'`(⠴⠄)   ·   제61항 아포스트로피 ’ = `'`(⠄)
@@ -2650,6 +2695,9 @@ def translate_with_breaks(text: str, *, force_roman: bool = False,
     text = _drop_nonkorean_emphasis(text)
     # 추출이 평탄화한 ASCII 작은따옴표 복원 — 줄 분리 전에 요소 전체에서 짝을 본다.
     text = _restore_ascii_single_quotes(text)
+    # 직선 큰따옴표도 같은 자리에서 여닫이를 가른다(제49항). 작은따옴표 복원 뒤에 두어
+    # `"'말'"` 처럼 겹친 인용에서 안쪽이 먼저 곡선으로 굳게 한다.
+    text = _restore_ascii_double_quotes(text)
     # 아포스트로피 판정도 짝을 세야 하므로 같은 자리에서(줄로 쪼개면 여는 ‘가 다른 줄에
     # 있는 인용부호가 전부 짝없음으로 보인다). 반드시 위 복원 **뒤**에 — 그쪽이 만든
     # 곡선 따옴표는 짝이 맞으므로 여기서 다시 ASCII로 돌아가지 않는다.
