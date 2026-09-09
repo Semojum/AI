@@ -19,9 +19,11 @@ import os
 import re
 import signal
 import shutil
+import socket
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -40,9 +42,26 @@ _url: str | None = None
 
 
 def _health(url: str, timeout: float = 2.0) -> bool:
+    """살아 있나. ★ **느린 것은 죽은 것이 아니다**(2026-09-10 · #848).
+
+    종전엔 응답이 `timeout` 안에 안 오면 False 였다. 그런데 `get_url()` 이 쪽마다 1초로
+    묻는데, 서버가 VLM 두 쪽을 물고 있고 스왑까지 차면 /health 가 1초를 넘긴다. 그러면
+    외부 URL 경로는 None → **CLI 폴백** → 쪽마다 vLLM 엔진을 새로 띄우다 60초에 끊겨
+    텍스트레이어 폴백으로 떨어진다. 실측(temp/n10/rebase-ruler s2·v1·v2): 03:15~04:25
+    70분 동안 세 러너 163쪽이 전부 이 길로 갔고, 언어·외국어 기출 쪽은 지문이 이미지라
+    텍스트레이어에 없어 본문 3분의 2를 잃었다(언어 p170: 28요소 → 10요소). CLI 가 띄운
+    엔진이 메모리를 더 먹어 health 가 더 느려지는 되먹임이라 한 번 들어가면 안 나온다.
+
+    죽음 = 연결 거부(프로세스 없음). 타임아웃 = 바쁨 = 살아 있음.
+    ponytail: 멈춘(hang) 서버는 못 가른다 — 그 쪽은 요청 상한(60초)이 잡는다.
+    """
     try:
         with urllib.request.urlopen(url + "/health", timeout=timeout) as r:
             return r.status == 200
+    except (socket.timeout, TimeoutError):
+        return True
+    except urllib.error.URLError as exc:
+        return isinstance(exc.reason, (socket.timeout, TimeoutError))
     except Exception:  # noqa: BLE001
         return False
 
