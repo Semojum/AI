@@ -241,3 +241,37 @@ class TestMultiVisualPage:
         main = [_box(i + 7, 309, 130 + i * 400, 1047, 500 + i * 400) for i in range(3)]
         _reorder_columns(side + main)
         assert max(b.reading_order for b in main) < min(b.reading_order for b in side)
+
+
+class TestBridgeElement:
+    def test_full_width_title_does_not_glue_two_columns(self):
+        # 세계사 p104 축소판: 강 제목(x 151~609)이 좌측 용어열(x 106~283)과
+        # 본문(x 318~1071)에 걸쳐 x-겹침 union 이 쪽 전체를 한 덩이로 붙였다.
+        # 다리 요소를 클러스터링에서만 빼면 두 단이 갈리고 참고열이 뒤로 간다
+        # (「점자 도서 제작 지침」 2장 5, 주종 관계의 다단).
+        title = _box(1, 151, 87, 609, 139)
+        side = [_box(i + 2, 106, 300 + i * 180, 283, 440 + i * 180) for i in range(4)]
+        main = [_box(i + 6, 318, 260 + i * 200, 1071, 420 + i * 200) for i in range(4)]
+        _reorder_columns([title] + side + main)
+        assert title.reading_order == 1
+        assert max(b.reading_order for b in main) < min(b.reading_order for b in side)
+
+    def test_no_bridge_search_when_page_already_splits(self):
+        # 이미 두 덩이로 갈리는 쪽은 다리 탐색을 하지 않는다(동작·순서 무변경).
+        side = [_box(i + 1, 96, 200 + i * 150, 264, 320 + i * 150) for i in range(3)]
+        main = [_box(i + 4, 309, 130 + i * 300, 1047, 380 + i * 300) for i in range(3)]
+        _reorder_columns(side + main)
+        assert max(b.reading_order for b in main) < min(b.reading_order for b in side)
+
+
+class TestThreeRunSidebar:
+    def test_sidebar_split_in_three_runs_still_deferred(self):
+        # 생물 p018 축소판: 좌측 열이 빈칸문제 7개 + 정답 상자 + 낱개로 세 토막이다
+        # (runs=[7,1,1]). 최장 토막이 절반 이상이면 한 단으로 본다.
+        side = [_box(i + 1, 96, 190 + i * 65, 261, 240 + i * 65) for i in range(7)]
+        side.append(_box(12, 107, 1247, 222, 1352))     # 정답 상자(본문 뒤 순번)
+        side.append(_box(20, 100, 1380, 240, 1410))     # 낱개 한 줄(맨 끝 순번)
+        main = [_box(o, 300, 143 + i * 100, 1044, 220 + i * 100)
+                for i, o in enumerate([8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19])]
+        _reorder_columns(side + main)
+        assert max(b.reading_order for b in main) < min(b.reading_order for b in side)
