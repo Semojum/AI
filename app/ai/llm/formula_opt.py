@@ -118,10 +118,9 @@ def _normalize(latex: str) -> str:
     return latex
 
 
-# ```latex … ``` 코드펜스(언어태그 포함)·$$ 구분자 제거. 백틱만 strip하면 'latex'
-# 언어태그가 남아 그대로 점역되는 버그가 있었다(⠇⠁⠞⠑⠭).
+# ```latex … ``` 코드펜스(언어태그 포함) 제거. 백틱만 strip하면 'latex' 언어태그가
+# 남아 그대로 점역되는 버그가 있었다(⠇⠁⠞⠑⠭).
 _FENCE_RE = re.compile(r"```[a-zA-Z]*\n?|```")
-_DOLLAR_RE = re.compile(r"^\s*\${1,2}|\${1,2}\s*$")
 
 
 # 모델이 수식 옆에 붙여 쓴 해설 줄. 앞머리("주어진 수식을 분석하겠습니다.")로도, 꼬리
@@ -149,11 +148,18 @@ def _extract(resp: str) -> str:
 
     프리필이 설명 머리말을 억제하므로 첫 줄만 자르지 않는다 — \\begin{cases} 등
     여러 줄 수식이 잘려 깨지는 것을 막는다.
+
+    ★ `$` 구분자는 여기서 벗기지 않는다(2026-09-10). 종전 `_DOLLAR_RE`는 앞뒤 `$`를
+      **따로** 지워, 문장이 섞인 요소에서 앞 하나만 벗겨 짝을 깼다:
+        `$f(x)\\ge kx$이므로 곡선 $y=f(x)$…` → `f(x)\\ge kx$이므로 곡선 $y=f(x)$…`
+      점자는 바뀌지 않지만(convert_latex가 `$`를 어차피 지운다) 점역사 편집창에 짝
+      안 맞는 `$`가 그대로 보인다. 벗기는 일은 네 갈래가 모두 지나는 `_normalize`의
+      `_BLOCK_WRAP_RE`가 이미 한다 — **양끝이 같은 구분자일 때만** 지우므로 짝이 안 깨진다
+      (호출부 `_normalize(_extract(...) or raw)`).
     """
     t = resp[len(_PREFILL):] if resp.startswith(_PREFILL) else resp
     t = _FENCE_RE.sub("", t).strip()      # ```latex … ``` 펜스(언어태그 포함)
     t = t.strip("`").strip()              # 잔여 인라인 백틱(`…`)
-    t = _DOLLAR_RE.sub("", t).strip()     # $$ … $$ 구분자
     return _drop_commentary(t)
 
 
