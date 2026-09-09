@@ -650,6 +650,39 @@ def desc_draft(
                  render_mode="narrative", label=desc_label(kind)), indents
 
 
+# 개조식 항목의 머리 표지(캡션 `① `·`1. `·`1) `·`- `). 줄글에서는 뗀다.
+# ⚠ **맨 숫자(`1 `)는 안 뗀다.** §6.6 골격이 붙이는 그 번호는 목록 표지가 아니라 **식별
+#   번호**라 같은 글 안에서 서로를 가리킨다 — 가계도 `1 정상 남자 / 2 정상 여자 /
+#   1, 2 → 3 정상 남자`(§6.6.4(3)②)와 흐름도 분기 `→ 3`(§6.6.2(4)⑥)이 그렇다.
+#   떼면 `1, 2 → 3` 이 가리킬 대상이 사라진다(캡션 캐시 3,251건 실측 106건).
+_ITEM_MARK_RE = re.compile(r"^(?:\d{1,2}[.)]|[\u2460-\u2473]|[-*·•])\s+")
+_SENT_END = ".?!…"
+
+
+def prose_join(parts: list[str]) -> str:
+    """개조식 항목을 줄글로 잇는다 — 한 항목이 한 문장(§6.1.4(7)).
+
+    「점자 자료 제작 지침」 §6.1.4(7) "사실에 대한 설명을 **문장 형식으로 진술**한다".
+    종전에는 항목을 `, ` 로만 이어 `…과정이다., 1 H: 원자핵이…, 2 Cl: …` 처럼 나갔다 —
+    마침표 뒤에 쉼표가 오고 개조식 번호가 문장 가운데 남아 문장이 아니었다(2026-09-09
+    실물 E2E N2).
+
+    ⚠ 재료에 없는 말은 만들지 않는다 — 표지를 **떼기만** 한다. 부호도 새로 안 붙인다:
+      항목이 이미 문장으로 끝나 있으면 한 칸 띄어 다음 문장을 잇고, 아니면 종전처럼
+      쉼표로 잇는다(값 나열은 재료 자체가 문장이 아니라 문장으로 만들 길이 없다).
+      남는 글자는 전부 개조식 안이 이미 쓰던 글자다(`gist_draft` 와 같은 안전장치).
+    """
+    out = ""
+    for p in parts:
+        t = _ITEM_MARK_RE.sub("", (p or "").strip()).strip()
+        if not t:
+            continue
+        if out:
+            out += " " if out[-1] in _SENT_END else ", "
+        out += t
+    return out
+
+
 def prose_draft(text: str, type_key: str = "") -> Draft | None:
     """줄글 설명 안(§6.1.4(7) 진술적 설명). 낼 글이 없으면 None.
 
@@ -918,9 +951,10 @@ async def build_visual_drafts(
     #     줄글 안에서만 사라진다(실물: 설명 `사진: 해바라기꽃` ↔ 줄글 `해바라기꽃, …`).
     #   ⚠ 머리글 재료는 `_strip_dup_type` 을 먼저 태운다 — 설명 안이 쓰는 것과 같은 값이라야
     #     한다. 안 태우면 캡션이 이미 `그림: …` 인 자리에서 `그림: 그림: …` 로 두 번 나간다.
-    _joined = ", ".join(
-        t.strip() for t in [_strip_dup_type(outline_desc, label),
-                            *(t for _lv, t in outline_items)] if (t or "").strip())
+    #   ⚠ 항목은 `prose_join` 이 **한 항목 한 문장**으로 잇는다(§6.1.4(7)). 종전 `, ` 이음은
+    #     마침표 뒤에 쉼표가 오고 캡션 번호(`①`)가 문장 가운데 남아 문장이 아니었다.
+    _joined = prose_join([_strip_dup_type(outline_desc, label),
+                          *(t for _lv, t in outline_items)])
     real_prose = struct_prose or (f"{label}: {_joined}" if _joined else "")
     if prose_label(kind) != desc_label(kind):
         d_prose = prose_draft(real_prose, kind)
