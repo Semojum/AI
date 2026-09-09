@@ -14,7 +14,8 @@
     text · list_item              → 2단계로 내려간다
     formula                       → 수식(M)
     table                         → 표(B)
-    image · caption               → 시각자료(V)   ※ 이 축은 셀 대조가 자가 아니다. 아래 참조
+    image                         → 시각자료(V) — **제품 시각 체인**을 그대로 돌린다(아래 ★)
+    caption                       → 시각자료(V)   ※ 제품도 caption 은 텍스트 체인이다
     header_footer · page_number   → 쪽 furniture(H) — 축이 아니다. 따로 센다
 
 2단계 · text/list_item 안에서 **문자 종류 런**으로
@@ -70,9 +71,10 @@ CER 과 달리 축마다 분모가 다르다. 합쳐도 전체 CER 이 되지 �
 1. **빈칸·줄바꿈**. CER 과 같이 U+2800 과 줄바꿈을 지우고 본다
    (`code/AI/test/corpus_metrics.py:88-90`). 조판 축(칸수)은 `tools/kpi/spacing_kpi.py`
    가 잰다 — 여기서 안 잰다.
-2. **시각자료 설명**. 정답이 하나가 아니라 셀 대조가 자가 안 된다(대표 2026-09-08).
-   그 축은 `temp/axis/visual_axis.py` 가 구조·양식·문체 셋으로 잰다. 여기서는 V 축의
-   셀 수치를 **참고로만** 찍고 목표를 걸지 않는다.
+2. **어느 안이 옳은가**. 같은 그림에 점역사마다 다르게 쓴다. "여러 안 중 하나와 닮았나"
+   는 `temp/axis/visual_axis.py` 가 구조·양식·문체로 잰다. 여기 V 축은 **선택 초안의 셀**을
+   gold 와 견주는 자라, 목표(90%)를 걸 값이 아니라 **A/B 가 갈리는지 보는 값**이다.
+   ★ 2026-09-10 이전에는 그 A/B 조차 안 됐다 — 아래 `visual_cells` 주석 참조.
 3. **추출 품질**. 묵자는 재추출 JSON 을 그대로 쓴다. 추출이 놓친 글은 gold-only 로
    잡혀 그 축의 무수정율을 깎는다. 그것이 점역 결함인지 추출 결함인지 이 자는 못 가른다.
 4. **셀 빈도 ≠ 현상 빈도.** 축 귀속은 **묵자 원문 문자**로 한다(셀 점형으로 세지 않는다).
@@ -86,7 +88,9 @@ CER 과 달리 축마다 분모가 다르다. 합쳐도 전체 CER 이 되지 �
 ★ 분모는 **정답본이 있는 1,180쪽**이다. 수학 II·독서·영어듣기·세계지리·한국사는
   점자본이 없다(`temp/poc/rt_kpi.py` 상단 · `corpus/books.jsonl`).
   백틱 규약은 코퍼스 BRF 이므로 `backtick="cell"`.
-자는 **제품 경로** `translate_body`(S1 #673)다. `translate_plain` 은 꼬리말 경로라 쓰지 않는다.
+자는 **제품 경로**다 — 본문은 `translate_body`(S1 #673), 시각은 `<유형>Opt.optimize`
+→ `<유형>Braille.translate`(= `translate_visual`). `translate_plain` 은 꼬리말 경로라
+쓰지 않는다. 시각 쪽을 `translate_body` 로 재던 것이 2026-09-10 까지의 눈먼 자리였다.
 
 사용:
     code/AI/venv/bin/python tools/kpi/axis_kpi.py --dump temp/axis/pages.jsonl [코드경로]
@@ -95,9 +99,15 @@ CER 과 달리 축마다 분모가 다르다. 합쳐도 전체 CER 이 되지 �
 
 변경 이력
   2026-09-08  신설(대표 지시 "축별로 갈라 지금 값을 대라").
+  2026-09-10  시각(V) 축이 눈멀어 있던 것을 고쳤다(r30-axis). image 요소를 재추출 설명
+              그대로 `translate_body` 에 넣고 있어서 **제품의 시각 체인을 한 줄도 안
+              탔다** — 시각 갈래가 무엇을 고쳐도 V 가 한 셀도 안 움직였다. 이제
+              `<유형>Opt.optimize(..., "ZERO")` → 선택 초안 → `<유형>Braille.translate`
+              를 그대로 돌린다. 대조 실측은 `temp/n10/결과_r30-axis.md`.
 """
 from __future__ import annotations
 
+import asyncio
 import collections
 import difflib
 import glob
@@ -105,6 +115,7 @@ import json
 import os
 import re
 import sys
+import uuid
 from multiprocessing import Pool
 
 _HERE = os.path.dirname(os.path.realpath(__file__))          # <AI>/tools/kpi
@@ -232,11 +243,11 @@ def _plain_runs(t: str) -> list[tuple[str, str]]:
 
 
 # ── 점역·역점역 (자식 프로세스에서 늦게 연다) ──────────────────────────────
-_tb = _decode = _a2u = _BOOKS = None
+_tb = _decode = _a2u = _BOOKS = _VIS = None
 
 
 def _init(code_path: str) -> None:
-    global _tb, _decode, _a2u, _BOOKS
+    global _tb, _decode, _a2u, _BOOKS, _VIS
     sys.path.insert(0, code_path)
     sys.path.insert(0, os.path.join(V2, "temp/poc"))
     from app.ai.braille.translator import translate_body
@@ -245,6 +256,57 @@ def _init(code_path: str) -> None:
     from rt_kpi import M as books                                   # 책ID ↔ 책이름
     _tb = lambda s: cells("\n".join(translate_body(s)[0]))          # noqa: E731
     _decode, _a2u, _BOOKS = decode, ascii_to_unicode, books
+    _VIS = _load_visual_chains()
+
+
+def _load_visual_chains() -> dict:
+    """제품 유형 → (Opt 클래스, Braille 클래스). 파이프라인 체인과 **같은 짝**이다
+    (`app/core/pipeline.py::_run_{image,cartoon,chart_graph,diagram}_chain`)."""
+    os.environ.setdefault("OPENAI_API_KEY", "x")
+    os.environ.setdefault("ANTHROPIC_API_KEY", "x")
+    os.environ["DISABLE_LLM_FALLBACK"] = "1"        # 자는 LLM 을 안 부른다(ZERO 티어)
+    from app.ai.llm.image_opt import ImageOpt
+    from app.ai.llm.cartoon_opt import CartoonOpt
+    from app.ai.llm.chart_graph_opt import ChartGraphOpt
+    from app.ai.llm.diagram_opt import DiagramOpt
+    from app.ai.braille.visual_braille import (ImageBraille, CartoonBraille,
+                                               ChartGraphBraille, DiagramBraille)
+    from app.core.pipeline import _TYPE_ALIAS
+    from app.schemas.content import ExtractedContent
+    return {"alias": _TYPE_ALIAS, "ec": ExtractedContent,
+            "chain": {"image": (ImageOpt, ImageBraille),
+                      "cartoon": (CartoonOpt, CartoonBraille),
+                      "chart_graph": (ChartGraphOpt, ChartGraphBraille),
+                      "diagram": (DiagramOpt, DiagramBraille)}}
+
+
+def visual_cells(kind: str, text: str) -> str:
+    """시각 요소 하나 → **제품이 실제로 내는** 점자 셀.
+
+    ★ 왜 `translate_body` 가 아닌가 (2026-09-10, r30-axis)
+      종전에는 image 요소의 재추출 설명을 그대로 `translate_body` 에 넣었다. 제품은 그
+      길로 안 간다 — `<유형>Opt.optimize` 가 4안을 만들어 하나를 고르고(점역자 주표 ⠠⠄ 로
+      감싸고 유형 제시어를 붙인다) `<유형>Braille.translate` 가 `translate_visual` 로
+      점역한다(`translator.translate_body` docstring: "시각 쪽 진입점은 translate_visual").
+      그래서 시각 갈래가 무엇을 고쳐도 이 축은 **한 셀도 안 움직였다**. 실측 대조는
+      `temp/n10/결과_r30-axis.md`.
+      실제 차이 한 건(사진 설명):
+        종전 자  ⠇⠨⠟⠐⠂⠀⠠⠈⠪⠦⠕…          (주표 없음)
+        제품     ⠠⠄⠇⠨⠟⠠⠄⠐⠂⠀⠠⠈⠪⠦⠕…      (⠠⠄ 점역자 주표)
+
+    ⚠ 못 재는 것 — 재추출 JSON 은 시각 하위유형을 안 준다(전부 `image`). 제품은 MinerU
+      `chart`→chart_graph 처럼 하위유형으로 체인을 가르므로, 그래프·도표로 갈 것이
+      여기서는 image 체인으로 간다. 코퍼스 한계지 자의 결함이 아니다 — 재추출에
+      하위유형이 생기면 `_TYPE_ALIAS` 가 그대로 받아 준다.
+    ★ caption 요소는 제품도 **텍스트 체인**으로 보낸다(`pipeline._TEXT_TYPES`). 그래서
+      여기서 손대지 않는다.
+    """
+    O, B = _VIS["chain"][_VIS["alias"].get(kind, kind)]
+    ext = _VIS["ec"](element_id=uuid.uuid4(), ocr_confidence=1.0,
+                     corrected_text=text, structure={})
+    lo = asyncio.run(O().optimize([ext], "ZERO"))[0]
+    bo = B().translate([lo])[0]
+    return cells("\n".join(bo.braille_lines or []))
 
 
 def elem_cells(kind: str, content: str) -> tuple[str, str]:
@@ -252,6 +314,9 @@ def elem_cells(kind: str, content: str) -> tuple[str, str]:
     s = strip_print(content)
     if not s.strip():
         return "", ""
+    if _VIS and _VIS["alias"].get(kind, kind) in _VIS["chain"]:
+        out = visual_cells(kind, s)                 # 제품 시각 경로(무-LLM)
+        return out, V * len(out)
     out = _tb(s)
     fixed = ELEM_AXIS.get(kind)
     if fixed or kind not in SUBSPLIT:
@@ -592,6 +657,16 @@ def selftest() -> int:
     assert round(s5["gold"][F]) == 8 and not s5["gold"][T] - 1, s5
     assert decode_ok("이에 대한 설명으로 옳은 것만을 고른 것은?")
     assert not decode_ok("정ib:2(정ibo정ibqo유)(jaR{1)'z(η(nS지f여^(i{]자wja'요R{jv")
+    # ★ V 축 눈멂 회귀 관문 — 제품 시각 체인을 안 타면 점역자 주표 ⠠⠄ 가 안 나온다.
+    #   이 두 줄이 없으면 시각 경로가 조용히 `translate_body` 로 되돌아가도 아무도 모른다.
+    sys.path.insert(0, AI_ROOT)
+    globals()["_VIS"] = _load_visual_chains()
+    from app.ai.braille.translator import translate_body
+    globals()["_tb"] = lambda x: cells("\n".join(translate_body(x)[0]))
+    _t = "사진: 끝이 뾰족한 청동 검 유물."
+    _vis, _ax = elem_cells("image", _t)          # 호출부까지 통째로 본다
+    _body = cells("\n".join(translate_body(_t)[0]))
+    assert "⠠⠄" in _vis and _vis != _body and set(_ax) == {V}, (_vis, _body, _ax)
     print("selftest ok")
     return 0
 
