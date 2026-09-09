@@ -945,6 +945,8 @@ def print_layout(corrected_text: str, mode: str) -> str:
         return corrected_text
     out: list[str] = []
     if mode == "numbered":                    # §3.1.1 (1)③ 번호 체계
+        # 번호 체계·줄 나눔은 점자 쪽(`_render_numbered`)과 **같아야 한다** — 피커가
+        # 묵자와 점자를 나란히 보이므로 어긋나면 점역사가 다른 안을 보고 고른다.
         heads = rows[0]
         for i, r in enumerate(rows[1:], start=1):
             out.append(f"{i}. {r[0].strip()}" if r and r[0].strip() else f"{i}.")
@@ -953,7 +955,12 @@ def print_layout(corrected_text: str, mode: str) -> str:
                 if not v:
                     continue
                 nm = heads[j].strip() if j < len(heads) else ""
-                out.append(("  " + (f"{j}) {nm}: {v}" if nm else f"{j}) {v}")))
+                mark = _L2_MARKS[(j - 1) % len(_L2_MARKS)]
+                if nm:
+                    out.append(f"  {mark}. {nm}")
+                    out.append(f"    {v}")
+                else:
+                    out.append(f"  {mark}. {v}")
         return "\n".join(out)
     if mode == "linear":                      # 키  값 (2열 표)
         for r in rows:
