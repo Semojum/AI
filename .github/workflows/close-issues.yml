@@ -1,0 +1,62 @@
+# develop 로 머지될 때 이슈를 닫는다.
+#
+# 왜 (2026-09-10)
+#   GitHub 는 **기본 브랜치**로 병합될 때만 `Closes #N` 을 발화시킨다. 이 저장소의
+#   기본 브랜치는 main 인데 PR 은 전부 develop 로 머지되므로, 이슈가 고쳐져도
+#   영영 안 닫힌다. 실측: 열린 이슈 165건 중 137건(83.0%)이 이미 고쳐진 유령이었고,
+#   그날 밤 갈래 둘이 유령을 쫓느라 0.87M 토큰을 버렸다.
+#
+# 무엇을 닫나
+#   커밋 제목의 `[#N]` 과 본문의 `Closes|Fixes|Resolves|Refs #N` 만 본다.
+#   제목 끝의 `(#N)` 은 PR 번호라 건드리지 않는다. 이슈가 아닌 번호는 건너뛴다.
+name: close-issues
+
+on:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  close:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+      - name: 커밋에서 이슈 번호를 뽑아 닫는다
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+          # 새로 들어온 커밋만 본다. force-push 나 첫 푸시면 마지막 하나만.
+          if git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            range="${BEFORE}..${AFTER}"
+          else
+            range="${AFTER}~1..${AFTER}"
+          fi
+          msgs=$(git log --format='%s%n%b' "$range" || git log -1 --format='%s%n%b')
+          # 제목의 [#N] 과 본문의 닫기 낱말 뒤 #N. 끝의 (#N) 은 PR 이라 뺀다.
+          nums=$(printf '%s\n' "$msgs" \
+            | grep -oiE '(\[#[0-9]+\]|(closes|fixes|resolves|refs)[[:space:]]+#[0-9]+)' \
+            | grep -oE '[0-9]+' | sort -un)
+          [ -z "$nums" ] && { echo "닫을 이슈 없음"; exit 0; }
+          for n in $nums; do
+            info=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${n}" 2>/dev/null) || {
+              echo "건너뜀: #${n} (그런 번호 없음)"; continue; }
+            # PR 과 이슈는 번호 대역을 같이 쓴다. PR 이면 손대지 않는다.
+            if [ -n "$(printf '%s' "$info" | jq -r '.pull_request // empty')" ]; then
+              echo "건너뜀: #${n} (이슈가 아니라 PR)"; continue
+            fi
+            state=$(printf '%s' "$info" | jq -r '.state')
+            if [ "$state" != open ]; then
+              echo "건너뜀: #${n} (이미 ${state})"; continue
+            fi
+            echo "닫는다: #${n}"
+            gh issue close "$n" --repo "${GITHUB_REPOSITORY}" \
+              --comment "develop 에 머지됐다 (${AFTER})." || echo "  실패 #${n} — 건너뜀"
+          done
