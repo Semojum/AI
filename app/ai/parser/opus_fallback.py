@@ -158,14 +158,25 @@ def relabel_circles(elements: list[dict], image_path: str) -> int:
                 {"type": "text", "text": _RELABEL_ASK.format(items=items)},
             ]}])
         record_anthropic("이름표되묻기", ADVANCED_MODEL, getattr(resp, "usage", None))
-        got = _parse("".join(b.text for b in resp.content if b.type == "text"))
+        txt = "".join(b.text for b in resp.content if b.type == "text")
     except Exception as exc:  # noqa: BLE001 — 못 되물으면 원본 그대로 둔다
         logger.warning("이름표 되묻기 실패: %s", exc)
         return 0
+    try:
+        got = _parse(txt)
+    except Exception:  # noqa: BLE001
+        got = None
     if not isinstance(got, list) or len(got) != len(spots):
-        logger.warning("이름표 되묻기 개수 불일치(자리 %d · 답 %s) — 그대로 둔다",
-                       len(spots), len(got) if isinstance(got, list) else type(got).__name__)
-        return 0
+        # JSON 이 아니어도 답은 이름표 나열이다 — 글자만 훑어 개수가 맞을 때만 쓴다.
+        # 실측: 배열이 잘리거나 산문으로 오는 판이 있고(진입점 실행 3벌 중 1벌), 그때
+        # `_parse` 는 통째로 죽는다. 개수가 어긋나면 그대로 둔다 — 자리가 밀리면
+        # 엉뚱한 이름표를 박는데 그건 `○` 보다 나쁘다.
+        scraped = _CIRCLED_LABEL.findall(txt)
+        if len(scraped) != len(spots):
+            logger.warning("이름표 되묻기 개수 불일치(자리 %d · 답 %r) — 그대로 둔다",
+                           len(spots), txt[:160])
+            return 0
+        got = scraped
     fixed = 0
     # 뒤에서부터 갈아 끼운다 — 앞자리를 먼저 바꾸면 뒷자리 위치가 밀린다.
     for (i, at), lab in sorted(zip(spots, got), key=lambda x: x[0], reverse=True):

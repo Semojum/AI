@@ -20,12 +20,15 @@ def test_이름표가_없으면_안_잡는다():
     assert not OF.self_contradicts(_els("원의 넓이", r"A \bigcirc B"))
 
 
-def _fake(monkeypatch, answer):
-    """되묻기 응답을 갈아 끼운다."""
-    monkeypatch.setattr(OF, "_parse", lambda txt: answer)
+def _fake(monkeypatch, answer, raw="[]"):
+    """되묻기 응답을 갈아 끼운다. answer=None 이면 JSON 파싱이 죽은 판을 흉내 낸다."""
+    if answer is None:
+        monkeypatch.setattr(OF, "_parse", lambda txt: (_ for _ in ()).throw(ValueError("x")))
+    else:
+        monkeypatch.setattr(OF, "_parse", lambda txt: answer)
 
     class _R:
-        content = [type("B", (), {"type": "text", "text": "[]"})()]
+        content = [type("B", (), {"type": "text", "text": raw})()]
         usage = None
 
     class _C:
@@ -85,3 +88,19 @@ def test_줄바꿈_없는_펜스도_읽는다():
     assert OF._parse('```["㉠", "㉡"]```') == ["㉠", "㉡"]
     assert OF._parse('```json\n["㉠"]\n```') == ["㉠"]
     assert OF._parse('[{"type": "text"}]') == [{"type": "text"}]
+
+
+def test_JSON_이_아니어도_이름표_개수가_맞으면_쓴다(monkeypatch):
+    # 배열이 잘리거나 산문으로 오는 판이 있다. 글자만 훑어 개수가 맞으면 쓴다.
+    els = _els("㉠에 의하여", r"a \cdots \bigcirc", r"b \cdots \bigcirc")
+    _fake(monkeypatch, None, raw="1번은 ㉠ 이고 2번은 ㉡ 입니다")
+    assert OF.relabel_circles(els, "p.jpg") == 2
+    assert els[1]["content"] == r"a \cdots ㉠"
+    assert els[2]["content"] == r"b \cdots ㉡"
+
+
+def test_훑은_개수가_어긋나면_안_건드린다(monkeypatch):
+    els = _els("㉠에 의하여", r"a \cdots \bigcirc", r"b \cdots \bigcirc")
+    _fake(monkeypatch, None, raw="㉠ 하나만 읽힙니다")
+    assert OF.relabel_circles(els, "p.jpg") == 0
+    assert els[1]["content"] == r"a \cdots \bigcirc"
