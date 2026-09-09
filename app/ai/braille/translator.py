@@ -1385,6 +1385,42 @@ def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
     return out
 
 
+# 32칸 테두리 줄의 채움 글리프 → 테두리 종류. `_BORDER_FILL` 의 역방향이다.
+_BORDER_FILL_KIND = {fill: _BORDER_KIND[name] for name, (_cap, fill) in _BORDER_FILL.items()}
+
+
+def border_marker_spans(
+    braille: str, source_text: str
+) -> list[tuple[int, int, str]]:
+    """글상자 테두리 태그가 만든 32칸 마커 줄 → (start, end, tag) 목록. source-gated.
+
+    ★ 근거를 **점역 시점에** 낸다(2026-09-10). 종전에는 `layout._expand_box_borders` 가
+      테두리를 다시 그리며 냈는데, 응답에 실리는 좌표계(`flatten_elements`)는 **layout
+      앞에서** 굳는다(`pipeline.py` "★ 순서 주의: flatten이 먼저다"). 그래서 Step17 이
+      배선해 둔 테두리 근거가 **응답에 한 건도 안 실렸다** — 단위 테스트가
+      `_expand_box_borders` 를 직접 불러 검증해 이 어긋남을 못 봤다.
+      실측(fresh 실행, 사회문화 p010): 테두리 줄이 든 요소 4개의 `rule_trail` 이 전부 [].
+
+    source-gated — 원본의 `<!상자>`·`<!상자끝>` 태그 순서·개수만큼만 짚는다. 표 격자도
+    같은 32칸 테두리를 그리므로(원장 C-01a) 출력 스캔만으로는 못 가른다. 채움 글리프로
+    종류(위 ⠛ / 아래 ⠶)까지 맞춰 어긋난 짝을 건너뛴다.
+    """
+    specs = box_borders_from_source(source_text)
+    if not specs:
+        return []
+    spans: list[tuple[int, int, str]] = []
+    si, pos = 0, 0
+    for line in braille.split("\n"):
+        if si < len(specs) and len(line) == _BORDER_COLS and line[:1] == line[-1:] == "⠿" \
+                and _BORDER_FILL_KIND.get(line[1:2]) == specs[si][0]:
+            kind, level, title = specs[si]
+            si += 1
+            titled = "·제목있음" if (kind == "top" and title) else ""
+            spans.append((pos, pos + len(line), f"box_{kind}·{level}단계{titled}"))
+        pos += len(line) + 1
+    return spans
+
+
 TN_MARKER = "⠠⠄"  # 점역자 주 점자 마커 (NLD-1.2.6), 양끝 동일
 
 
@@ -1414,7 +1450,10 @@ def source_has_tn(text: str) -> bool:
 #       "규정 모호 → 관행 채택 · ❓ 자문" 상태다.
 # dev 400쪽 실측: ⠸⠦ 131개·⠿⠿ 26개가 근거 0건으로 나갔다.
 _BLANK_TAG_RULE = "MCST-한글-6.14.73"
-_BLANK_TAG_NAMES = {_TAGS.BLANK_TABLE: "blank_table", _TAGS.BLANK_SQUARE: "blank_box"}
+_BLANK_TAG_NAMES = {_TAGS.BLANK_TABLE: "blank_table", _TAGS.BLANK_SQUARE: "blank_box",
+                    # 원장 C-05(밑줄 빈칸 ⠸⠤) — 빠져 있어 이 점형만 근거 0건으로 나갔다.
+                    #   gold 실측 18,892쪽: ⠸⠤ 5,175건 · 1,611쪽(8.5%).
+                    _TAGS.BLANK_RULE: "blank_rule"}
 
 
 def blank_marker_spans(
