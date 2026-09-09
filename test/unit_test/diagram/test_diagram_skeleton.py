@@ -354,3 +354,28 @@ class TestFamilyTreeGenerationIndent:
         lines = text.split("\n")
         gen = {ln[:3]: ind for ln, ind in zip(lines, indents) if ln[:1].isdigit()}
         assert gen == {"1세대": 0, "2세대": 2, "3세대": 4}, (gen, lines)
+
+    def test_로마자_세대도_들여쓴다(self):
+        """생물 교과 가계도는 세대를 `I대`·`II대` 로 적는다 — 동결 코퍼스 실물(#794).
+
+        아라비아 숫자만 보던 종전 정규식은 dev·val 1,131쪽의 가계도 6건 중 **한 건도**
+        못 잡았다(전건 평면). 실물: corpus-devall-생물 p025.
+        """
+        from app.ai.llm.diagram_structure import structure_from_caption
+        from app.ai.llm.diagram_opt import assemble_family_tree
+        cap = ("도표: 가계도 자료, 3대에 걸친 유전병 유전 양식 표시.\n"
+               "I대: 1(정상 남) × 2(유전병 여) 부부.\n"
+               "II대: 1(정상 여) × 2(유전병 남) 부부.\n"
+               "III대: 1(정상 여), 2(유전병 남).")
+        st = structure_from_caption(cap, "family_tree")
+        text, indents = assemble_family_tree(st)
+        gen = {ln.split(":")[0]: ind for ln, ind in zip(text.split("\n"), indents)
+               if ln[:1] == "I"}
+        assert gen == {"I대": 0, "II대": 2, "III대": 4}, (gen, text)
+
+    def test_세대_표지가_아니면_안_건드린다(self):
+        """`부모 세대`·`위 세대` 같은 낱말 표지는 순서를 모른다 — 평면 그대로 둔다."""
+        from app.ai.llm.diagram_structure import caption_outline, _generation_levels
+        cap = ("도표: 가계도\n부모 세대: 남자와 여자 부부\n자녀 세대: 영희, 영희의 자매")
+        items = caption_outline(cap)
+        assert _generation_levels(items) == items

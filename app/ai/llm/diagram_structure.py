@@ -254,7 +254,25 @@ def caption_head(caption: str) -> str:
     return ""
 
 
-_GEN_RE = re.compile(r"^제?\s*(\d{1,2})\s*(?:세대|대)(?![가-힣])")
+# 세대 표지 — `1세대`·`제2대` 같은 아라비아 숫자와 `I대`·`Ⅱ대` 같은 로마 숫자 둘 다.
+# ★ 2026-09-10(#794) — 로마 숫자를 더했다. 아라비아만 보던 종전 정규식은 **동결 코퍼스
+#   dev·val 1,131쪽의 가계도 6건 중 한 건도 못 잡았다**(전건 평면). 생물 교과의 가계도는
+#   세대를 `I대`·`II대` 로 적는 것이 표준이다(실측: corpus-devall-생물 p025
+#   `I대: 1(정상 남) × 2(유전병 여) 부부.` / `I대 1×2 자녀 → II대 2(유전병 남) …`).
+#   `_generation_levels` 가 표지 두 줄 미만이면 손대지 않으므로, 로마자 낱글자가 우연히
+#   줄머리에 오는 것만으로는 발동하지 않는다.
+# ponytail: 낱말 세대(`부모 세대`/`자녀 세대`·`위 세대`/`아래 세대`)는 안 잡는다 —
+#   순서를 알려면 어휘 표가 필요하고 그건 규정이 아니라 추측이다. 실측 dev·val 6건 중 2건
+#   (낱말 1·표지 없음 4)이 여전히 평면이다. 어휘 표를 넣으려면 실측을 먼저 하라.
+_ROMAN_GEN = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5,
+              "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10}
+_ROMAN_GEN.update({chr(0x2160 + i): i + 1 for i in range(10)})      # Ⅰ~Ⅹ(전각)
+_GEN_RE = re.compile(r"^제?\s*(\d{1,2}|[IVX]{1,4}|[\u2160-\u2169])\s*(?:세대|대)(?![가-힣])")
+
+
+def _gen_no(token: str) -> int | None:
+    """세대 표지 → 세대 번호. 못 읽으면 None(= 표지가 아니다)."""
+    return int(token) if token.isdigit() else _ROMAN_GEN.get(token)
 
 
 def _generation_levels(items: list[tuple[int, str]]) -> list[tuple[int, str]]:
@@ -271,15 +289,15 @@ def _generation_levels(items: list[tuple[int, str]]) -> list[tuple[int, str]]:
     """
     if any(lv for lv, _ in items):
         return items
-    gens = [_GEN_RE.match(t) for _lv, t in items]
-    if sum(g is not None for g in gens) < 2:
+    nos = [(_gen_no(m.group(1)) if (m := _GEN_RE.match(t)) else None) for _lv, t in items]
+    if sum(n is not None for n in nos) < 2:
         return items
-    first = min(int(g.group(1)) for g in gens if g)
+    first = min(n for n in nos if n is not None)
     out: list[tuple[int, str]] = []
     level = 0
-    for (_lv, text), g in zip(items, gens):
-        if g:
-            level = max(0, int(g.group(1)) - first)
+    for (_lv, text), no in zip(items, nos):
+        if no is not None:
+            level = max(0, no - first)
         out.append((level, text))
     return out
 
