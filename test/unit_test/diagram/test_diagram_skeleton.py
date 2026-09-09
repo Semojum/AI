@@ -335,3 +335,41 @@ class TestFamilyTreeGenerationIndent:
         lines = text.split("\n")
         gen = {ln[:3]: ind for ln, ind in zip(lines, indents) if ln[:1].isdigit()}
         assert gen == {"1세대": 0, "2세대": 2, "3세대": 4}, (gen, lines)
+
+
+class TestGistDraftHasContent:
+    """간추린 설명(#793) — 유형 제시어 줄만 남아 쌍점이 허공에 매달리면 안 된다.
+
+    골격 안에서는 `그림:` 뒤에 항목 줄이 따라오지만 간추린 안은 항목을 버린다.
+    그래서 종전에는 `신경 경로 / 그림:` 로 끝나 **설명이 아니라 이름표**가 나갔다
+    (캡션 캐시 3,244건 재생 실측: 도표 간추린 475건 중 442건 = 93.1%).
+    제목을 유형 제시어 줄로 끌어와 §6.1.4(4) '전체 윤곽' 한 줄로 만든다.
+    """
+
+    @staticmethod
+    def _gist(structure: dict):
+        from app.ai.llm.visual_drafts import GIST_OPTION
+        ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=structure)
+        opt = asyncio.run(DiagramOpt().optimize([ext], "ZERO"))[0]
+        return next((d for d in opt.drafts if d.option == GIST_OPTION), None)
+
+    def test_제목이_있으면_유형어와_한_줄(self):
+        d = self._gist(_CONCEPT_2)
+        assert d is not None, "간추린 안이 안 섰다"
+        body = decode_free(d.text)
+        assert body == f"{_TYPE_NOTE} 먹이 사슬", body
+
+    def test_쌍점으로_끝나는_안은_없다(self):
+        """제목이 있든 없든 유형 제시어 뒤에 내용이 있어야 한다."""
+        for st in (_CONCEPT_2, _CONCEPT_3, _FLOW):
+            d = self._gist(st)
+            if d is None:
+                continue
+            for ln in decode_free(d.text).split("\n"):
+                assert not ln.rstrip().endswith(":"), (st.get("subtype"), ln)
+
+
+def decode_free(text: str) -> str:
+    """들여쓰기 태그만 걷어 낸 글 (점역자 주 태그는 남긴다 — 자리 비교용)."""
+    from app.ai.braille import tag_names as _T
+    return _T.strip_indent_tags(text)[0]
