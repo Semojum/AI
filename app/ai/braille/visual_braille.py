@@ -39,6 +39,7 @@ from app.ai.braille.nested_block import append_nested
 from app.ai.braille.regulations import make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import (
+    border_marker_spans,
     box_borders_from_source,
     translate_visual,
     tn_marker_spans,
@@ -68,6 +69,12 @@ def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
     trail += [
         make_rule_at(rule_id, lines, s, e, tag="symbol")
         for s, e, rule_id in symbol_rule_spans(source, joined)
+    ]
+    # 글상자 테두리(NLD-1.2.5 · 원장 C-01b) — 시각 자료 초안도 블록을 상자로 감싼다
+    # (`visual_drafts` box 안). 우리가 판단해 넣은 자리라 점역사가 근거를 봐야 한다.
+    trail += [
+        make_rule_at("NLD-1.2.5", lines, s, e, tag=tag)
+        for s, e, tag in border_marker_spans(joined, source)
     ]
     return trail
 
