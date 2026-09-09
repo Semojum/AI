@@ -87,9 +87,13 @@ _KIEUK_FINAL = frozenset("엌녘")
 #   `볕` 은 이득이 아니라 **아래 닫는 부호 가드를 받쳐 주려고** 넣는다 — 그게 없으면
 #   `따뜻한 봄볕’` 이 `봄벼?’` 로 새 버린다(`벼?` 0회라 넣어도 잃는 게 없다).
 #   ⚠ `맡`·`샅` 은 넣었다가 뺐다. 묵자에 `마?`·`사?` 가 0회라 안전해 보였지만, 영어 지문이
-#     통째로 한글로 새는 쪽(로마자 런 미검출)에서 **영어 물음표**를 받침으로 먹었다 —
-#     맡 개선 1 : 악화 13(`for what purpose?` 등) · 샅 개선 0 : 악화 5(`걸 사?` 「돌다리」).
-#     영어 쪽이 고쳐지면 다시 볼 것. `흩`·`곁`·`옅`·`홑`·`뱉` 은 이득 0이라 안 넣는다.
+#     통째로 한글로 새는 쪽에서 **영어 물음표**를 받침으로 먹었다.
+#     ★ 2026-09-10 재시도 — 로마자 런 판정(`_english_line`)을 고친 **뒤에도 안 뒤집힌다**.
+#       전 코퍼스 1,251쪽 전수 재측정: 바뀐 쪽 22 · 조각 24 → **개선 1 : 악화 21 : 판정불가 2**.
+#       개선은 외국어 p090 `아이 맡기기` 하나뿐이고, 나머지는 여전히 영어로 안 읽히는 줄의
+#       물음표를 먹는다(`의마사사?`→`의마사샅` 등). 「돌다리」 `걸 사?`→`걸 샅` 도 그대로다.
+#       즉 원인이 로마자 런 하나가 아니다 — 영어 줄 판정이 100% 가 되기 전에는 못 넣는다.
+#     `흩`·`곁`·`옅`·`홑`·`뱉` 은 이득 0이라 안 넣는다.
 #   겹치는 `같`(`가?` 140) · `낱`(`나?` 11) · `솥`(`소?` 11) · `짙`(`지?` 4) · `얕`(`야?` 3)
 #   은 그대로 뺀다. `깥`(`까?` 110)은 아래 _JONG_PREV 로 가른다.
 _TIEUT_FINAL = frozenset("끝밑밭숱팥붙겉볕")
@@ -2534,7 +2538,58 @@ _ENG_FUNCTION = _build_eng_function()
 # 낱말 끝에 오는 문장 부호 — 로마자표 없는 영문 줄에서만 뗀다. ⠲ 는 로마자 종료표와
 # 같은 셀이라 런이 통째로 먹어 버려 마침표가 사라졌고(`home.` → `home`), 나머지는
 # 런을 끊어 낱말 판정을 실패시켰다.
-_ENG_TAIL_PUNCT = {"⠲": ".", "⠂": ",", "⠦": "?", "⠖": "!", "⠆": ";", "⠒": ":"}
+# ★ ⠴(닫는 큰따옴표) · ⠶(닫는 소괄호)도 넣는다 — 아래 `_ENG_LONE_WORD` 주석 참조.
+_ENG_TAIL_PUNCT = {"⠲": ".", "⠂": ",", "⠦": "?", "⠖": "!", "⠆": ";", "⠒": ":",
+                   "⠴": '"', "⠶": ")"}
+
+# 낱말 **앞**에 오는 부호 — 여는 큰따옴표 ⠦ · 여는 소괄호 ⠶.
+# 「한글 점자」 제34항 예문이 여는 큰따옴표를 ⠦ 로 못 박고(`“Open”` = ⠦⠠⠕⠏⠢⠴,
+# braille-source/text/한국 점자 규정_재추출.txt 1712행) 닫는 것이 ⠴ 다.
+# 소괄호는 규정(제32항 1666행)이 로마자 구간에 UEB `⠐⠣ ⠐⠜` 를 쓰라고 하지만
+# **코퍼스는 EBAE 그대로 ⠶ 한 셀을 양쪽에 쓴다** — 답지 머리 `(A) (B) (C)` 가
+# `⠶⠠⠁⠶ ⠶⠠⠃⠶ ⠶⠠⠉⠶` 로 나온다. 규정↔관행 충돌이라 원장 **R-76** 에 올렸다.
+# ⚠ 이 표는 `_english_line`(단서 셀 없는 영문 줄)에서만, 그것도 **낱말 가장자리**에서만
+#   쓴다. ⠦·⠶ 는 한글 받침 ㅌ·ㅇ 이라 줄 안 아무 데서나 떼면 본문을 먹는다.
+_ENG_HEAD_PUNCT = {"⠦": '"', "⠶": "("}
+
+# 낱말 첫머리에 붙는 약자 — 뒤에 글자가 이어질 때만이다(영어 점자 표준).
+#   ⠲ = `dis`(eng_braille.WORD_INITIAL_SYLLABLE) · ⠖ = `to`(WORDSIGNS, 붙여 적는다)
+# 둘 다 호출부가 종료표·느낌표로 먼저 삼켜 `discovered`·`to focus` 를 못 읽었다.
+_ENG_HEAD_SYLLABLE = {"⠲": "dis", "⠖": "to "}
+
+# 동그라미 숫자 `⠼N⠶` — 그 뒤의 홑 ⠶ 는 `were` 가 아니다(아래 `_english_line`).
+_CIRCLED_NUM_RE = re.compile(r"^⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]+⠶$")
+
+# 한 칸짜리 아래칸 단어 약자(EBAE lower wordsigns) — **로마자 문단 안에서만**.
+# 제37항과 그 [붙임](같은 파일 1795~1867행)은 `be·enough·his·in·was·were` 를
+# **로마자표 뒤·로마자 종료표 앞에서는 약자를 쓰지 말고 풀어 적으라**고 한다.
+# 뒤집으면 단서 셀이 없는 로마자 **문단**(제29항 [다만], 1507행) 안에서는 제32항대로
+# 통일영어점자 약자 그대로다. 코퍼스가 정확히 그렇다(외국어 214쪽 실측: 홑 ⠴ 342 ·
+# ⠶ 218 · ⠦ 178 · ⠆ 171 회). `to`(⠖)는 붙여 적는 단어기호인데 줄 끝에서 홀로 남는다.
+# ★ 이 표가 없으면 그 한 칸이 문장 부호로 깎여 **낱말이 빈 껍데기가 되고**, 낱말 하나가
+#   비면 `_english_line` 이 줄 전체를 버려 영어 지문이 통째로 한글로 샜다.
+# ★ `_decode_roman_run`(로마자표로 열린 구간)에는 넣지 않는다 — 그쪽은 제37항이
+#   "풀어 적는다"고 못 박은 자리다.
+# ⚠ `enough`(⠢)는 **뺐다.** 여섯 중 이것만 코퍼스에서 영어 쓰임(외국어 18회)보다
+#   그 밖(104회)이 많다 — 수식 표의 `+` 가 ⠢ 다. 넣었더니 `학 + 사회학` 이
+#   `ja enough ljyja` 로, `x=1 + 0 - 0` 이 `xcccc1 enough 0 in 0` 로 뒤집혔고,
+#   빼도 영어 낱말 적중은 20,417 로 **똑같다**(전 코퍼스 1,251쪽 실측).
+_ENG_LONE_WORD = {"⠆": "be", "⠦": "his", "⠔": "in",
+                  "⠴": "was", "⠶": "were", "⠖": "to", "⠔⠖": "into"}
+
+# 홑 낱자 단어기호(eng_braille.WORDSIGNS) — **줄 전체가 영어로 읽힌 뒤에만** 쓴다.
+# 같은 이유로 `_ENG_WORD` 에는 못 넣는다(한 칸짜리는 수식 변수와 겹쳐 32,036요소에서
+# 개선 5·악화 962였다). 여기는 이미 모든 낱말이 영어로 끝까지 읽힌 줄이라 그 함정이 없다.
+# 없으면 본문이 `t we were going to get into` 대신 `t we were …`, `b to accept` 처럼
+# 낱자로 남는다(t=that · b=but · z=as · m=more · h=have · n=not · c=can · l=like).
+# ⚠ **대문자표가 붙은 것은 뺀다.** 답지 머리 `(A) (B) (C)`(⠶⠠⠁⠶ …)의 `⠠⠃`·`⠠⠉` 가
+#   `But`·`Can` 으로 깨진다.
+def _build_eng_letter_words() -> dict[str, str]:
+    from app.ai.braille import eng_braille as _E
+    return {c: w for w, c in _E.WORDSIGNS.items() if len(c) == 1}
+
+
+_ENG_LETTER_WORD = _build_eng_letter_words()
 
 # 영어 아포스트로피 축약 꼬리 — 아포스트로피는 3점 ⠄ 한 칸이다(EBAE·UEB 공통).
 # 규정↔관행 대조원장 **R-26**(docs/analysis/규정-관행_대조원장.md) — 규정 모호 → 관행 채택.
@@ -2682,17 +2737,39 @@ def _english_line(line: str, *, evidence: bool = True) -> str | None:
     if not any(words):
         return None
     out: list[str] = []
+    raw: list[str] = []          # 증거 계산용 — 낱자 단어기호를 펴기 **전**의 텍스트
+    strong: list[str] = []       # 증거로 셀 낱말 — 한 칸짜리 단어 약자는 뺀다(아래)
     mid_cap = False
+    prev = ""
     for w in words:
         if not w:
             out.append("")
             continue
         # 낱말 끝 문장 부호를 떼고 읽는다. 로마자표가 없는 문단이라 ⠲ 는 종료표가
         # 아니라 **마침표**이고, 나머지는 런을 끊어 낱말을 못 읽게 만든다.
+        if w in _ENG_LONE_WORD and not (w == "⠶" and _CIRCLED_NUM_RE.match(prev)):
+            # ⚠ ⠶ 만 예외 — 동그라미 숫자 `⠼N⠶` 바로 뒤의 ⠶ 는 `were` 가 아니라
+            #   그 표기의 짝이다(외국어 224회 중 64회). 그 자리는 종전대로 둔다.
+            out.append(_ENG_LONE_WORD[w])
+            raw.append(_ENG_LONE_WORD[w])
+            prev = w
+            continue
+        prev = w
         core, head, tail = w, "", ""
-        while core[:2] in _UEB_BRACKET:              # 낱말 앞 UEB 괄호
-            head += _UEB_BRACKET[core[:2]]
-            core = core[2:]
+        while core[:2] in _UEB_BRACKET or core[:1] in _ENG_HEAD_PUNCT:  # 낱말 앞 괄호·따옴표
+            if core[:2] in _UEB_BRACKET:
+                head += _UEB_BRACKET[core[:2]]
+                core = core[2:]
+            else:
+                head += _ENG_HEAD_PUNCT[core[:1]]
+                core = core[1:]
+        if core[:1] in _ENG_HEAD_SYLLABLE and (core[1:2] in _ALPHA_REV
+                                              or core[1:2] in _ENG_ANY):
+            # 낱말 첫머리의 ⠲ 는 마침표·종료표가 아니라 음절 약자 `dis` 이고(호출부가
+            # 종료표로 먼저 삼켜 `discovered` 가 통째로 안 읽혔다), ⠖ 는 아래칸
+            # 단어기호 `to` 다 — 둘 다 뒤 낱말에 **붙여** 적는다(영어 점자 표준).
+            head += _ENG_HEAD_SYLLABLE[core[:1]]
+            core = core[1:]
         while core:                                  # 낱말 뒤 — 괄호·문장부호·축약이 섞인다
             if core[-2:] in _UEB_BRACKET:
                 tail = _UEB_BRACKET[core[-2:]] + tail
@@ -2716,11 +2793,23 @@ def _english_line(line: str, *, evidence: bool = True) -> str | None:
             return None
         if _CAPITAL in core[1:] and core[0] != _CAPITAL:
             mid_cap = True           # 낱말 **중간**의 대문자표 — 영어 표기에 거의 없다
-        out.append(head + got[0] + tail)
+        body = _ENG_LETTER_WORD.get(core, got[0])   # 홑 낱자면 단어기호로 편다
+        out.append(head + body + tail)
+        raw.append(head + got[0] + tail)
+        if len(core) > 1 and any(ch.isalpha() for ch in got[0]):
+            # 증거로 셀 낱말 — 한 칸짜리 단어 약자와 **숫자뿐인 토큰**은 뺀다.
+            strong.append(got[0])
     text = " ".join(out)
     if not evidence:                 # 구간표 짝 안쪽 — 표가 곧 증거다(제32항)
         return text
-    funcs = {w.strip(".,;:?!'[]{}").lower() for w in text.split()} & _ENG_FUNCTION
+    # ★ 한 칸짜리 단어 약자만으로 선 줄은 증거가 없다 — 그 자체가 기능어라 아래 요건이
+    #   저절로 채워진다. 수식 표 한 줄 `0<x<1  +  -   -  +` 이
+    #   `0ininxinin1 enough in in enough` 로 뒤집혔다. **여러 칸짜리 낱말 둘**을 요구한다.
+    if len(strong) < 2:
+        return None
+    # ★ 증거는 **펴기 전** 텍스트에서 센다. 낱자 단어기호까지 세면 한글 줄이 뒤집힌다 —
+    #   `에 대한 이해와 감상을 묻는 문제가 출` 이 `not irj: ojrv …` 로 나갔다(실측 5줄).
+    funcs = {w.strip(".,;:?!'[]{}").lower() for w in " ".join(raw).split()} & _ENG_FUNCTION
     if _E.translate(text).replace(" ", _SPACE_CELL) == line:
         # 왕복만으로는 모자란다 — 한글 두 낱말이 뜻 없는 알파벳으로 되짚기까지 통과한다
         # (실측 오탐: `우주 그물로` → `dujya Oiu`, 글상자 테두리 → `forggg…`).
