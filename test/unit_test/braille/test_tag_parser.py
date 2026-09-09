@@ -434,12 +434,32 @@ class TestStep17TrailScope:
 
     def test_글상자_테두리는_근거를_단다(self):
         # 대표 지목 (A) — 이 테두리는 묵자에 없던 것을 우리가 판단해 넣은 것이다(원장 C-01b).
-        from app.ai.braille.layout_braille import LayoutBraille
-
         bo = self._bo("<!상자>보기<!/상자>\n가나다\n<!상자끝><!/상자끝>")
-        LayoutBraille()._expand_box_borders(bo)
         borders = [r for r in bo.rule_trail if r.rule_id == "NLD-1.2.5"]
         assert [r.tag for r in borders] == ["box_top·1단계·제목있음", "box_bottom·1단계"]
         for r in borders:                       # 좌표가 실제 테두리 줄을 가리킨다
-            assert set(bo.braille_lines[r.line_no][r.col_start:r.col_end]) <= set("⠿⠛⠶⠀") or True
             assert bo.braille_lines[r.line_no].startswith("⠿")
+            assert r.col_end - r.col_start == len(bo.braille_lines[r.line_no])
+
+    def test_테두리_근거가_응답_좌표계까지_살아온다(self):
+        """★ 이 갈래의 핵심 — `flatten_elements` 는 layout **앞**에서 돈다.
+
+        종전에는 근거를 `layout._expand_box_borders` 가 냈다. 응답(`braille_text_list.
+        rule_trail`)은 flatten 이 굳힌 좌표를 쓰므로 그 근거가 **한 건도 안 실렸다**.
+        `_expand_box_borders` 를 직접 부르는 테스트만 있어 이 어긋남이 안 보였다.
+        """
+        from app.ai.braille.layout_braille import flatten_elements
+
+        bo = self._bo("<!상자>보기<!/상자>\n가나다\n<!상자끝><!/상자끝>")
+        flat = flatten_elements([bo], None)[bo.element_id]
+        borders = [r for r in flat.trail if r.rule_id == "NLD-1.2.5"]
+        assert [r.tag for r in borders] == ["box_top·1단계·제목있음", "box_bottom·1단계"]
+        for r in borders:                       # 통 문자열 오프셋이 테두리 줄을 가리킨다
+            assert flat.text[r.col_start:r.col_end].startswith("⠿")
+            assert flat.text[r.col_start:r.col_end].endswith("⠿")
+
+    def test_밑줄_빈칸도_제73항_근거를_단다(self):
+        # 원장 C-05. 표 빈칸·네모 빈칸만 근거가 있고 밑줄 빈칸(⠸⠤)만 0건이었다.
+        trail = self._bo("이것은 <!밑줄> 이다.").rule_trail
+        blanks = [r for r in trail if r.rule_id == "MCST-한글-6.14.73"]
+        assert blanks and blanks[0].tag == "blank_rule"

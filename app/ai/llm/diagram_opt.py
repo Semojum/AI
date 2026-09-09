@@ -45,6 +45,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Optional
 
@@ -137,6 +138,41 @@ _BOTTOMUP_INDENT = 2      # §6.6.4(3)② 상향식 가계도 항목 3칸
 _TIMELINE_YEAR = 4        # §6.6.6(4) 동일 연도 연도줄 5칸
 _TIMELINE_EVENT = 2       # §6.6.6(4) 동일 연도 사건줄 3칸
 _FLOW_ARROW = "→"         # §6.6.2(4)⑥ 반직선 `3o`(⠒⠕) — symbol_table 화살표 항목이 점역
+
+# 흐름도 관행형(option 10)을 접을 수 있는 **한 줄 길이 상한**(점자 칸). 대표 결재 2026-09-09.
+# 「점자 자료 제작 지침」 §1.3.3 L323 "점자 페이지는 **가로 32칸**, 세로 26줄을 기본 규격으로
+# 설정한다" 가 한 줄이다. 32칸을 넘으면 그 체인은 접힌 것이 아니라 **하드랩으로 잘린 덩어리**라
+# 관행형의 존재 이유(접기)가 사라진다 — 그 자리에서는 §6.6.2(4)③④ 규정형(상자 한 줄에 하나)이
+# 이미 "나눈 안"으로 나란히 서 있으므로 관행형을 안 낸다. 대표 결재 문구 그대로 "길면 나누고
+# 짧으면 접는다".
+# 근거 조항이 하나 더 있다 — 같은 지침 §3.1.1(1)① L1730 "표의 한 행을 점역 형식에 맞춰
+# **32칸 안에 배열할 수 있다면** 표의 정렬 형태대로 점역한다(②③ 아니면 풀어 적는다)".
+# 규정 스스로 "한 줄에 들어가면 압축형, 아니면 푼 형" 이라는 **같은 판단 절차**를 쓴다.
+# 대표가 보신 실물이 길었던 이유는 상자 하나가 47자였기 때문인데, 그 한 상자만으로도
+# 32칸을 넘으므로 이 상한이 그 건을 정확히 걸러 낸다.
+# ⚠ gold 실측(시각 자료 블록 1,166건 중 화살표 든 245건 · 화살표 논리줄 525줄)은 중앙 52칸 ·
+#   32칸 이하 24.0% 다. 즉 **점역사도 긴 체인을 쓴다** — 그래서 이 상한은 "관행이 틀렸다"는
+#   뜻이 아니라 "우리가 자동으로 접어 줄 자리를 한 줄짜리로 한정한다"는 뜻이다. 되돌리거나
+#   느슨하게 하려면 `FLOW_CHAIN_MAX_CELLS`(0 = 상한 없음). 스위치 대장 등재.
+_CHAIN_MAX_CELLS_DEFAULT = 32
+
+
+def _chain_max_cells() -> int:
+    """관행형 체인 한 줄 상한(칸). 호출 시 읽는다 — 대표가 실행 중에 뒤집을 수 있어야 한다."""
+    raw = (os.environ.get("FLOW_CHAIN_MAX_CELLS") or "").strip()
+    return int(raw) if raw.isdigit() else _CHAIN_MAX_CELLS_DEFAULT
+
+
+def _cells(text: str) -> int:
+    """묵자 한 줄 → 점자 칸 수. **시각 요소 공용 진입점**으로 잰다.
+
+    ⚠ `translate_plain` 은 `force_roman=True` 인 꼬리말 전용 경로라 제품과 다른 답을 낸다
+      (2026-09-07 채점기가 같은 함정을 밟았다). 시각 자료는 `translate_visual` 이다.
+    ⚠ import 는 함수 안에서 한다 — `translator` 가 이 모듈을 거쳐 들어오는 순환을 만들지 않는다.
+    """
+    from app.ai.braille.translator import translate_visual
+    lines, _ = translate_visual(text)
+    return max((len(l) for l in lines), default=0)
 _BOX_TOP = "<!상자><!/상자>"      # 글상자 위 테두리(빈 제목 쌍) — layout 재렌더
 _BOX_BOTTOM = "<!상자끝><!/상자끝>"  # 글상자 아래 테두리
 _TYPE_LABEL = {
@@ -652,10 +688,21 @@ def assemble_flowchart_chain(structure: dict) -> tuple[str, list[int]]:
 
 
 def _flow_chain_alt(subtype: str, structure: dict) -> Optional[Draft]:
-    """흐름도 관행형 안. 상자가 둘 이상일 때만 낸다(하나면 체인이 아니다)."""
+    """흐름도 관행형 안. 상자가 둘 이상이고 **체인이 한 줄에 접힐 때만** 낸다.
+
+    상자가 하나면 체인이 아니고, 체인 줄이 `_chain_max_cells()` 칸을 넘으면 접힌 것이
+    아니라 하드랩으로 잘린 덩어리다(대표 결재 2026-09-09 "길면 나누고 짧으면 접는다").
+    그 자리에서는 규정형(§6.6.2(4)③④)이 이미 "나눈 안"으로 나란히 서 있다.
+    """
     if subtype != "flowchart" or len(structure.get("boxes") or []) < 2:
         return None
     text, indents = assemble_flowchart_chain(structure)
+    # 체인 줄만 잰다 — 머리줄·갈래줄은 규정형에도 그대로 있어 상한의 대상이 아니다.
+    cap = _chain_max_cells()
+    chain_lines = [ln for ln, ind in zip(text.split("\n"), indents)
+                   if ind == 0 and _FLOW_ARROW in ln]
+    if cap and chain_lines and max(_cells(ln) for ln in chain_lines) > cap:
+        return None
     return Draft(option=FLOW_CHAIN_OPTION,
                  text=_TN.apply_indent_tags(text, indents),
                  render_mode="narrative", label=FLOW_CHAIN_LABEL)
@@ -762,6 +809,18 @@ class DiagramOpt(BaseOpt):
             # ⚠ 머리가 유형 제시어 한 줄뿐이면 안 낸다 — `그림:` 만 남아 고를 값이 없다.
             h_lines, h_ind = _head_lines(structure)
             if len(skeleton_indents) > len(h_ind) and h_lines != [_TYPE_NOTE_LINE]:
+                # ★ 2026-09-10(#793 · 원장 C-120) — 유형 제시어 줄의 **쌍점이 허공에 매달려 있었다.**
+                #   조항이 명확한 자리다 — 「점자 도서 제작 지침」 제3장 제2절 4)(1) L2367-2369
+                #   "제목의 다음 줄 3칸에서 시작하여 점역자 주표 ,' ,' 안에 '시각 자료 유형'을
+                #   적고, **쌍점과 원본 자료의 내용을 이어 적는다**". 쌍점 뒤가 비면 조항 위반이다.
+                #   골격에서는 `그림:` 뒤에 항목 줄이 따라오는데 간추린 안은 그 항목을
+                #   버리므로 `신경 경로 / 그림:` 로 끝난다 — 유형 이름표일 뿐 설명이 아니다.
+                #   실측(캡션 캐시 3,244건 재생): 도표 간추린 475건 중 **442건(93.1%)**.
+                #   제목을 그 줄로 끌어와 §6.1.4(4) '전체 윤곽' 한 줄로 만든다 —
+                #   `_head_lines` 의 요약 갈래(예6-1·예3-25)와 같은 꼴이라 새 형식이 아니다.
+                if len(h_lines) == 2 and h_lines[1] == _TYPE_NOTE_LINE:
+                    h_lines = [f"{_TYPE_NOTE_LINE} {h_lines[0]}"]
+                    h_ind = [_TYPE_NOTE_INDENT]
                 drafts.append(Draft(
                     option=GIST_OPTION, label=GIST_LABEL, render_mode="narrative",
                     text=_TN.apply_indent_tags("\n".join(h_lines), h_ind)))

@@ -10,6 +10,9 @@
   option 6  별책 참조 : `,'그림 20-4 참조,'` — 시각 자료를 별책으로 뺐을 때. 무-LLM.
   option 7  줄글 설명 : 형식이 실제로 갈리는 유형(만화·도표)에서만 붙는다.
   option 8  가계도(상향식) · option 10  흐름도(화살표) — 방식이 둘로 갈리는 유형.
+  option 11 간추린 설명 · option 12 자세한 설명 — **분량**이 갈리는 세 단(대표 결재
+            2026-09-09). 같은 재료에서 **덜어 내기만** 한다: 12=재료 전부 · 2=머리줄+부분 ·
+            11=머리줄. 가르는 자는 캡션 줄의 들여쓰기다(§6.1.4(4) 윤곽→부분→세부).
 
   ⚠ **피커 순서는 생략이 첫째다**(`drafts = [d_omit, d_desc, …]`). 그런데 gold 실측은
     설명 79.6% · 생략 12.2% · 참조 8.0% 다. **가장 많이 쓰는 안이 둘째에 선다.**
@@ -178,6 +181,31 @@ FLOW_CHAIN_LABEL = "흐름도(화살표)"
 #   기본으로 앞세울 근거는 여기에 없다.
 GIST_OPTION = 11
 GIST_LABEL = "간추린 설명"
+
+# 자세한 설명 — 캡션 재료를 **하나도 안 덜고 전부** 실은 안. 대표 결재 2026-09-09.
+#
+# 세 단은 **빼기로만** 만든다. 그래서 지어내는 자리가 구조적으로 없다:
+#
+#     캡션(재료) ─┬─ [12] 자세한 설명  재료 전부(머리줄 + 부분 + 부분의 세부)
+#                 ├─ [ 2] 설명        머리줄 + 부분          ← 기본 선택(그대로)
+#                 └─ [11] 간추린 설명  머리줄만
+#
+# '부분' 과 '부분의 세부' 를 가르는 자는 **캡션 줄의 들여쓰기**다(`caption_outline` 이
+# `들여쓴 칸 // 2` 로 level 을 매긴다). 임의로 자르지 않는다 — 조항이 그렇게 나눈다:
+# 「점자 자료 제작 지침」 §6.1.4(4) L3011-3012 "단계적 접근: 시각 자료의 **전체 윤곽**을
+# 포괄적으로 설명한 다음 **부분을 나누어 단계적으로** 설명한다". 윤곽=머리줄, 부분=level 0,
+# 그 부분의 세부=level 1+. [2] 가 부분에서 멈추는 근거는 같은 조 (2) L3009 "핵심 내용 전달:
+# 시각 자료의 **핵심 내용에 초점**을 맞추어 설명한다" 와 (1) L3008 "가능한 적은 수의 단어" 다.
+#
+# ★ 2026-09-07 에 `설명(자세히)`(option 7)을 만들었다가 없앤 전례가 있다. 그때는 LLM 에게
+#   **더 쓰라**고 시켜서 이름과 내용이 거꾸로 됐다('설명' 4줄 vs '자세히' 1줄, 그마저 캡션에
+#   없는 말). 이번은 반대 방향이다 — **재료를 더 관측하게 하고 초안은 덜기만 한다.**
+#   [12] 의 모든 글자는 캡션에 이미 있던 글자다. 늘어난 재료가 틀릴 위험은 캡셔너 축에서
+#   `#665` 하네스로 따로 잰다.
+# ⚠ 이 안은 **재료에 세부 줄이 실제로 있을 때만** 선다(`len(detail_indents) > len(indents)`).
+#   없으면 [2] 와 같은 글이라 피커에 같은 줄이 두 번 서게 된다.
+DETAIL_OPTION = 12
+DETAIL_LABEL = "자세한 설명"
 
 
 def omit_label(type_label: str) -> str:
@@ -724,6 +752,21 @@ def gist_draft(
 
 
 
+def detail_draft(
+    label: str, title: str, desc: str, items: list[tuple[int, str]], kind: str = "",
+    body_texts: list[str] | None = None,
+) -> tuple[Draft, list[int]]:
+    """자세한 설명 안 — 설명 안에 **부분의 세부(level 1+)까지 되돌린 것**. 반환 (Draft, indents).
+
+    `desc_draft` 와 **같은 함수를 같은 인자로** 부르고 items 만 안 거른다. 그래서 이 안의
+    모든 글자는 캡션이 이미 준 글자다 — `gist_draft` 와 같은 안전장치다(대표 지시
+    2026-09-07 "재료는 많이 뽑고 그 후에 간추려야지. 환각 현상이 제일 위험한 거야").
+    """
+    text, indents = _outline_text_indents(label, title, desc, items, kind, body_texts)
+    return Draft(option=DETAIL_OPTION, text=_TAGS.apply_indent_tags(text, indents),
+                 render_mode="narrative", label=DETAIL_LABEL), indents
+
+
 def _dedupe(drafts: list[Draft], selected_idx: int) -> tuple[list[Draft], int]:
     """문구가 똑같아진 안을 접는다. 반환 (남은 안, 옮겨진 selected_idx).
 
@@ -922,7 +965,25 @@ async def build_visual_drafts(
     # `base_opt._mark_body_texts_in_visuals` 가 **요소마다 자기 것만** 담아 둔 값이다
     # (공유 상태를 안 만든다 — `asyncio.gather` 로 여러 쪽이 겹쳐도 오염이 없다).
     _body = (getattr(ext, "structure", None) or {}).get("_body_texts")
-    d_desc, indents = desc_draft(label, title, outline_desc, outline_items, kind, _body)
+    # ★ 2026-09-09 — **핵심 항목(level 0)과 그 세부(level 1+)를 가른다**(대표 결재).
+    #   기본 안 [2] 는 §6.1.4(4) 의 '부분' 까지만 싣고, 그 아래 세부는 [12] 자세한 설명이
+    #   진다. 가르는 자는 캡션 줄의 들여쓰기 하나뿐이다(`caption_outline` 의 level).
+    #   ⚠ 오늘 캡션 캐시 3,242건 중 들여쓴 줄을 가진 것은 8건뿐이라 이 갈래는 **캡셔너가
+    #     세부 줄을 내기 시작하기 전까지 사실상 무동작**이다 — [2] 의 글은 안 움직인다.
+    # ⚠ **캡션 줄에서 만든 항목일 때만 가른다.** `struct_outline` 을 호출부가 직접 줄 때
+    #   (차트 `data_points`·만화 대사 등)의 level 은 §6.4·§5.3 이 정한 **전사 위계**지
+    #   '세부' 표시가 아니다 — 거기서 level 1 을 걷어 내면 `2020: 980권` 같은 값 줄이
+    #   기본 안에서 통째로 사라진다(단위 테스트 `test_개조식_데이터_전사` 가 잡았다).
+    cap_derived = cap_head is not None
+    core_items = ([(lv, t) for lv, t in outline_items if lv <= 0]
+                  if cap_derived else outline_items)
+    # ⚠ 캡셔너가 **본문을 전부 들여쓰면** 핵심이 0줄이 되어 기본 안이 머리줄 하나로 쪼그라든다
+    #   (62건 표본에서 1건 실측 — `그림: 염색체 쌍 세 개…` 밑 석 줄이 전부 들여쓴 줄이었다).
+    #   그때는 들여쓰기가 '세부' 표시가 아니라 **목록 장식**이라 본다 — 안 거른다.
+    #   결과로 `core_items == outline_items` 가 되어 자세한 설명 안도 안 선다(같은 글).
+    if not core_items:
+        core_items = outline_items
+    d_desc, indents = desc_draft(label, title, outline_desc, core_items, kind, _body)
     drafts = [d_omit, d_desc, *extra_drafts(label)]
     # 줄글 안은 **뒤에** 붙인다 — 앞 셋의 option 번호·순번이 BE·FE 계약이다.
     # ★ 재료가 **진짜 줄글일 때만** 붙인다. 옛 `prose` 폴백 사슬(caption·title·struct_text)은
@@ -954,7 +1015,7 @@ async def build_visual_drafts(
     #   ⚠ 항목은 `prose_join` 이 **한 항목 한 문장**으로 잇는다(§6.1.4(7)). 종전 `, ` 이음은
     #     마침표 뒤에 쉼표가 오고 캡션 번호(`①`)가 문장 가운데 남아 문장이 아니었다.
     _joined = prose_join([_strip_dup_type(outline_desc, label),
-                          *(t for _lv, t in outline_items)])
+                          *(t for _lv, t in core_items)])
     real_prose = struct_prose or (f"{label}: {_joined}" if _joined else "")
     if prose_label(kind) != desc_label(kind):
         d_prose = prose_draft(real_prose, kind)
@@ -968,6 +1029,13 @@ async def build_visual_drafts(
     # ⚠ 머리줄이 **유형 낱말 하나뿐**이면 내지 않는다. 캡션이 `도표: 흐름도` 처럼 유형만
     #   두 번 말하면 `_strip_dup_type` 이 뒤 낱말을 떼어 머리줄이 `도표` 만 남는다 —
     #   그 한 줄은 설명이 아니라 이름표라 고를 값이 없다(캡션 캐시 실측으로 확인).
+    # 자세한 설명 — **세부 줄이 실제로 있을 때만** 붙인다(줄이 안 늘면 [2]와 같은 글이다).
+    if len(core_items) < len(outline_items):
+        d_detail, det_indents = detail_draft(label, title, outline_desc, outline_items,
+                                             kind, _body)
+        if len(det_indents) > len(indents):
+            drafts.append(d_detail)
+
     d_gist, gist_indents = gist_draft(label, title, outline_desc, kind, _body)
     _gist_body = " ".join(_TAG_STRIP_RE.sub("", d_gist.text).split())
     if len(indents) > len(gist_indents) and _gist_body not in ("", label):

@@ -222,6 +222,25 @@ class TestLabelAndSceneRules:
         from app.ai.captioning.captioner import _PROMPTS
         assert "이름 없는 항목만 번호로 부릅니다" in _PROMPTS["diagram"]
 
+    def test_도표_위계_표지를_요구한다(self):
+        """#796 — 층이 둘이어도 위계를 지우지 않는다(§6.6.1(3)①·§6.6.2(4)⑤⑥·§6.6.4(2)②).
+
+        종전 문안 "층이 둘이면 '윗 항목' 한 줄, '아래 항목들' 한 줄로 끝냅니다" 가
+        하류(`diagram_structure.caption_outline`)에 전건 level 0 을 주고 §6.6 골격
+        여덟을 전부 같은 칸에 세웠다. 실측(캡션 캐시 3,242건): 골격이 선 699건 중
+        위계 2단계 이상 106건(15.2%) · 개념도 408건 중 33건(8.1%) · 흐름도 153건 중
+        분기 0건. 문안이 되돌아가면 조용히 다시 평면이 된다.
+        """
+        from app.ai.captioning.captioner import _PROMPTS
+        d = _PROMPTS["diagram"]
+        assert "층이 둘뿐이어도 위계를 지우지 마세요" in d        # §6.6.1(3)①
+        assert "층이 셋 이상일 때만" not in d                     # 되돌림 가드
+        assert "언제나 두 칸 들여쓰기로도 함께" in d               # 하류가 읽는 표지
+        assert "갈림(예·아니요 따위)이 있는 흐름도" in d           # §6.6.2(4)⑤⑥
+        assert "줄머리에 '1세대'·'2세대'" in d                     # §6.6.4(2)②
+        # 층을 **만들어 내라는** 말이 아니다 — 되풀이해 밟은 실패(1차안·4차안)의 방어.
+        assert "층이 그림에 안 보이면 들여쓰지 마세요" in d
+
     @pytest.mark.parametrize("answer", [
         "학교에 다니고 있다", "화가가 된다", "큐레이터",            # 예3-24 (5쪽)
         "석가 상", "왕관을 씌워", "율령을 반포", "칼을 들고",        # 예6-7 (4쪽)
