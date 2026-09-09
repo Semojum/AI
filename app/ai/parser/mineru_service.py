@@ -180,7 +180,11 @@ _last_restart = 0.0
 _MAX_RESTARTS = int(os.environ.get("MINERU_MAX_RESTARTS", "3"))
 _RESTART_COOLDOWN = float(os.environ.get("MINERU_RESTART_COOLDOWN", "60"))
 # 재기동은 기동보다 짧게 기다린다 — 쪽 예산이 180초라 여기서 다 쓰면 안 된다.
-# 실측 기동 중앙 26.6초(75회)라 120초면 넉넉하다.
+# 실측 기동 중앙 26.6초(75회)라 이미 떠 있던 모델을 다시 무는 재기동에는 120초면 넉넉하다.
+# ★ 다만 **콜드 기동(vLLM preload)은 실측 226초**라 이 상한으로는 못 채운다(2026-09-10).
+#   그 경우는 여기서 되살리기를 포기하고 CLI 로 떨어지는데, CLI 는 쪽마다 엔진을 새로 띄워
+#   추출이 180초를 넘겨 PAGE_TIMEOUT_SECONDS 에 걸린다 — 전 쪽 C7 BLOCKED 가 된다.
+#   전량 배치를 돌릴 때는 mineru-api 를 **미리 띄우고** MINERU_API_URL 로 붙여라.
 _RESTART_WAIT = float(os.environ.get("MINERU_RESTART_WAIT", "120"))
 
 
@@ -244,7 +248,7 @@ def _warn_if_unsafe_reuse(url: str) -> None:
             "그 쪽은 표·그림을 잃는다. 이 서버를 내리고 vLLM env로 다시 띄우는 것이 정답이다.", n)
 
 
-def ensure_started(wait: float = 240.0) -> str | None:
+def ensure_started(wait: float = 600.0) -> str | None:
     """영구 mineru-api를 보장(외부 URL 사용 또는 자동 기동). 사용 URL 반환, 실패 시 None."""
     global _proc, _pgid, _url
 
