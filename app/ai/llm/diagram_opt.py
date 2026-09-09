@@ -809,6 +809,18 @@ class DiagramOpt(BaseOpt):
             # ⚠ 머리가 유형 제시어 한 줄뿐이면 안 낸다 — `그림:` 만 남아 고를 값이 없다.
             h_lines, h_ind = _head_lines(structure)
             if len(skeleton_indents) > len(h_ind) and h_lines != [_TYPE_NOTE_LINE]:
+                # ★ 2026-09-10(#793 · 원장 C-120) — 유형 제시어 줄의 **쌍점이 허공에 매달려 있었다.**
+                #   조항이 명확한 자리다 — 「점자 도서 제작 지침」 제3장 제2절 4)(1) L2367-2369
+                #   "제목의 다음 줄 3칸에서 시작하여 점역자 주표 ,' ,' 안에 '시각 자료 유형'을
+                #   적고, **쌍점과 원본 자료의 내용을 이어 적는다**". 쌍점 뒤가 비면 조항 위반이다.
+                #   골격에서는 `그림:` 뒤에 항목 줄이 따라오는데 간추린 안은 그 항목을
+                #   버리므로 `신경 경로 / 그림:` 로 끝난다 — 유형 이름표일 뿐 설명이 아니다.
+                #   실측(캡션 캐시 3,244건 재생): 도표 간추린 475건 중 **442건(93.1%)**.
+                #   제목을 그 줄로 끌어와 §6.1.4(4) '전체 윤곽' 한 줄로 만든다 —
+                #   `_head_lines` 의 요약 갈래(예6-1·예3-25)와 같은 꼴이라 새 형식이 아니다.
+                if len(h_lines) == 2 and h_lines[1] == _TYPE_NOTE_LINE:
+                    h_lines = [f"{_TYPE_NOTE_LINE} {h_lines[0]}"]
+                    h_ind = [_TYPE_NOTE_INDENT]
                 drafts.append(Draft(
                     option=GIST_OPTION, label=GIST_LABEL, render_mode="narrative",
                     text=_TN.apply_indent_tags("\n".join(h_lines), h_ind)))
