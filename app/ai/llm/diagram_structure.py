@@ -139,6 +139,8 @@ _DATE_RE = re.compile(r"^((?:기원전\s*)?\d{1,4}\s*(?:년|년대|세기)?(?:\s
 _INLINE_TL = re.compile(r"(?:^|[,;.]\s*)((?:기원전\s*)?\d{3,4}\s*년?)\s+([^,;\n]{2,40})")
 
 _MAX_LINES = 40   # 폭주 방어 — 캡션이 이보다 길면 골격이 아니라 줄글이다
+# 분기 줄 '예 → 3번 상자' 의 가름표. 캡셔너 diagram 프롬프트가 쓰라고 한 그 화살표다.
+_BRANCH_ARROW = "→"
 
 
 def _event(text: str) -> dict:
@@ -320,8 +322,22 @@ def structure_from_caption(caption: str, subtype: str = "") -> dict | None:
         # 상향식 표기(§6.6.4(3))는 캡션만으로 방향을 알 수 없다 — 하향식 기본.
         return {**base, "mode": "top_down", "nodes": _nest(_generation_levels(items))}
     if subtype == "flowchart":
-        # §6.6.2(4)①④ 논리 순서 번호 + 상자 한 줄에 하나. 분기(⑤⑥)는 캡션에 없어 생략.
-        return {**base, "boxes": [{"no": i, "text": t} for i, (_lv, t) in enumerate(items, 1)]}
+        # §6.6.2(4)①④ 논리 순서 번호 + 상자 한 줄에 하나.
+        # ★ 2026-09-10(#796) — **들여쓴 줄은 분기 선택사항이다**(§6.6.2(4)⑤⑥, 재추출
+        #   L3572-3574 "분기점에서 선택사항이 있는 경우, 선택사항별로 줄을 바꾸어 … 3칸에
+        #   3o을 적고, 한 칸 띄어 선택사항, 그 후 3o과 목적지"). 정답 예6-19 가 그 꼴이다.
+        #   종전에는 캡션 줄을 전부 상자로 세워 분기 줄(3칸)이 한 번도 안 섰다 —
+        #   실측 캡션 캐시 3,242건 중 흐름도 153건 전부 분기 0개.
+        #   ⚠ 첫 줄이 들여쓰여 있으면(부모 없는 분기) 그냥 상자로 둔다 — 내용을 안 버린다.
+        boxes: list[dict] = []
+        for lv, t in items:
+            if lv and boxes:
+                label, _, to = t.partition(_BRANCH_ARROW)
+                boxes[-1].setdefault("branches", []).append(
+                    {"label": label.strip(), "to": to.strip()})
+            else:
+                boxes.append({"no": len(boxes) + 1, "text": t})
+        return {**base, "boxes": boxes}
     if subtype == "timeline":
         events = [_event(t) for _lv, t in items]
         if sum(1 for e in events if e["date"]) < 2:
@@ -365,6 +381,21 @@ def demo() -> None:
     cap2 = "도표: 정자 형성 과정 흐름도\n감수 1분열\n감수 2분열\n정자 4개"
     st2 = structure_from_caption(cap2)
     assert [b["no"] for b in st2["boxes"]] == [1, 2, 3], st2
+
+    # 들여쓴 줄 = 분기 선택사항(§6.6.2(4)⑤⑥, #796). 상자 번호는 갈림을 안 센다.
+    cap2b = ("도표: A와 B를 가르는 흐름도\n"
+             "직관적 통찰로 해석하는가?\n"
+             "  예 → A\n"
+             "  아니요 → B\n"
+             "(나)")
+    st2b = structure_from_caption(cap2b)
+    assert [b["no"] for b in st2b["boxes"]] == [1, 2], st2b
+    assert st2b["boxes"][0]["branches"] == [{"label": "예", "to": "A"},
+                                            {"label": "아니요", "to": "B"}], st2b
+    assert "branches" not in st2b["boxes"][1], st2b
+    # 화살표가 없는 분기 줄은 선택사항만 남긴다(목적지 없음) — 내용을 안 버린다.
+    st2c = structure_from_caption("도표: 흐름도\n질문\n  예\n결과")
+    assert st2c["boxes"][0]["branches"] == [{"label": "예", "to": ""}], st2c
 
     cap3 = "도표: 독립운동 연표\n1919년 3·1 운동\n1920년 청산리 대첩"
     st3 = structure_from_caption(cap3)
