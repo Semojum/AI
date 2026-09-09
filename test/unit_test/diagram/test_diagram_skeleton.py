@@ -285,23 +285,42 @@ class TestFlowChainAlt:
 
 
 class TestSummaryHeadLine:
-    """요약 머리줄은 원본 제목 자리가 아니라 유형 제시어 뒤 같은 줄이다(#794).
+    """제목 자리(5칸·주표 밖)에는 **원본에서 관측된 제목만** 앉는다(#794).
 
-    「점자 자료 제작 지침」 §6.1.4(4) L3011-3012 · 예6-1 · 도서지침 예3-25.
-    규정 시각자료 예시 전수 25건 중 유형어 줄 **앞 별도 줄**에 요약을 둔 것은 0건이다.
+    「점자 자료 제작 지침」 §6.3.3(1) L3168 "시각 자료의 제목은 **원본 자료의** 위치와
+    상관없이 … 윗줄 5칸에 적는다" · §6.3.4(2)① L3177-3179 "**제목이 없는** 시각 자료를
+    설명하거나 생략할 경우 점역자 주표 안에 '시각 자료 유형: 추가 설명문'을 적고".
+    규정 예시 전수 25건에도 유형어 줄 앞 별도 줄에 설명을 둔 것은 0건이다.
+
+    ★ 2026-09-10 — 판정 기준이 **문장 꼴**(종결어미+마침표)에서 **출처**로 바뀌었다.
+      캡션 첫 줄이 명사구면 LLM 이 지은 말이 제목 자리에 그대로 앉았다(실측 67건 중 51건).
     """
 
-    def test_요약_문장은_유형어_뒤_같은_줄(self):
+    def test_캡션에서_만든_제목은_유형어_뒤_같은_줄(self):
+        """`structure_from_caption` 이 만든 title = 캡션 첫 줄 = 점역자가 쓴 글."""
+        from app.ai.llm.diagram_opt import DiagramOpt, _structure
         from app.ai.llm.diagram_opt import assemble_timeline
-        st = {"subtype": "timeline",
-              "title": "사건과 시기가 순서대로 놓여 있다.",
-              "events": [{"date": "1911년", "text": "신해혁명"}]}
+
+        ext = ExtractedContent(
+            element_id=uuid4(), ocr_confidence=1.0,
+            corrected_text="도표: 주요 사건 연대표\n1911년 신해혁명\n1919년 5·4 운동")
+        st = _structure(ext, "timeline")
+        assert st.get("_llm_title") is True, st
         text, indents = assemble_timeline(st)
         first = text.split("\n")[0]
-        assert first == f"{_TYPE_NOTE} 사건과 시기가 순서대로 놓여 있다.", first
+        assert first.startswith(f"{_TYPE_NOTE} "), first     # §6.3.4(2)①
         assert indents[0] == 2, indents          # 3칸(도서지침 3장 2절 4)(1) L2368)
+        assert DiagramOpt is not None
 
-    def test_원본_제목은_5칸_제목_줄로_남는다(self):
+    def test_명사구_요약도_제목_자리에_안_앉는다(self):
+        """종전 `_is_summary`(종결어미+마침표)가 놓치던 자리 — 실측 51/67건."""
+        from app.ai.llm.diagram_opt import _head_lines
+
+        lines, indents = _head_lines({"title": "고려 중앙 통치 조직도", "_llm_title": True})
+        assert lines == [f"{_TYPE_NOTE} 고려 중앙 통치 조직도"], lines
+        assert indents == [2], indents
+
+    def test_앞단이_준_원본_제목은_5칸_제목_줄로_남는다(self):
         from app.ai.llm.diagram_opt import assemble_flowchart
         st = {"subtype": "flowchart",
               "title": "[심화·보충형 교육과정 운영도]",     # 규정 예3-22 실물
