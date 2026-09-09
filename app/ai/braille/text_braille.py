@@ -11,6 +11,7 @@ from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.translator import (
     _BLANK_TAG_RULE,
     blank_marker_spans,
+    border_marker_spans,
     box_borders_from_source,
     emphasis_marker_spans,
     tn_marker_spans,
@@ -69,6 +70,12 @@ class TextBraille:
         trail += [
             make_rule_at(_BLANK_TAG_RULE, lines, s, e, tag=tag)
             for s, e, tag in blank_marker_spans(joined, opt.corrected_text)
+        ]
+        # 글상자 테두리(NLD-1.2.5 · 원장 C-01b) — 묵자에 없던 것을 우리가 판단해 넣은 자리다.
+        # ★ layout 이 아니라 여기서 낸다: 응답 좌표계(flatten)가 layout 앞에서 굳는다.
+        trail += [
+            make_rule_at("NLD-1.2.5", lines, s, e, tag=tag)
+            for s, e, tag in border_marker_spans(joined, opt.corrected_text)
         ]
         trail += content_rules(opt.corrected_text, lines)
         box_borders = [

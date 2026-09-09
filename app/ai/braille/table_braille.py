@@ -20,6 +20,7 @@ from app.ai.braille.symbol_rules import symbol_rule_spans
 from app.ai.braille.text_braille import content_rules
 from app.ai.braille.translator import translate_tagged_text as _translate
 from app.ai.braille.translator import (
+    border_marker_spans,
     emphasis_marker_spans,
     tn_marker_spans,
     translate_with_breaks,
@@ -55,6 +56,11 @@ def _base_trail(
     trail += [
         make_rule_at("MCST-한글-6.13.56", lines, s, e, tag=tag)
         for s, e, tag in emphasis_marker_spans(joined, source)
+    ]
+    # 글상자 테두리(NLD-1.2.5 · 원장 C-01b) — 시각 요소도 이 경로로 온다(visual_braille).
+    trail += [
+        make_rule_at("NLD-1.2.5", lines, s, e, tag=tag)
+        for s, e, tag in border_marker_spans(joined, source)
     ]
     if content:
         trail += content_rules(source, lines)
