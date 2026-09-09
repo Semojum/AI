@@ -58,7 +58,8 @@ def test_혼합_줄의_구간표_안쪽만_영어로_읽는다():
 def test_줄을_넘는_구간표도_읽는다():
     """EBS-E26-006/p0025 실물 — 구간이 두 줄에 걸친다(32칸 조판)."""
     out = decode("⠀⠀⠼⠚⠙⠀⠑⠕⠦⠨⠯⠀⠰⠟⠀⠴⠸⠶⠩⠁⠅⠑⠎⠀⠥⠀⠞⠕⠀⠮\n⠉⠕⠗⠑⠸⠄⠲")
-    assert "shakes u to the" in out and "core." in out
+    # `⠥` 는 낱자 u 가 아니라 단어기호 `us` 다(eng_braille.WORDSIGNS · 규정 제37항 목록).
+    assert "shakes us to the" in out and "core." in out
     assert "⟨2838⟩" not in out
 
 
