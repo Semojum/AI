@@ -136,7 +136,8 @@ PROMPT_VER = {
     "figure": 1,       # app/ai/parser/figure_detect.py  _ASK
     "order": 1,        # app/ai/parser/llm_order.py      _SYS
     "visual": 1,       # app/ai/llm/visual_drafts.py
-    "opus": 1,         # app/ai/parser/opus_fallback.py
+    "opus": 2,         # app/ai/parser/opus_fallback.py
+                       #   (2: 원문자는 이름표 · 지면 글자 그대로 #812)
     "text": 3,         # app/ai/llm/text_opt.py  (3: 본문 OCR 교정 프롬프트 삭제 #788)
     "formula": 1,      # app/ai/llm/formula_opt.py
     "table": 1,        # app/ai/llm/table_opt.py
@@ -150,7 +151,7 @@ PROMPT_VER = {
 PROMPT_SHA = {
     "caption": "3b81b8beb97e",
     "visual": "3fb25cd311f8",
-    "opus": "41bba1c2b41d",
+    "opus": "8e09bd42c524",
     "text": "baa6a31f4221",
     "formula": "d831be6fa57a",
     "table": "347b251a5e77",

@@ -907,6 +907,19 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
                 r = max(r, covered(a, b))
         return r
 
+    def wrap(k: int, el: dict) -> str:
+        """LLM `formula` 요소를 **본문 요소에 붙일 때는** `$…$` 로 감싼다.
+
+        고급 점역 프롬프트는 독립 수식 줄을 `type=formula` 로 내면서 `$` 를 뺀다. 그 줄이
+        MinerU `text` 요소로 들어가면 감싸는 것이 없어 **LaTeX 소스가 본문 글자 그대로**
+        점역된다(2쪽 [19]·[26]·[29]·[30] 실측). 수식 요소끼리 붙는 자리는 그대로 둔다.
+        """
+        t = guard_llm_text(llm_els[k].get("content") or "", "body").strip()
+        if (llm_els[k].get("type") == "formula" and el.get("type") != "formula"
+                and t and "$" not in t):
+            return f"${t}$"
+        return t
+
     for loose in (False, True):
         for i, el in enumerate(mnr_els):
             if out[i] is not None:
@@ -934,8 +947,8 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
                 j += 1
             if len(acc) < _GRAFT_KEEP * len(a):   # 바꾸면 글자 수가 준다 — 손대지 않는다
                 continue
-            kept = [(k, t) for k in span
-                    if (t := guard_llm_text(llm_els[k].get("content") or "", "body").strip())]
+            kept = [(k, wrap(k, el)) for k in span
+                    if (guard_llm_text(llm_els[k].get("content") or "", "body").strip())]
             if not kept:
                 continue
             txt = "\n".join(t for _, t in kept)

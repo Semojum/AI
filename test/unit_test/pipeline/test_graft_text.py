@@ -262,3 +262,25 @@ def test_딴_요소에_붙은_LLM_줄은_안_나눈다():
     llm = [{"type": "text", "content": "앞의 문장이 여기 있고 뒤의 문장이 저기 있다"}]
     _graft_text(mnr, llm)
     assert mnr[3]["content"] == "뒤의 문장이 저기 있다"      # 원래 글자 그대로
+
+
+def test_수식_요소가_본문에_붙으면_달러로_감싼다():
+    """프롬프트가 독립 수식 줄을 `$` 없이 내므로, 본문에 붙을 때 감싸 줘야 한다.
+
+    안 감싸면 LaTeX 소스가 본문 글자 그대로 점역된다(2쪽 [19]·[26]·[30] 실측).
+    """
+    mnr = [{"type": "text",
+            "content": "사건 B가 일어날 확률을 구하는 것이므로 P(B|A)=P(A∩B)/P(A) 이다.",
+            "bbox": [0, 0, 9, 9]}]
+    llm = [{"type": "text", "content": "사건 B가 일어날 확률을 구하는 것이므로"},
+           {"type": "formula", "content": r"P(B|A)=\frac{P(A\cap B)}{P(A)}\text{이다.}"}]
+    assert _graft_text(mnr, llm) == 1
+    assert mnr[0]["content"].endswith(r"$P(B|A)=\frac{P(A\cap B)}{P(A)}\text{이다.}$")
+
+
+def test_수식끼리_붙는_자리는_달러를_안_넣는다():
+    mnr = [{"type": "formula", "content": r"\int_{0}^{1} f(x) d x = 2 \text{인 경우}",
+            "bbox": [0, 0, 9, 9]}]
+    llm = [{"type": "formula", "content": r"\int_{0}^{1}f(x)dx=2\text{인 경우}"}]
+    assert _graft_text(mnr, llm) == 1
+    assert not mnr[0]["content"].startswith("$")
