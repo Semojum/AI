@@ -792,6 +792,12 @@ def _recover_missing(mnr_els: list[dict], llm_els: list[dict],
         plan.append((pos, bb, txt))
         taken.append(bb)
 
+    return _insert_recovered(mnr_els, plan)
+
+
+def _insert_recovered(mnr_els: list[dict], plan: list[tuple[int, list[int], str]]) -> int:
+    """`(자리, bbox, 글자)` 를 새 요소로 세우고 읽기순서를 다시 매긴다. 회수(`_recover_missing`)와
+    크롭 되묻기(`crop_reask`)가 같이 쓴다."""
     import uuid
     for pos, bb, txt in sorted(plan, key=lambda p: -p[0]):
         src = mnr_els[max(pos - 1, 0)] if mnr_els else {}
@@ -807,10 +813,11 @@ def _recover_missing(mnr_els: list[dict], llm_els: list[dict],
             "caption_ref": None,
             "flags": ["ADVANCED_RECOVERED"],
         })
-    for k, e in enumerate(mnr_els):          # 읽기순서를 새로 매긴다
-        e["reading_order"] = k
-        if "order" in e:
-            e["order"] = k
+    if plan:
+        for k, e in enumerate(mnr_els):          # 읽기순서를 새로 매긴다
+            e["reading_order"] = k
+            if "order" in e:
+                e["order"] = k
     return len(plan)
 
 
@@ -1164,7 +1171,9 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     advanced_why = ""          # 고급 점역이 안 돈 이유. 아래에서 실패로 알린다.
     mnr: tuple[list[dict], int, int, str] | None = None
     if task.advanced_ai:
+        from app.ai.parser import crop_reask as _crop
         from app.ai.parser import opus_fallback as _llm
+        adv_mode = _crop.advanced_mode()
         if not _llm.advanced_available():
             advanced_why = "모델 키가 없다(ANTHROPIC_API_KEY)"
         else:
@@ -1176,17 +1185,31 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                 #   내용을 잘 읽지만 좌표를 못 준다 — 종전에는 이 경로에서 bbox 가 통째로
                 #   (0,0,0,0) 이라 FE 하이라이트가 아예 안 떴다. LLM 은 API·MinerU 는 GPU 라
                 #   서로 안 막으므로 나란히 돌리면 벽시계는 둘 중 긴 쪽이다.
-                llm_job = asyncio.create_task(
-                    asyncio.to_thread(_llm.extract_advanced, str(img))
-                )
+                # ★ crop 모드(`ADVANCED_EXTRACT_MODE=crop`, 2026-09-10 대표 지적 "깨진 거만 배치로")는
+                #   쪽 전체를 안 읽는다 — MinerU 가 먼저 읽고, 깨진 요소만 잘라 되묻는다(아래).
+                #   실측은 `crop_reask` 도크스트링. 기본은 종전대로 `page` 다 — 고급 점역의 정의
+                #   ("지면을 LLM 이 직접 읽는다", 대표 결정 2026-09-08)를 바꾸는 것은 대표 몫이다.
                 mnr_job = asyncio.create_task(_extract_via_models(task, doc_meta))
-                els, used = await llm_job
+                if adv_mode == "crop":
+                    els, used = None, ""
+                else:
+                    els, used = await asyncio.to_thread(_llm.extract_advanced, str(img))
                 try:
                     mnr = await mnr_job
                 except Exception as exc:  # noqa: BLE001 — 좌표가 없을 뿐 내용은 살린다
                     logger.warning("고급 점역 곁의 MinerU 실패(좌표 없이 진행): %s", exc)
                     mnr = None
-                if els:
+                if adv_mode == "crop":
+                    if mnr and mnr[0]:
+                        n = await asyncio.to_thread(_crop.reask_crops, mnr[0], str(img))
+                        if n is None:
+                            advanced_why = "크롭 되묻기가 실패했다"
+                        else:
+                            advanced_used = _llm.ADVANCED_MODEL
+                            logger.info("고급 점역(crop) %d요소 갈아 끼움 (page=%d)", n, task.page_no)
+                    else:
+                        advanced_why = "MinerU 가 지면을 못 읽었다"
+                elif els:
                     advanced_used = used
                     logger.info("고급 점역 추출 채택: %s %d요소 (page=%d)",
                                 used, len(els), task.page_no)
@@ -1211,10 +1234,15 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             #   아니다. 레이아웃·좌표·읽기순서·유형·캡션 연결을 MinerU 것으로 두고
             #   글자만 갈아 끼우면 bbox 가 보통 경로와 **똑같이** 맞는다.
             elements = mnr[0]
-            n = _graft_text(elements, els, img)
+            if els:
+                n = _graft_text(elements, els, img)
+                logger.info("고급 점역 글자 이식 %d/%d 요소 (page=%d)",
+                            n, len(elements), task.page_no)
+                if adv_mode == "both":
+                    # 이식이 못 잡은 자리(원문자·구조·누락)를 크롭으로 한 번 더 — 실측 73 → 82/125.
+                    n = await asyncio.to_thread(_crop.reask_crops, elements, str(img))
+                    logger.info("고급 점역(both) 크롭 되묻기 %s요소 (page=%d)", n, task.page_no)
             image_width, image_height, bbox_space = mnr[1], mnr[2], mnr[3]
-            logger.info("고급 점역 글자 이식 %d/%d 요소 (page=%d)",
-                        n, len(elements), task.page_no)
         else:
             # MinerU 가 없으면 LLM 결과를 그대로 쓴다(좌표 없음). 종전 규약을 따른다.
             elements = els
