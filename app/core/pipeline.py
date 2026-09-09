@@ -1225,6 +1225,12 @@ _REORDER_MODE = os.environ.get("READING_ORDER_MODE", "col")
 # 실측(2026-08-07, dev2027 189 · devall 172 · valall 868쪽, 요소단위 τ. 열 우선 정렬 적용 후):
 #   상한 없음 0.909/0.805/0.826 → ≤3열 0.909/0.908/0.888. 4~8열로 올려도 값이 같다(평탄).
 _MAX_COLS = 3
+# 다리 요소 탐색 상한(요소 수). 탐색이 O(n^3) 이라 큰 쪽에서는 접는다 — 실측 코퍼스
+# 1,131쪽의 최대 요소 수가 62 라 이 상한에 걸려 접히는 쪽은 없다.
+_BRIDGE_MAX_ELEMENTS = 80
+# 참고열로 인정할 '한 덩이' 비율. 추출기 순번에서 최장 연속 토막이 그 열 요소의 이 비율
+# 이상이면 한 단으로 본다(그리고 3개 이상이어야 한다 — 낱개 라벨 보호).
+_SIDE_RUN_SHARE = 0.5
 
 
 def _valid_bbox(b: BBoxItem) -> bool:
@@ -1332,30 +1338,55 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
         return
 
     # 1) x-구간 겹침(좁은 쪽 폭 50% 이상) union-find → 열 클러스터
-    parent = list(range(len(body)))
+    def _components(skip: set[int]) -> list[list[int]]:
+        """`skip` 을 뺀 요소들의 x-겹침 연결성분(요소 위치 목록)."""
+        par = {i: i for i in range(len(body)) if i not in skip}
 
-    def _find(i: int) -> int:
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
+        def find(i: int) -> int:
+            while par[i] != i:
+                par[i] = par[par[i]]
+                i = par[i]
+            return i
 
-    for i, a in enumerate(body):
-        for j in range(i + 1, len(body)):
-            c = body[j]
-            ov = min(a.bbox[2], c.bbox[2]) - max(a.bbox[0], c.bbox[0])
-            w = min(a.bbox[2] - a.bbox[0], c.bbox[2] - c.bbox[0])
-            if w > 0 and ov >= 0.5 * w:
-                parent[_find(i)] = _find(j)
+        ks = list(par)
+        for n, i in enumerate(ks):
+            for j in ks[n + 1:]:
+                a, c = body[i], body[j]
+                ov = min(a.bbox[2], c.bbox[2]) - max(a.bbox[0], c.bbox[0])
+                w = min(a.bbox[2] - a.bbox[0], c.bbox[2] - c.bbox[0])
+                if w > 0 and ov >= 0.5 * w:
+                    par[find(i)] = find(j)
+        out: dict[int, list[int]] = {}
+        for i in ks:
+            out.setdefault(find(i), []).append(i)
+        return list(out.values())
+
+    # 1-a) ★ 두 단을 가로지르는 요소 하나가 쪽 전체를 한 덩이로 붙여 버린다(2026-09-10).
+    #   x-겹침 union 은 전이적이라, 좌측 참고열과 본문에 걸치는 요소가 **하나만** 있어도
+    #   두 단이 한 클러스터로 합쳐지고 참고열 후치(아래 3번)가 통째로 막힌다.
+    #   실물: 세계사 p104 의 강 제목 `르네상스와 종교 개혁`(x 151~609)이 좌측 용어열
+    #   (x 106~283)과 본문(x 318~1071)을 이었다 — 28요소가 클러스터 1개.
+    #   그래서 **빼면 3요소 이상 성분이 둘로 갈리는 요소**를 다리로 보고 클러스터링에서만
+    #   제외한다. 그 요소는 아래 2번의 흡수 규칙으로 본문에 다시 붙으므로 사라지지 않는다.
+    #   비용은 O(n^3) 이라 요소가 적은 쪽에서만, 그리고 **한 덩이로 뭉친 쪽에서만** 찾는다.
+    bridge: set[int] = set()
+    if len(body) <= _BRIDGE_MAX_ELEMENTS and len(_components(set())) == 1:
+        for k in range(len(body)):
+            if sum(1 for c in _components({k}) if len(c) >= 3) >= 2:
+                bridge = {k}
+                break
+
     clusters: dict[int, list[BBoxItem]] = {}
-    for i, b in enumerate(body):
-        clusters.setdefault(_find(i), []).append(b)
+    for comp in _components(bridge):
+        clusters[comp[0]] = [body[i] for i in comp]
+    for k in bridge:                              # 다리는 홀로 둔다(2번에서 흡수된다)
+        clusters[-1 - k] = [body[k]]
 
     # 1-b) ★ 열이 너무 많으면 손대지 않는다. 교재 쪽은 많아야 3단인데 x-겹침 열이 10~30개로
     #   나오는 쪽이 실제로 있다 — 270° 회전 페이지(외국어 영역)와 비정형 글상자 배치다.
     #   그런 쪽에서 기하 정렬을 걸면 읽기순서가 통째로 뒤집힌다(실측 τ 1.00 → −1.00,
     #   valall 47쪽 평균 0.677 → −0.442). 모형이 안 맞는 쪽은 추출기 순서를 믿는다.
-    if len(clusters) > _MAX_COLS:
+    if len(clusters) - len(bridge) > _MAX_COLS:
         # ★ 그런데 그런 쪽의 대부분은 **회전된 지면**이다(실측 58쪽 중 57쪽이 rotation 270°).
         #   보기엔 평범한 1단 쪽인데 PDF 내부 좌표가 누워 있어 x0가 흩어져 열이 10~30개로
         #   잡힌다. 회전각을 알면 규칙으로 바로 세울 수 있다 — 270°에서 표시상의 '위에서
@@ -1411,8 +1442,13 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
         #   주종 관계의 다단), 그 단이 두 토막이어도 단이다 — 한 덩이일 것을 요구할 근거가 없다.
         #   낱개가 본문 사이에 흩어진 열(문항별 포인트 라벨 등, 세계사 p160)은 3 미만
         #   덩이만 나오므로 종전대로 보존된다.
-        contiguous = (best == len(ranks) or (best >= 3 and best >= len(ranks) - 1)
-                      or (len(runs) == 2 and min(runs) >= 3))
+        #   ★ 2026-09-10 — 토막이 **셋 이상**인 쪽도 같은 얼굴이다. 두 토막만 봐주던
+        #   조건이 `runs=[7,1,1]` 같은 쪽에서 다시 막혔다(생물 p018: 좌측 빈칸문제 7개 +
+        #   정답 상자 1개 + 낱개 1개 → 후치 실패, 본문이 통째로 뒤로 밀렸다).
+        #   조항이 요구하는 것은 '참고 자료 단'이지 추출기 순번의 연속성이 아니므로,
+        #   최장 토막이 그 열의 절반 이상이면 한 단으로 본다(_SIDE_RUN_SHARE).
+        contiguous = (best == len(ranks)
+                      or (best >= 3 and best >= _SIDE_RUN_SHARE * len(ranks)))
         narrow = (max(b.bbox[2] for b in cl) - min(b.bbox[0] for b in cl)) \
             <= 0.5 * (hull1 - hull0)
         # ★ 요소 하나짜리 클러스터는 '연속 순번'이 공짜로 참이라 이 조건을 못 거른다.
