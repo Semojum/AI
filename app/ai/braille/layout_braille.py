@@ -68,7 +68,8 @@ _TAG_RE = re.compile(r"<!/?[^>]+>")
 _RULE_HEADING_BLANK = "NLD-2.2.1"  # 단계별 제목 표기, tag=heading_blank
 _RULE_PARA_INDENT = "NLD-2.2.2"    # 문단 형식(새 문단 3칸), tag=indent
 _RULE_BULLET_INDENT = "NLD-2.3.5"  # 글머리 3칸, tag=indent
-_RULE_BOX_BORDER = "NLD-1.2.5"     # 글상자 테두리(Step17 emit), tag=box_top/box_bottom·N단계
+_RULE_BOX_BORDER = "NLD-1.2.5"     # 글상자 테두리. emit 은 translator.border_marker_spans,
+                                   # 여기서는 재렌더한 줄로 좌표만 옮긴다(_expand_box_borders)
 
 # ── MCST 제72항 글머리 기호: 숨김표 글리프(_..l, 꼬리 ⠇) → 글머리형(_.., 꼬리 없음) ──
 # ○□△가 list_item 글머리로 쓰이면 숨김표(제49항)가 아니라 글머리형(제72항)이어야 한다.
@@ -770,13 +771,13 @@ class LayoutBraille:
         translator가 남긴 32칸 테두리 줄을 위계·제목 배치로 다시 그리고(NLD-1.2.5),
         글상자 위아래에 빈 줄을 넣는다(1.2.5(5)). box_borders 없으면 변경 없음.
 
-        ★ Step17(2026-08-08) — 그린 테두리마다 근거를 남긴다(NLD-1.2.5, tag=box_top/box_bottom).
-          여기가 대표가 지목한 "레이아웃 관련 점자 기호를 왜 그걸 골랐는지"의 핵심이다.
-          이 테두리는 묵자에 점자 기호로 적혀 있던 것이 아니라 **우리가 판단해서 넣은 것**이다
-          — LLM 태깅(`text_opt._TAG_PROMPT`)이나 `pdf_analyzer`의 벡터 사각형 검출이 "이건
-          글상자다"라고 결정한 결과다. 게다가 원장 C-01a·C-01b는 이 항목을 "규정 모호 →
-          관행 채택"으로 분류해 점역사 자문 대상으로 올려 뒀다((A)이자 (B)).
-          실측(dev 400쪽): 위 테두리 520개·아래 522개가 rule_trail **0건**으로 나갔다.
+        ★ 테두리 근거(NLD-1.2.5)는 **여기서 안 만든다**(2026-09-10 정정).
+          Step17(2026-08-08)이 여기서 `border_trail` 을 붙였으나, 응답에 실리는 좌표계는
+          `flatten_elements` 가 **layout 앞에서** 굳혀 버린다(`pipeline.py` "★ 순서 주의:
+          flatten이 먼저다"). 그래서 그 근거는 응답에 한 건도 안 나갔다 —
+          단위 테스트가 이 메서드를 직접 불러 검증한 탓에 어긋남이 안 보였다.
+          이제 `translator.border_marker_spans` 가 **점역 시점에** 낸다. 여기서는 다시 그린
+          테두리 줄로 **좌표만 옮긴다**(`border_map`).
         """
         if not bo.box_borders:
             return
@@ -785,8 +786,11 @@ class LayoutBraille:
         si = 0
         new_lines: list[str] = []
         new_breaks: list[list[int]] = []   # new_lines와 1:1 (삽입 줄은 [])
-        index_map: dict[int, int] = {}  # 옛 줄 인덱스 → 새 줄 인덱스(내용 줄만)
-        border_trail: list[RuleApplication] = []
+        index_map: dict[int, int] = {}   # 옛 줄 인덱스 → 새 줄 인덱스(내용 줄만)
+        # 테두리 줄은 따로 담는다 — 점역 시점에 붙은 테두리 근거(NLD-1.2.5)가 다시 그린
+        # 줄을 가리켜야 한다. `index_map` 에 섞으면 아래 들여쓰기 재매핑이 테두리 줄에도
+        # 들여쓰기를 씌워 32칸이 깨진다(테두리는 layout 이 폭을 소유한다).
+        border_map: dict[int, int] = {}
         for old_idx, ln in enumerate(bo.braille_lines):
             if si < len(specs) and _is_border_line(ln):
                 spec = specs[si]
@@ -795,12 +799,13 @@ class LayoutBraille:
                     if not tight:
                         new_lines.append("")  # 위 한 줄 띔 (§2.1.6(5))
                     top = self._render_box_top(spec.level, spec.title)
-                    border_trail.append(self._border_rule(spec, len(new_lines), top[0]))
+                    # 캡 줄은 top 의 마지막 — 케이스①은 앞에 제목 줄이 붙는다.
+                    border_map[old_idx] = len(new_lines) + len(top) - 1
                     new_lines.extend(top)
                     new_breaks.extend([[]] * ((0 if tight else 1) + len(top)))
                 else:
                     bottom = self._render_box_bottom(spec.level)
-                    border_trail.append(self._border_rule(spec, len(new_lines), bottom))
+                    border_map[old_idx] = len(new_lines)
                     new_lines.append(bottom)
                     new_breaks.append([])
                     if not tight:
@@ -821,23 +826,14 @@ class LayoutBraille:
         bo.break_points = new_breaks
         # 빈 줄·테두리 삽입으로 내용 줄이 밀렸으므로 rule_trail 요소-로컬 line_no 재매핑.
         for r in bo.rule_trail:
-            if r.line_no >= 0 and r.line_no in index_map:
+            if r.line_no < 0:
+                continue
+            if r.line_no in border_map:
+                # 위계 캡이 바뀌면(2·3단계) 점형이 달라지므로 col 범위를 새 줄로 맞춘다.
+                r.line_no = border_map[r.line_no]
+                r.col_start, r.col_end = 0, len(new_lines[r.line_no])
+            elif r.line_no in index_map:
                 r.line_no = index_map[r.line_no]
-        bo.rule_trail += border_trail   # 테두리 좌표는 이미 새 프레임 기준이라 재매핑 뒤에 붙인다
-
-    @staticmethod
-    def _border_rule(spec: "BoxBorder", line_no: int, line: str) -> RuleApplication:
-        """그린 글상자 테두리 한 줄 → NLD-1.2.5 근거(요소-로컬 좌표).
-
-        tag에 위치(위/아래)·위계·제목 유무를 담는다 — 점역사가 "왜 여기에 상자를 쳤고
-        왜 이 단계 캡을 썼는지"를 판단하는 데 필요한 정보이자, 원장 C-01a/C-01b 자문 항목이다.
-        """
-        kind = "box_top" if spec.kind == "top" else "box_bottom"
-        titled = "·제목있음" if (spec.kind == "top" and spec.title) else ""
-        return make_rule(
-            _RULE_BOX_BORDER, line_no=line_no, col_start=0, col_end=len(line),
-            tag=f"{kind}·{spec.level}단계{titled}",
-        )
 
     def _apply_bullet_marker(self, bo: BrailleOutput) -> None:
         """list_item 첫머리 숨김표 글리프(○□△)를 MCST 제72항 글머리형으로 정정(in-place).

@@ -138,3 +138,50 @@ def test_circled_hangul_is_a_label_not_a_hierarchy_marker():
 
     # `①`은 프롬프트가 지정한 3층 표지라 종전대로 뗀다(회귀 가드).
     assert structure_from_caption(_ORG)["nodes"][0]["children"][1]["children"][0]["text"] == "이부"
+
+
+def test_indented_lines_become_flow_branches():
+    """#796 — 들여쓴 줄은 상자가 아니라 **분기 선택사항**이다(§6.6.2(4)⑤⑥).
+
+    「점자 자료 제작 지침」 재추출 L3572-3574 "분기점에서 선택사항이 있는 경우,
+    선택사항별로 줄을 바꾸어 … 3칸에 3o을 적고, 한 칸 띄어 선택사항, 그 후 3o과 목적지".
+    정답 예6-19 가 그 꼴이다. 종전에는 캡션 줄을 전부 상자로 세워 3칸 줄이 한 번도
+    안 섰다(캡션 캐시 3,242건 중 흐름도 153건 전부 분기 0개).
+    """
+    st = structure_from_caption("도표: A와 B를 가르는 흐름도\n"
+                                "직관적 통찰로 해석하는가?\n"
+                                "  예 → A\n"
+                                "  아니요 → B\n"
+                                "(나)")
+    assert [b["no"] for b in st["boxes"]] == [1, 2], st        # 갈림은 상자 번호를 안 먹는다
+    assert st["boxes"][0]["branches"] == [{"label": "예", "to": "A"},
+                                          {"label": "아니요", "to": "B"}], st
+    assert "branches" not in st["boxes"][1], st
+
+    # 조립하면 갈림 줄이 3칸(들여쓰기 2)에 선다 — §6.6.2(4)⑥.
+    text, indents = _ASSEMBLERS["flowchart"][0](st)
+    rows = list(zip(text.split("\n"), indents))
+    assert ("→ 예 → A", 2) in rows, rows
+    assert ("1 직관적 통찰로 해석하는가?", 0) in rows, rows
+
+
+def test_two_level_indent_builds_concept_and_org_hierarchy():
+    """#796 — 캡션이 **두 칸 들여쓰기**로 층을 주면 §6.6.1(3)①·§6.6.5(2)가 선다.
+
+    §6.6.1(3)① "위계가 2단계인 경우: 상위 개념은 5칸, 하위 개념은 3칸"(재추출 L3532).
+    종전에는 캡셔너가 "층이 둘이면 한 줄로 끝내라"는 지시를 받아 전건 level 0 으로 와서
+    개념도가 408건 중 33건(8.1%)만 위계를 가졌다.
+    """
+    cap = "도표: 맥락의 갈래를 나눈 개념도이다.\n중심\n  갈래 1\n  갈래 2\n    잔가지"
+    st = structure_from_caption(cap, "concept_map")
+    assert st["nodes"][0]["children"][1]["children"][0]["text"] == "잔가지", st
+    text, indents = _ASSEMBLERS["concept_map"][0](st)
+    body = [(ln, i) for ln, i in zip(text.split("\n"), indents) if not ln.startswith(" ")]
+    # 3단계 = 7/5/3칸 (들여쓰기 6/4/2) — §6.6.1(3)②
+    assert ("중심", 6) in body and ("갈래 1", 4) in body and ("잔가지", 2) in body, body
+
+    st2 = structure_from_caption(cap, "org_chart")
+    text2, ind2 = _ASSEMBLERS["org_chart"][0](st2)
+    rows = list(zip(text2.split("\n"), ind2))
+    # §6.6.5(2) 최상위 1칸 + 단계마다 2칸
+    assert ("중심", 0) in rows and ("갈래 1", 2) in rows and ("잔가지", 4) in rows, rows

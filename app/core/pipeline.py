@@ -572,6 +572,9 @@ _GRAFT_HEAD = 24       # 앞머리로 보는 글자 수
 _GRAFT_LOOSE_MIN = 12  # 2패스 '담김'을 걸 최소 길이 — 짧은 토막은 아무 문장에나 들어간다
 # LLM 이 그림을 설명한 줄. 본문 요소에 이것이 붙으면 지면에 없던 말이 나간다.
 _GRAFT_CAPTION_HEADS = ("그림:", "그래프:", "도식:", "표:", "사진:", "지도:")
+_GRAFT_SHARE = 0.6     # LLM 요소 하나가 MinerU 요소 여럿에 걸쳤을 때, 조각이 그 요소
+                       # 글자를 이만큼은 담아야 그 자리 것으로 본다
+_GRAFT_SHARE_SPAN = 3  # 한 LLM 요소를 나눠 가질 수 있는 MinerU 요소의 앞뒤 범위
 _GRAFT_DUP = 0.8       # 이웃 요소 글자를 이만큼 머금으면 같은 말이 두 번 나간다
 _GRAFT_DUP_LEN = 5     # 그 판정을 걸 이웃 글자의 최소 길이
 # 빈 구역 회수(`_page_gaps`) 문턱. 전부 지면 높이에 대한 비율이라 dpi 를 안 탄다.
@@ -789,6 +792,12 @@ def _recover_missing(mnr_els: list[dict], llm_els: list[dict],
         plan.append((pos, bb, txt))
         taken.append(bb)
 
+    return _insert_recovered(mnr_els, plan)
+
+
+def _insert_recovered(mnr_els: list[dict], plan: list[tuple[int, list[int], str]]) -> int:
+    """`(자리, bbox, 글자)` 를 새 요소로 세우고 읽기순서를 다시 매긴다. 회수(`_recover_missing`)와
+    크롭 되묻기(`crop_reask`)가 같이 쓴다."""
     import uuid
     for pos, bb, txt in sorted(plan, key=lambda p: -p[0]):
         src = mnr_els[max(pos - 1, 0)] if mnr_els else {}
@@ -804,10 +813,11 @@ def _recover_missing(mnr_els: list[dict], llm_els: list[dict],
             "caption_ref": None,
             "flags": ["ADVANCED_RECOVERED"],
         })
-    for k, e in enumerate(mnr_els):          # 읽기순서를 새로 매긴다
-        e["reading_order"] = k
-        if "order" in e:
-            e["order"] = k
+    if plan:
+        for k, e in enumerate(mnr_els):          # 읽기순서를 새로 매긴다
+            e["reading_order"] = k
+            if "order" in e:
+                e["order"] = k
     return len(plan)
 
 
@@ -854,6 +864,15 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
         """LaTeX 제어어를 걷고 남은 글자만. 같은 수식을 같은 것으로 보게 한다."""
         return _re.sub(r"[\s\W_]+", "", _re.sub(r"\\[a-zA-Z]+", " ", t or ""))
 
+    def norm_map(t: str) -> tuple[str, list[int]]:
+        """`norm` 과 같은 글자를 내되 글자마다 **원문 어디서 왔는지**를 같이 준다.
+
+        제어어를 같은 길이의 공백으로 바꾸므로 남는 글자의 자리가 안 밀린다.
+        """
+        t = _re.sub(r"\\[a-zA-Z]+", lambda m: " " * len(m.group()), t or "")
+        keep = [(k, c) for k, c in enumerate(t) if not _re.match(r"[\s\W_]", c)]
+        return "".join(c for _, c in keep), [k for k, _ in keep]
+
     def ratio(a: str, b: str) -> float:
         return difflib.SequenceMatcher(None, a, b).ratio()
 
@@ -895,6 +914,19 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
                 r = max(r, covered(a, b))
         return r
 
+    def wrap(k: int, el: dict) -> str:
+        """LLM `formula` 요소를 **본문 요소에 붙일 때는** `$…$` 로 감싼다.
+
+        고급 점역 프롬프트는 독립 수식 줄을 `type=formula` 로 내면서 `$` 를 뺀다. 그 줄이
+        MinerU `text` 요소로 들어가면 감싸는 것이 없어 **LaTeX 소스가 본문 글자 그대로**
+        점역된다(2쪽 [19]·[26]·[30] 실측). 수식 요소끼리 붙는 자리는 그대로 둔다.
+        """
+        t = guard_llm_text(llm_els[k].get("content") or "", "body").strip()
+        if (llm_els[k].get("type") == "formula" and el.get("type") != "formula"
+                and t and "$" not in t):
+            return f"${t}$"
+        return t
+
     for loose in (False, True):
         for i, el in enumerate(mnr_els):
             if out[i] is not None:
@@ -922,8 +954,8 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
                 j += 1
             if len(acc) < _GRAFT_KEEP * len(a):   # 바꾸면 글자 수가 준다 — 손대지 않는다
                 continue
-            kept = [(k, t) for k in span
-                    if (t := guard_llm_text(llm_els[k].get("content") or "", "body").strip())]
+            kept = [(k, wrap(k, el)) for k in span
+                    if (guard_llm_text(llm_els[k].get("content") or "", "body").strip())]
             if not kept:
                 continue
             txt = "\n".join(t for _, t in kept)
@@ -935,6 +967,98 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
             out[i] = txt
             used.update(k for k, _ in kept)
             at.update({k: i for k, _ in kept})
+
+    def window(a: str, b: str) -> tuple[int, int, float] | None:
+        """`b` 안에서 `a` 가 놓인 구간과, 그 구간이 `a` 와 닮은 정도."""
+        blk = [x for x in difflib.SequenceMatcher(None, a, b).get_matching_blocks() if x.size >= 3]
+        if not blk:
+            return None
+        s, e = blk[0].b, blk[-1].b + blk[-1].size
+        return s, e, ratio(a, b[s:e])
+
+    def share() -> None:
+        """LLM 요소 하나가 MinerU 요소 **여럿에 걸치면 쪼개서 각각에 붙인다**.
+
+        MinerU 가 지면의 한 문장을 서너 줄로 갖고 LLM 은 그 문장을 한 요소로 읽는
+        자리가 잦다. 위 두 패스는 LLM 요소를 **통째로만** 갈아 끼우므로 그런 자리에서
+        한 줄만 글자를 얻고 나머지는 깨진 채 남는다. 통째로 세우면 이웃의 말까지 같이
+        나가 중복 관문에 걸려 **아무것도 못 고치는** 일까지 있다.
+
+        실측(`temp/graft/개선_0909b.md`) — 못 고친 33건이 막힌 자리는 문턱미달 20 ·
+        중복관문 6 · 길이관문 3 · LLM선점 1 인데, 셋 다 뿌리가 이 한 가지다. 위 패스의
+        점수는 LLM 글자가 길수록 깎이므로(`ratio` 는 길이 차를 벌로 준다) 걸친 자리는
+        문턱을 못 넘는다. 여기서는 **그 요소가 놓인 구간과만** 견준다.
+
+        조각은 **원문을 빈틈없이 나눈다** — 한 글자도 안 버리므로 이 패스가 글자를
+        지우는 일은 없다. 길이·중복 관문은 조각마다 그대로 건다.
+        """
+        for i in range(len(mnr_els)):
+            if out[i] is not None or len(nm[i]) < _GRAFT_LOOSE_MIN:
+                continue
+            pick = None
+            for j, b in enumerate(nl):
+                # 통째로 갈아 끼우는 짝은 위 두 패스가 이미 봤다. 여기 몫은 **더 긴** 것뿐.
+                if cap[j] or len(b) < len(nm[i]) + _GRAFT_LOOSE_MIN:
+                    continue
+                w = window(nm[i], b)
+                if w and w[2] >= thr and (pick is None or w[2] > pick[1][2]):
+                    pick = (j, w)
+            if pick is None:
+                continue
+            j, (ws, we, _) = pick
+            lo = hi = i
+            while (lo - 1 >= 0 and i - lo < _GRAFT_SHARE_SPAN
+                   and (out[lo - 1] is None or at.get(j) == lo - 1) and len(nm[lo - 1]) >= 4):
+                lo -= 1
+            while (hi + 1 < len(mnr_els) and hi - i < _GRAFT_SHARE_SPAN
+                   and (out[hi + 1] is None or at.get(j) == hi + 1) and len(nm[hi + 1]) >= 4):
+                hi += 1
+            if not (at.get(j) is None or lo <= at[j] <= hi):
+                continue          # 이 LLM 줄은 딴 데 붙어 있다 — 나누면 두 번 나간다
+            raw = llm_els[j].get("content") or ""
+            b, bidx = norm_map(raw)
+            seg, cur, top = {i: (ws, we)}, we, ws
+            for k in range(i + 1, hi + 1):
+                w = window(nm[k], b[cur:])
+                if not w or w[2] < thr:
+                    break
+                seg[k] = (cur + w[0], cur + w[1])
+                cur = seg[k][1]
+            for k in range(i - 1, lo - 1, -1):
+                w = window(nm[k], b[:top])
+                if not w or w[2] < thr:
+                    break
+                seg[k] = (w[0], w[1])
+                top = w[0]
+            if len(seg) < 2:
+                continue
+            ks = sorted(seg)
+            cuts = [0]
+            for t in range(len(ks) - 1):
+                # 자르는 자리는 **띄어쓰기이면서 `$` 짝이 맞는 곳**이어야 한다. 정렬 구간의
+                # 한가운데를 그냥 자르면 낱말과 수식이 두 동강 난다(`곡|선`·`$\lim_{`).
+                gap = [x for x in range(bidx[seg[ks[t]][1] - 1] + 1, bidx[seg[ks[t + 1]][0]] + 1)
+                       if x >= len(raw) or (raw[x].isspace() and raw[:x].count("$") % 2 == 0)]
+                if not gap:
+                    break
+                mid = (bidx[seg[ks[t]][1] - 1] + bidx[seg[ks[t + 1]][0]]) // 2
+                cuts.append(min(gap, key=lambda x: abs(x - mid)))
+            if len(cuts) != len(ks):
+                continue          # 안전하게 자를 자리가 없다 — 손대지 않는다
+            cuts.append(len(raw))
+            pieces = []
+            for t, k in enumerate(ks):
+                txt = guard_llm_text(raw[cuts[t]:cuts[t + 1]], "body").strip()
+                if len(norm(txt)) < _GRAFT_KEEP * len(nm[k]) or swallows_neighbour(k, txt):
+                    break
+                pieces.append((k, txt))
+            if len(pieces) != len(ks):
+                continue
+            for k, txt in pieces:
+                out[k] = txt
+            at[j] = i
+
+    share()
 
     hit = 0
     for i, txt in enumerate(out):
@@ -1047,7 +1171,9 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     advanced_why = ""          # 고급 점역이 안 돈 이유. 아래에서 실패로 알린다.
     mnr: tuple[list[dict], int, int, str] | None = None
     if task.advanced_ai:
+        from app.ai.parser import crop_reask as _crop
         from app.ai.parser import opus_fallback as _llm
+        adv_mode = _crop.advanced_mode()
         if not _llm.advanced_available():
             advanced_why = "모델 키가 없다(ANTHROPIC_API_KEY)"
         else:
@@ -1059,17 +1185,31 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                 #   내용을 잘 읽지만 좌표를 못 준다 — 종전에는 이 경로에서 bbox 가 통째로
                 #   (0,0,0,0) 이라 FE 하이라이트가 아예 안 떴다. LLM 은 API·MinerU 는 GPU 라
                 #   서로 안 막으므로 나란히 돌리면 벽시계는 둘 중 긴 쪽이다.
-                llm_job = asyncio.create_task(
-                    asyncio.to_thread(_llm.extract_advanced, str(img))
-                )
+                # ★ crop 모드(`ADVANCED_EXTRACT_MODE=crop`, 2026-09-10 대표 지적 "깨진 거만 배치로")는
+                #   쪽 전체를 안 읽는다 — MinerU 가 먼저 읽고, 깨진 요소만 잘라 되묻는다(아래).
+                #   실측은 `crop_reask` 도크스트링. 기본은 종전대로 `page` 다 — 고급 점역의 정의
+                #   ("지면을 LLM 이 직접 읽는다", 대표 결정 2026-09-08)를 바꾸는 것은 대표 몫이다.
                 mnr_job = asyncio.create_task(_extract_via_models(task, doc_meta))
-                els, used = await llm_job
+                if adv_mode == "crop":
+                    els, used = None, ""
+                else:
+                    els, used = await asyncio.to_thread(_llm.extract_advanced, str(img))
                 try:
                     mnr = await mnr_job
                 except Exception as exc:  # noqa: BLE001 — 좌표가 없을 뿐 내용은 살린다
                     logger.warning("고급 점역 곁의 MinerU 실패(좌표 없이 진행): %s", exc)
                     mnr = None
-                if els:
+                if adv_mode == "crop":
+                    if mnr and mnr[0]:
+                        n = await asyncio.to_thread(_crop.reask_crops, mnr[0], str(img))
+                        if n is None:
+                            advanced_why = "크롭 되묻기가 실패했다"
+                        else:
+                            advanced_used = _llm.ADVANCED_MODEL
+                            logger.info("고급 점역(crop) %d요소 갈아 끼움 (page=%d)", n, task.page_no)
+                    else:
+                        advanced_why = "MinerU 가 지면을 못 읽었다"
+                elif els:
                     advanced_used = used
                     logger.info("고급 점역 추출 채택: %s %d요소 (page=%d)",
                                 used, len(els), task.page_no)
@@ -1094,10 +1234,15 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             #   아니다. 레이아웃·좌표·읽기순서·유형·캡션 연결을 MinerU 것으로 두고
             #   글자만 갈아 끼우면 bbox 가 보통 경로와 **똑같이** 맞는다.
             elements = mnr[0]
-            n = _graft_text(elements, els, img)
+            if els:
+                n = _graft_text(elements, els, img)
+                logger.info("고급 점역 글자 이식 %d/%d 요소 (page=%d)",
+                            n, len(elements), task.page_no)
+                if adv_mode == "both":
+                    # 이식이 못 잡은 자리(원문자·구조·누락)를 크롭으로 한 번 더 — 실측 73 → 82/125.
+                    n = await asyncio.to_thread(_crop.reask_crops, elements, str(img))
+                    logger.info("고급 점역(both) 크롭 되묻기 %s요소 (page=%d)", n, task.page_no)
             image_width, image_height, bbox_space = mnr[1], mnr[2], mnr[3]
-            logger.info("고급 점역 글자 이식 %d/%d 요소 (page=%d)",
-                        n, len(elements), task.page_no)
         else:
             # MinerU 가 없으면 LLM 결과를 그대로 쓴다(좌표 없음). 종전 규약을 따른다.
             elements = els

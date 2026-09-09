@@ -360,6 +360,111 @@
       "brf_ascii": ",.dx/,.dy",
       "braille_unicode": "⠠⠨⠙⠭⠌⠠⠨⠙⠽",
       "item": "제52항 변화율 — 묶음 괄호 없이"
+    },
+    {
+      "rule_id": "MCST-수학-7.60",
+      "latex": "a \\in M",
+      "brf_ascii": "A6,M",
+      "braille_unicode": "⠁⠖⠠⠍",
+      "item": "제60항 1호 가 원소(∈) — 앞뒤 붙임"
+    },
+    {
+      "rule_id": "MCST-수학-7.60",
+      "latex": "A \\ni x",
+      "brf_ascii": ",A4x",
+      "braille_unicode": "⠠⠁⠲⠭",
+      "item": "제60항 1호 나 원소(∋) — 앞뒤 붙임"
+    },
+    {
+      "rule_id": "MCST-수학-7.60",
+      "latex": "a \\notin A",
+      "brf_ascii": "A.6,A",
+      "braille_unicode": "⠁⠨⠖⠠⠁",
+      "item": "제60항 1호 다 원소 부정(∉)"
+    },
+    {
+      "rule_id": "MCST-수학-7.60",
+      "latex": "B \\subset A",
+      "brf_ascii": ",B61,A",
+      "braille_unicode": "⠠⠃⠖⠂⠠⠁",
+      "item": "제60항 3호 가 부분집합(⊂)"
+    },
+    {
+      "rule_id": "MCST-수학-7.60",
+      "latex": "A \\supset B",
+      "brf_ascii": ",A\"4,B",
+      "braille_unicode": "⠠⠁⠐⠲⠠⠃",
+      "item": "제60항 3호 나 부분집합(⊃)"
+    },
+    {
+      "rule_id": "MCST-수학-7.60",
+      "latex": "A \\not\\subset M",
+      "brf_ascii": ",A.61,M",
+      "braille_unicode": "⠠⠁⠨⠖⠂⠠⠍",
+      "item": "제60항 3호 다 부분집합 부정(⊄)"
+    },
+    {
+      "rule_id": "MCST-수학-7.60",
+      "latex": "A \\cup B",
+      "brf_ascii": ",A`+`,B",
+      "braille_unicode": "⠠⠁⠀⠬⠀⠠⠃",
+      "item": "제60항 5호 가 합집합(∪) — 앞뒤 한 칸"
+    },
+    {
+      "rule_id": "MCST-수학-7.60",
+      "latex": "A \\cap B",
+      "brf_ascii": ",A`%`,B",
+      "braille_unicode": "⠠⠁⠀⠩⠀⠠⠃",
+      "item": "제60항 5호 나 교집합(∩) — 앞뒤 한 칸"
+    },
+    {
+      "rule_id": "MCST-수학-7.60",
+      "latex": "A^{c}=U-A",
+      "brf_ascii": ",A^c33,U9,A",
+      "braille_unicode": "⠠⠁⠘⠉⠒⠒⠠⠥⠔⠠⠁",
+      "item": "제60항 5호 다 여집합"
+    },
+    {
+      "rule_id": "MCST-수학-7.61",
+      "latex": "p \\rightarrow q",
+      "brf_ascii": "P`3O`Q",
+      "braille_unicode": "⠏⠀⠒⠕⠀⠟",
+      "item": "제61항 2호 조건문(→)"
+    },
+    {
+      "rule_id": "MCST-수학-7.61",
+      "latex": "p \\Rightarrow q",
+      "brf_ascii": "P`33O`Q",
+      "braille_unicode": "⠏⠀⠒⠒⠕⠀⠟",
+      "item": "제61항 3호 항진명제(⇒) — 앞뒤 한 칸"
+    },
+    {
+      "rule_id": "MCST-수학-7.61",
+      "latex": "p \\leftrightarrow q",
+      "brf_ascii": "P`[3O`Q",
+      "braille_unicode": "⠏⠀⠪⠒⠕⠀⠟",
+      "item": "제61항 5호 쌍조건문(↔)"
+    },
+    {
+      "rule_id": "MCST-수학-7.61",
+      "latex": "r \\Leftrightarrow s",
+      "brf_ascii": "R`[33O`S",
+      "braille_unicode": "⠗⠀⠪⠒⠒⠕⠀⠎",
+      "item": "제61항 6호 필요충분(⇔)"
+    },
+    {
+      "rule_id": "MCST-수학-7.61",
+      "latex": "p \\wedge q",
+      "brf_ascii": "P`?`Q",
+      "braille_unicode": "⠏⠀⠹⠀⠟",
+      "item": "제61항 8호 가 논리곱(∧)"
+    },
+    {
+      "rule_id": "MCST-수학-7.61",
+      "latex": "p \\vee q",
+      "brf_ascii": "P`#`Q",
+      "braille_unicode": "⠏⠀⠼⠀⠟",
+      "item": "제61항 8호 나 논리합(∨)"
     }
   ],
   "backtick": "space"

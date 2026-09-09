@@ -220,3 +220,67 @@ def test_단을_넘은_자리에는_안_세운다(tmp_path):
     assert _gap_fits(left_gap, [90, 480, 350, 495], [90, 520, 350, 535])   # 같은 단, 사이에 낌
     assert not _gap_fits(left_gap, [520, 20, 560, 40], [520, 50, 900, 70])  # 오른쪽 단
     assert not _gap_fits(left_gap, [90, 600, 350, 615], [90, 700, 350, 715])  # 앞 요소가 아래
+
+
+# ── LLM 요소 하나가 MinerU 요소 여럿에 걸친 자리(`share`) ─────────────────────
+# 실측 근거: `temp/graft/개선_0909b.md`. 못 고친 33건이 막힌 자리는 문턱미달 20 ·
+# 중복관문 6 · 길이관문 3 · LLM선점 1 인데 뿌리가 하나다 — MinerU 는 지면 한 문장을
+# 여러 줄로 갖고 LLM 은 한 요소로 읽는다. 통째로만 갈아 끼우면 한 줄만 글자를 얻는다.
+
+def test_한_문장이_여러_줄이면_쪼개서_각각에_붙인다():
+    # 실물 꼴(p1#36~38) — MinerU 가 세 줄로 갖고 LLM 은 한 문장으로 읽었다.
+    mnr = [{"type": "text", "content": "실수 k의 최, f'(2) 이므로 그림과 같이", "bbox": [0, 0, 9, 9]},
+           {"type": "text", "content": "y = f (x) 와 직선 y = f'(2) x 가", "bbox": [0, 20, 9, 29]},
+           {"type": "text", "content": "(2, f (2)) 에서 접한다.", "bbox": [0, 40, 9, 49]}]
+    llm = [{"type": "text", "content":
+            "실수 k의 최댓값이 f'(2)이므로 그림과 같이 곡선 y=f(x)와 직선 y=f'(2)x가 "
+            "점 (2, f(2))에서 접한다."}]
+    assert _graft_text(mnr, llm) == 3
+    assert "최댓값이" in mnr[0]["content"]
+    assert "접한다" in mnr[2]["content"]
+    # 한 글자도 안 버린다 — 조각을 이으면 LLM 원문이 그대로 나온다
+    got = "".join(e["content"] for e in mnr).replace(" ", "")
+    assert got == llm[0]["content"].replace(" ", "")
+
+
+def test_조각은_수식_한가운데를_안_자른다():
+    mnr = [{"type": "text", "content": "함수 f(x)의 값이 커지고", "bbox": [0, 0, 9, 9]},
+           {"type": "text", "content": "그 극한은 다음과 같다", "bbox": [0, 20, 9, 29]}]
+    llm = [{"type": "text", "content":
+            "함수 $f(x)$의 값이 커지고 $\\lim_{x \\to 0} f(x)$ 그 극한은 다음과 같다"}]
+    _graft_text(mnr, llm)
+    for e in mnr:                       # `$` 가 짝을 잃으면 점역에서 수식 경로가 깨진다
+        assert e["content"].count("$") % 2 == 0
+
+
+def test_딴_요소에_붙은_LLM_줄은_안_나눈다():
+    # 멀리 있는 요소가 이미 그 줄을 가져갔으면 나누는 순간 같은 말이 두 번 나간다.
+    mnr = [{"type": "text", "content": "앞의 문장이 여기 있고 뒤의 문장이 저기 있다", "bbox": [0, 0, 9, 9]},
+           {"type": "text", "content": "관계없는 다른 줄이 사이에 하나", "bbox": [0, 20, 9, 29]},
+           {"type": "text", "content": "전혀 다른 내용의 넷째 줄이다", "bbox": [0, 40, 9, 49]},
+           {"type": "text", "content": "뒤의 문장이 저기 있다", "bbox": [0, 60, 9, 69]}]
+    llm = [{"type": "text", "content": "앞의 문장이 여기 있고 뒤의 문장이 저기 있다"}]
+    _graft_text(mnr, llm)
+    assert mnr[3]["content"] == "뒤의 문장이 저기 있다"      # 원래 글자 그대로
+
+
+def test_수식_요소가_본문에_붙으면_달러로_감싼다():
+    """프롬프트가 독립 수식 줄을 `$` 없이 내므로, 본문에 붙을 때 감싸 줘야 한다.
+
+    안 감싸면 LaTeX 소스가 본문 글자 그대로 점역된다(2쪽 [19]·[26]·[30] 실측).
+    """
+    mnr = [{"type": "text",
+            "content": "사건 B가 일어날 확률을 구하는 것이므로 P(B|A)=P(A∩B)/P(A) 이다.",
+            "bbox": [0, 0, 9, 9]}]
+    llm = [{"type": "text", "content": "사건 B가 일어날 확률을 구하는 것이므로"},
+           {"type": "formula", "content": r"P(B|A)=\frac{P(A\cap B)}{P(A)}\text{이다.}"}]
+    assert _graft_text(mnr, llm) == 1
+    assert mnr[0]["content"].endswith(r"$P(B|A)=\frac{P(A\cap B)}{P(A)}\text{이다.}$")
+
+
+def test_수식끼리_붙는_자리는_달러를_안_넣는다():
+    mnr = [{"type": "formula", "content": r"\int_{0}^{1} f(x) d x = 2 \text{인 경우}",
+            "bbox": [0, 0, 9, 9]}]
+    llm = [{"type": "formula", "content": r"\int_{0}^{1}f(x)dx=2\text{인 경우}"}]
+    assert _graft_text(mnr, llm) == 1
+    assert not mnr[0]["content"].startswith("$")
