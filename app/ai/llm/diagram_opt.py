@@ -73,6 +73,7 @@ from app.ai.llm.visual_drafts import (
     extra_drafts,
     omission_draft,
     prose_draft,
+    prose_join,
 )
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import Draft, ExtractedContent, LLMOutput, RuleApplication
@@ -478,7 +479,12 @@ _TAG_RE = re.compile(r"<!(/?)([^>]+)>")
 
 
 def _skeleton_prose(text: str) -> str:
-    """§6.6 골격 텍스트 → 줄글(태그·글상자 테두리 제거 후 항목을 쉼표로 이음). rule-based.
+    """§6.6 골격 텍스트 → 줄글(태그·글상자 테두리를 걷고 항목을 문장으로 이음). rule-based.
+
+    ★ 2026-09-09(#806) — 항목을 `, ` 로 잇던 것을 `prose_join` 으로 바꿨다. 골격 줄은
+      흐름도 상자 번호(`1 `)를 달고 있고 대개 마침표로 끝나서, 쉼표로 이으면
+      `…과정이다., 1 H: 원자핵이…, 2 Cl: …` 처럼 나갔다 — 개조식을 이어 붙인 것이지
+      §6.1.4(7) "사실에 대한 설명을 문장 형식으로 진술한다" 가 아니다(실물 E2E N2).
 
     ★ 2026-09-09(#793) — 유형 제시어 줄(`그림:`)을 **항목으로 세지 않고 맨 앞에 붙인다.**
       종전에는 `…포스터, 그림:, 제목: 저탄소 …` 처럼 줄 가운데에 쌍점만 덩그러니 남았다
@@ -496,7 +502,7 @@ def _skeleton_prose(text: str) -> str:
             head = clean                              # `그림:` — 머리말로 옮긴다
             continue
         parts.append(clean)
-    body = ", ".join(parts)
+    body = prose_join(parts)
     return f"{head} {body}".strip() if head else body
 
 
