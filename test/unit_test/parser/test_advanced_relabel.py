@@ -104,3 +104,11 @@ def test_훑은_개수가_어긋나면_안_건드린다(monkeypatch):
     _fake(monkeypatch, None, raw="㉠ 하나만 읽힙니다")
     assert OF.relabel_circles(els, "p.jpg") == 0
     assert els[1]["content"] == r"a \cdots \bigcirc"
+
+
+def test_동그라미_라틴_글자도_되묻는다(monkeypatch):
+    """크롭 되묻기 실측(2026-09-10) — 수식 문맥의 ㉢ 을 `ⓒ` 로 적는 판이 있다(한 배치 6자리 전부)."""
+    els = _els("㉠에 의하여", "ⓒ에 의하여 f(2)=5의 1가지이다.")
+    _fake(monkeypatch, ["㉢"])
+    assert OF.relabel_circles(els, "p.jpg") == 1
+    assert els[1]["content"] == "㉢에 의하여 f(2)=5의 1가지이다."

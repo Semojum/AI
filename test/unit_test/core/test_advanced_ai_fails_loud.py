@@ -124,3 +124,57 @@ class Test경계_재사용도_고급_점역을_안_무시한다:
             pytest.fail("고급 점역을 안 켰는데 재파생했다")
         except Exception:                # noqa: BLE001
             pass
+
+
+class Test크롭_모드:
+    """`ADVANCED_EXTRACT_MODE=crop` — 쪽 전체를 안 읽고 MinerU 뒤에 깨진 요소만 잘라 되묻는다(2026-09-10).
+    `both` 는 쪽 전체 이식 뒤에 한 번 더 건다. 실측은 `crop_reask` 도크스트링."""
+
+    def _crop(self, monkeypatch, mode, *, mnr_els, reask):
+        from app.ai.parser import crop_reask
+        monkeypatch.setenv("ADVANCED_EXTRACT_MODE", mode)
+        calls = []
+
+        def _reask(els, img):
+            calls.append(list(els))
+            return reask
+        monkeypatch.setattr(crop_reask, "reask_crops", _reask)
+        task = _arrange(monkeypatch, "STANDARD", els=[{"type": "text", "content": "LLM 이 읽은 글자"}])
+
+        async def _mnr(t, meta):
+            return mnr_els, 1000, 1000, "norm1000"
+        monkeypatch.setattr(pipeline, "_extract_via_models", _mnr)
+        monkeypatch.setattr(pipeline, "_graft_text", lambda els, llm, img=None: 0)
+        return task, calls
+
+    def test_crop_은_MinerU_요소를_되묻고_LLM_VISION_으로_나간다(self, monkeypatch):
+        from app.ai.parser import opus_fallback
+        monkeypatch.setattr(opus_fallback, "extract_advanced",
+                            lambda p: (_ for _ in ()).throw(AssertionError("쪽 전체를 읽었다")))
+        mnr = [{"type": "text", "content": "⑦에 의하여", "bbox": [1, 1, 9, 9]}]
+        task, calls = self._crop(monkeypatch, "crop", mnr_els=mnr, reask=1)
+        out = asyncio.run(pipeline._extract_with_hyunju(task))[1]
+        assert out["meta"]["extraction_method"] == "LLM_VISION" and calls == [mnr]
+
+    def test_crop_에서_되묻기가_죽으면_실패로_알린다(self, monkeypatch):
+        task, _ = self._crop(monkeypatch, "crop", mnr_els=[{"type": "text", "content": "x", "bbox": [1, 1, 9, 9]}],
+                             reask=None)
+        with pytest.raises(RuntimeError, match="크롭 되묻기가 실패했다"):
+            asyncio.run(pipeline._extract_with_hyunju(task))
+
+    def test_crop_에서_MinerU_가_비면_실패로_알린다(self, monkeypatch):
+        task, _ = self._crop(monkeypatch, "crop", mnr_els=[], reask=0)
+        with pytest.raises(RuntimeError, match="MinerU 가 지면을 못 읽었다"):
+            asyncio.run(pipeline._extract_with_hyunju(task))
+
+    def test_both_는_이식_뒤에_한_번_더_되묻는다(self, monkeypatch):
+        mnr = [{"type": "text", "content": "⑦에 의하여", "bbox": [1, 1, 9, 9]}]
+        task, calls = self._crop(monkeypatch, "both", mnr_els=mnr, reask=1)
+        out = asyncio.run(pipeline._extract_with_hyunju(task))[1]
+        assert out["meta"]["extraction_method"] == "LLM_VISION" and len(calls) == 1
+
+    def test_page_기본은_되묻기를_안_건다(self, monkeypatch):
+        task, calls = self._crop(monkeypatch, "page", mnr_els=[{"type": "text", "content": "x", "bbox": [1, 1, 9, 9]}],
+                                 reask=1)
+        asyncio.run(pipeline._extract_with_hyunju(task))
+        assert calls == []
