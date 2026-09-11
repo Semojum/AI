@@ -64,8 +64,8 @@ def ascii_to_unicode(brf: str, *, strict: bool = False, backtick: str = "space")
         raise ValueError(f"backtick은 'space'|'cell': {backtick!r}")
     out: list[str] = []
     for ch in brf:
-        if ch == "\n":
-            out.append("\n")
+        if ch in ("\n", "\f"):     # 줄바꿈·쪽 나눔(form feed)은 셀이 아니다 — 그대로 둔다
+            out.append(ch)
             continue
         if ch == " " or (ch == "`" and backtick == "space"):
             out.append(_SPACE_CELL)

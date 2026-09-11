@@ -900,8 +900,15 @@ _ENG_MAX = max((len(k) for k in list(_ENG_ANY) + list(_ENG_INIT) + list(_ENG_FIN
 _ENG_LOWER_SIGNS = frozenset("⠂⠆⠒⠲⠖⠶")
 
 
-def _eng_group_at(s: str, j: int, at_word_start: bool) -> tuple[str, int] | None:
-    """s[j]에서 시작하는 영어 약자 → (글자, 소비한 셀 수). 없으면 None."""
+def _eng_group_at(s: str, j: int, at_word_start: bool, *,
+                  mid_init: bool = False) -> tuple[str, int] | None:
+    """s[j]에서 시작하는 영어 약자 → (글자, 소비한 셀 수). 없으면 None.
+
+    `mid_init` — 두 칸 첫글자 약자를 낱말 중간에서도 받는다(아래 주석). **로마자표 없는
+    영어 줄 판정(`span_ok`)에서만** 켠다. 로마자표로 연 런에서 켜면 종료표 없이 한글로
+    이어지는 자리에서 ⠐⠕(리)·⠘⠥(보) 같은 음절을 one·upon 으로 먹는다 — 전권 A/B 에서
+    `Qa보다` 가 `Qauponi`, `aisen벼들` 이 `aisenwhoseithe` 로 깨졌다.
+    """
     for ln in range(min(_ENG_MAX, len(s) - j), 0, -1):
         seg = s[j:j + ln]
         # 하단 약자는 뒤에 글자가 이어질 때만 약자다(위 주석). ⠲(dd/dis)는 종료표와
@@ -914,6 +921,14 @@ def _eng_group_at(s: str, j: int, at_word_start: bool) -> tuple[str, int] | None
             return _ENG_INIT[seg], ln
         if not at_word_start and seg in _ENG_FINAL:
             return _ENG_FINAL[seg], ln
+        # ★ 첫글자 약자(기호표 ⠐·⠘·⠸ + 낱자)는 **낱말 중간에서도** 쓴다(통일영어점자 첫글자 약자 규칙 —
+        #   `however`=⠓⠪⠐⠑ · `never`=⠝⠐⠑ · `brought`=⠃⠗⠐⠳ · `Germany`=⠠⠛⠻⠸⠍).
+        #   정방향 `eng_braille` 는 첫머리에서만 만들지만 코퍼스는 UEB 대로 중간에도 쓴다.
+        #   첫머리에서만 받던 종전에는 이 셀에서 런이 끊겨 `however,` 가 `H["E1` 그대로
+        #   한글(`트,말`)로 샜다 — 영어 지면 245쪽 실측 461줄·10,474셀(#842).
+        #   한 칸짜리(⠆be ⠒con ⠲dis ⠤com)는 종전대로 첫머리 전용이다 — 중간에서는 bb·cc·dd.
+        if mid_init and not at_word_start and ln == 2 and seg in _ENG_INIT:
+            return _ENG_INIT[seg], ln
         if seg in _ENG_ANY:
             return _ENG_ANY[seg], ln
     return None
@@ -1118,6 +1133,7 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
     caps_word_any = False      # 대문자 단어표를 한 번이라도 봤나 — 로마 숫자 되돌림 판정용
     caps_next = False          # 단일 대문자표 ⠠ 를 만난 직후
     caps_phrase = False        # 대문자 구절표 ⠠⠠⠠ … 종료표 ⠠⠄ (제28항 [붙임])
+    hyph = -1                  # 하이픈으로 읽은 ⠤ 의 자리 — 그 뒤는 낱말 첫머리다
 
     def _emit(t: str) -> None:
         nonlocal caps_next
@@ -1239,6 +1255,21 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
             caps_word = caps_word_any = True
             j += 2
             continue
+        if (span_ok and c == _CAPITAL and s[j:j + 2] in _ENG_FINAL
+                and not caps_word and not caps_phrase
+                and j > i + 1 and s[j - 1] not in (_SPACE_CELL, " ", _HYPHEN_CELL)):
+            # ★ 낱말 **중간**의 ⠠⠝·⠠⠽ 는 대문자표가 아니라 EBAE 끝글자 약자 ation·ally 다
+            #   (eng_braille.FINAL_EBAE_ONLY — 코퍼스가 구 EBAE 관행). 대문자표 가지가
+            #   먼저 먹어 `information` 이 `informN`, `virtually` 가 `virtuY` 로 나갔고,
+            #   그 대문자가 `_english_line` 의 낱말 중간 대문자 가드까지 걸어 줄 전체가
+            #   한글로 샜다(영어 지면 245쪽 실측 200줄·4,714셀, #842).
+            #   ⚠ **로마자표 없는 영어 줄 판정(`span_ok`)에서만** 본다. 로마자표로 연 런은
+            #     국어 문장 안의 표기라 낱말 중간 대문자가 진짜다 — 유전 기호 `RrYy`·`rY`
+            #     (생물 p161)가 `Rrallyy`·`rally` 로 깨졌다. 대문자 단어표·구절표 안
+            #     (`DNA`·`UNESCO`)도 안 본다. `McNeil` 류는 천장으로 남긴다.
+            out.append(_ENG_FINAL[s[j:j + 2]])
+            j += 2
+            continue
         if c == _CAPITAL:                           # 단일 대문자표
             # ★ 다음 셀이 **낱자일 때만** 대문자로 만들던 것을 고쳤다. 통일영어점자는
             #   낱말을 약자로 줄이므로(제32항) 대문자표 뒤가 약자인 자리가 흔한데
@@ -1265,7 +1296,9 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
             continue
         # 영어 약자(er=⠻ · in=⠔ · the=⠮ …)를 낱자보다 먼저 본다. 낱자로 읽으면
         # 여기서 런이 깨져 뒤 낱말이 통째로 한글로 오독된다.
-        _word_start = j == i + 1 or s[j - 1] in (_SPACE_CELL, " ", _CAPITAL)
+        # 하이픈 뒤도 낱말 첫머리다 — `self-confidence` 의 ⠒ 는 cc 가 아니라 con 이다.
+        # (⠤ 를 com 으로 읽은 자리는 아니다 — `⠤⠤⠤⠤` 가 `comcomcom…` 으로 불어난다.)
+        _word_start = j == i + 1 or s[j - 1] in (_SPACE_CELL, " ", _CAPITAL) or j - 1 == hyph
         # 단축형은 **로마자표가 낱말 앞에 온 런에서만** 본다(제29항). 낱말 중간의 ⠴는
         # 로마자표가 아니라 닫는 낫표·따옴표다(』=⠴⠆) — 거기서 단축형을 대면
         # `『대의각미록』에`가 `『대의각미록beneath`가 된다(실측 악화 10건 전부 이것).
@@ -1278,7 +1311,7 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
                 _emit(_w)
                 j = _end
                 continue
-        _g = _eng_group_at(s, j, _word_start)
+        _g = _eng_group_at(s, j, _word_start, mid_init=span_ok)
         if _g is not None:
             txt, ln = _g
             _emit(txt)
@@ -1312,7 +1345,9 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
             j += 2
             continue
         if (s[j:j + 2] == _UNIT_SLASH and s[i] == _ROMAN_START
-                and _roman_span_ahead(s, j + 2)):
+                and (span_ok or _roman_span_ahead(s, j + 2))):
+            # ★ 영어 줄 판정(`span_ok`)에서는 종료표 증거 없이 받는다 — 답지의 짝 선택지
+            #   `prevent/protect`·연도 `2008/2009` 가 이 셀에서 끊겨 줄이 통째로 샜다.
             # 제69항 [붙임3] — 빗금으로 연결된 단위 기호는 **한 구간**이다
             # (`160㎎/㎗` = `#afj0mg_/dl4`). ⠸⠌ 에서 런이 끊겨 뒤 낱자가 한글로
             # 읽혔다: `m/s` -> `m/어.` · `g/mL` -> `g/우싸.` · `O/X` -> `O/속.`.
@@ -1409,9 +1444,17 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
             # ★ **⠤ 가 연달아 오면 하이픈이 아니다** — ⠤⠤ 는 줄표(제33항 `_JE33_CLOSE2`)이고,
             #   길게 이어진 ⠤ 런은 도형·그래프의 가로선이다. 첫 판이 이 가드 없이
             #   `″————` 를 `com------—-` 로 바꿨다(MS-REF-T26-023 도형 18곳·5쪽).
+            # ★ 영어 줄 판정(`span_ok`)에서는 뒤에 글자가 이어지면 종료표 증거 없이 하이픈이다 —
+            #   `high-profile`·`38-year`·`self-confidence` 가 이 셀에서 끊겨 줄이 통째로
+            #   한글로 샜다(영어 지면 245쪽 실측 600줄·13,091셀, #842). ⠤⠤ 는 여전히 아니다.
             if (s[i] == _ROMAN_START and s[j + 1:j + 2] != _HYPHEN_CELL
-                    and _roman_span_ahead(s, j + 1)):
+                    and (_roman_span_ahead(s, j + 1)
+                         or (span_ok and j + 1 < n
+                             and (s[j + 1] in _ALPHA_REV or s[j + 1] == _CAPITAL
+                                  or s[j + 1] == _NUMBER_SIGN
+                                  or _eng_group_at(s, j + 1, True) is not None)))):
                 out.append("-")
+                hyph = j
                 caps_word = False              # 대문자 단어표는 낱말 하나까지다
                 j += 1
                 continue
@@ -2338,6 +2381,9 @@ def decode(braille: str, *, math: bool = False) -> str:
     math=True면 전체를 수식 구역으로 보고 디코드한다(요소 type이 formula일 때 호출자가 지정).
     기본(False)은 공백 단위 토큰별로 수식/한글을 자동 판별한다(인라인 수식).
     """
+    # BRF 의 쪽 나눔(form feed)은 셀이 아니라 줄 경계다 — 남겨 두면 그 쪽 첫 낱말에 붙어
+    # 영어 줄 판정을 막는다(동결 코퍼스 실측 375줄·9,727셀, #842).
+    braille = braille.replace("\f", "\n")
     # 긴 숫자의 줄 나눔 연결표(제42항)를 먼저 이어 붙인다 — 줄 쪼개기 전이라야 닿는다.
     braille = _NUM_WRAP_RE.sub(r"\1", braille)
     # 줄을 넘는 짝(굵은 글자체표·한글표)을 먼저 벗긴다 — 아래 줄 분리보다 앞서야 한다.
@@ -2364,10 +2410,10 @@ def decode(braille: str, *, math: bool = False) -> str:
         body = "".join(loose.split())
         if body and sum(1 for c in body if "가" <= c <= "힣") / len(body) >= _MATH_KOR_RATIO:
             return loose
-    out_lines = []
-    for line in braille.split("\n"):
-        out_lines.append(_decode_line_router(line, math))
-    return "\n".join(out_lines)
+    lines = braille.split("\n")
+    # 로마자표 없는 영문 문단 — 이웃 줄이 영어면 그 문맥으로 읽는다(제29항 [다만] · #842).
+    ctx = _english_ctx(lines) if not math and len(lines) > 1 else [False] * len(lines)
+    return "\n".join(_decode_line_router(line, math, eng_ctx=c) for line, c in zip(lines, ctx))
 
 
 # ── 감쌈 붙임표 → 괄호 복원 (2026-08-06) ──────────────────────────────────
@@ -2540,7 +2586,30 @@ _ENG_FUNCTION = _build_eng_function()
 # 런을 끊어 낱말 판정을 실패시켰다.
 # ★ ⠴(닫는 큰따옴표) · ⠶(닫는 소괄호)도 넣는다 — 아래 `_ENG_LONE_WORD` 주석 참조.
 _ENG_TAIL_PUNCT = {"⠲": ".", "⠂": ",", "⠦": "?", "⠖": "!", "⠆": ";", "⠒": ":",
-                   "⠴": '"', "⠶": ")"}
+                   "⠴": '"', "⠶": ")", "⠤": "-"}
+# 두 칸짜리 따옴표 — 여는 작은따옴표 ⠠⠦ · 닫는 작은따옴표 ⠴⠄(「한글 점자」 문장 부호표,
+# 재추출본 2118~2130행). 영어 지면도 이 점형을 쓴다(`‘overbook’` = ⠠⠦⠕⠧⠻⠃⠕⠕⠅⠴⠄).
+_ENG_HEAD_QUOTE2 = {"⠠⠦": "‘"}
+_ENG_TAIL_QUOTE2 = {"⠴⠄": "’"}
+# EBAE 이탤릭표 ⠨ — 낱말 앞에 붙는다(`⠨⠓⠕⠇⠙` = *hold*). 묵자에 대응 글자가 없어 벗긴다.
+# ⠨ 는 한글 초성 ㅈ 이라 **영어 줄 판정 안, 낱말 첫머리에서만** 본다.
+_ENG_ITALIC = "⠨"
+# 답지의 순서 선택지 `(A)-(C)-(B)` = ⠶⠠⠁⠶⠤⠶⠠⠉⠶⠤⠶⠠⠃⠶ — 한 토큰이라 낱말 가장자리
+# 규칙으로는 못 풀고(안쪽 ⠶ 가 gg 로 읽힌다) 통째로 편다. 원장 R-76 과 같은 관행.
+_ANSWER_ORDER_RE = re.compile(r"^⠶⠠[⠁⠃⠉⠙⠑]⠶(?:⠤+⠶⠠[⠁⠃⠉⠙⠑]⠶)+$")
+_ANSWER_ITEM_RE = re.compile(r"⠶⠠([⠁⠃⠉⠙⠑])⠶")
+# 낱말 안에 박힌 줄임표 ⠄⠄⠄ — 답지 짝 빈칸 `promote...detected`. 토큰으로 떼어 낸다.
+_ENG_ELLIPSIS_RE = re.compile(r"(?<=[⠁-⣿])⠄⠄⠄(?=[⠁-⣿])")
+# 이웃 줄이 영어일 때 요구하는 기능어 수 — 0 이면 낱말이 끝까지 읽히는 것만 본다.
+# 전 코퍼스 1,251쪽 A/B: 1 을 요구하면 영어 회수율이 91.2% → 77.6% 로 떨어진다(`Controlling
+# Idea.`·`environment` 같은 기능어 없는 줄이 문단의 13%다). 대신 아래 거르개로 한글을 막는다.
+_CTX_MIN_FUNCS = 0
+# 문맥으로 받는 줄에서 **한글 줄을 걸러 내는** 영어 음운 거르개 — 이 꼴은 영어 낱말에 없다.
+#   · 자음 뒤 z: 한글 받침 ㄴ(⠵=z)이 그 자리다 — `것은?` 이 `spiritz?` 로 읽힌다.
+#   · j 뒤 자음·낱말 끝 j: 한글 초성 ㅎ(⠚=j)이다 — `한다` 가 `jcci` 로 읽힌다.
+# 전 코퍼스 1,251쪽 실측: 거르개 전 한글 손실 109줄 → 후 15줄(그중 진짜 한글은 4줄),
+# 영어 이득 4,737줄 → 4,727줄(waltz·Switzerland·Lugalzagesi 류 10줄을 잃는다).
+_ENG_JUNK_RE = re.compile(r"[bcdfghjklmnpqrstvwx]z|j(?![aeiou])")
 
 # 낱말 **앞**에 오는 부호 — 여는 큰따옴표 ⠦ · 여는 소괄호 ⠶.
 # 「한글 점자」 제34항 예문이 여는 큰따옴표를 ⠦ 로 못 박고(`“Open”` = ⠦⠠⠕⠏⠢⠴,
@@ -2555,7 +2624,19 @@ _ENG_HEAD_PUNCT = {"⠦": '"', "⠶": "("}
 # 낱말 첫머리에 붙는 약자 — 뒤에 글자가 이어질 때만이다(영어 점자 표준).
 #   ⠲ = `dis`(eng_braille.WORD_INITIAL_SYLLABLE) · ⠖ = `to`(WORDSIGNS, 붙여 적는다)
 # 둘 다 호출부가 종료표·느낌표로 먼저 삼켜 `discovered`·`to focus` 를 못 읽었다.
-_ENG_HEAD_SYLLABLE = {"⠲": "dis", "⠖": "to "}
+#   ⠴ = 낱말 앞에 붙은 **로마자표**(제29항, 재추출본 1496행) — 글자를 안 내고 벗긴다.
+#     EBAE 는 `by`(WORDSIGNS)도 ⠴ 를 뒤 낱말에 붙여 적어 같은 꼴이다(`⠴⠎` = by so).
+#     규정↔관행 충돌이라 원장 **R-77** — 규정이 명확하니 로마자표로 읽는다. 영어 지면
+#     245쪽 실측: 뒤가 대문자표면 묵자에 `by` 없음 326 · 있음 18, 소문자면 없음 291 ·
+#     있음 145. `by` 로 읽는 팔은 전권 A/B 에서 언어 p112 가 −0.066 으로 깨지고
+#     `⠴late 1940s, to⠲`(회귀 테스트)가 `by late …` 로 뒤집혔다. by 는 천장으로 남긴다.
+_ENG_HEAD_SYLLABLE = {"⠔⠖": "into ", "⠲": "dis", "⠖": "to ", "⠴": ""}
+
+
+def _eng_word_start(s: str) -> bool:
+    """s 가 영어 낱말(글자·약자·대문자표·수표)로 시작하는가 — 머리 부호를 뗄지 가른다."""
+    return bool(s) and (s[0] in _ALPHA_REV or s[0] in _ENG_ANY or s[0] in _ENG_INIT
+                        or s[:2] in _ENG_INIT or s[0] in (_CAPITAL, _NUMBER_SIGN))
 
 # 동그라미 숫자 `⠼N⠶` — 그 뒤의 홑 ⠶ 는 `were` 가 아니다(아래 `_english_line`).
 _CIRCLED_NUM_RE = re.compile(r"^⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]+⠶$")
@@ -2711,8 +2792,13 @@ def _rewrap_ueb_spans(text: str) -> str:
 _UEB_BRACKET = {"⠨⠣": "[", "⠨⠜": "]", "⠸⠣": "{", "⠸⠜": "}"}
 
 
-def _english_line(line: str, *, evidence: bool = True) -> str | None:
+def _english_line(line: str, *, evidence: bool = True, ctx: bool = False) -> str | None:
     """줄 전체가 로마자표 없는 영어면 그 텍스트, 아니면 None (제29항 [다만]).
+
+    ★ `ctx=True` 는 **앞뒤 줄이 이미 영어로 읽힌 줄**에서만 쓴다(`_english_ctx`). 제29항
+      [다만]의 단위는 줄이 아니라 **문단**이다 — 문단 안 한 줄에 기능어가 하나뿐이라고
+      그 줄만 한글로 떨어뜨리면 지문이 줄마다 언어가 뒤바뀐다. 이웃이 영어면 낱말이
+      끝까지 읽히고 여러 칸 낱말이 하나라도 있는 것으로 받는다(기능어 요건은 안 건다).
 
     ★ `evidence=False` 는 **UEB 밑줄 구간표 짝 안쪽**에서만 쓴다(제32항 · 원장 R-70).
       단서 셀이 하나도 없는 줄에는 아래 증거(왕복 대조·기능어 둘)가 꼭 필요하지만,
@@ -2731,8 +2817,9 @@ def _english_line(line: str, *, evidence: bool = True) -> str | None:
     """
     from app.ai.braille import eng_braille as _E
 
-    words = line.split(_SPACE_CELL)
-    if evidence and sum(1 for w in words if w) < 2:   # 한 낱말은 단서가 너무 약하다(⠎=so ↔ 한글)
+    # 낱말 안의 줄임표 ⠄⠄⠄ 는 토큰으로 떼어 낸다 — 답지의 짝 빈칸 `promote ... detected`.
+    words = _ENG_ELLIPSIS_RE.sub(_SPACE_CELL + "⠄⠄⠄" + _SPACE_CELL, line).split(_SPACE_CELL)
+    if evidence and not ctx and sum(1 for w in words if w) < 2:   # 한 낱말은 단서가 너무 약하다(⠎=so ↔ 한글)
         return None
     if not any(words):
         return None
@@ -2754,27 +2841,63 @@ def _english_line(line: str, *, evidence: bool = True) -> str | None:
             raw.append(_ENG_LONE_WORD[w])
             prev = w
             continue
+        if w[:1] == _CAPITAL and w[1:] in _ENG_LONE_WORD:      # 대문자표 + 홑 약자(`⠠⠦` = His)
+            out.append(_ENG_LONE_WORD[w[1:]].capitalize())
+            raw.append(_ENG_LONE_WORD[w[1:]])
+            prev = w
+            continue
+        if _ANSWER_ORDER_RE.match(w):                          # 순서 선택지 `(A)-(C)-(B)`
+            body = _ANSWER_ITEM_RE.sub(lambda m: "(" + _ALPHA_REV[m.group(1)].upper() + ")",
+                                       w).replace(_HYPHEN_CELL, "-")
+            out.append(body)
+            raw.append("")
+            strong.append(body)
+            prev = w
+            continue
         prev = w
         core, head, tail = w, "", ""
-        while core[:2] in _UEB_BRACKET or core[:1] in _ENG_HEAD_PUNCT:  # 낱말 앞 괄호·따옴표
+        while (core[:2] in _UEB_BRACKET or core[:2] in _ENG_HEAD_QUOTE2
+               or core[:1] in _ENG_HEAD_PUNCT):              # 낱말 앞 괄호·따옴표
             if core[:2] in _UEB_BRACKET:
                 head += _UEB_BRACKET[core[:2]]
+                core = core[2:]
+            elif core[:2] in _ENG_HEAD_QUOTE2:
+                head += _ENG_HEAD_QUOTE2[core[:2]]
                 core = core[2:]
             else:
                 head += _ENG_HEAD_PUNCT[core[:1]]
                 core = core[1:]
-        if core[:1] in _ENG_HEAD_SYLLABLE and (core[1:2] in _ALPHA_REV
-                                              or core[1:2] in _ENG_ANY):
-            # 낱말 첫머리의 ⠲ 는 마침표·종료표가 아니라 음절 약자 `dis` 이고(호출부가
-            # 종료표로 먼저 삼켜 `discovered` 가 통째로 안 읽혔다), ⠖ 는 아래칸
-            # 단어기호 `to` 다 — 둘 다 뒤 낱말에 **붙여** 적는다(영어 점자 표준).
-            head += _ENG_HEAD_SYLLABLE[core[:1]]
+        # EBAE 이탤릭표 — 뒤에 **두 칸 이상** 남을 때만 벗긴다. 한 칸이면 한글 음절이다
+        # (`⠨⠁`=자 → a · `⠨⠾`=? → with 가 기능어로 세어져 언어 p130·생물 p140 이 뒤집혔다).
+        while core[:1] == _ENG_ITALIC and len(core) >= 3 and _eng_word_start(core[1:]):
             core = core[1:]
+        # 낱말 첫머리의 ⠲ 는 마침표·종료표가 아니라 음절 약자 `dis` 이고(호출부가
+        # 종료표로 먼저 삼켜 `discovered` 가 통째로 안 읽혔다), ⠖·⠴·⠔⠖ 는 아래칸
+        # 단어기호 `to`·`by`·`into` 다 — 모두 뒤 낱말에 **붙여** 적는다(영어 점자 표준).
+        # 대문자표가 앞서면(`⠠⠲⠛⠥⠊⠎⠑` = Disguise · `⠠⠴⠑⠁⠞⠬` = By eating) 첫 글자를 올린다.
+        cap = core[:1] == _CAPITAL and (core[1:3] in _ENG_HEAD_SYLLABLE
+                                        or core[1:2] in _ENG_HEAD_SYLLABLE)
+        if cap:
+            core = core[1:]
+        roman_head = False
+        for k in (2, 1):
+            syl = _ENG_HEAD_SYLLABLE.get(core[:k])
+            if syl is not None and _eng_word_start(core[k:]):
+                head += syl.capitalize() if cap else syl
+                roman_head = core[:k] == _ROMAN_START
+                core = core[k:]
+                break
+        else:
+            if cap:
+                core = _CAPITAL + core
         while core:                                  # 낱말 뒤 — 괄호·문장부호·축약이 섞인다
             if core[-2:] in _UEB_BRACKET:
                 tail = _UEB_BRACKET[core[-2:]] + tail
                 core = core[:-2]
-            elif core[-1] in _ENG_TAIL_PUNCT:
+            elif core[-2:] in _ENG_TAIL_QUOTE2:
+                tail = _ENG_TAIL_QUOTE2[core[-2:]] + tail
+                core = core[:-2]
+            elif core[-1] in _ENG_TAIL_PUNCT and core not in _ENG_LONE_WORD:
                 tail = _ENG_TAIL_PUNCT[core[-1]] + tail
                 core = core[:-1]
             else:
@@ -2786,16 +2909,27 @@ def _english_line(line: str, *, evidence: bool = True) -> str | None:
                         break
                 else:
                     break
-        if not core:
-            return None
+        if core in _ENG_LONE_WORD:                   # 부호가 붙은 홑 약자(`⠴⠂` = was,)
+            out.append(head + _ENG_LONE_WORD[core] + tail)
+            raw.append(_ENG_LONE_WORD[core])
+            continue
+        if not core or set(core) == {"⠄"}:          # 부호뿐인 토큰(`____`·`...`) — 글자가 아니다
+            if not head and not tail and not core:
+                return None
+            out.append(head + "." * len(core) + tail)
+            raw.append("")
+            continue
         got = _decode_roman_run(_ROMAN_START + core, 0, span_ok=True)
         if got is None or got[1] != len(core) + 1:  # 낱말을 끝까지 못 읽으면 영어가 아니다
             return None
-        if _CAPITAL in core[1:] and core[0] != _CAPITAL:
-            mid_cap = True           # 낱말 **중간**의 대문자표 — 영어 표기에 거의 없다
+        if core[0] != _CAPITAL and _CAPITAL in core[1:].replace("⠠⠝", "").replace("⠠⠽", ""):
+            mid_cap = True           # 낱말 **중간**의 대문자표 — 영어 표기에 거의 없다(ation·ally 제외)
         body = _ENG_LETTER_WORD.get(core, got[0])   # 홑 낱자면 단어기호로 편다
         out.append(head + body + tail)
-        raw.append(head + got[0] + tail)
+        # ★ 로마자표를 벗긴 낱말은 **증거로 안 센다** — 로마자표는 국어 문장 안의 표시라
+        #   (제29항) 그 낱말이 기능어라도 영어 줄의 근거가 못 된다. 세면 `생물 Ⅰ 전`
+        #   (⠴⠠⠊ = Ⅰ, 제36항)의 `I` 가 기능어로 잡혀 한글 줄이 뒤집혔다(생물 p140).
+        raw.append("" if roman_head else head + got[0] + tail)
         if len(core) > 1 and any(ch.isalpha() for ch in got[0]):
             # 증거로 셀 낱말 — 한 칸짜리 단어 약자와 **숫자뿐인 토큰**은 뺀다.
             strong.append(got[0])
@@ -2805,11 +2939,21 @@ def _english_line(line: str, *, evidence: bool = True) -> str | None:
     # ★ 한 칸짜리 단어 약자만으로 선 줄은 증거가 없다 — 그 자체가 기능어라 아래 요건이
     #   저절로 채워진다. 수식 표 한 줄 `0<x<1  +  -   -  +` 이
     #   `0ininxinin1 enough in in enough` 로 뒤집혔다. **여러 칸짜리 낱말 둘**을 요구한다.
+    if ctx and any(_ENG_JUNK_RE.search(t) for w in strong
+                   for t in re.findall(r"[a-z]{2,}", w.lower())):
+        return None                  # 영어에 없는 음운 — 한글 줄이 이웃 문맥에 끌려온 것
     if len(strong) < 2:
-        return None
+        # 이웃이 영어인 줄(`ctx`)은 여러 칸 낱말 하나면 된다 — 줄 끝에 홀로 남은
+        # `environment`·`school.` 이 그 꼴이다. 낱말 중간 대문자표 가드는 그대로 둔다.
+        if not (ctx and strong and not mid_cap):
+            return None
+        return text
     # ★ 증거는 **펴기 전** 텍스트에서 센다. 낱자 단어기호까지 세면 한글 줄이 뒤집힌다 —
     #   `에 대한 이해와 감상을 묻는 문제가 출` 이 `not irj: ojrv …` 로 나갔다(실측 5줄).
     funcs = {w.strip(".,;:?!'[]{}").lower() for w in " ".join(raw).split()} & _ENG_FUNCTION
+    if ctx:
+        # 이웃 줄이 영어다 — 문단 단위 판정(제29항 [다만]). 기능어 요건은 이웃이 대신 채운다.
+        return text if len(funcs) >= _CTX_MIN_FUNCS and not mid_cap else None
     if _E.translate(text).replace(" ", _SPACE_CELL) == line:
         # 왕복만으로는 모자란다 — 한글 두 낱말이 뜻 없는 알파벳으로 되짚기까지 통과한다
         # (실측 오탐: `우주 그물로` → `dujya Oiu`, 글상자 테두리 → `forggg…`).
@@ -3173,7 +3317,50 @@ def _chem_line(line: str) -> str | None:
     return "".join(out) if groups and hard else None
 
 
-def _decode_line_router(line: str, math: bool) -> str:
+def _english_any(line: str, *, ctx: bool = False) -> str | None:
+    """로마자표 없는 영어 줄 판정 — UEB 밑줄 글자체표를 벗긴 판까지 본다."""
+    eng = _english_line(line, ctx=ctx)
+    if eng is None and _UEB_UNDERLINE_RE.search(line):
+        # UEB 밑줄 글자체표를 벗겨야 영어로 읽힌다 — 표가 낱말 런을 끊는다.
+        eng = _english_line(_UEB_UNDERLINE_RE.sub("", line), ctx=ctx)
+    return eng
+
+
+def _english_ctx(lines: list[str]) -> list[bool]:
+    """이웃 줄이 영어로 읽혀 **문단 문맥**으로 영어가 되는 줄 (제29항 [다만] · #842).
+
+    제29항 [다만](재추출본 1507행)은 로마자표·종료표 생략의 단위를 **문단**으로 둔다.
+    줄 단위 증거(서로 다른 기능어 둘)만 요구하면 같은 문단 안에서 기능어가 한 줄에 하나뿐인
+    줄이 한글로 떨어져 지문이 줄마다 언어가 바뀐다 — 영어 지면 245쪽 실측으로 낱말은 다
+    읽히는데 증거만 모자란 줄이 2,940줄·66,000셀이었다(#846 뒤 기준).
+    그래서 앞뒤 줄이 이미 영어로 읽힌 줄은 `_english_line(ctx=True)` 로 다시 본다.
+    문맥은 이어 번진다(한 줄이 받아들여지면 그 이웃도 후보). 빈 줄·표 구분선·글상자
+    테두리·원본 페이지 변경선은 문맥을 끊는다.
+    """
+    n = len(lines)
+    body = [bool(l.strip("⠀ ")) and not (_TABLE_RULE_RE.match(l) or _BOX_BORDER_RE.search(l)
+                                        or _PAGE_CHANGE_RE.match(l)) for l in lines]
+    ok = [body[k] and _english_any(lines[k]) is not None for k in range(n)]
+    ctx = [False] * n
+    loose: list[bool | None] = [None] * n
+    changed = True
+    while changed:
+        changed = False
+        for k in range(n):
+            if not body[k] or ok[k] or ctx[k]:
+                continue
+            if not ((k > 0 and (ok[k - 1] or ctx[k - 1]))
+                    or (k + 1 < n and (ok[k + 1] or ctx[k + 1]))):
+                continue
+            if loose[k] is None:
+                loose[k] = _english_any(lines[k], ctx=True) is not None
+            if loose[k]:
+                ctx[k] = True
+                changed = True
+    return ctx
+
+
+def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False) -> str:
     """줄을 공백 단위로 나눠 수식 토큰은 수학 디코더로, 나머지는 한글 디코더로 라우팅."""
     if not line:
         return ""
@@ -3200,10 +3387,7 @@ def _decode_line_router(line: str, math: bool) -> str:
         if chem is not None:
             return chem
         # 수식 줄에 영어 판정을 대면 안 된다 — `a √ b`가
-        eng = _english_line(line)    # `a ar b`로 뒤집힌다(⠜=√ ↔ 영어 약자 ar)
-        if eng is None and _UEB_UNDERLINE_RE.search(line):
-            # UEB 밑줄 글자체표를 벗겨야 영어로 읽힌다 — 표가 낱말 런을 끊는다.
-            eng = _english_line(_UEB_UNDERLINE_RE.sub("", line))
+        eng = _english_any(line, ctx=eng_ctx)    # `a ar b`로 뒤집힌다(⠜=√ ↔ 영어 약자 ar)
         if eng is not None:          # 로마자표 없는 순수 영어 줄 (제29항 [다만])
             return eng
         # 한·영 혼합 줄 — UEB 밑줄 구간표 짝 안쪽만 영어로 읽고 바깥은 한글로 읽는다
