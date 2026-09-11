@@ -60,21 +60,22 @@ from app.ai.llm.diagram_structure import (
 from app.ai.braille import tag_names as _TN
 from app.ai.braille import tn_notices as _TN_NOTICES
 from app.ai.llm.visual_drafts import (
-    DESC_IDX,
-    GIST_LABEL,
+    AMOUNT_BASIC,
+    AMOUNT_PROSE,
+    AMOUNT_SIMPLE,
     GIST_OPTION,
     FAMILY_BOTTOMUP_LABEL,
     FAMILY_BOTTOMUP_OPTION,
     FLOW_CHAIN_LABEL,
     FLOW_CHAIN_OPTION,
-    LABELS,
     _dedupe,
     build_visual_drafts,
-    desc_label,
     extra_drafts,
     omission_draft,
     prose_draft,
     prose_join,
+    type_name,
+    with_amount,
 )
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import Draft, ExtractedContent, LLMOutput, RuleApplication
@@ -625,16 +626,20 @@ def _caption_type_word(subtype: str, caption: str) -> str:
 
 
 def _skeleton_label(subtype: str, structure: dict, caption: str = "") -> str:
-    """골격 안의 이름. 가계도만 **실제로 조립된 방향**을 이름에 싣는다(§6.6.4(1)).
+    """골격 안의 **유형 이름**. 가계도만 실제로 조립된 방향을 이름에 싣는다(§6.6.4(1)).
 
     ★ 캡션이 유형어를 말했으면 **그 말을 쓴다**(2026-08-26, F16). `_SUBTYPE_WORDS`가
       모식도·구조도·도식을 concept_map 으로 접기 때문에, 이름까지 대표 이름으로 바꾸면
       '구조도'라고 적힌 자료가 피커에 '개념도'로 뜬다. 골격 접기와 표시 이름은 다른 문제다.
+
+    ★ 2026-09-11(#863) — 분량 낱말은 여기서 안 붙인다. 이 값은 **대안 유형 안**(둘째·셋째
+      후보 골격)의 이름 그대로이기도 해서, 분량을 붙이면 `개념도(기본)` 같은 안이 대안
+      자리에 서 버린다. 기본·단순 안은 호출부가 `with_amount` 로 감싼다.
     """
     if subtype == "family_tree":
         mode = (structure.get("mode") or "top_down").strip()
-        return FAMILY_BOTTOMUP_LABEL if mode == "bottom_up" else desc_label(subtype)
-    return _caption_type_word(subtype, caption) or desc_label(subtype)
+        return FAMILY_BOTTOMUP_LABEL if mode == "bottom_up" else type_name(subtype)
+    return _caption_type_word(subtype, caption) or type_name(subtype)
 
 
 _CIRCLED_NO = tuple(chr(0x2460 + i) for i in range(20))      # ①~⑳
@@ -728,7 +733,7 @@ def _family_alt(subtype: str, structure: dict) -> Optional[Draft]:
     if not (structure.get("nodes") if alt_mode == "top_down" else structure.get("items")):
         return None
     text, indents = assemble_family_tree({**structure, "mode": alt_mode})
-    label = (desc_label("family_tree") if alt_mode == "top_down"
+    label = (type_name("family_tree") if alt_mode == "top_down"
              else FAMILY_BOTTOMUP_LABEL)
     # ★ 자기 들여쓰기를 **글 안 태그**로 싣는다. 안 실으면 선택 안(하향식)의 값이 씌워져
     #   세대 방향이 거꾸로 나간다 — 줄 수가 같아 길이 검사로도 안 걸린다(§6.6.4(2)②·(3)②).
@@ -766,13 +771,17 @@ class DiagramOpt(BaseOpt):
             # ★ 2026-08-20 — 짧은 제목·줄글·유형만을 뺐다. 규정은 "설명" 하나이고
             #   gold 실측에서 '유형만'이 0건이다(visual_drafts.LABELS 주석 참조).
             # ★ 2026-08-25 — 골격 안을 **유형 이름**으로 내준다(계획서 §5). 조립은 그대로다.
+            # ★ 2026-09-11(#863) — 이름·순서를 `build_visual_drafts` 와 같은 규칙으로 맞췄다
+            #   (대표 결재). 이름은 `유형(분량)`, 순서는
+            #     기본 → 대안 유형 → 단순 → 자세히 → 줄글 → 생략 → 참조.
+            #   `type_word` 한 값이 이 요소의 유형 이름이다 — 캡션이 '구조도'라 말하면
+            #   기본·단순·줄글 세 칸이 **다 같이** 구조도로 나가야 한다(종전에는 기본만 그랬다).
+            type_word = _skeleton_label(subtype, structure, caption)
             drafts = [
-                omission_draft(label),
                 Draft(option=2,
                       text=_TN.apply_indent_tags(skeleton_text, skeleton_indents),
                       render_mode="narrative",
-                      label=_skeleton_label(subtype, structure, caption)),
-                *extra_drafts(label),
+                      label=with_amount(type_word, AMOUNT_BASIC)),
             ]
             # 가계도만 방향 둘을 **같이** 낸다 — §6.6.4(1)이 "교재 이해에 효과적인 쪽을
             # 고르라"고 하는데 그건 기계가 못 고르는 판단이다. 둘 다 조립돼 있으니
@@ -800,10 +809,7 @@ class DiagramOpt(BaseOpt):
                     render_mode="narrative",
                     label=_skeleton_label(alt_sub, alt_st)))
                 opt_no += 1
-            # 줄글 설명(§6.1.4(7) 진술적 설명) — 골격을 태그·테두리 없이 이은 것. rule-based다.
-            if (d_prose := prose_draft(_skeleton_prose(skeleton_text), subtype)) is not None:
-                drafts.append(d_prose)
-            # 간추린 설명(§6.1.4(4) "전체 윤곽을 포괄적으로 설명한 다음 부분을 나누어") —
+            # 단순(§6.1.4(4) "전체 윤곽을 포괄적으로 설명한 다음 부분을 나누어") —
             # 골격의 **머리 줄만** 남긴 안. `_head_lines` 가 골격에 실제로 쓴 그 줄이라
             # 재료에 없는 말이 들어갈 자리가 구조적으로 없고, 두 안의 점자도 안 갈린다.
             # ★ 2026-09-09(#793 · 원장 C-120) — 골격 경로에는 **분량을 줄일 안이 하나도
@@ -824,10 +830,18 @@ class DiagramOpt(BaseOpt):
                     h_lines = [f"{_TYPE_NOTE_LINE} {h_lines[0]}"]
                     h_ind = [_TYPE_NOTE_INDENT]
                 drafts.append(Draft(
-                    option=GIST_OPTION, label=GIST_LABEL, render_mode="narrative",
+                    option=GIST_OPTION, render_mode="narrative",
+                    label=with_amount(type_word, AMOUNT_SIMPLE),
                     text=_TN.apply_indent_tags("\n".join(h_lines), h_ind)))
+            # 줄글(§6.1.4(7) 진술적 설명) — 골격을 태그·테두리 없이 이은 것. rule-based다.
+            if (d_prose := prose_draft(_skeleton_prose(skeleton_text), subtype,
+                                       label=with_amount(type_word, AMOUNT_PROSE))) is not None:
+                drafts.append(d_prose)
+            # 처리 방식 축의 나머지 둘 — 설명 계열 **뒤**에 선다(gold 최빈순).
+            drafts += [omission_draft(label), *extra_drafts(label)]
             # 골격 경로는 build_visual_drafts를 안 타므로 접기를 여기서 직접 부른다.
-            drafts, sel_idx = _dedupe(drafts, DESC_IDX)
+            # 기본 안은 언제나 0 번이다(위 순서 주석).
+            drafts, sel_idx = _dedupe(drafts, 0)
             return LLMOutput(
                 element_id=ext.element_id,
                 corrected_text=skeleton_text,

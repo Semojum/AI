@@ -96,7 +96,7 @@ class TestAlwaysFourWithoutLLM:
             _ext(), routing_tier="ZERO", label="그림", caption="장식", kind="image",
             decorative=True))
         _assert_distinct(drafts)
-        assert sel == vd.OMIT_IDX
+        assert drafts[sel].option == vd.OMIT_OPTION      # 자리가 아니라 option 으로 본다
 
     @pytest.mark.parametrize("kind", ["image", "cartoon", "chart_graph", "diagram"])
     def test_모든_시각_유형(self, kind: str) -> None:
@@ -127,15 +127,16 @@ def test_재료가_있으면_세_안이_다_다르다() -> None:
                 "2020년 5,200만 명에서 2021년 5,180만 명으로 줄었다.",
         struct_outline=[(0, "2020년 5,200만 명"), (0, "2021년 5,180만 명")])
     _assert_distinct(drafts, expect=_EXPECTED_WITH_PROSE_GIST)
+    # ★ 2026-09-11(#863) — 기본 → 단순 → 줄글 → 생략 → 참조(gold 최빈순).
     assert [d.label for d in drafts] == [
-        vd.omit_label("그림"), vd.desc_label("이미지"), vd.volref_label(),
-        vd.PROSE_LABEL, vd.GIST_LABEL]
-    # 줄글 설명은 설명 안의 줄을 **이은 것**이다 — 낱말이 하나도 새로 안 생긴다.
+        "기본", "단순", "줄글", vd.omit_label("그림"), vd.volref_label()]
+    d_desc, d_gist, d_prose = drafts[0], drafts[1], drafts[2]
+    # 줄글은 설명 안의 줄을 **이은 것**이다 — 낱말이 하나도 새로 안 생긴다.
     _words = lambda t: set(re.sub(r"<!/?[^>]*>", "", t).replace(",", " ").split())
-    assert _words(drafts[3].text) <= _words(drafts[1].text), drafts[3].text
-    # 간추린 설명은 설명 안의 **머리줄 그대로**다 — 지우기만 하므로 새 말이 없다.
-    assert drafts[4].text.count("\n") == 0
-    assert drafts[4].text.strip("<!주/>") in drafts[1].text
+    assert _words(d_prose.text) <= _words(d_desc.text), d_prose.text
+    # 단순은 설명 안의 **머리줄 그대로**다 — 지우기만 하므로 새 말이 없다.
+    assert d_gist.text.count("\n") == 0
+    assert d_gist.text.strip("<!주/>") in d_desc.text
 
 
 def test_한_낱말_캡션도_세_안_그대로() -> None:
@@ -147,7 +148,7 @@ def test_한_낱말_캡션도_세_안_그대로() -> None:
     drafts = _build(caption="설명")
     _assert_distinct(drafts, expect=_EXPECTED)
     assert [d.label for d in drafts] == [
-        vd.omit_label("그림"), vd.desc_label("이미지"), vd.volref_label()]
+        vd.desc_label("이미지"), vd.omit_label("그림"), vd.volref_label()]
 
 
 def test_표는_렌더_4안_그대로() -> None:

@@ -5,19 +5,23 @@
 
 점역사가 고를 대체텍스트. 각 안은 그 자체로 완결된 대체텍스트다:
   option 1  생략      : 「제작 지침」 §6.3.4(2)② 생략 표기 — 결정적, LLM 미사용.
-  option 2  설명      : 유형별 이름으로 나간다(개념도·흐름도·연대표…). 구조가 있으면
-                        rule-based 전사, 없으면 LLM. **gold 실측 79.6% 로 압도한다.**
+  option 2  기본      : 구조가 있으면 rule-based 전사, 없으면 LLM. **gold 최빈이다.**
   option 6  별책 참조 : `,'그림 20-4 참조,'` — 시각 자료를 별책으로 뺐을 때. 무-LLM.
-  option 7  줄글 설명 : 형식이 실제로 갈리는 유형(만화·도표)에서만 붙는다.
+  option 7  줄글      : 형식이 실제로 갈리는 유형(도표)에서만 붙는다. 만화는 뺀다(§5.3.3).
   option 8  가계도(상향식) · option 10  흐름도(화살표) — 방식이 둘로 갈리는 유형.
-  option 11 간추린 설명 · option 12 자세한 설명 — **분량**이 갈리는 세 단(대표 결재
-            2026-09-09). 같은 재료에서 **덜어 내기만** 한다: 12=재료 전부 · 2=머리줄+부분 ·
-            11=머리줄. 가르는 자는 캡션 줄의 들여쓰기다(§6.1.4(4) 윤곽→부분→세부).
+  option 11 단순 · option 12 자세히 — **분량**이 갈리는 세 단(대표 결재 2026-09-09).
+            같은 재료에서 **덜어 내기만** 한다: 12=재료 전부 · 2=머리줄+부분 · 11=머리줄.
+            가르는 자는 캡션 줄의 들여쓰기다(§6.1.4(4) 윤곽→부분→세부).
 
-  ⚠ **피커 순서는 생략이 첫째다**(`drafts = [d_omit, d_desc, …]`). 그런데 gold 실측은
-    설명 79.6% · 생략 12.2% · 참조 8.0% 다. **가장 많이 쓰는 안이 둘째에 선다.**
-    바꾸려면 BE·FE 계약(option 번호 1·2·6)과 함께 봐야 해서 여기서 못 정한다 —
-    `docs/analysis/시각자료_초안양식.md` 에 결재 대기로 올렸다.
+  ★ 2026-09-11(#863) — **피커 이름과 차례를 대표 결재로 바꿨다.**
+    이름  `유형(분량)` — `흐름도(기본)`·`흐름도(단순)`·`흐름도(자세히)`·`흐름도(줄글)`.
+          유형이 없는 자료(그림·사진·그래프)는 분량만 — `기본`·`단순`·`자세히`·`줄글`.
+          생략·참조·대안 유형 이름은 안 바꾼다.
+    차례  설명 계열(기본 → 대안 유형 → 단순 → 자세히 → 줄글) → 생략 → 참조.
+          gold 전수 12,677건: 설명 75.9% · 생략 14.0% · 참조 10.0%.
+    ⚠ option 번호(1·2·6…)는 **안 바뀐다** — BE·FE 계약이다. 바뀐 것은 label 문자열과
+      리스트에 담는 차례뿐이고, proto 스키마도 FE 코드도 그대로다.
+    회귀 가드: `test/unit_test/llm/test_visual_picker_names_order.py`.
 
 4·5안은 2026-08-10에 붙였다(원장 C-28). 정답 실측에서 이 두 형식이 23%였고, 어느 형식을
 쓸지는 그림이 아니라 **책·권 단위 편집 방침**이라 우리가 못 고른다 — 안으로 내주고 고르게 한다.
@@ -26,8 +30,8 @@
 **1회 호출**로 생성한다(방식별 N회 호출 → 1회로 축소, 페이지 타임아웃 완화).
 LLM 파싱이 실패해도 캡션 폴백으로 3안이 보장된다(구 포맷 미준수 문제 해소).
 
-기본 선택(selected_idx): **사실상 항상 1(설명)이다.**
-⚠ 코드는 `decorative`면 0(생략)으로 두게 돼 있지만 **그 조건이 실제로 발화하지 않는다**
+기본 선택(selected_idx): **사실상 항상 0(기본 설명)이다**(2026-09-11 이전에는 1이었다).
+⚠ 코드는 `decorative`면 생략 안으로 두게 돼 있지만 **그 조건이 실제로 발화하지 않는다**
   (2026-08-21 실측). 호출부가 넘기는 값은 이제 `no_seed`(캡션·OCR·제목이 전부 없음) 하나뿐인데
   (`st['decorative']` 를 읽던 자리는 2026-09-08 재구조화 5단계에서 지웠다 — 채우는 쪽이 없었다),
   그 조건은 캡셔닝이 성공하면 안 걸린다.
@@ -109,7 +113,18 @@ _WRAP_STYLE = os.environ.get("VISUAL_WRAP_STYLE", "tn")
 #   ⚠ 피커 **순서**는 그대로다(생략이 첫째). gold 최빈이 `설명` 79.6% 지만 바꾸지 않는다.
 #   ⚠ 이 값은 proto 주석이 "피커 표시명"으로 못 박은 BE·FE 계약이다. 칸 폭이 늘어나므로
 #     FE 정렬 재작업이 따라와야 한다. 차이는 pm 이 정리해 BE·FE 에 전달한다.
+# ★ 2026-09-11(#863) — **순서를 gold 최빈순으로 뒤집었다**(대표 결재). 위 "순서는 그대로다"
+#   는 무효다. `설명 → 생략 → 참조` 다 — corpus/pages/braille 18,892쪽 전수 12,677건에서
+#   설명 75.9% · 생략 14.0% · 참조 10.0%. 가장 많이 쓰는 안이 둘째에, 가장 안 쓰는 안이
+#   첫째에 서 있었다. 값·option 번호는 그대로이고 **리스트에 담는 차례만** 바뀐다.
+#   ⚠ 그래서 `OMIT_IDX`·`DESC_IDX` 를 **리스트 인덱스로 쓰면 안 된다**(아래 주석 참조).
+# ★ 2026-09-11(#863) — FE 를 실제로 읽어 확인한 결과 위 "FE 정렬 재작업" 우려는 근거가
+#   없었다. `CandidateModal.tsx` 는 서버가 준 배열을 `flex flex-wrap` 안에 순서대로
+#   그리고 라벨 문자열 분기가 없다 — 이름·순서 변경은 FE·BE 코드 변경 0 이다.
 LABELS = ("생략", "설명", "참조")
+# ⚠ 이 셋은 **`LABELS` 안의 자리**이지 `drafts` 리스트의 자리가 아니다. 2026-09-11 이전에는
+#   둘이 우연히 같아서(`[생략, 설명, 참조]` 순) 리스트 인덱스로도 쓰였는데, 순서를 바꾸면서
+#   그 우연이 깨졌다. 안을 가려낼 때는 `option` 번호(아래)나 객체 동일성으로 가른다.
 OMIT_IDX, DESC_IDX, VOLREF_IDX = 0, 1, 2
 # ★ 안을 가릴 때는 **표시 이름이 아니라 이 번호로 가른다.** 이름은 사람에게 보이는
 #   값이라 언제든 바뀐다(2026-08-25 짧게, 2026-09-06 유형 부착 — 두 번 바뀌었다).
@@ -132,7 +147,22 @@ DESC_LABELS = {
     "만화":         "만화",             # §5.3 — 한 장면이면 장면 설정, 여러 장면이면 대사.
                                         #   재료가 가르니 이름은 하나다.
 }
-PROSE_LABEL = "줄글 설명"                     # 도표: 골격과 갈리는 줄글(§6.1.1(5))
+# 분량·형식 낱말 — 피커 이름의 **뒤 칸**이다(대표 결재 2026-09-11, #863).
+#
+#   유형 있음(도표·만화)   흐름도(단순)  흐름도(기본)  흐름도(자세히)  흐름도(줄글)
+#   유형 없음(그림·사진 등)      단순         기본         자세히         줄글
+#   생략·참조·대안 유형    그대로 (`흐름도 생략` · `그림 참조` · `가계도(상향식)`)
+#
+# 왜 — 종전에는 한 탭 목록 안에 성격이 다른 이름 셋이 섞여 있었다:
+#   `간추린 설명`(분량) · `흐름도`(유형) · `줄글 설명`(형식). 그래서 기본 안(`흐름도`)만
+#   분량 신호가 없어, 점역사가 탭 이름을 보고 "이걸 고르면 얼마나 긴 글이 나오는지"를
+#   짐작할 방법이 없었다. 이제 설명 계열 네 칸이 모두 같은 꼴을 갖는다.
+#
+# ★ `줄글`은 분량이 아니라 **형식**(문장이냐 개조식이냐) 축이다. 대표가 말한 3단계
+#   (단순·기본·자세히)는 분량 축이고, 줄글은 그 축 밖이다. 그래도 **표기는 같은 꼴로**
+#   맞춘다 — 피커에서 한 칸만 모양이 다르면 그게 무슨 축인지가 또 안 보인다.
+AMOUNT_SIMPLE, AMOUNT_BASIC, AMOUNT_DETAIL = "단순", "기본", "자세히"
+AMOUNT_PROSE = "줄글"
 # 그림·사진·그래프의 둘째 안. 점역사 실측 피드백(2026-08-25): 2차함수 그래프를 문제 풀이에서는
 # 수식만 적는 게 맞고, 개념이 처음 나오는 자리에서는 "위로 볼록"·"꼭짓점" 같은 성질을 더
 # 적어 주는 게 좋다. 어느 쪽이 맞는지는 **그 문제에 달렸는데 우리는 문제를 안 본다** —
@@ -179,8 +209,7 @@ FLOW_CHAIN_LABEL = "흐름도(화살표)"
 #   즉 **"절반이 한 줄" 이 아니라 4분의 1 미만이고, 지도·그래프·만화는 오히려 긴 쪽**이다.
 #   `간추린 설명`(머리줄만 남긴 안)은 22.9% 를 겨눈다 — 최빈 갈래가 아니다. 안으로 남기되
 #   기본으로 앞세울 근거는 여기에 없다.
-GIST_OPTION = 11
-GIST_LABEL = "간추린 설명"
+GIST_OPTION = 11   # 이름은 `amount_label(kind, AMOUNT_SIMPLE)` — `흐름도(단순)` · `단순`
 
 # 자세한 설명 — 캡션 재료를 **하나도 안 덜고 전부** 실은 안. 대표 결재 2026-09-09.
 #
@@ -204,8 +233,7 @@ GIST_LABEL = "간추린 설명"
 #   `#665` 하네스로 따로 잰다.
 # ⚠ 이 안은 **재료에 세부 줄이 실제로 있을 때만** 선다(`len(detail_indents) > len(indents)`).
 #   없으면 [2] 와 같은 글이라 피커에 같은 줄이 두 번 서게 된다.
-DETAIL_OPTION = 12
-DETAIL_LABEL = "자세한 설명"
+DETAIL_OPTION = 12   # 이름은 `amount_label(kind, AMOUNT_DETAIL)` — `흐름도(자세히)` · `자세히`
 
 
 def omit_label(type_label: str) -> str:
@@ -218,15 +246,39 @@ def volref_label(ref: str = "") -> str:
     return f"그림 {ref} 참조" if ref else f"그림 {LABELS[VOLREF_IDX]}"
 
 
-def desc_label(type_key: str) -> str:
-    """그 유형의 '설명' 안 이름.
+def type_name(type_key: str) -> str:
+    """그 유형의 이름. **유형이 없는 자료(그림·사진·그래프)는 빈 문자열이다.**
 
     ★ 도표는 **유형명 자체가 방식**이다(대표 지시 2026-08-25). "개념도 - 위계 개조식"처럼
       방식을 덧붙이면 같은 말을 두 번 하는 꼴이고, 규정에도 점역사 어휘에도 없는 조어가 붙는다.
       방식이 둘로 뚜렷이 갈리는 가계도만 괄호로 가른다.
-      그림·사진·그래프·만화는 골격이 하나뿐이라 **설명** 하나다.
+    ★ 2026-09-11(#863) — 없을 때의 폴백을 `"설명"` 에서 `""` 로 바꿨다. 이 함수는 이제
+      **유형 낱말만** 돌려주고, 사람에게 보이는 이름은 `with_amount` 가 만든다.
     """
-    return DESC_LABELS.get(type_key or "", LABELS[DESC_IDX])
+    return DESC_LABELS.get(type_key or "", "")
+
+
+def with_amount(type_word: str, amount: str) -> str:
+    """피커 이름 = `유형(분량)`. 유형이 없으면 분량만 (대표 결재 2026-09-11, #863).
+
+    ⚠ 유형 이름이 이미 괄호로 끝나면(`가계도(하향식)` 하나뿐이다) **그 괄호 안에 잇는다.**
+      기계적으로 붙이면 `가계도(하향식)(기본)` 이라 괄호가 두 번 열린다 — 실측 캡션 캐시
+      717건 중 54건(7.5%)이 이 자리다. 값이 아니라 표기만 다듬는 것이라 유형명은 그대로다.
+    """
+    if not type_word:
+        return amount
+    return (f"{type_word[:-1]}, {amount})" if type_word.endswith(")")
+            else f"{type_word}({amount})")
+
+
+def amount_label(type_key: str, amount: str) -> str:
+    """유형 키 + 분량 낱말 → 피커 이름."""
+    return with_amount(type_name(type_key), amount)
+
+
+def desc_label(type_key: str) -> str:
+    """그 유형의 '기본' 안 이름 — `흐름도(기본)` · `기본`."""
+    return amount_label(type_key, AMOUNT_BASIC)
 
 
 def prose_label(type_key: str) -> str:
@@ -245,10 +297,11 @@ def prose_label(type_key: str) -> str:
       섞이지 않고, 재료가 같으면 `_covered_by` 가 접는다(2026-09-07 실패와 갈리는 지점).
 
     ⚠ 만화만 뺀다. §5.3.3(1)(2)가 장면 5칸·대사 3칸으로 **줄 배치를 못 박아** 한 줄
-      줄글이 조항 위반이 된다. `desc_label("만화") == "만화"` 라 여기서 같은 값이 나오면
-      호출부의 "이름이 갈릴 때만" 조건이 안을 안 만든다.
+      줄글이 조항 위반이 된다. 여기서 `desc_label` 과 **같은 값**을 돌려주면 호출부의
+      "이름이 갈릴 때만" 조건이 안을 안 만든다 — 그 게이트를 그대로 쓴다.
     """
-    return desc_label(type_key) if type_key == "만화" else PROSE_LABEL
+    return (desc_label(type_key) if type_key == "만화"
+            else amount_label(type_key, AMOUNT_PROSE))
 
 # 개조식 들여쓰기 — **값은 전부 앞 빈칸 수다. 규정의 칸 번호가 아니다.**
 #   규정 "1칸에서 적는다" = 0 · "3칸에서 적는다" = 2 · "5칸에서 적는다" = 4 · "7칸" = 6
@@ -728,7 +781,7 @@ def prose_join(parts: list[str]) -> str:
     return out
 
 
-def prose_draft(text: str, type_key: str = "") -> Draft | None:
+def prose_draft(text: str, type_key: str = "", *, label: str = "") -> Draft | None:
     """줄글 설명 안(§6.1.4(7) 진술적 설명). 낼 글이 없으면 None.
 
     ★ 2026-09-09 인용 정정 — 종전 주석은 근거로 §6.1.1(5)를 댔는데 그 조항은
@@ -744,8 +797,11 @@ def prose_draft(text: str, type_key: str = "") -> Draft | None:
     body = _oneline(text or "")
     if not body:
         return None
+    # `label` 은 호출부가 **캡션이 말한 유형어**를 이미 풀어 놓았을 때 쓴다(도표 골격 경로).
+    # 안 주면 유형 키로 짓는다. 안 주고 지으면 기본 안이 `구조도(기본)` 인 자리에서 줄글만
+    # `개념도(줄글)` 로 나가 피커의 두 칸이 서로 다른 유형을 말한다(2026-09-11, #863).
     return Draft(option=PROSE_OPTION, text=_tn(body), render_mode="narrative",
-                 label=prose_label(type_key))
+                 label=label or prose_label(type_key))
 
 
 
@@ -765,7 +821,8 @@ def gist_draft(
     """
     text, indents = _outline_text_indents(label, title, desc, [], kind, body_texts)
     return Draft(option=GIST_OPTION, text=_TAGS.apply_indent_tags(text, indents),
-                 render_mode="narrative", label=GIST_LABEL), indents
+                 render_mode="narrative",
+                 label=amount_label(kind, AMOUNT_SIMPLE)), indents
 
 
 
@@ -781,7 +838,8 @@ def detail_draft(
     """
     text, indents = _outline_text_indents(label, title, desc, items, kind, body_texts)
     return Draft(option=DETAIL_OPTION, text=_TAGS.apply_indent_tags(text, indents),
-                 render_mode="narrative", label=DETAIL_LABEL), indents
+                 render_mode="narrative",
+                 label=amount_label(kind, AMOUNT_DETAIL)), indents
 
 
 def _dedupe(drafts: list[Draft], selected_idx: int) -> tuple[list[Draft], int]:
@@ -1001,8 +1059,13 @@ async def build_visual_drafts(
     if not core_items:
         core_items = outline_items
     d_desc, indents = desc_draft(label, title, outline_desc, core_items, kind, _body)
-    drafts = [d_omit, d_desc, *extra_drafts(label)]
-    # 줄글 안은 **뒤에** 붙인다 — 앞 셋의 option 번호·순번이 BE·FE 계약이다.
+    # ★ 2026-09-11(#863) 순서 — **설명 계열이 먼저, 생략·참조가 뒤**(대표 결재).
+    #   처리 방식 축:   설명 → 생략 → 참조   (gold 전수 12,677건: 75.9% · 14.0% · 10.0%)
+    #   설명 계열 안:   기본 → 단순 → 자세히 → 줄글
+    #   종전에는 `[생략, 설명, 참조]` 였다 — option 번호(1·2·6)를 그대로 화면 차례로 쓴
+    #   결과라, 가장 많이 쓰는 안이 둘째에 가장 안 쓰는 안이 첫째에 서 있었다.
+    #   ⚠ option 번호와 label 값은 **안 바뀐다**. 리스트에 담는 차례만 바뀐다.
+    drafts = [d_desc]
     # ★ 재료가 **진짜 줄글일 때만** 붙인다. 옛 `prose` 폴백 사슬(caption·title·struct_text)은
     #   설명 안이 쓰는 것과 같은 글이라, 그대로 넣으면 피커에 거의 같은 줄이 두 번 선다
     #   (`_dedupe`는 글자가 완전히 같을 때만 접으므로 라벨 머리글 하나 차이로 안 접힌다).
@@ -1034,29 +1097,35 @@ async def build_visual_drafts(
     _joined = prose_join([_strip_dup_type(outline_desc, label),
                           *(t for _lv, t in core_items)])
     real_prose = struct_prose or (f"{label}: {_joined}" if _joined else "")
-    if prose_label(kind) != desc_label(kind):
-        d_prose = prose_draft(real_prose, kind)
-        if d_prose is not None and not _covered_by(d_prose.text, d_desc.text):
-            drafts.append(d_prose)
 
-    # 간추린 설명 — **설명 안이 여러 줄일 때만** 붙인다. 한 줄이면 두 안이 같은 글이라
+    # 단순 — **설명 안이 여러 줄일 때만** 붙인다. 한 줄이면 두 안이 같은 글이라
     # 피커에 같은 줄이 두 번 선다(`_dedupe` 도 접지만 여기서 아예 안 만든다).
     # gold 설명 909건 중 **52.9%가 한 줄**인데 우리 설명 계열 안은 100.0%가 하나뿐이었다 —
     # 재료가 넉넉한 자리에서 점역사가 짧은 쪽을 고를 길이 없었다.
     # ⚠ 머리줄이 **유형 낱말 하나뿐**이면 내지 않는다. 캡션이 `도표: 흐름도` 처럼 유형만
     #   두 번 말하면 `_strip_dup_type` 이 뒤 낱말을 떼어 머리줄이 `도표` 만 남는다 —
     #   그 한 줄은 설명이 아니라 이름표라 고를 값이 없다(캡션 캐시 실측으로 확인).
-    # 자세한 설명 — **세부 줄이 실제로 있을 때만** 붙인다(줄이 안 늘면 [2]와 같은 글이다).
+    d_gist, gist_indents = gist_draft(label, title, outline_desc, kind, _body)
+    _gist_body = " ".join(_TAG_STRIP_RE.sub("", d_gist.text).split())
+    if len(indents) > len(gist_indents) and _gist_body not in ("", label):
+        drafts.append(d_gist)
+
+    # 자세히 — **세부 줄이 실제로 있을 때만** 붙인다(줄이 안 늘면 [2]와 같은 글이다).
     if len(core_items) < len(outline_items):
         d_detail, det_indents = detail_draft(label, title, outline_desc, outline_items,
                                              kind, _body)
         if len(det_indents) > len(indents):
             drafts.append(d_detail)
 
-    d_gist, gist_indents = gist_draft(label, title, outline_desc, kind, _body)
-    _gist_body = " ".join(_TAG_STRIP_RE.sub("", d_gist.text).split())
-    if len(indents) > len(gist_indents) and _gist_body not in ("", label):
-        drafts.append(d_gist)
+    # 줄글 — 위 조건 셋을 다 지날 때만.
+    if prose_label(kind) != desc_label(kind):
+        d_prose = prose_draft(real_prose, kind)
+        if d_prose is not None and not _covered_by(d_prose.text, d_desc.text):
+            drafts.append(d_prose)
+
+    # 처리 방식 축의 나머지 둘 — 설명 계열 **뒤**에 선다(gold 최빈순, 위 순서 주석).
+    omit_pos = len(drafts)
+    drafts += [d_omit, *extra_drafts(label)]
 
     # 기본은 설명이다. gold 실측에서 설명이 79.6%로 압도한다(생략 12.2% · 참조 8.0%).
     #
@@ -1069,7 +1138,10 @@ async def build_visual_drafts(
     #   캡션이 없는 것이 아니다. 재료가 **아무것도** 없으면 아래 `_no_material` 가 생략 한
     #   안만 내므로 그 경우는 그대로 걸러진다.
     has_material = bool(struct_outline or struct_prose)
-    selected_idx = OMIT_IDX if (decorative and not has_material) else DESC_IDX
+    # ⚠ `OMIT_IDX`·`DESC_IDX` 는 리스트 자리가 아니다(2026-09-11 순서 변경). 기본 안은
+    #   언제나 0 번이고, 생략 안의 자리는 그 사이에 몇 안이 섰느냐로 갈린다.
+    omitted = decorative and not has_material
+    selected_idx = omit_pos if omitted else 0
 
     # ★ 재료가 하나도 없으면 **생략 한 안만** 낸다 (2026-08-12 대표 지시).
     #   캡션·제목·원본 글자가 다 없으면 짧은 제목·개조식·줄글은 낼 게 없어 전부
@@ -1086,7 +1158,7 @@ async def build_visual_drafts(
         if title:
             logger.info("    4안 제목만 → 생략 표기(R11) %s %s", kind, str(ext.element_id)[:8])
         return [d_omit], 0, None, tier, caption_source(
-            OMIT_IDX, has_print_caption=False, has_struct=False)
+            True, has_print_caption=False, has_struct=False)
 
     # 재료가 조금이라도 있으면 6안을 내되, 문구가 똑같아진 안은 접는다.
     drafts, selected_idx = _dedupe(drafts, selected_idx)
@@ -1094,7 +1166,7 @@ async def build_visual_drafts(
     logger.info("    4안 %s %s: %.1fs (tier=%s)", kind, str(ext.element_id)[:8],
                 time.monotonic() - _t0, tier)
     return drafts, selected_idx, line_indents, tier, caption_source(
-        selected_idx, has_print_caption=bool(caption), has_struct=struct_outline is not None,
+        omitted, has_print_caption=bool(caption), has_struct=struct_outline is not None,
     )
 
 
@@ -1112,7 +1184,7 @@ def visual_trail(rule_id: str, drafts: list[Draft], selected_idx: int, source: s
 
 
 def caption_source(
-    selected_idx: int, *, has_print_caption: bool, has_struct: bool
+    omitted: bool, *, has_print_caption: bool, has_struct: bool
 ) -> str:
     """선택된 대체텍스트가 **어디서 왔는지** 한 마디로 (Step17, 2026-08-08 대표 지시).
 
@@ -1120,7 +1192,10 @@ def caption_source(
     인쇄 캡션을 옮긴 것이면 원본 대조로 끝나지만, AI가 만든 문구면 그림과 하나하나 맞춰
     봐야 한다 — 확인 비용이 다르다. 지금까지 이 구분이 rule_trail 어디에도 없었다.
     """
-    if selected_idx == OMIT_IDX:
+    # ★ 2026-09-11(#863) — 인자를 리스트 인덱스에서 **참/거짓**으로 바꿨다. 종전에는
+    #   `selected_idx == OMIT_IDX(=0)` 로 가렸는데, 순서가 바뀌어 0 번이 생략이 아니라
+    #   **기본 안**이 됐다. 그대로 뒀으면 모든 초안이 "생략(장식용 판정)" 근거를 달았다.
+    if omitted:
         return "생략(장식용 판정)"
     if has_struct:
         return "구조 전사(무-LLM)"

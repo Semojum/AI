@@ -34,21 +34,22 @@ class TestFourDrafts:
     def test_안_라벨(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(ChartGraphOpt().optimize([ext], "ZERO"))[0]
-        from app.ai.llm.visual_drafts import GIST_LABEL, PROSE_LABEL
         labels = [d.label for d in opt.drafts]
+        # ★ 2026-09-11(#863) 순서 — 기본 → 단순 → 줄글 → 생략 → 참조(gold 최빈순).
         # 생략·참조에는 탐지된 유형이 붙는다(2026-09-06 결재). 값이 아니라 끝 낱말로 본다.
-        assert labels[0].endswith(LABELS[0]) and labels[0] != LABELS[0], labels
-        assert labels[1] == desc_label("차트"), labels
-        assert labels[2].endswith(LABELS[2]) and labels[2] != LABELS[2], labels
+        assert labels[0] == desc_label("차트") == "기본", labels
         # 종전엔 LLM `[줄글]` 로 만든 '설명(자세히)'였는데 설명 안보다 **짧고** 캡션에
         # 없는 문장이었다. 지금은 둘 다 **설명 안의 글자만** 쓴다(2026-09-07·#793) —
-        # 줄글은 그 줄들을 잇고(§6.1.4(7)) 간추린은 항목을 지운다(§6.1.4(4)).
-        assert labels[3:] == [PROSE_LABEL, GIST_LABEL], labels
-        assert opt.selected_idx == 1                                   # 기본=설명(gold 79.6%)(표 변환)
+        # 줄글은 그 줄들을 잇고(§6.1.4(7)) 단순은 항목을 지운다(§6.1.4(4)).
+        assert labels[1:3] == ["단순", "줄글"], labels
+        assert labels[3].endswith(LABELS[0]) and labels[3] != LABELS[0], labels
+        assert labels[4].endswith(LABELS[2]) and labels[4] != LABELS[2], labels
+        assert opt.selected_idx == 0                                   # 기본=설명(gold 75.9%)(표 변환)
 
     def test_개조식_데이터_전사(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
-        outline = asyncio.run(ChartGraphOpt().optimize([ext], "ZERO"))[0].drafts[1].text
+        drafts = asyncio.run(ChartGraphOpt().optimize([ext], "ZERO"))[0].drafts
+        outline = next(d for d in drafts if d.option == 2).text
         assert "2020: 980권" in outline and "2021: 1100권" in outline   # 수치+단위 전사
         assert "가로축 연도" in outline                                # 축 머리 항목
 

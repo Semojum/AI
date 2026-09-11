@@ -11,7 +11,8 @@ from uuid import uuid4
 from app.ai.braille.visual_braille import CartoonBraille
 from app.ai.braille.layout_braille import LayoutBraille
 from app.ai.llm.cartoon_opt import CartoonOpt
-from app.ai.llm.visual_drafts import omit_label, volref_label, LABELS, desc_label, prose_label
+from app.ai.llm.visual_drafts import (AMOUNT_SIMPLE, LABELS, amount_label, desc_label,
+                                      omit_label, prose_label, volref_label)
 from app.schemas.content import ExtractedContent
 from app.schemas.layout import BBoxItem, LayoutResult
 from app.utils.braille_back import decode
@@ -31,23 +32,24 @@ class TestFourDrafts:
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
         labels = [d.label for d in opt.drafts]
         # 재료가 겹쳐 접힌 안이 있을 수 있다(`visual_drafts._dedupe`) — 남은 것은
-        # LABELS의 **부분 수열**이고 서로 달라야 한다.
-        from app.ai.llm.visual_drafts import GIST_LABEL
+        # 아래 차례의 **부분 수열**이고 서로 달라야 한다.
+        # ★ 2026-09-11(#863) — 기본 → 단순 → 생략 → 참조. 만화는 줄글 안을 안 낸다(§5.3.3).
         expected = list(dict.fromkeys(
-            [omit_label("만화"), desc_label("만화"), volref_label(),
-             prose_label("만화"), GIST_LABEL]))
+            [desc_label("만화"), amount_label("만화", AMOUNT_SIMPLE),
+             omit_label("만화"), volref_label()]))
         assert labels == [x for x in expected if x in labels], labels
         assert len(set(labels)) == len(labels), labels
-        assert opt.selected_idx == 1                                   # 기본=설명(gold 79.6%)
+        assert opt.selected_idx == 0                                   # 기본=설명(gold 75.9%)
 
     def test_생략안(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
-        assert opt.drafts[0].text == "<!주>만화 생략<!/주>"
+        assert next(d for d in opt.drafts if d.option == 1).text == "<!주>만화 생략<!/주>"
 
     def test_개조식_장면_대사_전사(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
-        outline = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0].drafts[1].text
+        drafts = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0].drafts
+        outline = next(d for d in drafts if d.option == 2).text
         assert "장면 1" in outline                                     # §5.3.3(1)
         assert "학생: 안녕?" in outline                                 # §5.3.3(2)(3) 대사 전사
         assert "말풍선: 반가워" in outline                              # §6.3.4(3) 화자 불명
@@ -57,10 +59,11 @@ class TestFourDrafts:
         opt = asyncio.run(CartoonOpt().optimize([ext], "ZERO"))[0]
         labels = [d.label for d in opt.drafts]
         expected = list(dict.fromkeys(
-            [omit_label("만화"), desc_label("만화"), volref_label(), prose_label("만화")]))
+            [desc_label("만화"), prose_label("만화"), omit_label("만화"), volref_label()]))
         assert labels == [x for x in expected if x in labels], labels
         assert len(set(labels)) == len(labels) >= 3, labels
-        assert "두 컷 만화" in opt.drafts[1].text                      # 캡션 → 짧은 제목
+        # 캡션 → 짧은 제목
+        assert "두 컷 만화" in next(d for d in opt.drafts if d.option == 2).text
 
     def test_전부_없음_생략표기(self):
         """시드가 전부 없으면 규정상 '생략' 표기(§6.3.4(2)②). 실패 문자열은 점자로 찍지 않는다."""
