@@ -33,14 +33,20 @@ def test_이름은_짧다():
     ("slide", "발표용 슬라이드"),
 ])
 def test_도표는_유형명_자체가_방식이다(subtype, name):
-    """★ "개념도 - 위계 개조식"은 같은 말을 두 번 하는 꼴이고 조어가 붙는다(대표 지시)."""
-    assert vd.desc_label(subtype) == name
+    """★ "개념도 - 위계 개조식"은 같은 말을 두 번 하는 꼴이고 조어가 붙는다(대표 지시).
+
+    ★ 2026-09-11(#863) — 유형 낱말은 `type_name`, 사람에게 보이는 이름은 `유형(분량)` 이다.
+      유형명 자체는 안 바뀐다.
+    """
+    assert vd.type_name(subtype) == name
+    assert vd.desc_label(subtype) == vd.with_amount(name, "기본")
 
 
 def test_만화는_안이_하나다():
     """한 장면이면 장면 설정, 여러 장면이면 대사 — **재료가 가르니** 이름은 하나다."""
-    assert vd.desc_label("만화") == "만화"
-    assert vd.prose_label("만화") == "만화"       # 같은 이름 → 둘째 안을 안 만든다
+    assert vd.desc_label("만화") == "만화(기본)"
+    # 같은 이름 → 둘째 안(줄글)을 안 만든다. §5.3.3(1)(2)가 줄 배치를 못 박아서다.
+    assert vd.prose_label("만화") == vd.desc_label("만화")
 
 
 def test_그림_사진_그래프는_분량과_형식_둘로_갈린다():
@@ -54,16 +60,17 @@ def test_그림_사진_그래프는_분량과_형식_둘로_갈린다():
       조항도 반대를 말한다 — §6.1.4(7) "대부분의 시각 자료 설명에 사용".
     """
     for k in ("이미지", "차트", ""):
-        assert vd.desc_label(k) == "설명", k
-        assert vd.prose_label(k) == "줄글 설명", k        # 이름이 갈린다 → 줄글 안이 선다
+        assert vd.type_name(k) == "", k                  # 유형이 없는 자료 → 분량만
+        assert vd.desc_label(k) == "기본", k
+        assert vd.prose_label(k) == "줄글", k             # 이름이 갈린다 → 줄글 안이 선다
     # 분량은 여기서 갈린다 — 항목을 지우기만 하므로 재료에 없는 말이 못 들어간다.
     d_gist, ind = vd.gist_draft("그림", "", "물의 순환", "이미지")
-    assert d_gist.option == vd.GIST_OPTION and d_gist.label == "간추린 설명"
+    assert d_gist.option == vd.GIST_OPTION and d_gist.label == "단순"
     assert len(ind) == 1, ind
 
 
 def test_도표만_줄글이_골격과_갈린다():
-    assert vd.prose_label("concept_map") == "줄글 설명"
+    assert vd.prose_label("concept_map") == "개념도(줄글)"
 
 
 def test_표_이름이_점자_차이를_말한다():
@@ -110,7 +117,7 @@ def test_줄글_안은_뒤에_붙는_새_번호다():
     d = vd.prose_draft("사용자 서버, DNS 서버", "concept_map")
     assert d is not None
     assert d.option == vd.PROSE_OPTION == 7          # 1·2·6 은 BE·FE 계약이라 안 건드린다
-    assert d.label == "줄글 설명"
+    assert d.label == "개념도(줄글)"
 
 
 # ── 2단계 B: 안마다 자기 들여쓰기 ─────────────────────────────────────────
@@ -169,7 +176,7 @@ def test_8종_밖은_설명_폴백이다():
     ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0,
                            corrected_text="동아시아 지역을 표시한 지도")
     opt = asyncio.run(DiagramOpt().optimize([ext], "ZERO"))[0]
-    assert opt.drafts[opt.selected_idx].label == "설명"
+    assert opt.drafts[opt.selected_idx].label == "기본"
 
 
 def test_표_셀_태그와_안_섞인다():
@@ -193,10 +200,11 @@ def test_안마다_자기_들여쓰기를_싣는다():
     from app.ai.braille import tag_names as T
     by = {d.label: T.strip_indent_tags(d.text)[1] for d in opt.drafts}
     # 둘째 칸(유형 제시어 머리줄)은 3칸 = 빈칸 2 — 도서지침 3장 2절 4)(1) L2368, 원장 C-D3.
-    assert by["가계도(하향식)"] == [4, 2, 2, 0, 2, 4]
+    # ★ 기본 안만 분량 낱말을 단다. 대안 방향 안은 **유형 이름 그대로**다(#863).
+    assert by["가계도(하향식, 기본)"] == [4, 2, 2, 0, 2, 4]
     assert by["가계도(상향식)"] == [4, 2, 2, 2, 2, 2]
     # ★ 줄 수가 6으로 같아 길이 검사로는 못 걸렀다 — 그래서 태그로 옮겼다
-    assert len(by["가계도(하향식)"]) == len(by["가계도(상향식)"])
+    assert len(by["가계도(하향식, 기본)"]) == len(by["가계도(상향식)"])
     # 호환 필드는 **선택된 안의 글에 박힌 태그**에서 되읽는다
     assert opt.line_indents == T.strip_indent_tags(opt.drafts[opt.selected_idx].text)[1]
 

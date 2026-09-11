@@ -36,38 +36,44 @@ _STRUCT = {
 from app.ai.llm import visual_drafts as vd_mod  # noqa: E402
 
 
+def _by_option(opt, option: int):
+    """안은 **option 번호로 찾는다.** 리스트 자리는 2026-09-11(#863)에 바뀌었고
+    재료 상황(단순·자세히·줄글이 서느냐)에 따라서도 달라진다."""
+    return next(d for d in opt.drafts if d.option == option)
+
+
 class TestFourDrafts:
     def test_안_라벨(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(ImageOpt().optimize([ext], "ZERO"))[0]
         labels = [d.label for d in opt.drafts]
-        # 재료가 겹쳐 접힌 안이 있을 수 있다(`visual_drafts._dedupe`) — 남은 것은
-        # LABELS의 **부분 수열**이고 서로 달라야 한다.
-        # 생략·참조 이름에는 **탐지된 유형**이 붙는다(2026-09-06 결재) — 스키마 키가
-        # 아니라 실제 탐지 결과라 값을 못 박지 않고 끝 낱말로 검사한다.
-        assert labels[0].endswith(LABELS[0]) and labels[0] != LABELS[0], labels
-        assert labels[1] == desc_label("이미지"), labels
-        assert labels[2].endswith(LABELS[2]) and labels[2] != LABELS[2], labels
+        # ★ 2026-09-11(#863) 순서 — 기본 → 단순 → 줄글 → 생략 → 참조.
+        #   생략·참조 이름에는 **탐지된 유형**이 붙는다(2026-09-06 결재) — 스키마 키가
+        #   아니라 실제 탐지 결과라 값을 못 박지 않고 끝 낱말로 검사한다.
+        assert labels[0] == desc_label("이미지") == "기본", labels
+        assert labels[-2].endswith(LABELS[0]) and labels[-2] != LABELS[0], labels
+        assert labels[-1].endswith(LABELS[2]) and labels[-1] != LABELS[2], labels
         if len(labels) > 3:
-            # 설명 안이 여러 줄이면 **줄글·간추린 설명**이 뒤에 선다(2026-09-07·#793).
-            assert labels[3:] == [vd_mod.PROSE_LABEL, vd_mod.GIST_LABEL], labels
+            # 설명 안이 여러 줄이면 **단순·줄글**이 기본 바로 뒤에 선다(2026-09-07·#793).
+            assert labels[1:-2] == ["단순", "줄글"], labels
         assert len(set(labels)) == len(labels), labels
-        assert opt.selected_idx == 1                           # 기본=설명(gold 79.6%)
+        assert opt.selected_idx == 0                           # 기본=설명(gold 75.9%)
 
     def test_생략안_규정표기(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(ImageOpt().optimize([ext], "ZERO"))[0]
-        assert opt.drafts[0].text == "<!주>그림 생략<!/주>"   # §6.3.4(2)②
+        assert _by_option(opt, 1).text == "<!주>그림 생략<!/주>"   # §6.3.4(2)②
 
     def test_짧은제목_캡션_전사(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(ImageOpt().optimize([ext], "ZERO"))[0]
-        assert "잎에서 빛을 받는다" in opt.drafts[1].text
+        assert "잎에서 빛을 받는다" in _by_option(opt, 2).text
 
     def test_개조식_ocr_전사(self):
         ext = ExtractedContent(element_id=uuid4(), ocr_confidence=1.0, structure=_STRUCT)
         opt = asyncio.run(ImageOpt().optimize([ext], "ZERO"))[0]
-        assert "6CO2" in opt.drafts[1].text and "C6H12O6" in opt.drafts[1].text   # §6.3.4(2)①
+        d = _by_option(opt, 2)
+        assert "6CO2" in d.text and "C6H12O6" in d.text         # §6.3.4(2)①
         assert opt.line_indents is not None                    # 개조식 위계 들여쓰기 전달
 
     # ★ 2026-09-08(재구조화 5단계) — `test_장식용_기본_생략` 을 지웠다. 입력으로 준

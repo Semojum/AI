@@ -176,15 +176,17 @@ class TestStep17CaptionSource:
     """Step17 — 대체텍스트의 출처(인쇄 캡션 전사 / AI 생성 / 구조 전사)를 근거에 남긴다."""
 
     def test_출처_구분(self):
-        from app.ai.llm.visual_drafts import OMIT_IDX, DESC_IDX, caption_source
+        from app.ai.llm.visual_drafts import caption_source
 
         f = caption_source
         # ★ 2026-09-08(재구조화 5단계) — `used_llm` 인자를 뺐다. L8 LLM 팔이 없어져
         #   4안 출처는 '구조 전사 / 인쇄 캡션 전사 / 제목 전사 / 생략' 넷뿐이다.
-        assert f(DESC_IDX, has_print_caption=True, has_struct=False) == "인쇄 캡션 전사"
-        assert f(DESC_IDX, has_print_caption=False, has_struct=False) == "제목 전사"
-        assert f(DESC_IDX, has_print_caption=True, has_struct=True) == "구조 전사(무-LLM)"
-        assert "생략" in f(OMIT_IDX, has_print_caption=False, has_struct=False)
+        # ★ 2026-09-11(#863) — 첫 인자를 리스트 인덱스에서 **'생략 안이 골렸는가'** 로
+        #   바꿨다. 순서가 바뀌어 0 번이 생략이 아니라 기본 안이 됐기 때문이다.
+        assert f(False, has_print_caption=True, has_struct=False) == "인쇄 캡션 전사"
+        assert f(False, has_print_caption=False, has_struct=False) == "제목 전사"
+        assert f(False, has_print_caption=True, has_struct=True) == "구조 전사(무-LLM)"
+        assert "생략" in f(True, has_print_caption=False, has_struct=False)
 
     def test_근거_tag는_선택안과_출처(self):
         from app.ai.llm.visual_drafts import DESC_IDX, LABELS, visual_trail

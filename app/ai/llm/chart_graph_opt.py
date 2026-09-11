@@ -12,7 +12,7 @@ from app.ai.llm.base_opt import BaseOpt
 from app.ai.llm.base_opt import numbers_grounded as _verify_numbers  # noqa: F401 (테스트가 import)
 from app.ai.braille import tag_names as _TAGS
 from app.ai.llm.visual_drafts import (
-    DESC_IDX,
+    DESC_OPTION,
     build_visual_drafts,
     resolve_label,
     visual_trail,
@@ -95,7 +95,12 @@ class ChartGraphOpt(BaseOpt):
         # 수치 그라운딩 — LLM이 생성한 줄글에서 원본 수치가 누락/변조됐는지(누락 시 R5).
         # ZERO/rule-based 줄글은 전사라 검사 불필요(생성 환각 위험 없음).
         ref = ", ".join(t for _, t in data_items) or caption
-        if tier not in ("ZERO",) and struct_prose is None and ref and not _verify_numbers(ref, drafts[DESC_IDX].text):
+        # ⚠ **option 번호로 찾는다.** 종전에는 `drafts[DESC_IDX]`(=1번 자리)로 집었는데,
+        #   2026-09-11(#863)에 피커 순서가 바뀌어 그 자리가 '기본 설명' 이 아니게 됐다.
+        #   자리는 재료 상황마다 달라지지만 option 번호는 BE·FE 계약이라 안 바뀐다.
+        d_desc = next((d for d in drafts if d.option == DESC_OPTION), None)
+        if (tier not in ("ZERO",) and struct_prose is None and ref and d_desc is not None
+                and not _verify_numbers(ref, d_desc.text)):
             ext.flags = list(getattr(ext, "flags", None) or []) + ["R5"]
 
         return LLMOutput(
