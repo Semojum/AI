@@ -6,6 +6,7 @@ debug=True 시 최종 order 기준 layout_viz.jpg를 test/results/page_{no:03d}/
 import json
 import os
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextvars import copy_context
@@ -124,9 +125,72 @@ def caption_fatal_reason() -> str | None:
 
 
 def reset_caption_fatal() -> None:
-    """테스트·재시도용 — 잠금 해제."""
-    global _caption_fatal
+    """테스트·재시도용 — 잠금 해제. 누계(성공·실패)는 건드리지 않는다.
+
+    잠금은 job 경계에서 풀린다(pipeline). 누계까지 같이 풀면 러너 상태바가
+    과목이 바뀔 때마다 0으로 돌아가 "이번 실행에서 몇 개가 비었나"를 못 센다.
+    """
+    global _caption_fatal, _cap_streak
     _caption_fatal = None
+    with _cap_lock:
+        _cap_streak = 0
+
+
+# ── 실행 단위 집계 + 연속 실패 래치 (#852) ──────────────────────────────────
+# 위 _FATAL_EXC 래치는 **설정성 오류**(키·인증)만 잡는다. 망이 끊기거나 한도가 나면
+# 예외는 `APIConnectionError`·`RateLimitError`라 fatal 이 아니고, 요소마다 재시도 2회를
+# 태운 뒤 빈 캡션으로 조용히 넘어간다 — 실행은 안 멈춘다.
+#   실측(2026-09-11 재현, 이 갈래): 미도달 엔드포인트로 1쪽을 돌렸더니 시각요소 3개가
+#   각각 9.5s 를 태우고 전부 CAPTION_FAILED, 페이지는 NEEDS_REVIEW, 러너 요약은
+#   `완료: COMPLETED0 NEEDS_REVIEW1 BLOCKED0 fail0 timeout0 / 1` 로 정상처럼 찍혔다.
+#   실제 사고(2026-08-06)는 이 상태로 816쪽·3.5시간을 돌았다.
+# **망이 끊긴 것과 한 요소가 실패한 것은 다르다.** 캡셔닝 실패는 그림마다 따로 나지 않고
+# 실행 통째로 난다(위 전 job 실측: 실패율 100% job 152개 · 0% job 215개, 중간이 거의 없다).
+# 그래서 일시장애라도 **내리 이어지면** 망 문제로 보고 잠근다. 성공이 하나라도 끼면 0으로
+# 되돌리므로, 산발 실패 한둘로는 절대 안 걸린다.
+_cap_lock = threading.Lock()
+_cap_ok = 0
+_cap_fail = 0
+_cap_streak = 0
+# 연속 실패 임계. 한 건당 재시도 2회(백오프 1.5s·3s)를 이미 태운 뒤의 실패라서,
+# 5연속이면 호출 15회·대기 22s 를 내리 못 받은 것이다. 잠깐 끊긴 것과 구분된다.
+_CAP_STREAK_LIMIT = max(1, int(os.environ.get("CAPTION_FAIL_STREAK_LIMIT", "5")))
+
+
+def caption_counters() -> tuple[int, int]:
+    """이번 실행의 (캡션 성공 수, 실패 수). 러너가 **도는 중에** 들여다본다."""
+    return _cap_ok, _cap_fail
+
+
+def reset_caption_counters() -> None:
+    """테스트용 — 누계·연속 실패 초기화."""
+    global _cap_ok, _cap_fail, _cap_streak
+    with _cap_lock:
+        _cap_ok = _cap_fail = _cap_streak = 0
+
+
+def _note_caption_result(ok: bool, exc: Exception | None = None) -> None:
+    """캡션 한 건의 결과를 실행 단위로 센다. 일시장애가 내리 이어지면 잠근다.
+
+    의도된 생략(가드3·DISABLE_LLM_FALLBACK·SEMOJUM_NO_CAPTION·이미지 없음)은 세지 않는다 —
+    그걸 실패로 세면 정상 실행이 경보로 덮인다(2026-08-27 전례).
+    """
+    global _cap_ok, _cap_fail, _cap_streak, _caption_fatal
+    with _cap_lock:
+        if ok:
+            _cap_ok += 1
+            _cap_streak = 0
+            return
+        _cap_fail += 1
+        _cap_streak += 1
+        if (_caption_fatal or exc is None
+                or type(exc).__name__ not in _TRANSIENT_EXC
+                or _cap_streak < _CAP_STREAK_LIMIT):
+            return
+        _caption_fatal = f"{type(exc).__name__}(연속 {_cap_streak}회): {exc}"
+    logger.error("캡셔닝 전면 중단 — 일시장애가 %d회 내리 이어졌다(%s). 망·한도 문제로 본다. "
+                 "이번 실행의 남은 시각요소는 API를 부르지 않고 '생략'으로 나간다.",
+                 _CAP_STREAK_LIMIT, _caption_fatal)
 
 
 def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | None, str]:
@@ -158,6 +222,7 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
     # 설정성 오류로 이미 잠겼으면 API를 다시 두드리지 않는다 — 같은 실패를 요소 수만큼
     # 반복해 봐야 시간만 버린다(200요소 페이지면 재시도 포함 600회).
     if _caption_fatal:
+        _note_caption_result(False)      # 잠금 때문에 빈 캡션으로 나간 것도 실패로 센다
         return "", original_type, False, None, ""
 
     # 가드3 — 텍스트 요소와 자리가 거의 같은 시각 요소는 **글자를 그림으로 잡은 것**이다
@@ -198,7 +263,9 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
             #   빈 응답은 성공이 아니다. 실패로 돌려 요소를 살린다(불변규칙 1).
             if not text.strip():
                 logger.error("캡셔닝 빈 응답 id=%s type=%s — 요소는 살린다", eid, image_type)
+                _note_caption_result(False)
                 return "", mapped_type, False, subconf, vsub
+            _note_caption_result(True)
             return text, mapped_type, True, subconf, vsub
         except Exception as exc:  # noqa: BLE001 — 요소 격리(불변규칙 3)
             last = exc
@@ -215,6 +282,7 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
 
     # 삼키지 않는다 — 원인(쿼터 소진·인증 실패 등)이 로그에 남아야 운영에서 추적된다.
     logger.error("캡셔닝 실패 id=%s: %s: %s", eid, type(last).__name__, last)
+    _note_caption_result(False, last)
     return "", original_type, False, None, ""
 
 

@@ -119,3 +119,104 @@ class TestResetOnNewJob:
         rb._caption_fatal = "AuthenticationError: 401"
         self._run("job-A", 2)
         assert rb.caption_fatal_reason() == "AuthenticationError: 401"
+
+
+# ── 일시장애가 내리 이어지면 = 망이 끊긴 것 (#852) ───────────────────────────
+class TestTransientStreak:
+    """한 요소의 실패와 망이 끊긴 것을 가른다.
+
+    `APIConnectionError` 는 fatal 이 아니라 요소마다 재시도만 태우고 넘어갔다. 그래서
+    망이 끊기면 실행이 안 멈추고 빈 캡션만 쌓였다(2026-08-06 816쪽·3.5시간).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clean(self, monkeypatch: pytest.MonkeyPatch):
+        rb.reset_caption_counters()
+        monkeypatch.setattr(rb, "_CAPTION_RETRIES", 0)   # 백오프 대기 없이 재현
+        yield
+        rb.reset_caption_counters()
+
+    @staticmethod
+    def _img(tmp_path):
+        p = tmp_path / "a.jpg"
+        p.write_bytes(b"x")
+        return {"image_path": str(p), "type": "image", "element_id": "e"}
+
+    @staticmethod
+    def _raise(name: str):
+        def _f(_p):
+            raise type(name, (Exception,), {})("Connection error.")
+        return _f
+
+    def test_내리_이어지면_잠근다(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+        monkeypatch.setattr(rb, "classify_with_confidence", self._raise("APIConnectionError"))
+        el = self._img(tmp_path)
+        for _ in range(rb._CAP_STREAK_LIMIT):
+            assert rb._do_caption(el)[2] is False
+        assert rb.caption_fatal_reason(), "망이 끊겼는데 안 잠겼다"
+        assert "APIConnectionError" in rb.caption_fatal_reason()
+        assert rb.caption_counters() == (0, rb._CAP_STREAK_LIMIT)
+
+    def test_한둘_실패로는_안_잠근다(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+        monkeypatch.setattr(rb, "classify_with_confidence", self._raise("APIConnectionError"))
+        el = self._img(tmp_path)
+        for _ in range(rb._CAP_STREAK_LIMIT - 1):
+            rb._do_caption(el)
+        assert rb.caption_fatal_reason() is None, "산발 실패로 멀쩡한 실행을 죽였다"
+
+    def test_사이에_성공이_끼면_연속이_끊긴다(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+        """실패가 섞여 나는 것은 망 문제가 아니다 — 잠그면 정상 실행이 죽는다."""
+        monkeypatch.setattr(rb, "classify_with_confidence", self._raise("APIConnectionError"))
+        el = self._img(tmp_path)
+        for _ in range(rb._CAP_STREAK_LIMIT - 1):
+            rb._do_caption(el)
+        rb._note_caption_result(True)                    # 한 건 성공
+        for _ in range(rb._CAP_STREAK_LIMIT - 1):
+            rb._do_caption(el)
+        assert rb.caption_fatal_reason() is None
+
+
+class TestRunnerSummary:
+    """러너 요약에 캡션 실패 수가 뜬다 (#852).
+
+    종전 요약은 `COMPLETED n NEEDS_REVIEW m BLOCKED 0` 뿐이라, 캡션이 전부 비어도
+    `BLOCKED 0` 을 보고 정상으로 읽었다.
+    """
+
+    PROG = {"ok": 7, "review": 3, "blocked": 0, "fail": 0, "to": 0}
+
+    @pytest.fixture(autouse=True)
+    def _clean(self):
+        rb.reset_caption_counters()
+        yield
+        rb.reset_caption_counters()
+
+    def test_캡션이_실패하면_요약에_수가_뜬다(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+        from test import corpus_runner as cr
+
+        monkeypatch.setattr(rb, "_CAPTION_RETRIES", 0)
+        monkeypatch.setattr(rb, "classify_with_confidence",
+                            lambda _p: (_ for _ in ()).throw(
+                                type("APIConnectionError", (Exception,), {})("Connection error.")))
+        img = tmp_path / "a.jpg"
+        img.write_bytes(b"x")
+        for _ in range(3):
+            rb._do_caption({"image_path": str(img), "type": "image", "element_id": "e"})
+
+        line = cr.summary_line(self.PROG, 10, 32.0)
+        assert "CAPTION_FAILED3" in line, line
+        assert "BLOCKED0" in line   # 종전에는 이것만 보고 정상으로 읽었다
+
+    def test_실패가_없으면_0으로_조용하다(self) -> None:
+        from test import corpus_runner as cr
+
+        assert "CAPTION_FAILED0" in cr.summary_line(self.PROG, 10, 32.0)
+
+    def test_상태바가_도는_중에_보여준다(self, capsys: pytest.CaptureFixture) -> None:
+        """런이 끝나야 아는 건 늦다 — 816쪽 사고는 3.5시간 뒤에나 알 수 있었다."""
+        from test import corpus_runner as cr
+
+        cr.bar(1, 10, ok=1, review=0, blocked=0, fail=0, to=0, eta=0, label="x", capfail=12)
+        assert "cap✗12" in capsys.readouterr().out
+        cr.bar(1, 10, ok=1, review=0, blocked=0, fail=0, to=0, eta=0, label="x")
+        assert "cap✗" not in capsys.readouterr().out   # 0이면 조용하다

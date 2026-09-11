@@ -43,6 +43,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import fitz  # noqa: E402
 
+from app.ai.builder import result_builder  # noqa: E402
 from app.core import pipeline  # noqa: E402
 from app.schemas.task import PageTask  # noqa: E402
 
@@ -236,15 +237,35 @@ def page_text(pdf: Path) -> str:
 
 
 # ── 상태바 ───────────────────────────────────────────────────────────────
-def bar(cur: int, total: int, *, ok: int, review: int, blocked: int, fail: int, to: int, eta: float, label: str):
+def bar(cur: int, total: int, *, ok: int, review: int, blocked: int, fail: int, to: int, eta: float,
+        label: str, capfail: int = 0):
+    """상태바. `cap✗N` 은 **이번 실행에서 캡션 호출이 실제로 실패한 건수**다(#852).
+
+    종전엔 캡션 실패가 상태바에도 요약에도 안 떴다 — 빈 캡션 집계는 런이 **다 끝난 뒤**에나
+    찍혀서, 816쪽·3.5시간을 돌고 나서야 알 수 있었다(2026-08-06). 중간에 끊기면 그마저 못 본다.
+    """
     w = 26
     fill = int(w * cur / total) if total else w
     etas = f"{int(eta//60)}m{int(eta%60):02d}s" if eta > 0 else "--"
+    cap = f" cap✗{capfail}" if capfail else ""
     sys.stdout.write(
         f"\r[{'#'*fill}{'.'*(w-fill)}] {cur}/{total} "
-        f"ok{ok} rv{review} blk{blocked} fail{fail} to{to} ETA{etas} {label[:30]:<30}"
+        f"ok{ok} rv{review} blk{blocked} fail{fail} to{to}{cap} ETA{etas} {label[:30]:<30}"
     )
     sys.stdout.flush()
+
+
+def summary_line(prog: dict, total: int, elapsed: float) -> str:
+    """러너 요약 한 줄. **캡션 실패 건수를 여기 박는다**(#852).
+
+    종전 요약은 `COMPLETED n NEEDS_REVIEW m BLOCKED 0` 이었다. 캡셔닝이 통째로 죽어도
+    요소는 살아서 CAPTION_FAILED 플래그만 달고 나가고 쪽 status 는 NEEDS_REVIEW 라
+    `BLOCKED 0` 을 보고 정상으로 읽었다 — 2026-08-06 에 816쪽·3.5시간이 그렇게 돌았다.
+    """
+    cap_fail = result_builder.caption_counters()[1]
+    return (f"완료: COMPLETED{prog['ok']} NEEDS_REVIEW{prog['review']} BLOCKED{prog['blocked']} "
+            f"fail{prog['fail']} timeout{prog['to']} CAPTION_FAILED{cap_fail} / {total}  "
+            f"({int(elapsed)}s)")
 
 
 # ── job 실행 ─────────────────────────────────────────────────────────────
@@ -296,7 +317,8 @@ async def run_subject(subject: str, sel_rows: list[dict], tag: str, *,
         elapsed = time.time() - prog["t0"]
         eta = (elapsed / prog["cur"]) * (prog["total"] - prog["cur"]) if prog["cur"] else 0
         bar(prog["cur"], prog["total"], ok=prog["ok"], review=prog["review"], blocked=prog["blocked"],
-            fail=prog["fail"], to=prog["to"], eta=eta, label=f"{subject} p{pg}")
+            fail=prog["fail"], to=prog["to"], eta=eta, label=f"{subject} p{pg}",
+            capfail=result_builder.caption_counters()[1])
 
         if (vol, pg) in done:  # 재개: 이미 완료
             page_states.append(done[(vol, pg)])
@@ -345,6 +367,14 @@ async def run_subject(subject: str, sel_rows: list[dict], tag: str, *,
         page_states.append(rec)
         # 페이지마다 체크포인트 저장(중단 대비)
         _save_state(job_dir, job_id, subject, tag, page_states)
+
+        # ★ 캡셔닝이 통째로 막혔으면 **남은 쪽을 돌리지 않는다**(#852). 계속 돌아 봐야
+        #   시각 축이 빈 산출물만 쌓이고, 그걸로 채점하면 기준선이 조용히 오염된다.
+        #   잠금은 job(=과목) 경계에서 풀리므로 여기서 안 멈추면 다음 과목에서 또 5건을
+        #   태우고 다시 잠긴다 — 실행 전체를 세운다.
+        if result_builder.caption_fatal_reason():
+            prog["cap_stop"] = result_builder.caption_fatal_reason()
+            break
 
     _save_state(job_dir, job_id, subject, tag, page_states)
     return {"job_id": job_id, "pages": page_states}
@@ -475,10 +505,15 @@ def main():
                                     force=args.force, prog=prog,
                                     page_index=page_index))
         summaries.append(s)
+        if prog.get("cap_stop"):
+            break
     print()  # 상태바 줄바꿈
     print("-" * 60)
-    print(f"완료: COMPLETED{prog['ok']} NEEDS_REVIEW{prog['review']} BLOCKED{prog['blocked']} fail{prog['fail']} "
-          f"timeout{prog['to']} / {total}  ({int(time.time()-prog['t0'])}s)")
+    print(summary_line(prog, total, time.time() - prog["t0"]))
+    if prog.get("cap_stop"):
+        print(f"⛔ 캡셔닝이 통째로 막혀 **남은 쪽을 돌리지 않고 멈췄다** — {prog['cap_stop']}\n"
+              f"   망·API 한도를 먼저 확인하고, 이미 돈 쪽 중 시각자료가 빈 쪽은 지우고 다시 돌려라"
+              f"(재개는 NEEDS_REVIEW 를 완료로 보고 건너뛴다).")
     # ★ MinerU 조용한 폴백 집계(2026-08-08). 추출이 실패·타임아웃하면 파이프라인이
     #   텍스트레이어 폴백으로 내려가는데, 그 경고는 WARNING이라 러너 로그에 안 찍히고
     #   페이지 status는 COMPLETED/NEEDS_REVIEW로 남는다 — 런이 조용히 다른 물건이 된다.
