@@ -16,9 +16,24 @@ from app.ai.braille.kor_math_rules import convert_latex
 @pytest.mark.parametrize("spaced,tight", [
     (r"\frac {3}{2} a ^ {2}", r"\frac{3}{2}a^{2}"),      # [A] 구분점
     (r"\frac {2 a b}{c ^ {2}}", r"\frac{2ab}{c^{2}}"),   # [B-2] 곱 묶음
+    # [C] 인자 **사이**의 칸 `} {` (#871). 여기가 안 닫혀 \frac 이 통째로 사라졌다.
+    (r"\frac { 1 } { 2 }", r"\frac{1}{2}"),
+    (r"\frac { \pi } { 6 }", r"\frac{\pi}{6}"),
+    (r"\frac { x + 1 } { x - 2 }", r"\frac{x+1}{x-2}"),
+    (r"\frac { 1 } { 1 6 }", r"\frac{1}{16}"),
 ])
 def test_토큰_공백이_있어도_같게_점역된다(spaced, tight):
     assert convert_latex(spaced) == convert_latex(tight)
+
+
+@pytest.mark.parametrize("latex", [r"\frac { 3 } { 4 }", r"\frac {3}{4}", r"\frac{3}{4}"])
+def test_띄어_쓴_분수도_분수표로_나간다(latex):
+    """「수학 점자」 제7항 1호(규정 재추출 3141~3145행) — 분모·분수표·분자 순, 분수표는 `/`.
+
+    규정 예문 3/4 = `#d/#c`. MinerU 꼴 `\frac { 3 } { 4 }` 는 #871 전에는 분수표가
+    아예 없이 `⠼⠉⠀⠼⠙`("3 4") 로 나가 **다른 수**로 읽혔다.
+    """
+    assert convert_latex(latex) == "⠼⠙⠌⠼⠉"
 
 
 @pytest.mark.parametrize("latex,expected", [
@@ -26,6 +41,8 @@ def test_토큰_공백이_있어도_같게_점역된다(spaced, tight):
     (r"x \oplus y", "⠭⠀⠸⠢⠀⠽"),   # 제15항 "앞뒤를 한 칸씩 띄어 쓴다"
     (r"A \cap B", "⠠⠁⠀⠩⠀⠠⠃"),
     (r"X \to Y", "⠠⠭⠀⠒⠕⠀⠠⠽"),    # 제10항 붙임
+    # 집합 표기 `\{ … \}` 는 중괄호가 아니라 **문자**다 — `} {` 규칙에 걸리면 안 된다.
+    (r"\{ 1 \} \{ 2 \}", "⠶⠼⠁⠶⠀⠶⠼⠃⠶"),
 ])
 def test_명령과_규정상_한_칸은_안_건드린다(latex, expected):
     """공백을 넓게 지우면 명령이 사라지거나 규정이 요구하는 칸이 없어진다."""
