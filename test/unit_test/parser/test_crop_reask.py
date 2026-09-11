@@ -157,3 +157,17 @@ def test_되묻기가_죽으면_None_을_돌려_호출부가_알린다(tmp_path,
     monkeypatch.setattr("app.core.pipeline._page_gaps", lambda *a: [])
     els = [_el("⑦에 의하여", [100, 100, 900, 130])]
     assert C.reask_crops(els, _page(tmp_path)) is None
+
+
+# ── 기본값 고정(2026-09-11 대표 결재) ────────────────────────────────────────
+def test_기본_모드는_both_다(monkeypatch):
+    """page 70~73 · crop 67~70 · **both 82~84**/125. 쪽당 +$0.02 로 +9~11건이라 대표가 both 로 결재했다.
+    조용히 `page` 로 되돌리면 여기서 걸린다. 되돌릴 일이 생기면 env 로 하고 이 시험을 고치지 말 것."""
+    monkeypatch.delenv("ADVANCED_EXTRACT_MODE", raising=False)
+    assert C.advanced_mode() == "both"
+
+
+@pytest.mark.parametrize("mode", ["page", "crop", "both"])
+def test_env_로_여전히_고를_수_있다(monkeypatch, mode):
+    monkeypatch.setenv("ADVANCED_EXTRACT_MODE", mode)
+    assert C.advanced_mode() == mode

@@ -1187,8 +1187,9 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                 #   서로 안 막으므로 나란히 돌리면 벽시계는 둘 중 긴 쪽이다.
                 # ★ crop 모드(`ADVANCED_EXTRACT_MODE=crop`, 2026-09-10 대표 지적 "깨진 거만 배치로")는
                 #   쪽 전체를 안 읽는다 — MinerU 가 먼저 읽고, 깨진 요소만 잘라 되묻는다(아래).
-                #   실측은 `crop_reask` 도크스트링. 기본은 종전대로 `page` 다 — 고급 점역의 정의
-                #   ("지면을 LLM 이 직접 읽는다", 대표 결정 2026-09-08)를 바꾸는 것은 대표 몫이다.
+                #   **기본은 `both` 다**(2026-09-11 대표 결재) — 쪽 전체를 읽고(page) 그래도 깨진
+                #   자리를 잘라 한 번 더 되묻는다. 실측 70~73 → 82~84/125(58.4% → 67%), 쪽당
+                #   +$0.02·+6~22초. 고치는 부류가 서로 달라 보완 관계다(`crop_reask.advanced_mode`).
                 mnr_job = asyncio.create_task(_extract_via_models(task, doc_meta))
                 if adv_mode == "crop":
                     els, used = None, ""
