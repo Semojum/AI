@@ -829,6 +829,32 @@ def _table_to_text(html: str) -> str:
                      if any(t for _, t in row))
 
 
+# ── MinerU 표 인식 붕괴 방어 (#864, 2026-09-11) ──────────────────────────────
+# MinerU 표 구조 인식기가 자기반복에 빠져 **원본에 없는 숫자열을 게워낸다.**
+#   생물 p182: 「보기」 글상자 + ①~⑤ 선택지 자리를 표로 잡고 한 칸에
+#   `1 2 3 … 899 900` 3,524자를 넣었다(쪽 CER 29.3% → 280.3%). 환각 부류다.
+#
+# ★ 신호는 **길이가 아니라 반복**이다. 길이로는 못 가른다 — dev+val 999쪽 실측에서
+#   멀쩡한 요소가 3,738자(외국어 p030 지문)까지 나오고 이 환각은 3,524자라,
+#   요소 길이 상한을 어디에 두든 둘 중 하나는 틀린다.
+#   반면 **한 칸 안 '연속 증가 정수' 런**은 표 376개 전부 1이고 이것만 900이다
+#   (전수 분포 {1: 375, 900: 1} — 오검출 0·미검출 0). 여유를 넉넉히 둬 8로 자른다.
+_CELL_ASC_RUN_MAX = 8
+
+
+def _collapsed_table(html: str) -> bool:
+    """MinerU 표 인식이 붕괴해 없는 숫자열을 게워낸 표인가 (위 절 주석 참조)."""
+    for _attr, cell in _TD_RE.findall(html or ""):
+        run, prev = 0, None
+        for tok in re.sub(r"<[^>]+>", " ", cell).split():
+            n = int(tok) if tok.isdigit() and tok.isascii() else None
+            run = run + 1 if (n is not None and prev is not None and n == prev + 1) else 1
+            prev = n
+            if run >= _CELL_ASC_RUN_MAX:
+                return True
+    return False
+
+
 def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> str:
     """표 셀의 한글 오독을 텍스트 레이어를 근거로 고친다. 구조(HTML)는 건드리지 않는다.
 
@@ -1377,6 +1403,17 @@ def run(
                 content = _native_text_spaced(fitz_page, bb) or content
             else:
                 content = _native_override(fitz_page, bb, content) or content
+        elif mapped_type == "table" and _collapsed_table(content):
+            # MinerU 표 인식 붕괴(#864) — 원 출력이 통째로 환각이라 버린다.
+            # 텍스트 레이어에 진짜 글이 남아 있으면 그걸로 되찾고, 없으면(스캔본)
+            # 그림으로 돌려 캡셔닝이 설명하게 둔다(불변규칙 1 '빈 결과 금지').
+            native = _native_text_spaced(fitz_page, bb)
+            if native.strip() and not _layer_untrustworthy(native, fitz_page):
+                mapped_type, content = "text", native
+            else:
+                mapped_type, content = "image", "이미지 캡셔닝 대기"
+            logger.warning("page %d: MinerU 표 붕괴 %d자를 버렸다 → %s",
+                           page_no, len(item.get("table_body") or ""), mapped_type)
         elif mapped_type == "table":
             # 괘선 없는 '표'는 표가 아니다 — 위 _h_rules 주석 참조(QA 9번)
             n_rules = _h_rules(fitz_page, bb) if item_type == "table" else None
