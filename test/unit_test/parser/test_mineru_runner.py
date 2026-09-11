@@ -197,3 +197,35 @@ class TestMineruFooterFlag:
         assert "MINERU_FOOTER" not in _FLAG_TO_REVIEW
         assert not _GENERIC_R_FLAG.match("MINERU_FOOTER")
         assert not "MINERU_FOOTER".endswith("_FALLBACK")
+
+
+# ── MinerU 표 인식 붕괴 방어 (#864, 2026-09-11) ──────────────────────────────
+# 생물 p182 실물: 「보기」 글상자 자리를 표로 잡고 한 칸에 1~900 을 세어 넣었다(3,524자).
+# 판별은 길이가 아니라 **한 칸 안 연속 증가 정수 런**이다(dev+val 표 376개 분포
+# {1: 375, 900: 1}). 길이로 가르면 3,738자짜리 멀쩡한 지문을 같이 죽인다.
+class TestCollapsedTable:
+    def test_생물_p182_원본_숫자열을_잡는다(self):
+        from app.ai.parser.mineru_runner import _collapsed_table
+        body = "<table><tr><td>" + " ".join(str(i) for i in range(1, 901)) + "</td></tr></table>"
+        assert len(body) > 3500
+        assert _collapsed_table(body)
+
+    def test_멀쩡한_표는_안_잡는다(self):
+        from app.ai.parser.mineru_runner import _collapsed_table
+        # 1) 연도 머리행 — 숫자가 많지만 연속 증가가 아니다
+        assert not _collapsed_table(
+            "<table><tr><td>구분</td><td>1970년</td><td>1980년</td><td>1990년</td></tr>"
+            "<tr><td>총생산액</td><td>100.0</td><td>100.0</td><td>100.0</td></tr></table>")
+        # 2) 번호가 **칸마다 따로** 든 표 — 칸 안 런은 1이라 통과해야 한다
+        assert not _collapsed_table(
+            "<table><tr>" + "".join(f"<td>{i}</td>" for i in range(1, 31)) + "</tr></table>")
+        # 3) 선택지 표(정답 모음)
+        assert not _collapsed_table(
+            "<table><tr><td>1 ㄱ</td><td>2 ㄷ</td><td>3 ㄱ, ㄴ</td></tr></table>")
+
+    def test_경계값(self):
+        from app.ai.parser.mineru_runner import _collapsed_table, _CELL_ASC_RUN_MAX
+        n = _CELL_ASC_RUN_MAX
+        cell = lambda k: "<table><tr><td>" + " ".join(str(i) for i in range(1, k + 1)) + "</td></tr></table>"
+        assert not _collapsed_table(cell(n - 1))
+        assert _collapsed_table(cell(n))
