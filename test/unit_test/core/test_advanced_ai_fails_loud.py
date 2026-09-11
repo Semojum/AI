@@ -132,7 +132,10 @@ class Test크롭_모드:
 
     def _crop(self, monkeypatch, mode, *, mnr_els, reask):
         from app.ai.parser import crop_reask
-        monkeypatch.setenv("ADVANCED_EXTRACT_MODE", mode)
+        if mode is None:                 # 기본값 그대로 — env 를 지우고 본다
+            monkeypatch.delenv("ADVANCED_EXTRACT_MODE", raising=False)
+        else:
+            monkeypatch.setenv("ADVANCED_EXTRACT_MODE", mode)
         calls = []
 
         def _reask(els, img):
@@ -173,8 +176,16 @@ class Test크롭_모드:
         out = asyncio.run(pipeline._extract_with_hyunju(task))[1]
         assert out["meta"]["extraction_method"] == "LLM_VISION" and len(calls) == 1
 
-    def test_page_기본은_되묻기를_안_건다(self, monkeypatch):
+    def test_page_로_두면_되묻기를_안_건다(self, monkeypatch):
         task, calls = self._crop(monkeypatch, "page", mnr_els=[{"type": "text", "content": "x", "bbox": [1, 1, 9, 9]}],
                                  reask=1)
         asyncio.run(pipeline._extract_with_hyunju(task))
         assert calls == []
+
+    def test_기본값이면_되묻기가_실제로_걸린다(self, monkeypatch):
+        """기본값(`both`, 2026-09-11 대표 결재)이 **호출부까지 닿는지** 본다 — 상수만 바꾸고
+        배선을 안 보면 튜닝이 안 닿는 전례가 있다(0824 `decode math=False`)."""
+        mnr = [{"type": "text", "content": "⑦에 의하여", "bbox": [1, 1, 9, 9]}]
+        task, calls = self._crop(monkeypatch, None, mnr_els=mnr, reask=1)
+        asyncio.run(pipeline._extract_with_hyunju(task))
+        assert calls == [mnr], "기본값이 호출부에 안 닿는다(되묻기 발동 0건)"

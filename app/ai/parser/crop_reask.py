@@ -10,9 +10,9 @@ MinerU 것 그대로다.
 
     팔                          고침/125    쪽당 $    쪽당 LLM 시간
     MinerU 만                      6        0          0
-    쪽 전체 LLM(page, 현행)       70~73     0.14      45~102초 (MinerU 와 나란히)
+    쪽 전체 LLM(page)             70~73     0.14      45~102초 (MinerU 와 나란히)
     크롭 배치(crop)               70        0.05      10~27초  (MinerU 뒤에)
-    둘 다(both)                   82        0.16      page + 4~21초
+    둘 다(both, **기본**)         82        0.16      page + 4~21초
 
 신호는 부류마다 따로 세웠다. 정밀도는 6쪽 422요소 **전수**에서 "켜진 자리가 실제로 깨졌나"다.
 
@@ -131,8 +131,24 @@ _SKIP_TYPES = ("image", "chart_graph", "diagram", "table")
 
 
 def advanced_mode() -> str:
-    """`page`(현행 — 쪽 전체 LLM) · `crop`(깨진 요소만) · `both`(둘 다). 호출 때 읽는다."""
-    return os.environ.get("ADVANCED_EXTRACT_MODE", "page")
+    """`page`(쪽 전체 LLM) · `crop`(깨진 요소만) · `both`(둘 다 — 기본). 호출 때 읽는다.
+
+    **기본은 `both` 다(2026-09-11 대표 결재).** 같은 6쪽·같은 커밋에서 잰 세 팔:
+
+        팔                          고침/125        쪽당 $     쪽당 LLM 시간
+        MinerU 만                   6   (4.8%)      0          0
+        쪽 전체 LLM(page)           70~73(56~58%)   0.135      45~102초
+        크롭 배치(crop)             67~70(54~56%)   0.041      11~28초
+        둘 다(both)                 82~84(66~67%)   0.155      page + 6~22초
+
+    page 와 crop 은 **고치는 부류가 다르다.** page 만 한글→한글 깨짐(`극숫값`·`획률`)을 고치고,
+    crop 만 원문자·구조·누락을 고친다. 그래서 둘을 같이 걸면 58.4% → 67% 로 +9~11건이다.
+    값은 쪽당 +$0.02 — 고급 점역은 유료 옵션이라 그 옵션을 켠 건에만 든다.
+
+    되돌리려면 `ADVANCED_EXTRACT_MODE=page`(종전) 또는 `=crop`(비용 1/3·시간 1/3, 교정률은 page 와 같은 띠).
+    실측 원장은 `temp/n10/결과_cropbatch.md`(PR #835) · `temp/n10/결과_d1-bothdefault.md`.
+    """
+    return os.environ.get("ADVANCED_EXTRACT_MODE", "both")
 
 
 def _ok_box(b) -> bool:
