@@ -413,7 +413,8 @@ def _render_grid(corrected_text: str) -> list[str]:
     """지침 §3.1 표 표기(행 단위 전개, 예3-4·3-6 실측 형식, 2026-07-19 정정).
 
     위 테두리 ⠿⠛…⠿ · 아래 테두리 ⠿⠶…⠿ 안에, 각 행을 3칸(앞 빈칸 2)에서
-    '행제목: 값  값'(쌍점 ⠐⠂ + 한 칸, 값 사이 두 칸)으로 적는다. 빈 셀 = ⠿⠿(§3.1.2(4)).
+    '행제목  값  값'으로 적는다. 값 사이는 두 칸이고, 행 머리 뒤도 같은 구분자를 쓴다
+    (`_sep_word_level` — 낱말 수준이면 두 칸, 문장 수준이면 쌍점). 빈 셀 = ⠿⠿(§3.1.2(4)).
     (구 격자형 — 전체 ⠿ 채움 테두리·세로 ⠿ 벽·행 구분선 — 은 지침 예시와 달랐다.
      layout._is_border_line이 이 테두리 형을 정식 인정해 들여쓰기 미적용도 유지된다.)
     """
@@ -448,6 +449,24 @@ def _render_grid(corrected_text: str) -> list[str]:
             rows = ["|".join(r) for r in grid]      # 다 못 줄여도 줄인 만큼은 쓴다
         else:
             notes = []
+    # ★ #839 — 행 머리 뒤 구분자를 `_sep_word_level` 로 정한다.
+    #   종전엔 이 자리에 `_COLON` 이 **리터럴로 박혀** 있어 표가 늘 쌍점으로 나갔다.
+    #   판정은 2026-07-21 에 이미 gold 로 정해져 `_render_unfold` 에 배선돼 있었는데
+    #   `_render_grid` 만 그 자리를 안 지났다. `_render_unfold` 가 기본이던 동안에는
+    #   안 드러나다가 #793·#797 로 **기본이 격자로 뒤집히면서** 대부분의 표에 새어 나왔다.
+    #   규정 근거: 「점자 도서 제작 지침」 재추출 1647행 "표의 셀과 셀 사이는 두 칸을
+    #   띄어 구분한다" · 「점자 자료 제작 지침」 §3.1(1)② "열 항목을 두 칸씩 띄어" —
+    #   쌍점은 표 절 어디에도 없다. 쌍점은 문장 수준 셀에 한한 도서 관행이라
+    #   `_sep_word_level` 이 `_BOOK_STYLE` 로 가둔다(규정 모드는 늘 두 칸).
+    #   gold 행 머리 뒤 표기 대조(동결 코퍼스): 늘 쌍점 dev 21.2%·val 26.0% →
+    #   `_sep_word_level` dev 81.2%·val 71.5%.
+    #   되돌리는 길: TABLE_GRID_SEP=colon — 스위치는 **호출 시** 읽는다(모듈 상수로 굳히면
+    #   A/B 의 끄기 팔이 임포트 시점에 박혀 안 꺼진다).
+    if os.environ.get("TABLE_GRID_SEP") == "colon":
+        sep = _COLON
+    else:
+        sep = "⠀⠀" if _sep_word_level(grid) else _COLON
+
     lines: list[str] = [top]
     if notes:
         # 규정: "원본과 달라진 내용이나 범례를 점역자 주로 알린다"
@@ -457,7 +476,7 @@ def _render_grid(corrected_text: str) -> list[str]:
         cells = [c.strip() for c in row.split("|")]
         head = _translate(cells[0]) if cells[0] else "⠿⠿"
         vals = [(_translate(c) if c else "⠿⠿") for c in cells[1:]]
-        body = head + ("⠐⠂⠀" + "⠀⠀".join(vals) if vals else "")
+        body = head + (sep + "⠀⠀".join(vals) if vals else "")
         # §3.2.1 (3) — 32칸을 넘으면 나눠 적고 이어지는 줄은 두 칸 더 들여쓴다.
         if _SHORTEN and len("⠀⠀" + body) > _COLS:
             lines.extend(_wrap_row(body))
