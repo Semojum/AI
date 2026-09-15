@@ -3624,6 +3624,14 @@ def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False) -> str:
         for _j in (_i - 1, _i + 1):
             if _is_operand(tokens[_j]):
                 is_math[_j] = True
+    # ── 줄 관문 (#905) ───────────────────────────────────────────────────
+    # 그 줄의 **읽기에 이미 영어가 있을 때만** 토막 규칙을 켠다(로마자표로 열린 구간이 그렇다).
+    # 관문이 없으면 영어가 한 글자도 없는 한글 줄에서 규칙이 돌아, 전 코퍼스 A/B 에서
+    # `섞여`→`Thawh` · `섭취`→`Sbmr` · `소득`→`Uiowa` 로 **비영어책 12,130줄이 깨졌다.**
+    # 제29항 [다만]의 단위는 문단이고, 그 문맥의 최소 증거가 **같은 줄 안의 영어**다.
+    _ko = {idx: _decode_line(tok) for idx, tok in enumerate(tokens)
+           if tok and not is_math[idx] and not setop[idx] and not leadop[idx] and not upper[idx]}
+    _has_eng = _ENG_TOKEN and not math and any(_LATIN_RE.search(v) for v in _ko.values())
     pieces = []
     for idx, tok in enumerate(tokens):
         if tok:
@@ -3645,8 +3653,8 @@ def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False) -> str:
             elif is_math[idx]:
                 pieces.append(_decode_math_token(tok))
             else:
-                ko = _decode_line(tok)
-                pieces.append(_eng_token(tok, ko) or ko)
+                ko = _ko.get(idx) or _decode_line(tok)
+                pieces.append((_eng_token(tok, ko) if _has_eng else None) or ko)
         if idx < len(seps):
             pieces.append("" if seps[idx] == _EMPH_MARK
                           else " " * _print_gap(len(seps[idx]), idx, tokens, is_math))
