@@ -3836,6 +3836,7 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
     i, n = 0, len(s)
     _after_number = -1        # 수표 숫자가 방금 끝난 자리(아래 단위표 가드용)
     _quoted_roman_end = -1    # 여는 큰따옴표로 연 로마자 런이 끝난 자리(제34항 가드용)
+    _roman_run_end = -1        # 로마자 런이 끝난 자리 (#625)
     while i < n:
         ch = s[i]
         # 공백(점자/일반)
@@ -4124,6 +4125,7 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
         if roman is not None:
             txt, j = roman
             out.append(txt)
+            _roman_run_end = j                        # 제33항 판정용 (#625)
             if ch == _ROMAN_START and len(out) >= 2 and out[-2] == '"':
                 _quoted_roman_end = j     # 이 자리의 ⠴ 는 닫는 큰따옴표다
             i = j
@@ -4135,8 +4137,8 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
         #   `What Is A Youth?이다.` 인데 종전에는 `Youth"이다.` 로 나갔다(#625).
         #   ⚠ `⠦` 는 한글 받침 ㅌ 이기도 하다. **바로 앞이 로마자 런일 때로 한정**한다 —
         #     넓히면 본문을 먹는다.
-        if (ch in _SENT_END and not _final(i + 1) and out
-                and _LATIN_TAIL_RE.search("".join(out))
+        if (ch in _SENT_END and not _final(i + 1)
+                and i == _roman_run_end               # **로마자 런 바로 뒤**에서만
                 and _cells_are_hangul(s, i + 1)):
             out.append(_SENT_END[ch])
             i += 1
