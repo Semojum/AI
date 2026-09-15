@@ -351,9 +351,16 @@ _ITEM_LABEL_HEAD_RE = re.compile(r"\s*\d+\.[ \t]+(?=\d)")
 #   (실측: `x ^ {2} - 3` → ⠭⠘⠼⠃⠔⠼⠉ 로 이미 붙는다. 범위를 넓히면 헛일이거나 손해다).
 _SIGN_REL = ("leq|geq|neq|le|ge|ne|approx|equiv|sim|simeq|doteq|fallingdotseq|"
              "to|rightarrow|Rightarrow|longrightarrow|iff|pm|mp|cdot|times|div")
+# ⚠ 부호 뒤에 오는 것은 수만이 아니다 — `- \frac {1}{2}`(명령) · `x = - y`(변수) ·
+#   `x = - ( y+1 )`(여는 괄호)도 같은 MinerU 산물이고 같은 제45항 위반이다. 뒤를
+#   숫자·점으로만 보던 종전 lookahead 는 이 셋을 통째로 놓쳤다(경계 파일 1,131쪽 실측:
+#   명령 46건/25쪽 · 로마자 31건/16쪽 · 괄호 18건/10쪽. 숫자 꼴은 136건/46쪽).
+#   ⚠ 간격 명령(\quad·\qquad)은 뺀다 — 그건 부호의 피연산자가 아니라 조판 칸이다.
+#   `\\`(행 구분)·`\ `·`\,` 는 백슬래시 뒤가 글자가 아니라 알아서 안 걸린다.
 _SIGN_GAP_RE = re.compile(
     r"(^|[=<>\u2264\u2265\u2260(\[,&]|\\(?:" + _SIGN_REL + r")(?![A-Za-z]))"
-    r"(\s*)([-\u2212+\u00b1])[ \t]+(?=[\d.])")
+    r"(\s*)([-\u2212+\u00b1])[ \t]+"
+    r"(?=[\d.]|\\(?!quad|qquad)[a-zA-Z]|[A-Za-z(\[{])")
 
 _CODE_FENCE_RE = re.compile(r"```[a-zA-Z]*\n?|```")        # ```latex … ``` 펜스
 _MATH_DELIM_RE = re.compile(r"\${1,2}")                    # $$ … $$ / $ … $
