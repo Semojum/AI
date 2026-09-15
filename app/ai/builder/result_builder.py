@@ -193,8 +193,8 @@ def _note_caption_result(ok: bool, exc: Exception | None = None) -> None:
                  _CAP_STREAK_LIMIT, _caption_fatal)
 
 
-def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | None, str]:
-    """(캡션, 확정 타입, 성공여부, 세분류 신뢰도, §6.6 세분류).
+def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | None, str, bool]:
+    """(캡션, 확정 타입, 성공여부, 세분류 신뢰도, §6.6 세분류, **장식여부**).
 
     ★ 실패 문자열을 본문으로 흘리지 않는다. 예전에는 "[캡셔닝 실패]"를 content로 반환해
     그 다섯 글자가 그대로 점자로 찍혀 학생에게 나갔다(품질검사도 못 잡아 COMPLETED 처리).
@@ -217,13 +217,13 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
     # 실제로 그 오독으로 두 세션이 몇 시간을 썼다(2026-08-16). 조용히 건너뛴다.
     if os.environ.get("DISABLE_LLM_FALLBACK") == "1":
         logger.debug("캡셔닝 건너뜀(DISABLE_LLM_FALLBACK=1) id=%s", eid)
-        return "", original_type, False, None, ""
+        return "", original_type, False, None, "", False
 
     # 설정성 오류로 이미 잠겼으면 API를 다시 두드리지 않는다 — 같은 실패를 요소 수만큼
     # 반복해 봐야 시간만 버린다(200요소 페이지면 재시도 포함 600회).
     if _caption_fatal:
         _note_caption_result(False)      # 잠금 때문에 빈 캡션으로 나간 것도 실패로 센다
-        return "", original_type, False, None, ""
+        return "", original_type, False, None, "", False
 
     # 가드3 — 텍스트 요소와 자리가 거의 같은 시각 요소는 **글자를 그림으로 잡은 것**이다
     # (원장 C-40 부록). 캡션을 부르지 않는다. 판정은 `mineru_runner._mark_text_lookalikes`.
@@ -233,11 +233,11 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
                     el.get("job_id", "?"), el.get("page_no", "?"), eid, iou,
                     extra={"job_id": el.get("job_id"), "page": el.get("page_no"),
                            "guard": 3, "iou": iou, "stage": "캡셔닝", "status": "SKIPPED"})
-        return "", original_type, False, None, ""
+        return "", original_type, False, None, "", False
 
     if not img_path or not Path(img_path).exists():
         logger.warning("캡셔닝 불가 — 이미지 경로 없음 id=%s path=%r", eid, img_path)
-        return "", original_type, False, None, ""
+        return "", original_type, False, None, "", False
 
     # ★ 캡셔닝 끄기 스위치(2026-08-22 대표 지시 — API 크레딧 절약).
     #   기호 층 A/B는 캡션이 결과에 영향이 없는데도 재추출 한 번에 20~30달러가 나갔다.
@@ -247,14 +247,15 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
     #      (pipeline의 processing_meta.caption_disabled).
     if os.getenv("SEMOJUM_NO_CAPTION") == "1":
         logger.info("캡셔닝 꺼짐(SEMOJUM_NO_CAPTION=1) — 생략 처리 id=%s", eid)
-        return "", original_type, False, None, ""
+        return "", original_type, False, None, "", False
 
     last: Exception | None = None
     for attempt in range(_CAPTION_RETRIES + 1):
         try:
             image_type, subconf, vsub = classify_with_confidence(img_path)
             mapped_type = _CLASSIFY_TYPE_MAP.get(image_type, "image")
-            text = caption(img_path, image_type, context=context)
+            info: dict = {}          # 호출마다 새 dict — 전역이면 쪽 간 오염(#872)
+            text = caption(img_path, image_type, context=context, out_info=info)
             # ★ 예외 없이 **빈 캡션**이 오는 길이 있다(모델이 거부하거나 빈 응답을 줌).
             #   그걸 성공으로 넘기면 build()의 `not content.strip()` 가지에서 요소가
             #   통째로 사라진다 — 실측: job_260807160446 p1의 만화가 이렇게 없어졌고
@@ -262,11 +263,21 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
             #   그 뒤 그림 회수가 같은 그림을 다시 찾아 LLM을 한 번 더 썼다.
             #   빈 응답은 성공이 아니다. 실패로 돌려 요소를 살린다(불변규칙 1).
             if not text.strip():
+                # ★ 비는 길이 둘인데 종전에는 한 줄로 찍혀 **구분이 안 됐다**(#872).
+                #   실측(2026-09-12 CAPTION_FAILED 10쪽 전건 재현): 10건이 전부 가드4
+                #   장식 판정이었고 모델이 정말 빈 응답을 준 건 **0건**이었다
+                #   (stop_reason 전부 end_turn · 출력 11~101토큰). 그런데 로그가
+                #   "빈 응답" 이라 매번 누군가 모델 결함으로 알고 다시 조사했다.
+                #   장식은 **의도된 생략**이라 실패로 세지 않는다(위 `_note_caption_result` 주석).
+                if info.get("rejected_by") == "decoration":
+                    logger.info("장식 판정(가드4) id=%s type=%s — 요소를 버린다", eid, image_type,
+                                extra={"guard": 4, "stage": "캡셔닝", "status": "DECORATION"})
+                    return "", mapped_type, False, subconf, vsub, True
                 logger.error("캡셔닝 빈 응답 id=%s type=%s — 요소는 살린다", eid, image_type)
                 _note_caption_result(False)
-                return "", mapped_type, False, subconf, vsub
+                return "", mapped_type, False, subconf, vsub, False
             _note_caption_result(True)
-            return text, mapped_type, True, subconf, vsub
+            return text, mapped_type, True, subconf, vsub, False
         except Exception as exc:  # noqa: BLE001 — 요소 격리(불변규칙 3)
             last = exc
             name = type(exc).__name__
@@ -283,7 +294,7 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
     # 삼키지 않는다 — 원인(쿼터 소진·인증 실패 등)이 로그에 남아야 운영에서 추적된다.
     logger.error("캡셔닝 실패 id=%s: %s: %s", eid, type(last).__name__, last)
     _note_caption_result(False, last)
-    return "", original_type, False, None, ""
+    return "", original_type, False, None, "", False
 
 
 def _render_page(pdf_path: str, page_no: int) -> Image.Image:
@@ -564,7 +575,7 @@ def _caption_all(ordered: list[dict]) -> dict[int, tuple]:
                     out[id(el)] = fut.result()
                 except Exception as exc:  # noqa: BLE001 — 요소 격리(불변규칙 3)
                     logger.warning("    캡셔닝 예외 %s: %s", str(el.get("element_id", ""))[:8], exc)
-                    out[id(el)] = ("", el["type"], False, None, "")
+                    out[id(el)] = ("", el["type"], False, None, "", False)
     ok_n = sum(1 for v in out.values() if v[2])
     logger.info("  캡셔닝 %d개 중 %d개 성공 · 동시 %d — %.1fs",
                 len(vis), ok_n, workers, time.monotonic() - t0)
@@ -599,10 +610,11 @@ def _do_caption_logged(el: dict, context: str = "") -> tuple:
 
     with caption_slot():
         t = time.monotonic()
-        content, el_type, ok, subconf, vsub = _do_caption(el, context)
+        content, el_type, ok, subconf, vsub, decor = _do_caption(el, context)
         logger.info("    캡셔닝 %s(%s→%s) %.1fs%s", str(el.get("element_id", ""))[:8],
-                    el["type"], el_type, time.monotonic() - t, "" if ok else " [실패]")
-    return content, el_type, ok, subconf, vsub
+                    el["type"], el_type, time.monotonic() - t,
+                    "" if ok else (" [장식]" if decor else " [실패]"))
+    return content, el_type, ok, subconf, vsub, decor
 
 
 # ── 장식 판정 (원장 C-70 후속 · 제작 지침 §6.1.1(4)·§6.3.4(2)②) ────────────────
@@ -655,10 +667,11 @@ def build(
     order = 1
     for el in ordered:
         caption_failed = False
+        decor = False
         subconf: float | None = None
         vsub = ""
         if el["type"] in _VISUAL_TYPES:
-            content, el_type, ok, subconf, vsub = cap_results[id(el)]
+            content, el_type, ok, subconf, vsub, decor = cap_results[id(el)]
             caption_failed = not ok
         else:
             content = el.get("content", "")
@@ -674,9 +687,14 @@ def build(
         # 배지·아이콘·화살표 낱개다. 「점자 자료 제작 지침」 §6.1.1(4)·§6.3.4(2)② 는
         # "장식 용도이거나 본문 이해에 불필요한 경우에는 생략 여부를 표기하지 않는다"고 한다.
         # 우리는 그 자리에 `그림 생략`을 내고 있었고, 그건 점역사가 찾아 지워야 할 일감이다.
-        if caption_failed and _is_decoration(el):
-            logger.info("장식 요소 제거(설명 없음·면적 %.4f) id=%s type=%s",
-                        _area_ratio(el) or 0, str(el.get("element_id", ""))[:8], el["type"])
+        # ★ 신호가 둘이다(#872). 면적은 **작은** 장식만 잡는다 — 문항 번호 배지는 크롭이
+        #   17~19KB 로 커서 면적 임계를 안 넘고, 그래서 지금까지 `그림 생략` + R11 로 나가
+        #   쪽마다 점역사 일감이 됐다(2027 코퍼스 전수 20요소). 가드4 가 "배지·장식" 이라고
+        #   판정한 것도 같은 조항이 말하는 장식이니 같이 버린다.
+        if caption_failed and (decor or _is_decoration(el)):
+            logger.info("장식 요소 제거(%s) id=%s type=%s",
+                        "가드4 배지·장식" if decor else f"설명 없음·면적 {_area_ratio(el) or 0:.4f}",
+                        str(el.get("element_id", ""))[:8], el["type"])
             continue
 
         # element_id를 그대로 사용 (새 UUID 생성 안 함)

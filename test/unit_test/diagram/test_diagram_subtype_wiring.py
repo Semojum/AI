@@ -171,7 +171,7 @@ class TestSubtypeIsNotCaptionText:
         cap = _CAPTIONS["org_chart"]
         monkeypatch.setattr(rb, "classify_with_confidence",
                             lambda p: ("diagram", 0.9, "org_chart"))
-        monkeypatch.setattr(rb, "caption", lambda p, t, context="": cap)
+        monkeypatch.setattr(rb, "caption", lambda p, t, context="", out_info=None: cap)
         monkeypatch.setattr(rb.Path, "exists", lambda self: True)
         el = {"element_id": "e1", "type": "image", "image_path": "/tmp/none.png",
               "bbox": [100, 100, 500, 400], "bbox_px": [200, 200, 1000, 800],
