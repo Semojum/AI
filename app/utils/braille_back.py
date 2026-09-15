@@ -2636,6 +2636,15 @@ _CTX_PAGE_SEED_RATIO = float(os.environ.get("BR_CTX_PAGE_SEED_RATIO", "0.25"))
 # `'1나사이어가' → '1 closed'` 와 `'BOAT! / LAND! / 설의이' → '… / Two'` 를 잘못 막는다.
 _CTX_KOR_GUARD = os.environ.get("BR_CTX_KOR_GUARD", "1").lower() not in ("0", "false", "off")
 _CTX_KOR_THRESHOLD = float(os.environ.get("BR_CTX_KOR_THRESHOLD", "-4.5"))
+# 토막 단위 영어 되찾기 (#905) — 한 줄에 한글이 섞이면 줄 단위 영어 판정이 통째로 실패한다.
+# gold 는 제29항 [다만](로마자표 생략 단위 = 문단)에 따라 낱말마다 로마자표를 안 붙이므로,
+# `Reading 과 Writing.` 같은 줄에서 `Writing.` 이 한글로 떨어졌다(전 코퍼스 10,049줄·14,316토막).
+# #894·#895 가 줄 단위로 고친 축을 토막 단위로 내린다.
+_ENG_TOKEN = os.environ.get("BR_ENG_TOKEN", "1").lower() not in ("0", "false", "off")
+# 한글 읽기가 이 아래면 '깨진 한글' 로 본다. 묵자 줄 분포의 1퍼센타일이다
+# (이득을 찾는 쪽이라 낮은 문턱을 쓴다 — 손해를 찾을 때 쓰는 -4.5 와 방향이 반대다).
+_ENG_TOKEN_FLOOR = float(os.environ.get("BR_ENG_TOKEN_FLOOR", "-6.964"))
+_LATIN_RE = re.compile(r"[A-Za-z]")
 # 음절 빈도표 — **묵자 재추출 1,361쪽·음절 101만**(우리 **입력** 텍스트)에서 만든다.
 # ★ gold 점자를 안 쓴다(`meta.gold_braille_used = false`). 자기 출력으로 자기를 판정하면
 #   그 자는 아무것도 안 잰다. 문턱을 다시 정할 사람을 위해 묵자 줄 점수 분위수도 meta 에 있다.
@@ -2655,6 +2664,26 @@ def _kor_plausibility(text: str) -> float | None:
         _KOR_FREQ = (freq, _mlog(sum(freq.values()) + len(freq)))
     freq, log_den = _KOR_FREQ
     return sum(_mlog(freq.get(c, 0) + 1) - log_den for c in syl) / len(syl)
+
+
+def _eng_token(tok: str, ko: str) -> str | None:
+    """한글로 떨어진 토막이 실은 영어였으면 영어 읽기를 돌려준다 (#905).
+
+    세 신호를 **겹쳐서** 본다. 하나로는 못 가른다 — 전 코퍼스 실측:
+      · 한글다움만 보면 드문 전문어가 깨진 한글로 잡힌다(`액틴 필라멘트`·`뉴클레오솜`).
+      · 토막의 영어 읽기만 보면 멀쩡한 한글도 걸린다(`각`→`eda` · `및`→`eo;`).
+      · 대문자표만 보면 비영어책에서 무너진다(`수능형`→`Mcowggjer`).
+    셋이 겹칠 때만 바꾼다. 그래도 남는 위양성(`띤다.`→`Iqi.`)은 '영어 낱말인가' 를 물어야
+    걸러지는데, **자생 낱말 목록은 쓰지 않는다** — 자기 출력으로 자기를 판정하는 꼴이다.
+    """
+    if not _ENG_TOKEN or not tok.startswith("⠠") or not _HANGUL_SYL_RE.search(ko):
+        return None
+    score = _kor_plausibility(ko)
+    if score is None or score >= _ENG_TOKEN_FLOOR:   # 한글로도 그럴듯하면 손대지 않는다
+        return None
+    eng = _english_any(tok, ctx=True)
+    # 한 글자·두 글자 영어는 뺀다 — `수`(⠠⠍)가 EBAE `M` 이기도 하다.
+    return eng if eng and len(_LATIN_RE.findall(eng)) >= 3 else None
 
 
 def _kor_guard_blocks(line: str) -> bool:
@@ -3613,8 +3642,11 @@ def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False) -> str:
                 if pieces:
                     pieces[-1] = ""                 # 범위와 위끝 사이의 한 칸을 지운다
                 pieces.append("^" + _decode_math_token(tok))
+            elif is_math[idx]:
+                pieces.append(_decode_math_token(tok))
             else:
-                pieces.append(_decode_math_token(tok) if is_math[idx] else _decode_line(tok))
+                ko = _decode_line(tok)
+                pieces.append(_eng_token(tok, ko) or ko)
         if idx < len(seps):
             pieces.append("" if seps[idx] == _EMPH_MARK
                           else " " * _print_gap(len(seps[idx]), idx, tokens, is_math))
