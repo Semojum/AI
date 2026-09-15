@@ -2645,6 +2645,22 @@ _ENG_TOKEN = os.environ.get("BR_ENG_TOKEN", "1").lower() not in ("0", "false", "
 # (이득을 찾는 쪽이라 낮은 문턱을 쓴다 — 손해를 찾을 때 쓰는 -4.5 와 방향이 반대다).
 _ENG_TOKEN_FLOOR = float(os.environ.get("BR_ENG_TOKEN_FLOOR", "-6.964"))
 _LATIN_RE = re.compile(r"[A-Za-z]")
+# 진짜 한국어 낱말 목록 — **묵자 재추출**(우리 입력 텍스트)에서 만든다. gold 점자를 안 쓴다.
+# 한글 읽기가 이 목록에 있으면 그 토막은 한글이다. 실측이 깨끗하다:
+#   손해 쪽  스포츠 1 · 소득 2 · 시스템 14 · 쉬운 5 · 섞여 6 · 써야 4 · 카드 98   (묵자에 있다)
+#   이득 쪽  샐표 · 셕얼 · 땃사사 · 쎼뭐 · 슈마 · 설맜 …                        (전부 0)
+# 문턱 아래(-6.964) 어절만 담는다 — 규칙이 물어보는 자리가 거기뿐이라 876 KB 가 69 KB 가 된다.
+_KOR_WORDS_PATH = Path(__file__).with_name("kor_words.json")
+_KOR_WORDS: frozenset[str] | None = None
+_KOR_RUN_RE = re.compile(r"[가-힣]{2,}")
+
+
+def _is_real_korean(ko: str) -> bool:
+    """읽힌 한글에 **묵자에 실재하는 낱말**이 들어 있는가."""
+    global _KOR_WORDS
+    if _KOR_WORDS is None:
+        _KOR_WORDS = frozenset(json.loads(_KOR_WORDS_PATH.read_text(encoding="utf-8"))["words"])
+    return any(w in _KOR_WORDS for w in _KOR_RUN_RE.findall(ko))
 # 음절 빈도표 — **묵자 재추출 1,361쪽·음절 101만**(우리 **입력** 텍스트)에서 만든다.
 # ★ gold 점자를 안 쓴다(`meta.gold_braille_used = false`). 자기 출력으로 자기를 판정하면
 #   그 자는 아무것도 안 잰다. 문턱을 다시 정할 사람을 위해 묵자 줄 점수 분위수도 meta 에 있다.
@@ -2680,6 +2696,8 @@ def _eng_token(tok: str, ko: str) -> str | None:
         return None
     score = _kor_plausibility(ko)
     if score is None or score >= _ENG_TOKEN_FLOOR:   # 한글로도 그럴듯하면 손대지 않는다
+        return None
+    if _is_real_korean(ko):      # 묵자에 있는 낱말이면 한글이다 — 손대지 않는다
         return None
     eng = _english_any(tok, ctx=True)
     # 한 글자·두 글자 영어는 뺀다 — `수`(⠠⠍)가 EBAE `M` 이기도 하다.
