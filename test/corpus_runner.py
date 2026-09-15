@@ -236,21 +236,40 @@ def page_text(pdf: Path) -> str:
     return t
 
 
+def fell_back(job_dir: Path, local_no: int, tier: str | None) -> bool:
+    """이 쪽이 MinerU 추출을 못 하고 텍스트레이어로 떨어졌나(#870).
+
+    끝 요약의 폴백 목록과 **같은 잣대**를 쓴다 — `mineru_raw` 에 `*_content_list.json` 이
+    없으면 MinerU 가 아무것도 안 낸 것이다. ZERO 티어는 원래 MinerU 를 안 타므로 제외한다.
+    """
+    if tier in (None, "ZERO"):
+        return False
+    return not list((job_dir / "temp" / f"page_{local_no:03d}" / "mineru_raw")
+                    .glob("*_content_list.json"))
+
+
 # ── 상태바 ───────────────────────────────────────────────────────────────
 def bar(cur: int, total: int, *, ok: int, review: int, blocked: int, fail: int, to: int, eta: float,
-        label: str, capfail: int = 0):
+        label: str, capfail: int = 0, fb: int = 0):
     """상태바. `cap✗N` 은 **이번 실행에서 캡션 호출이 실제로 실패한 건수**다(#852).
 
     종전엔 캡션 실패가 상태바에도 요약에도 안 떴다 — 빈 캡션 집계는 런이 **다 끝난 뒤**에나
     찍혀서, 816쪽·3.5시간을 돌고 나서야 알 수 있었다(2026-08-06). 중간에 끊기면 그마저 못 본다.
+
+    `fb N` 은 **MinerU 추출이 텍스트레이어로 떨어진 쪽 수**다(#870). 같은 이유로 올렸다 —
+    끝 요약에만 있었다. vLLM 엔진이 OOM 으로 죽어도 `/health` 는 200 이라 쪽 status 는
+    COMPLETED 로 남고 상태바는 `blk0 fail0` 만 보여, 2026-09-12 에 56쪽(6.2%)이 조용히
+    폴백으로 뜬 것을 밤새 못 봤다. **0 이 아니면 그 런은 A/B 비교에 못 쓴다** — 지금 알아야
+    갈래를 멈추고 서버를 살린다.
     """
     w = 26
     fill = int(w * cur / total) if total else w
     etas = f"{int(eta//60)}m{int(eta%60):02d}s" if eta > 0 else "--"
     cap = f" cap✗{capfail}" if capfail else ""
+    fbs = f" fb{fb}" if fb else ""
     sys.stdout.write(
         f"\r[{'#'*fill}{'.'*(w-fill)}] {cur}/{total} "
-        f"ok{ok} rv{review} blk{blocked} fail{fail} to{to}{cap} ETA{etas} {label[:30]:<30}"
+        f"ok{ok} rv{review} blk{blocked} fail{fail} to{to}{cap}{fbs} ETA{etas} {label[:30]:<30}"
     )
     sys.stdout.flush()
 
@@ -318,7 +337,7 @@ async def run_subject(subject: str, sel_rows: list[dict], tag: str, *,
         eta = (elapsed / prog["cur"]) * (prog["total"] - prog["cur"]) if prog["cur"] else 0
         bar(prog["cur"], prog["total"], ok=prog["ok"], review=prog["review"], blocked=prog["blocked"],
             fail=prog["fail"], to=prog["to"], eta=eta, label=f"{subject} p{pg}",
-            capfail=result_builder.caption_counters()[1])
+            capfail=result_builder.caption_counters()[1], fb=prog.get("fb", 0))
 
         if (vol, pg) in done:  # 재개: 이미 완료
             page_states.append(done[(vol, pg)])
@@ -364,6 +383,10 @@ async def run_subject(subject: str, sel_rows: list[dict], tag: str, *,
                         "error": f"{type(exc).__name__}: {exc}",
                         "traceback": traceback.format_exc()})
             prog["fail"] += 1
+        # ★ 폴백을 **지금** 센다(#870). 끝에 한 번 세던 것을 쪽마다 센다 — 밤새 도는 런에서
+        #   조용한 폴백을 아침에 알면 그 런은 이미 버린 것이다.
+        if fell_back(job_dir, li, rec.get("tier")):
+            prog["fb"] += 1
         page_states.append(rec)
         # 페이지마다 체크포인트 저장(중단 대비)
         _save_state(job_dir, job_id, subject, tag, page_states)
@@ -498,7 +521,8 @@ def main():
               f"{' '.join(r['page'] for r in rs)}")
     print("-" * 60)
 
-    prog = {"cur": 0, "total": total, "ok": 0, "review": 0, "blocked": 0, "fail": 0, "to": 0, "t0": time.time()}
+    prog = {"cur": 0, "total": total, "ok": 0, "review": 0, "blocked": 0, "fail": 0, "to": 0,
+            "fb": 0, "t0": time.time()}
     summaries = []
     for sub in sorted(sel):
         s = asyncio.run(run_subject(sub, sel[sub], tag, reuse=args.reuse,
@@ -521,12 +545,18 @@ def main():
     #   B면 33쪽·C면 42쪽이 폴백으로 떨어졌고, 그 차이가 A/B 판정에 ±1p로 섞여 들어갔다.
     #   폴백이 1쪽이라도 있으면 그 런은 다른 런과 비교하면 안 된다.
     fb = [(s["job_id"], p["page"]) for s in summaries for p in s["pages"]
-          if p.get("tier") not in (None, "ZERO")
-          and not list((STORAGE / s["job_id"] / "temp" /
-                        f"page_{p['local_no']:03d}" / "mineru_raw").glob("*_content_list.json"))]
+          if fell_back(STORAGE / s["job_id"], p["local_no"], p.get("tier"))]
     if fb:
         print(f"⚠ MinerU 추출 폴백 {len(fb)}쪽 — 이 런은 A/B 비교에 쓰지 말 것"
-              f" (동시 실행·GPU 경합 확인): {[f'{j.split(chr(45))[-1]} p{p}' for j, p in fb[:10]]}")
+              f" (동시 실행·GPU 경합·엔진 사망 확인): "
+              f"{[f'{j.split(chr(45))[-1]} p{p}' for j, p in fb[:10]]}")
+        # ★ #870 — 한 책에 몰려 있으면 GPU 경합이 아니라 **엔진이 죽은 것**이다.
+        #   vLLM EngineCore 가 OOM 으로 죽으면 `/health` 는 200 인 채 `/file_parse` 만
+        #   409 를 내므로, 그 시각 이후 그 책의 남은 쪽이 통째로 폴백한다.
+        jobs = {j for j, _ in fb}
+        if len(jobs) == 1 and len(fb) >= 10:
+            print("   ↳ 한 책에 몰렸다 — MinerU 엔진 사망을 의심할 것. "
+                  "`grep EngineDeadError <mineru_api.log>` · tools/ops/mineru_watchdog.sh")
 
     # ★ 빈 캡션 집계(2026-08-10). 위 폴백 집계와 같은 이유다 — 캡셔닝이 실패해도 요소는
     #   빈 캡션 + CAPTION_FAILED로 살아남고(불변규칙 1) 페이지는 NEEDS_REVIEW로 끝나서,

@@ -199,8 +199,17 @@ def _post_mineru_api(api_url: str, pdf_path: Path, out_dir: Path, page_idx: int,
     except requests.RequestException as exc:      # 연결 끊김 등 — 재시도 대상(CLI 실패와 같은 층)
         raise RuntimeError(f"MinerU API 호출 실패 (page_idx={page_idx}): {exc}") from exc
     if resp.status_code != 200:
+        body = resp.text[:300]
+        # ★ #870 — 409 `EngineDeadError` 는 엔진이 죽었다는 **유일한 신호**다.
+        #   `/health` 는 vLLM EngineCore 가 OOM 으로 죽은 뒤에도 200 을 내므로
+        #   `mineru_service.get_url()` 의 재기동 길이 한 번도 안 열린다. 여기서 알려 주지
+        #   않으면 그 런의 남은 쪽이 전부 조용히 텍스트레이어 폴백으로 뜬다
+        #   (2026-09-12 실측 `EBS-E26-013` 56쪽, 러너 요약은 `blk0 fail0`).
+        if resp.status_code == 409 or "EngineDead" in body:
+            from app.ai.parser import mineru_service
+            mineru_service.report_engine_dead(api_url)
         raise RuntimeError(
-            f"MinerU API 실패 (status={resp.status_code}, page_idx={page_idx}): {resp.text[:300]}")
+            f"MinerU API 실패 (status={resp.status_code}, page_idx={page_idx}): {body}")
     out_dir.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
         zf.extractall(out_dir)
