@@ -53,8 +53,22 @@ _UEB_PUNCT = {"⠂": ",", "⠆": ";", "⠒": ":"}   # 구절 안 문장 부호(�
 _SPACE_CELL = "⠀"            # 점자 공백(U+2800)
 # 어말 문장부호 — 받침 셀과 같은 점형이라(같=⠫⠦) 뒤가 공백/끝일 때만 부호로 본다.
 _SENT_END = {"⠦": "?", "⠖": "!"}
+
+
+def _cells_are_hangul(s: str, at: int) -> bool:
+    """`at` 자리부터 한글 음절이 이어지는가 (제33항 판정용 · #625)."""
+    seg = s[at:at + 4]
+    if not seg:
+        return False
+    for ln in (3, 2, 1):
+        syl = _SYLLABLE_REV.get(seg[:ln])
+        if syl and "가" <= syl[0] <= "힣":
+            return True
+    return False
 # 로마자 런 바로 뒤인지 보는 데 쓴다 (제33항 · #625).
-_LATIN_TAIL_RE = re.compile(r"[A-Za-z0-9]")
+# 앞이 **영문 낱말**(3자 이상)로 끝나는가 — 한 글자 변수(`a?a`)와 숫자를 뺀다.
+# 전 코퍼스 A/B: 앞 글자 하나만 보면 수식 자리에서 570줄이 깨졌다(`값in"평균”`·`a"a,`).
+_LATIN_TAIL_RE = re.compile(r"[A-Za-z]{3,}$")
 
 # 받침 ㅍ 음절 — ⠲가 마침표인지 받침 ㅍ인지 가른다(높=⠉⠥⠲ vs 노+마침표).
 # 한국어에서 받침 ㅍ이 실제로 쓰이는 음절은 닫힌 집합이라 목록으로 가르는 게 가장 정확하다.
@@ -4122,7 +4136,8 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
         #   ⚠ `⠦` 는 한글 받침 ㅌ 이기도 하다. **바로 앞이 로마자 런일 때로 한정**한다 —
         #     넓히면 본문을 먹는다.
         if (ch in _SENT_END and not _final(i + 1) and out
-                and (_tail := "".join(out)[-1:]) and _LATIN_TAIL_RE.match(_tail)):
+                and _LATIN_TAIL_RE.search("".join(out))
+                and _cells_are_hangul(s, i + 1)):
             out.append(_SENT_END[ch])
             i += 1
             continue
