@@ -184,3 +184,47 @@ def test_가드_스위치가_종전_동작으로_되돌린다(monkeypatch):
     finally:
         monkeypatch.delenv("BR_CTX_KOR_GUARD", raising=False)
         importlib.reload(bb)
+
+
+# ── #905 · 토막 단위 영어 되찾기 ────────────────────────────────────────────
+# gold 는 제29항 [다만](로마자표 생략 단위 = 문단)대로 낱말마다 로마자표를 안 붙인다.
+# 줄 단위로만 영어를 판정하면 한글이 한 토막이라도 섞인 줄은 판정이 통째로 실패한다.
+# 세 신호를 겹칠 때만 바꾼다 — 하나로는 못 가른다(전 코퍼스 실측, #905 본문).
+def test_한글_섞인_줄의_영어_낱말을_되찾는다():
+    from app.utils.braille_back import decode
+    # 'Reading 과 Writing.' — gold 는 `Writing` 앞에 로마자표를 안 붙인다.
+    assert decode("⠴⠠⠗⠂⠙⠬⠀⠈⠯⠀⠠⠺⠗⠊⠞⠬⠲") == "Reading 굴 Writing."
+
+
+def test_묵자에_있는_한국어_낱말은_안_바꾼다():
+    """`시스템`·`스포츠`는 묵자에 실재한다 — 점수가 낮아도 한글로 둔다."""
+    from app.utils.braille_back import _is_real_korean, _eng_token
+    assert _is_real_korean("시스템") and _is_real_korean("스포츠")
+    assert not _is_real_korean("샐표")
+    # ⠠ 로 시작하는 토막이어도 묵자 낱말이면 손대지 않는다
+    assert _eng_token("⠠⠕⠠⠎⠐⠮", "시스템") is None
+
+
+def test_여는_작은따옴표를_대문자표로_오인하지_않는다():
+    """`⠠⠦`(여는 작은따옴표)·`⠠⠄`(점역자주)도 ⠠ 로 시작한다 — 그 둘은 뺀다."""
+    from app.utils.braille_back import _eng_token
+    assert _eng_token("⠠⠦⠇⠥⠞", "‘루트") is None
+
+
+def test_영어가_없는_줄에서는_안_돈다():
+    """줄 관문 — 이게 없으면 `섞여`가 `Thawh`로 뒤집힌다(전 코퍼스 12,130줄)."""
+    from app.utils.braille_back import decode
+    got = decode("⠝⠁⠺⠀⠠⠎⠐⠮⠀⠈⠯")
+    assert "Se" not in got and "S" not in got, got
+
+
+def test_토막_되찾기_스위치가_종전_동작으로_되돌린다(monkeypatch):
+    import importlib
+    import app.utils.braille_back as bb
+    monkeypatch.setenv("BR_ENG_TOKEN", "0")
+    importlib.reload(bb)
+    try:
+        assert bb.decode("⠴⠠⠗⠂⠙⠬⠀⠈⠯⠀⠠⠺⠗⠊⠞⠬⠲") == "Reading 굴 싀애덜요."
+    finally:
+        monkeypatch.delenv("BR_ENG_TOKEN", raising=False)
+        importlib.reload(bb)
