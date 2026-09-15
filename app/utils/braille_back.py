@@ -2692,7 +2692,10 @@ def _eng_token(tok: str, ko: str) -> str | None:
     셋이 겹칠 때만 바꾼다. 그래도 남는 위양성(`띤다.`→`Iqi.`)은 '영어 낱말인가' 를 물어야
     걸러지는데, **자생 낱말 목록은 쓰지 않는다** — 자기 출력으로 자기를 판정하는 꼴이다.
     """
-    if not _ENG_TOKEN or not tok.startswith("⠠") or not _HANGUL_SYL_RE.search(ko):
+    # ⠠ 로 시작하되 **대문자표**여야 한다 — 여는 작은따옴표 `⠠⠦`(제34항)와 점역자주 `⠠⠄`도
+    # ⠠ 로 시작한다. 그 둘을 안 빼면 `‘루트`·`‘편히`·`‘네네` 같은 **진짜 한글**이 걸린다(실측).
+    if (not _ENG_TOKEN or len(tok) < 2 or tok[0] != "⠠" or tok[1] in "⠦⠄"
+            or not _HANGUL_SYL_RE.search(ko)):
         return None
     score = _kor_plausibility(ko)
     if score is None or score >= _ENG_TOKEN_FLOOR:   # 한글로도 그럴듯하면 손대지 않는다
