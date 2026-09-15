@@ -1309,7 +1309,9 @@ def _border_line(name: str, title_braille: str) -> str:
         return cap + fill * inner + cap
     # 케이스②: 캡1 + 채움4 + 빈칸1 + 제목 + 빈칸1 + 채움R + 캡1 = 32
     max_title = inner - _BORDER_LEFT_FILL - 2          # = 24
-    t = title_braille[:max_title]                       # 초과 시 클립(케이스① 윗줄 5칸은 TODO: layout)
+    # 초과분은 여기서 자른다. 케이스①(제목을 윗줄 5칸에 적고 테두리는 제목 없이 두기)은
+    # 조판 단계가 맡는다 — `layout_braille.BrailleLayout._render_box_top`.
+    t = title_braille[:max_title]
     right_fill = inner - _BORDER_LEFT_FILL - 2 - len(t)
     return (cap + fill * _BORDER_LEFT_FILL + _BORDER_BLANK
             + t + _BORDER_BLANK + fill * right_fill + cap)
