@@ -76,3 +76,61 @@ def test_쪽_나눔_form_feed_는_줄_경계다():
     cells = ascii_to_unicode(brf, backtick="cell")
     assert "\f" in cells and "[?" not in cells
     assert decode(cells).split("\n") == ["the paintings that adorned the walls"] * 2
+
+
+# ── #894 · 쪽 단위 씨앗 ────────────────────────────────────────────────────
+# 이웃 번짐은 **바로 옆**에서만 이어져, 같은 쪽에 영어 블록이 둘 이상인데 사이에 한글
+# 지시문·빈 줄·표 구분선이 끼면 뒤 블록이 통째로 한글로 떨어졌다.
+# 전권 실측: 씨앗은 있는데 안 닿은 줄 1,199개 중 **바로 옆인데 안 닿은 것은 0개**다.
+# 제29항 [다만](재추출 1507행)이 단위를 문단으로 두므로 같은 쪽에 씨앗이 둘 이상이면
+# 그 쪽 본문 줄 전부를 문맥 후보로 본다.
+# BRF 줄은 정답 도서 실물이다(수능특강 영어 body p0016).
+
+# 씨앗 — 혼자서도 엄격 관문을 통과하는 줄 둘. 하나로는 안 연다(아래 시험).
+_SEED = [
+    "s9ce`%e`_h`la/`visit$`!`>ea`\":",      # since she had last visited the area where
+    "awkw>dly`look$`>.d`at`h}",             # awkwardly looked around at her
+]
+_CHOICE = [
+    "#1`3fus$`;|o`pl1s$",                   # ① confused → pleased
+    "#2`3fid5t`;|o`emb>rass$",              # ② confident → embarrassed
+]
+
+
+def _page(brf_lines: list[str]) -> str:
+    """이 파일의 BRF 는 `unicode_to_ascii` 가 뱉은 꼴이라 백틱이 **빈칸**이다.
+
+    코퍼스 원본 파일은 백틱이 ⠈(ㄱ) 인 `cell` 규약을 쓴다. 두 규약을 섞으면 안 된다 —
+    `cell` 로 읽으면 낱말 사이가 ⠈ 로 붙어 영어가 한 낱말도 안 읽힌다(실측).
+    """
+    from app.utils.braille_ascii import ascii_to_unicode
+    return ascii_to_unicode("\n".join(brf_lines), backtick="space")
+
+
+def test_빈_줄_너머의_보기_줄이_영어로_읽힌다():
+    """씨앗과 보기 줄 사이에 빈 줄이 있어도 같은 쪽이면 문맥이 닿는다."""
+    from app.utils.braille_back import decode
+    got = decode(_page(_SEED + ["", ""] + _CHOICE))
+    assert "confused" in got and "pleased" in got, got
+    assert "confident" in got and "embarrassed" in got, got
+
+
+def test_씨앗이_하나뿐이면_안_연다():
+    """씨앗 하나는 우연히 영어로 읽힌 한 줄일 수 있다 — 둘을 요구한다."""
+    from app.utils.braille_back import decode
+    got = decode(_page(_SEED[:1] + ["", ""] + _CHOICE))
+    assert "confused" not in got, got
+
+
+def test_되돌림_스위치가_종전_동작으로_되돌린다(monkeypatch):
+    """`BR_CTX_PAGE_SEED=0` — 점역사 자문 회신이 오면 되돌릴 수 있어야 한다(#839 와 같은 방식)."""
+    import importlib
+    import app.utils.braille_back as bb
+    monkeypatch.setenv("BR_CTX_PAGE_SEED", "0")
+    importlib.reload(bb)
+    try:
+        got = bb.decode(_page(_SEED + ["", ""] + _CHOICE))
+        assert "confused" not in got, got
+    finally:
+        monkeypatch.delenv("BR_CTX_PAGE_SEED", raising=False)
+        importlib.reload(bb)
