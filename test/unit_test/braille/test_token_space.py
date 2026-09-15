@@ -47,3 +47,30 @@ def test_띄어_쓴_분수도_분수표로_나간다(latex):
 def test_명령과_규정상_한_칸은_안_건드린다(latex, expected):
     """공백을 넓게 지우면 명령이 사라지거나 규정이 요구하는 칸이 없어진다."""
     assert convert_latex(latex) == expected
+
+
+@pytest.mark.parametrize("spaced,tight", [
+    # [D] 부호 뒤의 칸 (#876). 종전 lookahead 가 `(?=[\d.])` 라 뒤가 숫자일 때만 걸렸다.
+    (r"- \frac { 1 } { 2 }", r"-\frac{1}{2}"),      # 명령
+    (r"x = - \sqrt { 2 }", r"x=-\sqrt{2}"),
+    (r"x = - \infty", r"x=-\infty"),
+    (r"x = - \beta", r"x=-\beta"),
+    (r"x = - y", r"x=-y"),                          # 로마자 변수
+    (r"x = - ( y + 1 )", r"x=-(y+1)"),              # 여는 괄호
+])
+def test_부호_뒤_칸도_붙는다(spaced, tight):
+    """「한국 점자 규정」 제45항(재추출 2028~2060행) — 수식 안 연산 기호는 붙여 적는다.
+
+    예시 `9-3=6` → `#i9#c33#f`. 앞뒤를 한 칸씩 띄우는 것은 한글 사이일 때뿐이다(제46항).
+    MinerU 가 칸을 넣었느냐에 따라 같은 식이 두 모양으로 나가면 안 된다.
+    """
+    assert convert_latex(spaced) == convert_latex(tight)
+
+
+@pytest.mark.parametrize("latex,expected", [
+    (r"x = - 24", "⠭⠒⠒⠔⠼⠃⠙"),      # gold 수학2 p002 실측
+    (r"1 - 2", "⠼⠁⠔⠼⠃"),             # 이항 뺄셈 — 왼쪽이 숫자라 부호 자리가 아니다
+    (r"a \leq - 3", "⠁⠖⠖⠔⠼⠉"),
+])
+def test_부호_규칙이_종전_자리를_안_깬다(latex, expected):
+    assert convert_latex(latex) == expected
