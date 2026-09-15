@@ -134,3 +134,53 @@ def test_되돌림_스위치가_종전_동작으로_되돌린다(monkeypatch):
     finally:
         monkeypatch.delenv("BR_CTX_PAGE_SEED", raising=False)
         importlib.reload(bb)
+
+
+# ── #895 · 한글 그럴듯함 가드 (다섯째 축) ──────────────────────────────────
+# 쪽 단위 씨앗(#894)이 연 쪽에서도 **한글 본문 줄**이 섞여 있으면 그 줄이 영어로 뒤집혔다.
+# `이 줄이 영어인가` 를 묻는 거르개 넷은 전부 이득을 같이 깎아 기각됐다(#895).
+# 다섯째 축은 반대로 묻는다 — **되돌린 한글이 한국어답게 읽히면 그건 한글 줄이다.**
+# 문턱 -4.5 는 묵자 재추출 분포(중앙값 -5.39)와 77줄 전수 눈검사로 잡았다.
+_KOR_LINE = "⠕⠌⠊⠲"        # '있다.' — 영어로 읽으면 'osti.' 가 된다(전권 6회)
+
+
+def test_그럴듯한_한글은_문맥에_끌려가지_않는다():
+    """가드는 **쪽 단위 씨앗**이 여는 자리에만 건다 — 이웃 번짐에는 안 건다.
+
+    번짐 고리에도 걸면 `school.`·`now.` 처럼 **진짜 영어 짧은 줄**이 전부 판정 대상이 되고,
+    한 줄을 막으면 그 쪽 영어 문맥이 무너져 가드가 손대지도 않은 줄까지 깨진다.
+    전 코퍼스 A/B: 번짐까지 걸면 이득 42·손해 76, 씨앗만 걸면 이득 12·손해 0.
+    그래서 한글 줄은 **영어 줄과 바로 붙어 있지 않을 때** 지켜진다.
+    """
+    from app.utils.braille_back import decode
+    got = decode(_page(_SEED + ["", ""] + _CHOICE + [""]) + "\n" + _KOR_LINE).split("\n")
+    assert got[-1] == "있다.", got
+    assert "confused" in got[-4], got          # #894 이득은 그대로다
+
+
+def test_깨진_한글로_읽히는_줄은_계속_영어가_된다():
+    """#894 회귀 — 보기 줄의 한글 읽기는 점수가 문턱 아래라 가드가 안 걸린다."""
+    from app.utils.braille_back import decode
+    got = decode(_page(_SEED + ["", ""] + _CHOICE))
+    assert "confused" in got and "embarrassed" in got, got
+
+
+def test_한글_두_음절_미만은_판정하지_않는다():
+    from app.utils.braille_back import _kor_plausibility
+    assert _kor_plausibility("1 closed") is None
+    assert _kor_plausibility("가") is None
+    assert _kor_plausibility("있다") is not None
+
+
+def test_가드_스위치가_종전_동작으로_되돌린다(monkeypatch):
+    """`BR_CTX_KOR_GUARD=0` — 문턱 근거가 바뀌면 되돌릴 수 있어야 한다."""
+    import importlib
+    import app.utils.braille_back as bb
+    monkeypatch.setenv("BR_CTX_KOR_GUARD", "0")
+    importlib.reload(bb)
+    try:
+        got = bb.decode(_page(_SEED + ["", ""] + _CHOICE + [""]) + "\n" + _KOR_LINE).split("\n")
+        assert got[-1] == "osti.", got
+    finally:
+        monkeypatch.delenv("BR_CTX_KOR_GUARD", raising=False)
+        importlib.reload(bb)
