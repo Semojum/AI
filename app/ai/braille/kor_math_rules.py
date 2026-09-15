@@ -1158,7 +1158,7 @@ def _stage0b_nth_root(result: str) -> str:
                 n_part = convert_latex(result[i + 6:close])
                 inner = convert_latex(raw)
                 out.append(n_part + _SQRT_N_IND
-                           + (_wrap_ins(inner) if _needs_wrap(raw) else inner))
+                           + (_wrap_ins(inner) if _needs_wrap(raw, radicand=True) else inner))
                 i = after
                 continue
         out.append(result[i])
@@ -1348,7 +1348,7 @@ def _stage2c_sqrt(result: str) -> str:
         if result[i:i + 5] == "\\sqrt" and result[i + 5:i + 6] == "{":
             raw, after = _extract_brace_content(result, i + 5)
             inner = convert_latex(raw)
-            out.append(_SQRT_IND + (_wrap_ins(inner) if _needs_wrap(raw) else inner))
+            out.append(_SQRT_IND + (_wrap_ins(inner) if _needs_wrap(raw, radicand=True) else inner))
             i = after
             continue
         out.append(result[i])
@@ -2264,8 +2264,25 @@ def _wrap_ins(inner_braille: str) -> str:
     return f"{_WRAP_S}{inner_braille}{_WRAP_E}"
 
 
-def _needs_wrap(expr: str) -> bool:
+# 함수 적용을 인수 하나로 접기 위한 꼴 둘 (#877). 이름 목록은 이미 있는 두 자리와 같다 —
+# `_TRIG_ARG_RE`(삼각)·`_BARE_FUNC_RE`(lim·ln 등). 늘리려면 세 곳을 같이 고칠 것.
+_FUNC_NAME = (r"\\(?:(?:arc)?(?:sin|cos|tan|sec|csc|cot)h?"
+              r"|lim|max|min|ln|exp|det|gcd|lcm|arg|deg)")
+# 이름 + 인자 괄호. 괄호는 ASCII `( )` 와 **1단계 뒤 점형 ⠦ ⠴** 를 다 본다.
+# `\\cmd{…}` 는 이름이 무엇이든 **구성 하나**다(`\\sqrt{3}`·`\\vec{a}`·`\\overline{AB}`).
+# `\\sqrt`+`3` 으로 세면 중첩 근호가 곱으로 잡힌다 — 기각 이력이 지목한 바로 그 함정이다.
+_FUNC_APPLY_RE = re.compile(
+    rf"(?:\\[a-zA-Z]+|{_FUNC_NAME}|[A-Za-z])\s*(?:\{{[^{{}}]*\}}|\([^()]*\)|⠦[^⠦⠴]*⠴)")
+# 괄호 없이 인자를 붙여 쓴 꼴(`\sin x`). **함수 이름일 때만** 접는다 —
+# `\pi x` 는 곱이라 접으면 안 된다.
+_FUNC_BARE_RE = re.compile(rf"{_FUNC_NAME}\s*(?:\d+(?:[.,]\d+)*|[A-Za-z]|\\[a-zA-Z]+)")
+
+
+def _needs_wrap(expr: str, *, radicand: bool = False) -> bool:
     """점역자 삽입 묶음 괄호 필요 판정 (수학 제7항 3호·제18항 붙임·제22항 붙임2).
+
+    `radicand=True` 는 **근호 안** 자리다(제14항 [붙임 2]). 그 자리에서는 book 모드에서도
+    곱을 묶는다 — 아래 ⚠ 의 관행 해제가 닿지 않는 자리다. 근거는 그쪽 주석(#877).
 
     묶는다: 다항식(이항 +/−), 분수(/·\\frac), 곱(인수 2개 이상 — xy·2a·2(m+n)).
     안 묶는다: 단일 수(소수·자릿점 포함, 제18항 x^#j4c)·단일 문자·문자^단일첨자
@@ -2322,11 +2339,31 @@ def _needs_wrap(expr: str) -> bool:
     # 규정은 곱도 묶으라 하지만(제7항 3호·제22항 [붙임2]) 정답 도서는 묶지 않는다 —
     # A/B에서 곱 묶음 해제가 유사도 +2.1p(temp/wrap_variant_ab.py). 관행이라 book 모드
     # 한정으로 해제하고, regulation 모드는 규정대로 묶는다.
-    # (근호 안·삼각 인수의 명시 묶음은 _TRIG_ARG_RE 등 별도 경로가 규정대로 처리한다.)
-    if _IS_BOOK_STYLE:
+    #
+    # ★ #877 — **근호 안(`radicand`)은 이 해제가 닿지 않는다.**
+    #   규정이 그 자리를 따로 집어 말한다: 「수학 점자」 제14항 [붙임 2](규정 재추출
+    #   3615~3618행) "근호 안이 분수, 곱, 다항식 등일 때에는 묶음 괄호로 묶어 나타낸다"
+    #   + 보기 `√―xy → >(xy)`. 제6항 2호(3110행)도 같은 보기를 든다.
+    #   관행 쪽은 **증거가 없다** — 동결 코퍼스 gold 의 근호 중 묶음 괄호를 쓴 것은 4건인데
+    #   넷 다 다항식이고(`{f'(t)}²+{g'(t)}²` 꼴), 안 묶은 258건은 전부 `√3` 같은 **단항**이다.
+    #   즉 gold 에 근호 안 곱이 **0건**이라 위 A/B(+2.1p)가 이 자리를 잰 적이 없다.
+    #   규정만 있고 관행이 침묵하면 규정대로 간다(CLAUDE.md 판정표).
+    #   실측 규모: 추출물 근호 1,304건 중 곱은 11건(0.8%) — 작지만 규정이 요구하는 것을
+    #   빈도로 빼지 않는다.
+    if _IS_BOOK_STYLE and not radicand:
         return False
     flat = re.sub(r"[\^_](?:\{[^{}]*\}|[A-Za-z0-9])", "", expr)
-    factors = re.findall(r"\\[a-zA-Z]+|\d+(?:[.,]\d+)*|[A-Za-z]|\([^()]*\)", flat)
+    # ★ #877 — 세기 전에 **함수 적용과 명령 인자를 원자 하나로 접는다.**
+    #   위 ⚠ 가 기각된 이유가 정확히 이것이다: `f(x)`를 `f`+`(x)` 로, `\sqrt{3}`을
+    #   `\sqrt`+`3` 으로 세면 **단일 함수값이 곱으로 잡혀** 과잉 묶음이 난다
+    #   (2026-07-22 A/B 에서 텍스트 인라인 수식 38건이 이렇게 깨졌다).
+    #   전면 원자 파서는 아직 없고, 여기서는 두 꼴만 접으면 그 함정이 닫힌다.
+    #   ⚠ 이 자리에 오는 `expr` 은 **1단계를 지난 반쯤 점자**다 — 소괄호가 이미 ⠦ ⠴ 로
+    #     바뀌어 있다(실측: `\sqrt{f(x)}` → `f⠦x⠴`). ASCII 괄호만 보면 안 걸린다.
+    #     위 "이미 완전 괄호" 검사가 두 꼴을 다 보는 이유와 같다.
+    flat = re.sub(_FUNC_APPLY_RE, "\x00", flat)   # f⠦x⠴ · \sin⠦x⠴ · \vec{a}
+    flat = re.sub(_FUNC_BARE_RE, "\x00", flat)    # \sin x · \ln 2
+    factors = re.findall(r"\x00|\\[a-zA-Z]+|\d+(?:[.,]\d+)*|[A-Za-z]|\([^()]*\)", flat)
     return len(factors) >= 2
 
 
