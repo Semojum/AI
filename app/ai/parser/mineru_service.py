@@ -54,6 +54,13 @@ def _health(url: str, timeout: float = 2.0) -> bool:
 
     죽음 = 연결 거부(프로세스 없음). 타임아웃 = 바쁨 = 살아 있음.
     ponytail: 멈춘(hang) 서버는 못 가른다 — 그 쪽은 요청 상한(60초)이 잡는다.
+
+    ★ **200 은 엔진 생존이 아니다**(#870). vLLM `EngineCore` 가 OOM 으로 죽어도 이 함수는
+      계속 True 를 돌려준다(2026-09-12 실측: 00:02:31 사망, 그 뒤로도 `/health` 200 ·
+      `/file_parse` 만 409 `EngineDeadError`). 그 사이 `EBS-E26-013` 56쪽(6.2%)이 조용히
+      텍스트레이어 폴백으로 떴고 러너 요약은 `blk0 fail0` 이었다. **실제로 쓸 수 있는지는
+      처리 경로만 안다** — `report_engine_dead()` 를 같이 본다. #848 은 반대쪽 구멍
+      (살아 있는 서버를 죽었다고 오판)이라 이 경우를 안 막는다.
     """
     try:
         with urllib.request.urlopen(url + "/health", timeout=timeout) as r:
@@ -64,6 +71,28 @@ def _health(url: str, timeout: float = 2.0) -> bool:
         return isinstance(exc.reason, (socket.timeout, TimeoutError))
     except Exception:  # noqa: BLE001
         return False
+
+
+# `/file_parse` 가 409(EngineDeadError)를 냈다 = 엔진이 죽었다. `/health` 는 200 을 내므로
+# 이 표시가 **유일한 사망 신호**다(#870). 재기동하면 내린다.
+_engine_dead = False
+_engine_dead_warned = False
+
+
+def report_engine_dead(url: str | None = None) -> None:
+    """처리 경로가 "엔진이 죽었다" 고 알려 온다(#870).
+
+    `mineru_runner._post_mineru_api` 가 409 를 받으면 부른다. 다음 `get_url()` 은
+    `/health` 결과를 **무시하고** 재기동 길로 간다. 이 표시가 없으면 health 가 계속 200 을
+    내므로 재기동 길이 **한 번도 안 열리고**, 그 런의 남은 쪽이 전부 조용히 폴백한다.
+    """
+    global _engine_dead
+    if url and _url and url.rstrip("/") != _url:
+        return                              # 우리가 쓰는 서버 이야기가 아니다
+    if not _engine_dead:
+        logger.error("MinerU 엔진 사망 신호(409 EngineDeadError) — /health 는 200 이지만 "
+                     "실제로는 못 쓴다. 다음 요청에서 재기동을 시도한다.")
+    _engine_dead = True
 
 
 def _mineru_api_bin() -> str:
@@ -220,16 +249,30 @@ def get_url() -> str | None:
     되살리기 전에 `stop()`으로 죽은 그룹을 먼저 거둔다. 안 그러면 `VLLM::EngineCore`가
     VRAM을 문 채 남아 새 인스턴스가 메모리를 못 잡는다(실측 5,955MiB 잔존).
     """
-    global _restarts, _last_restart
-    if _url and _health(_url, 1.0):
+    global _restarts, _last_restart, _engine_dead, _engine_dead_warned
+    # ★ #870 — health 는 죽은 엔진에도 200 을 낸다. 처리 경로가 사망을 알려 왔으면
+    #   health 가 뭐라 하든 살아 있다고 보지 않는다.
+    if _url and not _engine_dead and _health(_url, 1.0):
         return _url
     # 우리가 띄운 게 아니면 손대지 않는다(외부 URL은 남의 것, 비활성은 의도된 것).
-    if os.environ.get("MINERU_API_URL") or os.environ.get("MINERU_PERSISTENT", "1") == "0":
+    external = os.environ.get("MINERU_API_URL")
+    if external or os.environ.get("MINERU_PERSISTENT", "1") == "0":
+        if _engine_dead and external and _url:
+            # 남의 서버는 우리가 못 살린다. 그렇다고 None 을 주면 쪽마다 CLI 가 자기 VLM 을
+            # 새로 올려 예산을 태우고 되먹임에 빠진다(#848 주석) — 409 로 빨리 떨어지는
+            # 편이 낫다. 대신 **한 번은 크게 알린다.** 밖에서 감시·재기동해야 하는 상태다
+            # (`tools/ops/mineru_watchdog.sh`).
+            if not _engine_dead_warned:
+                _engine_dead_warned = True
+                logger.error("외부 MinerU 서버(%s)의 엔진이 죽었다 — 우리가 재기동할 수 없다. "
+                             "이 런의 남은 쪽은 텍스트레이어 폴백으로 뜬다. "
+                             "tools/ops/mineru_watchdog.sh 로 감시·재기동할 것.", _url)
+            return _url
         return None
 
     with _restart_lock:
         # 자물쇠를 기다리는 동안 다른 쪽이 이미 살렸을 수 있다.
-        if _url and _health(_url, 1.0):
+        if _url and not _engine_dead and _health(_url, 1.0):
             return _url
         now = time.time()
         if _restarts >= _MAX_RESTARTS:
@@ -242,6 +285,8 @@ def get_url() -> str | None:
         logger.warning("MinerU 서비스가 죽었다(health 실패) → 재기동 %d/%d",
                        _restarts, _MAX_RESTARTS)
         stop()                              # 죽은 그룹을 먼저 거둔다(VRAM 회수)
+        _engine_dead = False                # 새로 띄우는 것이니 사망 표시는 내린다(#870)
+        _engine_dead_warned = False
         return ensure_started(wait=_RESTART_WAIT)
 
 
