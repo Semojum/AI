@@ -1141,6 +1141,31 @@ def _page_rotation(pdf_data: bytes, page_no: int) -> int:
         return 0
 
 
+def _place_recovered_figures(elements: list[dict], add: list[dict]) -> None:
+    """회수한 그림을 **추정 y 자리**에 끼워 넣고 order 를 다시 매긴다(#875).
+
+    회수분은 bbox 가 없다 — 비전 모델의 눈대중 좌표를 경계로 내보내지 않기 때문이다
+    (`figure_detect.to_elements` 관문 G2). 그래서 뒤의 기하 읽기순서 보정
+    (`_reorder_columns` 5번)이 손대지 않고 **원래 슬롯**을 지킨다. 종전에는 끝에
+    붙여 두고 그 보정이 추정 좌표로 자리를 잡아 줬는데, 좌표를 뺐으니 그림 설명이
+    쪽 맨 뒤로 밀린다. 자리는 여기서 정해 둔다 — 눈대중 값을 쓰는 곳은 여기뿐이고,
+    쓰는 것도 절대 위치가 아니라 **앞뒤 순서**다(그 정도는 실측에서 맞았다).
+    """
+    for el in add:
+        est = el.get("bbox_est")
+        y = est[1] if est and len(est) >= 4 else None
+        pos = len(elements)
+        if y is not None:
+            for i, e in enumerate(elements):
+                bb = e.get("bbox")
+                if isinstance(bb, (list, tuple)) and len(bb) >= 4 and bb[1] > y:
+                    pos = i
+                    break
+        elements.insert(pos, el)
+    for i, e in enumerate(elements, start=1):
+        e["order"] = i
+
+
 async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     """현주 추출 단계: analyze_pdf + (ZERO 텍스트 | non-ZERO 모델) → 경계 dict(크기·bbox 포함)."""
     from app.ai.preprocessor.pdf_analyzer import (
@@ -1309,7 +1334,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                 w, h = ((image_width, image_height) if bbox_space == "pixel"
                         else (1000.0, 1000.0))
                 add = figure_detect.to_elements(figs, w, h, len(elements) + 1)
-                elements.extend(add)
+                _place_recovered_figures(elements, add)
                 logger.info("그림 회수 %d개 (page=%d)", len(add), task.page_no)
 
     # QA용 쪽 이미지 보관(기본 off — KEEP_PAGE_IMAGE=1로만 켠다, 대표 결정 2026-08-07).
