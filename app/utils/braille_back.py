@@ -1225,6 +1225,20 @@ def _decode_roman_run(s: str, i: int, *, span_ok: bool = False) -> tuple[str, in
                         break
                     continue
                 break                              # 뒤가 숫자 셀 → 수표(소비 안 함)
+            # ── 제64항 동그라미 숫자 (#514) ────────────────────────────────
+            # `⠼` 뒤가 **내린 숫자**면 EBAE 약자 ble 가 아니라 동그라미 번호다
+            # (①=⠼⠂ · ②=⠼⠆ · ③=⠼⠒). 영어 줄로 판정된 보기 줄의 머리 번호가
+            # 여기서 `ble` 로 풀려 번호가 통째로 사라졌다 —
+            #   `⠼⠒⠀⠠⠞⠓⠁⠞⠄⠎ …` -> `ble: That's all for today.`
+            # ★ **토큰 첫머리일 때만** 본다. EBAE 의 ble 는 낱말 **끝**에 붙는
+            #   약자라 낱말 첫머리에 설 수 없고, 반대로 낱말 안의 `⠼`+내린숫자는
+            #   `table,`(⠞⠁⠼⠂ = ble + 반점)처럼 약자+문장부호인 쪽이 맞다.
+            #   전권 18,892쪽 실측: 토큰 첫머리 94,893건 · 낱말 안 2,235건.
+            if ((j == i or s[j - 1] in (_SPACE_CELL, " ", "\n"))
+                    and (sp := _special_at(s, j)) is not None):
+                out.append(sp[0])
+                j = sp[1]
+                continue
             out.append("ble")
             j += 1
             continue
@@ -2844,6 +2858,23 @@ def _english_line(line: str, *, evidence: bool = True, ctx: bool = False) -> str
         if w[:1] == _CAPITAL and w[1:] in _ENG_LONE_WORD:      # 대문자표 + 홑 약자(`⠠⠦` = His)
             out.append(_ENG_LONE_WORD[w[1:]].capitalize())
             raw.append(_ENG_LONE_WORD[w[1:]])
+            prev = w
+            continue
+        if (w[:1] == _NUMBER_SIGN
+                and (cn := _special_at(w, 0)) is not None and cn[1] == len(w)):
+            # ── 제64항 동그라미 숫자 (#514) ────────────────────────────────
+            # 토큰 전체가 `⠼`+내린 숫자면 보기 머리 번호(①②③)지 EBAE 약자 ble 가
+            # 아니다. 종전에는 ⠒ 가 꼬리 문장부호(:)로 떨어지고 남은 `⠼` 가 홑 약자
+            # ble 로 읽혀 **번호가 통째로 사라졌다** —
+            #   `⠼⠒⠀⠠⠞⠓⠁⠞⠄⠎ …` -> `ble: That's all for today.`
+            # ble 는 낱말 **끝**에 붙는 약자라 홀로 선 토큰이 될 수 없다.
+            # ★ **수표 ⠼ 로 시작할 때만** 본다. `_special_at` 은 온표 ⠿ 로 여는 원문자
+            #   (㉠=⠿⠁)도 보는데, ⠿ 는 EBAE 단어기호 `for` 와 같은 셀이다. 게이트 없이
+            #   뒀더니 `for.`(⠿⠲)·`for?`(⠿⠦)·`for,`(⠿⠂)가 한글 낱자로 먹혔다 —
+            #   전권 실측 10줄(`… waiting for. I can't miss` -> `… waiting ㅍ I can't miss`).
+            # 증거(`raw`·`strong`)로는 안 센다 — 번호는 영어의 근거가 못 된다.
+            out.append(cn[0])
+            raw.append("")
             prev = w
             continue
         if _ANSWER_ORDER_RE.match(w):                          # 순서 선택지 `(A)-(C)-(B)`
