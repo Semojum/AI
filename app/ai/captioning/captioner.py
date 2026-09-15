@@ -924,9 +924,42 @@ _DECOR_CAPTION_RE = re.compile(
     r")")
 
 
+# 도형 **안**을 말하는 낱말만 센다 — `원그래프`·`원자` 처럼 도형이 아닌 합성어가 걸리면
+# 진짜 그림이 죽는다. 배지 캡션은 실측상 전부 "… 안(에) …" 꼴이다.
+_BADGE_SHAPE_RE = re.compile(r"(?:원|동그라미|반원|타원|육각형|사각형|네모)\s*안|배지|장식")
+_TYPE_HEAD_RE = re.compile(r"^(?:그림|사진|도표)\s*[:：]\s*")
+_BADGE_MAX_LEN = 40
+
+
+def _is_badge_caption(text: str) -> bool:
+    """도형 안의 숫자만 말하는 **짧은 한 줄** 캡션인가 = 문항 번호 배지(#872).
+
+    `_DECOR_CAPTION_RE` 는 어순을 열거해 잡는데, 모델 문장이 매번 조금씩 달라 **같은 배지가
+    실행마다 걸렸다 안 걸렸다 한다.** 2026-09-12 의 `CAPTION_FAILED` 13→11→10 흔들림이
+    그것이다(10쪽 재현: 6건은 정규식에 걸리고 4건은 표현이 달라 비켜 갔다 —
+    `숫자 08이 원 안에 적혀 있다` · `09라는 숫자가 원 안에 있다`).
+    어순 대신 **구조**로 본다: 유형 제시어 뒤가 쉼표·줄바꿈 없는 40자 이하이고, `숫자` 와
+    도형 `안` 을 같이 말하면 배지다.
+
+    전수 대조(캡션 캐시 3,242건): 새로 잡히는 것 **8건 · 전부 문항 번호 배지**,
+    오격발 0건. 안 잡고 남긴 것은 쉼표·줄바꿈이 있는 진짜 그림들이다
+    (`숫자 2 모양 오브제, 하트 모양에 …` · `주머니 속 카드 6장 …`).
+
+    `장식` 도 도형 낱말과 같이 센다 — 모델이 스스로 장식이라 부른 자리다
+    (`숫자 09가 쓰인 원 모양 장식.`). 캐시 전수에서 `장식` 이 든 캡션은 3건뿐이고
+    셋 다 여러 줄 짜리 진짜 그림(조몬 토우·만화·인물화)이라 줄바꿈 조건에서 걸러진다.
+    """
+    m = _TYPE_HEAD_RE.match(text.strip())
+    if not m:
+        return False
+    body = text.strip()[m.end():]
+    return (len(body) <= _BADGE_MAX_LEN and "," not in body and "\n" not in body
+            and "숫자" in body and bool(_BADGE_SHAPE_RE.search(body)))
+
+
 def _reject_decoration(text: str) -> str:
-    """배지·장식을 읽은 캡션이면 실패로 돌린다(= 빈 문자열 → 생략 표기)."""
-    if text and _DECOR_CAPTION_RE.search(text.strip()):
+    """배지·장식을 읽은 캡션이면 실패로 돌린다(= 빈 문자열 → 요소는 장식으로 버려진다)."""
+    if text and (_DECOR_CAPTION_RE.search(text.strip()) or _is_badge_caption(text)):
         logger.info("가드4 캡션 버림(배지·장식) 길이=%d", len(text),
                     extra={"guard": 4, "stage": "캡셔닝", "status": "REJECTED"})
         return ""
@@ -1138,7 +1171,7 @@ def _strip_dup_type_word(text: str, image_type: str) -> str:
     return _DUP_TYPE_RE.sub(r"\1", head, count=1) + nl + rest
 
 
-def _finish(raw: str, image_type: str) -> str:
+def _finish(raw: str, image_type: str, out: dict | None = None) -> str:
     """모델 응답 → 저장할 캡션. 가드·정리는 **설명 부분에만** 건다.
 
     재료 블록을 가드 사슬에 넣으면 안 된다 —
@@ -1153,10 +1186,18 @@ def _finish(raw: str, image_type: str) -> str:
       빠져 있었다. 한 자리로 모으면서 같이 붙는다.
     """
     head, sep, tail = (raw or "").partition(_MATERIAL_MARK)
+    # ★ 사슬을 단계로 푼다(#872) — 가드4 앞의 값을 봐야 "왜 비었는지" 를 밖에 알릴 수 있다.
+    #   순서는 종전과 한 자도 다르지 않다.
+    pre = _reject_read_text(_strip_dup_type_word(
+        _ensure_type_word(_strip_ai_voice(_reject_meta(head.strip())), image_type),
+        image_type))
+    if out is not None and pre and (_DECOR_CAPTION_RE.search(pre.strip())
+                                    or _is_badge_caption(pre)):
+        # 이 자리에서 비는 것은 **실패가 아니라 장식 판정**이다(원장 C-70).
+        # 부르는 쪽이 요소를 버릴지(지침 §6.1.1(4)) 정할 수 있게 이유를 넘긴다.
+        out["rejected_by"] = "decoration"
     head = _split_enumerations(_drop_per_speech_narration(_strip_situation_head(
-        _reject_decoration(_reject_read_text(_strip_dup_type_word(
-            _ensure_type_word(_strip_ai_voice(_reject_meta(head.strip())), image_type),
-            image_type))))))
+        _reject_decoration(pre))))
     if not head.strip():
         return ""
     body = "\n".join(ln.rstrip() for ln in tail.splitlines() if ln.strip())
@@ -1190,7 +1231,8 @@ _AI_VOICE_KINDS = ("figure", "visual_draft", "table_tn")
 _REFUSAL_KINDS = ("body", "figure")
 
 
-def guard_llm_text(text: str, kind: str = "caption", *, image_type: str = "image") -> str:
+def guard_llm_text(text: str, kind: str = "caption", *, image_type: str = "image",
+                   out_info: dict | None = None) -> str:
     """LLM 문장 → 요소 필드에 쓸 문장. 남는 게 없으면 **빈 문자열**(재시도 없음).
 
     kind 별로 사슬이 갈리는 이유는 하나다 — **본문에는 존댓말이 정상으로 있다.**
@@ -1218,9 +1260,9 @@ def guard_llm_text(text: str, kind: str = "caption", *, image_type: str = "image
         #   안 그러면 손잡이를 내렸을 때 develop 보다 **더 새는** 상태가 된다
         #   (모델이 쓴 원문이 유형 제시어 보정도 없이 그대로 캡션이 된다).
         #   손잡이를 내린 자리는 develop 과 바이트로 같아야 한다. 관문 로그도 0이다.
-        return _finish(src, image_type) if kind == "caption" else src
+        return _finish(src, image_type, out_info) if kind == "caption" else src
     if kind == "caption":
-        out = _finish(src, image_type)
+        out = _finish(src, image_type, out_info)
     elif kind in _AI_VOICE_KINDS:
         out = _strip_ai_voice(_reject_meta(src))
     else:
@@ -1294,7 +1336,8 @@ def _kind_matches(kind: str, text: str) -> bool:
     return is_label if kind in ("classify", "subtype") else not is_label
 
 
-def _cache_read(kind: str, new_path: Path | None, image_type: str) -> str | None:
+def _cache_read(kind: str, new_path: Path | None, image_type: str,
+                out_info: dict | None = None) -> str | None:
     """캐시에서 캡션을 꺼낸다. 없으면 None.
 
     ★ **히트에도 관문을 건다**(재구조화 3-c → 2단계에서 `guard_llm_text` 로). 종전에는 버리기 가드 하나만 다시
@@ -1308,7 +1351,7 @@ def _cache_read(kind: str, new_path: Path | None, image_type: str) -> str | None
     text = new_path.read_text(encoding="utf-8")
     if not _kind_matches(kind, text):
         return None                         # 분류 라벨을 캡션으로 내보내지 않는다
-    return guard_llm_text(text, "caption", image_type=image_type)
+    return guard_llm_text(text, "caption", image_type=image_type, out_info=out_info)
 
 
 def _cache_write(new_path: Path | None, answer: str, finished: str) -> None:
@@ -1347,10 +1390,14 @@ def _is_blank_crop(path: str) -> bool:
     return std is not None and std < _BLANK_CROP_STD
 
 
-def caption(image_path: str, image_type: str = "image", *, context: str = "") -> str:
+def caption(image_path: str, image_type: str = "image", *, context: str = "",
+            out_info: dict | None = None) -> str:
     """
     image_type: 'image' | 'cartoon' | 'chart'
     context: 그 그림 옆 본문(있으면). 무엇을 쓸지 고르는 근거로만 쓴다 — 위 `_CONTEXT_BLOCK` 참조.
+    out_info: 주면 **왜 비었는지**를 채워 준다 — 지금은 `{"rejected_by": "decoration"}` 하나다(#872).
+              호출마다 **새 dict** 를 넘긴다. 전역·인스턴스에 담으면 `asyncio.gather` 로
+              여러 쪽이 겹칠 때 쪽 간 오염이 난다(`_mark_body_texts_in_visuals` 주석과 같은 이유).
     Returns Korean description string.
     """
     # 캐시 경계에서 가른다(#760) — `head` 는 유형별 고정(캐시에 얹는다), `tail` 은
@@ -1374,7 +1421,8 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
 
     prompt_id = image_type + ("+material" if _material_on() else "")
     cache = _cache_new_file("caption", raw, prompt_id, context)
-    hit = _cache_read("caption", cache, image_type)
+    # 적중분에도 이유를 채운다 — 안 그러면 캐시가 장식 판정을 비켜 가 `CAPTION_FAILED` 로 남는다.
+    hit = _cache_read("caption", cache, image_type, out_info)
     if cache is not None:
         from app.utils.req_log import record_cache
         record_cache("캡셔닝", hit is not None)
@@ -1386,7 +1434,7 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
 
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
         answer = _caption_anthropic(b64, mime, head, tail)
-        text = guard_llm_text(answer, "caption", image_type=image_type)
+        text = guard_llm_text(answer, "caption", image_type=image_type, out_info=out_info)
         # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
         _cache_write(cache, answer, text)
         return text
@@ -1410,6 +1458,6 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "") ->
     )
     record_openai("캡셔닝", "gpt-4o", getattr(resp, "usage", None))
     answer = resp.choices[0].message.content
-    text = guard_llm_text(answer, "caption", image_type=image_type)
+    text = guard_llm_text(answer, "caption", image_type=image_type, out_info=out_info)
     _cache_write(cache, answer, text)
     return text
