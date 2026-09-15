@@ -71,7 +71,6 @@ app/
 │   │   └── metrics_collector.py MetricsCollector.record(result, elapsed_ms) → storage/metrics/ai_metrics.jsonl (실패 비전파)
 │   └── (각 폴더 __init__.py)
 ├── utils/
-│   ├── file_merger.py   PART 10 후반. 페이지별 결과 → output/result.brf, result.txt 병합
 │   └── logger.py        get_logger(name), setup_root_logging()
 ├── protos/
 │   ├── braille_service.proto        BE↔AI 계약 (= ../../docs/archive/braille_service.proto.txt)
