@@ -4125,7 +4125,11 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
         if roman is not None:
             txt, j = roman
             out.append(txt)
-            _roman_run_end = j                        # 제33항 판정용 (#625)
+            if ch == _ROMAN_START:
+                # ★ **로마자표 ⠴ 로 연 런**일 때만 기록한다(제29항). 단서 셀 없이 잡힌 런은
+                #   수식 토막에서도 선다 — `"각 ㄱㄴㄷen"각`·`합stst"자료의 수”` 가 그 자리다.
+                #   전 코퍼스 A/B: 안 조이면 161줄이 바뀌고 그중 이득이 0이었다(#625).
+                _roman_run_end = j                    # 제33항 판정용 (#625)
             if ch == _ROMAN_START and len(out) >= 2 and out[-2] == '"':
                 _quoted_roman_end = j     # 이 자리의 ⠴ 는 닫는 큰따옴표다
             i = j
