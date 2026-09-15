@@ -130,6 +130,10 @@ SHORT_FORMS: dict[str, str] = {
 }
 
 _WORD_RE = re.compile(r"[A-Za-z']+")
+# 낱말 **안**의 아포스트로피 — 양옆이 로마자일 때만(제61항 ⠄). 홀로 선 `'` 는 제49항
+# 작은따옴표일 수 있어 여기 안 걸린다.
+_INNER_APOS_RE = re.compile(r"(?<=[A-Za-z])'(?=[A-Za-z])")
+_APOS_CELL = "⠄"
 
 
 def iter_words(text: str) -> Iterator[str]:
@@ -219,6 +223,20 @@ def translate_word(word: str) -> str:
     """
     if not word:
         return ""
+    # ── 낱말 안 아포스트로피 (#513 · 원장 R-26) ────────────────────────────────
+    # 「한국 점자 규정」 제61항 — 아포스트로피(’)는 `'`(⠄) 한 칸이다. 종전에는 ASCII
+    # 작은따옴표가 표에 없어 `ALPHABET.get(c, c)` 를 그대로 빠져나가 **점자 출력에
+    # 점자가 아닌 글자**가 실렸다(`don't` -> ⠙⠕⠝'⠞).
+    # ★ 자리마다 잘라 각각 점역하고 ⠄ 로 잇는다. 그러면 본문 경로(`translator`)가
+    #   이미 내던 답과 **한 글자도 안 달라진다** — 그쪽은 라틴 런을 아포스트로피에서
+    #   끊고 `_span_gap` 이 ⠄ 를 내므로 결과가 같은 꼴이다(실측 11낱말 전부 일치:
+    #   don't · It's · we've · patient's · I'll · they're · world's · can't · isn't ·
+    #   you're · O'Brien). 곧 이 수정은 **두 경로를 같게 맞추는 것**이지 본문 출력을
+    #   바꾸는 것이 아니다.
+    # ⚠ 낱말 **안**(양옆이 로마자)일 때만이다. 홀로 선 `'` 는 제49항 작은따옴표일 수
+    #   있어 건드리지 않는다.
+    if _INNER_APOS_RE.search(word):
+        return _APOS_CELL.join(translate_word(p) for p in _INNER_APOS_RE.split(word))
     letters = [c for c in word if c.isalpha()]
     if _is_abbrev(word):
         if all(c.isupper() for c in letters):
