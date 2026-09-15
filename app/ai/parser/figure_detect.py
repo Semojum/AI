@@ -110,7 +110,7 @@ def detect(pdf_data: bytes, page_no: int) -> list[dict]:
 
 
 def to_elements(figs: list[dict], width: float, height: float, start_order: int) -> list[dict]:
-    """검출 결과 → 경계 요소. bbox는 부르는 쪽 좌표계(width/height)로 환산한다.
+    """검출 결과 → 경계 요소. 추정 좌표는 `bbox_est`(부르는 쪽 좌표계)에만 담는다.
 
     ★ 관문 G1(재구조화 §2-2) — `what` 은 **LLM 이 쓴 설명문**이고 여기서 요소 `content`
       가 된다. 종전에는 이 길에 관문이 없어, 회수 모델이 "…확인할 수 없습니다" 같은
@@ -135,7 +135,20 @@ def to_elements(figs: list[dict], width: float, height: float, start_order: int)
         out.append({
             "id": str(uuid4()), "order": start_order + i,
             "type": _KIND_TYPE.get((f.get("kind") or "").strip(), "image"),
-            "content": what, "bbox": [int(round(v)) for v in bb],
-            "flags": ["FIGURE_RECOVERED"],      # 회수분 표시 — 품질 추적용
+            "content": what,
+            # ★ 관문 G2(#875) — 이 좌표는 **비전 모델의 눈대중**이지 지면에서 잰 값이 아니다.
+            #   MinerU content_list 에 없는 상자이므로 `bbox` 로는 내보내지 않는다.
+            #   실측(2027 코퍼스 전수 217개 · 눈검사 10상자): 지면에 꼭 맞는 상자 0개,
+            #   3개는 그림이 아닌 자리(선지·〈보기〉 글)를 짚었고 나머지도 옆 단·표로 넘쳤다.
+            #   FE 는 bounding_box_list 를 그대로 클릭 영역으로 그린다 — 틀린 상자를
+            #   주면 점역사가 "이 그림" 을 눌렀을 때 다른 데가 잡혀 초안을 못 고친다.
+            #   좌표를 모르면 없다고 하는 편이 지어낸 좌표보다 낫다.
+            "bbox": None,
+            # 눈대중 값은 provenance 로만 남긴다. 쓰는 곳은 **끼워 넣을 자리 정하기**
+            # 하나뿐이다(`pipeline._insert_recovered`). 절대 경계 bbox 로 승격하지 말 것.
+            "bbox_est": [int(round(v)) for v in bb],
+            # 회수분 표시 — 품질 추적용. BBOX_UNKNOWN 은 소비자(BE·FE)에게 "이 요소의
+            # 좌표는 없다" 를 알리는 표지다(응답에는 (0,0,0,0) 으로 나간다).
+            "flags": ["FIGURE_RECOVERED", "BBOX_UNKNOWN"],
         })
     return out

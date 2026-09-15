@@ -38,10 +38,13 @@ class TestToElements:
         got = [e["type"] for e in F.to_elements(figs, 1000, 1000, 1)]
         assert got == ["chart_graph", "diagram", "cartoon"]
 
-    def test_좌표를_경계_좌표계로_환산한다(self) -> None:
+    def test_추정_좌표는_bbox_est_에만_담는다(self) -> None:
+        """#875 — 비전 모델 눈대중을 경계 bbox 로 내보내면 FE 가 엉뚱한 자리를 짚는다."""
         e = F.to_elements([{"kind": "사진", "x0": 10, "y0": 20, "x1": 60, "y1": 50,
                             "what": "사진"}], 1000, 2000, 1)[0]
-        assert e["bbox"] == [100, 400, 600, 1000]
+        assert e["bbox"] is None
+        assert e["bbox_est"] == [100, 400, 600, 1000]
+        assert "BBOX_UNKNOWN" in e["flags"]
 
     def test_읽기순서는_위에서_아래로(self) -> None:
         figs = [{"kind": "그림", "x0": 0, "y0": 80, "x1": 9, "y1": 90, "what": "아래"},
@@ -62,3 +65,32 @@ class TestToElements:
         e = F.to_elements([{"kind": "그림", "x0": 0, "y0": 0, "x1": 9, "y1": 9,
                             "what": "x"}], 100, 100, 1)[0]
         assert "FIGURE_RECOVERED" in e["flags"]
+
+
+class TestPlacement:
+    """회수분은 bbox 가 없으므로 기하 보정이 안 잡는다 — 자리를 여기서 정해 둔다(#875)."""
+
+    def test_추정_y_자리에_끼워_넣는다(self) -> None:
+        from app.core.pipeline import _place_recovered_figures
+        elements = [{"order": 1, "bbox": [0, 100, 500, 140], "content": "위"},
+                    {"order": 2, "bbox": [0, 600, 500, 640], "content": "아래"}]
+        add = F.to_elements([{"kind": "그래프", "x0": 10, "y0": 30, "x1": 60, "y1": 45,
+                              "what": "가운데 그래프"}], 1000, 1000, 3)
+        _place_recovered_figures(elements, add)
+        assert [e["content"] for e in elements] == ["위", "가운데 그래프", "아래"]
+        assert [e["order"] for e in elements] == [1, 2, 3]
+
+    def test_추정값이_없으면_끝에_붙인다(self) -> None:
+        from app.core.pipeline import _place_recovered_figures
+        elements = [{"order": 1, "bbox": [0, 100, 500, 140], "content": "본문"}]
+        _place_recovered_figures(elements, [{"order": 9, "content": "좌표 없음"}])
+        assert [e["content"] for e in elements] == ["본문", "좌표 없음"]
+
+    def test_응답에는_좌표가_0으로_나간다(self) -> None:
+        """bbox 가 없는 요소는 BoundingBox 가 (0,0,0,0) — 지어낸 좌표를 안 싣는다."""
+        from app.core.pipeline import _valid_bbox
+        from app.schemas.layout import BBoxItem
+        from uuid import uuid4
+        b = BBoxItem(element_id=uuid4(), type="chart_graph", bbox=(0, 0, 0, 0),
+                     reading_order=1, flags=["FIGURE_RECOVERED", "BBOX_UNKNOWN"])
+        assert _valid_bbox(b) is False
