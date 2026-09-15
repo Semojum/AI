@@ -45,11 +45,21 @@ done
 for n in $nums; do
   # `gh --jq` 로 한 번에 읽는다 — `jq` 바이너리를 따로 요구하지 않는다(로컬에서도 돌아야 한다).
   info=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${n}" \
-           --jq '[(.pull_request.url // ""), .state] | @tsv' 2>/dev/null) || {
+           --jq '[(.pull_request.url // ""), .state, ([.labels[].name] | join(","))] | @tsv' 2>/dev/null) || {
     echo "건너뜀: #${n} (그런 번호 없음)"; continue; }
   # ★ PR 과 이슈는 번호 대역을 같이 쓴다. PR 이면 손대지 않는다.
   if [ -n "$(printf '%s' "$info" | cut -f1)" ]; then
     echo "건너뜀: #${n} (이슈가 아니라 PR)"; continue
+  fi
+  # ★ 원장 이슈는 안 닫는다 (2026-09-16 · #901).
+  #   이 판정기는 제목의 `[#N]` 과 본문의 `Refs #N` 까지 닫기로 친다(유령을 없애려고 그렇게 했다).
+  #   그래서 **제목 규약 `fix: [#N] 제목` 을 지키는 한 이슈를 닫지 않고 참조할 방법이 없었다.**
+  #   실측: #895 는 `Closes` 를 한 번도 안 썼는데 머지와 함께 닫혔다. 그 이슈는 거르개 넷의
+  #   기각 표를 담은 원장이라, 닫히면 다음 사람이 같은 것을 다시 판다.
+  #   결함 하나를 고치는 PR 이 원장 전체를 닫으면 안 된다 — 라벨로 뺀다.
+  labels=$(printf '%s' "$info" | cut -f3)
+  if printf '%s' "$labels" | grep -qw 'keep-open'; then
+    echo "건너뜀: #${n} (keep-open — 원장 이슈라 참조만 한다)"; continue
   fi
   state=$(printf '%s' "$info" | cut -f2)
   if [ "$state" != open ]; then
