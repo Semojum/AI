@@ -1611,6 +1611,24 @@ _INLINE_SUB_HYPHEN_RE = re.compile(r"^-(?:[A-Za-z]+_\{?\d+\}?)+[A-Za-z]*-$")
 #   규정 예시도 한 칸이다 — `수소가 전자를 잃으면 H+가 된다` = …0[e*`0,h^5`$`iy3i4
 #   (백틱이 한 칸이고 이온 0,h^5 앞뒤가 각각 한 칸).
 _ION_TOKEN_RE = re.compile(r"^(?:[A-Z][a-z]?(?:_\{\d+\})?)+\^\{\d*[+-]\}$")
+# 홑 기호 하나만 든 수식 토막(`$\to$`·`$\cup$`)도 **제11항 두 칸의 예외**다 — 이슈 #715.
+#   제11항(재추출 3235~3237행)이 말하는 '수학적 표기'는 "분수·무한소수·순환소수·첨자·
+#   제곱근·절댓값 등이 포함된 표현"이다. 기호 하나는 거기 안 든다. 그 기호들은 저마다
+#   앞뒤 한 칸을 정한 조항이 따로 있다:
+#     · 「한국 점자 규정」 제70항(2773행)  화살표 → ← ↔ ↑ ↓ — 앞뒤 한 칸
+#     · 수학 편 제60항 5호 가·나(4119·4122행)  합집합 ∪ · 교집합 ∩ — 앞뒤 한 칸
+#     · 수학 편 제15항(3485행)  일반연산 기호 ⊕ ⊖ ⊗ ∗ ⦾ ∙ — 앞뒤 한 칸
+#   묵자에 그냥 `→` 로 오면 텍스트 경로가 한 칸을 내는데, MinerU 가 `$\to$` 로 싸서
+#   보내면 수식 세그가 되어 두 칸이 나갔다. **같은 기호가 두 모양으로 나간 것이다.**
+#   실측(#715): 화살표 홑 토큰에 붙은 틀린 자리 180곳, 그중 gold 1칸↔우리 2칸이 143곳.
+# ⚠ 겹화살표(⇒ ⇐ ⇔)는 뺐다 — 제70항 표에 없어 근거가 없다.
+# ⚠ ∘(제15항 5호)·∆(9호)도 뺐다 — `^{\circ}`(도)와 그리스 Δ(증분)로도 쓰여 홑 토막만
+#   보고는 못 가른다. 코퍼스 실측 0건이라 얻을 것도 없다.
+_LONE_SPACED_SYM_RE = re.compile(
+    r"^(?:\\(?:to|rightarrow|leftarrow|leftrightarrow|longrightarrow|longleftarrow"
+    r"|longleftrightarrow|uparrow|downarrow|cup|cap|oplus|ominus|otimes|ast"
+    r"|circledcirc|bullet)"
+    r"|[\u2192\u2190\u2194\u2191\u2193\u222a\u2229\u2295\u2296\u2297\u2217])$")
 _BOOK_HYPHEN = "⠤"
 
 
@@ -1689,7 +1707,9 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
             elif _ION_TOKEN_RE.match(core):
                 chunks.append(("n", convert_latex(core), False, False))
             else:
-                chunks.append(("f", convert_latex(part), False, False))
+                # "s" = 홑 기호(제70항·제60항 5호·제15항 한 칸). 그 밖은 "f"(제11항 두 칸).
+                chunks.append(("s" if _LONE_SPACED_SYM_RE.match(core) else "f",
+                               convert_latex(part), False, False))
 
     # 수학 점자 규정 제11항: 수식 앞뒤 두 칸 공백(⠀⠀).
     # 단 인라인 첨자 토큰(O₂·t₁)은 gold가 두 칸을 쓰지 않으므로 원문 띄어쓰기를 그대로 둔다.
@@ -1707,8 +1727,9 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
             # H+만 0,h^5다 — 그래서 **앞이 한글 텍스트일 때만** 붙인다.
             braille = "⠴" + braille
         if prev_kind is not None:
-            if kind == "n" or prev_kind == "n":
-                result_parts.append("⠀")      # 이온은 한 칸(제2항 붙임)
+            if kind in ("n", "s") or prev_kind in ("n", "s"):
+                # 이온은 한 칸(과학 제2항 붙임), 홑 기호도 한 칸(제70항·제60항 5호·제15항)
+                result_parts.append("⠀")
             elif kind == "i" or prev_kind == "i":
                 if pending_ws or lead_ws:
                     result_parts.append("⠀")

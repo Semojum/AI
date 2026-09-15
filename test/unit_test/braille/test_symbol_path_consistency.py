@@ -96,3 +96,50 @@ class TestLogicArrowsAreDistinct:
 def test_therefore_두_경로가_같다():
     """원장 M-05 — 2026-08-27 규정형(⠠⠡, 제65항 2호)으로 고정해 닫았다."""
     assert convert_latex("∴") == translate_tagged_text("∴") == "⠠⠡"
+
+
+# ── #715 · 홑 기호 수식 토막의 칸수 ────────────────────────────────────────────
+# 같은 기호가 묵자에 그냥 `→` 로 오면 한 칸, MinerU 가 `$\to$` 로 싸서 보내면 두 칸이
+# 나갔다. 점형이 아니라 **칸수**가 경로에 따라 갈린 자리다.
+# 제11항(재추출 3235~3237행)의 '수학적 표기'는 "분수·무한소수·순환소수·첨자·제곱근·
+# 절댓값 등이 포함된 표현"이라 기호 하나는 해당이 없고, 그 기호들은 저마다 한 칸을
+# 정한 조항이 따로 있다 — 제70항(2773행) 화살표 · 제60항 5호(4119·4122행) ∪ ∩ ·
+# 제15항(3485행) 일반연산.
+# ★ 이 축은 CER 이 못 본다(채점기·재점역 하네스가 빈칸 U+2800 을 지운다). 그래서 시험으로 박는다.
+
+@pytest.mark.parametrize("bare,wrapped", [
+    ("가 → 나", r"가 $\to$ 나"),
+    ("가 ← 나", r"가 $\leftarrow$ 나"),
+    ("가 ↔ 나", r"가 $\leftrightarrow$ 나"),
+])
+def test_홑_기호는_수식으로_싸여도_같게_나간다(bare, wrapped):
+    """묵자 그대로 온 것과 `$…$` 로 싸여 온 것이 한 글자도 다르면 안 된다."""
+    from app.ai.braille.translator import translate_body
+    assert translate_body(wrapped)[0] == translate_body(bare)[0]
+
+
+@pytest.mark.parametrize("wrapped,cell", [
+    (r"가 $\to$ 나", "⠒⠕"),          # 제70항 화살표
+    (r"A $\cup$ B 는", "⠬"),         # 제60항 5호 가 합집합
+    (r"A $\cap$ B 는", "⠩"),         # 제60항 5호 나 교집합
+    (r"x $\oplus$ y 는", "⠸⠢"),      # 제15항 1호 동그라미 덧셈표
+])
+def test_홑_기호_앞뒤는_한_칸이다(wrapped, cell):
+    """앞뒤 두 칸이면 제11항을 잘못 적용한 것이다.
+
+    ∪·∩ 는 피연산자가 로마자라 로마자표 ⠴·종료표 ⠲ 가 함께 움직인다. 그 축은 이 건과
+    별개라 여기서는 **기호 양옆 칸수만** 본다.
+    """
+    from app.ai.braille.translator import translate_body
+    out = "\n".join(translate_body(wrapped)[0])
+    i = out.index(cell)
+    before = len(out[:i]) - len(out[:i].rstrip("⠀"))
+    after = len(out[i + len(cell):]) - len(out[i + len(cell):].lstrip("⠀"))
+    assert (before, after) == (1, 1), f"앞 {before}칸 · 뒤 {after}칸: {out!r}"
+
+
+def test_진짜_수식은_제11항_두_칸을_지킨다():
+    """홑 기호 예외가 수식 전체로 번지면 제11항이 무너진다."""
+    from app.ai.braille.translator import translate_body
+    out = "\n".join(translate_body(r"$x ^ { 2 } + 1$ 은")[0])
+    assert "⠀⠀" in out, f"수식 경계 두 칸이 사라졌다: {out!r}"
