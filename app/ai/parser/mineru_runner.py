@@ -1113,11 +1113,49 @@ _MATH_FONT_GUARD = os.environ.get("MINERU_MATH_FONT_GUARD", "0") == "1"
 _MD_SEP_RE = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
 
 
+# 그래프를 '설명한' 표의 머리줄 어휘(#898). MinerU가 effort=high에서 그림을 읽어
+# `| Point | x-coordinate | y-coordinate |` 같은 **영어 설명 표**를 지어낸다 — 묵자 지면에는
+# 없는 것이다. medium은 같은 그림을 빈 `image`로 돌려주므로 이 입력 자체가 안 생긴다.
+# ⚠ 머리줄 판정이다. 데이터 칸에 이 낱말이 들어가는 건(예: 외국어 지문의 'line') 안 본다.
+_CHART_DESC_WORDS = frozenset((
+    "feature", "features", "description", "descriptions", "point", "points",
+    "curve", "curves", "line", "lines", "function", "functions", "equation",
+    "equations", "coordinate", "coordinates", "intersection", "intersections",
+    "peak", "peaks", "trough", "troughs", "vertex", "maximum", "minimum",
+    "slope", "axis", "origin", "tangent", "asymptote", "graph",
+    "leftmost", "rightmost", "upper", "lower", "center", "centre",
+    "solid", "dashed", "dotted", "label", "labels", "value", "values",
+))
+_ENG_WORD_RE = re.compile(r"[A-Za-z]{3,}")
+_LATEX_CMD_RE = re.compile(r"\\[a-zA-Z]+")
+
+
+def _is_chart_description(rows: list[str]) -> bool:
+    """전사된 데이터가 아니라 **생성된 그래프 설명**인가(#898).
+
+    머리줄의 영어 낱말이 전부 그래프 부위 이름이면 설명이다. 한 글자 변수(x·y·t·P)와
+    LaTeX 명령은 세지 않는다 — `X | Y`, `X | y=f(x)` 같은 진짜 좌표 전사를 살려야 한다.
+    한글이 한 자라도 있으면 전사로 본다(`_flowchart_lines`의 한글 가드와 같은 뜻).
+
+    실측 근거(#886 A/B 수학2 127쪽, high): 이 판정에 걸리는 표 11개가 있는 9쪽의 편집차
+    합이 **+852셀**(쪽당 +95)이고, 안 걸리는 숫자 표 22개가 있는 14쪽은 −115셀이다.
+    부수 피해 확인(medium 6과목 1,131쪽): 외국어의 진짜 영어 데이터 표
+    (`Region | 1990-2000 (thousands of hectares per year)`)와 생물의
+    `Time (hours) | Dynamic force (mmHg)` 는 머리줄 낱말이 목록 밖이라 안 걸린다.
+    """
+    if not rows or _HANGUL_RE.search("\n".join(rows)):
+        return False
+    head = _LATEX_CMD_RE.sub(" ", rows[0])
+    words = _ENG_WORD_RE.findall(head)
+    return bool(words) and all(w.lower() in _CHART_DESC_WORDS for w in words)
+
+
 def _chart_data_table(md: str) -> str:
     """MinerU가 차트에서 뽑은 markdown 표 → 표 점역이 먹는 '|' 격자. 표가 아니면 "".
 
     MinerU는 그래프(막대·원·꺾은선)를 읽어 `| Category | Value |` 형태의 데이터 표를 낸다.
     정답 도서도 그래프를 이렇게 전사하므로(수치가 본문에 살아 있어야 함) 그대로 표로 넘긴다.
+    ★ 단, **전사가 아니라 생성된 설명**(`Feature | Description`)은 버린다 — `_is_chart_description`.
     """
     if not md or "|" not in md:
         return ""
@@ -1131,7 +1169,9 @@ def _chart_data_table(md: str) -> str:
         cells = [c.strip() for c in s.strip("|").split("|")]
         if any(cells):
             rows.append(" | ".join(cells))
-    return "\n".join(rows) if len(rows) >= 2 else ""
+    if len(rows) < 2 or _is_chart_description(rows):
+        return ""
+    return "\n".join(rows)
 
 
 # mermaid 노드 선언: A["영국"] · B(청) — 따옴표형을 먼저 잡는다("청 (광저우)"처럼 괄호가
