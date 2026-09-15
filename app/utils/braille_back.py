@@ -27,6 +27,7 @@ import json
 import os
 import re
 import sys
+from math import log as _mlog
 from pathlib import Path
 
 from app.ai.braille.kor_math_rules import _ELEMENTS as _CHEM_ELEMENTS
@@ -2626,6 +2627,44 @@ _CTX_PAGE_SEED = os.environ.get("BR_CTX_PAGE_SEED", "1").lower() not in ("0", "f
 # 그중 수학 목차(`4평면도형의 이동` → `4 derechiujerw oifor`)·음악(`흑인 영가` → `jowaq ered`)·
 # 수식(`81+138=219` → `81en138cccc219`)이 깨졌다. 비율을 함께 요구해 그 쪽들을 뺀다.
 _CTX_PAGE_SEED_RATIO = float(os.environ.get("BR_CTX_PAGE_SEED_RATIO", "0.25"))
+# 한글 그럴듯함 가드 (#895) — 쪽 단위 씨앗이 여는 줄 가운데 **한글 읽기가 그럴듯한 줄**은 안 연다.
+# 씨앗 조건을 만족한 쪽에서도 한글 본문 줄이 섞여 있으면 그 줄이 영어로 뒤집힌다. 거르개 넷
+# (자음 4연속·기능어 개수·코퍼스 자생 낱말·길이)은 전부 기각됐다 — 이득을 같이 깎았다(#895).
+# 다섯째 축은 영어 쪽이 아니라 **한글 쪽**을 본다: 되돌린 한글이 한국어답게 읽히면 그건 한글이다.
+# 문턱 -4.5 근거(77줄 전수 눈검사): 막는 줄 18 · 진짜 손해 16 · 잘못 막는 이득 2 · 순증 +14.
+# 손해 하나에 잃는 이득 0.13 으로 -4.8(0.30)·-5.0(0.54)보다 정밀하다. 0 은 아니다 —
+# `'1나사이어가' → '1 closed'` 와 `'BOAT! / LAND! / 설의이' → '… / Two'` 를 잘못 막는다.
+_CTX_KOR_GUARD = os.environ.get("BR_CTX_KOR_GUARD", "1").lower() not in ("0", "false", "off")
+_CTX_KOR_THRESHOLD = float(os.environ.get("BR_CTX_KOR_THRESHOLD", "-4.5"))
+# 음절 빈도표 — **묵자 재추출 1,361쪽·음절 101만**(우리 **입력** 텍스트)에서 만든다.
+# ★ gold 점자를 안 쓴다(`meta.gold_braille_used = false`). 자기 출력으로 자기를 판정하면
+#   그 자는 아무것도 안 잰다. 문턱을 다시 정할 사람을 위해 묵자 줄 점수 분위수도 meta 에 있다.
+_KOR_FREQ_PATH = Path(__file__).with_name("kor_syllable_freq.json")
+_HANGUL_SYL_RE = re.compile(r"[가-힣]")
+_KOR_FREQ: tuple[dict, float] | None = None
+
+
+def _kor_plausibility(text: str) -> float | None:
+    """한글 음절 unigram 평균 로그확률. 음절이 둘 미만이면 판정하지 않는다(None)."""
+    syl = _HANGUL_SYL_RE.findall(text)
+    if len(syl) < 2:
+        return None
+    global _KOR_FREQ
+    if _KOR_FREQ is None:
+        freq = json.loads(_KOR_FREQ_PATH.read_text(encoding="utf-8"))["freq"]
+        _KOR_FREQ = (freq, _mlog(sum(freq.values()) + len(freq)))
+    freq, log_den = _KOR_FREQ
+    return sum(_mlog(freq.get(c, 0) + 1) - log_den for c in syl) / len(syl)
+
+
+def _kor_guard_blocks(line: str) -> bool:
+    """문맥으로 영어가 되려는 줄인데 **한글 읽기가 한국어답다** — 그러면 안 바꾼다 (#895)."""
+    if not _CTX_KOR_GUARD:
+        return False
+    # 한글 읽기를 그 자리에서 만들어 점수를 본다. 문맥 후보 줄만 부르므로 싸다.
+    # `math=False` 고정 — 영어 줄 판정 자체가 `not math` 에서만 돈다.
+    kor = _kor_plausibility(_decode_line_router(line, False))
+    return kor is not None and kor > _CTX_KOR_THRESHOLD
 # 문맥으로 받는 줄에서 **한글 줄을 걸러 내는** 영어 음운 거르개 — 이 꼴은 영어 낱말에 없다.
 #   · 자음 뒤 z: 한글 받침 ㄴ(⠵=z)이 그 자리다 — `것은?` 이 `spiritz?` 로 읽힌다.
 #   · j 뒤 자음·낱말 끝 j: 한글 초성 ㅎ(⠚=j)이다 — `한다` 가 `jcci` 로 읽힌다.
@@ -3399,13 +3438,17 @@ def _english_ctx(lines: list[str]) -> list[bool]:
     #   영어책 안 손해는 표본 60건 눈검사로 8.5% 로 추정한다(전수가 아니다).
     # 거르개 셋(자음 4개 연속·기능어 개수·코퍼스 자생 낱말 목록)은 **전부 기각**했다 —
     #   셋 다 이득을 비슷하게 깎는다. 기각 사유와 실물은 이슈 #895 에 적어 두었다.
+    # ★ 넷째까지 기각한 뒤 질문을 뒤집어 **다섯째 축**(한글 그럴듯함)을 채택했다 — 위 넷은
+    #   '이 줄이 영어인가' 를 물었고 다섯째는 '되돌린 한글이 한국어다운가' 를 묻는다.
+    #   `_CTX_KOR_GUARD` / `_kor_plausibility` 참조. #895 본문 머리에 읽는 순서가 있다.
     #
     # ★ 되돌림: `BR_CTX_PAGE_SEED=0` 이면 종전 동작(이웃 번짐만)으로 돌아간다.
     _n_body = sum(body)
     if (_CTX_PAGE_SEED and sum(ok) >= 2
             and sum(ok) >= _CTX_PAGE_SEED_RATIO * max(_n_body, 1)):
         for k in range(n):
-            if body[k] and not ok[k] and _english_any(lines[k], ctx=True) is not None:
+            if (body[k] and not ok[k] and _english_any(lines[k], ctx=True) is not None
+                    and not _kor_guard_blocks(lines[k])):
                 ctx[k] = True
     loose: list[bool | None] = [None] * n
     changed = True
@@ -3418,6 +3461,12 @@ def _english_ctx(lines: list[str]) -> list[bool]:
                     or (k + 1 < n and (ok[k + 1] or ctx[k + 1]))):
                 continue
             if loose[k] is None:
+                # ★ 여기에는 한글 그럴듯함 가드를 걸지 않는다(#895). 전 코퍼스 A/B 실측:
+                #   걸면 이득 42 · 손해 76(순증 -34)이고, 안 걸면 이득 12 · 손해 0 이다.
+                #   번짐 고리는 #894 이전부터 있던 자리라 `school.`·`now.`·`on.` 처럼
+                #   **진짜 영어 짧은 줄**이 전부 판정 대상이 된다 — 그쪽이 훨씬 많다.
+                #   게다가 한 줄을 막으면 그 쪽 영어 문맥이 무너져 **가드가 손대지도 않은**
+                #   줄까지 깨졌다(p0227 보기 ③④⑤ 가 통째로).
                 loose[k] = _english_any(lines[k], ctx=True) is not None
             if loose[k]:
                 ctx[k] = True
