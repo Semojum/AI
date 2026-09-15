@@ -145,10 +145,17 @@ _KOR_LINE = "⠕⠌⠊⠲"        # '있다.' — 영어로 읽으면 'osti.' �
 
 
 def test_그럴듯한_한글은_문맥에_끌려가지_않는다():
+    """가드는 **쪽 단위 씨앗**이 여는 자리에만 건다 — 이웃 번짐에는 안 건다.
+
+    번짐 고리에도 걸면 `school.`·`now.` 처럼 **진짜 영어 짧은 줄**이 전부 판정 대상이 되고,
+    한 줄을 막으면 그 쪽 영어 문맥이 무너져 가드가 손대지도 않은 줄까지 깨진다.
+    전 코퍼스 A/B: 번짐까지 걸면 이득 42·손해 76, 씨앗만 걸면 이득 12·손해 0.
+    그래서 한글 줄은 **영어 줄과 바로 붙어 있지 않을 때** 지켜진다.
+    """
     from app.utils.braille_back import decode
-    got = decode(_page(_SEED + ["", ""] + _CHOICE) + "\n" + _KOR_LINE).split("\n")
+    got = decode(_page(_SEED + ["", ""] + _CHOICE + [""]) + "\n" + _KOR_LINE).split("\n")
     assert got[-1] == "있다.", got
-    assert "confused" in got[-3], got          # #894 이득은 그대로다
+    assert "confused" in got[-4], got          # #894 이득은 그대로다
 
 
 def test_깨진_한글로_읽히는_줄은_계속_영어가_된다():
@@ -172,7 +179,7 @@ def test_가드_스위치가_종전_동작으로_되돌린다(monkeypatch):
     monkeypatch.setenv("BR_CTX_KOR_GUARD", "0")
     importlib.reload(bb)
     try:
-        got = bb.decode(_page(_SEED + ["", ""] + _CHOICE) + "\n" + _KOR_LINE).split("\n")
+        got = bb.decode(_page(_SEED + ["", ""] + _CHOICE + [""]) + "\n" + _KOR_LINE).split("\n")
         assert got[-1] == "osti.", got
     finally:
         monkeypatch.delenv("BR_CTX_KOR_GUARD", raising=False)

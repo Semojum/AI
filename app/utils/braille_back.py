@@ -3461,11 +3461,13 @@ def _english_ctx(lines: list[str]) -> list[bool]:
                     or (k + 1 < n and (ok[k + 1] or ctx[k + 1]))):
                 continue
             if loose[k] is None:
-                # 가드를 씨앗 블록에만 두면 **바로 아래 번짐이 같은 줄을 다시 연다**
-                # (실측: 씨앗이 연 보기 줄 옆의 `있다.` 가 그대로 `osti.` 로 뒤집혔다).
-                # 문맥으로 켜는 자리가 둘이므로 둘 다에서 본다.
-                loose[k] = (_english_any(lines[k], ctx=True) is not None
-                            and not _kor_guard_blocks(lines[k]))
+                # ★ 여기에는 한글 그럴듯함 가드를 걸지 않는다(#895). 전 코퍼스 A/B 실측:
+                #   걸면 이득 42 · 손해 76(순증 -34)이고, 안 걸면 이득 12 · 손해 0 이다.
+                #   번짐 고리는 #894 이전부터 있던 자리라 `school.`·`now.`·`on.` 처럼
+                #   **진짜 영어 짧은 줄**이 전부 판정 대상이 된다 — 그쪽이 훨씬 많다.
+                #   게다가 한 줄을 막으면 그 쪽 영어 문맥이 무너져 **가드가 손대지도 않은**
+                #   줄까지 깨졌다(p0227 보기 ③④⑤ 가 통째로).
+                loose[k] = _english_any(lines[k], ctx=True) is not None
             if loose[k]:
                 ctx[k] = True
                 changed = True
