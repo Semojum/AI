@@ -1269,6 +1269,13 @@ def guard_llm_text(text: str, kind: str = "caption", *, image_type: str = "image
         out = src
     if kind in _REFUSAL_KINDS and out and gates.is_extraction_refusal(out):
         out = ""
+    # ★ 자기 작업 보고 줄 걷기(#772) — **모든 kind 에 건다.** 거부문 표는 "못 읽었다" 만
+    #   잡아서, 모델이 **일을 했다고 보고하는 문장**은 body 는 물론 table_tn·visual_draft·
+    #   figure 까지 넷 다 그대로 통과했다(2026-09-15 실측, 문장 다섯 × kind 넷 = 20건 전수 통과).
+    #   통째로 비우지 않고 **그 줄만** 걷으므로, 뒤에 붙은 진짜 본문은 살아남는다.
+    #   전수 오검출 0건(교과서 글 요소 25,458개) — 근거는 `gates._SELF_REPORT_RES` 주석.
+    if out:
+        out = gates.strip_self_report(out)
     # ★ **줄을 걷어낸 것만** 센다. 캡션 사슬에는 줄 안을 고치는 손질이 섞여 있다 —
     #   `_ensure_type_word` 는 유형 제시어를 붙이고 `_strip_dup_type_word` 는 겹친 유형
     #   낱말을 뗀다(실측 1,961건 중 498건, `도표: 흐름도, …` → `도표: …`). 그건 관문이
