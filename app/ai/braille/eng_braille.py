@@ -207,6 +207,16 @@ def _apply_groups(word: str, ebae: bool = False) -> str:
     return "".join(out)
 
 
+# 대문자 런 / 대문자 아닌 런 — 혼합 낱말의 대문자 표기 단위(#934)
+_CASE_RUN_RE = re.compile(r"[A-Z]+|[^A-Z]+")
+
+
+def _is_element_seq(word: str) -> bool:
+    """낱말 전체가 원소 기호(대문자 + 소문자 0~1자)의 이음인가 — HCl·NaCl 은 예, ABd·SDGs 는 아니오."""
+    from app.ai.braille.kor_math_rules import _ELEMENTS   # 순환 import 회피(지연)
+    return bool(word) and all(t in _ELEMENTS for t in re.findall(r"[A-Z][a-z]?|.", word))
+
+
 def _is_abbrev(word: str) -> bool:
     """약어·단위인가 — 전부 대문자(ATP·DNA)이거나 대소문자가 섞인 형태(mV·pH·mmHg).
 
@@ -248,13 +258,25 @@ def translate_word(word: str, ebae: bool = False) -> str:
     if _is_abbrev(word):
         if all(c.isupper() for c in letters):
             return "⠠⠠" + "".join(ALPHABET.get(c.lower(), c) for c in word)
-        # 대소문자 혼합(mV·mmHg) — 대문자마다 대문자표를 붙이고 약자는 쓰지 않는다
+        # 대소문자 혼합(mV·mmHg·ABd) — 약자는 쓰지 않는다. 대문자 표기는 통일영어점자대로(#934):
+        #   홑 대문자는 ⠠ 하나(mV·AaBb), 둘 이상 이어지면 대문자 단어표 ⠠⠠ 를 쓰고
+        #   같은 낱말에 소문자가 이어지면 대문자 종료표 ⠠⠄ 로 닫는다.
+        #   2027 gold: `ABd` = ⠠⠠⠁⠃⠠⠄⠙ · `HFCs` = ⠠⠠⠓⠋⠉⠠⠄⠎ · `SDGs` = ⠠⠠⠎⠙⠛⠠⠄⠎.
+        #   ⚠ 원소 기호로 끊기는 낱말(HCl · NaCl · CaCO)은 종전대로 원소마다 ⠠ 다 — 「과학 점자」
+        #   제1항이 원소 기호를 제29항 로마자로 적게 하고 gold 도 `HCl` = ⠠⠓⠠⠉⠇ 로 쓴다.
+        if _is_element_seq(word):
+            return "".join((_CAPITAL + ALPHABET.get(c.lower(), c)) if c.isupper()
+                           else ALPHABET.get(c, c) for c in word)
         out = []
-        for c in word:
-            if c.isupper():
-                out.append(_CAPITAL + ALPHABET.get(c.lower(), c))
+        for m in _CASE_RUN_RE.finditer(word):
+            run = m.group()
+            cells = "".join(ALPHABET.get(c.lower(), c) for c in run)
+            if not run[0].isupper():
+                out.append(cells)
+            elif len(run) == 1:
+                out.append(_CAPITAL + cells)
             else:
-                out.append(ALPHABET.get(c, c))
+                out.append(_CAPITAL * 2 + cells + ("⠠⠄" if m.end() < len(word) else ""))
         return "".join(out)
     low = word.lower()
     caps = _CAPITAL if word[0].isupper() else ""
