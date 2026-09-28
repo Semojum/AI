@@ -1645,8 +1645,10 @@ _LATEX_SIMPLE: dict[str, str] = {
     "\\ldots":    "⠠⠠⠠",  # … (제12항 [붙임1])
     "\\vdots":    "⠠⠠⠠",  # ⋮
     "\\ddots":    "⠨⠨⠨",  # ⋱
-    "\\therefore":_THEREFORE,  # ∴ (제65항 2호 ,*)
-    "\\because":  "⠈⠌",   # ∵ (수학 제65항 3호: @/)
+    # ∴·∵ — 제65항 2·3호 "그 앞뒤를 두 칸씩 띄어 쓴다"(#906). 15단계의 다중 공백 접기가
+    # 둘레 칸을 한 칸으로 뭉개므로 행 구분자 sentinel 로 나른다(이웃 칸을 흡수해 정확히 ⠀⠀).
+    "\\therefore": _W2R_ROW_SEP + _THEREFORE + _W2R_ROW_SEP,  # ∴ (제65항 2호 ,*)
+    "\\because":   _W2R_ROW_SEP + "⠈⠌" + _W2R_ROW_SEP,       # ∵ (제65항 3호 @/)
     "\\rightarrow": "⠒⠕", # → (3o)
     "\\uparrow":   "⠰⠒⠕",  # ↑ (제10항 ;3o)
     "\\downarrow": "⠘⠒⠕",  # ↓ (제10항 ^3o)
@@ -1768,7 +1770,7 @@ def _stage11c_math_context_symbols(result: str) -> str:
                    ("⦾", "⠸⠴⠴"), ("∙", "⠸⠲"), ("▷", "⠸⠜"), ("◁", "⠸⠣"),
                    ("⊲", "⠸⠣"), ("⊳", "⠸⠜")):
         result = result.replace(_u, _c)
-    result = result.replace("∴", _THEREFORE)
+    result = result.replace("∴", _W2R_ROW_SEP + _THEREFORE + _W2R_ROW_SEP)  # 제65항 2호(#906)
     # 숫자 사이 쉼표 — **자릿점만** ⠂다(2026-09-10 정정, 원장 M-09).
     # 「수학 점자」 제1항 [붙임](규정 3009행) "수의 **세 자리마다** 표기되어 있는 쉼표는
     # ⠂으로 적는다" / 제60항 2호 가(4092행) 원소나열법 `{1,2,3}` = `7#A"`#B"`#C7`
@@ -1875,6 +1877,10 @@ def _stage15_spaces(result: str) -> str:
     # 행 구분자(\x1e) 주변 칸을 흡수해 정확히 ⠀⠀ 2칸으로 — 이웃 공백·구조 칸·기존
     # 점자 빈칸을 함께 접어 3칸 이상으로 불어나는 것을 막는다(연속 sentinel도 1개로).
     result = re.sub(r"[ \x1f⠀]*\x1e[ \x1f⠀\x1e]*", _W2R_ROW_SEP, result)
+    # 식 머리·꼬리의 두 칸은 뗀다 — 수식 경계의 두 칸은 「수학 점자」 제11항("수식과 수학적
+    # 표기는 앞뒤를 두 칸씩 띄어 쓴다")이 본문 쪽에서 이미 낸다. 안 떼면 `정수 $\because …$` 가
+    # 네 칸이 된다(#906). 행 구분자가 머리·꼬리에 오는 것은 빈 행뿐이라 떼도 잃는 게 없다.
+    result = result.strip(_W2R_ROW_SEP)
     result = re.sub(r" *\x1f *", _SP, result)
     result = re.sub(r" {2,}", " ", result)
     result = result.replace(" ", "⠀")
