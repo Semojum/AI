@@ -1088,6 +1088,11 @@ _GREEK_CMD_TIGHT_RE = re.compile(
     r"(\\(?:" + "|".join(sorted(
         [n for n in _GREEK_NAMES] + [n.capitalize() for n in _GREEK_NAMES],
         key=len, reverse=True)) + r"))[ \t]+(?=[A-Za-z])")
+# 수 뒤 칸 + 로마자·그리스 문자(유니코드·명령 꼴) — 곱 생략 인접 표기라 칸을 지운다.
+_DIGIT_GAP_RE = re.compile(
+    r"(?<=\d) +(?=[A-Za-zα-ωΑ-Ω]|\\(?:" + "|".join(sorted(
+        _GREEK_NAMES + [n.capitalize() for n in _GREEK_NAMES],
+        key=len, reverse=True)) + r")(?![a-zA-Z]))")
 
 
 def _collapse_redundant_braces(latex: str) -> str:
@@ -1192,7 +1197,10 @@ def _stage1_math_brackets(result: str) -> str:
     result = re.sub(rf"(?<=[A-Za-z0-9{_MATH_PAREN_E}]) +(?={_MATH_PAREN_S})", "", result)
     result = re.sub(rf"(?<={_MATH_PAREN_E}) +(?=[A-Za-z0-9{_MATH_PAREN_S}])", "", result)
     # 숫자·문자 곱도 붙인다: "1 6 x"→16x (정답 수학2 p009 '…16옥=옥…' — 곱 생략 인접 표기).
-    result = re.sub(r"(?<=\d) +(?=[A-Za-z])", "", result)
+    # 그리스 문자도 같은 곱이다: MinerU 가 `\frac {2 π}{b}`·`2 \pi` 로 띄워 내면 칸이 남아
+    # ⠼⠃⠀⠨⠏ 가 나가고, 칸 때문에 분자 곱 판정(_is_monomial_product)도 빠져 묶음 괄호가
+    # 안 붙었다(제7항 3호 `(ab)/#a`). 2027 gold 는 ⠃⠌⠷⠼⠃⠨⠏⠾ (dev 009 p0023).
+    result = _DIGIT_GAP_RE.sub("", result)
     # 1a. 병치 닫음표 생략(T2 관행) — 위 공백 정리로 병치가 확정된 뒤에 적용한다.
     # 대문자 함수명(F(x)G(x))은 제외: 닫음을 지우면 앞 인수와 붙어 연속 대문자가 되어
     # 14단계의 대문자 단어표 ⠠⠠가 잘못 붙는다(P(A)P(B) → "AP"). gold 실측 모수도 소문자다.
