@@ -1595,6 +1595,13 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
     # 3) 연속 순번 + 좁은 폭(본문 헐의 절반 이하) 사이드 열만 본문 뒤로 이동
     body_rank = {id(b): r for r, b in
                  enumerate(sorted(body, key=lambda b: b.reading_order), start=1)}
+    # ★ '좁다'의 잣대는 main **헐**이 아니라 main 에서 **가장 넓은 요소**다(2026-09-29, #656, 원장 C-122-b).
+    #   헐은 옆 해설 열이 다리 조각으로 붙으면 부푼다 — 언어 p019 는 가운데 본문 단 조각
+    #   (x 669~745)이 아래 해설 상자와 겹쳐 헐이 454~745 → 454~1069 가 됐고, 폭이 같은 왼쪽
+    #   본문 단(291)이 '헐의 절반 이하'로 잡혀 쪽 끝으로 밀렸다(τ 1.000 → −0.059).
+    #   실측 1,076쪽: 바뀐 쪽 5 = 이득 4(언어 011·019·159·223) · 손해 1(언어 222: 왼쪽 해설 열이
+    #   본문 한 단과 폭이 비슷해 앞으로 온다 — 폭으로는 019 와 못 가른다, 내용 판정은 자문 대기).
+    _main_w = max(b.bbox[2] - b.bbox[0] for b in main)
     deferred: list[list[BBoxItem]] = []
     for cl in sides:
         ranks = sorted(body_rank[id(b)] for b in cl)
@@ -1621,7 +1628,7 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
         contiguous = (best == len(ranks)
                       or (best >= 3 and best >= _SIDE_RUN_SHARE * len(ranks)))
         narrow = (max(b.bbox[2] for b in cl) - min(b.bbox[0] for b in cl)) \
-            <= 0.5 * (hull1 - hull0)
+            <= 0.5 * _main_w
         # ★ 요소 하나짜리 클러스터는 '연속 순번'이 공짜로 참이라 이 조건을 못 거른다.
         #   그래서 본문 옆에 홀로 놓인 그림·아이콘·표가 통째로 쪽 끝으로 밀려났다
         #   (실측 devall+valall 13쪽 — 생물 p026 '유형' 아이콘이 y=355인데 마지막에서 두 번째).
