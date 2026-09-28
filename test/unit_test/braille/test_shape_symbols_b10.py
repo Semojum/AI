@@ -81,12 +81,12 @@ def test_double_corner_brackets_use_regulation_cells():
 
     gold 실측: 묵자 『 val 412 · dev 11 대 gold ⠰⠦ val 422 · dev 11(1:1).
     우리는 val 1 · dev 2뿐이었다 — 책 제목이 통째로 다른 부호로 나갔다.
-    ⚠ 홑낫표 「」는 아직 관행(작은따옴표)을 쓴다. gold ⠐⠦에 다른 용도가 섞여 있어
-      실물을 짚기 전까지 건드리지 않는다.
+    홑낫표 「」도 2026-09-29 에 규정형으로 돌렸다(#909). 실물을 짚으니 gold ⠐⠦ 의 여분은
+    추출이 놓친 진짜 홑낫표였다(`test_hotnat_regulation.py`).
     """
     out = tr("『세종실록지리지』")
     assert out.startswith("⠰⠦") and out.endswith("⠴⠆")
-    assert tr("「홑낫표」 자리").startswith("⠠⠦")     # 홑낫표는 종전 그대로
+    assert tr("「홑낫표」 자리").startswith("⠐⠦")     # 홑낫표도 규정형(#909)
 
 
 def test_line_start_hyphen_bullet_is_one_cell():
