@@ -474,7 +474,7 @@ class _RomanCtx:
     재점역하는 동안 문맥이 덮여 같은 줄이 호출 순서에 따라 다르게 나온다.
     """
 
-    __slots__ = ("has_hangul", "hangul_ratio", "opened")
+    __slots__ = ("has_hangul", "hangul_ratio", "opened", "tail_term")
 
     def __init__(self, text: str, *, force: bool = False) -> None:
         han = len(_HANGUL_SYL_RE.findall(text))
@@ -487,6 +487,8 @@ class _RomanCtx:
         self.hangul_ratio = 1.0 if force else (han / (han + lat) if (han + lat) else 0.0)
         # 이 줄에서 로마자 구간이 이미 열렸는가(제29항 후단 — 첫 로마자 앞에만 ⠴).
         self.opened = False
+        # 직전 `_split_english` 가 **세그 맨 끝에** 종료표 ⠲ 를 적었는가(#917, `_emit_mixed` 가 읽는다).
+        self.tail_term = False
 
     def wants_roman(self) -> bool:
         """세그에 한글이 없어도 줄 문맥상 ⠴를 새로 열어야 하는가."""
@@ -506,26 +508,40 @@ def _emit_mixed(text: str, result: list[str], ctx: "_RomanCtx | None" = None) ->
 
     ctx는 로마자표 줄 문맥(_RomanCtx). None이면 세그먼트 국소 판정(종전 동작).
     """
-    def _seg(seg: str) -> str:
+    def _seg(seg: str, follow: str = "") -> str:
+        if ctx is not None:
+            ctx.tail_term = False
         out = _safe_to_unicode(seg, ctx=ctx)
         # 붙임표(⠤) 뒤 순수 로마자 세그: 세그 분리로 한글 문맥이 사라져 braillify가
         # 로마자표를 못 붙인다. 정답 관행은 여는 ⠴만·종료표 생략(-⠴UN- , 사회문화
         # p100·108 실측, 교차 59건). 직전 결과가 ⠤로 끝날 때만 ⠴를 접두한다.
         # ★ 줄 문맥 경로가 이미 ⠴를 붙였으면 여기서 또 붙이지 않는다 — 이중 ⠴는
         #   회귀다(억제 없이 재면 val NET −27, 억제하면 +52. 재현 V2/temp/s2_ab3.py).
+        #   #917 — 세그가 빈칸으로 시작하면(`범례 — A:`) `out` 머리가 ⠀ 라 그 확인이 빗나가
+        #   `⠤⠤⠴⠀⠴⠠⠁` 로 겹쳤다. 머리 빈칸을 건너 보고, 붙일 때도 빈칸 뒤에 붙인다.
+        body = out.lstrip("⠀")
         if (result and result[-1].endswith("⠤")
                 and seg.strip() and all(c.isalpha() and c.isascii() for c in seg.strip())
-                and not out.startswith("⠴")):
-            out = "⠴" + out
+                and not body.startswith("⠴")):
+            out = out[:len(out) - len(body)] + "⠴" + body
             if ctx is not None:
                 ctx.opened = True
+        # 제33항 — 로마자와 한글 사이의 쌍점·쌍반점·줄표는 종료표를 적지 않는다(#917).
+        #   `:`·`;`·`—` 는 문자표가 **먼저** 점자로 바꿔 다음 조각으로 가므로, 한글 섞인 세그
+        #   끝의 로마자(`이 PD: 먼저` · `학생 A: 많이` · `범례 ― A: 갑`)는 `_eng_terminator` 가
+        #   그 부호를 못 보고 ⠲ 를 적었다. 세그 **끝에 적은 종료표**만 뗀다 — 끝 셀이 영어
+        #   약자일 수도 있어(`add` 의 dd = ⠲) 셀 모양으로는 안 가른다.
+        if (follow and ctx is not None and ctx.tail_term and out.endswith("⠲")
+                and _ART33_FOLLOW_RE.match(follow)):
+            out = out[:-1]
+            ctx.opened = True
         return out
 
     last = 0
     for m in _BRAILLE_RE.finditer(text):
         pre = text[last:m.start()]
         if pre:
-            result.append(_seg(pre))
+            result.append(_seg(pre, text[m.start():]))
         result.append(m.group())
         last = m.end()
     tail = text[last:]
@@ -2190,6 +2206,8 @@ _UEB_PUNCT = {",": "⠂", ";": "⠆", ":": "⠒", "'": "⠄"}
 
 # 제33항 — 로마자와 한글 사이에 오는 이 부호들은 종료표를 적지 않고 한글 점자로 적는다.
 _ART33_PUNCT = ",:;–—―"
+# 같은 부호가 문자표에서 먼저 점자로 바뀐 꼴(쌍점 ⠐⠂ · 쌍반점 ⠰⠆ · 줄표 ⠤⠤) + 뒤따르는 한글(#917).
+_ART33_FOLLOW_RE = re.compile(r"(?:⠐⠂|⠰⠆|⠤⠤)[ \t⠀]*[가-힣]")
 
 def _english_spans(seg: str, runs: list[tuple[int, int]]) -> list[list[tuple[int, int]]]:
     """라틴 런 목록 → 로마자 구간(제32항) 목록. 구간 = 브리지 가능한 간극으로 이어진 런들.
@@ -2304,16 +2322,20 @@ def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
             term = _eng_terminator(seg, end)
             out.append(f"⠴{core}{term}")
             ctx.opened = term == ""    # 종료표를 안 적었으면 구간은 계속 열려 있다
+            ctx.tail_term = term == "⠲" and end == len(seg)
         elif ctx.wants_roman():
             out.append("⠴" + core)     # 제34항 — 종료표는 적지 않는다
             ctx.opened = True
+            ctx.tail_term = False
         else:
             out.append(core)
+            ctx.tail_term = False
         last = end
     if seg[last:]:
         if _HANGUL_SYL_RE.search(seg[last:]):
             ctx.opened = False
         out.append(_braillify_korean(seg[last:]))
+        ctx.tail_term = False
     return "".join(out)
 
 
