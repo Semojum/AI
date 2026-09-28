@@ -62,6 +62,9 @@ def test_n제곱근은_대괄호라_안_걸린다():
 @pytest.mark.parametrize("latex,expected", [
     ("\\frac{2\\pi}{b}", "⠃⠌⠷⠼⠃⠨⠏⠾"),
     ("\\frac{2π}{b}", "⠃⠌⠷⠼⠃⠨⠏⠾"),
+    # MinerU 가 띄워 낸 꼴(2026-09-29 dev-2027 009 p0023 실물). 칸이 남으면 ⠼⠃⠀⠨⠏ 로 묶음이 빠졌다
+    ("\\frac {2 π}{b}", "⠃⠌⠷⠼⠃⠨⠏⠾"),
+    ("\\frac {2 \\pi}{b}", "⠃⠌⠷⠼⠃⠨⠏⠾"),
 ])
 def test_명령_꼴_그리스도_곱으로_본다(latex, expected):
     assert convert_latex(latex) == expected
