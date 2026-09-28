@@ -3158,7 +3158,8 @@ def _english_line(line: str, *, evidence: bool = True, ctx: bool = False) -> str
     if ctx:
         # 이웃 줄이 영어다 — 문단 단위 판정(제29항 [다만]). 기능어 요건은 이웃이 대신 채운다.
         return text if len(funcs) >= _CTX_MIN_FUNCS and not mid_cap else None
-    if _E.translate(text).replace(" ", _SPACE_CELL) == line:
+    # 옛 EBAE 책(ation·ally 약자)도 되짚어야 한다 — 정방향은 UEB 라 그 약자를 안 쓴다(#932).
+    if _E.translate(text, ebae=True).replace(" ", _SPACE_CELL) == line:
         # 왕복만으로는 모자란다 — 한글 두 낱말이 뜻 없는 알파벳으로 되짚기까지 통과한다
         # (실측 오탐: `우주 그물로` → `dujya Oiu`, 글상자 테두리 → `forggg…`).
         # 영어 문장이라면 기능어가 적어도 하나는 있다(the·to·do·in·so…). 그걸 요구한다.
