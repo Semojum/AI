@@ -96,3 +96,32 @@ def test_규정_로마자구간_예시(label: str, src: str, gold_brf: str, arti
 def test_규정_32a_grade1_지시부호() -> None:
     """제32항 'a, b, c' — gold는 낱자 b·c 앞에 grade-1 지시부호 ⠰를 둔다."""
     assert _ours("다음 a, b, c의") == _gold("``i<{5`0a1`;b1`;c4w")
+
+
+
+def _body(text: str) -> str:
+    """제품 본문 경로(`translate_body`) — 제34항 뒤처리는 줄 문맥(_RomanCtx)이 있어야 돈다."""
+    return _cells("".join(translator.translate_body(text)[0]))
+
+
+@pytest.mark.parametrize("src,gold_brf", [
+    # 제34항(재추출 1709~1719행) 규정 예문
+    ("문 앞에 “Open”이라고 쓰여 있었다.", "``eg`<4n`80,op50o\"<@u`,,{:`o/s/`i4"),
+    ("링컨(Lincoln)은 미국의 제16대 대통령이다.", "``\"o7f)8'0,l9coln,0z`eo@maw`.n```#af`ir`irh=\"}oi4"),
+])
+def test_제34항_규정_예문(src: str, gold_brf: str) -> None:
+    assert _body(src) == _gold(gold_brf)
+
+
+@pytest.mark.parametrize("src,gold", [
+    # 2027 gold 실물 — 한글이 같이 묶인 자리(제34항). dev 004 p0082 · dev 001 p0009 · val 005 p0189
+    ("‘카드 A’를", "⠠⠦⠋⠊⠪⠴⠠⠁⠴⠄⠐⠮"),
+    ("(DNA 또는 RNA)이다", "⠦⠄⠴⠠⠠⠙⠝⠁⠲⠠⠊⠥⠉⠵⠴⠠⠠⠗⠝⠁⠠⠴⠕⠊"),
+    ("‘이 PD’는", "⠠⠦⠕⠴⠠⠠⠏⠙⠴⠄⠉⠵"),
+])
+def test_제34항_한글과_함께_묶인_로마자(src: str, gold: str) -> None:
+    assert _body(src) == gold
+
+
+def test_제34항_여는_짝_없는_번호_머리는_묶인_것이_아니다() -> None:
+    assert _body("그림 A) 참고").startswith("⠈⠪⠐⠕⠢⠴⠠⠁⠲")

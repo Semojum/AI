@@ -535,6 +535,17 @@ def _emit_mixed(text: str, result: list[str], ctx: "_RomanCtx | None" = None) ->
                 and _ART33_FOLLOW_RE.match(follow)):
             out = out[:-1]
             ctx.opened = True
+        # 제34항(재추출 1709행) — 따옴표·괄호로 묶인 로마자에는 종료표를 적지 않는다.
+        #   닫는 부호도 문자표가 먼저 점자로 바꿔 다음 조각으로 가므로 `‘카드 A’`·`(DNA 또는 RNA)`
+        #   처럼 한글이 같이 묶인 자리는 `_eng_terminator` 가 부호를 못 보고 ⠲ 를 적었다
+        #   (2027 gold `⠠⠦⠋⠊⠪⠀⠴⠠⠁⠴⠄` · `⠴⠠⠠⠗⠝⠁⠠⠴`). **같은 줄 앞에 여는 짝이 있을 때만** 뗀다 —
+        #   홀로 선 `A)` 같은 번호 머리는 묶인 것이 아니다.
+        if follow and ctx is not None and ctx.tail_term and out.endswith("⠲"):
+            before = text[:len(text) - len(follow)]
+            for close, open_ in _ART34_PAIRS:
+                if follow.startswith(close) and open_ in before:
+                    out = out[:-1]
+                    break
         return out
 
     last = 0
@@ -2215,6 +2226,8 @@ _ART33_PUNCT = ",:;–—―"
 # 제33항 [다만] — 점형이 같은 부호 중 뒤에 종료표를 안 적는 것.
 _ART33_SAME_PUNCT = ".?!…"
 # 같은 부호가 문자표에서 먼저 점자로 바뀐 꼴(쌍점 ⠐⠂ · 쌍반점 ⠰⠆ · 줄표 ⠤⠤) + 뒤따르는 한글(#917).
+# 제34항 — 닫는 부호(점자로 바뀐 꼴)와 그 여는 짝: ’ ‘ · ) ( · ] [
+_ART34_PAIRS = (("⠴⠄", "⠠⠦"), ("⠠⠴", "⠦⠄"), ("⠰⠴", "⠦⠆"))
 _ART33_FOLLOW_RE = re.compile(r"(?:⠐⠂|⠰⠆|⠤⠤)[ \t⠀]*[가-힣]")
 
 def _english_spans(seg: str, runs: list[tuple[int, int]]) -> list[list[tuple[int, int]]]:
