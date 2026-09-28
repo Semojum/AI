@@ -2390,11 +2390,13 @@ def _closing_follows(s: str, at: int) -> bool:
     return any(s.startswith(c, at) for c in _PERIOD_CLOSERS)
 
 
-def decode(braille: str, *, math: bool = False) -> str:
+def decode(braille: str, *, math: bool = False, english: bool = False) -> str:
     """점자 BRF 문자열 → 한국어 텍스트(근사). 줄바꿈은 보존.
 
     math=True면 전체를 수식 구역으로 보고 디코드한다(요소 type이 formula일 때 호출자가 지정).
     기본(False)은 공백 단위 토큰별로 수식/한글을 자동 판별한다(인라인 수식).
+    english=True 는 **영어 교과의 책**이라는 뜻이다(호출부가 과목으로 정한다). 한글이 섞인
+    줄에서 한글로 떨어진 영어 토막을 되찾는다(#905). 비영어책에선 켜지 말 것.
     """
     # BRF 의 쪽 나눔(form feed)은 셀이 아니라 줄 경계다 — 남겨 두면 그 쪽 첫 낱말에 붙어
     # 영어 줄 판정을 막는다(동결 코퍼스 실측 375줄·9,727셀, #842).
@@ -2428,7 +2430,8 @@ def decode(braille: str, *, math: bool = False) -> str:
     lines = braille.split("\n")
     # 로마자표 없는 영문 문단 — 이웃 줄이 영어면 그 문맥으로 읽는다(제29항 [다만] · #842).
     ctx = _english_ctx(lines) if not math and len(lines) > 1 else [False] * len(lines)
-    return "\n".join(_decode_line_router(line, math, eng_ctx=c) for line, c in zip(lines, ctx))
+    return "\n".join(_decode_line_router(line, math, eng_ctx=c, eng_tok=english)
+                     for line, c in zip(lines, ctx))
 
 
 # ── 감쌈 붙임표 → 괄호 복원 (2026-08-06) ──────────────────────────────────
@@ -2636,6 +2639,60 @@ _CTX_PAGE_SEED_RATIO = float(os.environ.get("BR_CTX_PAGE_SEED_RATIO", "0.25"))
 # `'1나사이어가' → '1 closed'` 와 `'BOAT! / LAND! / 설의이' → '… / Two'` 를 잘못 막는다.
 _CTX_KOR_GUARD = os.environ.get("BR_CTX_KOR_GUARD", "1").lower() not in ("0", "false", "off")
 _CTX_KOR_THRESHOLD = float(os.environ.get("BR_CTX_KOR_THRESHOLD", "-4.5"))
+# 토막 단위 영어 되찾기 (#905) — 한 줄에 한글이 섞이면 줄 단위 영어 판정이 통째로 실패한다.
+# gold 는 제29항 [다만](로마자표 생략 단위 = 문단)에 따라 낱말마다 로마자표를 안 붙이므로,
+# `Reading 과 Writing.` 같은 줄에서 `Writing.` 이 한글로 떨어졌다(전 코퍼스 10,049줄·14,316토막).
+# #894·#895 가 줄 단위로 고친 축을 토막 단위로 내린다.
+_ENG_TOKEN = os.environ.get("BR_ENG_TOKEN", "1").lower() not in ("0", "false", "off")
+# 한글 읽기가 이 아래면 '깨진 한글' 로 본다. 묵자 줄 분포의 1퍼센타일이다
+# (이득을 찾는 쪽이라 낮은 문턱을 쓴다 — 손해를 찾을 때 쓰는 -4.5 와 방향이 반대다).
+_ENG_TOKEN_FLOOR = float(os.environ.get("BR_ENG_TOKEN_FLOOR", "-6.964"))
+_LATIN_RE = re.compile(r"[A-Za-z]")
+_HANGUL_RUN_RE = re.compile(r"[가-힣]+")
+# 영어책에서만 켠다(#905). 호출부가 과목을 알고 `decode(..., english=True)` 로 넘긴다.
+# ⠠ 는 대문자표이면서 **초성 ㅅ** 이라 `손녀`·`습윤`·`스크롤` 처럼 ㅅ·ㅆ 로 시작하는 한국어가
+# 전부 위험군이다. 비영어책 전 코퍼스에선 아래 술어를 다 겹쳐도 바뀐 토막 768개 중 103개만
+# 막혔다(`습윤`·`세슘`·`스칸듐`·`셔터스톡` 이 영어로 바뀐다). 그래서 경계를 토막 조건이 아니라
+# **책 단위**로 긋는다. 기본값은 끔 — 과목을 모르는 호출부(검수 등급)는 종전과 같다.
+#
+# 실재하는 한국어 낱말인가 — kiwi(이미 의존성, `pdf_analyzer` 가 쓴다) 분석이 **내용 형태소
+# 하나 + 조사·어미·접사** 로 떨어지고 그 형태소 점수가 문턱 위면 낱말이다.
+#   손해 쪽  손녀/NNG-12 · 셔츠/NNG-12+를 · 숙련도/NNG-14 · 띄/VV-12+다 · 샌드위치/NNG-11
+#   이득 쪽  샐표/NNG-26 · 슈마/NNG-22(사전에 없어 추측한 명사) · 섞/VV+에+ᆽ/Z_CODA(자모 조각)
+#            · 설/NNG+운/NNG+애/NNG(내용 형태소 여럿)
+# ⚠ **최소 점수 하나로는 안 갈린다** — 문턱 -26 이면 영어책 이득 토막의 절반이 막힌다
+#   (`샐표`→`Reading` 318개가 샐+표 로 잘려 점수가 괜찮게 나온다). 형태소 **개수**가 가른다.
+_ENG_TOKEN_KIWI_MIN = float(os.environ.get("BR_ENG_TOKEN_KIWI_MIN", "-14.5"))
+_KIWI = None
+_FUNC_TAGS = ("J", "E", "XS", "XP", "S", "VCP")   # 조사·어미·접사·부호·서술격 조사(`딸인`)
+
+
+def _is_real_korean(ko: str) -> bool:
+    """읽힌 한글이 **실재하는 한국어 낱말**인가(kiwi 형태소 분석)."""
+    global _KIWI
+    if _LATIN_RE.search(ko):             # 한글 읽기 안에 라틴이 끼면(`싲a외`) 낱말이 아니다
+        return False
+    runs = _HANGUL_RUN_RE.findall(ko)
+    if not runs:
+        return False
+    if _KIWI is None:
+        from kiwipiepy import Kiwi
+        _KIWI = Kiwi()
+    for run in runs:
+        toks = _KIWI.analyze(run)[0][0]
+        if any(t.tag.startswith(("Z", "UN", "W")) for t in toks):
+            return False
+        content = [t for t in toks if not t.tag.startswith(_FUNC_TAGS)]
+        if len(content) != 1 or content[0].score < _ENG_TOKEN_KIWI_MIN:
+            return False
+        # 한 음절 명사 **홀로**는 우연히 맞기 쉽다(`숙`·`설`). 용언 어간(`띄다`·`쉬며`)이거나
+        # 뒤에 조사·접사가 붙으면(`싹이`·`쇼를`·`땀을`·`손님`) 받는다 — 영어책 실측으로
+        # 이 허용이 손해 10토막을 더 막고 이득 29토막을 잃는다. 손해 쪽이 더 비싸다.
+        if len(content[0].form) < 2 and not content[0].tag.startswith("V") and len(toks) < 2:
+            return False
+    return True
+
+
 # 음절 빈도표 — **묵자 재추출 1,361쪽·음절 101만**(우리 **입력** 텍스트)에서 만든다.
 # ★ gold 점자를 안 쓴다(`meta.gold_braille_used = false`). 자기 출력으로 자기를 판정하면
 #   그 자는 아무것도 안 잰다. 문턱을 다시 정할 사람을 위해 묵자 줄 점수 분위수도 meta 에 있다.
@@ -2655,6 +2712,31 @@ def _kor_plausibility(text: str) -> float | None:
         _KOR_FREQ = (freq, _mlog(sum(freq.values()) + len(freq)))
     freq, log_den = _KOR_FREQ
     return sum(_mlog(freq.get(c, 0) + 1) - log_den for c in syl) / len(syl)
+
+
+def _eng_token(tok: str, ko: str) -> str | None:
+    """한글로 떨어진 토막이 실은 영어였으면 영어 읽기를 돌려준다 (#905).
+
+    세 신호를 **겹쳐서** 본다. 하나로는 못 가른다 — 전 코퍼스 실측:
+      · 한글다움만 보면 드문 전문어가 깨진 한글로 잡힌다(`액틴 필라멘트`·`뉴클레오솜`).
+      · 토막의 영어 읽기만 보면 멀쩡한 한글도 걸린다(`각`→`eda` · `및`→`eo;`).
+      · 대문자표만 보면 비영어책에서 무너진다(`수능형`→`Mcowggjer`).
+    셋이 겹칠 때만 바꾼다. 그래도 남는 위양성(`띤다.`→`Iqi.`)은 '영어 낱말인가' 를 물어야
+    걸러지는데, **자생 낱말 목록은 쓰지 않는다** — 자기 출력으로 자기를 판정하는 꼴이다.
+    """
+    # ⠠ 로 시작하되 **대문자표**여야 한다 — 여는 작은따옴표 `⠠⠦`(제34항)와 점역자주 `⠠⠄`도
+    # ⠠ 로 시작한다. 그 둘을 안 빼면 `‘루트`·`‘편히`·`‘네네` 같은 **진짜 한글**이 걸린다(실측).
+    if (not _ENG_TOKEN or len(tok) < 2 or tok[0] != "⠠" or tok[1] in "⠦⠄"
+            or not _HANGUL_SYL_RE.search(ko)):
+        return None
+    score = _kor_plausibility(ko)
+    if score is None or score >= _ENG_TOKEN_FLOOR:   # 한글로도 그럴듯하면 손대지 않는다
+        return None
+    if _is_real_korean(ko):      # 실재하는 한국어 낱말이면 손대지 않는다
+        return None
+    eng = _english_any(tok, ctx=True)
+    # 한 글자·두 글자 영어는 뺀다 — `수`(⠠⠍)가 EBAE `M` 이기도 하다.
+    return eng if eng and len(_LATIN_RE.findall(eng)) >= 3 else None
 
 
 def _kor_guard_blocks(line: str) -> bool:
@@ -3474,7 +3556,8 @@ def _english_ctx(lines: list[str]) -> list[bool]:
     return ctx
 
 
-def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False) -> str:
+def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False,
+                        eng_tok: bool = False) -> str:
     """줄을 공백 단위로 나눠 수식 토큰은 수학 디코더로, 나머지는 한글 디코더로 라우팅."""
     if not line:
         return ""
@@ -3489,12 +3572,12 @@ def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False) -> str:
         out, last = [], 0
         for m in _BOX_BORDER_RE.finditer(line):
             if m.start() > last:
-                out.append(_decode_line_router(line[last:m.start()], math))
+                out.append(_decode_line_router(line[last:m.start()], math, eng_tok=eng_tok))
             title = m.group(2)
             out.append(f"【글상자 {_decode_line(title)}】" if title else "【글상자】")
             last = m.end()
         if last < len(line):
-            out.append(_decode_line_router(line[last:], math))
+            out.append(_decode_line_router(line[last:], math, eng_tok=eng_tok))
         return "".join(out)
     if not math:
         chem = _chem_line(line)      # 로마자표 없는 화학식 줄 (「과학 점자」 제1항)
@@ -3513,11 +3596,11 @@ def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False) -> str:
             out, last = [], 0
             for m, t in spans:
                 if m.start() > last:
-                    out.append(_decode_line_router(line[last:m.start()], math))
+                    out.append(_decode_line_router(line[last:m.start()], math, eng_tok=eng_tok))
                 out.append(t)
                 last = m.end()
             if last < len(line):
-                out.append(_decode_line_router(line[last:], math))
+                out.append(_decode_line_router(line[last:], math, eng_tok=eng_tok))
             return "".join(out)
     # 네모 빈칸 ⠸⠦␣⠴⠇ — 규정 제73항. 가운데가 **공백 셀**이라 아래 토큰 분리가
     # 여는 쪽과 닫는 쪽을 갈라 놓는다(layout_braille._ATOMIC_SEQS 와 같은 이유).
@@ -3595,6 +3678,14 @@ def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False) -> str:
         for _j in (_i - 1, _i + 1):
             if _is_operand(tokens[_j]):
                 is_math[_j] = True
+    # ── 줄 관문 (#905) ───────────────────────────────────────────────────
+    # 그 줄의 **읽기에 이미 영어가 있을 때만** 토막 규칙을 켠다(로마자표로 열린 구간이 그렇다).
+    # 관문이 없으면 영어가 한 글자도 없는 한글 줄에서 규칙이 돌아, 전 코퍼스 A/B 에서
+    # `섞여`→`Thawh` · `섭취`→`Sbmr` · `소득`→`Uiowa` 로 **비영어책 12,130줄이 깨졌다.**
+    # 제29항 [다만]의 단위는 문단이고, 그 문맥의 최소 증거가 **같은 줄 안의 영어**다.
+    _ko = {idx: _decode_line(tok) for idx, tok in enumerate(tokens)
+           if tok and not is_math[idx] and not setop[idx] and not leadop[idx] and not upper[idx]}
+    _has_eng = eng_tok and _ENG_TOKEN and not math and any(_LATIN_RE.search(v) for v in _ko.values())
     pieces = []
     for idx, tok in enumerate(tokens):
         if tok:
@@ -3613,8 +3704,11 @@ def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False) -> str:
                 if pieces:
                     pieces[-1] = ""                 # 범위와 위끝 사이의 한 칸을 지운다
                 pieces.append("^" + _decode_math_token(tok))
+            elif is_math[idx]:
+                pieces.append(_decode_math_token(tok))
             else:
-                pieces.append(_decode_math_token(tok) if is_math[idx] else _decode_line(tok))
+                ko = _ko.get(idx) or _decode_line(tok)
+                pieces.append((_eng_token(tok, ko) if _has_eng else None) or ko)
         if idx < len(seps):
             pieces.append("" if seps[idx] == _EMPH_MARK
                           else " " * _print_gap(len(seps[idx]), idx, tokens, is_math))

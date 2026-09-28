@@ -184,3 +184,58 @@ def test_가드_스위치가_종전_동작으로_되돌린다(monkeypatch):
     finally:
         monkeypatch.delenv("BR_CTX_KOR_GUARD", raising=False)
         importlib.reload(bb)
+
+
+# ── #905 · 토막 단위 영어 되찾기 ────────────────────────────────────────────
+# gold 는 제29항 [다만](로마자표 생략 단위 = 문단)대로 낱말마다 로마자표를 안 붙인다.
+# 줄 단위로만 영어를 판정하면 한글이 한 토막이라도 섞인 줄은 판정이 통째로 실패한다.
+# 영어책에서만 켠다 — 호출부가 과목을 알고 `english=True` 를 넘긴다.
+_READING = "⠴⠠⠗⠂⠙⠬⠀⠈⠯⠀⠠⠺⠗⠊⠞⠬⠲"          # 'Reading 과 Writing.'
+_GRANDDAUGHTER = "⠠⠷⠉⠱⠀⠼⠁⠐⠂⠀⠴⠠⠛⠗⠁⠝⠙⠏⠁⠂"   # '손녀 1: Grandpa,'
+
+
+def test_영어책에서_한글_섞인_줄의_영어_낱말을_되찾는다():
+    from app.utils.braille_back import decode
+    assert decode(_READING, english=True) == "Reading 굴 Writing."
+
+
+def test_영어책이_아니면_안_바꾼다():
+    """책 단위 경계 — ⠠ 는 초성 ㅅ 이기도 해서 비영어책에선 `습윤`·`세슘` 이 영어로 뒤집힌다."""
+    from app.utils.braille_back import decode
+    assert decode(_READING) == "Reading 굴 싀애덜요."
+
+
+def test_실재하는_한국어_낱말은_안_바꾼다():
+    """영어책에도 한국어 풀이가 있다 — `손녀`·`셔츠를`·`띄다` 는 kiwi 가 아는 낱말이다."""
+    from app.utils.braille_back import _is_real_korean, decode
+    assert decode(_GRANDDAUGHTER, english=True) == "손녀 1: Grandpa,"
+    assert _is_real_korean("셔츠를") and _is_real_korean("띄다") and _is_real_korean("싹이")
+    assert _is_real_korean("딸인")   # 서술격 조사 `이` 는 내용 형태소가 아니다
+    # 사전에 없어 추측한 명사·자모 조각·라틴이 낀 읽기는 낱말이 아니다
+    assert not _is_real_korean("샐표") and not _is_real_korean("섞엦")
+    assert not _is_real_korean("싲a외")
+
+
+def test_여는_작은따옴표를_대문자표로_오인하지_않는다():
+    """`⠠⠦`(여는 작은따옴표)·`⠠⠄`(점역자주)도 ⠠ 로 시작한다 — 그 둘은 뺀다."""
+    from app.utils.braille_back import _eng_token
+    assert _eng_token("⠠⠦⠇⠥⠞", "‘루트") is None
+
+
+def test_영어가_없는_줄에서는_안_돈다():
+    """줄 관문 — 이게 없으면 `섞여`가 `Thawh`로 뒤집힌다(전 코퍼스 12,130줄)."""
+    from app.utils.braille_back import decode
+    got = decode("⠝⠁⠺⠀⠠⠎⠐⠮⠀⠈⠯", english=True)
+    assert "Se" not in got and "S" not in got, got
+
+
+def test_토막_되찾기_스위치가_종전_동작으로_되돌린다(monkeypatch):
+    import importlib
+    import app.utils.braille_back as bb
+    monkeypatch.setenv("BR_ENG_TOKEN", "0")
+    importlib.reload(bb)
+    try:
+        assert bb.decode(_READING, english=True) == "Reading 굴 싀애덜요."
+    finally:
+        monkeypatch.delenv("BR_ENG_TOKEN", raising=False)
+        importlib.reload(bb)
