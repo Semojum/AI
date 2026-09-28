@@ -1538,7 +1538,7 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
     #   실물: 세계사 p104 의 강 제목 `르네상스와 종교 개혁`(x 151~609)이 좌측 용어열
     #   (x 106~283)과 본문(x 318~1071)을 이었다 — 28요소가 클러스터 1개.
     #   그래서 **빼면 3요소 이상 성분이 둘로 갈리는 요소**를 다리로 보고 클러스터링에서만
-    #   제외한다. 그 요소는 아래 2번의 흡수 규칙으로 본문에 다시 붙으므로 사라지지 않는다.
+    #   제외한다. 그 요소는 아래 3번 참고열 판정이 끝난 뒤 본문에 붙인다(사라지지 않는다).
     #   비용은 O(n^3) 이라 요소가 적은 쪽에서만, 그리고 **한 덩이로 뭉친 쪽에서만** 찾는다.
     bridge: set[int] = set()
     if len(body) <= _BRIDGE_MAX_ELEMENTS and len(_components(set())) == 1:
@@ -1550,7 +1550,7 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
     clusters: dict[int, list[BBoxItem]] = {}
     for comp in _components(bridge):
         clusters[comp[0]] = [body[i] for i in comp]
-    for k in bridge:                              # 다리는 홀로 둔다(2번에서 흡수된다)
+    for k in bridge:                              # 다리는 홀로 둔다(3번 뒤 main 에 붙는다)
         clusters[-1 - k] = [body[k]]
 
     # 1-b) ★ 열이 너무 많으면 손대지 않는다. 교재 쪽은 많아야 3단인데 x-겹침 열이 10~30개로
@@ -1585,7 +1585,16 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
     main = clusters.pop(main_key)
     hull0, hull1 = min(b.bbox[0] for b in main), max(b.bbox[2] for b in main)
     sides: list[list[BBoxItem]] = []
-    for cl in clusters.values():
+    # ★ 다리(1-a)는 흡수·후치 판정에 넣지 않고 3번 뒤 main 에 붙인다(2026-09-29, #656).
+    #   예전엔 여기서 헐 겹침으로 흡수를 따졌는데, 다리는 두 단에 걸쳐 헐과 절반도 안 겹치기
+    #   일쑤라 낱개 '좁은 열'로 판정돼 쪽 맨 끝으로 갔다(2027 윤리와 사상 p040: 쪽 머리 제목이
+    #   41 중 40번째). 그렇다고 3번 **전에** main 에 넣으면 다리 폭이 main 최대 요소 폭을
+    #   부풀려 본문 단이 좁은 열로 잡힌다(사회문화 val p113 τ 0.960 → 0.036).
+    bridges: list[BBoxItem] = []
+    for key, cl in clusters.items():
+        if key < 0:
+            bridges.extend(cl)
+            continue
         c0, c1 = min(b.bbox[0] for b in cl), max(b.bbox[2] for b in cl)
         if min(hull1, c1) - max(hull0, c0) >= 0.5 * (c1 - c0):
             main.extend(cl)
@@ -1641,6 +1650,7 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
             deferred.append(cl)
         else:
             main.extend(cl)
+    main.extend(bridges)
     hull0, hull1 = min(b.bbox[0] for b in main), max(b.bbox[2] for b in main)
 
     # 4) main: MinerU 순서가 y-흐름을 2회 넘게 거스를 때만 y-밴드 정렬.
