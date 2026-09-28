@@ -2212,6 +2212,8 @@ _UEB_PUNCT = {",": "⠂", ";": "⠆", ":": "⠒", "'": "⠄"}
 
 # 제33항 — 로마자와 한글 사이에 오는 이 부호들은 종료표를 적지 않고 한글 점자로 적는다.
 _ART33_PUNCT = ",:;–—―"
+# 제33항 [다만] — 점형이 같은 부호 중 뒤에 종료표를 안 적는 것.
+_ART33_SAME_PUNCT = ".?!…"
 # 같은 부호가 문자표에서 먼저 점자로 바뀐 꼴(쌍점 ⠐⠂ · 쌍반점 ⠰⠆ · 줄표 ⠤⠤) + 뒤따르는 한글(#917).
 _ART33_FOLLOW_RE = re.compile(r"(?:⠐⠂|⠰⠆|⠤⠤)[ \t⠀]*[가-힣]")
 
@@ -2258,6 +2260,11 @@ def _eng_terminator(seg: str, end: int) -> str:
     while j < len(rest) and rest[j] == " ":
         j += 1
     if j < len(rest) and rest[j].isdigit():
+        return ""
+    # 제33항 [다만](규정 재추출 1682~1684행) — 두 규정의 점형이 같은 `. ? ! …` 는 부호 **뒤에**
+    # 종료표를 적지 않는다. 예 `Ms.는` = ⠴⠠⠍⠎⠲⠉⠵ · `Bravo!를` = ⠴⠠⠃⠗⠁⠧⠕⠖⠐⠮ · `Umm ...이라고`.
+    # 종전엔 종료표 ⠲ 를 먼저 적고 부호를 이어 `II.` 가 ⠴⠠⠠⠊⠊⠲⠲ 로 나갔다(2027 gold ⠴⠠⠠⠊⠊⠲).
+    if j < len(rest) and rest[j] in _ART33_SAME_PUNCT:
         return ""
     if rest[0] in _ART33_PUNCT:
         # 제33항 — 점형이 다른 부호(, : ; ―)가 로마자와 한글 사이면 종료표를 적지 않는다.
@@ -2326,6 +2333,12 @@ def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
         if has_hangul:
             # 종전 경로 — 세그 안에 한글이 있으니 제29항 그대로 ⠴…⠲.
             term = _eng_terminator(seg, end)
+            if term == "" and seg[end:end + 1] == "?":
+                # 제33항 [다만] — 물음표는 두 규정 점형이 같다(⠦). 구간 밖으로 넘기면 braillify 가
+                # 세그 머리의 `?` 를 제49항 [붙임] 단독 부호로 보고 ⠸⠦ + 점역자 주 '물음표' 를 붙인다
+                # (`Youth?이다` · 규정 예문 `,y|?8oi4`).
+                core += "⠦"
+                end += 1
             out.append(f"⠴{core}{term}")
             ctx.opened = term == ""    # 종료표를 안 적었으면 구간은 계속 열려 있다
             ctx.tail_term = term == "⠲" and end == len(seg)
