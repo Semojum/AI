@@ -2586,6 +2586,12 @@ def _no_cut_interior(src: str) -> list[bool]:
     return mask
 
 
+# 한글 바로 뒤 닫는 문장 부호·가운뎃점 앞은 끊지 않는다 — 부호가 다음 줄 머리로 가면 앞 낱말과
+# 떨어진다(실측 568곳, `된다‖.`·`군사‖·정치`). 수식 줄(`cos2α)`)은 끊을 곳이 없어져 강제분리가
+# 늘어서 한글 뒤로 좁혔다.
+_NO_BREAK_BEFORE = frozenset(".,?!:;…·)]}」』’”〉》")
+
+
 def _break_offsets(src: str, braille: str) -> list[int]:
     """src(원문 한 줄)→braille의 줄바꿈 허용 셀 offset 목록(그 위치 '앞'에서 끊기 가능).
 
@@ -2606,9 +2612,24 @@ def _break_offsets(src: str, braille: str) -> list[int]:
     for sp in range(1, len(src)):
         if mask[sp]:
             continue
+        # 앞 글자는 태그를 걷고 본다 — `<!드러냄>지도자<!/드러냄>의` 의 `자`.
+        prev = _TAG_RE.sub("", src[:sp])[-1:]
+        after_hangul = "가" <= prev <= "힣"
+        if after_hangul and src[sp] in _NO_BREAK_BEFORE:
+            continue
         pre = translate_tagged_text(src[:sp])
-        if pre and len(pre) < len(braille) and braille.startswith(pre):
-            offs.add(len(pre))
+        if not (pre and len(pre) < len(braille) and braille.startswith(pre)):
+            continue
+        # ★ 뒤쪽도 따로 점역해 이어 붙인 것과 같아야 끊는 자리다(2026-09-29). 접두만 보면
+        #   `나이`(⠉⠣⠕)의 접두 `나`가 약자 ⠉ 로 통과해 ⠉|⠣(ㄴ과 ㅏ 사이)에 후보가 섰다 —
+        #   제14항: 나·다·마·바·자·카·타·파·하 에 모음이 붙으면 약자를 안 쓴다. 줄머리 ⠣ 는
+        #   `아`로 읽혀 `대한 자‖아유롭고`가 됐다. 약자 규칙은 어절 안의 일이라 어절 끝까지만 본다.
+        #   한글 뒤에서만 본다 — 수식 조각은 따로 점역하면 문맥이 달라 후보가 빠지고 강제분리가 는다.
+        if after_hangul:
+            end = next((k for k in range(sp, len(src)) if src[k].isspace()), len(src))
+            if not braille.startswith(translate_tagged_text(src[sp:end]), len(pre)):
+                continue
+        offs.add(len(pre))
     return sorted(offs)
 
 
