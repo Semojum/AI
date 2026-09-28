@@ -976,6 +976,7 @@ _ROMAN_NUM_UNI = {"II": "Ⅱ", "III": "Ⅲ", "IV": "Ⅳ", "VI": "Ⅵ", "VII": "�
 #   표준정규분포표 머리가 `)z` 로 깨진다 — 뒤 셀로 가른다(`_je33_close_at`).
 _JE33_CLOSE = frozenset("⠦⠖")             # 물음표 · 느낌표 (제33항 [다만])
 _JE33_CLOSE2 = ("⠤⠤",)                    # 줄표 (제33항)
+_JE33_COLON = "⠐⠂"                        # 한글 쌍점 (제33항 · #535)
 _HYPHEN_CELL = "⠤"                        # 붙임표 (= 통일영어점자 하이픈 · 제32항)
 # 숫자 바로 뒤에 붙는 영어 접미사 — 복수 `1960s` · 서수 `1st`·`2nd`·`23rd`·`4th`.
 _NUM_SUFFIX = ("s", "st", "nd", "rd", "th")
@@ -1030,7 +1031,7 @@ def _caps_phrase_at(s: str, i: int) -> bool:
     return all(c in _CAPS_BODY for c in s[i + 3:end])
 
 
-def _roman_span_ahead(s: str, at: int, *, caps: bool = False) -> bool:
+def _roman_span_ahead(s: str, at: int, *, caps: bool = False, after_gap: bool = False) -> bool:
     """`at`부터 로마자 구간이 이어지는가 — **종료표 ⠲가 앞에 실제로 있는지**로 본다.
 
     제35항: 로마자 구간 안 숫자는 구간을 끊지 않는다(`A4`·`MP3`·`V1`). 숫자에서 끊으면
@@ -1041,11 +1042,16 @@ def _roman_span_ahead(s: str, at: int, *, caps: bool = False) -> bool:
       "로마자로 읽히니까 이어 간다"로 판정하면 한글을 통째로 삼킨다.
       실측: `A4용지`(⠴⠠⠁⠼⠙⠬⠶⠨⠕ — 종료표 없음)가 `A4inggg지`로 깨졌다.
       제4항으로 종료표를 생략한 표기는 여기서 이어 가지 않는다 — 안전한 쪽으로 판단한다.
+
+    after_gap=True 는 호출부가 **이미 빈칸을 하나 넘어** `at` 에 온 경우다(줄 라우터의 토막 잇기).
     """
     n = len(s)
     j = at
     seen = False
     crossed = False                          # 빈칸을 넘었나 — 제33항 닫힘 판정에 쓴다
+    # 넘은 빈칸 무리 수 (쌍점 판정 · #535). `at` 바로 앞이 빈칸이면 호출부가 이미 하나 넘었다.
+    gaps = int(after_gap or (at > 0 and s[at - 1] in (_SPACE_CELL, " ")))
+    word_at = at                             # 지금 낱말이 시작한 자리
     while j < n:
         c = s[j]
         if c == _ROMAN_END:
@@ -1056,9 +1062,26 @@ def _roman_span_ahead(s: str, at: int, *, caps: bool = False) -> bool:
         if caps and s[j:j + 2] == _CAPS_CLOSE:
             return seen
         if c in (_SPACE_CELL, " "):
+            if j == 0 or s[j - 1] not in (_SPACE_CELL, " "):
+                gaps += 1
             crossed = True
             j += 1
+            word_at = j
             continue
+        # ★ 제33항 쌍점(#535) — `free radical: 활성 산소` 처럼 **두 낱말 구절 뒤 쌍점**은
+        #   종료표 없이 구간이 닫힌다. 위 가지는 빈칸을 넘으면 종료표를 요구하므로
+        #   둘째 낱말이 `액파다낙사:` 로 떨어졌다. 쌍점 `⠐⠂` 뒤가 빈칸·끝일 때, 빈칸
+        #   **하나**까지만 넘었을 때, 그리고 그 낱말의 **한글 읽기가 한국어가 아닐 때**만 받는다
+        #   (`DNA 지문:`·`3C 정책:`·`cursory 몹시:` 는 한글이다 — 질문을 뒤집는 #895 의 방식).
+        # ⚠ 낱말 **하나**에 붙은 쌍점(`그림 Ⅰ-1:`)은 받지 않는다 — 받으면 로마 숫자 `Ⅰ` 가
+        #   알파벳 `I` 로 떨어졌다(전 코퍼스 71줄). 빈칸을 넘은 **둘째 낱말**만 본다.
+        if (seen and gaps == 1 and s[j:j + 2] == _JE33_COLON
+                and (j + 2 >= n or s[j + 2] in (_SPACE_CELL, " "))):
+            ko = _decode_line(s[word_at:j])
+            kor = _kor_plausibility(ko)
+            # 드문 음절을 품은 진짜 낱말(`cursory 몹시:` 의 `몹시`)은 음절 점수로 못 가른다
+            # — kiwi 낱말 판정(#905)을 같이 건다.
+            return (kor is None or kor <= _CTX_KOR_THRESHOLD) and not _is_real_korean(ko)
         # UEB 문자표 ⠰ + 낱자 — 제32항 "로마자표와 로마자 종료표 사이의 표기는
         # 「통일영어점자 규정」에 따라 적는다". 홑 낱자는 낱말표(b=but·c=can)로 읽히지
         # 않게 문자표를 앞세운다. 규정 예문 `다음 a, b, c의 값` = `0a1 ;b1 ;c4`.
@@ -3210,7 +3233,8 @@ def _merge_roman_tokens(tokens: list[str], seps: list[str]) -> tuple[list[str], 
               and merged not in _UNIT_TABLE_SYM else -1)
         _end = _CAPS_CLOSE if caps_run else _ROMAN_END
         while (st >= 0 and _end not in merged[st:] and i < len(seps)
-               and _roman_span_ahead("⠀".join(tokens[i + 1:]), 0, caps=caps_run)):
+               and _roman_span_ahead("⠀".join(tokens[i + 1:]), 0, caps=caps_run,
+                                     after_gap=True)):
             merged += seps[i] + tokens[i + 1]
             i += 1
         out_t.append(merged)
