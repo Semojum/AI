@@ -282,7 +282,16 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | N
     #   최악 42.8초로 60초 안에 든다. 다만 원가(쪽당 356→573원·서버 1→2대)는 그 동시 1
     #   전제에서 나온 수치라 **같이 낡았다.** 다시 재기 전에는 어느 쪽으로도 인용하지 말 것.
     #   위 수치는 기본값을 바꿀 근거가 아니라 옛 근거의 만료 표시다.
-    effort = os.environ.get("MINERU_EFFORT", "medium" if "hybrid" in backend else None)
+    # ★ I886(2026-09-29 대표 결재) — **한컴 수식 폰트가 있는 쪽만** high 로 보낸다.
+    #   근거 `workspace/reports/0916/결재_수학지면_effort_high.md`: 수학2 전량 254쪽 A/B 에서
+    #   dev +0.89p · val +1.91p(문장 안 수식이 살아난다, #886). 신호는 formula 든 쪽 87/87 을 잡는다.
+    #   ⚠ 수학 밖으로 넓히지 않는다(같은 문서 §5-B — 생물·언어 high 는 영어 표 60개 중 28개가 환각).
+    #   ⚠ 60초 추출 상한은 medium 눈금 그대로다. 위 vLLM 실측은 이 박스(4090 Laptop) 값이라
+    #     운영(A10G)에서 high 쪽이 상한에 걸리는지는 따로 재야 한다.
+    #   `MINERU_EFFORT` 를 명시하면 그 값이 전 쪽에 걸린다(실험 팔용). 끄기 팔 = `MINERU_EFFORT=medium`.
+    effort = os.environ.get("MINERU_EFFORT")
+    if effort is None and "hybrid" in backend:
+        effort = "high" if _is_math_page(pdf_path, page_idx) else "medium"
     if effort in ("medium", "high"):
         cmd += ["--effort", effort]
     # 상주 서버가 있으면 CLI 를 건너뛰고 그 서버를 직접 친다(쪽당 CLI 기동 2.9초 제거).
@@ -1042,6 +1051,32 @@ def _has_math_font(fitz_page: fitz.Page, bbox: list[float]) -> bool:
                for bl in d.get("blocks", [])
                for ln in bl.get("lines", [])
                for sp in ln.get("spans", []))
+
+
+# 추출 effort 라우터(I886)의 쪽 신호 — 한컴 수식 폰트 **가운데 기울인 변수체·분수/근호 구조체**
+# (`EHsang-Italic`·`EHboNA`·`EHRoot`·`EHSusic` · 구판 `STksaA-Italic`·`STkboNA`)가 쪽 스팬의 몇 %인가.
+# ★ 수식 폰트가 '있나' 로는 못 가른다 — 2027 생명과학 I(EBS-E26-001)은 235쪽 중 225쪽에 수식 폰트가
+#   있다. 유전자 기호·ATP 를 바른체 `EHsang-Plain` 으로 쓴다. 그 쪽이 high 로 가면 그래프에서
+#   영어 표를 지어낸다(결재 문서 §5-B, 생물·언어 60개 중 28개).
+# 실측(쪽 스팬 중 이 글꼴 비율): 수학 I 최소 19.7%·중앙 49.7% · 구판 수학2 최소 5.4%·중앙 36.0% ·
+#   생명과학 I 최대 17.1% · 구판 생물 0 · 나머지 책 0~1.1%. 문턱 20% 에서 수학 I 151/152 ·
+#   수학2 122/127 이 걸리고 수학 아닌 쪽은 **0** 이다. 놓친 수학 쪽은 medium(종전 그대로)으로 남고,
+#   잘못 걸린 쪽은 새 환각을 낸다 — 그래서 정밀도 쪽으로 둔다.
+_MATH_STRUCT_FONT_RE = re.compile(r"^(?:[A-Z]{6}\+)?(?:EH|ST)[\w-]*?(?:Italic|boN|Root|Susic)", re.I)
+_MATH_PAGE_MIN_SHARE = 0.20
+
+
+def _is_math_page(pdf_path: Path, page_idx: int) -> bool:
+    """추출 effort 라우터(I886) — 수식 지면인가. 못 열면 '아님'(medium, 종전 기본)."""
+    try:
+        with fitz.open(str(pdf_path)) as d:
+            fonts = [sp.get("font") or ""
+                     for bl in d[page_idx].get_text("dict").get("blocks", [])
+                     for ln in bl.get("lines", []) for sp in ln.get("spans", [])]
+    except Exception:                       # noqa: BLE001 — 판정 실패는 종전 기본으로 둔다
+        return False
+    return bool(fonts) and \
+        sum(1 for f in fonts if _MATH_STRUCT_FONT_RE.match(f)) / len(fonts) > _MATH_PAGE_MIN_SHARE
 
 
 def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
