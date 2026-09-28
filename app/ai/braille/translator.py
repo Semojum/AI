@@ -278,6 +278,15 @@ _DIGIT_LOWER_AJ_RE = re.compile(r"(?<=\d)(?=[a-j])")
 #   ⚠ `$`는 뺐다 — 재추출 묵자에서 `$…$한글` 꼴 LaTeX 경계가 8,249건이라 화폐로 오인한다
 #     (gold 의 `⠴⠈⠎` 뒤 한 칸은 전권 0건, 붙은 것 9건).
 _UNIT_MONEY_HANGUL_RE = re.compile(r"(%p|[%‰°℃℉￦￠€￡￥₣])(?=[가-힣])")
+# 「한국 점자 규정」 제71항 [다만](재추출 2839~2842행) — 한글과 혼동되는 &는 로마자표와 로마자
+# 종료표로 감싼다. 예문 `종이접기 & 클레이아트` = `.=o.sb@o`0@&4`f!"no<h{`(앞뒤 칸은 묵자대로).
+# 감싸지 않은 ⠈⠯ 는 한글 `굴` 과 같은 셀이다. 양옆이 로마자·숫자면(`AT&T`·`Words & Phrases`)
+# 영어 구간 안이라 문자표 ⠈⠯ 그대로 둔다. gold 도 두 자리를 그렇게 가른다(수학2 `출제 경향 ⠴⠈⠯⠲
+# 대표 기출` · 외국어 `Words ⠈⠯ Phrases`). 종전 book 규칙(&→⠯, 앞뒤 칸 삭제)은 "정답 도서는
+# ⠯ 단독"이 근거였는데 지금 gold 에는 그 꼴이 없다 — 백틱(⠈)을 빈칸으로 읽던 시절 수치로 보인다.
+# 같은 [다만]의 § ¶ © ® ™ 는 뺐다. 재추출 묵자에 나오는 것은 전부 추출 잡음이다
+# (¶=∞ · ®=윗첨자 r · ©=㉢ · ™=아래첨자 2). 감싸면 잡음에 두 칸을 더 얹는다.
+_AMP_RE = re.compile(r"&(?![#A-Za-z0-9]+;)")    # HTML 엔티티 잔재(&#x27;·&gt;)는 뺀다
 _HANGUL_SYL_RE   = re.compile(r"[가-힣]")        # 완성형 한글 음절
 _LATIN_CHAR_RE   = re.compile(r"[A-Za-z]")       # 로마자 낱글자(줄 문맥 비율 계산용)
 
@@ -559,6 +568,19 @@ def _preprocess_units(text: str) -> str:
          inline_math 라우팅이 그 요소를 수식 경로로 보내는 것이다.
     """
     return _UNIT_MONEY_HANGUL_RE.sub(r"\1 ", _DIGIT_LOWER_AJ_RE.sub(" ", text))
+
+
+def _wrap_hangul_amp(text: str) -> str:
+    """제71항 [다만] — 한글 문맥의 & 를 ⠴⠈⠯⠲ 로 적는다(`_AMP_RE` 주석). 양옆이 다 로마자·숫자면 둔다."""
+    if not _HANGUL_SYL_RE.search(text):
+        return text
+
+    def repl(m: re.Match) -> str:
+        left, right = text[:m.start()].rstrip()[-1:], text[m.end():].lstrip()[:1]
+        if left.isascii() and left.isalnum() and right.isascii() and right.isalnum():
+            return m.group()
+        return "⠴⠈⠯⠲"
+    return _AMP_RE.sub(repl, text)
 
 
 # ── 점자 도서 표기 관행(BOOK_STYLE) ────────────────────────────────────────────
@@ -947,9 +969,6 @@ _UNIT_BACKTICK_RE = re.compile(r"(?<=[0-9])`(?=[A-Za-z]{1,4}(?:[\s,./)]|[가-힣
 _BACKTICK_MATH_RE = re.compile(
     r"`\s*([A-Za-z][A-Za-z0-9(){}\[\]=+\-*/^'′,.\s"
     + WRAP_HYPHEN_OPEN + WRAP_HYPHEN_CLOSE + r"]*?)(?=[가-힣]|$|\n)")
-# 앰퍼샌드: 규정 [다만]은 한글 사이 &를 로마자표 감쌈 ⠴⠈⠯⠲(0@&4 예시 명시)으로, 정답
-# 도서는 ⠯ 단독(이탈 — regulation_vs_book 기록). book=⠯, regulation=규정 그대로(symbol_table).
-_AMP_RE = re.compile(r"\s*&\s*")
 # 한컴 수식폰트 잡음: MinerU가 ≥를 æ로 낸다('(분자의 차수)æ(분모의 차수)', 수학2 p005).
 # 외국어 발음기호 [dæd]와 충돌하지 않게 수학 문맥(괄호·숫자·한글 인접)만 복원.
 _AE_GEQ_RE = re.compile(r"(?<=[)\d가-힣])\s*æ\s*(?=[(\d가-힣])")
@@ -1122,7 +1141,6 @@ def _apply_book_style(text: str, *, qnum_period: bool = True) -> str:
     text = _BOGI_LINE_RE.sub(r"\1", text)
     text = _BOGI_GAP_RE.sub(r"\1 ‘보기’\2", text)
     text = _NOISE_BACKTICK_RE.sub("", text)
-    text = _AMP_RE.sub("⠯", text)
     text = _LINE_BULLET_RE.sub(_line_bullet_repl, text)
     text = _BLACK_SQUARE_RUN_RE.sub(lambda m: '□' * len(m.group()), text)
     text = _UNLISTED_SHAPE_RUN_RE.sub(lambda m: '△' * len(m.group()), text)
@@ -1686,8 +1704,8 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
                 # 음수 판정이 끝났으니 감쌈 자리표시자를 원래 붙임표로 되돌린다
                 # (뒤의 _apply_book_style·substitute_symbols의 -=⠤ 매핑을 그대로 태운다).
                 clean = _restore_wrap_hyphen(clean)
-                preprocessed = _preprocess_units(
-                    _apply_book_style(clean, qnum_period=qnum_period))
+                preprocessed = _wrap_hangul_amp(_preprocess_units(
+                    _apply_book_style(clean, qnum_period=qnum_period)))
                 substituted = _old_hangul_to_braille(substitute_symbols(preprocessed))
                 text_result: list[str] = []
                 _emit_mixed(substituted, text_result, roman_ctx)
