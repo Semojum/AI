@@ -54,6 +54,27 @@ _SPACE_CELL = "⠀"            # 점자 공백(U+2800)
 # 어말 문장부호 — 받침 셀과 같은 점형이라(같=⠫⠦) 뒤가 공백/끝일 때만 부호로 본다.
 _SENT_END = {"⠦": "?", "⠖": "!"}
 
+
+# 제33항 예문은 전부 **로마자 + 부호 + 조사·서술격**이다(`Youth?이다` · `Bravo!를`).
+# 로마자 뒤 `⠦` 에 **내용어**가 붙으면 여는 부호다 — `A(속도×운동량)` 가 `A"속도` 로 온다.
+_JOSA_HEAD = set("이가을를은는에로으와과의도만라처보까부하랑야요")
+
+
+def _cells_are_hangul(s: str, at: int) -> bool:
+    """`at` 자리부터 **조사로 시작하는** 한글이 이어지는가 (제33항 판정용 · #625)."""
+    seg = s[at:at + 4]
+    if not seg:
+        return False
+    for ln in (3, 2, 1):
+        syl = _SYLLABLE_REV.get(seg[:ln])
+        if syl and "가" <= syl[0] <= "힣":
+            return syl[0] in _JOSA_HEAD
+    return False
+# 로마자 런 바로 뒤인지 보는 데 쓴다 (제33항 · #625).
+# 앞이 **영문 낱말**(3자 이상)로 끝나는가 — 한 글자 변수(`a?a`)와 숫자를 뺀다.
+# 전 코퍼스 A/B: 앞 글자 하나만 보면 수식 자리에서 570줄이 깨졌다(`값in"평균”`·`a"a,`).
+_LATIN_TAIL_RE = re.compile(r"[A-Za-z]{3,}$")
+
 # 받침 ㅍ 음절 — ⠲가 마침표인지 받침 ㅍ인지 가른다(높=⠉⠥⠲ vs 노+마침표).
 # 한국어에서 받침 ㅍ이 실제로 쓰이는 음절은 닫힌 집합이라 목록으로 가르는 게 가장 정확하다.
 # (위치로 가르면 닫는 따옴표 앞에서 틀린다 — `나타난다.’` → `나타난닾’`.)
@@ -3914,6 +3935,7 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
     i, n = 0, len(s)
     _after_number = -1        # 수표 숫자가 방금 끝난 자리(아래 단위표 가드용)
     _quoted_roman_end = -1    # 여는 큰따옴표로 연 로마자 런이 끝난 자리(제34항 가드용)
+    _roman_run_end = -1        # 로마자 런이 끝난 자리 (#625)
     while i < n:
         ch = s[i]
         # 공백(점자/일반)
@@ -4202,11 +4224,34 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
         if roman is not None:
             txt, j = roman
             out.append(txt)
+            if ch == _ROMAN_START and (i == 0 or s[i - 1] in (_SPACE_CELL, " ")):
+                # ★ **토막 첫머리의 로마자표 ⠴ 로 연 런**일 때만 기록한다(제29항).
+                #   수식 줄에서도 로마자 런이 선다(`{캍옥eng"옥”{`·`합stst"자료의 수”`).
+                #   전 코퍼스 A/B(#625): 조건 없이 570줄, ⠴ 로 연 런만 봐도 161줄이 바뀌었고
+                #   **전부 이미 깨진 수식 줄이라 이득이 0**이었다. 그 런은 전부 한글·숫자
+                #   **뒤에 붙어** 선다 — 진짜 로마자 낱말은 빈칸 뒤에서 시작한다.
+                _roman_run_end = j                    # 제33항 판정용 (#625)
             if ch == _ROMAN_START and len(out) >= 2 and out[-2] == '"':
                 _quoted_roman_end = j     # 이 자리의 ⠴ 는 닫는 큰따옴표다
             i = j
             continue
         # 어말 ?·!(⠦·⠖) — 단독으로 떨어진 경우 따옴표(") 대신 문장부호로(안녕?=…⠦).
+        # ★ 제33항(재추출본 1667~1669행) — 점형이 다른 문장 부호가 **로마자와 한글 사이**에
+        #   오면 로마자 종료표를 적지 않고 그 부호를 「한글 점자」로 적는다. 그래서 이 자리의
+        #   `⠦` 는 **빈칸 없이 한글이 붙어 와도 물음표**다. 규정 예문(1690~1691행)이
+        #   `What Is A Youth?이다.` 인데 종전에는 `Youth"이다.` 로 나갔다(#625).
+        #   ⚠ `⠦` 는 한글 받침 ㅌ 이기도 하다. **바로 앞이 로마자 런일 때로 한정**한다 —
+        #     넓히면 본문을 먹는다.
+        if (ch in _SENT_END and not _final(i + 1)
+                and i == _roman_run_end               # **로마자 런 바로 뒤**에서만
+                and _cells_are_hangul(s, i + 1)
+                # 뒤에 닫는 짝(`⠴`=” · `⠴⠄`=’)이 있으면 여는 부호다 — `Mg"시타”_2`(괄호),
+                # `AI ‘이봄’` · `constantly ‘끊임없이’`. 이 조건 없이는 전 코퍼스에서 바뀐 13줄 중
+                # 12줄이 나빠졌다(#625). 물음표는 짝이 없다.
+                and _ROMAN_START not in s[i + 1:]):
+            out.append(_SENT_END[ch])
+            i += 1
+            continue
         if ch in _SENT_END and _final(i + 1):
             out.append(_SENT_END[ch])
             i += 1
