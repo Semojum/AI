@@ -115,8 +115,23 @@ class TestScienceBraille:
     """
 
     def test_화학식은_로마자표로_감싼다(self):
-        out = convert_latex(r"\mathrm{H} ^ {+} \mathrm{Hb} + \mathrm{O} _ {2}")
+        out = convert_latex(r"\mathrm{H} ^ {+} \mathrm{Hb}")
         assert out.startswith("⠴") and out.endswith("⠲")
+
+    def test_한글_없는_반응식은_감싸지_않는다(self):
+        # 과학 점자 제6항(재추출 4423행) — 연산·화살표가 든 식의 로마자는 로마자표를 안 적는다(원장 C-132).
+        #   종전 입력 `H⁺Hb + O₂` 는 이 자리다. 예문 `C + O₂ → CO₂` = ``,,,C`5`O;#b`3o`CO;#b,'``(4428행)
+        out = convert_latex(r"\mathrm{H} ^ {+} \mathrm{Hb} + \mathrm{O} _ {2}")
+        assert "⠴" not in out and "⠲" not in out
+        assert convert_latex(r"\mathrm{C} + \mathrm{O}_2 \rightarrow \mathrm{CO}_2") == "⠠⠠⠠⠉⠀⠢⠀⠕⠰⠼⠃⠀⠒⠕⠀⠉⠕⠰⠼⠃⠠⠄"
+
+    def test_한글_섞인_도식은_화학식마다_감싼다(self):
+        # 규정이 안 다루는 자리 — 2027 생명 gold 관행(화살표 둘레 ⠴ 113 : 36, 원장 C-132).
+        #   MinerU 가 쪼개 낸 꼴과 평문 꼴이 같은 점자로 나가야 한다. 순수 반응식과 다르게 난다.
+        from app.ai.braille.translator import translate_body
+        want = "⠙⠥⠊⠥⠊⠶⠀⠢⠀⠴⠠⠕⠰⠼⠃⠀⠒⠕⠀⠴⠠⠉⠠⠕⠰⠼⠃⠀⠢⠀⠴⠠⠓⠰⠼⠃⠠⠕"
+        assert translate_body("포도당$+O_{2}$ → $CO_{2}+H_{2}O$")[0][0] == want
+        assert translate_body("포도당 + O₂ → CO₂ + H₂O")[0][0] == want
 
     def test_로마자표는_한_번만(self):
         out = convert_latex(r"\mathrm{Hb} + 4 \mathrm{O} _ {2} \xrightarrow {결합} \mathrm{Hb}")
@@ -126,7 +141,7 @@ class TestScienceBraille:
         # 규정 제2항 `0,h^5` = ⠴⠠⠓⠘⠢ — 위첨자 ⠘, + 는 ⠢.
         # 단, 반응식 **안에서만** 화학으로 판정한다(아래 test_기하_표기는_화학이_아니다 참조).
         out = convert_latex(r"\mathrm{H} ^ {+} + \mathrm{Hb} \xrightarrow {x} \mathrm{HbO}")
-        assert "⠠⠓⠘⠢" in out and out.startswith("⠴")
+        assert "⠠⠓⠘⠢" in out and not out.startswith("⠴")   # 한글 없는 반응식 — 제6항(C-132)
 
     def test_기하_표기는_화학이_아니다(self):
         r"""점·선분·도형 이름도 \mathrm으로 적고 글자가 원소 기호와 겹친다(P·O·Q·C·N…).
