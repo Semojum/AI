@@ -247,3 +247,81 @@ def test_GUARD_MONOLOGUE_0_이면_종전대로(monkeypatch):
     assert _guard()(src, "figure") == src                # 대조군: 종전에는 샜다
     monkeypatch.delenv("GUARD_MONOLOGUE")
     assert _guard()(src, "figure") == "원 안에 삼각형이 있다"
+
+
+# ── #1041 출력 약속 표지 둘 — 무늬가 아니라 모델이 낸 표지를 맞춘다 ─────────────
+def _cap():
+    return pytest.importorskip("app.ai.captioning.captioner")
+
+
+@pytest.mark.parametrize("raw", ["⟦장식⟧", "그림: ⟦장식⟧", "⟦장식⟧ 문항 번호 배지"])
+def test_장식_표지면_요소를_버리는_길로(raw):
+    cap, info = _cap(), {}
+    assert cap._finish(raw, "image", info) == "" and info == {"rejected_by": "decoration", "decor_by": "marker"}
+
+
+@pytest.mark.parametrize("raw", [
+    "원 안에 삼각형 세 개가 있다.\n⟦메모⟧ 이름표는 작아서 못 읽었다.",
+    "원 안에 삼각형 세 개가 있다. ⟦메모⟧ 색은 적지 않았다.",
+])
+def test_메모_줄은_떼고_설명은_남긴다(raw):
+    assert _cap()._finish(raw, "image") == "그림: 원 안에 삼각형 세 개가 있다."
+
+
+def test_표지_글자는_어디서도_안_남는다():
+    out = _cap()._finish("원 안에 삼각형이 있다.\n⟦장식⟧ 아래쪽 번호", "image")
+    assert "⟦" not in out and out.startswith("그림: 원 안에 삼각형이 있다.")
+
+
+def test_표지_약속은_스위치로_끈다(monkeypatch):
+    cap = _cap()
+    assert cap._markers_on() and "⟦장식⟧" in cap._PROMPT_MARKERS and "⟦메모⟧" in cap._PROMPT_MARKERS
+    monkeypatch.setenv("CAPTION_MARKERS", "0")
+    assert not cap._markers_on()
+
+
+@pytest.mark.parametrize("raw", ["⟦ 장식 ⟧", "사진: ⟦장 식⟧"])
+def test_장식_표지_변이도_받는다(raw):
+    cap, info = _cap(), {}
+    assert cap._finish(raw, "image", info) == "" and info == {"rejected_by": "decoration", "decor_by": "marker"}
+
+
+def test_메모_문장은_점자까지_안_간다():
+    """pm 조건 ② — 표지 글자만 걷고 메모 문장이 남으면 그 문장이 점자로 나간다(점역기 입구 G3 는
+    `⟦…⟧` 토큰만 걷는다). 캡션 관문을 지난 글을 실제 점역기에 넣어 본다."""
+    cap = _cap()
+    from app.ai.braille.translator import translate_tagged_text as tr
+    text = cap.guard_llm_text("원 안에 삼각형이 있다.\n⟦ 메모 ⟧ 이름표는 작아서 못 읽었다.", "caption")
+    assert "⟦" not in text and "못 읽었다" not in text
+    assert tr(text) == tr("그림: 원 안에 삼각형이 있다.")
+    assert "⟦" not in gates.strip_format_tokens("원 ⟦장식⟧ 안 ⟦ 메모 ⟧")
+
+
+@pytest.mark.parametrize("keep, dropped", [("", False), ("0", True)])
+def test_표지_장식은_남기거나_버린다(monkeypatch, tmp_path, keep, dropped):
+    """pm 조건 ① — (나) 기본: 남기고 R11(빈 캡션 → CAPTION_FAILED) · (가) `CAPTION_DECOR_KEEP=0`: 버린다."""
+    rb = pytest.importorskip("app.ai.builder.result_builder")
+    img = tmp_path / "c.png"; img.write_bytes(b"x")
+    for k in ("SEMOJUM_NO_CAPTION", "DISABLE_LLM_FALLBACK"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("CAPTION_DECOR_KEEP", keep)
+    monkeypatch.setattr(rb, "_caption_fatal", None)
+    monkeypatch.setattr(rb, "classify_with_confidence", lambda p: ("image", 0.9, ""))
+
+    def fake_caption(p, t, context="", out_info=None):
+        out_info.update(rejected_by="decoration", decor_by="marker")
+        return ""
+    monkeypatch.setattr(rb, "caption", fake_caption)
+    el = {"image_path": str(img), "type": "image", "element_id": "e1"}
+    content, _, ok, _, _, decor = rb._do_caption(el, "")
+    assert content == "" and ok is False and decor is dropped
+    assert ("DECOR_MARKER" in (el.get("flags") or [])) is (not dropped)
+
+
+def test_장식_판정도_캐시에_담는다(tmp_path):
+    """#1041 — 비어 나온 까닭이 판정이면 원응답을 담는다. 안 담으면 재파생 때마다 다시 묻는다."""
+    cap = _cap()
+    p1, p2 = tmp_path / "a.txt", tmp_path / "b.txt"
+    cap._cache_write(p1, "⟦장식⟧", "", decoration=True)
+    cap._cache_write(p2, "", "")                      # 실패로 빈 것은 종전대로 안 담는다
+    assert p1.exists() and not p2.exists()
