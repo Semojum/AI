@@ -332,10 +332,10 @@ class TestC5RuntimeScanner:
         assert not any(c.type == "C5" for c in report.critical_errors)
 
     def test_ble_followed_by_digit_cell_still_caught(self):
-        """잔여 모호형(-bled처럼 ble 뒤 글자가 a~j)도 원문 낱말로 세어 잡는다.
+        """-ble 낱말이 든 요소에서도 수표 누락을 잡는다.
 
-        `assembled` = ⠁⠎⠎⠑⠍⠼⠙ — ⠼ 뒤 ⠙는 숫자 4의 셀과 같아 점형만으로는 수표와
-        구별되지 않는다. 원문에 그 낱말이 있으므로 수표 후보에서 뺀다.
+        종전(EBAE)에는 `assembled` = ⠁⠎⠎⠑⠍⠼⠙ 라 ⠼ 뒤 ⠙(숫자 4의 셀)가 수표처럼 보여 원문 낱말로
+        세어 뺐다. #946 부터 정방향은 UEB 라 ble 약자를 안 쓴다(⠁⠎⠎⠑⠍⠃⠇⠫) — 수표 모양이 아예 안 생긴다.
         """
         layout, ids = _layout(1)
         report = QualityChecker().check(
@@ -343,7 +343,7 @@ class TestC5RuntimeScanner:
             extracted=[_ext(ids[0])],
             llm_outputs=[_llm(ids[0], "assembled 부품 2개")],
             braille_outputs=[BrailleOutput(
-                element_id=ids[0], braille_lines=["⠴⠁⠎⠎⠑⠍⠼⠙⠲⠀⠘⠍⠙⠍⠢⠀⠃⠈⠗"])],
+                element_id=ids[0], braille_lines=["⠴⠁⠎⠎⠑⠍⠃⠇⠫⠲⠀⠘⠍⠙⠍⠢⠀⠃⠈⠗"])],
         )
         assert [c.type for c in report.critical_errors] == ["C5"]
 
