@@ -2999,6 +2999,40 @@ def merge_hidden_runs(braille: str) -> str:
         lambda m: "⠸" + m.group(2) * (len(m.group(0)) // 3) + "⠇", braille)
 
 
+# ── 「한글 점자」 제74항 — 컴퓨터 점자(URL·이메일)는 통일영어점자로 (eval 규정 전수 A 9, #1031) ──────
+# 재추출 2960~2965행: `https://www.korean.go.kr이다` = `0https3_/_/www4kor1n4go4kr4oi4`
+#   · `greenpark7150@korea.kr이다` = `0gre5p>k` + `#gaej@akorea4kr4oi4`(줄 끝 `"` 는 줄 이음 표시).
+# 종전에는 쌍점이 종료표+한글 쌍점(⠲⠐⠂)으로 나가고 `//`·`@` 뒤에서 로마자표 ⠴ 를 다시 열었다.
+# 주소 하나를 구간 하나로 묶는다: 낱말은 묶음 약자만(`go` 를 단어 약자 ⠛ 로 안 줄인다 — 예문 `go4`),
+# 부호는 UEB(`:`=⠒ · `/`=⠸⠌ · `.`=⠲ · `@`=⠈⠁ · `-`=⠤ · `_`=⠨⠤), 숫자는 수표 + a~j.
+_URL_RE = re.compile(
+    r"(?<![A-Za-z0-9@._%+-])(?:https?://[A-Za-z0-9._~:/?=&%#-]+|www\.[A-Za-z0-9.-]+"
+    r"|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
+_URL_PUNCT = {":": "⠒", "/": "⠸⠌", ".": "⠲", "@": "⠈⠁", "-": "⠤", "_": "⠨⠤"}
+_DIGIT_LETTER = dict(zip("1234567890", "⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚"))
+
+
+def _url_cells(m: re.Match) -> str:
+    url = m.group().rstrip(".,")
+    tail = m.group()[len(url):]
+    out: list[str] = []
+    prev_digit = False
+    for tok in re.findall(r"[A-Za-z]+|[0-9]+|.", url):
+        if tok.isdigit():
+            out.append("⠼" + "".join(_DIGIT_LETTER[c] for c in tok))
+        elif tok.isalpha():
+            # 대문자가 섞인 토막은 약자 없이 글자대로(대문자표 ⠠) — 실물 URL 은 거의 소문자다
+            cells = eng_braille._apply_groups(tok) if tok.islower() else "".join(
+                ("⠠" if c.isupper() else "") + eng_braille.ALPHABET[c.lower()] for c in tok)
+            out.append(("⠰" if prev_digit and tok[0].lower() in "abcdefghij" else "") + cells)
+        elif tok in _URL_PUNCT:
+            out.append(_URL_PUNCT[tok])
+        else:
+            return m.group()                  # 모르는 부호가 끼면 손대지 않는다
+        prev_digit = tok.isdigit()
+    return "⠴" + "".join(out) + "⠲" + tail
+
+
 def translate_tagged_text(text: str, *, force_roman: bool = False,
                           qnum_period: bool = True) -> str:
     """<!수식> 태그가 포함된 텍스트를 점자 BRF로 변환."""
@@ -3038,6 +3072,8 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     # convert_latex이 곱셈 ⠡ 셋으로 낸다(규정 예시는 ⠸⠭⠭⠭⠇).
     text = _HIDDEN_X_RUN_RE.sub(lambda m: "⠸" + "⠭" * len(m.group()) + "⠇", text)
     # 숫자 뒤 ′″는 프라임이 아니라 단위 분·초다(제69항) — 같은 이유로 라우팅보다 먼저.
+    if _HANGUL_SYL_RE.search(text):          # 제74항 URL·이메일 — 한글 문장 속일 때만(순수 영어 줄은 종전대로)
+        text = _URL_RE.sub(_url_cells, text)
     text = _UNIT_PRIME_RE.sub(lambda m: SYMBOL_TABLE[m.group()], text)
     text = _UNIT_BACKTICK_RE.sub("", text)
     text = _BACKTICK_MATH_RE.sub(lambda m: f"<!수식>{m.group(1).rstrip()}<!/수식> ", text)
