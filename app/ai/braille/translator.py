@@ -26,7 +26,7 @@ import unicodedata
 from functools import lru_cache
 
 from app.ai.braille.kor_math_rules import (convert_latex, digits_to_braille,
-                                          caps_phrase_run, caps_phrase_cells)
+                                          caps_phrase_run, caps_phrase_cells, bond_chain)
 from app.ai.braille import eng_braille, inline_math
 from app.ai.braille.constants import WRAP_HYPHEN_CLOSE, WRAP_HYPHEN_OPEN
 from app.ai.braille.symbol_rules import (
@@ -2018,6 +2018,8 @@ def _inline_sub_braille(b: str, src: str = "") -> str:
 
 def _translate_with_braillify(text: str, *, force_roman: bool = False,
                               qnum_period: bool = True) -> str:
+    if bond_chain(text.strip()):      # 줄 전체가 사슬 화합물 결합선(`H-O-H`, 과학 제10항) — 영어 붙임표로 새지 않게
+        return convert_latex(text.strip())
     parts = _FORMULA_RE.split(text)
     # (종류, 점자, 앞 원문공백, 뒤 원문공백). 종류: "t"=텍스트 "f"=수식 "i"=인라인 첨자 토큰
     chunks: list[tuple[str, str, bool, bool]] = []
