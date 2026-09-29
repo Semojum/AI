@@ -1948,6 +1948,18 @@ _INLINE_SUB_HYPHEN_RE = re.compile(r"^-(?:[A-Za-z]+_\{?\d+\}?)+[A-Za-z]*-$")
 #   규정 예시도 한 칸이다 — `수소가 전자를 잃으면 H+가 된다` = …0[e*`0,h^5`$`iy3i4
 #   (백틱이 한 칸이고 이온 0,h^5 앞뒤가 각각 한 칸).
 _ION_TOKEN_RE = re.compile(r"^(?:[A-Z][a-z]?(?:_\{\d+\})?)+\^\{\d*[+-]\}$")
+# MinerU 는 이온을 `$\mathrm{Na}^{+}$` · `$Na^{+} - K^{+}$`(Na⁺-K⁺ 펌프) 꼴로도 준다(T36). 로만체 감쌈과
+#   빈칸을 걷고, 이온끼리 붙임표로 이은 이름은 붙임표 ⠤ 로 한 구간에 잇는다 — 2027 gold 생명
+#   `⠴⠠⠝⠁⠘⠢⠤⠠⠅⠘⠢`. 종전에는 수식으로 가 두 칸 + 빼기 ⠔(`⠀⠀⠠⠝⠁⠘⠢⠔⠠⠅⠘⠢⠀⠀`)였다.
+_ROMAN_WRAP_RE = re.compile(r"\\(?:mathrm|rm|text)\s*\{([^{}]*)\}")
+_ION_JOIN_RE = re.compile(r"(?<=\})-(?=[A-Z])")
+
+
+def _ion_parts(core: str) -> list[str] | None:
+    """이온 하나 또는 붙임표로 이은 이온들이면 조각 목록, 아니면 None."""
+    plain = _ROMAN_WRAP_RE.sub(r"\1", core).replace(" ", "")
+    parts = _ION_JOIN_RE.split(plain)
+    return parts if all(_ION_TOKEN_RE.match(p) for p in parts) else None
 # 홑 기호 하나만 든 수식 토막(`$\to$`·`$\cup$`)도 **제11항 두 칸의 예외**다 — 이슈 #715.
 #   제11항(재추출 3235~3237행)이 말하는 '수학적 표기'는 "분수·무한소수·순환소수·첨자·
 #   제곱근·절댓값 등이 포함된 표현"이다. 기호 하나는 거기 안 든다. 그 기호들은 저마다
@@ -2045,8 +2057,14 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
                 else:
                     chunks.append(("i", _BOOK_HYPHEN + inner + _BOOK_HYPHEN,
                                    False, False))
-            elif _ION_TOKEN_RE.match(core):
-                chunks.append(("n", convert_latex(core), False, False))
+            elif (ions := _ion_parts(core)) and len(ions) == 1 and inline_sub and caps_phrase_run(ions[0]):
+                # ★ 한 글자 원소 3연 이상 이온(HCO₃⁻)은 제4항 구절표로 묶고, 과학 제2항 [붙임] 다만
+                #   "이온 표시 뒤에 대문자 종료표가 올 때에는 로마자 종료표를 적는다" — 빈칸 없이 붙인다.
+                #   예문 `HCO₃⁻는` = `0,,,hco;#c^9,'4cz`(재추출 4350행). 2027 gold 생명 5회 전부 이 꼴(T36).
+                chunks.append(("i", _ROMAN_START + caps_phrase_cells(convert_latex(ions[0]), ions[0])
+                               + _ROMAN_END, False, False))
+            elif ions:
+                chunks.append(("n", "⠤".join(convert_latex(x) for x in ions), False, False))
             else:
                 # "s" = 홑 기호(제70항·제60항 5호·제15항 한 칸). 그 밖은 "f"(제11항 두 칸).
                 chunks.append(("s" if _LONE_SPACED_SYM_RE.match(core) else "f",
@@ -2061,7 +2079,10 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
         if not braille:
             pending_ws = pending_ws or lead_ws or trail_ws
             continue
-        if kind == "n" and prev_kind == "t":
+        if kind == "n" and (prev_kind == "t" or (prev_kind is None and inline_sub)):
+            # ★ 줄 머리 이온도 문장 속이면 ⠴ 를 앞세운다(T36). 규정은 "문장 속 H+"(0,h^5)와 "홀로 쓴 H+"(,h^5)를
+            #   가른다 — 앞 조각이 글이냐가 아니라 **줄에 한글이 있느냐**다. 종전에는 `Na⁺이 세포 밖으로` 처럼
+            #   이온이 줄 머리에 오면 빠졌다(2027 gold 줄 머리 `⠴⠠⠝⠁⠘⠢`).
             # 제69항 로마자표. 여는 ⠴만 붙이고 종료표는 안 붙인다(제2항 붙임).
             # gold 실측 195자리 중 161(83%)이 ⠴를 앞세우고, 나머지 34는 수식 안에서
             # 이온이 잇따르는 자리다. 규정도 홀로 쓴 H+는 ,h^5(⠴ 없음)이고 문장 속
