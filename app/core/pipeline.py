@@ -370,6 +370,7 @@ _EXTRACT_ENV = (
     "LLM_TEXT_GUARD", "LLM_CACHE_MODE", "SIDEBAR_AS_NOTE", "GRAFT_SIM_MIN",
     "ADVANCED_EXTRACT_MODE", "ADVANCED_EXTRACT_MODEL", "ADVANCED_EXTRACT_FALLBACK_MODEL",
     "ADVANCED_EXTRACT_RELABEL", "ADVANCED_EXTRACT_MAX_TOKENS", "ADVANCED_EXTRACT_RETRY_BUDGET",
+    "ADVANCED_KEEP_CAPTIONS",
 )
 
 
@@ -918,6 +919,11 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
     nl = [norm(m.get("content")) for m in llm_els]
     nm = [norm(el.get("content")) for el in mnr_els]
     cap = [(m.get("content") or "").lstrip().startswith(_GRAFT_CAPTION_HEADS) for m in llm_els]
+    # ★ 시각 요소 content 는 캡셔너가 쓴 설명이지 MinerU 가 읽은 글자가 아니다 — 갈아 끼울 것이 없다
+    #   (재구조화 L5 손질 · #1012). 유형 필터가 없던 때는 첫머리가 `_GRAFT_CAPTION_HEADS` 밖인 LLM
+    #   그림 설명(`모식도:` · `만화:` …)이 유사도로 짝이 잡혀 캡션을 통째로 덮었다. 표는 MinerU 글이라 둔다.
+    from app.ai.parser.crop_reask import keep_captions
+    skip = [keep_captions() and el.get("type") in _VISUAL_TYPES - {"table"} for el in mnr_els]
     out: list[str | None] = [None] * len(mnr_els)
     used: set[int] = set()
     at: dict[int, int] = {}          # LLM 줄 → 붙은 MinerU 요소. 회수 때 자리를 잡는 데 쓴다.
@@ -960,7 +966,7 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
 
     for loose in (False, True):
         for i, el in enumerate(mnr_els):
-            if out[i] is not None:
+            if out[i] is not None or skip[i]:
                 continue
             a = nm[i]
             if len(a) < 4:
@@ -1024,7 +1030,7 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
         지우는 일은 없다. 길이·중복 관문은 조각마다 그대로 건다.
         """
         for i in range(len(mnr_els)):
-            if out[i] is not None or len(nm[i]) < _GRAFT_LOOSE_MIN:
+            if out[i] is not None or skip[i] or len(nm[i]) < _GRAFT_LOOSE_MIN:
                 continue
             pick = None
             for j, b in enumerate(nl):
@@ -1039,10 +1045,12 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
             j, (ws, we, _) = pick
             lo = hi = i
             while (lo - 1 >= 0 and i - lo < _GRAFT_SHARE_SPAN
-                   and (out[lo - 1] is None or at.get(j) == lo - 1) and len(nm[lo - 1]) >= 4):
+                   and (out[lo - 1] is None or at.get(j) == lo - 1) and len(nm[lo - 1]) >= 4
+                   and not skip[lo - 1]):
                 lo -= 1
             while (hi + 1 < len(mnr_els) and hi - i < _GRAFT_SHARE_SPAN
-                   and (out[hi + 1] is None or at.get(j) == hi + 1) and len(nm[hi + 1]) >= 4):
+                   and (out[hi + 1] is None or at.get(j) == hi + 1) and len(nm[hi + 1]) >= 4
+                   and not skip[hi + 1]):
                 hi += 1
             if not (at.get(j) is None or lo <= at[j] <= hi):
                 continue          # 이 LLM 줄은 딴 데 붙어 있다 — 나누면 두 번 나간다
@@ -1427,6 +1435,10 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             # 손실 목록을 무엇과 대조해 만들었나("mineru" · "text_layer"). 빠진 쪽은 안 쟀다는 뜻이다 —
             # 목록이 비었다고 손실이 없다고 읽으면 안 된다.
             "loss_checks": loss_checks,
+            # 캡셔닝을 끄고 뜬 경계인가. **경계와 함께 다닌다** — 응답 표시(processing_meta.caption_disabled)는
+            # 요청 때 env 가 아니라 이 값을 옮긴다. 경계를 재사용·복사하면 env 와 내용이 갈리기 때문이다
+            # (arm.py 108곳: 캡션 든 d8c 경계에 True 가 찍혔다). 이 키가 없는 옛 경계는 '모름'(None)이다.
+            "caption_disabled": os.getenv("SEMOJUM_NO_CAPTION") == "1",
         },
         "elements": elements,
         "extraction_losses": losses,
@@ -2648,6 +2660,7 @@ async def _run_pipeline(task: PageTask) -> dict:
     return _build_response(
         task, page_id, doc_meta, routing_tier, image_width, image_height,
         layout_result, all_extracted, all_llm, all_braille, flat=flat,
+        caption_disabled=extraction.get("meta", {}).get("caption_disabled"),
     )
 
 
@@ -2836,6 +2849,9 @@ def _line_order(mode: str, order_map: dict, element_id, idx: int) -> int:
     return idx + 1
 
 
+_ENV_CAPTION = object()   # _build_response 기본값 — 경계가 없는 경로(모드 b)는 요청 때 env 로 정한다
+
+
 def _build_response(
     task: PageTask,
     page_id: str,
@@ -2848,6 +2864,7 @@ def _build_response(
     llm_outputs: list[LLMOutput],
     braille_outputs: list[BrailleOutput],
     flat: Optional[dict] = None,
+    caption_disabled: Optional[bool] = _ENV_CAPTION,
 ) -> dict:
     elem_by_id = {e.element_id: e for e in layout_result.elements}
     braille_by_id = {b.element_id: b for b in braille_outputs}
@@ -2901,8 +2918,10 @@ def _build_response(
             "pdf_layer_confidence": doc_meta.pdf_confidence if doc_meta else 0.0,
             "routing_tier_used": routing_tier,
             "scan_only": doc_meta.scan_only if doc_meta else False,
-            # 캡셔닝을 끄고 돈 산출물이면 박아 둔다 — 이걸로 시각 축을 재면 안 된다.
-            "caption_disabled": os.getenv("SEMOJUM_NO_CAPTION") == "1",
+            # 캡셔닝을 끄고 뜬 경계로 낸 산출물이면 박아 둔다 — 이걸로 시각 축을 재면 안 된다.
+            # 값은 경계 meta 에서 온다(True · False · 모름=None). 경계가 없는 모드 b 는 요청 때 env.
+            "caption_disabled": (os.getenv("SEMOJUM_NO_CAPTION") == "1"
+                                 if caption_disabled is _ENV_CAPTION else caption_disabled),
         },
         "quality_report": quality_report.model_dump(),
     }
