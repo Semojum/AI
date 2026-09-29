@@ -1324,6 +1324,109 @@ def _drop_unpainted(elements: list[dict], fitz_page: fitz.Page,
     return kept
 
 
+# ── MinerU 하위 블록 펼치기 (#986) ───────────────────────────────────────────
+# MinerU 는 표·그림·그래프에 딸린 제목과 각주를 **부모 항목 안의 필드**로 준다
+# (content_list 의 `table_caption` · `table_footnote` · `image_footnote` · `chart_caption` ·
+# `chart_footnote`). 아래 변환은 `image_caption` 하나만 읽어서 나머지 글은 경계 파일에
+# 안 들어가고 점자에서 통째로 사라졌다. `code` 블록(MinerU 가 풀이·사전 항목을 algorithm·txt
+# 로 잘못 본 것)도 글이 `code_body` 에 있어 빈 요소가 됐다.
+# 실측(2027 기준선 d8c, dev 900쪽): 표 각주 55블록 2,356자 · code 3블록 1,430자(수학1 p019
+# 풀이 gold 821셀) · 표 제목 28 · 그림 각주 57 · 그래프 제목 31 · 그래프 각주 5블록.
+# 채점기 미커버 중 "MinerU 는 봤는데 경계 파일에 없다" 3,724셀이 이 갈래다(T33).
+#
+# 자리는 하위 블록의 **인쇄 순서**를 따른다. content_list 의 부모 bbox 는 몸통뿐이고,
+# middle.json 이 하위 블록마다 bbox 를 읽기 순서대로 따로 준다. gold 대조(2027 dev+val):
+# 표 위에 인쇄된 제목은 gold 도 표 앞(12:2), 그래프 아래 제목은 설명 뒤(9:5), 위 제목은 앞(4:1).
+# middle.json 이 없거나 개수가 안 맞으면 제목은 부모 앞, 각주는 부모 뒤에 둔다.
+# 꼴은 `text` 다. gold 는 이 글을 보통 문단(앞 두 칸)으로 적는다(caption 은 0칸이라 어긋난다).
+# ⚠ `image_caption` 은 아래 forced_caption 규칙이 따로 맡는다(그림을 캡션 요소로 바꾼다).
+# ⚠ 같은 글을 MinerU 가 따로 글 블록으로도 준 경우가 있다(dev+val 269항목 중 18). 그러면 안 넣는다.
+_NESTED_FIELDS = {
+    "table": ("table_caption", "table_footnote"),
+    "image": ("image_footnote",),
+    "chart": ("chart_caption", "chart_footnote"),
+    "code": ("code_caption",),
+}
+_TEXTUAL_ITEM_TYPES = {"text", "title", "list", "aside_text", "ref_text", "header", "footer"}
+_CODE_WRAP_RE = re.compile(r"</?(?:div|pre|code)\b[^>]*>|^[ \t]*```[\w+-]*[ \t]*$", re.I | re.M)
+_NESTED_DUP_MIN = 6               # 이보다 짧은 글은 중복 판정을 안 한다(①·가 같은 조각)
+
+
+def _squash_text(s: str) -> str:
+    return re.sub(r"[\W_]+", "", s or "")
+
+
+def _middle_blocks(raw_dir: Path) -> list[tuple[str, list[float], list[tuple[str, list[float]]]]]:
+    """middle.json → [(부모 type, 몸통 bbox, [(하위 type, bbox), …])]. bbox 는 0~1000, 읽기 순서 그대로."""
+    paths = list(raw_dir.rglob("*_middle.json"))
+    if not paths:
+        return []
+    try:
+        info = json.loads(paths[0].read_text(encoding="utf-8"))["pdf_info"][0]
+        w, h = info["page_size"]
+        blocks = info.get("para_blocks") or []
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        return []
+
+    def norm(bb: list) -> list[float]:
+        return [bb[0] / w * 1000, bb[1] / h * 1000, bb[2] / w * 1000, bb[3] / h * 1000]
+
+    out = []
+    for b in blocks:
+        subs = [s for s in b.get("blocks") or [] if s.get("bbox")]
+        body = next((s for s in subs if str(s.get("type", "")).endswith("_body")), None)
+        if body is not None:
+            out.append((b.get("type"), norm(body["bbox"]), [(s["type"], norm(s["bbox"])) for s in subs]))
+    return out
+
+
+def _unfold_nested(content_list: list[dict], raw_dir: Path) -> list[dict]:
+    """부모 항목 안 필드로 온 제목·각주를 본문 글 항목으로 펼치고, code 블록을 글로 바꾼다(#986)."""
+    middle = _middle_blocks(raw_dir)
+    seen = _squash_text(" ".join(
+        f"{it.get('text') or ''} {' '.join(it.get('list_items') or [])}"
+        for it in content_list if it.get("type") in _TEXTUAL_ITEM_TYPES))
+    out: list[dict] = []
+    for it in content_list:
+        kind = it.get("type")
+        fields = _NESTED_FIELDS.get(kind)
+        if not fields:
+            out.append(it)
+            continue
+        if kind == "code":
+            it = {**it, "type": "text", "text": _code_text(it.get("code_body") or ""),
+                  "_nested": "code_body", "_nested_exact": True}
+        vals = {f: [str(v).strip() for v in (it.get(f) or []) if str(v).strip()] for f in fields}
+        bb = it.get("bbox")
+        mb = next((m for m in middle if m[0] == kind and bb and len(bb) == 4
+                   and all(abs(a - b) <= 3 for a, b in zip(m[1], bb))), None)
+        if mb is not None and all(sum(1 for t, _ in mb[2] if t == f) == len(v) for f, v in vals.items()):
+            seq, left = [], {f: list(v) for f, v in vals.items()}
+            for t, sbb in mb[2]:
+                if t.endswith("_body"):
+                    seq.append(it)
+                elif t in left and left[t]:
+                    seq.append(_nested_item(t, left[t].pop(0), [int(x) for x in sbb]))
+        else:                          # 자리를 모르면 제목은 앞, 각주는 뒤(부모 bbox 를 빌린다)
+            seq = ([_nested_item(f, v, bb, exact=False) for f in fields if f.endswith("_caption") for v in vals[f]]
+                   + [it]
+                   + [_nested_item(f, v, bb, exact=False) for f in fields if not f.endswith("_caption") for v in vals[f]])
+        for x in seq:
+            if x is not it and len(q := _squash_text(x["text"])) >= _NESTED_DUP_MIN and q in seen:
+                continue
+            out.append(x)
+    return out
+
+
+def _nested_item(field: str, text: str, bbox, exact: bool = True) -> dict:
+    return {"type": "text", "text": text, "bbox": bbox, "_nested": field, "_nested_exact": exact}
+
+
+def _code_text(body: str) -> str:
+    """code 블록 글에서 algorithm 감싸개(<div …>)와 마크다운 울타리(```txt)를 벗긴다."""
+    return _CODE_WRAP_RE.sub("", body or "").strip()
+
+
 def run(
     pdf_path: str,
     page_no: int,
@@ -1377,6 +1480,7 @@ def run(
     cl_path = _find_content_list(raw_dir)
     with open(cl_path, encoding="utf-8") as f:
         content_list = json.load(f)
+    content_list = _unfold_nested(content_list, raw_dir)     # 딸린 제목·각주·code 글(#986)
 
     images_dir = raw_dir / "images"
     images_dir.mkdir(exist_ok=True)
@@ -1517,7 +1621,9 @@ def run(
 
         # 글자는 PDF 텍스트 레이어 우선(하이브리드) — 티어와 무관하게 블록별로 시도한다.
         # TEXT_NATIVE(스캔 아님이 확실)면 가드 없이 대체, 그 외(OCR 라우팅)는 가드 통과 시만.
-        if mapped_type in _NATIVE_TEXT_TYPES:
+        if mapped_type in _NATIVE_TEXT_TYPES and not item.get("_nested_exact", True):
+            pass                       # 부모 bbox 를 빌린 펼친 글(#986) — 그 자리 레이어는 부모 글이다
+        elif mapped_type in _NATIVE_TEXT_TYPES:
             if extraction_method == "TEXT_NATIVE":
                 content = _native_text_spaced(fitz_page, bb) or content
             else:
@@ -1585,7 +1691,8 @@ def run(
             "image_path": image_path,
             "heading_level": hlevel,
             "caption_ref": None,
-            "flags": ["MINERU_FOOTER"] if raw_footer else [],
+            "flags": (["MINERU_FOOTER"] if raw_footer else [])
+                     + ([f"MINERU_{item['_nested'].upper()}"] if item.get("_nested") else []),
         })
         order += 1
 
