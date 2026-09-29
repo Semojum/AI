@@ -86,13 +86,6 @@ def test_규정_로마자구간_예시(label: str, src: str, gold_brf: str, arti
     )
 
 
-@pytest.mark.xfail(
-    reason="통일영어점자 grade-1 지시부호 ⠰ 미구현 — 제32항이 UEB에 위임한 부분이고 "
-           "셀이 늘어나므로 별도 A/B 대상. 초안 하네스는 이 자리를 gold에서 빼고 대조해 "
-           "'12/12 통과'로 보고했으나 엄밀히는 11/12였다(2026-07-27 독립 검증). "
-           "구현하면 이 xfail을 지울 것.",
-    strict=True,
-)
 def test_규정_32a_grade1_지시부호() -> None:
     """제32항 'a, b, c' — gold는 낱자 b·c 앞에 grade-1 지시부호 ⠰를 둔다."""
     assert _ours("다음 a, b, c의") == _gold("``i<{5`0a1`;b1`;c4w")
@@ -117,7 +110,8 @@ def test_제34항_규정_예문(src: str, gold_brf: str) -> None:
     # 2027 gold 실물 — 한글이 같이 묶인 자리(제34항). dev 004 p0082 · dev 001 p0009 · val 005 p0189
     ("‘카드 A’를", "⠠⠦⠋⠊⠪⠴⠠⠁⠴⠄⠐⠮"),
     ("(DNA 또는 RNA)이다", "⠦⠄⠴⠠⠠⠙⠝⠁⠲⠠⠊⠥⠉⠵⠴⠠⠠⠗⠝⠁⠠⠴⠕⠊"),
-    ("‘이 PD’는", "⠠⠦⠕⠴⠠⠠⠏⠙⠴⠄⠉⠵"),
+    # PD = 단축형 paid 꼴이라 ⠰ 가 붙는다. gold 원문 `,8o 0;,,pd0'cz`(종전 기대값은 ⠰ 를 빠뜨리고 옮겼다).
+    ("‘이 PD’는", "⠠⠦⠕⠴⠰⠠⠠⠏⠙⠴⠄⠉⠵"),
 ])
 def test_제34항_한글과_함께_묶인_로마자(src: str, gold: str) -> None:
     assert _body(src) == gold

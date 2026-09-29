@@ -25,7 +25,8 @@ def test_규정_예문_WHO():
 
 def test_한글_뒤_로마자_쌍점에_종료표가_없다():
     # 실물 `학생 A: 많이…`(구판 언어) · `이 PD: 먼저…`(2027 화법과 작문). gold 는 ⠴⠠x⠐⠂.
-    for text, want in (("학생 A: 많이 팔린", "⠴⠠⠁⠐⠂⠀"), ("이 PD: 먼저 저는", "⠴⠠⠠⠏⠙⠐⠂⠀")):
+    # PD 는 단축형 paid(⠏⠙)와 셀이 같아 1종 지시자 ⠰ 가 붙는다 — val 005 p0187 gold `0;,,pd"1`(원장 C-99).
+    for text, want in (("학생 A: 많이 팔린", "⠴⠠⠁⠐⠂⠀"), ("이 PD: 먼저 저는", "⠴⠰⠠⠠⠏⠙⠐⠂⠀")):
         out = _body(text)
         assert want in out and "⠲⠐⠂" not in out, (text, out)
 

@@ -2510,11 +2510,18 @@ def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
             out.append(_braillify_korean(pre))
         body: list[str] = []
         pos = start
+        # 1종 지시자 ⠰(원장 C-99) — 로마자표를 적는 구간이면 첫 런은 ⠴ 바로 뒤("lead"), 뒤 런은 이어짐("cont").
+        #   ★ 여는 괄호 등이 먼저 점자가 돼 세그가 끊긴 자리(`[C] [D]`)는 켜지 않는다 — gold 는 거기서
+        #   로마자표를 새로 연다(`⠦⠆⠴⠠⠙`, 001 ans p0033). ⠰ 를 붙이면 빠진 ⠴ 자리에 엉뚱한 셀이 선다.
+        #   한글 없는 순수 로마자 줄도 켜지 않는다(실측 전).
+        g1 = "lead" if (has_hangul or ctx.wants_roman()) else ""
         for s, e in span:
             if s > pos:
                 body.append(_span_gap(seg[pos:s]))
             # 낱말 사이 공백은 점자 빈칸으로 — 한글 구간(braillify) 출력과 통일한다.
-            body.append(eng_braille.translate(seg[s:e]).replace(" ", "⠀"))
+            body.append(eng_braille.translate(seg[s:e], grade1=g1).replace(" ", "⠀"))
+            if g1:
+                g1 = "cont"
             pos = e
         core = "".join(body)
         if has_hangul:
