@@ -13,7 +13,7 @@ def _b(text: str) -> str:
 
 
 @pytest.mark.parametrize("text, cells", [
-    ("Oª와 COª가", "⠉⠕⠰⠼⠃"),          # p008 gold CO⠰⠼⠃ (아래첨자 2)
+    ("Oª와 COª가", "⠉⠠⠕⠰⠼⠃"),        # p008 gold C·O 원소마다 대문자표 + ⠰⠼⠃ (아래첨자 2, C-129)
     ("간기 중 GÁ기에는", "⠛⠰⠼⠁⠈⠕"),     # p048 gold G⠰⠼⠁기
     ("생장하며, Gª기에는", "⠛⠰⠼⠃⠈⠕"),   # p048 gold G⠰⠼⠃기
     ("자손 1대(FÁ)에서", "⠋⠰⠼⠁"),       # p174 gold F⠰⠼⠁
