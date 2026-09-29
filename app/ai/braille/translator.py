@@ -2441,6 +2441,55 @@ def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
     return "".join(out)
 
 
+
+# ── 「한글 점자」 제39항 — 로마자가 주된 문장 속 한글은 한글표로 묶는다 (#950) ──────────────
+# 재추출 1890행 예문: `What is 김치 in English?` = 0,:at`is`_(@o5;o_)`9`,5gli%8 ·
+#   `Banchan (Korean: 반찬) are small side dishes …` = ,ban*an`"<,kor1n3`_(~3;<3_)">`…
+# 영어가 주된 문장은 문장 전체가 통일영어점자다 — 한글 덩어리만 ⠸⠷…⠸⠾ 로 묶고, 괄호 ⠐⠣…⠐⠜ ·
+# 쌍점 ⠒ 같은 문장 부호도 UEB 꼴이다. 종전엔 로마자 구간을 한글 사이마다 ⠴…⠲ 로 쪼개고 부호를 한글 점자로 냈다.
+# ★ 판정을 좁게 둔다 — 2027 dev·val 에서 '라틴이 한글의 세 배를 넘는 줄' 27개는 **전부 수식 줄**이었다
+#   (`sin B-2 cos A`·한컴 잔재 `TJO`). 그래서 태그·숫자·수식 기호·함수명이 하나라도 있으면 이 경로를 안 탄다.
+_ART39_WORD_RE = re.compile(r"[A-Za-z][A-Za-z']*")
+_ART39_BLOCK_RE = re.compile(r"[0-9=<>^_\\`|{}$+×÷√∫∑<>~/]|<!")
+_ART39_FUNC_RE = re.compile(r"(?<![A-Za-z])(?:sin|cos|tan|log|ln|lim|max|min)(?![A-Za-z])")
+_ART39_PUNCT = {"(": "⠐⠣", ")": "⠐⠜", ":": "⠒", ",": "⠂", ".": "⠲", "?": "⠦", "!": "⠖",
+                ";": "⠆", "'": "⠄", "-": "⠤"}
+_ART39_TOKEN_RE = re.compile(r"[가-힣]+|[A-Za-z][A-Za-z']*|\s+|.")
+
+
+def _english_sentence_with_hangul(text: str) -> bool:
+    han = len(_HANGUL_SYL_RE.findall(text))
+    if not han or _ART39_BLOCK_RE.search(text) or _ART39_FUNC_RE.search(text):
+        return False
+    body = text.strip()
+    # 문장이 영어로 시작하고, 한글은 앞이 빈칸인 **독립 낱말**일 때만 — 예문 둘이 다 그렇다.
+    #   `구분: I(P) II(Q)…`·`유전자형: XY X'Y`(한글 머리말 + 목록, 2027 실물)과
+    #   `(… Strings)에`(영어 인용에 붙은 조사 — 한국어 문장이다)를 뺀다.
+    if not (body[:1].isascii() and body[:1].isalpha()):
+        return False
+    if any(m.start() == 0 or not body[m.start() - 1].isspace() for m in re.finditer(r"[가-힣]+", body)):
+        return False
+    words = [w for w in _ART39_WORD_RE.findall(text) if len(w) >= 2]
+    lat = sum(len(w) for w in _ART39_WORD_RE.findall(text))
+    return len(words) >= 3 and lat > 3 * han and all(c in _ART39_PUNCT or c.isspace()
+                                                     or "가" <= c <= "힣" or c.isascii() and c.isalpha()
+                                                     for c in text)
+
+
+def _translate_english_sentence(text: str) -> str:
+    """제39항 — 영어가 주된 문장. 한글 덩어리는 ⠸⠷…⠸⠾, 나머지는 통일영어점자."""
+    out: list[str] = ["⠴"]                  # 한국어 문서 속 로마자 구간의 머리(예문 `0,:at`)
+    for tok in _ART39_TOKEN_RE.findall(text.strip()):
+        if tok[0] == "가" or "가" <= tok[0] <= "힣":
+            out.append("⠸⠷" + _braillify_korean(tok) + "⠸⠾")
+        elif tok[0].isascii() and tok[0].isalpha():
+            out.append(eng_braille.translate(tok))
+        elif tok.isspace():
+            out.append("⠀")
+        else:
+            out.append(_ART39_PUNCT.get(tok, tok))
+    return "".join(out)
+
 def _braillify_korean(seg: str) -> str:
     """영어를 뺀 구간(한글·숫자·기호) → braillify. 영어 분리 경로가 재사용한다."""
     return _safe_to_unicode(seg, _split_eng=False)
@@ -2626,6 +2675,8 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     #   이 태그를 실어 보내기 때문이다. 평문 줄에서는 `substitute_tags` 가 미지 태그로
     #   지우고 있었으므로 그 경로의 동작은 안 바뀐다(같은 결과, 더 이른 자리).
     text = _TAGS._INDENT_TAG_RE.sub("", text)
+    if not force_roman and _english_sentence_with_hangul(text):
+        return _translate_english_sentence(text)   # 제39항(#950)
     text = _restore_legacy_glyphs(text)     # 오디코딩 5자(⇂¤‹˘⇨)
     text = _restore_broken_subscripts(text)  # 깨진 아래첨자 ¡™£¢§ → ₁₂₃₄₆ (수식 라우팅 전, r16)
     text = _restore_ion_signs(text)         # 이온 전하 ±— → ⁺⁻ (과학점자 제2항, 아래첨자 복원 뒤)
