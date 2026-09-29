@@ -370,7 +370,7 @@ _EXTRACT_ENV = (
     "LLM_TEXT_GUARD", "LLM_CACHE_MODE", "SIDEBAR_AS_NOTE", "GRAFT_SIM_MIN",
     "ADVANCED_EXTRACT_MODE", "ADVANCED_EXTRACT_MODEL", "ADVANCED_EXTRACT_FALLBACK_MODEL",
     "ADVANCED_EXTRACT_RELABEL", "ADVANCED_EXTRACT_MAX_TOKENS", "ADVANCED_EXTRACT_RETRY_BUDGET",
-    "ADVANCED_KEEP_CAPTIONS", "STABLE_ELEMENT_ID", "GUARD_MONOLOGUE",
+    "ADVANCED_KEEP_CAPTIONS", "STABLE_ELEMENT_ID", "GUARD_MONOLOGUE", "ANSWER_BOX_TEXTLAYER",
 )
 
 
@@ -1419,6 +1419,15 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     except Exception as exc:          # noqa: BLE001 — 표시는 있으면 좋은 것, 실패는 격리
         logger.warning("추출 손실 목록 건너뜀 (page=%d): %s", task.page_no, exc)
 
+    if bbox_space == "norm1000" and _answer_textlayer_on() and task.pdf_data:
+        try:                      # 정답 상자 칸의 벗겨진 동그라미 숫자(B-11 중 이 자리만)
+            import fitz
+            from app.ai.preprocessor.pdf_analyzer import _coerce_pdf_bytes
+            with fitz.open(stream=_coerce_pdf_bytes(task.pdf_data), filetype="pdf") as _d:
+                _restore_answer_marks(elements, _d[max(0, min(task.page_no - 1, _d.page_count - 1))])
+        except Exception as exc:  # noqa: BLE001 — 되살리기는 덤, 실패는 격리
+            logger.warning("정답 상자 동그라미 숫자 되살리기 건너뜀 (page=%d): %s", task.page_no, exc)
+
     if _stable_ids():             # 요소가 다 정해진 뒤 한 자리에서 매긴다(N5 · #1017)
         _rekey_elements(elements, task.job_id, task.page_no)
 
@@ -1780,6 +1789,62 @@ _LIST_SPLIT_MARKER_RE = re.compile(
 
 
 # 요소 id 이름공간(N5 · #1017). 바꾸면 모든 요소 id 가 한 번 바뀐다 — 고정값이다.
+# ── 정답 상자 동그라미 숫자 (T33 §2-3 후속 · 원장 B-11 중 정답 상자 자리만) ──────────
+# MinerU 표 인식이 원문자를 벗겨 `01 ④` 가 `01 4` 로 온다. 텍스트층에는 원문 그대로 있다
+# (dev 실물 셋: 생명과학 ans p0026 · 수학 ans p0003 · 국어 ans p0012, PUA 0). 정답 상자로
+# 판정된 표만, **세 목록이 어긋남 없이 같을 때만** 칸을 고친다: 표 칸의 쌍 순서 · 텍스트층의 쌍
+# 순서 · 번호와 값(원문자는 그 숫자로 환산). 여러 묶음 상자는 번호가 되풀이되므로 번호가 아니라
+# 순서로 짝짓는다. 조금이라도 다르면 손대지 않는다. 되돌리는 길 `ANSWER_BOX_TEXTLAYER=0`.
+_ANS_CELL_HTML_RE = re.compile(r"(<t[dh][^>]*>)\s*(\d{1,2})\s+([①-⑳]|\d{1,4})\s*(</t[dh]>)")
+_ANS_TEXT_RE = re.compile(r"(?<!\d)(\d{1,2})[ \t]+([①-⑳]|\d{1,4})(?![\d~])")
+
+
+def _answer_textlayer_on() -> bool:
+    return os.environ.get("ANSWER_BOX_TEXTLAYER", "1") != "0"
+
+
+def _is_answer_box_html(html: str) -> bool:
+    """표 HTML 이 정답 상자인가(`ANSWER_BOX_FORM` 이 켜졌을 때만)."""
+    from app.ai.braille.table_braille import answer_box_on, answer_box_parts
+    if not answer_box_on() or "<t" not in (html or ""):
+        return False
+    from app.ai.llm.table_opt import _html_to_grid
+    return answer_box_parts(_html_to_grid(html, expand=False)) is not None
+
+
+def _answer_val(a: str) -> str:
+    return str(ord(a) - 0x245F) if "①" <= a <= "⑳" else a
+
+
+def _restore_answer_marks(elements: list[dict], page) -> int:
+    """정답 상자 표의 `번호 답` 칸을 텍스트층 글자로 되살린다. 고친 칸 수를 돌려준다."""
+    from app.ai.braille.table_braille import answer_box_parts
+    from app.ai.llm.table_opt import _html_to_grid
+    if page.rotation:
+        return 0
+    fixed = 0
+    W, H = page.rect.width, page.rect.height
+    for el in elements:
+        html, bb = el.get("content") or "", el.get("bbox")
+        bb = json.loads(bb) if isinstance(bb, str) else bb
+        if el.get("type") != "table" or not bb or "<t" not in html:
+            continue
+        cells = list(_ANS_CELL_HTML_RE.finditer(html))
+        if not cells or answer_box_parts(_html_to_grid(html, expand=False)) is None:
+            continue
+        clip = (bb[0] / 1000 * W - 3, bb[1] / 1000 * H - 3, bb[2] / 1000 * W + 3, bb[3] / 1000 * H + 3)
+        layer = [(m.group(1), m.group(2)) for m in _ANS_TEXT_RE.finditer(page.get_text("text", clip=clip))]
+        ours = [(m.group(2), m.group(3)) for m in cells]
+        if len(layer) != len(ours) or any(int(a[0]) != int(b[0]) or _answer_val(a[1]) != _answer_val(b[1])
+                                          for a, b in zip(layer, ours)):
+            continue
+        answers = iter(ans for _, ans in layer)
+        el["content"] = _ANS_CELL_HTML_RE.sub(
+            lambda m: f"{m.group(1)}{m.group(2)} {next(answers)}{m.group(4)}", html)
+        fixed += sum(1 for a, b in zip(layer, ours) if a[1] != b[1])
+    return fixed
+
+
 _EID_NS = UUID("5e0c6f1e-7a2b-4c1d-9f3e-2b8a6d4c1f70")
 
 
@@ -1905,10 +1970,7 @@ def _split_inline_choices(text: str) -> str:
 #   그래서 **정답에서 실제로 관측된 제목 낱말만** 승격한다(gold 2,917쪽 위 테두리 1,634건 실측:
 #   〈보기〉 549 · 개념 체크 292 · 보기 285 · 수능 기본/실전 문제 각 72 · 자료 플러스 57 …).
 #   ※ 괄호 유무(`〈보기〉` vs `보기`)는 **책마다 갈린다** — 우리는 원문 그대로 둔다(원장 C-28 성격).
-_BOX_TITLE_PROMOTABLE = frozenset({
-    "보기", "개념 체크", "수능 기본 문제", "수능 실전 문제",
-    "자료 플러스", "개념 플러스", "기출 플러스", "학습의 길잡이", "학습 활동",
-})
+from app.ai.braille.constants import BOX_TITLE_PROMOTABLE as _BOX_TITLE_PROMOTABLE  # noqa: E402 (정답 상자와 공유)
 _BOX_BLOCK_RE = re.compile(
     r"(<!상자(\d?)>)(.*?)(<!/상자\2>)(.*?)(?=<!상자끝)", re.S)
 
@@ -2122,7 +2184,12 @@ def _parse_txt_result(
             content = _join_wrapped_lines(content)
         else:
             content = _join_split_words(content)      # 낱말 갈림은 유형을 안 가린다
-        content = _promote_box_title(_split_inline_choices(content))
+        # 정답 상자 표는 보기 쪼개기를 안 탄다 — 한 행 HTML 에 원문자가 둘 이상이면 칸 안에 줄바꿈이
+        # 들어가 격자가 행째로 부서진다(`01 ④` → `01\n④`). 다른 표 28개(2027 전체)도 같은 병이지만
+        # 여기서는 정답 상자만 뺀다 — 나머지는 따로 잰다.
+        if not (etype == "table" and _is_answer_box_html(content)):
+            content = _split_inline_choices(content)
+        content = _promote_box_title(content)
         if etype in _TEXT_TYPES and _is_boilerplate(content):
             logger.info("보일러플레이트 드롭(%s): %.60s", etype, content)
             continue

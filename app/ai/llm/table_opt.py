@@ -18,7 +18,8 @@ from typing import Optional
 
 from app.ai.braille.nested_block import box_narrative
 from app.ai.braille.regulations import make_rule
-from app.ai.braille.table_braille import build_table_tags, parse_table_tags, print_layout
+from app.ai.braille.table_braille import (answer_box_on, answer_box_parts, build_table_tags,
+                                         parse_table_tags, print_layout)
 from app.ai.captioning.captioner import guard_llm_text
 from app.ai.llm.base_opt import BaseOpt, decide_tier_timeout, generate_with_retry
 from app.ai.llm.draft_utils import ensure_tn_prefix
@@ -398,7 +399,10 @@ def _is_answer_grid(grid: list) -> bool:
       `table_structure.cells` 가 든 표는 **0개**였다 — MinerU 표는 HTML 로 들어와서
       `_html_to_grid` 를 탄다. 구조 dict 쪽에만 신호를 걸면 아무 데도 안 걸린다.
     """
-    return _is_answer_texts([c for row in grid for c in row])
+    # 제목 칸(`수능 2점 테스트`)·세 자리 답(`5 100`)이 든 정답 상자는 위 비율 판정에 안 걸린다
+    # (넉 자 넘는 칸이 섞여서). 정답 상자 꼴 판정(table_braille.answer_box_parts)으로 같이 본다.
+    return (_is_answer_texts([c for row in grid for c in row])
+            or (answer_box_on() and answer_box_parts(grid) is not None))
 
 
 def two_col_mode() -> str:
