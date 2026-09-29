@@ -39,7 +39,7 @@ def test_표와_시각자료는_안_접는다():
 
 
 def test_접어도_rule_trail_오프셋이_맞는다():
-    """개행과 점자공백이 둘 다 1문자라 오프셋이 안 바뀐다 — 줄 문자열에 손대면 밀린다."""
+    """줄 문자열에 손대면 오프셋이 밀린다 — 구분자 길이로만 센다."""
     lines, pads = ["⠁" * 31, "⠃⠉⠙", "⠑" * 12, "⠋⠛"], [0, 3, 0, 3]
     pads2, seps = _fold_full_lines(lines, pads)
     body = _pad_join(lines, pads2, seps)
@@ -101,3 +101,17 @@ def test_선택지_안_줄바꿈은_그대로_접는다():
     lines, pads = ["⠁" * 31, "⠃" * 31, "⠉" * 31], [2, 0, 2]
     _, seps = _fold_full_lines(lines, pads, "text", src)
     assert seps == ["⠀", "\n"]
+
+
+def test_원문_줄_끝_빈칸이면_구분자를_비운다():
+    """원문 줄 끝 빈칸이 ⠀ 로 와 있으면 이음 ⠀ 를 또 넣지 않는다 — 두 칸 빈칸이 됐다.
+
+    사이드카 대조(2026-09-29) 실물 `정확한 ⏎정보를` → `⠚⠒⠀⠀⠨⠻`. 2027 8권 4,182곳.
+    """
+    lines, pads = ["⠁" * 29 + "⠀", "⠃⠉⠙", "⠑" * 31, "⠋⠛"], [0, 0, 0, 3]
+    pads2, seps = _fold_full_lines(lines, pads)
+    assert seps == ["", "\n", "⠀"]
+    body = _pad_join(lines, pads2, seps)
+    assert "⠀⠀" not in body
+    for i, r in enumerate(_flat_trail(_trail(len(lines)), lines, 0, len(body), pads2, seps)):
+        assert body[r.col_start] == lines[i][0], f"줄 {i}"

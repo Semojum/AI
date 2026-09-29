@@ -822,7 +822,7 @@ def _insert_recovered(mnr_els: list[dict], plan: list[tuple[int, list[int], str]
 
 
 def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
-    """**MinerU 요소를 기준으로 두고** LLM 이 읽은 글자만 갈아 끼운다.
+    r"""**MinerU 요소를 기준으로 두고** LLM 이 읽은 글자만 갈아 끼운다.
 
     고급 점역의 몫은 "MinerU 가 한자로 깨뜨리는 글자를 제대로 읽는 것"이지 지면 구조를
     다시 잡는 것이 아니다(2026-09-03 대표 지시). 그래서 **레이아웃·좌표·읽기순서·유형·

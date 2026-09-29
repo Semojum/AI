@@ -129,7 +129,7 @@ class TestScienceBraille:
         assert "⠠⠓⠘⠢" in out and out.startswith("⠴")
 
     def test_기하_표기는_화학이_아니다(self):
-        """점·선분·도형 이름도 \mathrm으로 적고 글자가 원소 기호와 겹친다(P·O·Q·C·N…).
+        r"""점·선분·도형 이름도 \mathrm으로 적고 글자가 원소 기호와 겹친다(P·O·Q·C·N…).
 
         `\overline{\mathrm{PQ}}^2`(선분 PQ의 제곱)에 로마자표가 붙는 사고가 실제로 났다.
         """
