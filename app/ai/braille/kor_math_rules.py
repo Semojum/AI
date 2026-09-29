@@ -488,6 +488,87 @@ def caps_phrase_run(src: str) -> bool:
     return best >= 3
 
 
+# ★ 식 전체 구절표(T36 ②-b, eval T32 과학 23쌍) — 반응식·화학식 **식 하나**에서 한 글자 원소 기호가
+#   이어지는 구간을 잡는다. 「한국 점자 규정」 과학 점자 제4항(재추출 4363행~)과 [붙임 1·2] 예문 그대로:
+#   · 구간은 연산·비교 기호와 계수를 넘어 이어진다 — `H₂S >SO₂>Cl₂` = `,,,h;#bs`55`so;#b,'`55`,cl;#b`(4393행)
+#   · 두 글자 원소에서 끊긴다 — `CH₃COONa +HCl →…` = `,,,ch;#c"coo,',na`5`,h,cl`3o`…`(4406행)
+#   · 첫 원소 앞에 숫자가 오면 거기서 시작할 수 없다(3호) — `2H₂ + O₂ → 2H₂O` = `#b,h;#b`5`,,,o;#b`3o`#b"h;#bo,'`(4400행)
+#   · 화살표가 붙으면 그 앞에서 닫는다([붙임 2]) — `…3SO₂↑` = `…#cso;#b,';3o`(4414행)
+#   · 알킬기 R 도 구간 안이다 — `HNCO +ROH →…` = `,,,hnco`5`roh`3o`…`(4381행)
+#   구간 안 글자를 소문자로 바꿔 14단계가 대문자표를 안 붙이게 하고, 구간 앞뒤에 ⠠⠠⠠ · ⠠⠄ 를 박는다.
+#   제5항(숫자 뒤 H·B·C·F·I 앞 ⠐)은 11a단계의 "숫자 뒤 a~j 구분점"이 그대로 낸다(h·b·c·f·i 가 a~j 안이다).
+#   ⚠ 화학식 판정(_is_chem) 안에서만 쓴다. 문장 속 토큰(`PCO₂` 분압)은 제7항 2호 자리라 여기 안 온다.
+_CHEM_TOK_RE = re.compile(r"\\[a-zA-Z]+|[A-Z][a-z]?|[_^]\s*\{[^{}]*\}|[_^]\s*\S|\d+|\s+|.")
+_CHEM_WRAP_RE = re.compile(r"\\(?:mathrm|rm|text)\s*\{([^{}]*)\}")
+
+
+def _formula_like(latex: str) -> bool:
+    """로만체 표지 없이 들어온 화학식(글 경로 `CH₃COOH` · `H₂S >SO₂>Cl₂`) — 제4항 방아쇠와 같은 틀.
+
+    아래첨자 숫자가 있고, 첨자에 문자가 없고, 글자가 전부 원소 기호이고, 기하 표지가 없을 때.
+    """
+    t = _CHEM_WRAP_RE.sub(r"\1", latex or "")
+    if (not re.search(r"_\s*\{?\s*\d", t) or re.search(r"[_^]\s*\{?\s*[A-Za-z]", t)
+            or _GEOMETRY_MARK_RE.search(t) or re.search(r"[가-힣]|\\text", t)):
+        return False
+    # ★ 원소 기호가 바로 이어지는 자리(`H₂S`·`CH₃`·`SO₂`)가 하나는 있어야 화학식이다. 수학의 변수 합
+    #   `S₁+S₂−S₃`(넓이)는 S 가 원소 기호라도 글자마다 연산 기호가 끼어 있다 — 이걸 안 보면 구절표가
+    #   씌워진다(A/B 수학 E26-009 답지 4쪽 +31, T36).
+    if not re.search(r"[A-Z][a-z]?\s*(?:_\s*\{?\s*\d+\s*\}?)?\s*[A-Z]", t):
+        return False
+    words = re.findall(r"[A-Za-z]+", re.sub(r"\\[a-zA-Z]+", " ", t))
+    return bool(words) and all(all(e in _ELEMENTS for e in re.findall(r"[A-Z][a-z]?|[a-z]", w)) for w in words)
+
+
+def mark_chem_phrases(latex: str) -> tuple[str, bool]:
+    src = _CHEM_WRAP_RE.sub(r"\1", latex)
+    toks = [m.group() for m in _CHEM_TOK_RE.finditer(src)]
+    runs, cur, prev = [], [], None
+
+    def flush() -> None:
+        if len(cur) >= 3:
+            runs.append((cur[0], cur[-1]))
+        cur.clear()
+
+    for i, t in enumerate(toks):
+        if len(t) == 1 and (t in _ELEM1 or t == "R"):
+            if cur or prev not in ("num", "letter"):
+                cur.append(i)
+            prev = "letter"
+        elif re.fullmatch(r"[A-Z][a-z]", t):
+            if t not in _ELEMENTS:
+                return latex, False
+            flush()
+            prev = "letter"
+        elif t[0] in "_^":
+            prev = "script"
+        elif t.isdigit():
+            prev = "num"
+        elif t.isspace():
+            continue
+        elif re.fullmatch(r"[A-Za-z]", t):
+            flush()
+            prev = "letter"
+        else:
+            prev = "op"
+    flush()
+    if not runs:
+        return latex, False
+    out = list(toks)
+    for a, b in runs:
+        for i in range(a, b + 1):
+            if len(out[i]) == 1 and out[i].isupper():
+                out[i] = out[i].lower()
+        j = b + 1
+        while j < len(toks) and (toks[j].isspace() or toks[j][0] in "_^"):
+            j += 1
+        while j > b + 1 and toks[j - 1].isspace():
+            j -= 1
+        out[a] = _CAPS_OPEN + out[a]
+        out[j - 1] = out[j - 1] + _CAPS_CLOSE
+    return "".join(out), True
+
+
 def caps_phrase_cells(cells: str, src: str = "") -> str:
     """대문자표를 걷어내고 구절표로 묶는다 + 제5항 ⠐ 를 넣는다.
 
@@ -2111,6 +2192,9 @@ def convert_latex(latex: str) -> str:
     latex = re.sub(r"^\s*(?:\$\$|\$)?\s*\\text\s*\{\s*(7|T|L|E|B|七)\s*\.\s*\}",
                    lambda m: _TC_JAMO_CELLS_DOT[m.group(1)] + " ", latex)
     _is_chem = _looks_chemical(latex)           # 0-전: 화학식 판정(원문 상태에서만 가능)
+    _chem_phrased = False
+    if _is_chem or _formula_like(latex):        # 0-전b: 식 전체 구절표(제4항, T36 ②-b)
+        latex, _chem_phrased = mark_chem_phrases(latex)
     latex, _text_store = _protect_text(latex)   # 0.  P2: \text{한글} → 한글 점자 sentinel
     result = _normalize_latex_input(latex)      # 0a. MinerU/마크다운 입력 정규화
 
@@ -2166,7 +2250,7 @@ def convert_latex(latex: str) -> str:
         # 제4항 — 원소 기호 3연 이상이면 낱 대문자표를 구절표로 갈아 끼운다.
         # ⚠ 화학식 판정(_is_chem) 밖으로 넓혀 봤다가 되돌렸다 — 규정쌍 412 -> 410.
         #   수식 경로의 로마자 토막이 구절표로 끌려간다.
-        if caps_phrase_run(latex):
+        if not _chem_phrased and caps_phrase_run(latex):
             result = caps_phrase_cells(result, latex)
         if not result.startswith(_ROMAN_OPEN):
             result = _ROMAN_OPEN + result

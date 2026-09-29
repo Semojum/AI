@@ -2009,6 +2009,8 @@ def _inline_sub_braille(b: str, src: str = "") -> str:
       종료표를 적는다(4367-4368행 `0,,,ch;#c"cooh,'4`). 방아쇠 근거와 오발동 실측은
       `kor_math_rules.caps_phrase_run` 주석에 있다(코퍼스 1,361쪽 발동 3회·오발동 0).
     """
+    if "⠠⠠⠠" in b:                     # convert_latex 가 식 전체 구절표를 이미 적었다(T36 ②-b)
+        return _ROMAN_START + b + _ROMAN_END
     if src and caps_phrase_run(src):
         return _ROMAN_START + caps_phrase_cells(b, src) + _ROMAN_END
     return _ROMAN_START + b.replace(_CAPITAL_IND * 2, _CAPITAL_IND)
@@ -2075,8 +2077,10 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
                 # ★ 한 글자 원소 3연 이상 이온(HCO₃⁻)은 제4항 구절표로 묶고, 과학 제2항 [붙임] 다만
                 #   "이온 표시 뒤에 대문자 종료표가 올 때에는 로마자 종료표를 적는다" — 빈칸 없이 붙인다.
                 #   예문 `HCO₃⁻는` = `0,,,hco;#c^9,'4cz`(재추출 4350행). 2027 gold 생명 5회 전부 이 꼴(T36).
-                chunks.append(("i", _ROMAN_START + caps_phrase_cells(convert_latex(ions[0]), ions[0])
-                               + _ROMAN_END, False, False))
+                cells = convert_latex(ions[0])
+                if "⠠⠠⠠" not in cells:       # convert_latex 가 식 전체 구절표를 이미 적었으면 두 번 안 입힌다
+                    cells = caps_phrase_cells(cells, ions[0])
+                chunks.append(("i", _ROMAN_START + cells + _ROMAN_END, False, False))
             elif ions:
                 chunks.append(("n", "⠤".join(convert_latex(x) for x in ions), False, False))
             else:
