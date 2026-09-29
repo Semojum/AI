@@ -42,3 +42,8 @@ def test_원소마다인_자리는_그대로():
     assert translate_body("CO₂가")[0][0].startswith("⠴⠠⠉⠠⠕⠰⠼⠃")
     assert translate_body("HCO₃⁻는 중탄산 이온이다.")[0][0].startswith(
         "⠴⠠⠠⠠⠓⠉⠕⠰⠼⠉⠘⠔⠠⠄⠲⠉⠵")                                            # 4350행 · 이중 적용 없음
+
+
+def test_괄호에서_구간이_끊긴다():
+    # 제7항 4호 재추출 4457~4458행 `(',cu8,n,h;#c0;#d,)8,o,h0;#b` — N·H·O·H 넷이 괄호를 넘어 이어지지만 낱 대문자표
+    assert translate_body("[Cu(NH₃)₄](OH)₂")[0][0] == "⠷⠄⠠⠉⠥⠦⠠⠝⠠⠓⠰⠼⠉⠴⠰⠼⠙⠠⠾⠦⠠⠕⠠⠓⠴⠰⠼⠃"
