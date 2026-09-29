@@ -1721,6 +1721,13 @@ _LATEX_SIMPLE: dict[str, str] = {
     "\\models":   "⠘⠸⠒",    # ⊨ (제60항 ^_3)
     "\\nRightarrow": "⠨⠒⠒⠕",  # ⇏ (제61항 .33O)
     "\\rightleftarrows": "⠪⠶⠕",  # ⇄ (제61항 [7O)
+    # ★ 화학 반응식 화살표(T36) — 화학식 판정(_CHEM_MARK_RE)이 신호로 쓰는 명령인데 표에 없어
+    #   11d단계가 **지웠다**(`NH₃ + H₂O ⇌ NH₄⁺ + OH⁻` 의 ⇌ 소실). 과학 점자 제18항 1호(재추출 4815행)
+    #   `+ 5 · → 3o · ← {3 · ⇄ [7O`. ⇌(가역 반응)은 ⇄ 와 같은 뜻이라 같은 점형이다.
+    "\\rightleftharpoons": "⠪⠶⠕",
+    "\\leftrightharpoons": "⠪⠶⠕",
+    "\\longrightarrow": "⠒⠕",
+    "\\longleftarrow": "⠪⠒",
     "\\nexists":  "⠨⠨⠢",    # ∄ (제61항 ..5)
     "\\circledcirc": "⠸⠴⠴",  # ⦾ 겹동그라미 (제15항 6호 _00)
     "\\rhd":      "⠸⠜",     # ▷ 정규부분군 (제33항 _>)
