@@ -2738,6 +2738,14 @@ def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
         link = ctx.hyphen_link and start == 0     # 붙임표로 이어진 구간 — ⠴ 를 다시 열지 않는다
         ctx.hyphen_link = False
         g1 = "cont" if link else ("lead" if (has_hangul or ctx.wants_roman()) else "")
+        # ★ 원소 기호 나열(`Li, Na, K`)에는 1종 지시자를 안 적는다(T36, eval T32 결함 4). 과학 점자 제1항
+        #   예문 `Li, Na, K는` = `0,li1`,na1`,k4cz`(재추출 4323행) — K 앞에 ⠰ 가 없다. 원소 기호는 약자가
+        #   아니라 제29항 로마자다. 두 글자 원소가 하나라도 있어야 원소 나열로 본다 — `a, b, c`·`B, C`
+        #   (개체·유전자 이름표)는 2027 gold 가 ⠰ 를 적는다(347/347, 원장 C-99). 넓히지 않는다.
+        words = [seg[a:b] for a, b in span]
+        if (len(words) >= 2 and any(re.fullmatch(r"[A-Z][a-z]", w) for w in words)   # `VI`·`II`(로마 숫자)는 아님
+                and all(len(w) <= 2 and eng_braille._is_element_seq(w) for w in words)):
+            g1 = ""
         for s, e in span:
             if s > pos:
                 body.append(_span_gap(seg[pos:s]))
