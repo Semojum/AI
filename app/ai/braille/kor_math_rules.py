@@ -520,6 +520,21 @@ def _formula_like(latex: str) -> bool:
     return bool(words) and all(all(e in _ELEMENTS for e in re.findall(r"[A-Z][a-z]?|[a-z]", w)) for w in words)
 
 
+# ★ 화학식 기호 간격(T36 ②-b 간격 갈래) — 과학 점자 제18항 1호(재추출 4815행) "화학 반응식에 쓰이는
+#   기호는 앞뒤를 한 칸씩 띄어 쓴다"(`+ 5 · → 3o · ← {3 · ⇄ [7O`), 제8항(4475행) 비교 기호도 한 칸.
+#   예문 `2H₂ + O₂ → 2H₂O` = `#b,h;#b`5`,,,o;#b`3o`#b"h;#bo,'`(4817행). 수학 경로는 연산 기호를 붙인다
+#   (제45항) — 화학식에서는 그 규칙이 아니다. 이온 부호 `⁺`(⠘⠢ · ⠘⠼n⠢)와 제18항 2호 기체·침전 기호
+#   (`;3o`=⠰⠒⠕ · `^3o`=⠘⠒⠕, 분자식에 붙여 적는다)는 띄우지 않는다.
+_CHEM_OP_RE = re.compile(r"(⠘(?:⠼[⠁-⠚]+)?[⠢⠔]|[⠰⠘]⠒⠕)|[⠀ ]*(⠢⠢|⠔⠔|⠪⠶⠕|⠪⠒|⠒⠕|⠢)[⠀ ]*")
+
+
+def chem_operator_spacing(cells: str) -> str:
+    """이온 부호(⠘⠢ · ⠘⠼n⠢)와 기체·침전 기호(⠰⠒⠕ · ⠘⠒⠕)를 먼저 통째로 소비해 연산 기호로 잘못 읽지 않는다
+    (`Ca²⁺ + 2Cl⁻` 의 `⠘⠼⠃⠢` + `⠢` 가 비교 기호 `⠢⠢` 로 읽혔다)."""
+    cells = re.sub(r"[⠀ ]+(?=[⠰⠘]⠒⠕)", "", cells)   # 기체 ↑ · 침전 ↓ 은 분자식에 붙인다(제18항 2호)
+    return _CHEM_OP_RE.sub(lambda m: m.group(1) or "⠀" + m.group(2) + "⠀", cells).strip("⠀")
+
+
 def mark_chem_phrases(latex: str) -> tuple[str, bool]:
     src = _CHEM_WRAP_RE.sub(r"\1", latex)
     toks = [m.group() for m in _CHEM_TOK_RE.finditer(src)]
@@ -2253,6 +2268,8 @@ def convert_latex(latex: str) -> str:
     #     맨 끝에 두는 이유: 앞 단계들이 로마자·첨자·화살표를 다 만든 뒤라야 감쌀 범위가 확정된다.
     if result and element_formula(latex):          # 18-전. 과학 점자 제1·2항 원소마다 ⠠ (C-129)
         result = element_caps_cells(result, latex)
+    if (_is_chem or _chem_phrased) and result:   # 18-전b. 화학식 기호 간격(제18항 1호 · 제8항)
+        result = chem_operator_spacing(result)
     if _is_chem and result:
         # 제4항 — 원소 기호 3연 이상이면 낱 대문자표를 구절표로 갈아 끼운다.
         # ⚠ 화학식 판정(_is_chem) 밖으로 넓혀 봤다가 되돌렸다 — 규정쌍 412 -> 410.
