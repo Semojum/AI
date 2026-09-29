@@ -715,8 +715,12 @@ def build(
             "caption_ref": "",   # 아래 _link_captions가 채움
             # CAPTION_FAILED는 quality_checker가 R11로 올리는 정확한 키다(문자열 변경 금지).
             # 사유는 **별도 플래그**로 붙여 사후에 원인을 알 수 있게 한다.
-            "flags": (["CAPTION_FAILED"] + ([f"CAPTION_ERR:{_caption_fatal.split(':', 1)[0]}"]
-                                            if _caption_fatal else [])) if caption_failed else [],
+            # ★ 추출기가 단 출처 표지(MINERU_FOOTER · MINERU_TABLE_FOOTNOTE · TEXTLAYER_TABLE_OUTSIDE …)를
+            #   앞에 그대로 싣는다(T35). 종전에는 여기서 버려 추출 단계 밖으로 한 번도 안 나왔다.
+            #   R 플래그 표(`quality_checker._FLAG_TO_REVIEW`)에 없는 이름이라 검토 플래그로는 안 바뀐다.
+            "flags": list(el.get("flags") or []) + (
+                (["CAPTION_FAILED"] + ([f"CAPTION_ERR:{_caption_fatal.split(':', 1)[0]}"]
+                                       if _caption_fatal else [])) if caption_failed else []),
         }
         # 제목 단계(NLD 2장2절1) — 여기서 안 실으면 조판이 가운데 정렬·들여쓰기를 못 쓴다.
         # mineru_runner가 MinerU의 text_level을 걸러 넣어 준다.
