@@ -87,8 +87,18 @@ _LETTER_RE = re.compile(r"[A-Za-zαβγδεζηθικλμνξπρστυφχψω�
 _BIN_OPS = "+-−×÷=<>≤≥≠"   # 두 피연산자 사이에 서는 연산·비교 기호(#941)
 
 
+# ★ 그리스 문자가 든 **단위 기호**(`μm`·`μg`)는 수식 신호가 아니다(#955). 「한국 점자 규정」
+#   제69항 [붙임 1](재추출 2710행) "그리스 문자가 포함된 단위 기호는 그 앞에 로마자표를 적고 그
+#   뒤에는 로마자 종료표를 적으며, 띄어쓰기는 묵자를 따른다" — 예문 `1 μm는` = `#a`0.mm4cz`
+#   (⠼⠁⠀⠴⠨⠍⠍⠲⠉⠵). 수식으로 감싸면 숫자 뒤 빈칸이 빠지고 구간 앞뒤에 제11항 두 칸이 붙었다
+#   (`⠼⠁⠴⠨⠍⠍⠲⠀⠀⠉⠵`). 라틴 단위 `1 mm` 는 원래 수식 신호가 없어 바르다.
+#   μ 바로 뒤에 로마자가 붙은 것만 뺀다. 홀로 선 μ(마찰 계수·평균)는 여전히 수식 신호다.
+_GREEK_UNIT_RE = re.compile(r"(?<![A-Za-z])μ(?=[A-Za-z])")
+
+
 def _has_strong(core: str) -> bool:
     """구간이 수식인지 — 강한 신호가 하나라도 있으면 참."""
+    core = _GREEK_UNIT_RE.sub("", core)
     if _STRONG.search(core):
         return True
     return any(_LETTER_RE.search(m.group()) for m in _ABS_PAIR_RE.finditer(core))
