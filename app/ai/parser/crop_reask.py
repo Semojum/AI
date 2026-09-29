@@ -130,6 +130,21 @@ _LH = 12                # 한 줄 높이(norm1000 — 지면 높이의 1.2%)
 _SKIP_TYPES = ("image", "chart_graph", "diagram", "table")
 
 
+def keep_captions() -> bool:
+    """고급 점역이 시각 요소 캡션을 안 건드린다(기본). `ADVANCED_KEEP_CAPTIONS=0` 이 종전 동작이다.
+
+    시각 요소 `content` 는 캡셔너가 쓴 설명이지 MinerU 가 읽은 글자가 아니다 — 고급 점역이
+    고칠 것이 없다. 글자 이식(`pipeline._graft_text`)과 크롭 되묻기가 같이 따른다(#1012). 호출 때 읽는다.
+    """
+    return os.environ.get("ADVANCED_KEEP_CAPTIONS", "1") != "0"
+
+
+def _skip_types() -> tuple[str, ...]:
+    # ★ cartoon 이 빠져 있었다(#1012). 만화 상자 옆에 추출 안 된 글 구역이 붙으면 만화가
+    #   되묻기 대상이 되어 캡션이 필사 글로 바뀔 수 있었다.
+    return _SKIP_TYPES + (("cartoon",) if keep_captions() else ())
+
+
 def advanced_mode() -> str:
     """`page`(쪽 전체 LLM) · `crop`(깨진 요소만) · `both`(둘 다 — 기본). 호출 때 읽는다.
 
@@ -171,8 +186,9 @@ def crop_targets(elements: list[dict], gaps: list[list[int]]) -> list[tuple[int 
     빈 구역으로 잡히므로, 붙은 구역을 합쳐 잘라야 요소 전문이 한 크롭에 든다(p1#23 실측).
     """
     boxes: dict[int, list[int]] = {}
+    skip = _skip_types()
     for i, e in enumerate(elements):
-        if e.get("type") in _SKIP_TYPES or not _ok_box(e.get("bbox")):
+        if e.get("type") in skip or not _ok_box(e.get("bbox")):
             continue
         if broken_signals(e.get("content") or ""):
             boxes[i] = list(e["bbox"])
@@ -181,7 +197,7 @@ def crop_targets(elements: list[dict], gaps: list[list[int]]) -> list[tuple[int 
         if g[0] <= 10 or g[2] >= 990:          # 지면 가장자리 탭·귀(`15회`)는 글이 아니다
             continue
         cand = [(i, boxes.get(i, e["bbox"])) for i, e in enumerate(elements)
-                if e.get("type") not in _SKIP_TYPES and _ok_box(e.get("bbox"))
+                if e.get("type") not in skip and _ok_box(e.get("bbox"))
                 and _attached(g, boxes.get(i, e["bbox"]))]
         if cand:
             i, b = min(cand, key=lambda x: abs(x[1][3] - g[1]) + abs(x[1][0] - g[0]))

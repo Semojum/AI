@@ -370,6 +370,7 @@ _EXTRACT_ENV = (
     "LLM_TEXT_GUARD", "LLM_CACHE_MODE", "SIDEBAR_AS_NOTE", "GRAFT_SIM_MIN",
     "ADVANCED_EXTRACT_MODE", "ADVANCED_EXTRACT_MODEL", "ADVANCED_EXTRACT_FALLBACK_MODEL",
     "ADVANCED_EXTRACT_RELABEL", "ADVANCED_EXTRACT_MAX_TOKENS", "ADVANCED_EXTRACT_RETRY_BUDGET",
+    "ADVANCED_KEEP_CAPTIONS",
 )
 
 
@@ -918,6 +919,11 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
     nl = [norm(m.get("content")) for m in llm_els]
     nm = [norm(el.get("content")) for el in mnr_els]
     cap = [(m.get("content") or "").lstrip().startswith(_GRAFT_CAPTION_HEADS) for m in llm_els]
+    # ★ 시각 요소 content 는 캡셔너가 쓴 설명이지 MinerU 가 읽은 글자가 아니다 — 갈아 끼울 것이 없다
+    #   (재구조화 L5 손질 · #1012). 유형 필터가 없던 때는 첫머리가 `_GRAFT_CAPTION_HEADS` 밖인 LLM
+    #   그림 설명(`모식도:` · `만화:` …)이 유사도로 짝이 잡혀 캡션을 통째로 덮었다. 표는 MinerU 글이라 둔다.
+    from app.ai.parser.crop_reask import keep_captions
+    skip = [keep_captions() and el.get("type") in _VISUAL_TYPES - {"table"} for el in mnr_els]
     out: list[str | None] = [None] * len(mnr_els)
     used: set[int] = set()
     at: dict[int, int] = {}          # LLM 줄 → 붙은 MinerU 요소. 회수 때 자리를 잡는 데 쓴다.
@@ -960,7 +966,7 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
 
     for loose in (False, True):
         for i, el in enumerate(mnr_els):
-            if out[i] is not None:
+            if out[i] is not None or skip[i]:
                 continue
             a = nm[i]
             if len(a) < 4:
@@ -1024,7 +1030,7 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
         지우는 일은 없다. 길이·중복 관문은 조각마다 그대로 건다.
         """
         for i in range(len(mnr_els)):
-            if out[i] is not None or len(nm[i]) < _GRAFT_LOOSE_MIN:
+            if out[i] is not None or skip[i] or len(nm[i]) < _GRAFT_LOOSE_MIN:
                 continue
             pick = None
             for j, b in enumerate(nl):
@@ -1039,10 +1045,12 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
             j, (ws, we, _) = pick
             lo = hi = i
             while (lo - 1 >= 0 and i - lo < _GRAFT_SHARE_SPAN
-                   and (out[lo - 1] is None or at.get(j) == lo - 1) and len(nm[lo - 1]) >= 4):
+                   and (out[lo - 1] is None or at.get(j) == lo - 1) and len(nm[lo - 1]) >= 4
+                   and not skip[lo - 1]):
                 lo -= 1
             while (hi + 1 < len(mnr_els) and hi - i < _GRAFT_SHARE_SPAN
-                   and (out[hi + 1] is None or at.get(j) == hi + 1) and len(nm[hi + 1]) >= 4):
+                   and (out[hi + 1] is None or at.get(j) == hi + 1) and len(nm[hi + 1]) >= 4
+                   and not skip[hi + 1]):
                 hi += 1
             if not (at.get(j) is None or lo <= at[j] <= hi):
                 continue          # 이 LLM 줄은 딴 데 붙어 있다 — 나누면 두 번 나간다
