@@ -2106,6 +2106,13 @@ _SPECIAL_MAP = {
     #   2027 gold 는 대괄호 ⠦⠆…⠰⠴ 로 적는다(`【…에 …을】` 등). 리터럴 【점역자주】는
     #   [점역자주]가 되어 _LITERAL_TN_RE 가 그대로 받는다.
     "【": "[", "】": "]",
+    # ★ T30 — 기호표에 없어 **조용히 사라지던** 기호 중 규정 점형이 있거나 gold 가 짚는 것(원장 R-86).
+    #   · 홑 ♡ → 점역자 주 "하트". 「점자 자료 제작 지침」 2.5.3(2): 이모티콘은 그 자리에 점역자 주표로 뜻을
+    #     적는다(한글 점자 제66항). gold 는 갈린다 — 언어와 매체 p0121 소괄호 `(하트)` · p0120 생략(원장 R-86).
+    #     연속 ♡♡ 는 이름 가림이라 아래 _HEART_RUN_RE 가 숨김표로 먼저 바꾼다.
+    #   ⚠ ☞ 는 넣지 않았다 — gold 가 문법 해설에서는 → (⠒⠕, 2곳), 블로그 링크 `☞ 메뉴판(클릭)` 에서는
+    #     생략(3곳)으로 갈려 문자 단계 한 규칙으로 못 가른다(A/B dev 나빠짐 3쪽).
+    "♡": "[점역자주]하트[점역자주]",
     # ★ Q12(원장) — 도형 변종을 규정 기본형으로 정규화한다. 2026-08-22 대표 승인.
     #   규정 제57항 숨김표 표와 제72항 글머리 기호 표는 **테두리형만** 싣는다
     #   (○ U+25CB · △ U+25B3 · □ · ×). 아래 둘은 어느 표에도 없어 조용히 사라졌다.
@@ -2161,6 +2168,10 @@ _LEGACY_GLYPH_MAP = {
 }
 _LEGACY_GLYPH_RE = re.compile("[" + "".join(_LEGACY_GLYPH_MAP) + "]")
 _SPECIAL_MAP.update(_LEGACY_GLYPH_MAP)   # sanitize 경로(다른 호출자)에도 같은 표를 건다
+# ★ T30 — 괄호 한글 ㈀~㈍(자음)·㈎~㈛(음절)은 **그 글자가 곧 `(ㄱ)`·`(가)`** 다. braillify 가 받지 않아 사라졌다.
+#   2027 gold 생명과학 p0032·p0127 `㈀+㈁>6` = ⠦⠄⠿⠁⠠⠴⠢⠦⠄⠿⠒⠠⠴…(소괄호 + 자음 낱자표, 제49항·제8항).
+_SPECIAL_MAP.update({chr(0x3200 + i): f"({c})" for i, c in enumerate("ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ")})
+_SPECIAL_MAP.update({chr(0x320E + i): f"({c})" for i, c in enumerate("가나다라마바사아자차카타파하")})
 
 
 def _restore_legacy_glyphs(s: str) -> str:
@@ -2319,10 +2330,14 @@ _HANGUL_HEAD_RE = re.compile(r"[가-힣]")
 #   #239 는 줄머리 홑 ▲(글머리 ⠸⠲)만 넣고 연속은 "근거를 한 건씩 못 짚었다"며 뺐다. 근거:
 #   2027 gold 언어와 매체 dv-004 p177 `▲▲일보` = ⠸⠬⠬⠇(△△ 숨김표, 제57항). 종전에는 통째로 지워졌다.
 _FILLED_TRI_RUN_RE = re.compile(r"▲{2,}")
+# ★ 연속 ♡♡ 도 이름 가림이다(T30). gold 화법과 작문 vl-005 p0201 `♡♡ 고등학교` = ⠸⠔⠔⠇ —
+#   제57항 [붙임] 제1 점역자 정의 숨김표(`_9l`), 우리 ☆ 와 같은 점형이다.
+_HEART_RUN_RE = re.compile(r"♡{2,}")
 
 
 def _normalize_special(s: str) -> str:
     s = _FILLED_TRI_RUN_RE.sub(lambda m: "△" * len(m.group()), s)
+    s = _HEART_RUN_RE.sub(lambda m: "☆" * len(m.group()), s)
     out = []
     for ch in s:
         o = ord(ch)
