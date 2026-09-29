@@ -3039,6 +3039,7 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     text = _UNIT_PRIME_RE.sub(lambda m: SYMBOL_TABLE[m.group()], text)
     text = _UNIT_BACKTICK_RE.sub("", text)
     text = _BACKTICK_MATH_RE.sub(lambda m: f"<!수식>{m.group(1).rstrip()}<!/수식> ", text)
+    text = inline_math.chem_chains(text)    # 반응식 식 경계(C-132) — $…$ 를 풀기 전에
     text = _normalize_inline_math(text)     # $…$/\(…\) → <!수식> (P1: 수식 라우팅)
     # 구분자 없는 평문 수식(cos 2α=1-2 sin² α)도 같은 경로로 보낸다 — 수학 본문의
     # 16%가 이 형태다(inline_math 모듈이 오탐 없이 구간만 골라 태그를 붙인다).
