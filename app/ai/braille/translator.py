@@ -2929,7 +2929,11 @@ def _no_cut_interior(src: str) -> list[bool]:
 # 한글 바로 뒤 닫는 문장 부호·가운뎃점 앞은 끊지 않는다 — 부호가 다음 줄 머리로 가면 앞 낱말과
 # 떨어진다(실측 568곳, `된다‖.`·`군사‖·정치`). 수식 줄(`cos2α)`)은 끊을 곳이 없어져 강제분리가
 # 늘어서 한글 뒤로 좁혔다.
+# ★ 한글 자모 뒤(`‘뒤ㅎ‖’`)와 한글 뒤 닫는 부호 뒤(`‘-뇨’‖,`)도 한글 뒤로 친다(2026-09-29,
+#   사이드카 대조에서 code 발견). 닫는 부호를 걷고 그 앞 글자를 본다.
 _NO_BREAK_BEFORE = frozenset(".,?!:;…·)]}」』’”〉》")
+_CLOSERS = ")]}」』’”〉》"
+_HANGUL_OR_JAMO_RE = re.compile(r"[가-힣ㄱ-ㆎ]$")
 
 
 def _break_offsets(src: str, braille: str) -> list[int]:
@@ -2955,7 +2959,8 @@ def _break_offsets(src: str, braille: str) -> list[int]:
         # 앞 글자는 태그를 걷고 본다 — `<!드러냄>지도자<!/드러냄>의` 의 `자`.
         prev = _TAG_RE.sub("", src[:sp])[-1:]
         after_hangul = "가" <= prev <= "힣"
-        if after_hangul and src[sp] in _NO_BREAK_BEFORE:
+        if src[sp] in _NO_BREAK_BEFORE and _HANGUL_OR_JAMO_RE.search(
+                _TAG_RE.sub("", src[:sp]).rstrip(_CLOSERS)):
             continue
         pre = translate_tagged_text(src[:sp])
         if not (pre and len(pre) < len(braille) and braille.startswith(pre)):

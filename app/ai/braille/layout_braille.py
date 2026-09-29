@@ -1308,9 +1308,9 @@ def _fold_full_lines(lines: list[str], pads: list[int],
     밀려 끊긴 줄이 개행으로 남아 있었다. 실측 점자 요소의 25%가 안쪽 개행을 물고 나갔고,
     그중 32%가 이 얼굴이다(eval 2026-08-17).
 
-    ★ 개행과 점자 공백은 **둘 다 1문자**라 이 치환은 오프셋을 안 바꾼다 — `_flat_trail`이
-      쓰는 `starts` 계산(`+1`)이 그대로 맞는다. 그래서 줄 문자열에는 손대지 않는다
-      (표식을 줄에 붙이면 `len(ln)`이 1 늘어 오프셋이 밀린다 — 한 번 밟았다).
+    ★ 줄 문자열에는 손대지 않는다(표식을 줄에 붙이면 `len(ln)`이 1 늘어 오프셋이
+      밀린다 — 한 번 밟았다). 구분자는 개행·점자 공백(1문자)이거나, 앞 줄이 이미 ⠀ 로
+      끝나면 빈 문자열이다. `_flat_trail`은 seps 를 받아 구분자 길이로 센다.
       이어 붙는 줄의 들여쓰기만 0으로 돌리고, 그 pads를 두 함수가 같이 쓴다.
 
     ⚠ 짧은 줄 뒤 개행은 안 건드린다 — 시행·대사·목록처럼 줄바꿈이 내용인 자리다.
@@ -1345,7 +1345,10 @@ def _fold_full_lines(lines: list[str], pads: list[int],
         if (width >= _FULL_LINE_MIN and lines[i + 1].strip()
                 and not _is_border_line(lines[i])
                 and not _is_border_line(lines[i + 1])):
-            seps[i] = "⠀"
+            # 원문 줄 끝 빈칸이 이미 ⠀ 로 와 있으면 구분자를 비운다 — 종전에는 빈칸이 두 칸
+            # (`정확한⠀⠀정보를`) 들었다. 2027 8권 실측 4,182곳. 빈 구분자는 오프셋을 바꾸므로
+            # `_flat_trail` 이 seps 를 받아 센다.
+            seps[i] = "" if lines[i].endswith("⠀") else "⠀"
             out_pads[i + 1] = 0
     return out_pads, seps
 
@@ -1355,7 +1358,7 @@ def _pad_join(lines: list[str], pads: list[int],
     """줄별 들여쓰기를 점자 공백 셀로 박아 한 문자열로 잇는다.
 
     `seps`를 주면 줄 사이 구분자를 자리마다 고른다(`_fold_full_lines` 참조).
-    구분자는 전부 1문자라 오프셋 계산이 그대로 맞는다.
+    구분자가 빈 문자열일 수 있다 — `_flat_trail`에 같은 seps 를 넘겨야 오프셋이 맞는다.
     """
     parts = [_PAD * p + ln for ln, p in zip(lines, pads)]
     if not seps:
@@ -1368,7 +1371,7 @@ def _pad_join(lines: list[str], pads: list[int],
 
 def _flat_trail(
     trail: list[RuleApplication], lines: list[str], prefix_len: int, body_len: int,
-    pads: Optional[list[int]] = None,
+    pads: Optional[list[int]] = None, seps: Optional[list[str]] = None,
 ) -> list[RuleApplication]:
     """요소-로컬 (line_no, col) → 통 문자열 문자 오프셋. line_no는 0으로 고정한다.
 
@@ -1380,7 +1383,7 @@ def _flat_trail(
     for i, ln in enumerate(lines):
         pad = pads[i] if pads and i < len(pads) else 0
         starts.append(acc + pad)    # 들여쓴 칸 수만큼 본문 시작이 뒤로 밀린다
-        acc += pad + len(ln) + 1    # +1 = 줄 끝 개행
+        acc += pad + len(ln) + (len(seps[i]) if seps and i < len(seps) else 1)   # 줄 사이 구분자
     out: list[RuleApplication] = []
     for r in trail:
         c = r.model_copy()
@@ -1470,7 +1473,7 @@ def flatten_elements(
             drafts.append(prefix + _pad_join(d_lines, d_pads) + suffix)
         out[bo.element_id] = FlatElement(
             text=prefix + text_body + suffix,
-            trail=_flat_trail(bo.rule_trail, lines, len(prefix), len(text_body), pads),
+            trail=_flat_trail(bo.rule_trail, lines, len(prefix), len(text_body), pads, seps),
             prefix=prefix,
             suffix=suffix,
             draft_texts=tuple(drafts),

@@ -44,6 +44,19 @@ def test_닫는_문장부호_앞에서_안_끊는다(text, mark):
     assert all(not b[o:].startswith(mark) for o in breaks[0]), (text, breaks[0])
 
 
+@pytest.mark.parametrize("text, head", [
+    ("중세 국어 ‘뒤ㅎ’의 꼴", "’"),           # 한글 자모 뒤 닫는 따옴표
+    ("종결 어미 ‘-뇨’, 의문 보조사", ","),     # 한글 뒤 닫는 따옴표 뒤 쉼표
+])
+def test_자모나_닫는_부호_뒤_닫는_부호_앞에서도_안_끊는다(text, head):
+    # 사이드카 대조(2026-09-29, code) 눈검사 `‘뒤ㅎ‖’` · `‘-뇨’‖,`. 종전에는 앞 글자가
+    # 완성형 한글일 때만 막아서 자모·닫는 부호 뒤에서는 부호가 줄머리로 갔다.
+    lines, breaks = translate_with_breaks(text)
+    i = text.index(head, text.index("ㅎ" if "ㅎ" in text else "뇨"))
+    pre = translate_with_breaks(text[:i])[0][0]
+    assert len(pre) not in breaks[0], (text, breaks[0])
+
+
 def test_태그_뒤_약자도_음절_안에서_안_끊는다():
     # 세계사 val p141: `<!드러냄>지도자<!/드러냄>의` — 끊는 자리 바로 앞이 태그라 한글 판정이
     # 빠져 ⠨|⠣⠺ (ㅈ|ㅏ의) 에 후보가 섰다.

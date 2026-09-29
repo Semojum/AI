@@ -2447,7 +2447,7 @@ _GREEK_CMD_FOR_JUDGE_RE = re.compile(
 
 
 def _is_monomial_product(raw: str) -> bool:
-    """`ab`·`2a`·`2R`·`2\pi`처럼 문자가 든 두 자 이상 덩어리인가."""
+    r"""`ab`·`2a`·`2R`·`2\pi`처럼 문자가 든 두 자 이상 덩어리인가."""
     raw = _GREEK_CMD_FOR_JUDGE_RE.sub("π", raw).strip()
     if _DIFFERENTIAL_RE.fullmatch(raw):
         return False
