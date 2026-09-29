@@ -564,6 +564,11 @@ def mark_chem_phrases(latex: str) -> tuple[str, bool]:
         elif re.fullmatch(r"[A-Za-z]", t):
             flush()
             prev = "letter"
+        elif t in "()[]":
+            # 괄호에서 끊는다 — 제7항 4호(재추출 4454~4458행) `[Cu(NH₃)₄](OH)₂` =
+            #   `(',cu8,n,h;#c0;#d,)8,o,h0;#b`. N·H·O·H 가 괄호를 사이에 두고 넷이지만 낱 대문자표다.
+            flush()
+            prev = "op"
         else:
             prev = "op"
     flush()
