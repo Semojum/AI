@@ -13,7 +13,7 @@ def _b(text: str) -> str:
 def test_첨자_괄호는_소괄호():
     out = _b("잡종 1대(F₁)에서")
     assert "⠦⠄⠴⠠⠋⠰⠼⠁⠠⠴" in out and "⠤" not in out
-    assert "⠦⠄⠴⠠⠉⠕⠰⠼⠃⠠⠴" in _b("이산화 탄소(CO₂)가")
+    assert "⠦⠄⠴⠠⠉⠠⠕⠰⠼⠃⠠⠴" in _b("이산화 탄소(CO₂)가")   # C·O 원소마다(#977) = gold
 
 
 def test_원문_붙임표는_그대로():
