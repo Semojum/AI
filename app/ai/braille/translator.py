@@ -311,6 +311,46 @@ _SQ_UNIT_COMPOUND_RE = re.compile(
     rf"(?:[{_SQ_UNIT}]|[A-Za-z]+)(?:/(?:[{_SQ_UNIT}]|[A-Za-z]+))+(?![A-Za-z{_SQ_UNIT}])")
 
 
+# 「한국 점자 규정」 제69항(재추출 2682~2772행) — 숫자 뒤 로마자 단위는 로마자표 ⠴ 를 앞세우고 종료표 ⠲ 로 닫는다.
+# 빗금으로 이은 단위는 한 구간이다(예문 `160㎎/㎗` = `0mg_/dl4`). 띄어쓰기는 묵자를 따른다.
+#   · `180cm` = `#ahj0cm4` — 줄에 한글이 없으면 줄 문맥(`_RomanCtx`)이 로마자표를 안 열어 ⠼⠁⠓⠚⠀⠉⠍ 가 나갔다
+#     (표 셀 `20 mL`·`4 kg` 도 같다. 2027 gold 생명과학 E26-001 p037·p047 `⠼⠃⠚⠴⠍⠠⠇` · `⠼⠙⠴⠅⠛`).
+#   · `1in는` = `#a0in4cz` — 영어 약자 in(⠔)으로 나갔다. 숫자 뒤 in 은 인치다(2027 실물 0).
+#   · `2 cm/ms` — gold `⠼⠃⠴⠉⠍⠸⠌⠍⠎`(한 구간). 우리는 빗금에서 로마자표를 다시 열었다.
+#   숫자 바로 뒤(빈칸 하나까지) 두 글자 이상 단위 기호만 본다. 한 글자(`3 m`·`5g`)는 변수와 같은 글자라 둔다.
+#   뒤에 영어 낱말이 이어지면(`Top 10 in Korea`) 영어 문장이라 둔다. 글자는 약자 없이 낱자로 적는다(#958).
+_LATIN_UNIT = r"(?:mm|cm|km|nm|mg|kg|mL|ml|dL|dl|kcal|cal|kPa|kJ|ha|in)"
+_LATIN_UNIT_RE = re.compile(
+    rf"(?<![A-Za-z0-9.,])(\d+(?:[.,]\d+)*[^\S\n]?)({_LATIN_UNIT}(?:/(?:{_LATIN_UNIT}|[a-z]{{1,3}}))*)"
+    r"(?![A-Za-z])(?![^\S\n]*[A-Za-z])")
+# `킬로미터/h` 처럼 한글 단위 뒤 빗금의 로마자 단위(예문 `80킬로미터/h` = `…_/0h4`). 줄 끝에서 종료표가 빠졌다.
+_HANGUL_SLASH_UNIT_RE = re.compile(r"(?<=[가-힣])/([a-z]{1,3})(?![A-Za-z])(?![^\S\n]*[A-Za-z])")
+
+
+# 종료표를 안 적는 뒤따름 — 숫자(제35항) · 점형이 다른 `, : ; ―`(제33항) · 점형이 같은 `. ? !`(제33항 [다만]) ·
+#   닫는 괄호·따옴표(제34항). 2027 val 에서 넣었다가 되물린 자리: `반경: 1km.`(gold ⠴⠅⠍⠲ 하나) ·
+#   `가로 7cm, 세로`(gold ⠴⠉⠍⠐) · `(600mm 이상)` 계열 `⠴⠍⠍⠠⠴`.
+_UNIT_NO_TERM = set("0123456789,:;―.?!)]}’”")
+
+
+def _unit_end(text: str, at: int) -> str:
+    return "" if text[at:at + 1] in _UNIT_NO_TERM and text[at:at + 1] else "⠲"
+
+
+def _unit_cells(unit: str) -> str:
+    return "⠸⠌".join("".join(("⠠" + _ALPHA_MAP[c.lower()]) if c.isupper() else _ALPHA_MAP[c] for c in part)
+                     for part in unit.split("/"))
+
+
+def _wrap_latin_units(text: str) -> str:
+    """제69항 — 숫자 뒤 로마자 단위를 ⠴…⠲ 한 구간으로(`_LATIN_UNIT_RE` 주석)."""
+    def repl(m: re.Match) -> str:
+        return m.group(1) + "⠴" + _unit_cells(m.group(2)) + _unit_end(text, m.end())
+    text = _LATIN_UNIT_RE.sub(repl, text)
+    return _HANGUL_SLASH_UNIT_RE.sub(
+        lambda m: "/⠴" + _unit_cells(m.group(1)) + _unit_end(text, m.end()), text)
+
+
 def _wrap_square_unit_compound(text: str) -> str:
     """제69항 — 사각 단위 문자가 든 빗금 복합 단위를 한 로마자 구간으로(`_SQ_UNIT_COMPOUND_RE` 주석)."""
     return _SQ_UNIT_COMPOUND_RE.sub(lambda m: _braillify_lib.translate_to_unicode(m.group()), text)
@@ -1932,8 +1972,8 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
                 # 음수 판정이 끝났으니 감쌈 자리표시자를 원래 붙임표로 되돌린다
                 # (뒤의 _apply_book_style·substitute_symbols의 -=⠤ 매핑을 그대로 태운다).
                 clean = _restore_wrap_hyphen(clean)
-                preprocessed = _wrap_square_unit_compound(_wrap_hangul_greek(_wrap_hangul_amp(_preprocess_units(_QUOTED_ELLIPSIS2_RE.sub("⠠⠠⠠⠠⠠⠠",
-                    _apply_book_style(clean, qnum_period=qnum_period))))))
+                preprocessed = _wrap_square_unit_compound(_wrap_hangul_greek(_wrap_hangul_amp(_preprocess_units(_wrap_latin_units(_QUOTED_ELLIPSIS2_RE.sub("⠠⠠⠠⠠⠠⠠",
+                    _apply_book_style(clean, qnum_period=qnum_period)))))))
                 substituted = _old_hangul_to_braille(substitute_symbols(preprocessed))
                 text_result: list[str] = []
                 _emit_mixed(substituted, text_result, roman_ctx)
