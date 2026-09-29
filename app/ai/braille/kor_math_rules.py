@@ -614,8 +614,12 @@ def caps_phrase_cells(cells: str, src: str = "") -> str:
 #   로마자 토막이 **전부** 원소 기호로 끊긴다. 3연 이상(제4항 구절표)은 caps_phrase_run 이 먼저 받는다.
 #   ⚠ 첨자 없는 대문자 낱말(`HIV` · `CPU` · `SNS`)은 원소로도 끊기지만 약어라 건드리지 않는다.
 def element_formula(src: str) -> bool:
-    t = re.sub(r"\\mathrm|\\text|\\rm|[{}$ ]", "", src or "")
-    if not re.search(r"_\d|\^\d*[+-]", t) or re.search(r"[_^][A-Za-z]", t):
+    # 식 전체 구절표가 이미 선 구간(⠠⠠⠠…⠠⠄, 안 글자는 소문자)은 빼고 나머지를 본다(T36).
+    t = re.sub(r"⠠⠠⠠.*?⠠⠄", " ", re.sub(r"\\mathrm|\\text|\\rm|[{}$ ]", "", src or ""))
+    # 화학 신호: 첨자 숫자·이온 부호, 또는 **대문자+소문자 원소**(`HCl`·`NaCl` — 제7항 1호 `,na,cl`).
+    #   반응식이 조각으로 갈리면 `+HCl` 처럼 첨자 없는 화학식이 대문자 단어표(⠠⠠⠓⠉⠇)로 나갔다(T36).
+    two = [w for w in re.findall(r"[A-Z][a-z]", t) if w in _ELEMENTS]
+    if (not re.search(r"_\d|\^\d*[+-]", t) and not two) or re.search(r"[_^][A-Za-z]", t):
         return False
     if _GEOMETRY_MARK_RE.search(src or ""):
         return False
