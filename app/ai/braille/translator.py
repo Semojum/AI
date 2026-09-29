@@ -1933,9 +1933,11 @@ def substitute_tags(text: str) -> str:
 #   범위: 연산자·등호가 하나라도 있으면 진짜 수식이라 제외(S₁+S₂=10은 종전대로 제11항).
 #         한글이 없는 요소(순수 수식·표 셀)도 제외 — '국어 문장 안'이 규정 전제다.
 _INLINE_SUB_TOKEN_RE = re.compile(r"^(?:[A-Za-z]+_\{?\d+\}?)+[A-Za-z]*$")
-# 괄호로 묶인 첨자 토큰 '산소(O₂)와' — gold는 수학 괄호 ⠦…⠴가 아니라 **붙임표 ⠤…⠤**로
-# 감싼다(생물 p087 `L3,U-O2-V`=산소-O₂-와 · p030 `-0,NAHCO3-`, dev+val 붙임표 25건 대
-# 수학괄호 0건). (가)→⠤가⠤와 같은 도서 관행(D-01)이다.
+# 괄호로 묶인 첨자 토큰 '산소(O₂)와' — ★ 2026-09-29 판본 역전(T26): **소괄호 ⠦⠄…⠠⠴**로 적는다.
+#   2027 gold(dev·val)는 첨자가 든 괄호를 소괄호 94 : 붙임표 0 으로 적고(`⠦⠄⠴⠠⠉⠠⠕⠰⠼⠃⠠⠴`),
+#   규정 제49항도 소괄호다. R-06((가)→소괄호, 2026-08-06)과 같은 뒤집힘이다.
+#   종전 붙임표 ⠤…⠤ 는 구판 생물 gold(p087 `L3,U-O2-V` · p030 `-0,NAHCO3-`, 붙임표 25 : 0)
+#   관행이었다. 원문이 붙임표 `-O₂-` 인 자리는 그대로 붙임표로 둔다.
 # ⚠ 실제로 도달하는 형태는 `-O₂-`다: translate_with_breaks가 _paren_repl로 (X)→-X-를
 #   먼저 적용하고, 그 붙임표까지 inline_math가 수식 구간에 삼켜 convert_latex이 **뺄셈
 #   ⠔**로 내보내고 있었다(생물 p087 실측 `⠔⠠⠕⠆⠔`, gold `⠤⠕⠆⠤`). 두 형태 모두 받는다.
@@ -2037,8 +2039,12 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
             elif inline_sub and (_INLINE_SUB_PAREN_RE.match(core)
                                  or _INLINE_SUB_HYPHEN_RE.match(core)):
                 inner = _inline_sub_braille(convert_latex(core[1:-1]), core[1:-1])
-                chunks.append(("i", _BOOK_HYPHEN + inner + _BOOK_HYPHEN,
-                               False, False))
+                if core[0] == "(":             # 원문 소괄호는 제49항 소괄호(2027 gold 94:0)
+                    chunks.append(("i", _OPEN_PAREN_CELL + inner + _CLOSE_PAREN_CELL,
+                                   False, False))
+                else:
+                    chunks.append(("i", _BOOK_HYPHEN + inner + _BOOK_HYPHEN,
+                                   False, False))
             elif _ION_TOKEN_RE.match(core):
                 chunks.append(("n", convert_latex(core), False, False))
             else:
