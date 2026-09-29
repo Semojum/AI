@@ -171,3 +171,13 @@ def test_기본_모드는_both_다(monkeypatch):
 def test_env_로_여전히_고를_수_있다(monkeypatch, mode):
     monkeypatch.setenv("ADVANCED_EXTRACT_MODE", mode)
     assert C.advanced_mode() == mode
+
+
+def test_만화_요소도_안_자른다(monkeypatch):
+    """만화 content 도 캡셔너가 쓴 설명이다 — 종전엔 건너뛰기 목록에서 빠져 있었다(#1012)."""
+    monkeypatch.delenv("ADVANCED_KEEP_CAPTIONS", raising=False)
+    els = [_el("且 만화", [100, 100, 500, 500], typ="cartoon")]
+    gap = [120, 502, 480, 514]                                        # 만화 바로 아래 추출 안 된 줄
+    assert C.crop_targets(els, [gap]) == [(None, gap)]                # 만화는 안 자르고 줄만 따로
+    monkeypatch.setenv("ADVANCED_KEEP_CAPTIONS", "0")                 # 종전: 만화 상자째 되묻는다
+    assert C.crop_targets(els, [gap]) == [(0, [100, 100, 500, 514])]

@@ -284,3 +284,30 @@ def test_수식끼리_붙는_자리는_달러를_안_넣는다():
     llm = [{"type": "formula", "content": r"\int_{0}^{1}f(x)dx=2\text{인 경우}"}]
     assert _graft_text(mnr, llm) == 1
     assert not mnr[0]["content"].startswith("$")
+
+
+# ── 시각 요소 캡션은 고급 점역이 안 덮는다(재구조화 L5 손질 · #1012) ──────────────
+def _cap_case():
+    cap = "모식도: 세포막에서 나트륨 이온과 칼륨 이온이 펌프를 통해 이동하는 모습"
+    mnr = [{"type": "text", "content": "且, 세포막의 이온 이동을 求하면", "bbox": [0, 0, 9, 9]},
+           {"type": "diagram", "content": cap, "bbox": [0, 10, 9, 19]}]
+    # LLM 그림 설명 첫머리 `모식도:` 는 `_GRAFT_CAPTION_HEADS` 밖이라 그 관문에 안 걸린다
+    llm = [{"type": "text", "content": "또, 세포막의 이온 이동을 구하면"},
+           {"type": "image", "content": cap + "을 나타낸 그림(Na+ 3개 밖으로, K+ 2개 안으로)"}]
+    return cap, mnr, llm
+
+
+def test_시각_요소_캡션은_안_덮고_본문은_고친다(monkeypatch):
+    monkeypatch.delenv("ADVANCED_KEEP_CAPTIONS", raising=False)
+    cap, mnr, llm = _cap_case()
+    assert _graft_text(mnr, llm) == 1
+    assert mnr[0]["content"] == "또, 세포막의 이온 이동을 구하면"   # 깨진 본문은 고친다
+    assert mnr[1]["content"] == cap                                   # 캡션은 캡셔너 몫
+
+
+def test_스위치_0_이면_종전대로_캡션을_덮는다(monkeypatch):
+    """되돌리는 길(`ADVANCED_KEEP_CAPTIONS=0`)이 실제로 종전 동작인지 — A/B 대조군."""
+    monkeypatch.setenv("ADVANCED_KEEP_CAPTIONS", "0")
+    cap, mnr, llm = _cap_case()
+    assert _graft_text(mnr, llm) == 2
+    assert mnr[1]["content"] != cap
