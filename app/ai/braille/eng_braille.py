@@ -293,8 +293,28 @@ def translate_word(word: str, ebae: bool = False) -> str:
     return caps + _apply_groups(low, ebae)
 
 
+# 1종 지시자 ⠰ (「한글 점자」 제32항 → 통일영어점자 위임 · 원장 C-99) ─────────────────────
+# 홀로 선 낱자·낱자열이 약자와 셀이 같으면 약자로 읽힌다(V = very · CD = could · AB = about).
+# 그 앞에 ⠰ 를 적어 "글자 그대로" 임을 밝힌다. 표에서 뽑으므로 a·i·o(약자 아님)는 저절로 빠진다.
+_GRADE1 = "⠰"
+_WORDSIGN_CELLS = frozenset(v for v in WORDSIGNS.values() if len(v) == 1 and v in ALPHABET.values())
+_SHORTFORM_CELLS = frozenset(v for v in SHORT_FORMS.values() if all(c in ALPHABET.values() for c in v))
+
+
+def _looks_contracted(word: str) -> bool:
+    """글자 그대로 적은 낱말이 약자와 셀이 같은가 — 홑 낱자는 단어 약자, 둘 이상은 단축형."""
+    if not (word.isascii() and word.isalpha()):
+        return False
+    # 낱말 안쪽 대문자는 대문자표 ⠠ 가 셀 사이에 끼어 약자 모양이 깨진다 — `aB` = ⠁⠠⠃ 는 about(⠁⠃)로
+    #   안 읽힌다. gold 001 p0115 유전자형 `AB, Ab, aB, ab` 도 aB 만 ⠰ 가 없다.
+    if len(word) > 1 and not (word.isupper() or word[1:].islower()):
+        return False
+    cells = "".join(ALPHABET[c] for c in word.lower())
+    return cells in (_WORDSIGN_CELLS if len(word) == 1 else _SHORTFORM_CELLS)
+
+
 @lru_cache(maxsize=4096)
-def translate(text: str, ebae: bool = False) -> str:
+def translate(text: str, ebae: bool = False, grade1: str = "") -> str:
     """영어 구간 문자열 → Grade 2 점자(낱말 단위 적용, 그 외 문자는 그대로).
 
     캐시가 붙은 이유 — `_break_offsets`가 줄바꿈 지점을 찾으려고 문자 위치마다 접두를
@@ -304,6 +324,14 @@ def translate(text: str, ebae: bool = False) -> str:
 
     순수 함수라 캐시가 안전하다 — 입력 문자열만 보고 모듈 전역 표(WORDSIGNS·SHORT_FORMS)로
     변환한다. 표가 런타임에 바뀌지 않으므로 무효화할 일이 없다.
+
+    grade1 — 한국어 문장 속 로마자 구간에서만 켠다(`translator._split_english`). "lead" 는 이
+    문자열이 로마자표 ⠴ 바로 뒤에서 시작한다는 뜻이고 "cont" 는 구간 안에서 이어진다는 뜻이다.
+    규정 예문 여섯 곳과 2027 gold 가 같은 세 갈래다(재현 `V2/temp/n14-acc/g1_measure.py`):
+      로마자표 바로 뒤 첫 홑 낱자는 안 적는다(`v-x` 의 v · 제36항 표 V)     gold 0/4,896
+      이어지는 약자꼴 홑 낱자는 적는다(`a, b, c` 의 b·c · `George V`)       gold 347/347
+      두 글자 이상 약자꼴은 로마자표 바로 뒤라도 적는다(`CD 1장`)           gold 100/102
+    ⚠ 구판 gold 는 셋 다 안 적는다(판본 역전). 구판 수치로 판정하지 말 것.
     """
     words = list(_WORD_RE.finditer(text))
     passage: dict[int, str] = {}
@@ -331,13 +359,14 @@ def translate(text: str, ebae: bool = False) -> str:
         if caps:
             run.append(k)
     _flush()
-    if not passage:
-        return _WORD_RE.sub(lambda m: translate_word(m.group(), ebae), text)
     out: list[str] = []
     last = 0
     for k, m in enumerate(words):
         out.append(text[last:m.start()])
-        out.append(passage.get(k) or translate_word(m.group(), ebae))
+        w = m.group()
+        mark = (grade1 and not ebae and k not in passage and _looks_contracted(w)
+                and not (grade1 == "lead" and k == 0 and m.start() == 0 and len(w) == 1))
+        out.append((_GRADE1 if mark else "") + (passage.get(k) or translate_word(w, ebae)))
         last = m.end()
     out.append(text[last:])
     return "".join(out)
