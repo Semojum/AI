@@ -1319,7 +1319,11 @@ def _stage0b_nth_root(result: str) -> str:
             close = result.find("]", i + 6)
             if close > 0 and result[close + 1:close + 2] == "{":
                 raw, after = _extract_brace_content(result, close + 1)
-                n_part = convert_latex(result[i + 6:close])
+                n_raw = result[i + 6:close]
+                n_part = convert_latex(n_raw)
+                # 근수가 곱이면 묶는다 — 제22항 [붙임 2](재추출 3615·3620행) `ᵐⁿ√y` = ` (mn)]y`
+                if _needs_wrap(n_raw) or _is_monomial_product(n_raw):
+                    n_part = _wrap_ins(n_part)
                 inner = convert_latex(raw)
                 out.append(n_part + _SQRT_N_IND
                            + (_wrap_ins(inner) if _needs_wrap(raw, radicand=True) else inner))
@@ -1394,7 +1398,11 @@ def _stage1b_accents(result: str) -> str:
         mark = _ACC_POSTFIX_MARK[name]
         if mark == "⠈⠉" and _CAPS_RUN_RE.match(content.strip()):
             return f"⠈⠉{convert_latex(content)}"   # 선분 @c,,AB (제35항)
-        return f"{convert_latex(content)}{mark}"
+        inner = convert_latex(content)
+        # 켤레 복소수·평균의 가로바 아래가 다항식이면 묶는다 — 제23항 1호 가(3627~3629행) `―a+bi` = `(a5bi)@c`
+        if mark == "⠈⠉" and re.search(r"[A-Za-z0-9}]\s*[-+]\s*\S", content):
+            inner = _wrap_ins(inner)
+        return f"{inner}{mark}"
 
     return _ACC_POSTFIX_RE.sub(_acc_postfix, result)
 
@@ -2686,7 +2694,11 @@ def _apply_fracs(latex: str) -> str:
                 num_wrapped = (_wrap_ins(num)
                                if _needs_wrap(num_raw) or _is_monomial_product(num_raw)
                                else num)
-                result.append(f"{den_wrapped}{_FRACTION_MID}{num_wrapped}")
+                frac = f"{den_wrapped}{_FRACTION_MID}{num_wrapped}"
+                # 범위 없는 Σ 바로 뒤 분수는 묶는다 — 제25항(재추출 3657~3659행) `∑1/n` = `,.S(N/#A)`
+                if re.search(r"\\sum\s*$", "".join(result)):
+                    frac = _wrap_ins(frac)
+                result.append(frac)
                 i = after_den
                 continue
         result.append(latex[i])
