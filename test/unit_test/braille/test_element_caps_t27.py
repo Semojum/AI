@@ -17,8 +17,8 @@ def test_이산화탄소는_원소마다():
 
 
 def test_이온도_원소마다():
-    assert _b("NO₃⁻이").startswith("⠠⠝⠠⠕⠰⠼⠉⠘⠔")
-    assert _b("NH₄⁺이").startswith("⠠⠝⠠⠓⠰⠼⠙⠘⠢")
+    assert _b("NO₃⁻이").startswith("⠴⠠⠝⠠⠕⠰⠼⠉⠘⠔")    # 문장 속 이온은 ⠴(T36)
+    assert _b("NH₄⁺이").startswith("⠴⠠⠝⠠⠓⠰⠼⠙⠘⠢")
     assert convert_latex("SO_{4}^{2-}") == "⠠⠎⠠⠕⠰⠼⠙⠘⠼⠃⠔"   # 규정 제2항 예문
 
 
