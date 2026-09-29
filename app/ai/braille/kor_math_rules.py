@@ -535,6 +535,21 @@ def chem_operator_spacing(cells: str) -> str:
     return _CHEM_OP_RE.sub(lambda m: m.group(1) or "⠀" + m.group(2) + "⠀", cells).strip("⠀")
 
 
+# ★ 사슬 화합물 결합선(T36 ②-b 결합 갈래) — 과학 점자 제10항(재추출 4506행~): 결합선과 원소 기호는
+#   붙여 적고, 결합선은 ; 뒤에 단일 1 · 이중 2 · 삼중 3. 예문 `H-O-H` = `,,,h;1o;1h,'` · `O=C=O` = `,,,o;2c;2o,'`
+#   · `H-C≡C-H` = `,,,h;1c;3c;1h,'`. 수학 경로는 `-` 를 빼기 ⠔, `=` 를 등호로 읽었다.
+#   **식 전체가 원소 기호와 결합선으로만** 된 경우만 결합선으로 읽는다 — `V=IR`(R 은 원소 아님)·`A-B` 는 안 걸린다.
+_BOND_CELL = {"-": "⠰⠂", "=": "⠰⠆", "≡": "⠰⠒"}
+_BOND_CHAIN_RE = re.compile(r"^[A-Z][a-z]?(?:[-=≡][A-Z][a-z]?)+$")
+
+
+def bond_chain(latex: str) -> str | None:
+    t = _CHEM_WRAP_RE.sub(r"\1", latex or "").replace("\\equiv", "≡").replace(" ", "")
+    if not _BOND_CHAIN_RE.match(t) or not all(e in _ELEMENTS for e in re.findall(r"[A-Z][a-z]?", t)):
+        return None
+    return re.sub(r"[-=≡]", lambda m: _BOND_CELL[m.group()], t)
+
+
 def mark_chem_phrases(latex: str) -> tuple[str, bool]:
     src = _CHEM_WRAP_RE.sub(r"\1", latex)
     toks = [m.group() for m in _CHEM_TOK_RE.finditer(src)]
@@ -2219,7 +2234,10 @@ def convert_latex(latex: str) -> str:
                    lambda m: _TC_JAMO_CELLS_DOT[m.group(1)] + " ", latex)
     _is_chem = _looks_chemical(latex)           # 0-전: 화학식 판정(원문 상태에서만 가능)
     _chem_phrased = False
-    if _is_chem or _formula_like(latex):        # 0-전b: 식 전체 구절표(제4항, T36 ②-b)
+    _bonds = bond_chain(latex)                  # 0-전a: 사슬 화합물 결합선(제10항, T36 ②-b)
+    if _bonds:
+        latex = _bonds
+    if _is_chem or _bonds or _formula_like(latex):  # 0-전b: 식 전체 구절표(제4항, T36 ②-b)
         latex, _chem_phrased = mark_chem_phrases(latex)
     latex, _text_store = _protect_text(latex)   # 0.  P2: \text{한글} → 한글 점자 sentinel
     result = _normalize_latex_input(latex)      # 0a. MinerU/마크다운 입력 정규화
