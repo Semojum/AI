@@ -1660,6 +1660,24 @@ def _braillify_box_title(raw: str) -> str:
     return _braillify(_ANGLE_LABEL_RE.sub(r"〈\1〉", raw))
 
 
+# ★ B-15(원장, T27) — 괄호로 싼 제목(`[실험 과정 및 결과]`·`【4문단 초고】`)은 원본에서 **상자 안 첫 줄**이다.
+#   「점자 도서 제작 지침」 1장 2절 5.(4)는 제목을 원본 위치대로 놓게 하고(① 테두리 위 → 윗줄 5칸,
+#   ② 테두리에 걸침 → 테두리 7칸), 상자 안 첫 줄은 그 어느 쪽도 아닌 본문 첫 줄이다.
+#   추출이 `<!상자>제목<!/상자>` 로 태깅하면 우리는 위치를 안 보고 ②로 올렸다.
+#   2027 gold 전수: 우리가 테두리에 올린 괄호 제목 16개 중 gold 가 테두리에 적은 것 **0**
+#   (테두리 다음 줄 12 · 본문 4). 맨몸 제목(`보기` 등)은 gold 도 테두리다(468) — 건드리지 않는다.
+_BODY_TITLE_RE = re.compile(r"^[\[【][^\[\]【】\n]+[\]】]$")
+
+
+def _drop_body_title(m: re.Match) -> str:
+    """괄호 제목이 든 위 테두리 태그 → 제목 없는 태그 + 다음 줄 본문."""
+    title = (m.group(3) or "").strip()
+    if m.group(1) != _TAGS.BOX_TOP or not _BODY_TITLE_RE.match(title):
+        return m.group(0)
+    tag = m.group(1) + m.group(2)
+    return f"<!{tag}><!/{tag}>\n{title}"
+
+
 def isolate_border_tags(text: str) -> str:
     """글상자 테두리 태그 쌍을 **제 줄에 홀로** 세운다(빈 줄은 만들지 않는다).
 
@@ -1681,7 +1699,7 @@ def isolate_border_tags(text: str) -> str:
         buf += text[last:m.start()].rstrip(" \t")
         if buf and not buf.endswith("\n"):
             buf += "\n"
-        buf += m.group(0)
+        buf += _drop_body_title(m)
         last = m.end()
     if not hit:
         return text
@@ -1703,6 +1721,8 @@ def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
         kind = _BORDER_KIND[m.group(1)]
         level = int(m.group(2)) if m.group(2) else 1
         title_raw = (m.group(3) or "").strip()
+        if _BODY_TITLE_RE.match(title_raw):
+            title_raw = ""                 # B-15 — 본문 첫 줄로 내려간다(isolate_border_tags)
         title = _braillify_box_title(title_raw) if (kind == "top" and title_raw) else ""
         out.append((kind, level, title))
     return out
