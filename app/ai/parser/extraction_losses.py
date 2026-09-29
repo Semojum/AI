@@ -17,8 +17,9 @@
 "있다" 로 본다. 6자보다 짧은 글은 부분 문자열로 본다.
 
 ★ 목록이 비었다고 손실이 없는 것이 아니다. 무엇을 대조했는지는 함께 돌려주는 `checks` 에 있다
-  ("mineru" = MinerU 원출력과 대조함, "text_layer" = 텍스트 레이어와 대조함). 스캔본·수식 PUA 쪽처럼
-  레이어를 못 믿으면 "text_layer" 가 빠지고 unseen 은 아예 안 잰다.
+  ("mineru" = MinerU 원출력과 대조함, "text_layer" = 텍스트 레이어와 대조함). 스캔본은 레이어가 남의
+  OCR 이라 "text_layer" 가 빠지고 unseen 을 아예 안 잰다. 그 밖의 쪽은 줄마다 가려 PUA·깨진 글리프 줄과
+  한컴 수식 글꼴 스팬만 뺀다. 빠진 줄은 목록에 안 오른다.
 """
 from __future__ import annotations
 
@@ -31,6 +32,7 @@ import fitz
 from app.ai.parser.mineru_runner import (
     _MATH_FONT_RE,
     _find_content_list,
+    _is_scanned_page,
     _layer_untrustworthy,
     _native_text_spaced,
     _squash_text,
@@ -70,8 +72,9 @@ def _item_text(it: dict, page: fitz.Page, layer_ok: bool) -> str:
     kind = it.get("type")
     if kind in _FIGURE_TYPES:
         # 그림 안 글은 MinerU 가 안 적는 일이 많다(카드 뉴스·지도). 레이어를 믿으면 레이어 글을 쓴다.
-        if layer_ok and it.get("bbox"):
-            return _native_text_spaced(page, it["bbox"]) or it.get("content") or ""
+        native = _native_text_spaced(page, it["bbox"]) if layer_ok and it.get("bbox") else ""
+        if native.strip() and not _layer_untrustworthy(native):
+            return native
         return it.get("content") or ""
     if kind == "table":
         return it.get("table_body") or ""
@@ -127,7 +130,10 @@ def extraction_losses(elements: list[dict], page: fitz.Page,
             checks.append("mineru")
         except (FileNotFoundError, OSError, ValueError):
             items = []
-    layer_ok = not _layer_untrustworthy(page.get_text("text"), page)
+    # 레이어 신뢰는 **줄마다** 가른다(아래). 쪽 글 전체로 가르면 글꼴 매핑이 몇 글자만 어긋난 쪽까지
+    # 통째로 빠진다 — dev 121쪽에서 99쪽이 빠졌다(생명과학 "글꼴 매핑 어긋남 12자" 등). 파이프라인도
+    # 블록마다 가른다(`_native_override`). 쪽째로 빼는 것은 스캔본뿐이다(위의 글이 남의 OCR 이다).
+    layer_ok = not _is_scanned_page(page)
     if layer_ok:
         checks.append("text_layer")
 

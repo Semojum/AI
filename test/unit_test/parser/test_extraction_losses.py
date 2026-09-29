@@ -98,13 +98,22 @@ def test_MinerU_가_없으면_레이어만_대조한다(tmp_path):
     assert "영역을" in losses[0]["text"] and "카드" in losses[1]["text"]
 
 
-def test_레이어를_못_믿으면_unseen_을_안_잰다(tmp_path, monkeypatch):
-    """스캔본·수식 PUA 쪽 — 목록이 비었다고 손실이 없는 게 아니다. checks 로 알린다."""
-    monkeypatch.setattr(L, "_layer_untrustworthy", lambda s, page=None: True)
+def test_스캔본이면_unseen_을_안_잰다(tmp_path, monkeypatch):
+    """스캔본 위의 글은 남의 OCR — 목록이 비었다고 손실이 없는 게 아니다. checks 로 알린다."""
+    monkeypatch.setattr(L, "_is_scanned_page", lambda page: True)
     doc, pg = _page()
     losses, checks = L.extraction_losses([{"content": KEPT}], pg, _raw(tmp_path, ITEMS))
     assert checks == ["mineru"]
     assert {x["class"] for x in losses} == {"dropped"}
+
+
+def test_깨진_줄만_빼고_나머지_줄은_잰다(tmp_path, monkeypatch):
+    """쪽 글 전체로 레이어를 가르면 몇 글자 깨진 쪽이 통째로 빠진다(dev 121쪽 중 99쪽). 줄마다 가른다."""
+    monkeypatch.setattr(L, "_layer_untrustworthy", lambda s, page=None: "카드" in (s or ""))
+    doc, pg = _page()
+    losses, checks = L.extraction_losses([{"content": KEPT}, {"content": DROP}], pg, None)
+    assert checks == ["text_layer"]
+    assert [x["text"] for x in losses] == [UNSEEN]           # 깨진 줄(CARD)만 빠진다
 
 
 def test_짧은_조각은_적지_않는다(tmp_path):
