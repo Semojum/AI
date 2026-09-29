@@ -34,7 +34,9 @@ NS = "⠼"
 
 class TestBleCell:
     def test_ble_is_dots_3456(self):
-        assert eng_braille.STRONG_GROUPS["ble"] == NS
+        # ble 는 EBAE 전용 표로 옮겼다(#946 — UEB 폐지). 역점역이 옛 책을 읽을 때 쓴다.
+        assert "ble" not in eng_braille.STRONG_GROUPS
+        assert eng_braille.EBAE_ONLY_GROUPS["ble"] == NS
         assert ord(NS) - 0x2800 == 0b111100        # 점 3·4·5·6
 
     def test_gg_keeps_dots_2356(self):
@@ -52,10 +54,13 @@ class TestBleCell:
         assert dups == []
 
     def test_contracted_words(self):
-        # 낱말 첫머리에는 못 쓰고(ble→b·l·e), 그 밖에는 한 셀로 줄인다
-        assert eng_braille.translate_word("able") == "⠁" + NS
-        assert eng_braille.translate_word("possible") == "⠏⠕⠎⠎⠊" + NS
-        assert eng_braille.translate_word("problem") == "⠏⠗⠕" + NS + "⠍"
+        # 정방향은 UEB — ble 약자를 안 쓴다(규정 제29항 예문 `Table` = ⠠⠞⠁⠃⠇⠑, #946)
+        assert eng_braille.translate_word("able") == "⠁⠃⠇⠑"
+        assert eng_braille.translate_word("possible") == "⠏⠕⠎⠎⠊⠃⠇⠑"
+        # EBAE(옛 책 되짚기)는 종전대로 — 낱말 첫머리에는 못 쓰고 그 밖에는 한 셀
+        assert eng_braille.translate_word("able", ebae=True) == "⠁" + NS
+        assert eng_braille.translate_word("possible", ebae=True) == "⠏⠕⠎⠎⠊" + NS
+        assert eng_braille.translate_word("problem", ebae=True) == "⠏⠗⠕" + NS + "⠍"
 
 
 class TestNumberSignIndices:
@@ -72,8 +77,8 @@ class TestNumberSignIndices:
         assert number_sign_indices("⠏⠕⠎⠎⠊⠼⠲") == []
 
     def test_lookalike_counted_from_source(self):
-        # assembled = ⠁⠎⠎⠑⠍⠼⠙ — ⠼ 뒤 ⠙가 숫자 4의 셀과 같아 점형만으론 구별 불가
-        assert contraction_lookalikes("assembled 부품") == 1
+        # 정방향이 ble 약자를 안 쓰므로(#946) 수표 모양 ⠼ 를 만드는 영어 낱말이 없다
+        assert contraction_lookalikes("assembled 부품") == 0
         assert contraction_lookalikes("possible 한 3가지") == 0
 
     def test_has_number_sign(self):

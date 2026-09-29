@@ -50,13 +50,15 @@ STRONG_GROUPS: dict[str, str] = {
     "and": "⠯", "for": "⠿", "of": "⠷", "the": "⠮", "with": "⠾",
     "ch": "⠡", "gh": "⠣", "sh": "⠩", "th": "⠹", "wh": "⠱",
     "ed": "⠫", "er": "⠻", "ou": "⠳", "ow": "⠪",
-    # ble = 3456점(⠼). 2356점(⠶)은 gg 자리라 같은 dict 안에서 셀이 겹쳤었다(~2026-07-27).
-    # ⠼는 한글 점자에서 수표(제40항)와 같은 점형이다 — 두 뜻을 가르는 판정은 number_sign.py.
-    "st": "⠌", "ing": "⠬", "ar": "⠜", "ble": "⠼",
+    "st": "⠌", "ing": "⠬", "ar": "⠜",
     "bb": "⠆", "cc": "⠒", "dd": "⠲", "ff": "⠖", "gg": "⠶",
     "in": "⠔", "en": "⠢",
     "ea": "⠂",
 }
+# ble = 3456점(⠼) — EBAE 약자다. **UEB 가 폐지했다**(#946, 규정 제29항 예문 `Table of Contents` =
+#   ⠠⠞⠁⠃⠇⠑…). 정방향은 쓰지 않고, 역점역이 옛 EBAE 책을 되짚을 때만(`ebae=True`) 쓴다 — ation·ally(#932)와 같은 처리.
+#   2027 dev·val 묵자에 -ble 낱말은 0회다. ⠼는 한글 점자에서 수표(제40항)와 같은 점형이라 number_sign.py 가 가른다.
+EBAE_ONLY_GROUPS: dict[str, str] = {"ble": "⠼"}
 # 아래칸 약자(ea·bb·cc·dd·ff·gg)는 **낱말 첫머리·끝에 못 쓴다**(영어 점자 표준).
 # 위아래 칸이 비어 다른 셀과 혼동되기 때문이다.
 _LOWER_CELL = {"ea", "bb", "cc", "dd", "ff", "gg"}
@@ -154,7 +156,7 @@ def _apply_groups(word: str, ebae: bool = False) -> str:
     """
     # 긴 약자 우선, 길이가 같으면 **윗칸 약자가 아래칸 약자보다 우선**한다.
     # year·near·clear에서 ar(⠜)이 ea(⠂)를 이겨야 한다(실측 12건: 우리 ⠂⠗ vs 정답 ⠑⠜).
-    keys = sorted(set(STRONG_GROUPS) | (set(FINAL_EBAE_ONLY) if ebae else set())
+    keys = sorted(set(STRONG_GROUPS) | (set(FINAL_EBAE_ONLY) | set(EBAE_ONLY_GROUPS) if ebae else set())
                   | set(WORD_INITIAL_SYLLABLE)
                   | set(FINAL_46) | set(FINAL_56)
                   | set(INITIAL_5) | set(INITIAL_45) | set(INITIAL_456),
@@ -170,7 +172,7 @@ def _apply_groups(word: str, ebae: bool = False) -> str:
                 if i != 0 or len(word) <= len(k):
                     continue
                 out.append(WORD_INITIAL_SYLLABLE[k])
-            elif k in STRONG_GROUPS:
+            elif k in STRONG_GROUPS or k in EBAE_ONLY_GROUPS:
                 if i == 0 and k in _NOT_WORD_INITIAL:
                     continue
                 if k in _LOWER_CELL:
@@ -181,7 +183,7 @@ def _apply_groups(word: str, ebae: bool = False) -> str:
                     if any(word.startswith(k2, i + 1)
                            for k2 in STRONG_GROUPS if k2 not in _LOWER_CELL):
                         continue
-                out.append(STRONG_GROUPS[k])
+                out.append(STRONG_GROUPS.get(k) or EBAE_ONLY_GROUPS[k])
             elif k in FINAL_EBAE_ONLY:
                 if i == 0:          # 끝글자 약자는 낱말 첫머리에 못 온다
                     continue
@@ -299,4 +301,39 @@ def translate(text: str, ebae: bool = False) -> str:
     순수 함수라 캐시가 안전하다 — 입력 문자열만 보고 모듈 전역 표(WORDSIGNS·SHORT_FORMS)로
     변환한다. 표가 런타임에 바뀌지 않으므로 무효화할 일이 없다.
     """
-    return _WORD_RE.sub(lambda m: translate_word(m.group(), ebae), text)
+    words = list(_WORD_RE.finditer(text))
+    passage: dict[int, str] = {}
+    # 대문자 구절표(UEB, #946) — 대문자로만 된 낱말이 빈칸만 사이에 두고 셋 이상 이어지면 ⠠⠠⠠ 로 열고
+    #   ⠠⠄ 로 닫는다. 규정 제28항 예문 `WELCOME TO KOREA` = ⠠⠠⠠⠺⠑⠇⠉⠕⠍⠑⠀⠞⠕⠀⠅⠕⠗⠑⠁⠠⠄.
+    #   낱말마다 ⠠⠠ 를 붙이던 종전 꼴은 UEB 가 아니다. 쉼표 등이 끼면(`DNA, RNA, ATP`) 구절로 안 본다.
+    #   두 글자 이상 낱말만 센다 — 홑 대문자 나열(`A B C D` 표 머리·라벨)은 종전대로 둔다.
+    run: list[int] = []
+
+    def _flush() -> None:
+        if len(run) >= 3:
+            for j, k in enumerate(run):
+                cells = "".join(ALPHABET.get(c.lower(), c) for c in words[k].group())
+                passage[k] = ("⠠⠠⠠" if j == 0 else "") + cells + ("⠠⠄" if j == len(run) - 1 else "")
+        run.clear()
+
+    for k, m in enumerate(words):
+        w = m.group()
+        # EBAE(옛 책 되짚기)는 낱말마다 ⠠⠠ 다. 홑 대문자 나열(`A B C D` 라벨)은 구절이 아니다(2027 실물 001 p0156).
+        caps = not ebae and len(w) >= 2 and w.isalpha() and w.isupper()
+        if caps and run and text[words[run[-1]].end():m.start()].strip(" ") == "":
+            run.append(k)
+            continue
+        _flush()
+        if caps:
+            run.append(k)
+    _flush()
+    if not passage:
+        return _WORD_RE.sub(lambda m: translate_word(m.group(), ebae), text)
+    out: list[str] = []
+    last = 0
+    for k, m in enumerate(words):
+        out.append(text[last:m.start()])
+        out.append(passage.get(k) or translate_word(m.group(), ebae))
+        last = m.end()
+    out.append(text[last:])
+    return "".join(out)

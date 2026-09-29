@@ -846,6 +846,8 @@ def _build_eng_reverse() -> tuple[dict[str, str], dict[str, str], dict[str, str]
     final: dict[str, str] = {}
     for word, cell in _E.STRONG_GROUPS.items():
         anywhere.setdefault(cell, word)
+    for word, cell in _E.EBAE_ONLY_GROUPS.items():      # 옛 EBAE 책(ble) — 정방향은 안 쓴다(#946)
+        anywhere.setdefault(cell, word)
     for word, cell in _E.WORD_INITIAL_SYLLABLE.items():
         initial.setdefault(cell, word)
     for word, cell in _E.INITIAL_5.items():
