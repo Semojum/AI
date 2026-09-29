@@ -1825,6 +1825,33 @@ _WORD_EDGE_RE = re.compile(r"[0-9A-Za-z가-힣]$")
 _WORD_HEAD_RE = re.compile(r"^[0-9A-Za-z가-힣]")
 
 
+# ★ T30 — 강조가 인쇄면 줄마다 따로 닫히고 열리면 낱말 가운데 갈림이 태그 뒤에 숨는다:
+#   `…통해 가<!/강조>\n<!강조>출 동기…`. 판정기(`_join_words`)가 태그 글자를 보고 어절 경계로
+#   읽어 두 잇기 함수 어디서도 안 이어졌다. 2027 8권 제품 응답 984쪽의 낱말 안 개행 16곳 중
+#   진짜 낱말 안 7곳(`가‖출`·`평‖균`·`행‖동`·`기‖존`·`가‖능`·`아무‖런`·`진행‖하기로`)이 전부 이 꼴이고
+#   나머지 9곳은 제목·이름표 줄(`보기`·`교초`)이다. 태그를 걷고 판정해 낱말 안이면 두 태그와 개행을
+#   지워 강조 한 덩이로 잇는다. 어절 경계면 그대로 둔다(뒤의 잇기 함수가 맡는다).
+_SPLIT_TAG_SPAN_RE = re.compile(
+    r"([0-9A-Za-z가-힣])<!/([^<>\s/]+)>[ \t]*\n[ \t]*<!\2>(?=[0-9A-Za-z가-힣])")
+_ANY_TAG_RE = re.compile(r"<!/?[^<>]*>")
+
+
+def _join_split_tag_spans(text: str) -> str:
+    if "\n<!" not in text:
+        return text
+    from app.ai.preprocessor.pdf_analyzer import _join_words
+
+    def fix(m: re.Match) -> str:
+        left = _ANY_TAG_RE.sub("", text[text.rfind("\n", 0, m.start()) + 1:m.start() + 1])
+        rest = text[m.end():]
+        right = _ANY_TAG_RE.sub("", rest.split("\n", 1)[0])
+        if left.strip() and right.strip() and _join_words(left, right) == "":
+            return m.group(1)
+        return m.group(0)
+
+    return _SPLIT_TAG_SPAN_RE.sub(fix, text)
+
+
 def _join_split_words(text: str) -> str:
     """**낱말 가운데서** 갈린 줄만 잇는다 — `유전 물` / `질인`, `그` / `러다 보니`.
 
@@ -1982,7 +2009,7 @@ def _parse_txt_result(
         etype = _TYPE_ALIAS.get(orig_type, orig_type)
         vsub = el.get("visual_subtype") or _SUBTYPE_FROM_TYPE.get(orig_type)
         order = int(el.get("order", idx))
-        content = el.get("content", "") or ""
+        content = _join_split_tag_spans(el.get("content", "") or "")
         if etype in _PARA_JOIN_TYPES:
             content = _join_wrapped_lines(content)
         else:
