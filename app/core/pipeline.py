@@ -2993,6 +2993,19 @@ def _build_response(
             if response.get("status") == "COMPLETED":
                 response["status"] = "NEEDS_REVIEW"
                 response["quality_report"]["status"] = "NEEDS_REVIEW"
+        # 기호표에도 braillify 에도 없는 기호가 조용히 사라진다(`가▶나` → 가나, T25).
+        # PUA(R15)와 같은 원칙이다 — 지우되 세고, 그 쪽을 NEEDS_REVIEW 로 세운다.
+        from app.ai.braille.translator import dropped_symbols as _dropped_symbols
+        _sym = _dropped_symbols("\n".join(
+            c for e in (response.get("text_list") or []) for c in (e.get("contents") or [])))
+        if _sym and "quality_report" in response:
+            _chars = ", ".join(f"{ch}(U+{ord(ch):04X})×{n}" for ch, n in _sym.most_common())
+            response["quality_report"].setdefault("review_flags", []).append(
+                {"type": "R17", "element_id": "page",
+                 "message": f"점자 기호가 없는 기호 {sum(_sym.values())}자가 점역에서 빠졌다 — 원본 확인 필요 ({_chars})"})
+            if response.get("status") == "COMPLETED":
+                response["status"] = "NEEDS_REVIEW"
+                response["quality_report"]["status"] = "NEEDS_REVIEW"
     except Exception as exc:  # noqa: BLE001 — 등급 실패가 점역 결과를 막지 않는다
         logger.warning("검수 등급 산출 실패(무시): %s", exc)
 

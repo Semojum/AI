@@ -34,9 +34,10 @@ class ReviewFlag(BaseModel):
     R15: PUA_DROPPED — 글꼴 사설영역 글리프가 점역에서 빠진 쪽(원장 B-09, 2026-08-22)
     R16: BBOX_MISSING — bbox 가 전부 (0,0,0,0) 인 쪽. 좌표가 죽었다(2026-09-08).
          `image_width`·`image_height` 는 정상값이라 응답만으로는 알 수 없어 짚어 준다.
+    R17: SYMBOL_DROPPED — 점자 기호가 없는 기호(▶·★·↳ 등)가 점역에서 빠진 쪽(2026-09-29).
     """
 
-    type: str       # R1~R16
+    type: str       # R1~R17
     element_id: str
     message: str
 
