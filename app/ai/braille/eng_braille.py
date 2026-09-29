@@ -171,6 +171,10 @@ def _apply_groups(word: str, ebae: bool = False) -> str:
                 # 첫머리 음절 약자는 뒤에 글자가 더 있어야 한다(be/con/dis 단독 아님)
                 if i != 0 or len(word) <= len(k):
                     continue
+                # UEB — 첫 음절을 이룰 때만 쓴다. `dish` 는 d-i-sh 라 dis 가 음절이 아니다
+                #   (규정 제39항 예문 `dishes` = di%es, #950)
+                if k == "dis" and word[3:4] == "h":
+                    continue
                 out.append(WORD_INITIAL_SYLLABLE[k])
             elif k in STRONG_GROUPS or k in EBAE_ONLY_GROUPS:
                 if i == 0 and k in _NOT_WORD_INITIAL:
