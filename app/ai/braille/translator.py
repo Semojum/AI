@@ -22,6 +22,7 @@ import logging
 import os
 import collections
 import re
+import unicodedata
 from functools import lru_cache
 
 from app.ai.braille.kor_math_rules import (convert_latex, digits_to_braille,
@@ -1044,6 +1045,11 @@ def _src_bracket_repl(m: re.Match) -> str:
 # gold는 `⠦⠄⠀⠠⠴`(소괄호 + 한 칸)를 181건 적었고, 밑줄 빈칸 ⠸⠤·숨김표는 0건이다.
 # 규정도 같다(제49항 소괄호), 지침도 같다(예 2-13·2-15 `( )이/가 이루어졌다`).
 _HANJA_ONLY_RE = re.compile(r"^[\u4e00-\u9fff\s·]*[\u4e00-\u9fff][\u4e00-\u9fff\s·]*$")
+# 한자 병기 괄호 **앞** 빈칸 — 괄호를 통째 지우면 앞 빈칸이 남아 조사가 떨어진다
+# (`측은지심 (惻隱之心)을` → `측은지심 을`). gold 는 `측은지심을`(vl-014 p005). 뒤가 빈칸이면
+# 그 빈칸 하나가 어절 경계로 남는다(`국가 (國家) 가` → `국가 가`, 종전 두 칸)(T25).
+_HANJA_PAREN_LEAD_SPACE_RE = re.compile(
+    r"[ \t]+(?=\([\u4e00-\u9fff\s·]*[\u4e00-\u9fff][\u4e00-\u9fff\s·]*\))")
 # 기입용 빈 괄호: 안이 공백뿐이면 폭과 무관하게 한 칸으로 적는다(gold 181/181이 한 칸).
 _BLANK_PAREN_RE = re.compile(r"^\s+$")
 
@@ -1420,7 +1426,7 @@ def _apply_book_style(text: str, *, qnum_period: bool = True) -> str:
     text = _CIRCLED_RE.sub(
         lambda m: (_circled_braille(m.group()) if m.group() in _CIRCLED_PLAIN
                    else _CIRCLED[m.group()]), text)
-    text = _MARK_PAREN_RE.sub(_paren_repl, text)
+    text = _MARK_PAREN_RE.sub(_paren_repl, _HANJA_PAREN_LEAD_SPACE_RE.sub("", text))
     # 이 단계는 이미 음수 판정(_NEG_NUM_RE) 뒤라 자리표시자를 유지할 이유가 없다 —
     # 여기서 만들어진 감쌈만 되돌린다(밖에서 온 것은 앞서 복원돼 no-op).
     text = _restore_wrap_hyphen(text)
@@ -2328,6 +2334,41 @@ def dropped_pua(text: str) -> collections.Counter:
     return collections.Counter(ch for ch in text if _pua_droppable(ch))
 
 
+# ── 기호표에도 braillify 에도 없는 기호 — 2026-09-29 pm 결재(T25) ────────────────────
+# `_safe_to_unicode` 는 braillify 가 거부한 글자를 **지우고** 다시 점역한다. PUA 는 R15 로
+# 세지만 그 밖의 기호는 아무 데도 안 남았다(`가▶나` → ⠫⠉). 2027 8권에 기호만 330회·113쪽,
+# 그중 `★★★★☆` → `☆` 처럼 뜻이 뒤집히는 자리도 있다. 점역사는 없는 것을 못 본다.
+# 점형을 정하기 전까지는 **세어서 쪽 플래그(R17)로 드러낸다.**
+# ⚠ 기호 블록만 센다. 한자(gold 도 뺀다) · ZWNJ 같은 보이지 않는 글자 · 백틱(추출 잡음) ·
+#   다른 문자권 글리프(`١`·`ང` 등 추출 잡음)까지 세면 2,500회가 넘어 플래그가 늘 켜진다.
+_SYMBOL_BLOCKS = ((0x00A1, 0x00BF), (0x2010, 0x2BFF), (0x3000, 0x303F),
+                  (0x3200, 0x33FF), (0xFE30, 0xFE4F), (0xFF01, 0xFFEF))
+
+
+@lru_cache(maxsize=None)
+def _symbol_droppable(ch: str) -> bool:
+    """그 기호 하나를 점역 경로에 넣으면 아무것도 안 나오는가(= 조용히 사라지는 기호)."""
+    o = ord(ch)
+    if not any(a <= o <= b for a, b in _SYMBOL_BLOCKS):
+        return False
+    if unicodedata.category(ch)[0] not in "SP" and unicodedata.category(ch) != "No":
+        return False
+    try:
+        return not translate_tagged_text(ch).strip("⠀ ")
+    except Exception:      # noqa: BLE001
+        return True
+
+
+def dropped_symbols(text: str) -> collections.Counter:
+    """점역에서 조용히 빠질 기호를 글자별로 센다. 페이지 플래그(R17)의 근거 수치다.
+
+    문맥으로 점형을 받는 자리는 먼저 걷는다 — `정답 해설 ▶` 의 ▶ 는 쌍점으로 나간다
+    (`_ARROW_LABEL_RE`, 2027 8권 128회). 안 걷으면 플래그가 멀쩡한 쪽에 켜진다.
+    """
+    text = _ARROW_LABEL_RE.sub("", text)
+    return collections.Counter(ch for ch in text if _symbol_droppable(ch))
+
+
 def _sanitize_repl(m: re.Match) -> str:
     """hostile 런을 문자별로: braillify가 처리 가능하면 보존(옛한글 PUA 등),
     못 하는 것(수식 글리프·제어문자)만 공백. 규정 08절 옛한글 PUA 소실 버그 수정(2026-07-18)."""
@@ -3210,7 +3251,7 @@ def translate_with_breaks(text: str, *, force_roman: bool = False,
         # ★ 보기 마커 원문 복원(ㄱㄴㄷㄹ)은 나열 시퀀스가 필요해 요소 전체에서 선적용해야
         #   한다 — 줄 분리 후엔 줄당 마커 1개라 ≥2 가드에 걸려 발동 못 한다(2026-07-18).
         text = _normalize_bogi_markers(text)
-        text = _MARK_PAREN_RE.sub(_paren_repl, text)
+        text = _MARK_PAREN_RE.sub(_paren_repl, _HANJA_PAREN_LEAD_SPACE_RE.sub("", text))
     lines: list[str] = []
     breaks: list[list[int]] = []
     for src_line in text.split("\n"):
