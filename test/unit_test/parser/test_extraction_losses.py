@@ -107,13 +107,32 @@ def test_스캔본이면_unseen_을_안_잰다(tmp_path, monkeypatch):
     assert {x["class"] for x in losses} == {"dropped"}
 
 
-def test_깨진_줄만_빼고_나머지_줄은_잰다(tmp_path, monkeypatch):
-    """쪽 글 전체로 레이어를 가르면 몇 글자 깨진 쪽이 통째로 빠진다(dev 121쪽 중 99쪽). 줄마다 가른다."""
-    monkeypatch.setattr(L, "_layer_untrustworthy", lambda s, page=None: "카드" in (s or ""))
+def test_깨진_글자만_빼고_줄은_남긴다():
+    """언매 실물 — ◇ 가 PUA, 글머리 구분이 제어 문자로 나온다. 줄째 버리면 멀쩡한 한글이 대조에서 빠진다."""
+    assert L._BAD_CHAR_RE.sub("", "이번 주부터 우리 \ue280\u2009\ue280\u2009시 주요 뉴스") == \
+        "이번 주부터 우리 \u2009\u2009시 주요 뉴스"
+    assert L._BAD_CHAR_RE.sub("", "•\x07Ⅰ~Ⅲ의 전체 개체 수는") == "•Ⅰ~Ⅲ의 전체 개체 수는"
+    assert L._BAD_CHAR_RE.sub("", "‘\uf537녀긔’") == "‘녀긔’"
+
+
+def test_짧은_줄이_이어진_칸은_덩이로_잰다():
+    """생명과학 p10 정답 칸 — 줄 하나씩 재면 `정답` 이 머리말 `정답과 해설` 에 걸려 칸이 끊겼다."""
+    doc = fitz.open()
+    pg = doc.new_page(width=500, height=1000)
+    pg.insert_text((50, 100), "정답\n1. 가설\n2. 대조\n3. 인산", fontname="korea", fontsize=9)
+    kept = [{"content": "정답과 해설 5쪽"}, {"content": "가설을 세우고 대조 실험을 한다."}]
+    losses, _ = L.extraction_losses(kept, pg, None)
+    assert [L._plain(x["text"]) for x in losses] == ["정답1가설2대조3인산"]
+
+
+def test_항목_안에서_빠진_줄만_적는다(tmp_path):
+    """그림 제목은 경계에 들어갔고 그림 안 글만 빠졌다 — 들어간 줄까지 손실로 적으면 채점기가 오인한다."""
     doc, pg = _page()
-    losses, checks = L.extraction_losses([{"content": KEPT}, {"content": DROP}], pg, None)
-    assert checks == ["text_layer"]
-    assert [x["text"] for x in losses] == [UNSEEN]           # 깨진 줄(CARD)만 빠진다
+    title = "그림 1 우리 동네 소식 카드 뉴스"
+    pg.insert_text((50, 580), title, fontname="korea", fontsize=9)
+    losses, _ = L.extraction_losses([{"content": KEPT}, {"content": title}], pg, _raw(tmp_path, ITEMS))
+    fig = [x for x in losses if x.get("reason") == "figure_text"]
+    assert len(fig) == 1 and "카드 뉴스 속" in fig[0]["text"] and "우리 동네" not in fig[0]["text"]
 
 
 def test_짧은_조각은_적지_않는다(tmp_path):
