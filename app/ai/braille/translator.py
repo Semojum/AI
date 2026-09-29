@@ -514,7 +514,7 @@ class _RomanCtx:
     재점역하는 동안 문맥이 덮여 같은 줄이 호출 순서에 따라 다르게 나온다.
     """
 
-    __slots__ = ("has_hangul", "hangul_ratio", "opened", "tail_term")
+    __slots__ = ("has_hangul", "hangul_ratio", "opened", "tail_term", "hyphen_link")
 
     def __init__(self, text: str, *, force: bool = False) -> None:
         han = len(_HANGUL_SYL_RE.findall(text))
@@ -529,6 +529,9 @@ class _RomanCtx:
         self.opened = False
         # 직전 `_split_english` 가 **세그 맨 끝에** 종료표 ⠲ 를 적었는가(#917, `_emit_mixed` 가 읽는다).
         self.tail_term = False
+        # 직전 세그가 로마자로 끝나고 붙임표 ⠤ 뒤에 로마자가 바로 이어지는가(`v-x`). 그러면 구간은
+        #   붙임표를 넘어 이어진다(제32항 · 제36항 예문 `v-x` = ⠴⠧⠤⠰⠭⠲). `_emit_mixed` 가 세우고 다음 세그가 쓴다.
+        self.hyphen_link = False
 
     def wants_roman(self) -> bool:
         """세그에 한글이 없어도 줄 문맥상 ⠴를 새로 열어야 하는가."""
@@ -551,7 +554,10 @@ def _emit_mixed(text: str, result: list[str], ctx: "_RomanCtx | None" = None) ->
     def _seg(seg: str, follow: str = "") -> str:
         if ctx is not None:
             ctx.tail_term = False
+        linked = ctx is not None and ctx.hyphen_link
         out = _safe_to_unicode(seg, ctx=ctx)
+        if ctx is not None:
+            ctx.hyphen_link = False
         # 붙임표(⠤) 뒤 순수 로마자 세그: 세그 분리로 한글 문맥이 사라져 braillify가
         # 로마자표를 못 붙인다. 정답 관행은 여는 ⠴만·종료표 생략(-⠴UN- , 사회문화
         # p100·108 실측, 교차 59건). 직전 결과가 ⠤로 끝날 때만 ⠴를 접두한다.
@@ -562,7 +568,7 @@ def _emit_mixed(text: str, result: list[str], ctx: "_RomanCtx | None" = None) ->
         body = out.lstrip("⠀")
         if (result and result[-1].endswith("⠤")
                 and seg.strip() and all(c.isalpha() and c.isascii() for c in seg.strip())
-                and not body.startswith("⠴")):
+                and not body.startswith("⠴") and not linked):
             out = out[:len(out) - len(body)] + "⠴" + body
             if ctx is not None:
                 ctx.opened = True
@@ -591,6 +597,18 @@ def _emit_mixed(text: str, result: list[str], ctx: "_RomanCtx | None" = None) ->
                 #   (규정 예문 `D-100일` = ⠴⠠⠙⠤⠼⠁⠚⠚ · #944). 붙임표가 먼저 점자가 돼 세그 끝에서 ⠲ 를 적었다.
                 if follow.startswith("⠤") and (follow[1:2].isdigit() or follow[1:2] == "⠼"):
                     out = out[:-1]
+        # 로마자 + 붙임표 + 로마자(`v-x` · `CD-ROM` · `B-team`) — 붙임표는 로마자 구간 **안**의 통일영어점자
+        #   붙임표다(제32항, 제36항 예문 `v-x쪽` = ⠴⠧⠤⠰⠭⠲…). 제33항 [다만]의 "‘-’ 앞 종료표" 는 로마자와
+        #   **한글** 사이 자리다(`U-도서관`). 붙임표가 먼저 점자가 돼 세그가 끊기면 앞에서 ⠲ 를 적고 뒤에서
+        #   ⠴ 를 다시 열었다(⠴⠧⠲⠤⠴⠭⠲). 앞 종료표를 떼고 다음 세그에 이어짐을 알린다.
+        if (follow and ctx is not None and follow.startswith("⠤") and follow[1:2].isascii()
+                and follow[1:2].isalpha() and seg[-1:].isascii() and seg[-1:].isalpha()):
+            if ctx.tail_term and out.endswith("⠲"):
+                out = out[:-1]
+            ctx.opened = True
+            ctx.tail_term = False
+            ctx.hyphen_link = True
+            return out
         # 종료표를 적어야 하는데 세그가 끊겨 못 적은 자리(#944). 문자표가 `[`·`/`·`-` 를 먼저 점자로 바꿔
         #   로마자 세그가 거기서 끊기고, 줄 문맥 경로(`_split_english` 의 ctx 가지)는 제34항(묶인 로마자)으로 보고
         #   종료표를 안 적었다. 그 부호가 **묶는 쪽이 아니라 로마자 뒤에 새로 여는 쪽**이면 로마자 구간은 거기서 닫힌다.
@@ -2535,7 +2553,9 @@ def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
         #   ★ 여는 괄호 등이 먼저 점자가 돼 세그가 끊긴 자리(`[C] [D]`)는 켜지 않는다 — gold 는 거기서
         #   로마자표를 새로 연다(`⠦⠆⠴⠠⠙`, 001 ans p0033). ⠰ 를 붙이면 빠진 ⠴ 자리에 엉뚱한 셀이 선다.
         #   한글 없는 순수 로마자 줄도 켜지 않는다(실측 전).
-        g1 = "lead" if (has_hangul or ctx.wants_roman()) else ""
+        link = ctx.hyphen_link and start == 0     # 붙임표로 이어진 구간 — ⠴ 를 다시 열지 않는다
+        ctx.hyphen_link = False
+        g1 = "cont" if link else ("lead" if (has_hangul or ctx.wants_roman()) else "")
         for s, e in span:
             if s > pos:
                 body.append(_span_gap(seg[pos:s]))
@@ -2554,11 +2574,11 @@ def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
                 # (`Youth?이다` · 규정 예문 `,y|?8oi4`).
                 core += "⠦"
                 end += 1
-            out.append(f"⠴{core}{term}")
+            out.append(("" if link else "⠴") + core + term)
             ctx.opened = term == ""    # 종료표를 안 적었으면 구간은 계속 열려 있다
             ctx.tail_term = term == "⠲" and end == len(seg)
-        elif ctx.wants_roman():
-            out.append("⠴" + core)     # 제34항 — 종료표는 적지 않는다
+        elif link or ctx.wants_roman():
+            out.append(("" if link else "⠴") + core)     # 제34항 — 종료표는 적지 않는다
             ctx.opened = True
             ctx.tail_term = False
         else:
