@@ -326,6 +326,8 @@ def join_wrapped_lines(elements: list[dict], page: fitz.Page, *,
             #   두 번째 이음부터 줄 대조가 어긋나 늘 개행으로 물러선다(한 번 밟았다).
             seam = _line_seam(page, tail, tail_text, el.get("content") or "")
             prev["content"] = f"{prev['content']}{seam}{el['content']}"
+            if el.get("flags"):          # 이은 글의 출처 표지도 같이 남긴다(T35)
+                prev["flags"] = list(dict.fromkeys([*(prev.get("flags") or []), *el["flags"]]))
             prev["bbox"] = [min(prev["bbox"][0], bb[0]), min(prev["bbox"][1], bb[1]),
                             max(prev["bbox"][2], bb[2]), max(prev["bbox"][3], bb[3])]
             tail, tail_text = to_rect(bb), el["content"]

@@ -353,6 +353,8 @@ _EXTRACT_SOURCES = (
     "app/ai/captioning/captioner.py",
     "app/ai/captioning/classifier.py",
     "app/ai/builder/result_builder.py",
+    "app/ai/parser/extraction_losses.py",   # 경계 파일의 `extraction_losses` 를 만든다(T35)
+    "app/ai/preprocessor/line_join.py",     # 경계 요소를 잇는다(요소 수·flags 가 바뀐다)
 )
 # 추출 산출을 가르는 스위치만. 값 자체는 안 싣는다(키가 섞일 수 있다) — 해시만.
 _EXTRACT_ENV = (
@@ -1364,6 +1366,22 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         except Exception as exc:      # noqa: BLE001 — 잇기는 있으면 좋은 것, 실패는 격리
             logger.warning("줄바꿈 조각 잇기 건너뜀 (page=%d): %s", task.page_no, exc)
 
+    # 추출 손실 목록(T35) — 추출이 못 본 글(unseen)과 MinerU 는 봤는데 여기까지 못 온 글(dropped).
+    # 요소가 다 정해진 **마지막 자리**에서 잰다. 앞 단계(builder·줄 잇기·상자 태깅)가 버린 것도 같이 잡힌다.
+    # 점역에는 안 쓴다 — 채점기가 미커버를 갈래로 나눌 때 읽는다(`extraction_losses` 모듈 주석).
+    losses: list[dict] = []
+    loss_checks: list[str] = []
+    try:
+        import fitz
+        from app.ai.parser.extraction_losses import extraction_losses
+        from app.ai.preprocessor.pdf_analyzer import _coerce_pdf_bytes
+        with fitz.open(stream=_coerce_pdf_bytes(task.pdf_data), filetype="pdf") as _d:
+            _pg = _d[max(0, min(task.page_no - 1, _d.page_count - 1))]
+            losses, loss_checks = extraction_losses(
+                elements, _pg, _page_dir(task) / "mineru_raw" if method != "TEXT_NATIVE" else None)
+    except Exception as exc:          # noqa: BLE001 — 표시는 있으면 좋은 것, 실패는 격리
+        logger.warning("추출 손실 목록 건너뜀 (page=%d): %s", task.page_no, exc)
+
     extraction = {
         "meta": {
             "job_id": task.job_id,
@@ -1377,8 +1395,12 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             # 쪽 회전각(0·90·180·270). 보기엔 평범한 1단 쪽인데 PDF 내부 좌표가 누워 있는
             # 지면이 있다(외국어 영역 실측 57쪽). 읽기순서를 바로 세우려면 이 값이 필요하다.
             "page_rotation": _page_rotation(task.pdf_data, task.page_no),
+            # 손실 목록을 무엇과 대조해 만들었나("mineru" · "text_layer"). 빠진 쪽은 안 쟀다는 뜻이다 —
+            # 목록이 비었다고 손실이 없다고 읽으면 안 된다.
+            "loss_checks": loss_checks,
         },
         "elements": elements,
+        "extraction_losses": losses,
     }
     return doc_meta, extraction
 
