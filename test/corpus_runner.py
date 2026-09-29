@@ -368,6 +368,7 @@ async def run_subject(subject: str, sel_rows: list[dict], tag: str, *,
                 "n_braille": len(res.get("braille_text_list") or []),
                 "critical": [c.get("type") for c in
                              res.get("quality_report", {}).get("critical_errors", [])],
+                "caption_disabled": pm.get("caption_disabled"),
                 "error": None,
             })
             # ★ NEEDS_REVIEW를 blocked로 세면 안 된다. 점자를 정상 생성하고 검토 플래그만
@@ -403,12 +404,19 @@ async def run_subject(subject: str, sel_rows: list[dict], tag: str, *,
     return {"job_id": job_id, "pages": page_states}
 
 
+def _job_caption_state(pages: list[dict]):
+    vals = {p.get("caption_disabled") for p in pages if "caption_disabled" in p}
+    return vals.pop() if len(vals) == 1 else None
+
+
 def _save_state(job_dir: Path, job_id: str, subject: str, tag: str, pages: list[dict]):
     (job_dir).mkdir(parents=True, exist_ok=True)
     (job_dir / "run_state.json").write_text(json.dumps({
         "job_id": job_id, "subject": subject, "tag": tag,
-        # 캡셔닝을 끄고 돈 런이면 남긴다 — 나중에 이 산출물로 시각 축을 재는 사고를 막는다.
-        "caption_disabled": os.environ.get("SEMOJUM_NO_CAPTION") == "1",
+        # 캡셔닝을 끄고 뜬 경계로 낸 런이면 남긴다 — 나중에 이 산출물로 시각 축을 재는 사고를 막는다.
+        # 러너 env 가 아니라 **쪽 응답 표시를 모은다**. 경계를 복사해 쓰는 러너는 env 와 내용이 갈린다.
+        # 쪽이 전부 같으면 그 값, 섞였거나 모르면 None(모름).
+        "caption_disabled": _job_caption_state(pages),
         "updated": time.strftime("%Y-%m-%d %H:%M:%S"),
         "pages": pages,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
