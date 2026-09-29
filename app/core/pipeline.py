@@ -2481,6 +2481,13 @@ async def _run_pipeline(task: PageTask) -> dict:
 
     # Phase 2 (태민): 경계 파일 → 분해 → 6-체인
     layout_result, ext_map, _method = _parse_txt_result(extraction, page_id)
+    # 수식 지면이면 평문 속 `p-q`·`(x, y)` 도 수식으로 보낸다(T16 · 원장 R-85). 신호는 추출 effort
+    # 라우터와 같은 한컴 수식 글꼴 비율이다. PDF 가 없는 요청(mode b)은 종전대로 꺼 둔다.
+    if task.pdf_data:
+        from app.ai.braille import inline_math
+        from app.ai.parser.mineru_runner import _is_math_page
+        inline_math.MATH_PAGE.set(await asyncio.to_thread(
+            _is_math_page, task.pdf_data, max(0, task.page_no - 1)))
     # 읽기순서 LLM 보정(원장 C-106 · 대표 결재 2026-09-07). 비회전 쪽만 태우고,
     # 실패·순열아님·안전판이면 규칙 순서 그대로 간다. 근거·수치는 llm_order 도크스트링.
     from app.ai.parser import llm_order            # 지연 임포트(anthropic SDK 는 호출 때만)
