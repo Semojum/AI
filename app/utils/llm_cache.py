@@ -90,6 +90,11 @@ def _mode() -> str:
     return os.environ.get("LLM_CACHE_MODE", "rw").strip().lower()
 
 
+def mode() -> str:
+    """`LLM_CACHE_MODE`(rw · ro · off). 캡션 · 분류 · 세분류 캐시(`captioner`)도 이 값을 따른다(T39 S1)."""
+    return _mode()
+
+
 def root() -> Path | None:
     """`cas/llm` 뿌리. `LLM_CACHE_DIR` 이 **빈 값**이면 None = 캐시 끔.
 

@@ -361,6 +361,15 @@ _EXTRACT_ENV = (
     "FIGURE_DETECT", "FIGDET_MODEL", "DISABLE_LLM_FALLBACK",
     "CAPTION_BACKEND", "CAPTION_MODEL", "CAPTION_CACHE_DIR",
     "MINERU_BIN", "CHAIN_SEQUENTIAL",
+    # ★ T39 S5 전수(2026-09-30) — 경계 내용을 바꾸는데 빠져 있던 것. 운영에서 바꿔도 옛 경계를 그대로
+    #   재사용했다(eval 실측: MINERU_MATH_FONT_GUARD 하나로 경계 8쪽 중 4쪽이 바뀐다). 캡션을 통째로 끄는
+    #   SEMOJUM_NO_CAPTION 도 없었다 — 끄고 뜬 경계가 켠 실행에 그대로 쓰였다.
+    #   새 스위치를 추출 단계에 넣으면 여기 또는 `test_extract_env_fingerprint` 의 "경계 무관" 표에 적는다.
+    "MINERU_MATH_FONT_GUARD", "MINERU_EFFORT", "MINERU_BACKEND", "MINERU_ENGINE",
+    "SEMOJUM_NO_CAPTION", "CAPTION_MATERIAL", "CAPTION_UPSCALE", "CAPTION_FAIL_STREAK_LIMIT",
+    "LLM_TEXT_GUARD", "LLM_CACHE_MODE", "SIDEBAR_AS_NOTE", "GRAFT_SIM_MIN",
+    "ADVANCED_EXTRACT_MODE", "ADVANCED_EXTRACT_MODEL", "ADVANCED_EXTRACT_FALLBACK_MODEL",
+    "ADVANCED_EXTRACT_RELABEL", "ADVANCED_EXTRACT_MAX_TOKENS", "ADVANCED_EXTRACT_RETRY_BUDGET",
 )
 
 
@@ -389,9 +398,29 @@ def _extract_prompt_ver() -> str:
 
 
 def _extract_env_fp() -> str:
+    # ★ 캡션 API 키는 값이 아니라 **있고 없음**만 싣는다(T39 S5). 키 없이 뜬 경계는 시각 요소 캡션이
+    #   전부 비어 있다(CAPTION_FAILED). 키를 넣은 뒤에도 그 경계가 그대로 재사용되면 안 된다.
+    keys = f"keys={int(bool(config.anthropic_api_key))}{int(bool(config.openai_api_key))}"
     return hashlib.sha256(
-        "|".join(f"{k}={os.environ.get(k, '')}" for k in _EXTRACT_ENV).encode()
+        ("|".join(f"{k}={os.environ.get(k, '')}" for k in _EXTRACT_ENV) + "|" + keys).encode()
     ).hexdigest()[:12]
+
+
+def _boundary_reuse(reuse_reason: str | None) -> str | None:
+    """`BOUNDARY_REUSE` 스위치를 지문 판정에 얹는다. None = 경계를 그대로 쓴다, 그 밖 = 다시 뜬다(사유).
+
+    ★ `always` 는 되돌리는 길이다. 지문 대조를 건너뛰고 옛 동작(있으면 쓴다)으로 돈다. 단 `doc_meta`
+      가 없는 옛 경계 파일은 여기서도 다시 뜬다 — 그게 없으면 티어를 되짚을 수밖에 없고, 되짚으면 틀린다.
+    ★ `never` 는 반대로 **늘 다시 뜬다**(T39 S2). 추출 · 캡션 · 순서 · 그림 회수를 바꾼 A/B 는 경계를
+      다시 떠야 차이가 보인다. 지문에 안 잡히는 변경도 이 팔에서는 다시 돈다.
+    프로세스 env 로만 읽는다(`.env` 아님 — `.env` 는 빈 값에도 진다).
+    """
+    mode = os.environ.get("BOUNDARY_REUSE", "")
+    if mode == "never":
+        return "never"
+    if reuse_reason and reuse_reason != "no_doc_meta" and mode == "always":
+        return None
+    return reuse_reason
 
 
 def _stamp_path(task: PageTask) -> Path:
@@ -2496,12 +2525,10 @@ async def _run_pipeline(task: PageTask) -> dict:
         stamp: dict = {}
         if _txt_result_path(task).exists():
             reuse_reason, stamp = _stamp_verdict(task)
-            # ★ 되돌리는 길. `always` 면 지문 대조를 건너뛰고 옛 동작(있으면 쓴다)으로 돈다.
-            #   단 `doc_meta` 가 없는 옛 경계 파일은 여기서도 다시 뜬다 — 그게 없으면
-            #   티어를 되짚을 수밖에 없고, 되짚으면 틀린다.
-            if (reuse_reason and reuse_reason != "no_doc_meta"
-                    and os.environ.get("BOUNDARY_REUSE") == "always"):
-                reuse_reason = None
+            reuse_reason = _boundary_reuse(reuse_reason)
+        # 경계 재사용을 계수기에 남긴다 — `never` 팔이 진짜 다시 떴는지 `경계 hit=0` 으로 본다.
+        from app.utils.req_log import record_cache
+        record_cache("경계", reuse_reason is None)
         if reuse_reason is None:
             extraction = _read_txt_result(task)
             doc_meta = DocumentMeta(**stamp["doc_meta"])

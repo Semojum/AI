@@ -1314,6 +1314,8 @@ def _cache_new_file(kind: str, raw: bytes, prompt_id: str, context: str = "") ->
     from app.utils import llm_cache
     if not llm_cache.scope():       # 격리 열쇠가 없으면 안 쓴다(3-e, fail closed)
         return None
+    if llm_cache.mode() == "off":   # T39 S1 — `LLM_CACHE_MODE=off` 면 읽지도 쓰지도 않는다
+        return None
     p = llm_cache.resolve_dir("CAPTION_CACHE_DIR")
     if p is None:
         return None
@@ -1343,6 +1345,38 @@ def _kind_matches(kind: str, text: str) -> bool:
     return is_label if kind in ("classify", "subtype") else not is_label
 
 
+# 계수기(`req_log.llm_counter_line`)에 찍히는 이름. 호출 계수(`record_anthropic`)와 같은 이름이라야
+# 한 줄에 `call · hit · miss` 가 같이 선다.
+_COUNTER_KIND = {"caption": "캡셔닝", "classify": "분류", "subtype": "세분류"}
+
+
+def _cache_lookup(kind: str, path: Path | None) -> str | None:
+    """캐시 원응답을 꺼낸다(없으면 None). 적중 · 미스를 계수기에 남긴다(T39 S4).
+
+    ★ `LLM_CACHE_MODE=ro` 에서 미스면 `CacheMiss` 를 올린다(T39 S1). ro 는 "이 팔에서 외부 호출 0"
+      을 강제하는 장치다 — 미스를 조용히 호출로 흘리면 캡션 A/B 에서 안 바뀌는 팔을 스냅숏으로
+      못 고정한다. 부르는 쪽(`result_builder._do_caption`)이 요소 하나의 캡션 실패로 받는다.
+    """
+    if path is None:
+        return None
+    from app.utils import llm_cache
+    from app.utils.req_log import record_cache
+    hit = path.exists()
+    record_cache(_COUNTER_KIND.get(kind, kind), hit)
+    if hit:
+        return path.read_text(encoding="utf-8")
+    if llm_cache.mode() == "ro":
+        raise llm_cache.CacheMiss(f"{kind} 캐시 미스 · LLM_CACHE_MODE=ro ({path.stem[:12]})")
+    return None
+
+
+def _cache_put(path: Path | None, text: str) -> None:
+    """원응답을 담는다. `LLM_CACHE_MODE` 가 rw 일 때만(ro · off 는 안 쓴다, T39 S1)."""
+    from app.utils import llm_cache
+    if path is not None and text and llm_cache.mode() == "rw":
+        path.write_text(text, encoding="utf-8")
+
+
 def _cache_read(kind: str, new_path: Path | None, image_type: str,
                 out_info: dict | None = None) -> str | None:
     """캐시에서 캡션을 꺼낸다. 없으면 None.
@@ -1353,9 +1387,9 @@ def _cache_read(kind: str, new_path: Path | None, image_type: str,
       `_finish` 는 멱등이라(전수 실측 깨짐 0건) 통과본에 한 번 더 걸어도 무해하고,
       새 가드가 옛 항목에도 즉시 닿는다.
     """
-    if new_path is None or not new_path.exists():
+    text = _cache_lookup(kind, new_path)
+    if text is None:
         return None
-    text = new_path.read_text(encoding="utf-8")
     if not _kind_matches(kind, text):
         return None                         # 분류 라벨을 캡션으로 내보내지 않는다
     return guard_llm_text(text, "caption", image_type=image_type, out_info=out_info)
@@ -1367,9 +1401,9 @@ def _cache_write(new_path: Path | None, answer: str, finished: str) -> None:
     가드 판정 결과가 아니라 모델이 준 글을 담아야, 가드를 넓혔을 때 옛 항목에도 닿는다.
     빈 캡션은 안 담는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
     """
-    if new_path is None or not (finished or "").strip():
+    if not (finished or "").strip():
         return
-    new_path.write_text(answer, encoding="utf-8")
+    _cache_put(new_path, answer)
 
 
 # 크롭이 사실상 **빈 자리**이면 캡션을 부르지 않는다 (노션 Review, 2026-08-23).
@@ -1429,10 +1463,7 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "",
     prompt_id = image_type + ("+material" if _material_on() else "")
     cache = _cache_new_file("caption", raw, prompt_id, context)
     # 적중분에도 이유를 채운다 — 안 그러면 캐시가 장식 판정을 비켜 가 `CAPTION_FAILED` 로 남는다.
-    hit = _cache_read("caption", cache, image_type, out_info)
-    if cache is not None:
-        from app.utils.req_log import record_cache
-        record_cache("캡셔닝", hit is not None)
+    hit = _cache_read("caption", cache, image_type, out_info)   # 적중 · 미스 계수는 안에서 센다
     if hit is not None:
         return hit
 

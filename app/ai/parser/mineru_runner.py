@@ -1528,6 +1528,21 @@ def _recover_table_bands(content_list: list[dict], fitz_page: fitz.Page, page_no
     return out
 
 
+def _raw_dir(base: Path, mineru_cache_dir: str | None) -> tuple[Path, bool]:
+    """MinerU 출력 폴더와 재사용 여부.
+
+    ★ `MINERU_RAW_REUSE=never` 면 캐시된 MinerU 출력을 안 쓰고 **늘 다시 부른다**(T39 S3). 없으면 MinerU
+      설정 축(effort · 백엔드 · 엔진)은 어느 러너로도 못 잰다 — 경계를 다시 떠도 심어 둔 raw 를 재사용해
+      MinerU 가 안 돈다. 주어진 캐시 폴더(`mineru_cache_dir`)는 건드리지 않고 이 쪽 폴더를 비워 새로 받는다.
+      프로세스 env 로만 읽는다.
+    """
+    raw_dir = Path(mineru_cache_dir) if mineru_cache_dir else base / "mineru_raw"
+    if os.environ.get("MINERU_RAW_REUSE", "") == "never":
+        raw_dir = base / "mineru_raw"
+        shutil.rmtree(raw_dir, ignore_errors=True)
+    return raw_dir, bool(list(raw_dir.rglob("*_content_list.json")))
+
+
 def run(
     pdf_path: str,
     page_no: int,
@@ -1557,8 +1572,11 @@ def run(
     with fitz.open(str(pdf_path)) as _d:
         page_idx = max(0, min(page_no - 1, _d.page_count - 1))
 
-    raw_dir = Path(mineru_cache_dir) if mineru_cache_dir else base / "mineru_raw"
-    if not list(raw_dir.rglob("*_content_list.json")):
+    raw_dir, reused = _raw_dir(base, mineru_cache_dir)
+    # 재사용을 계수기에 남긴다 — `never` 팔이 진짜 MinerU 를 불렀는지 `MinerU hit=0` 으로 본다.
+    from app.utils.req_log import record_cache
+    record_cache("MinerU", reused)
+    if not reused:
         raw_dir.mkdir(parents=True, exist_ok=True)
         for _attempt in range(1 + _MINERU_RETRIES):
             try:
