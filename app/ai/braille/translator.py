@@ -546,6 +546,33 @@ def _emit_mixed(text: str, result: list[str], ctx: "_RomanCtx | None" = None) ->
                 if follow.startswith(close) and open_ in before:
                     out = out[:-1]
                     break
+            else:
+                # 제35항 — 로마자와 숫자가 이어 나오면 종료표를 적지 않는다. 붙임표가 끼어도 같다
+                #   (규정 예문 `D-100일` = ⠴⠠⠙⠤⠼⠁⠚⠚ · #944). 붙임표가 먼저 점자가 돼 세그 끝에서 ⠲ 를 적었다.
+                if follow.startswith("⠤") and (follow[1:2].isdigit() or follow[1:2] == "⠼"):
+                    out = out[:-1]
+        # 종료표를 적어야 하는데 세그가 끊겨 못 적은 자리(#944). 문자표가 `[`·`/`·`-` 를 먼저 점자로 바꿔
+        #   로마자 세그가 거기서 끊기고, 줄 문맥 경로(`_split_english` 의 ctx 가지)는 제34항(묶인 로마자)으로 보고
+        #   종료표를 안 적었다. 그 부호가 **묶는 쪽이 아니라 로마자 뒤에 새로 여는 쪽**이면 로마자 구간은 거기서 닫힌다.
+        #   · 빈칸 뒤 여는 괄호 — 규정 제10항 예문 `Roma [ㄹㄹ로마]` = ⠴⠠⠗⠕⠍⠁⠲⠀⠦⠆…(재추출 523행)
+        #   · `/`·`-` 뒤 한글 — 제33항 [다만] "‘/ - ~’는 문장 부호 앞에 로마자 종료표를 적는다"
+        #     (`KTX/새마을호` = ⠴⠠⠠⠅⠞⠭⠲⠸⠌… · `U-도서관` = ⠴⠠⠥⠲⠤…)
+        #   ⚠ 좁힌 자리(2027 실물): 홑 대문자 라벨 `A (사회 보험)`(63곳, 원장 R-48 영역)은 두 글자 이상 낱말만 본다 ·
+        #     단위 `4000 kcal/년`·`(mL/분)`(제69항 보류건)은 대문자로 시작하고 앞이 숫자가 아닌 낱말만 본다.
+        if (follow and ctx is not None and ctx.opened and not ctx.tail_term
+                and not out.endswith("⠲")):
+            core = seg.rstrip()
+            word = re.search(r"[A-Za-z]+$", core)
+            if word:
+                w = word.group()
+                pre = text[:len(text) - len(follow) - len(seg)] + seg[:word.start()]
+                after_ws = seg[len(core):]
+                if after_ws and len(w) >= 2 and follow.startswith(("⠦⠆", "⠦⠄", "⠠⠦")):
+                    out = out[:len(out) - len(out) + len(out.rstrip("⠀ "))] + "⠲" + out[len(out.rstrip("⠀ ")):]
+                elif (not after_ws and w[0].isupper() and not re.search(r"\d\s*$", pre)
+                      and follow.startswith(("⠸⠌", "⠤")) and follow.lstrip("⠸⠌⠤")[:1] >= "가"
+                      and follow.lstrip("⠸⠌⠤")[:1] <= "힣"):
+                    out += "⠲"
         return out
 
     last = 0
