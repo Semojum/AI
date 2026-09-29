@@ -72,6 +72,17 @@ def gate_counts() -> dict[tuple[str, str], int]:
     return dict(_COUNTS.get() or {})
 
 
+def gate_restore(saved) -> None:
+    """경계 재사용 — 그 경계를 뜰 때 센 추출 단계 발동(`[[관문, 규칙, 건수], …]`)을 이 쪽 몫으로
+    되살린다(#1032). 안 그러면 재요청마다 G1 검토 표시가 빠진다(추출이 안 돌아 안 세진다).
+    새 발동이 아니므로 "발동" 로그는 찍지 않는다(끈 팔 확인이 그 로그를 센다)."""
+    counts = _COUNTS.get()
+    if counts is None:
+        return
+    for gate, rule, n in saved or ():
+        counts[(gate, rule)] += int(n)
+
+
 def gate_flags() -> list[dict]:
     """이 쪽에서 발동한 관문 → `quality_report.review_flags` 코드 넷.
 
