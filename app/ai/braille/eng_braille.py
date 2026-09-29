@@ -325,6 +325,26 @@ def _looks_contracted(word: str) -> bool:
                                   for h, any_pos in _SHORTFORM_HEADS)
 
 
+# 「한글 점자」 제37항(재추출 1795~1851행) — 로마자표 **바로 뒤** 영어 낱말은 단어 약자를 쓰지 않고
+#   알파벳과 묶음 약자로 풀어 적는다(`Can you` = `0,can`y` · rather = `ra!r` · in = `in`).
+#   [붙임](1847~1848행) be·enough·his·in·was·were 는 로마자 종료표 앞에서도 풀어 적는다 — 예문
+#   `be, his, was, were의` = `0be1`his1`was1`w]e4w`. 쉼표에 붙은 자리도 풀었으므로 문장 부호에
+#   닿은 자리 전부로 읽는다(통일영어점자의 아래칸 단어 약자 규칙과 같은 방향).
+_LOWER_WORDSIGNS = frozenset({"be", "enough", "his", "in", "was", "were"})
+
+
+def _spell_out(w: str, text: str, m: re.Match, lead: bool) -> bool:
+    low = w.lower()
+    if low not in WORDSIGNS or _is_abbrev(w):
+        return False
+    if lead and m.start() == 0:
+        return True
+    if low not in _LOWER_WORDSIGNS:
+        return False
+    before, after = text[m.start() - 1:m.start()], text[m.end():m.end() + 1]
+    return m.end() == len(text) or (after and not after.isspace()) or (before and not before.isspace())
+
+
 @lru_cache(maxsize=4096)
 def translate(text: str, ebae: bool = False, grade1: str = "") -> str:
     """영어 구간 문자열 → Grade 2 점자(낱말 단위 적용, 그 외 문자는 그대로).
@@ -378,6 +398,12 @@ def translate(text: str, ebae: bool = False, grade1: str = "") -> str:
         w = m.group()
         mark = (grade1 and not ebae and k not in passage and _looks_contracted(w)
                 and not (grade1 == "lead" and k == 0 and m.start() == 0 and len(w) == 1))
+        if grade1 and not ebae and k not in passage and _spell_out(w, text, m, grade1 == "lead" and k == 0):
+            low = w.lower()
+            body = "".join(ALPHABET[c] for c in low) if low == "in" else _apply_groups(low)
+            out.append((_CAPITAL if w[0].isupper() else "") + body)
+            last = m.end()
+            continue
         out.append((_GRADE1 if mark else "") + (passage.get(k) or translate_word(w, ebae)))
         last = m.end()
     out.append(text[last:])
