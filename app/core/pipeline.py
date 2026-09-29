@@ -27,7 +27,7 @@ import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 from app.core.config import config
 from app.ai import gates
@@ -370,7 +370,7 @@ _EXTRACT_ENV = (
     "LLM_TEXT_GUARD", "LLM_CACHE_MODE", "SIDEBAR_AS_NOTE", "GRAFT_SIM_MIN",
     "ADVANCED_EXTRACT_MODE", "ADVANCED_EXTRACT_MODEL", "ADVANCED_EXTRACT_FALLBACK_MODEL",
     "ADVANCED_EXTRACT_RELABEL", "ADVANCED_EXTRACT_MAX_TOKENS", "ADVANCED_EXTRACT_RETRY_BUDGET",
-    "ADVANCED_KEEP_CAPTIONS",
+    "ADVANCED_KEEP_CAPTIONS", "STABLE_ELEMENT_ID",
 )
 
 
@@ -1419,6 +1419,9 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     except Exception as exc:          # noqa: BLE001 — 표시는 있으면 좋은 것, 실패는 격리
         logger.warning("추출 손실 목록 건너뜀 (page=%d): %s", task.page_no, exc)
 
+    if _stable_ids():             # 요소가 다 정해진 뒤 한 자리에서 매긴다(N5 · #1017)
+        _rekey_elements(elements, task.job_id, task.page_no)
+
     extraction = {
         "meta": {
             "job_id": task.job_id,
@@ -1435,6 +1438,10 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             # 손실 목록을 무엇과 대조해 만들었나("mineru" · "text_layer"). 빠진 쪽은 안 쟀다는 뜻이다 —
             # 목록이 비었다고 손실이 없다고 읽으면 안 된다.
             "loss_checks": loss_checks,
+            # 캡셔닝을 끄고 뜬 경계인가. **경계와 함께 다닌다** — 응답 표시(processing_meta.caption_disabled)는
+            # 요청 때 env 가 아니라 이 값을 옮긴다. 경계를 재사용·복사하면 env 와 내용이 갈리기 때문이다
+            # (arm.py 108곳: 캡션 든 d8c 경계에 True 가 찍혔다). 이 키가 없는 옛 경계는 '모름'(None)이다.
+            "caption_disabled": os.getenv("SEMOJUM_NO_CAPTION") == "1",
         },
         "elements": elements,
         "extraction_losses": losses,
@@ -1769,6 +1776,41 @@ _LIST_SPLIT_MARKER_RE = re.compile(
 )
 
 
+# 요소 id 이름공간(N5 · #1017). 바꾸면 모든 요소 id 가 한 번 바뀐다 — 고정값이다.
+_EID_NS = UUID("5e0c6f1e-7a2b-4c1d-9f3e-2b8a6d4c1f70")
+
+
+def _stable_ids() -> bool:
+    """요소 id 를 입력에서 정한다(기본). `STABLE_ELEMENT_ID=0` 이 종전(uuid4)이다. 호출 때 읽는다."""
+    return os.environ.get("STABLE_ELEMENT_ID", "1") != "0"
+
+
+def _rekey_elements(elements: list[dict], job_id: str, page_no: int) -> None:
+    """경계 요소 id 를 다시 매긴다 — 같은 job · 쪽 · 자리의 요소는 늘 같은 id 다(N5 · #1017).
+
+    종전 uuid4 는 재파생마다 전부 갈려 점역사 피드백의 요소 참조가 끊겼다(설계 §2-3). 열쇠는
+    **자리**(유형 + 상자)다. 글은 안 넣는다 — 캡션 · 교정이 바뀌어도 같은 요소는 같은 id 여야 한다.
+    상자가 없는 요소(회수 그림 · 쪽 읽기 요소)만 글 앞머리로 잡는다. 겹치면 순번을 붙인다.
+    요소끼리의 참조(`caption_ref`)도 같이 옮긴다. MinerU 이미지 조각은 `image_path` 로 찾으므로
+    id 를 바꿔도 안 끊긴다.
+    """
+    seen: dict[str, int] = {}
+    remap: dict[str, str] = {}
+    for el in elements:
+        bb = el.get("bbox")
+        where = (",".join(str(round(float(v))) for v in bb) if bb
+                 else re.sub(r"\s+", "", el.get("content") or "")[:40])
+        key = f"{el.get('type', '')}|{where}"
+        seen[key] = seen.get(key, 0) + 1
+        new = str(uuid5(_EID_NS, f"{job_id}|{page_no}|{key}|{seen[key]}"))
+        if el.get("id"):
+            remap[str(el["id"])] = new
+        el["id"] = new
+    for el in elements:
+        if el.get("caption_ref") and str(el["caption_ref"]) in remap:
+            el["caption_ref"] = remap[str(el["caption_ref"])]
+
+
 def _split_list_marker_items(elements: list[dict]) -> list[dict]:
     """list_item 요소 중 줄머리 마커가 2개 이상이면 항목별로 쪼갠다(원소 dict 목록 변환).
 
@@ -1794,9 +1836,13 @@ def _split_list_marker_items(elements: list[dict]) -> list[dict]:
                 groups[-1].append(ln)
         if not groups[0]:
             groups.pop(0)
-        for grp in groups:
+        for k, grp in enumerate(groups):
             child = dict(el)
-            child.pop("id", None)     # 새 UUID로 재발급(_parse_txt_result가 uuid4 폴백)
+            if _stable_ids() and el.get("id"):
+                # 부모 id + 순번 — 같은 경계면 요청마다 같은 id 다(N5 · #1017). 종전엔 요청마다 uuid4 였다.
+                child["id"] = str(uuid5(_EID_NS, f"{el['id']}|split|{k}"))
+            else:
+                child.pop("id", None)     # 새 UUID로 재발급(_parse_txt_result가 uuid4 폴백)
             child["flags"] = list(el.get("flags") or [])
             child["content"] = "\n".join(grp)
             out.append(child)
@@ -2479,7 +2525,9 @@ async def _run_pipeline(task: PageTask) -> dict:
         src_lines = _mode_b_segments(_src)
         if not src_lines:                       # 내용이 없으면 빈 응답(빈 결과 금지 규칙은
             src_lines = [(1, "text", task.source_text or "")]   # 플레이스홀더가 담당)
-        line_ids = [uuid4() for _ in src_lines]
+        line_ids = [uuid5(_EID_NS, f"{task.job_id}|{task.page_no}|b|{i}|{typ}|{txt[:40]}")
+                    if _stable_ids() else uuid4()          # 같은 원문이면 같은 id(N5 · #1017)
+                    for i, (_, typ, txt) in enumerate(src_lines)]
         layout_result = LayoutResult(
             page_id=page_id,
             elements=[BBoxItem(element_id=eid, type=typ, bbox=(0, 0, 0, 0),
@@ -2656,6 +2704,7 @@ async def _run_pipeline(task: PageTask) -> dict:
     return _build_response(
         task, page_id, doc_meta, routing_tier, image_width, image_height,
         layout_result, all_extracted, all_llm, all_braille, flat=flat,
+        caption_disabled=extraction.get("meta", {}).get("caption_disabled"),
     )
 
 
@@ -2844,6 +2893,9 @@ def _line_order(mode: str, order_map: dict, element_id, idx: int) -> int:
     return idx + 1
 
 
+_ENV_CAPTION = object()   # _build_response 기본값 — 경계가 없는 경로(모드 b)는 요청 때 env 로 정한다
+
+
 def _build_response(
     task: PageTask,
     page_id: str,
@@ -2856,6 +2908,7 @@ def _build_response(
     llm_outputs: list[LLMOutput],
     braille_outputs: list[BrailleOutput],
     flat: Optional[dict] = None,
+    caption_disabled: Optional[bool] = _ENV_CAPTION,
 ) -> dict:
     elem_by_id = {e.element_id: e for e in layout_result.elements}
     braille_by_id = {b.element_id: b for b in braille_outputs}
@@ -2909,8 +2962,10 @@ def _build_response(
             "pdf_layer_confidence": doc_meta.pdf_confidence if doc_meta else 0.0,
             "routing_tier_used": routing_tier,
             "scan_only": doc_meta.scan_only if doc_meta else False,
-            # 캡셔닝을 끄고 돈 산출물이면 박아 둔다 — 이걸로 시각 축을 재면 안 된다.
-            "caption_disabled": os.getenv("SEMOJUM_NO_CAPTION") == "1",
+            # 캡셔닝을 끄고 뜬 경계로 낸 산출물이면 박아 둔다 — 이걸로 시각 축을 재면 안 된다.
+            # 값은 경계 meta 에서 온다(True · False · 모름=None). 경계가 없는 모드 b 는 요청 때 env.
+            "caption_disabled": (os.getenv("SEMOJUM_NO_CAPTION") == "1"
+                                 if caption_disabled is _ENV_CAPTION else caption_disabled),
         },
         "quality_report": quality_report.model_dump(),
     }
