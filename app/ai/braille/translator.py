@@ -284,9 +284,31 @@ _UNIT_MONEY_HANGUL_RE = re.compile(r"(%p|[%‰°℃℉￦￠€￡￥₣])(?=[�
 # 영어 구간 안이라 문자표 ⠈⠯ 그대로 둔다. gold 도 두 자리를 그렇게 가른다(수학2 `출제 경향 ⠴⠈⠯⠲
 # 대표 기출` · 외국어 `Words ⠈⠯ Phrases`). 종전 book 규칙(&→⠯, 앞뒤 칸 삭제)은 "정답 도서는
 # ⠯ 단독"이 근거였는데 지금 gold 에는 그 꼴이 없다 — 백틱(⠈)을 빈칸으로 읽던 시절 수치로 보인다.
-# 같은 [다만]의 § ¶ © ® ™ 는 뺐다. 재추출 묵자에 나오는 것은 전부 추출 잡음이다
-# (¶=∞ · ®=윗첨자 r · ©=㉢ · ™=아래첨자 2). 감싸면 잡음에 두 칸을 더 얹는다.
-_AMP_RE = re.compile(r"&(?![#A-Za-z0-9]+;)")    # HTML 엔티티 잔재(&#x27;·&gt;)는 뺀다
+# 같은 [다만]의 § ¶ © ® ™ 도 같은 꼴로 감싼다(#945). 규정 예문 `저작권자© 연합뉴스` =
+# `,s,a@p3,0^c4`…`(재추출 2868행) · `®는` = `0^r4cz`(2870행). 감싸지 않은 ⠘⠉ 는 한글 `바나` 와 같은 셀이다.
+#   ⚠ 2027 코퍼스에 나오는 17회는 전부 추출 잡음이다(¶=∞ · ®=윗첨자 r · ©=㉢ · ™=아래첨자 2,
+#   `temp/n12-ab/제6장_54건_분류.md`). 그 자리는 이미 틀린 글자라 두 칸이 더 얹힐 뿐 고칠 곳은
+#   같다. 규정이 명확하고 실제 문서(기사 `저작권자©`)에는 진짜 기호로 나오므로 감싼다.
+_ART71_WRAP = {"&": "⠈⠯", "§": "⠘⠎", "¶": "⠘⠏", "©": "⠘⠉", "®": "⠘⠗", "™": "⠘⠞"}
+_AMP_RE = re.compile(r"&(?![#A-Za-z0-9]+;)|[§¶©®™]")    # HTML 엔티티 잔재(&#x27;·&gt;)는 뺀다
+_ART71_SKIP_RE = re.compile(r"[\s`\x00-\x1f\x7f-\x9f]+")
+# 「한국 점자 규정」 제31항(재추출 1642행) — 국어 문장 안의 그리스 문자는 로마자표 ⠴ 와 종료표 ⠲ 로
+# 감싼다. 예문 `통계에서 σ는` = `0.s4cz` · `ΦΒΚ의` = `0,,.f.b.k4w`(대문자 둘 이상은 대문자 단어표
+# ⠠⠠ 하나에 글자마다 ⠨). 2027 gold 도 문장 속 그리스 문자는 감싼다 — 생명과학 E26-001 p130
+# `α세포` = `⠴⠨⠁⠲⠠⠝⠙⠥` · 수학 E26-009 p071 `각 θ에` = `⠴⠨⠹⠲⠝` · p135 `기호 Σ를` = `⠴⠠⠨⠎⠲⠐⠮`.
+# 식 안의 그리스 문자(`sin θ`·`2π`)는 수식 경로를 타서 여기 안 온다. 옆에 로마자·숫자가 붙은
+# 자리(`5μm`·`Δt`)는 단위·기호 식이라 둔다.
+_GREEK_RUN_RE = re.compile(r"[α-ωΑ-Ω]+")
+_GREEK_MATH_LEFT = frozenset("-−+±=<>≤≥×÷/^_∠")   # 연산 기호 바로 뒤는 식이다
+# 「한국 점자 규정」 제53항 [다만](재추출 2393행) — 줄임표 점의 개수를 밝혀야 할 때는 묵자 개수만큼 적는다.
+# 예문 `줄임표는 ‘……’이 원칙이나 ‘…’나 ‘...’도` = `,8,,,,,,0'o` · `,8,,,0'c` · `,84440'iu`.
+# 따옴표 안에 줄임표만 있으면 부호 자체를 가리키는 자리다. `…` 하나와 `...` 는 지금도 개수대로
+# 나가고 `……` 만 ⠠⠠⠠ 하나로 합쳐졌다(symbol_table `……`). 그 자리만 여섯 점으로 둔다.
+_QUOTED_ELLIPSIS2_RE = re.compile(r"(?<=[‘“])……(?=[’”])")
+# 「한국 점자 규정」 제72항 [붙임](재추출 2913행) — ○ 와 ◎ 가 함께 나와 구별해야 할 때 ◎ 는 `_00`(⠸⠴⠴).
+# 예문 `◎ 실장급 인사발령 / ○ 승진 인사`. 줄머리 ◎ 는 따로 나오면 `_LINE_BULLET_MAP` 대로 ⠸⠴ 다.
+_LINE_HEAD_O_RE = re.compile(r"(?m)^[ \t]*○[ \t]")
+_LINE_HEAD_DOUBLE_O_RE = re.compile(r"(?m)^([ \t]*)◎(?=[ \t])")
 _HANGUL_SYL_RE   = re.compile(r"[가-힣]")        # 완성형 한글 음절
 _LATIN_CHAR_RE   = re.compile(r"[A-Za-z]")       # 로마자 낱글자(줄 문맥 비율 계산용)
 
@@ -598,16 +620,48 @@ def _preprocess_units(text: str) -> str:
 
 
 def _wrap_hangul_amp(text: str) -> str:
-    """제71항 [다만] — 한글 문맥의 & 를 ⠴⠈⠯⠲ 로 적는다(`_AMP_RE` 주석). 양옆이 다 로마자·숫자면 둔다."""
+    """제71항 [다만] — 한글 문맥의 & § ¶ © ® ™ 를 ⠴…⠲ 로 적는다(`_AMP_RE` 주석). 양옆이 다 로마자·숫자면 둔다."""
     if not _HANGUL_SYL_RE.search(text):
         return text
 
     def repl(m: re.Match) -> str:
-        left, right = text[:m.start()].rstrip()[-1:], text[m.end():].lstrip()[:1]
-        if left.isascii() and left.isalnum() and right.isascii() and right.isalnum():
+        # 빈칸·백틱·제어문자는 건너뛰고 본다 — 추출 잡음 `X\x8c`¶`Y`(생명과학 E26-001 p068, ¶=윗첨자
+        # 잡음)가 로마자 뒤인데 제어문자 때문에 한글 문맥으로 읽혀 감싸졌다. 뒤는 조각이 갈려 안 보이거나
+        # (`Y` 가 다음 조각으로 간다) 조사(`X¶를`)라, **바로 앞이 로마자·숫자면** 로마자 구간으로 본다.
+        # 규정 예문은 여섯 모두 앞이 한글·빈칸·줄머리다(`저작권자©` · `헌법§` · `때 ¶` · `®는` · `는 ™로`).
+        left = _ART71_SKIP_RE.sub("", text[:m.start()])[-1:]
+        if left.isascii() and left.isalnum():
             return m.group()
-        return "⠴⠈⠯⠲"
+        # 뒤에 숫자가 붙으면 수표가 구간을 닫으므로 종료표를 안 적는다 — 예문 `헌법§1①` = `0^s#a#1`
+        end = "" if text[m.end():m.end() + 1].isdigit() else "⠲"
+        return "⠴" + _ART71_WRAP[m.group()[0]] + end
     return _AMP_RE.sub(repl, text)
+
+
+def _wrap_hangul_greek(text: str) -> str:
+    """제31항 — 한글 문맥의 그리스 문자 런을 ⠴…⠲ 로 감싼다(`_GREEK_RUN_RE` 주석)."""
+    if not _HANGUL_SYL_RE.search(text):
+        return text
+
+    def repl(m: re.Match) -> str:
+        run = m.group()
+        left, right = text[m.start() - 1:m.start()], text[m.end():m.end() + 1]
+        if (left.isascii() and left.isalnum()) or (right.isascii() and right.isalnum()):
+            return run
+        if left and left in _GREEK_MATH_LEFT:
+            return run                          # `각 -θ가` — gold 는 수식꼴 ⠔⠨⠹(E26-009 p079)
+        cells = [SYMBOL_TABLE.get(c) for c in run]
+        if not all(cells):
+            return run
+        # 종료표를 안 적는 자리 둘. ① 뒤에 단위 기호가 붙으면 그 단위표 ⠴ 가 구간을 이어받는다
+        # (수학 E26-009 p067 gold `α°라` = `⠴⠨⠁⠴⠙`). ② 한글·통일영어 점형이 다른 부호가 바로 붙으면
+        # 제33항대로 부호를 한글 점자로 적고 종료표는 안 적는다. 조항이 든 `, : ; ―` 에 여는 괄호를
+        # 더했다 — 같은 쪽 gold `θ(라디안)` = `⠴⠨⠹⠦⠄⠐⠣…`(괄호 ⠦⠄ 는 통일영어 ⠐⠣ 와 다르다).
+        end = "" if right and right in "°′″(,:;―" else "⠲"
+        if len(run) > 1 and run.isupper():
+            return "⠴⠠⠠" + "".join(c[1:] for c in cells) + end   # ⠠⠨X → 단어표 ⠠⠠ + ⠨X
+        return "⠴" + "".join(cells) + end
+    return _GREEK_RUN_RE.sub(repl, text)
 
 
 # ── 점자 도서 표기 관행(BOOK_STYLE) ────────────────────────────────────────────
@@ -705,6 +759,13 @@ _OX_CELL.update({c: "⠴⠠⠭" for c in "×✕✖✗"})
 _OX_MARK_RE = re.compile(
     "(?<![" + "".join(_OX_CELL) + "])([" + "".join(_OX_CELL) + "])(?![" + "".join(_OX_CELL) + "])")
 _OX_OPERAND_RE = re.compile(r"[0-9A-Za-z가-힣]")
+# ★ 낱개 × 가 **한글 앞에 붙으면** 맞고 틀림 표시가 아니라 글자를 가린 숨김표다(#945).
+#   「한국 점자 규정」 제49항 표 × = `_xl`(⠸⠭⠇), 예문 `그 말을 듣는 순간 ×란 말이`.
+#   2027 gold 가 같은 자리를 그렇게 적는다 — 사회문화 E26-005 p115 `2026년 ×월 ×일` =
+#   `⠸⠭⠇⠏⠂⠀⠸⠭⠇⠕⠂` · p168 `6월 ×일` · 윤사 E26-004 p003 `5월 ×일에`. 우리는 `⠴⠠⠭` 를 냈다.
+#   둘은 가른다: `×표 하시오`(E26-005 p004, gold `⠴⠠⠭⠲⠙⠬`)는 가위표 이름이라 표시로 둔다.
+#   같은 글에 ◯ 표시가 있으면(`◯에, ×에 표시`) 맞고 틀림 문맥이라 표시로 둔다.
+_OX_O_RE = re.compile("[" + "".join(c for c, v in _OX_CELL.items() if v == "⠴⠠⠕") + "]")
 _ITEM_NO_RE = re.compile(r"^[0-9]{1,2}[.)]$")   # 답지 번호 '3.' '4)'
 
 
@@ -800,6 +861,9 @@ def _ox_mark_repl(m: re.Match) -> str:
     if (sp_before == sp_after and a and b
             and _OX_OPERAND_RE.search(a) and _OX_OPERAND_RE.search(b)):
         return m.group(0)                      # 곱셈이다 — 종전 경로에 맡긴다
+    if (ch == "×" and _is_hangul_syl(right[:1]) and not right.startswith("표")
+            and not _OX_O_RE.search(src)):
+        return "⠸⠭⠇"                           # 글자를 가린 × — 제49항 숨김표(_OX_O_RE 주석)
     return _OX_CELL[ch]
 
 
@@ -1807,8 +1871,8 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
                 # 음수 판정이 끝났으니 감쌈 자리표시자를 원래 붙임표로 되돌린다
                 # (뒤의 _apply_book_style·substitute_symbols의 -=⠤ 매핑을 그대로 태운다).
                 clean = _restore_wrap_hyphen(clean)
-                preprocessed = _wrap_hangul_amp(_preprocess_units(
-                    _apply_book_style(clean, qnum_period=qnum_period)))
+                preprocessed = _wrap_hangul_greek(_wrap_hangul_amp(_preprocess_units(_QUOTED_ELLIPSIS2_RE.sub("⠠⠠⠠⠠⠠⠠",
+                    _apply_book_style(clean, qnum_period=qnum_period)))))
                 substituted = _old_hangul_to_braille(substitute_symbols(preprocessed))
                 text_result: list[str] = []
                 _emit_mixed(substituted, text_result, roman_ctx)
@@ -2956,6 +3020,8 @@ def translate_with_breaks(text: str, *, force_roman: bool = False,
     # 있는 인용부호가 전부 짝없음으로 보인다). 반드시 위 복원 **뒤**에 — 그쪽이 만든
     # 곡선 따옴표는 짝이 맞으므로 여기서 다시 ASCII로 돌아가지 않는다.
     text = _normalize_apostrophe(text)
+    if _LINE_HEAD_O_RE.search(text):          # 제72항 [붙임] — 줄을 가로질러 봐야 해서 여기서
+        text = _LINE_HEAD_DOUBLE_O_RE.sub(r"\1⠸⠴⠴", text)
     if _BOOK_STYLE:
         # ★ 보기 마커 원문 복원(ㄱㄴㄷㄹ)은 나열 시퀀스가 필요해 요소 전체에서 선적용해야
         #   한다 — 줄 분리 후엔 줄당 마커 1개라 ≥2 가드에 걸려 발동 못 한다(2026-07-18).
