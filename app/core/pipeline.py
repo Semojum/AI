@@ -1435,6 +1435,10 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             # 손실 목록을 무엇과 대조해 만들었나("mineru" · "text_layer"). 빠진 쪽은 안 쟀다는 뜻이다 —
             # 목록이 비었다고 손실이 없다고 읽으면 안 된다.
             "loss_checks": loss_checks,
+            # 캡셔닝을 끄고 뜬 경계인가. **경계와 함께 다닌다** — 응답 표시(processing_meta.caption_disabled)는
+            # 요청 때 env 가 아니라 이 값을 옮긴다. 경계를 재사용·복사하면 env 와 내용이 갈리기 때문이다
+            # (arm.py 108곳: 캡션 든 d8c 경계에 True 가 찍혔다). 이 키가 없는 옛 경계는 '모름'(None)이다.
+            "caption_disabled": os.getenv("SEMOJUM_NO_CAPTION") == "1",
         },
         "elements": elements,
         "extraction_losses": losses,
@@ -2656,6 +2660,7 @@ async def _run_pipeline(task: PageTask) -> dict:
     return _build_response(
         task, page_id, doc_meta, routing_tier, image_width, image_height,
         layout_result, all_extracted, all_llm, all_braille, flat=flat,
+        caption_disabled=extraction.get("meta", {}).get("caption_disabled"),
     )
 
 
@@ -2844,6 +2849,9 @@ def _line_order(mode: str, order_map: dict, element_id, idx: int) -> int:
     return idx + 1
 
 
+_ENV_CAPTION = object()   # _build_response 기본값 — 경계가 없는 경로(모드 b)는 요청 때 env 로 정한다
+
+
 def _build_response(
     task: PageTask,
     page_id: str,
@@ -2856,6 +2864,7 @@ def _build_response(
     llm_outputs: list[LLMOutput],
     braille_outputs: list[BrailleOutput],
     flat: Optional[dict] = None,
+    caption_disabled: Optional[bool] = _ENV_CAPTION,
 ) -> dict:
     elem_by_id = {e.element_id: e for e in layout_result.elements}
     braille_by_id = {b.element_id: b for b in braille_outputs}
@@ -2909,8 +2918,10 @@ def _build_response(
             "pdf_layer_confidence": doc_meta.pdf_confidence if doc_meta else 0.0,
             "routing_tier_used": routing_tier,
             "scan_only": doc_meta.scan_only if doc_meta else False,
-            # 캡셔닝을 끄고 돈 산출물이면 박아 둔다 — 이걸로 시각 축을 재면 안 된다.
-            "caption_disabled": os.getenv("SEMOJUM_NO_CAPTION") == "1",
+            # 캡셔닝을 끄고 뜬 경계로 낸 산출물이면 박아 둔다 — 이걸로 시각 축을 재면 안 된다.
+            # 값은 경계 meta 에서 온다(True · False · 모름=None). 경계가 없는 모드 b 는 요청 때 env.
+            "caption_disabled": (os.getenv("SEMOJUM_NO_CAPTION") == "1"
+                                 if caption_disabled is _ENV_CAPTION else caption_disabled),
         },
         "quality_report": quality_report.model_dump(),
     }
