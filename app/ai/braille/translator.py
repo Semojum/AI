@@ -32,6 +32,8 @@ from app.ai.braille.constants import WRAP_HYPHEN_CLOSE, WRAP_HYPHEN_OPEN
 from app.ai.braille.symbol_rules import (
     HIDDEN_TO_BULLET as _HIDDEN_TO_BULLET,
     SYMBOL_TABLE,
+    square_unit_body,
+    square_unit_cells,
     substitute_symbols,
 )
 from app.ai.braille import tag_names as _TAGS
@@ -322,7 +324,7 @@ _SQ_UNIT_COMPOUND_RE = re.compile(
 #   뒤에 영어 낱말이 이어지면(`Top 10 in Korea`) 영어 문장이라 둔다. 글자는 약자 없이 낱자로 적는다(#958).
 _LATIN_UNIT = r"(?:mm|cm|km|nm|mg|kg|mL|ml|dL|dl|kcal|cal|kPa|kJ|ha|in)"
 _LATIN_UNIT_RE = re.compile(
-    rf"(?<![A-Za-z0-9.,])(\d+(?:[.,]\d+)*[^\S\n]?)({_LATIN_UNIT}(?:/(?:{_LATIN_UNIT}|[a-z]{{1,3}}))*)"
+    rf"(?<![A-Za-z0-9.,])(\d+(?:[.,]\d+)*[^\S\n]?)({_LATIN_UNIT}(?:/(?:{_LATIN_UNIT}|[a-z]{{1,3}}|[\u3380-\u33df]))*)"
     r"(?![A-Za-z])(?![^\S\n]*[A-Za-z])")
 # `킬로미터/h` 처럼 한글 단위 뒤 빗금의 로마자 단위(예문 `80킬로미터/h` = `…_/0h4`). 줄 끝에서 종료표가 빠졌다.
 _HANGUL_SLASH_UNIT_RE = re.compile(r"(?<=[가-힣])/([a-z]{1,3})(?![A-Za-z])(?![^\S\n]*[A-Za-z])")
@@ -339,6 +341,8 @@ def _unit_end(text: str, at: int) -> str:
 
 
 def _unit_cells(unit: str) -> str:
+    if not unit.isascii():             # 빗금 뒤 사각 단위(`kg/㎥`, T36) — 제69항 한 구간
+        return square_unit_body(unicodedata.normalize("NFKC", unit)) or unit
     return "⠸⠌".join("".join(("⠠" + _ALPHA_MAP[c.lower()]) if c.isupper() else _ALPHA_MAP[c] for c in part)
                      for part in unit.split("/"))
 
@@ -346,7 +350,9 @@ def _unit_cells(unit: str) -> str:
 def _wrap_latin_units(text: str) -> str:
     """제69항 — 숫자 뒤 로마자 단위를 ⠴…⠲ 한 구간으로(`_LATIN_UNIT_RE` 주석)."""
     def repl(m: re.Match) -> str:
-        return m.group(1) + "⠴" + _unit_cells(m.group(2)) + _unit_end(text, m.end())
+        cells = _unit_cells(m.group(2))
+        end = "" if re.search(r"⠘⠼[⠁-⠚]+$", cells) else _unit_end(text, m.end())   # ㎡ 표와 같이
+        return m.group(1) + "⠴" + cells + end
     text = _LATIN_UNIT_RE.sub(repl, text)
     return _HANGUL_SLASH_UNIT_RE.sub(
         lambda m: "/⠴" + _unit_cells(m.group(1)) + _unit_end(text, m.end()), text)
@@ -354,7 +360,15 @@ def _wrap_latin_units(text: str) -> str:
 
 def _wrap_square_unit_compound(text: str) -> str:
     """제69항 — 사각 단위 문자가 든 빗금 복합 단위를 한 로마자 구간으로(`_SQ_UNIT_COMPOUND_RE` 주석)."""
-    return _SQ_UNIT_COMPOUND_RE.sub(lambda m: _braillify_lib.translate_to_unicode(m.group()), text)
+    def repl(m: re.Match) -> str:
+        try:
+            return _braillify_lib.translate_to_unicode(m.group())
+        except ValueError:
+            # braillify 는 ㎥·㎤ 처럼 제 표에 없는 사각 단위를 받으면 **예외를 던진다**(#956 회귀, T36).
+            #   `kg/㎥` 가 든 요소가 통째로 [처리 불가]가 됐다. 같은 제69항 꼴을 직접 조립한다.
+            cells = square_unit_cells(m.group())
+            return cells if cells else m.group()
+    return _SQ_UNIT_COMPOUND_RE.sub(repl, text)
 
 
 _GREEK_RUN_RE = re.compile(r"[α-ωΑ-Ω]+")

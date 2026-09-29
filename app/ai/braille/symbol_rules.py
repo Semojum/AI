@@ -16,6 +16,7 @@ import json
 import os
 import pathlib
 import re
+import unicodedata
 
 _TABLE_PATH = pathlib.Path(__file__).parent / "symbol_table.json"
 
@@ -83,6 +84,52 @@ def _load_flat_table() -> dict[str, str]:
 
 
 SYMBOL_TABLE: dict[str, str] = _load_flat_table()
+
+# ★ 사각 단위 문자(U+3380~33DF) — 표에 없는 것은 **점역에서 조용히 사라졌다**(T36, eval T32 결함 1).
+#   `부피는 3 ㎥이다` → `3 이다`. 표에 든 12자(㎏·㎝·㎡ …)만 살았다. 이 글자들은 호환 분해(NFKC)가
+#   곧 단위 표기다(㎥=m3 · ㎷=mV · ㎛=μm · ㏀=kΩ · ㎧=m∕s). 「한국 점자 규정」 제69항(재추출 2682행~):
+#   단위 기호는 로마자표 ⠴ 로 열고 종료표 ⠲ 로 닫는 한 구간, 대문자는 글자마다 ⠠(`96.7 ㎒` = `0,m,hz4`),
+#   빗금은 ⠸⠌(`㎎/㎗` = `0mg_/dl4`), 그리스 문자는 제30항 ⠨(`1 μm` = `0.mm4`), 제곱·세제곱은 위첨자
+#   (`cal/㎠/min` = `0cal_/cm~#b_/…`). 끝이 위첨자 숫자면 표의 ㎡(⠴⠍⠘⠼⠃)처럼 종료표를 안 적는다.
+#   단위가 아닌 넷(㏂ a.m. · ㏘ p.m. · ㏇ Co. · ㏑ ln · ㏒ log)은 만들지 않는다.
+_UNIT_LETTER = {c: v for c, v in zip("abcdefghijklmnopqrstuvwxyz",
+                                     "⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵")}
+_UNIT_GREEK = {"μ": "⠨⠍", "Ω": "⠠⠨⠺"}
+_NOT_UNIT = set("㏂㏘㏇㏑㏒")
+
+
+def square_unit_body(unit: str) -> str | None:
+    """NFKC 로 푼 단위 글자열(`kg/m3`)을 ⠴·⠲ 없는 점형으로. 못 만드는 글자가 있으면 None."""
+    out = []
+    for m in re.finditer(r"(\d+)|(.)", unit.replace("∕", "/")):
+        d, ch = m.groups()
+        if d:
+            out.append("⠘⠼" + "".join(_UNIT_LETTER["jabcdefghi"[int(x)]] for x in d))
+        elif ch == "/":
+            out.append("⠸⠌")
+        elif ch in _UNIT_GREEK:
+            out.append(_UNIT_GREEK[ch])
+        elif ch.lower() in _UNIT_LETTER and ch.isascii():
+            out.append(("⠠" if ch.isupper() else "") + _UNIT_LETTER[ch.lower()])
+        else:
+            return None
+    return "".join(out)
+
+
+def square_unit_cells(unit: str) -> str | None:
+    body = square_unit_body(unicodedata.normalize("NFKC", unit))
+    if not body:
+        return None
+    return "⠴" + body + ("" if re.search(r"⠘⠼[⠁-⠚]+$", body) else "⠲")
+
+
+# ⚠ SYMBOL_TABLE 에 넣지 않는다 — 역점역이 그 표를 거꾸로 써서 규정 꼴 `⠴⠅⠉⠁⠇⠲` 를 `㎉` 로,
+#   `1in` 을 `1㏌` 으로 되돌렸다(역맵 오염). 정방향 전용 표로 두고 substitute_symbols 만 쓴다.
+SQUARE_UNIT_TABLE: dict[str, str] = {
+    chr(_cp): _cells for _cp in range(0x3380, 0x33E0)
+    if chr(_cp) not in SYMBOL_TABLE and chr(_cp) not in _NOT_UNIT
+    and (_cells := square_unit_cells(chr(_cp)))
+}
 
 # • 글머리 = 규정 제72항 ⠸⠲(_4). **여기가 생성처다.**
 #
@@ -271,5 +318,7 @@ def substitute_symbols(text: str) -> str:
     braillify 설치 환경에서는 preprocess/postprocess를 사용할 것.
     """
     for symbol, braille in SYMBOL_TABLE.items():
+        text = text.replace(symbol, braille)
+    for symbol, braille in SQUARE_UNIT_TABLE.items():
         text = text.replace(symbol, braille)
     return text
