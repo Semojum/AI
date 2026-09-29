@@ -264,6 +264,8 @@ _GAP_MARK        = "\x01"
 #   ⚠ a~j 는 그대로 칸을 넣는다 — 빼면 `⑤2e` 가 ⠼⠃⠑ = "25" 로 읽힌다(수학2 p110, C5).
 #     그 자리의 규정형은 구분표 ⠐ 인데, 줄 문맥이 로마자표 ⠴ 를 열면 ⠐⠴ 로 겹쳐 나가
 #     되레 나빠진다. 라우팅으로 수식 경로에 태우는 것이 정답이라 여기서는 손대지 않는다.
+# ⚠ 두 글자 단위(`100cm`) 앞 빈칸도 규정에는 없지만(재추출 2690행 `#ajj0cm4`) 그대로 둔다(#955 에서 빼 봤다가 되돌림).
+#   braillify 의 로마자표는 줄에서 첫 로마자 앞에만 서서, `3cm, 6cm` 의 둘째 `6cm` 가 ⠼⠋⠉⠍(=633)로 붙었다(C5).
 _DIGIT_LOWER_AJ_RE = re.compile(r"(?<=\d)(?=[a-j])")
 # 「한글 점자」 제65항 [붙임](규정_텍스트.txt **2637행**) "화폐 기호 뒤에 한글이 이어 나올
 # 때에는 한 칸 띄어 쓴다" · 제69항 [붙임 2](같은 파일 **2739~2741행**) "비로마자 단위 기호는
@@ -298,6 +300,22 @@ _ART71_SKIP_RE = re.compile(r"[\s`\x00-\x1f\x7f-\x9f]+")
 # `α세포` = `⠴⠨⠁⠲⠠⠝⠙⠥` · 수학 E26-009 p071 `각 θ에` = `⠴⠨⠹⠲⠝` · p135 `기호 Σ를` = `⠴⠠⠨⠎⠲⠐⠮`.
 # 식 안의 그리스 문자(`sin θ`·`2π`)는 수식 경로를 타서 여기 안 온다. 옆에 로마자·숫자가 붙은
 # 자리(`5μm`·`Δt`)는 단위·기호 식이라 둔다.
+# 「한국 점자 규정」 제69항(재추출 2691·2694행) — 빗금으로 이은 단위 기호는 로마자 구간 하나다.
+# 예문 `160㎎/㎗를` = `#afj0mg_/dl4"!` · `cal/㎠/min이` = `0cal_/cm~#b_/m94o`. 문자표가 사각 단위 문자를
+# 하나씩 `⠴⠍⠛⠲` 로 바꿔 구간이 빗금에서 끊겼다(`⠴⠍⠛⠲⠸⠌⠴⠙⠇⠲`). 사각 단위 문자(U+3380~33DF)가 하나라도
+# 든 빗금 복합 단위만 braillify 에 통째로 넘긴다 — braillify 는 이 꼴을 규정대로 낸다(#955).
+# 사각 단위 문자는 변수로 안 쓰이므로 로마자 낱말과 헷갈리지 않는다.
+_SQ_UNIT = "\u3380-\u33df"
+_SQ_UNIT_COMPOUND_RE = re.compile(
+    rf"(?<![A-Za-z{_SQ_UNIT}])(?=[A-Za-z{_SQ_UNIT}/]*[{_SQ_UNIT}])"
+    rf"(?:[{_SQ_UNIT}]|[A-Za-z]+)(?:/(?:[{_SQ_UNIT}]|[A-Za-z]+))+(?![A-Za-z{_SQ_UNIT}])")
+
+
+def _wrap_square_unit_compound(text: str) -> str:
+    """제69항 — 사각 단위 문자가 든 빗금 복합 단위를 한 로마자 구간으로(`_SQ_UNIT_COMPOUND_RE` 주석)."""
+    return _SQ_UNIT_COMPOUND_RE.sub(lambda m: _braillify_lib.translate_to_unicode(m.group()), text)
+
+
 _GREEK_RUN_RE = re.compile(r"[α-ωΑ-Ω]+")
 _GREEK_MATH_LEFT = frozenset("-−+±=<>≤≥×÷/^_∠")   # 연산 기호 바로 뒤는 식이다
 # 「한국 점자 규정」 제53항 [다만](재추출 2393행) — 줄임표 점의 개수를 밝혀야 할 때는 묵자 개수만큼 적는다.
@@ -1243,10 +1261,13 @@ _QNUM_NOT_BODY = "0-9①-⑳❶-❿" + "".join(_CIRCLED) + _QNUM_SYMBOL
 #   그래서 `5 개의 사과가…` 처럼 뒤에 말이 더 붙은 수량 표기는 못 가른다(한계).
 #   주자 2027 63,102줄·구판 45,358줄에서 두 조건에 걸리는 줄 0 → 코퍼스 출력 불변
 #   (`temp/n18-qnum/strict_probe.py`·`unit_probe.py`).
-_QNUM_UNIT = "%‰℃°"
+_QNUM_UNIT = "%‰℃°\u3380-\u33df"   # 사각 단위 문자(㎠·㎞)는 #955
 _QNUM_COUNTER = ("개|명|권|번|회|가지|마리|대|자루|송이|그루|상자|꾸러미|켤레|살|세|년|월|일|시|분|초"
                  "|시간|개월|주|배|원|곳|층|쪽|장|칸|톤|평|항|반")
-_QNUM_QUANTITY = rf"[^\S\n]+(?:[{_QNUM_UNIT}]|μ[A-Za-z]|(?:{_QNUM_COUNTER})씩?[^\S\n]*(?:\n|$))"
+# 로마자 단위 기호(두 글자 이상)도 단위 기호다(#955). 주자 2027 에서 숫자 뒤에 온 84곳을 열어 보니 전부 단위였다
+#   (`7 mL`·`4 kg`·`2 cm/ms`·`340000 kcal/년`). 한 글자(`m`·`g`·`s`)는 변수와 같은 글자라 넣지 않는다.
+_QNUM_LATIN_UNIT = r"(?:mm|cm|km|nm|mg|kg|mL|ml|dL|dl|kcal|cal|kPa|kJ|ha)(?![A-Za-z])"
+_QNUM_QUANTITY = rf"[^\S\n]+(?:[{_QNUM_UNIT}]|μ[A-Za-z]|{_QNUM_LATIN_UNIT}|(?:{_QNUM_COUNTER})씩?[^\S\n]*(?:\n|$))"
 # 한 자리 번호만 본다(위 M006). 두 자리·영패딩은 정답이 마침표를 안 찍는다.
 _QNUM_RE = re.compile(rf"^(\d)(?!{_QNUM_QUANTITY})(?=\s+(?![{_QNUM_NOT_BODY}])\S)")
 # ★ 2026-09-08 일곱째 — **시각 자료 설명·전사는 이 규칙을 아예 안 탄다**(원장 C-41,
@@ -1911,8 +1932,8 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
                 # 음수 판정이 끝났으니 감쌈 자리표시자를 원래 붙임표로 되돌린다
                 # (뒤의 _apply_book_style·substitute_symbols의 -=⠤ 매핑을 그대로 태운다).
                 clean = _restore_wrap_hyphen(clean)
-                preprocessed = _wrap_hangul_greek(_wrap_hangul_amp(_preprocess_units(_QUOTED_ELLIPSIS2_RE.sub("⠠⠠⠠⠠⠠⠠",
-                    _apply_book_style(clean, qnum_period=qnum_period)))))
+                preprocessed = _wrap_square_unit_compound(_wrap_hangul_greek(_wrap_hangul_amp(_preprocess_units(_QUOTED_ELLIPSIS2_RE.sub("⠠⠠⠠⠠⠠⠠",
+                    _apply_book_style(clean, qnum_period=qnum_period))))))
                 substituted = _old_hangul_to_braille(substitute_symbols(preprocessed))
                 text_result: list[str] = []
                 _emit_mixed(substituted, text_result, roman_ctx)
