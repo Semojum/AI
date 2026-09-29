@@ -2772,6 +2772,25 @@ def _restore_ascii_double_quotes(text: str) -> str:
 _ROMAN_CH_RE = re.compile(r"[A-Za-z]")
 
 
+# 연도 생략 아포스트로피(#939) — 「한글 점자」 제61항 예문 `’88 서울 올림픽` = #'hh(⠼⠄⠓⠓) ·
+#   `’22. 9. 7.` = #'bb4(⠼⠄⠃⠃⠲). 수표가 **아포스트로피 앞**에 오고 숫자에는 수표를 다시 적지 않는다.
+#   종전엔 짝 없는 ’ 가 닫는 따옴표(⠴⠄)로 남아 ⠴⠄⠼⠓⠓ 가 나갔다. 점형을 여기서 바로 적는다
+#   (숫자로 두면 수표가 한 번 더 붙는다). 뒤가 숫자·쌍점이면 연도가 아니다(`'02:26` 시각 인용).
+_YEAR_APOS_RE = re.compile(r"(?:^|(?<=[\s(\[]))’(\d{2})(?![\d:])")
+_DIGIT_CELL = dict(zip("1234567890", "⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚"))
+# 제44항 — 숫자 뒤 첫소리 ㄴ·ㄷ·ㅁ·ㅋ·ㅌ·ㅍ·ㅎ 과 '운' 은 띄어 쓴다(점형을 직접 적으므로 여기서 챙긴다).
+_NUM_GAP_INITIALS = {2, 3, 6, 15, 16, 17, 18}
+
+
+def _year_apos_cells(m: re.Match) -> str:
+    cells = "⠼⠄" + "".join(_DIGIT_CELL[d] for d in m.group(1))
+    nxt = m.string[m.end():m.end() + 1]
+    if nxt and ("가" <= nxt <= "힣") and (
+            (ord(nxt) - 0xAC00) // 588 in _NUM_GAP_INITIALS or nxt == "운"):
+        cells += " "
+    return cells
+
+
 def _normalize_apostrophe(text: str) -> str:
     """제61항 아포스트로피로 쓰인 ’만 ASCII '로 (제49항 닫는 따옴표와 구분)."""
     if "’" not in text:
@@ -2786,7 +2805,13 @@ def _normalize_apostrophe(text: str) -> str:
                 depth -= 1
             elif _ROMAN_CH_RE.search(text[max(0, i - 1):i + 2]):
                 out[i] = "'"
-    return "".join(out)
+            elif _YEAR_APOS_RE.match(text, i) and (i == 0 or _YEAR_APOS_RE.search(text[i - 1:i + 4])):
+                out[i] = "\x00"            # 연도 생략 — 아래에서 점형으로 바꾼다
+    text = "".join(out)
+    if "\x00" in text:
+        text = re.sub(r"\x00(\d{2})", lambda m: _year_apos_cells(
+            _YEAR_APOS_RE.match("’" + m.group(1) + m.string[m.end():m.end() + 1])), text)
+    return text
 
 
 EMPHASIS_OPEN, EMPHASIS_CLOSE = _TAG_PAIR_MARKER[_TAGS.EMPH]  # ⠠⠤ … ⠤⠄ (제56항)
