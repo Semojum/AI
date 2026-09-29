@@ -35,7 +35,9 @@ def _dict_to_processing_meta(d: dict):
     meta.routing_tier_used = d.get("routing_tier_used", "")
     meta.scan_only = d.get("scan_only", False)
     # pipeline이 이미 만들어 두고도 여기서 안 실려 버려지던 값이다.
-    meta.caption_disabled = d.get("caption_disabled", False)
+    # 경계 meta 에 값이 없는 옛 경계는 '모름'(None)인데 proto bool 은 그걸 못 싣는다 — False 로 나간다.
+    # 운영은 캡션을 끄지 않으므로 False 가 사실과 같다. 우리 응답 dict 에는 None 그대로 남는다.
+    meta.caption_disabled = bool(d.get("caption_disabled"))
     return meta
 
 
