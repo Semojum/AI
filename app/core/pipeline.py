@@ -1803,6 +1803,10 @@ def _answer_textlayer_on() -> bool:
     return os.environ.get("ANSWER_BOX_TEXTLAYER", "1") != "0"
 
 
+def _table_keep_cells() -> bool:
+    return os.environ.get("TABLE_KEEP_CELLS", "1") != "0"
+
+
 def _is_answer_box_html(html: str) -> bool:
     """표 HTML 이 정답 상자인가(`ANSWER_BOX_FORM` 이 켜졌을 때만)."""
     from app.ai.braille.table_braille import answer_box_on, answer_box_parts
@@ -2184,10 +2188,11 @@ def _parse_txt_result(
             content = _join_wrapped_lines(content)
         else:
             content = _join_split_words(content)      # 낱말 갈림은 유형을 안 가린다
-        # 정답 상자 표는 보기 쪼개기를 안 탄다 — 한 행 HTML 에 원문자가 둘 이상이면 칸 안에 줄바꿈이
-        # 들어가 격자가 행째로 부서진다(`01 ④` → `01\n④`). 다른 표 28개(2027 전체)도 같은 병이지만
-        # 여기서는 정답 상자만 뺀다 — 나머지는 따로 잰다.
-        if not (etype == "table" and _is_answer_box_html(content)):
+        # 표는 보기 쪼개기를 안 탄다 — 한 행 HTML 에 원문자가 둘 이상이면 칸 안에 줄바꿈이 들어가
+        # 격자가 행째로 부서진다(`01 ④` → `01\n④`). 쪼개기는 본문에 뭉친 선택지용이다.
+        # 2027 dev·val 표 925개 중 실제로 바뀌던 표 7개: 정답 상자 1(#1040) · 나머지 6(#1042).
+        # 두 스위치는 따로 되돌린다 — `ANSWER_BOX_FORM` · `TABLE_KEEP_CELLS`.
+        if not (etype == "table" and (_table_keep_cells() or _is_answer_box_html(content))):
             content = _split_inline_choices(content)
         content = _promote_box_title(content)
         if etype in _TEXT_TYPES and _is_boilerplate(content):

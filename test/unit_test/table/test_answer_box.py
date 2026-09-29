@@ -123,3 +123,18 @@ def test_본문_쪽_표지가_있으면_세_쌍도_정답_상자():
 def test_두_쌍이_한_칸에_붙으면_표로_둔다():
     """MinerU 가 `01 4` 와 `05 3` 을 한 칸에 붙인 것 — 번호가 1에서 시작하지 않아 거른다."""
     assert tb.answer_box_parts([["01 매체", "본문 110~119쪽"], ["01 405 3", "02 4", "03 5", "04 5"]]) is None
+
+
+_CIRCLED_TABLE = ("<table><tr><td>구분</td><td>물질의 전환</td></tr>"
+                  "<tr><td>(가)</td><td> $⑦ \\rightarrow ①$ </td></tr><tr><td>(나)</td><td> $① \\rightarrow ③$ </td></tr></table>")
+
+
+@pytest.mark.parametrize("keep, split", [("", False), ("0", True)])
+def test_표는_보기_쪼개기를_안_탄다(monkeypatch, keep, split):
+    """#1042 — 칸 안에 줄바꿈이 들어가면 격자가 행째로 부서진다. 스위치 0 이 종전(대조군)."""
+    from app.core import pipeline
+    monkeypatch.setenv("TABLE_KEEP_CELLS", keep)
+    ext = {"meta": {"extraction_method": "OCR"},
+           "elements": [{"id": "t", "order": 1, "type": "table", "content": _CIRCLED_TABLE}]}
+    _, ext_map, _ = pipeline._parse_txt_result(ext, "p_001")
+    assert ("\n" in next(iter(ext_map.values())).corrected_text) is split
