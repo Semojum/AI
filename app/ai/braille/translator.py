@@ -2259,13 +2259,26 @@ def _normalize_big_circle(s: str) -> str:
         #   — gold 한 칸 dev 18 · val 0 대 두 칸 dev 181 · val 277. 홑 ◯을 같이 태웠더니
         #   dev 한 칸 틀이 116 → 313으로 뛰었다(gold 18). 그 자리는 가림이 아니라
         #   표 범례·값이다. 가림은 이름을 가리는 것이라 두 칸 이상으로 나온다.
-        if at_line_start or len(run) < 2:
+        if len(run) < 2:
+            return run
+        # ★ 줄머리라도 ◯◯ 뒤에 한글이 바로 붙으면 이름 가림이다(2026-09-29, T25). 사회문화
+        #   dv-013 p173 `◯◯국의 계층` 의 gold 는 ⠸⠴⠴⠇(○○ 숨김표)다. 종전에는 줄머리라서
+        #   건너뛰었고, ◯ 은 braillify 가 거부해 **통째로 지워졌다**. ◎ 런은 근거를 못 봐 그대로 둔다.
+        if at_line_start and not (set(run) == {"◯"} and _HANGUL_HEAD_RE.match(s, m.end())):
             return run
         return "○" * len(run)
     return _BIG_CIRCLE_RUN_RE.sub(repl, s)
 
 
+_HANGUL_HEAD_RE = re.compile(r"[가-힣]")
+# ★ 채운 삼각형 **연속**(▲▲)은 이름 가림이다(T25). 대표 Q12 재결재(2026-08-22)가 ▲→△ 를 승인했지만
+#   #239 는 줄머리 홑 ▲(글머리 ⠸⠲)만 넣고 연속은 "근거를 한 건씩 못 짚었다"며 뺐다. 근거:
+#   2027 gold 언어와 매체 dv-004 p177 `▲▲일보` = ⠸⠬⠬⠇(△△ 숨김표, 제57항). 종전에는 통째로 지워졌다.
+_FILLED_TRI_RUN_RE = re.compile(r"▲{2,}")
+
+
 def _normalize_special(s: str) -> str:
+    s = _FILLED_TRI_RUN_RE.sub(lambda m: "△" * len(m.group()), s)
     out = []
     for ch in s:
         o = ord(ch)
