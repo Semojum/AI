@@ -535,6 +535,21 @@ def chem_operator_spacing(cells: str) -> str:
     return _CHEM_OP_RE.sub(lambda m: m.group(1) or "⠀" + m.group(2) + "⠀", cells).strip("⠀")
 
 
+# ★ 사슬 화합물 결합선(T36 ②-b 결합 갈래) — 과학 점자 제10항(재추출 4506행~): 결합선과 원소 기호는
+#   붙여 적고, 결합선은 ; 뒤에 단일 1 · 이중 2 · 삼중 3. 예문 `H-O-H` = `,,,h;1o;1h,'` · `O=C=O` = `,,,o;2c;2o,'`
+#   · `H-C≡C-H` = `,,,h;1c;3c;1h,'`. 수학 경로는 `-` 를 빼기 ⠔, `=` 를 등호로 읽었다.
+#   **식 전체가 원소 기호와 결합선으로만** 된 경우만 결합선으로 읽는다 — `V=IR`(R 은 원소 아님)·`A-B` 는 안 걸린다.
+_BOND_CELL = {"-": "⠰⠂", "=": "⠰⠆", "≡": "⠰⠒"}
+_BOND_CHAIN_RE = re.compile(r"^[A-Z][a-z]?(?:[-=≡][A-Z][a-z]?)+$")
+
+
+def bond_chain(latex: str) -> str | None:
+    t = _CHEM_WRAP_RE.sub(r"\1", latex or "").replace("\\equiv", "≡").replace(" ", "")
+    if not _BOND_CHAIN_RE.match(t) or not all(e in _ELEMENTS for e in re.findall(r"[A-Z][a-z]?", t)):
+        return None
+    return re.sub(r"[-=≡]", lambda m: _BOND_CELL[m.group()], t)
+
+
 def mark_chem_phrases(latex: str) -> tuple[str, bool]:
     src = _CHEM_WRAP_RE.sub(r"\1", latex)
     toks = [m.group() for m in _CHEM_TOK_RE.finditer(src)]
@@ -2226,8 +2241,12 @@ def convert_latex(latex: str) -> str:
     latex = re.sub(r"^\s*(?:\$\$|\$)?\s*\\text\s*\{\s*(7|T|L|E|B|七)\s*\.\s*\}",
                    lambda m: _TC_JAMO_CELLS_DOT[m.group(1)] + " ", latex)
     _is_chem = _looks_chemical(latex)           # 0-전: 화학식 판정(원문 상태에서만 가능)
+    _has_hangul = bool(re.search(r"[가-힣]", latex))   # 18단계 C-132 — _protect_text 가 한글을 걷기 전에 본다
     _chem_phrased = False
-    if _is_chem or _formula_like(latex):        # 0-전b: 식 전체 구절표(제4항, T36 ②-b)
+    _bonds = bond_chain(latex)                  # 0-전a: 사슬 화합물 결합선(제10항, T36 ②-b)
+    if _bonds:
+        latex = _bonds
+    if _is_chem or _bonds or _formula_like(latex):  # 0-전b: 식 전체 구절표(제4항, T36 ②-b)
         latex, _chem_phrased = mark_chem_phrases(latex)
     latex, _text_store = _protect_text(latex)   # 0.  P2: \text{한글} → 한글 점자 sentinel
     result = _normalize_latex_input(latex)      # 0a. MinerU/마크다운 입력 정규화
@@ -2288,10 +2307,19 @@ def convert_latex(latex: str) -> str:
         #   수식 경로의 로마자 토막이 구절표로 끌려간다.
         if not _chem_phrased and caps_phrase_run(latex):
             result = caps_phrase_cells(result, latex)
-        if not result.startswith(_ROMAN_OPEN):
-            result = _ROMAN_OPEN + result
-        if not result.endswith(_ROMAN_CLOSE):
-            result = result + _ROMAN_CLOSE
+        # ★ 연산·비교 기호나 화살표가 든 식은 감싸지 않는다(T36 ②-b 헛 로마자표 갈래). 과학 점자 제6항
+        #   (재추출 4423행) "국어 문장 안에 연산 기호, 비교 기호, 화살표 등이 포함된 식이 나올 때에는 식의
+        #   앞뒤를 두 칸씩 띄어 쓴다. 이때 식에 포함된 로마자는 로마자표를 적지 않는다" — 예문
+        #   `C + O₂ → CO₂이다` = ``,,,C`5`O;#b`3o`CO;#b,'``oi4`. 제18항 반응식 예문도 ⠴ 가 없다.
+        #   화학식 하나(`H₂O와` · 제7항 1호 `0,h;#b,o4v`)는 종전대로 감싼다.
+        #   ★ 가르는 조건은 "식에 한글이 없을 때"다(원장 C-132, pm 09-30). 한글 낱말이 섞인 도식
+        #   (`포도당 + O₂ → CO₂`)은 규정이 안 다루는 자리라 관행대로 화학식마다 감싼다 — 글 경로가
+        #   `inline_math.chem_chains` 에서 화학식마다 따로 쪼개 보낸다. 여기 한글이 남아 들어오면 종전대로.
+        if _has_hangul or not re.search(r"⠀(?:⠢|⠢⠢|⠔⠔|⠒⠕|⠪⠒|⠪⠶⠕)⠀", result):
+            if not result.startswith(_ROMAN_OPEN):
+                result = _ROMAN_OPEN + result
+            if not result.endswith(_ROMAN_CLOSE):
+                result = result + _ROMAN_CLOSE
     return result
 
 # ── 수식 구조 → rule_id (rule_trail emit용, Phase B) ────────────────────────

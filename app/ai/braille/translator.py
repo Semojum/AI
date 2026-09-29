@@ -26,7 +26,7 @@ import unicodedata
 from functools import lru_cache
 
 from app.ai.braille.kor_math_rules import (convert_latex, digits_to_braille,
-                                          caps_phrase_run, caps_phrase_cells)
+                                          caps_phrase_run, caps_phrase_cells, bond_chain)
 from app.ai.braille import eng_braille, inline_math
 from app.ai.braille.constants import WRAP_HYPHEN_CLOSE, WRAP_HYPHEN_OPEN
 from app.ai.braille.symbol_rules import (
@@ -2018,6 +2018,8 @@ def _inline_sub_braille(b: str, src: str = "") -> str:
 
 def _translate_with_braillify(text: str, *, force_roman: bool = False,
                               qnum_period: bool = True) -> str:
+    if bond_chain(text.strip()):      # 줄 전체가 사슬 화합물 결합선(`H-O-H`, 과학 제10항) — 영어 붙임표로 새지 않게
+        return convert_latex(text.strip())
     parts = _FORMULA_RE.split(text)
     # (종류, 점자, 앞 원문공백, 뒤 원문공백). 종류: "t"=텍스트 "f"=수식 "i"=인라인 첨자 토큰
     chunks: list[tuple[str, str, bool, bool]] = []
@@ -3039,6 +3041,7 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     text = _UNIT_PRIME_RE.sub(lambda m: SYMBOL_TABLE[m.group()], text)
     text = _UNIT_BACKTICK_RE.sub("", text)
     text = _BACKTICK_MATH_RE.sub(lambda m: f"<!수식>{m.group(1).rstrip()}<!/수식> ", text)
+    text = inline_math.chem_chains(text)    # 반응식 식 경계(C-132) — $…$ 를 풀기 전에
     text = _normalize_inline_math(text)     # $…$/\(…\) → <!수식> (P1: 수식 라우팅)
     # 구분자 없는 평문 수식(cos 2α=1-2 sin² α)도 같은 경로로 보낸다 — 수학 본문의
     # 16%가 이 형태다(inline_math 모듈이 오탐 없이 구간만 골라 태그를 붙인다).
