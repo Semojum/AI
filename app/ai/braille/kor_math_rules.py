@@ -195,6 +195,7 @@ _NUM_RE    = re.compile(r"-?\d+(?:,\d{3})*(?:\.\d+)?")
 # \to 또는 \rightarrow
 _TO_RE     = re.compile(r"\\(?:to|rightarrow)")
 # \lim_{var \to val} 또는 \lim_{var→val}
+_LIM_SUBSTACK_RE = re.compile(r"\\lim_\{\\substack\{(.*?)\}\}", re.DOTALL)
 _LIM_RE    = re.compile(
     r"\\lim_\{([^{}]*?)(?:\\to|→|\\rightarrow)(.*?)\}",
     re.DOTALL,
@@ -1541,13 +1542,25 @@ def _stage3_limit(result: str) -> str:
     def _lim_replace(m: re.Match) -> str:
         var = convert_latex(m.group(1).strip())
         val = convert_latex(m.group(2).strip())
-        # 원장 M-07. 도서 관행(2026-07-19 실측): gold의 lim 420건 **전부** 화살표 없이
-        # `lim⠰변수 점근값 본식`으로 적는다(0%). 규정 제51항은 화살표를 명시하므로
-        # regulation 모드는 규정형을 유지하고 book 모드만 생략한다.
-        if _IS_BOOK_STYLE:
-            return f"{_LIM_BRAILLE}{_SUBSCRIPT_IND}{var} {val} "
+        # 원장 M-07 — **규정 채택**(2026-09-30 pm). 제51항(재추출 3902~3904행) "lim 으로 적은 다음
+        # 범위의 시작(변수), 화살표, 점근값의 순으로 적는다" · 예문 `LIM;X`3o`B`G8X0`(3908행).
+        # 종전 book 모드는 구판 gold lim 420건 0% 를 근거로 화살표를 뺐으나 2027 dev·val gold 에
+        # lim 이 0건이라 관행 근거가 구판 하나뿐이다(판본 역전 꼴). 규정이 명확한 자리는 규정대로.
         return f"{_LIM_BRAILLE}{_SUBSCRIPT_IND}{var} {_ARROW_RIGHT} {val} "
 
+    def _substack_replace(m: re.Match) -> str:
+        # 제51항 [붙임](3931~3935행) 범위가 둘이면 변수마다 ⠰ — `LIM;X 3o`A`;Y`3o`B`F8X"`Y0`.
+        #   종전에는 `\substack` 가 _LIM_RE 에 안 걸려 `_` 가 점자에 그대로 샜다.
+        heads = []
+        for part in re.split(r"\\\\|" + _W2R_ROW_SEP, m.group(1)):
+            mm = re.match(r"\s*(.*?)(?:\\to|→|\\rightarrow)(.*)$", part, re.DOTALL)
+            if not mm:
+                return m.group()
+            heads.append(f"{_SUBSCRIPT_IND}{convert_latex(mm.group(1).strip())} {_ARROW_RIGHT} "
+                         f"{convert_latex(mm.group(2).strip())}")
+        return f"{_LIM_BRAILLE}{' '.join(heads)} "
+
+    result = _LIM_SUBSTACK_RE.sub(_substack_replace, result)
     result = _LIM_RE.sub(_lim_replace, result)
     # 단독 \to / \rightarrow → 화살표
     return _TO_RE.sub(_ARROW_RIGHT, result)
@@ -1836,6 +1849,8 @@ _LATEX_SIMPLE: dict[str, str] = {
     "\\downarrow": "⠘⠒⠕",  # ↓ (제10항 ^3o)
     "\\nearrow":   "⠔⠕",   # ↗ (제10항 9o)
     "\\searrow":   "⠢⠕",   # ↘ (제10항 5o)
+    "\\nwarrow":   "⠪⠢",   # ↖ (제10항 [5, 재추출 3200행) — 없어서 통째로 사라졌다
+    "\\swarrow":   "⠪⠔",   # ↙ (제10항 [9, 3202행)
     "\\leftarrow":  "⠪⠒", # ← (폰트 "[3"=⠪⠒)
     "\\leftrightarrow": "⠪⠒⠕",  # ↔ (폰트 "[3o")
     "\\Rightarrow":  "⠒⠒⠕",     # ⇒ (명제 제61항, "33o")
