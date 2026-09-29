@@ -94,6 +94,27 @@ def _region(bb: list[int], items: list[dict]) -> str | None:
     return None
 
 
+def locate(boundary: dict, text: str) -> str | None:
+    """채점기용 — 글(gold 해독문 등)이 이 쪽 경계 파일의 어디에 있나. 목록을 만든 잣대와 같다.
+
+    "kept"    경계 요소 글에 있다 → 점역·배치 몫(추출은 했다)
+    "unseen"  추출이 못 봤다
+    "dropped" MinerU 는 봤는데 경계까지 못 왔다
+    None      어디에도 없다 → gold 만의 것(점역자 주·테두리 등)이거나, 대조를 안 한 쪽이다
+              (`boundary["meta"]["loss_checks"]` 로 가른다)
+    """
+    q = _plain(text)
+    if not q:
+        return None
+    if _Pool(e.get("content") for e in boundary.get("elements", [])).has(q):
+        return "kept"
+    losses = boundary.get("extraction_losses") or []
+    for cls in ("unseen", "dropped"):
+        if _Pool(x.get("text") for x in losses if x.get("class") == cls).has(q):
+            return cls
+    return None
+
+
 def extraction_losses(elements: list[dict], page: fitz.Page,
                       raw_dir: Path | None) -> tuple[list[dict], list[str]]:
     """경계 요소(최종) · MinerU 원출력 · 텍스트 레이어를 대조해 (손실 목록, 대조한 것)을 돌려준다."""

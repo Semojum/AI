@@ -115,6 +115,18 @@ def test_짧은_조각은_적지_않는다(tmp_path):
     assert losses == []
 
 
+def test_채점기는_locate_로_갈래를_읽는다(tmp_path):
+    doc, pg = _page()
+    els = [{"content": KEPT}, {"content": "이미지 캡셔닝 대기"}]
+    losses, checks = L.extraction_losses(els, pg, _raw(tmp_path, ITEMS))
+    bnd = {"meta": {"loss_checks": checks}, "elements": els, "extraction_losses": losses}
+    assert L.locate(bnd, KEPT) == "kept"
+    assert L.locate(bnd, UNSEEN) == "unseen"
+    assert L.locate(bnd, DROP) == "dropped" and L.locate(bnd, CARD) == "dropped"
+    assert L.locate(bnd, "【점역자주】그림: 지도에 표시된 두 지역의 위치") is None   # gold 만의 것
+    assert L.locate({"elements": els}, UNSEEN) is None                              # 옛 경계 파일
+
+
 def test_builder_가_추출_표지를_경계로_싣는다(tmp_path, monkeypatch):
     """종전에는 builder 가 flags 를 새로 만들어 추출기 표지(MINERU_*·TEXTLAYER_*)가 버려졌다."""
     monkeypatch.chdir(tmp_path)
