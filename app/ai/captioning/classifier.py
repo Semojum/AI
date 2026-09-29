@@ -196,13 +196,15 @@ def _classify_anthropic(b64: str, mime: str):
     import anthropic
     from app.core.limits import estimate_tokens, llm_limiter
     from app.utils.req_log import record_anthropic
-    from app.ai.captioning.captioner import _cache_new_file, _kind_matches
+    from app.ai.captioning.captioner import _cache_lookup, _cache_new_file, _cache_put, _kind_matches
     raw = base64.b64decode(b64)
     # 판 번호 열쇠(3-c) + 격리 열쇠(3-e). 옛 자리(전문 키)는 2026-09-08 에 없앴다 —
     # 열쇠에 고객이 안 들어가 고객 사이에 샌다. 캐시는 여기서부터 새로 쌓는다(대표 결정).
+    # 꺼내기(`_cache_lookup`)가 적중 · 미스를 세고, ro 미스면 `CacheMiss` 를 올린다(T39 S1 · S4).
     cache = _cache_new_file("classify", raw, "classify")
-    if cache is not None and cache.exists():
-        label = cache.read_text(encoding="utf-8").strip()
+    cached = _cache_lookup("classify", cache)
+    if cached is not None:
+        label = cached.strip()
         if _kind_matches("classify", label):   # 캡션이 라벨 자리에 있으면 없는 셈 친다
             if label not in LABELS:
                 return "image", 0.0, ""
@@ -224,8 +226,7 @@ def _classify_anthropic(b64: str, mime: str):
         return "image", 0.0, ""    # 형식 이탈 = 불확실 신호(R2 대상)
     # 형식 이탈은 캐시하지 않는다 — 한 번 어긋난 응답이 영구히 굳으면 그 그림은
     # 다시는 제 라벨을 못 받는다(빈 캡션을 안 굽는 것과 같은 이유).
-    if cache is not None:
-        cache.write_text(label, encoding="utf-8")
+    _cache_put(cache, label)
     return label, None, (_subtype(b64, mime, raw) if label == "diagram" else "")
 
 
@@ -239,11 +240,17 @@ def _subtype(b64: str, mime: str, raw: bytes) -> str:
     import anthropic
     from app.core.limits import estimate_tokens, llm_limiter
     from app.utils.req_log import record_anthropic
-    from app.ai.captioning.captioner import _cache_new_file, _kind_matches
+    from app.ai.captioning.captioner import _cache_lookup, _cache_new_file, _cache_put, _kind_matches
+    from app.utils.llm_cache import CacheMiss
 
     cache = _cache_new_file("subtype", raw, "subtype")
-    if cache is not None and cache.exists():
-        cached = cache.read_text(encoding="utf-8").strip()
+    try:
+        cached = _cache_lookup("subtype", cache)
+    except CacheMiss as exc:            # ro 미스 — 세분류 콜 실패와 같게 물러난다(라벨은 살았다)
+        logger.info("세분류 캐시 미스(ro) — 골격 없이 진행: %s", exc)
+        return ""
+    if cached is not None:
+        cached = cached.strip()
         if _kind_matches("subtype", cached):
             return _parse_subtype(cached)
     model = os.getenv("CAPTION_MODEL", "claude-sonnet-5")
@@ -265,6 +272,6 @@ def _subtype(b64: str, mime: str, raw: bytes) -> str:
     sub = _parse_subtype(answer)
     # 일곱 밖('none' 포함)도 담는다 — 같은 그림에 같은 질문을 다시 하지 않는다.
     # `diagram` 을 앞에 붙이는 것은 `_kind_matches` 가 첫 낱말로 자리를 가르기 때문이다.
-    if cache is not None and answer:
-        cache.write_text(f"diagram {sub or 'none'}", encoding="utf-8")
+    if answer:
+        _cache_put(cache, f"diagram {sub or 'none'}")
     return sub
