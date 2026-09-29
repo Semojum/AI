@@ -1442,6 +1442,9 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             # 요청 때 env 가 아니라 이 값을 옮긴다. 경계를 재사용·복사하면 env 와 내용이 갈리기 때문이다
             # (arm.py 108곳: 캡션 든 d8c 경계에 True 가 찍혔다). 이 키가 없는 옛 경계는 '모름'(None)이다.
             "caption_disabled": os.getenv("SEMOJUM_NO_CAPTION") == "1",
+            # 추출 중에 센 관문 발동(G1 등). 재사용 때 되살린다 — 추출이 안 돌면 안 세져서
+            # 재요청마다 검토 표시가 빠졌다(#1032). 이 키가 없는 옛 경계는 종전대로 표시 없음.
+            "gate_counts": [[g, r, n] for (g, r), n in sorted(gates.gate_counts().items())],
         },
         "elements": elements,
         "extraction_losses": losses,
@@ -2595,6 +2598,8 @@ async def _run_pipeline(task: PageTask) -> dict:
             if (task.advanced_ai
                     and extraction.get("meta", {}).get("extraction_method") != "LLM_VISION"):
                 reuse_reason = "advanced_ai"
+            else:           # 경계를 뜰 때 센 관문을 이 쪽 몫으로(#1032)
+                gates.gate_restore(extraction.get("meta", {}).get("gate_counts"))
         if reuse_reason is not None:
             if reuse_reason != "no_boundary":
                 logger.info("경계 stamp 무효(%s) → 재파생 job=%s page=%d",
