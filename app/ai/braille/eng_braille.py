@@ -299,6 +299,10 @@ def translate_word(word: str, ebae: bool = False) -> str:
 _GRADE1 = "⠰"
 _WORDSIGN_CELLS = frozenset(v for v in WORDSIGNS.values() if len(v) == 1 and v in ALPHABET.values())
 _SHORTFORM_CELLS = frozenset(v for v in SHORT_FORMS.values() if all(c in ALPHABET.values() for c in v))
+# 10.9.3 — 긴 낱말 안에서도 쓰는 단축형(글자로만 된 것). (셀, 어디서나 쓰는가)
+_SHORTFORM_HEADS = tuple((SHORT_FORMS[w], w in ("braille", "great"))
+                         for w in ("braille", "great", "blind", "friend", "good", "letter", "little", "quick"))
+_VOWEL_Y_CELLS = frozenset(ALPHABET[c] for c in "aeiouy")
 
 
 def _looks_contracted(word: str) -> bool:
@@ -310,7 +314,15 @@ def _looks_contracted(word: str) -> bool:
     if len(word) > 1 and not (word.isupper() or word[1:].islower()):
         return False
     cells = "".join(ALPHABET[c] for c in word.lower())
-    return cells in (_WORDSIGN_CELLS if len(word) == 1 else _SHORTFORM_CELLS)
+    if cells in (_WORDSIGN_CELLS if len(word) == 1 else _SHORTFORM_CELLS):
+        return True
+    # 통일영어점자 10.9.5 — 단축형으로 **시작하는** 긴 낱자열도 적는다(`BLCUP` = ;,,blcup). 긴 낱말
+    #   안에서 단축형으로 읽히는 것은 10.9.3 의 열 개뿐이라 그 앞머리만 본다: braille·great 는 늘,
+    #   blind·friend·good·letter·little·quick 은 뒤가 모음·y 가 아닐 때. 2027 gold `GDP` ⠰ 12/12 ·
+    #   10.9.3 밖(ABC·ABO·ABD) 0/257(재현 `V2/temp/n14-acc/g1_prefix_measure.py`). 구판은 GDP 0/21(판본 역전).
+    # ponytail: 실물이 전부 대문자 약어라 대문자 낱말만 본다 — 소문자 낱말은 약자 적용 경로가 따로다.
+    return word.isupper() and any(cells.startswith(h) and (any_pos or cells[len(h):][:1] not in _VOWEL_Y_CELLS)
+                                  for h, any_pos in _SHORTFORM_HEADS)
 
 
 @lru_cache(maxsize=4096)

@@ -58,3 +58,19 @@ def test_낱말_안쪽_대문자는_약자꼴이_아니다() -> None:
     # 2027 gold 001 p0115 유전자형 `AB, Ab, aB, ab` = ⠰⠠⠠⠁⠃ ⠰⠠⠁⠃ ⠁⠠⠃ ⠰⠁⠃
     assert eng_braille._looks_contracted("AB") and eng_braille._looks_contracted("Ab")
     assert eng_braille._looks_contracted("ab") and not eng_braille._looks_contracted("aB")
+
+
+@pytest.mark.parametrize("word,want", [
+    # 통일영어점자 10.9.5 예문 `BLCUP` = ;,,blcup · 2027 gold `GDP` = 0;,,gdp (12/12)
+    ("GDP", True), ("BLCUP", True), ("GRTX", True),
+    # 10.9.3 밖 단축형(about·could)은 긴 낱말 안에서 안 읽힌다 — gold ABC·ABO·ABD 0/257
+    ("ABC", False), ("ABO", False), ("OECD", False),
+    # good·friend 은 뒤가 모음·y 면 단축형을 안 쓴다(10.9.3(c))
+    ("GDA", False), ("FRY", False),
+])
+def test_단축형으로_시작하는_긴_낱자열(word: str, want: bool) -> None:
+    assert eng_braille._looks_contracted(word) is want
+
+
+def test_GDP_본문() -> None:
+    assert "⠴⠰⠠⠠⠛⠙⠏" in _body("GDP가 늘었다.")
