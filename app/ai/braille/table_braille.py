@@ -66,7 +66,7 @@ def _base_trail(
         trail += content_rules(source, lines)
     return trail
 
-from app.ai.braille.constants import COLS as _COLS  # noqa: E402 (공용 상수)
+from app.ai.braille.constants import COLS as _COLS, BOX_TITLE_PROMOTABLE  # noqa: E402 (공용 상수)
 _BORDER  = "⠿"  # 표 테두리
 _EMPTY_CELL = "⠿⠿"  # 빈 셀 (NLD-3.1.2(4))
 _SEP     = "⠒"  # 행·셀 구분선
@@ -605,6 +605,127 @@ def _render_linear(corrected_text: str) -> list[str]:
     return [_TBL_TOP, *(result or [""]), _TBL_BOT]
 
 
+# ── 정답 상자 (T33 §2-3 후속 · pm 2026-09-30 착수 승인) ─────────────────────────
+# 단원 정답 상자(`수능 2점 테스트` · `본문 118~121쪽` 아래 `01 ④ 02 ⑤ …`)를 MinerU 는 표로 본다.
+# gold 는 표가 아니라 **글상자**다(생명과학 ans p0026 · 국어 ans p0003 · p0012 실물):
+#     ⠀⠀⠀⠀수능 2점 테스트            ← 제목은 상자 **위**(첫 줄 5칸, 다음 줄 3칸)
+#     ⠀⠀본문 118~121쪽
+#     ⠿⠛⠛⠛…⠿
+#     ⠀⠀[언어]                        ← 여러 묶음이면 소제목은 상자 **안**(3칸)
+#     ⠀⠀(01)
+#     ⠀⠀01 ③  02 ③  03 ②  04 ③      ← 쌍 사이 두 칸, 번호와 답 사이 한 칸. 32칸을 쌍째로 채운다
+#     ⠀⠀05 ⑤  06 ⑤                     ← 이어진 줄도 3칸부터. gold 가 책마다 갈린다(정답 상자 쪽
+#                                         전수: 들임 58줄 = 생명과학·수학·사회문화 · 안 들임 48줄 = 국어).
+#                                         조항이 없는 자리라 다수를 따른다
+#     ⠿⠶⠶⠶…⠿
+# 우리 5안은 모두 멀었다(dev 정답 상자 55개: 고른 안 편집 65.9% · 가장 가까운 안 53.3%, `temp/n52`).
+# 이 꼴을 "테두리만" 자리에 넣고 기본으로 고른다(5안 개수·순서는 BE·FE 계약이라 그대로).
+# 되돌리는 길 `ANSWER_BOX_FORM=0`(호출 때 읽음).
+_ANS_PAIR_RE = re.compile(r"^(\d{1,2})\s+([①-⑳]|\d{1,4})$")
+_ANS_BARE_NO_RE = re.compile(r"^\d{1,2}$")
+_ANS_LABEL_MAX = 4        # 쌍 사이 소제목은 넉 자 이하('언어'·'1회'·'02')
+_ANS_MIN_PAIRS = 6
+_ANS_MIN_PAIRS_PAGED = 3  # 제목에 '본문 87~89쪽' 이 있으면(정답 상자 머리 표지) 세 쌍이면 된다
+_ANS_PAGE_REF_RE = re.compile(r"본문\s*\d+(?:\s*~\s*\d+)?\s*쪽")
+
+
+def answer_box_on() -> bool:
+    return os.environ.get("ANSWER_BOX_FORM", "1") != "0"
+
+
+def answer_box_parts(rows: list[list[str]]):
+    """표 격자 → `(제목 줄, [(소제목 줄, [(번호, 답)…])…])`. 정답 상자가 아니면 None.
+
+    · 첫 쌍 앞 칸에 다섯 자 이상 글이 있으면 그 칸들은 상자 위 제목이다(두 자 이하 칸은
+      앞 제목에 붙인다: `Level` + `1`). 짧은 칸뿐이면 상자 안 소제목이다.
+    · 쌍 사이 짧은 칸은 새 묶음의 소제목이다. 긴 글이 끼면 자료 표다 → None.
+    · 한 묶음의 번호는 1에서 시작해 1씩 는다. MinerU 가 두 쌍을 한 칸에 붙이면(`01 405 3`) 여기서
+      걸러진다 — 안 거르면 붙은 칸이 제목 줄로 샌다.
+    · 쌍이 여섯 개 안 되면 None. 제목에 '본문 N~M쪽' 이 있으면 세 개면 된다(작은 단원 상자).
+    """
+    cells = [(c or "").strip() for r in rows for c in r]
+    cells = [c for c in cells if c]
+    first = next((i for i, c in enumerate(cells) if _ANS_PAIR_RE.match(c)), None)
+    if first is None:
+        return None
+    head, rest = cells[:first], cells[first:]
+    titles: list[str] = []
+    labels: list[str] = []
+    if any(len(c) > _ANS_LABEL_MAX for c in head):
+        for c in head:
+            if titles and len(c) <= 2:
+                titles[-1] += " " + c
+            else:
+                titles.append(c)
+    else:
+        labels = head
+    groups: list[tuple[list[str], list[tuple[str, str]]]] = []
+    pairs: list[tuple[str, str]] = []
+    for c in rest:
+        m = _ANS_PAIR_RE.match(c)
+        if m:
+            if int(m.group(1)) != (int(pairs[-1][0]) + 1 if pairs else 1):
+                return None
+            pairs.append((m.group(1), m.group(2)))
+            continue
+        if len(c) > _ANS_LABEL_MAX:
+            return None
+        if pairs:
+            groups.append((labels, pairs))
+            labels, pairs = [], []
+        labels.append(c)
+    if pairs:
+        groups.append((labels, pairs))
+    need = _ANS_MIN_PAIRS_PAGED if any(_ANS_PAGE_REF_RE.search(t) for t in titles) else _ANS_MIN_PAIRS
+    if sum(len(p) for _, p in groups) < need:
+        return None
+    return titles, [([f"({x})" if _ANS_BARE_NO_RE.match(x) else f"[{x}]" for x in lb], p)
+                    for lb, p in groups]
+
+
+def _answer_rows(corrected_text: str) -> list[list[str]]:
+    return [[c.strip() for c in ln.split("|")] for ln in corrected_text.splitlines() if ln.strip()]
+
+
+def _box_title(titles: list[str]) -> str | None:
+    """위 테두리에 박을 제목 — gold 에서 관측된 글상자 제목이면(지침 §2.1.6(1)②)."""
+    return next((t for t in titles if t.strip("〈〉<>") in BOX_TITLE_PROMOTABLE), None)
+
+
+def _render_answer_box(parts) -> list[str]:
+    titles, groups = parts
+    boxed = _box_title(titles)
+    above = [t for t in titles if t is not boxed]
+    out: list[str] = []
+    for i, t in enumerate(above):         # 두 줄 이상이면 첫 줄은 5칸(머리), 나머지는 3칸
+        out.extend(_split_lines(_PAD * (4 if i == 0 and len(above) > 1 else 2) + _translate(t)))
+    out.append(_translate(f"<!상자>{boxed}<!/상자>") if boxed else _TBL_TOP)
+    for labels, pairs in groups:
+        out.extend(_PAD * _ROW_INDENT + _translate(lb) for lb in labels)
+        line = _PAD * _ROW_INDENT
+        for k, (no, ans) in enumerate(pairs):
+            pb = _translate(f"{no} {ans}")
+            sep = "" if k == 0 else _PAD * 2
+            if k and len(line) + len(sep) + len(pb) > _COLS:   # 쌍째로 넘긴다
+                out.append(line)
+                line, sep = _PAD * _ROW_INDENT, ""
+            line += sep + pb
+        out.append(line)
+    out.append(_TBL_BOT)
+    return out
+
+
+def _print_answer_box(parts) -> str:
+    titles, groups = parts
+    boxed = _box_title(titles)
+    out = [*(t for t in titles if t is not boxed), f"{_PRINT_BOX_TOP} {boxed}" if boxed else _PRINT_BOX_TOP]
+    for labels, pairs in groups:
+        out.extend(labels)
+        out.extend("  ".join(f"{n} {a}" for n, a in pairs[k:k + 4]) for k in range(0, len(pairs), 4))
+    out.append(_PRINT_BOX_BOTTOM)
+    return "\n".join(out)
+
+
 _NUMERIC_CELL_RE = re.compile(r"^[\d.,()%~\-\s]+$")
 
 
@@ -956,6 +1077,8 @@ def print_layout(corrected_text: str, mode: str) -> str:
       있어 파라미터화하면 점자 출력이 흔들린다. 배치 규칙만 같은 별도 함수로 둔다.
     ★ 32칸 접기는 하지 않는다. 묵자는 그 제약이 없고, 피커는 **배치 모양**을 보이는 게 목적이다.
     """
+    if mode == "linear" and answer_box_on() and (ab := answer_box_parts(_answer_rows(corrected_text))):
+        return _print_answer_box(ab)          # 정답 상자 — 점자 쪽 _render_answer_box 와 같은 배치
     if mode == "transposed":
         corrected_text = _transpose_text(corrected_text)
     rows = [[c.strip() for c in ln.split("|")]
@@ -1130,7 +1253,9 @@ class TableBraille:
         # 전치 초안도 점역자 주를 태그로 낸다 — 옛 구현은 _translate(_TN_TRANSPOSE)라
         # 양끝 마커 ⠠⠄가 빠져 '그냥 한 줄 문장'으로 나갔고 rule_trail도 안 잡혔다.
         transposed_lines = [_tn_transpose_line()] + _render_grid(_transpose_text(text))
-        linear_lines = _render_linear(text)
+        # 정답 상자면 "테두리만" 자리에 정답 상자 꼴을 넣는다(위 answer_box_parts 주석).
+        ab = answer_box_parts(_answer_rows(text)) if answer_box_on() else None
+        linear_lines = _render_answer_box(ab) if ab else _render_linear(text)
         # §3.1.1 (1)③ 번호 체계 — 열 항목이 문장인 표의 정본 형식(2026-09-02 신설).
         numbered_lines = _render_numbered(text)
         # 자동 경로가 전치했으면 그 점역자 주가 출력에 실린다 → 태그를 트레일 원본에 얹어
