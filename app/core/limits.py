@@ -112,10 +112,14 @@ def braille_pool():
 
 async def run_braille(fn, *args, **kwargs):
     """점역·조판 동기 함수를 전용 풀에서 돌린다(이벤트 루프 비점유)."""
+    import contextvars
     import functools
 
+    # ★ `run_in_executor` 는 `asyncio.to_thread` 와 달리 contextvars 를 안 넘긴다. 쪽 단위 점역 문맥
+    #   (`inline_math.MATH_PAGE`, T16)이 풀 스레드에서 기본값으로 읽히지 않게 호출 쪽 문맥을 복사해 돈다.
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(braille_pool(), functools.partial(fn, *args, **kwargs))
+    ctx = contextvars.copy_context()
+    return await loop.run_in_executor(braille_pool(), ctx.run, functools.partial(fn, *args, **kwargs))
 
 
 def llm_slot() -> asyncio.Semaphore:

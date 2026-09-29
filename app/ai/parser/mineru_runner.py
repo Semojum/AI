@@ -1066,12 +1066,19 @@ _MATH_STRUCT_FONT_RE = re.compile(r"^(?:[A-Z]{6}\+)?(?:EH|ST)[\w-]*?(?:Italic|bo
 _MATH_PAGE_MIN_SHARE = 0.20
 
 
-def _is_math_page(pdf_path: Path, page_idx: int) -> bool:
-    """추출 effort 라우터(I886) — 수식 지면인가. 못 열면 '아님'(medium, 종전 기본)."""
+def _is_math_page(pdf_path: "Path | bytes", page_idx: int) -> bool:
+    """추출 effort 라우터(I886) — 수식 지면인가. 못 열면 '아님'(medium, 종전 기본).
+
+    점역 단계(T16 수식 라우팅)도 같은 신호를 쓴다 — 그쪽은 요청의 PDF 바이트를 넘긴다.
+    쪽 번호가 문서 밖이면 끝 쪽으로 붙인다(쪽 하나짜리 PDF 에 원래 쪽 번호가 오는 코퍼스 러너).
+    """
     try:
-        with fitz.open(str(pdf_path)) as d:
+        opened = (fitz.open(stream=bytes(pdf_path), filetype="pdf")
+                  if isinstance(pdf_path, (bytes, bytearray)) else fitz.open(str(pdf_path)))
+        with opened as d:
+            page = d[max(0, min(page_idx, d.page_count - 1))]
             fonts = [sp.get("font") or ""
-                     for bl in d[page_idx].get_text("dict").get("blocks", [])
+                     for bl in page.get_text("dict").get("blocks", [])
                      for ln in bl.get("lines", []) for sp in ln.get("spans", [])]
     except Exception:                       # noqa: BLE001 — 판정 실패는 종전 기본으로 둔다
         return False

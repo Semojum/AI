@@ -23,6 +23,7 @@ translator는 이 모듈이 태그를 붙인 결과를 받아 기존 수식 경�
 from __future__ import annotations
 
 import re
+from contextvars import ContextVar
 
 from app.ai.braille.constants import WRAP_HYPHEN_CLOSE, WRAP_HYPHEN_OPEN
 from app.ai.braille.kor_math_rules import UNI_SUB, UNI_SUP, unicode_scripts_to_latex
@@ -94,6 +95,22 @@ _BIN_OPS = "+-−×÷=<>≤≥≠"   # 두 피연산자 사이에 서는 연산�
 #   (`⠼⠁⠴⠨⠍⠍⠲⠀⠀⠉⠵`). 라틴 단위 `1 mm` 는 원래 수식 신호가 없어 바르다.
 #   μ 바로 뒤에 로마자가 붙은 것만 뺀다. 홀로 선 μ(마찰 계수·평균)는 여전히 수식 신호다.
 _GREEK_UNIT_RE = re.compile(r"(?<![A-Za-z])μ(?=[A-Za-z])")
+
+
+# ── 수식 지면의 약한 신호(T16 · 원장 R-85) ─────────────────────────────────────────────
+# `_has_strong` 은 기호 종류만 보므로 `p-q`·`(x, y)` 처럼 `-`·`+`·쉼표·괄호뿐인 식을 못 잡아 글로 샜다.
+# 같은 꼴이 과목에 따라 gold 가 반대다 — 수학 009 `p-q의 값` = ⠀⠀⠏⠔⠟⠀⠀ (수식) · 사회 013 `t+10년` =
+# ⠴⠞⠲⠀⠢⠀⠼⠁⠚ (글) · 생명 001 `(Q, n)` = ⠴⠠⠟⠂⠀⠰⠝⠠⠴ (글). 피연산자 모양으로는 못 가르므로 **수식 지면**
+# (추출 effort 라우터와 같은 한컴 수식 글꼴 신호, 2027 수학 I 151/152 · 그 밖 모든 책 0)일 때만 켠다.
+# 쪽 문맥은 파이프라인이 요청 PDF 로 재서 세운다. 기본값 거짓 = 종전 동작.
+MATH_PAGE: ContextVar[bool] = ContextVar("inline_math_page", default=False)
+_OPND = r"(?:[A-Za-z]|\d+(?:\.\d+)?)"                  # 홑 로마자 또는 수
+_EXPR = rf"{_OPND}(?:\s*[-+−]\s*{_OPND})*"
+_ELEM = rf"[-+−]?\s*{_EXPR}"
+_WEAK_MATH_RE = re.compile(
+    rf"(?=.*[A-Za-z]){_OPND}\s*[-+−]\s*{_EXPR}"            # 홑 로마자가 든 덧셈·뺄셈 `p-q` · `n-1`(수 범위 `3-4쪽` 제외)
+    rf"|\(\s*{_ELEM}(?:\s*,\s*{_ELEM})+\s*\)"           # 괄호 순서쌍 `(x, y)` · `(m, n-1)` · `(4, 3)` · `(8, -1)`
+)                                                            #   009 gold 수 순서쌍 수식 꼴 50 · 글 꼴 0
 
 
 def _has_strong(core: str) -> bool:
@@ -246,7 +263,7 @@ def _wrap_tokens(seg: str) -> str:
         em = _ENUM_HEAD_RE.match(core)
         if em:
             head, core = em.group(), core[em.end():]
-        if not _has_strong(core):
+        if not _has_strong(core) and not (MATH_PAGE.get() and _WEAK_MATH_RE.fullmatch(core)):
             return span
         # ★ 피연산자가 구간 **밖 한글**인 연산(#941) — `반지름×3.14이다` 의 `×3.14` 는 수식이 아니라
         #   한글 사이 연산이다(「한글 점자」 제46항 예문, 재추출 2066행). 감싸면 수식 구간 앞뒤에
