@@ -1427,6 +1427,107 @@ def _code_text(body: str) -> str:
     return _CODE_WRAP_RE.sub("", body or "").strip()
 
 
+# ── 표 영역 안 표 밖 글 되살리기 (#989) ─────────────────────────────────────
+# 〈보기〉 상자 안에 표가 있으면 MinerU 가 상자 전체를 표 하나로 잡는다. 표 bbox 는 상자를
+# 다 덮는데 table_body HTML 에는 안쪽 표만 있어서 표 밖 글(학생·선생님 대화, ㄱ~ㄹ 진술)이
+# 통째로 사라졌다(언매 p062 · 사회문화 p082). 글은 텍스트레이어에 멀쩡히 있다.
+# 그래서 표 영역 안 레이어 줄을 표 칸 글과 대조해(음절 2-gram 의 60% 이상이 칸 글에 있으면
+# 표 줄) **표 줄들의 위·아래 띠**에 남는 줄만 본문 글로 되살려 표 앞·뒤에 둔다.
+# 표 줄 사이에 낀 줄은 칸 글을 MinerU 가 잘못 읽은 것일 수 있어 건드리지 않는다.
+# 건드리지 않는 표: 표 줄을 둘 이상 못 찾은 표 · 표 붕괴(#864)로 어차피 영역 레이어 글로
+# 통째로 갈아치우는 표 · 레이어를 못 믿는 글(PUA·글꼴 매핑 어긋남).
+# 다른 글 블록에 이미 있는 글이면 넣지 않는다(음절 4-gram 80% 이상 겹침).
+# 상자 제목 '보기' 한 줄은 띠에서 뺀다. gold 는 그것을 테두리 제목(【글상자 〈보기〉】)으로 적는다.
+# ★ **문장으로 읽히는 띠만** 되살린다(한글 뒤 마침표·물음표·느낌표가 하나라도 있어야 한다).
+#   dev·val 표 있는 590쪽 실측: 이 조건 없이 되살린 띠 16개 중 gold 에 없는 6개가 전부 문장이
+#   아니었다 — 그림 라벨(`반응물  생성물`) · 격자 칸 이름(`하층  하층`) · 표 칸 값(`㉠(3)  1  1`) ·
+#   수식 글꼴 조각. 고치려는 것은 상자에 먹힌 **대화·진술**이다.
+# ★ 한컴 수식 글꼴(EH·ST) 자리는 되살리지 않는다. 레이어가 `sin` 을 ``TJO`` 로 거짓말한다
+#   (`_has_math_font` 주석, 수학1 p071·p115 실측 `TJO`D` · `DPT`D`).
+_BAND_TBL_MIN = 0.6
+_BAND_MIN_CHARS = 8
+_BAND_DUP_MIN = 0.8
+_BAND_LABEL_RE = re.compile(r"^[<〈《]?\s*보\s*기\s*[>〉》]?$")
+_BAND_PROSE_RE = re.compile(r"[가-힣][.?!]")
+
+
+def _ngrams(s: str, n: int) -> set:
+    return {s[i:i + n] for i in range(len(s) - n + 1)}
+
+
+def _table_bands(fitz_page: fitz.Page, bb: list, table_html: str) -> tuple[list | None, list | None]:
+    """표 영역 안 레이어 줄 중 표 칸 글이 아닌 줄의 (표 위 띠, 표 아래 띠) bbox(0~1000). 없으면 None."""
+    import html as _html
+    w, h = fitz_page.rect.width, fitz_page.rect.height
+    rect = fitz.Rect(bb[0] / 1000 * w, bb[1] / 1000 * h, bb[2] / 1000 * w, bb[3] / 1000 * h)
+    import unicodedata
+
+    def key(t: str) -> str:            # ⑤ 와 5 를 같게 본다 — MinerU 는 표 칸의 동그라미 숫자를 벗긴다
+        return _squash_text(unicodedata.normalize("NFKC", t))
+    cells = _ngrams(key(_html.unescape(re.sub(r"<[^>]+>", " ", table_html or ""))), 2)
+    rot = fitz_page.rotation_matrix             # 회전 지면은 줄 bbox 를 표시 좌표로 옮긴다(_native_text_spaced 와 같다)
+    lines = []
+    for blk in fitz_page.get_text("dict").get("blocks", []):
+        if blk.get("type") != 0:
+            continue
+        for ln in blk.get("lines", []):
+            lb = fitz.Rect(ln.get("bbox") or (0, 0, 0, 0)) * rot
+            if lb.get_area() <= 0 or (lb & rect).get_area() / lb.get_area() < 0.6:
+                continue
+            t = "".join(s.get("text", "") for s in ln.get("spans", [])).strip()
+            g = _ngrams(key(t), 2)
+            if g:
+                lines.append((lb, t, sum(1 for x in g if x in cells) / len(g) >= _BAND_TBL_MIN))
+    tbl = [lb for lb, _, is_tbl in lines if is_tbl]
+    if len(tbl) < 2:
+        return None, None
+    top, bot = min(r.y0 for r in tbl), max(r.y1 for r in tbl)
+
+    def band(inside) -> list | None:
+        rs = [lb for lb, t, is_tbl in lines if not is_tbl and inside(lb) and not _BAND_LABEL_RE.match(t)]
+        if not rs:
+            return None
+        u = fitz.Rect(rs[0])
+        for r in rs[1:]:
+            u |= r
+        return [u.x0 / w * 1000, u.y0 / h * 1000, u.x1 / w * 1000, u.y1 / h * 1000]
+
+    return band(lambda r: r.y1 <= top + 1), band(lambda r: r.y0 >= bot - 1)
+
+
+def _recover_table_bands(content_list: list[dict], fitz_page: fitz.Page, page_no: int) -> list[dict]:
+    """표 영역에 먹힌 표 밖 글을 레이어에서 되살려 표 앞·뒤 본문 글 항목으로 넣는다(#989, 위 절 주석)."""
+    seen = _ngrams(_squash_text(" ".join(
+        f"{it.get('text') or ''} {' '.join(it.get('list_items') or [])}"
+        for it in content_list if it.get("type") in _TEXTUAL_ITEM_TYPES)), 4)
+    out: list[dict] = []
+    for it in content_list:
+        bb = it.get("bbox")
+        body = _unescape_markdown(it.get("table_body") or "") if it.get("type") == "table" else ""
+        if not body or not bb or len(bb) != 4 or _collapsed_table(body):
+            out.append(it)
+            continue
+        above, below = _table_bands(fitz_page, bb, body)
+        pre, post = [], []
+        for band_bb, dst in ((above, pre), (below, post)):
+            if band_bb is None:
+                continue
+            text = _native_text_spaced(fitz_page, band_bb)
+            q = _squash_text(text)
+            g = _ngrams(q, 4)
+            if (len(q) < _BAND_MIN_CHARS or not _BAND_PROSE_RE.search(text)
+                    or _layer_untrustworthy(text, fitz_page) or _has_math_font(fitz_page, band_bb)
+                    or (g and sum(1 for x in g if x in seen) / len(g) >= _BAND_DUP_MIN)):
+                continue
+            dst.append({"type": "text", "text": text, "bbox": [int(v) for v in band_bb],
+                        "_flag": "TEXTLAYER_TABLE_OUTSIDE"})
+        if pre or post:
+            logger.info("page %d: 표 영역에 먹힌 표 밖 글 %d덩이를 되살렸다 (예: %r)", page_no,
+                        len(pre) + len(post), (pre + post)[0]["text"][:30])
+        out.extend(pre + [it] + post)
+    return out
+
+
 def run(
     pdf_path: str,
     page_no: int,
@@ -1498,6 +1599,7 @@ def run(
     img_w = int(rect.width * 2)
     img_h = int(rect.height * 2)
     page_img_info = fitz_page.get_image_info()   # 재크롭 DPI 상한 판정용, 쪽당 1회
+    content_list = _recover_table_bands(content_list, fitz_page, page_no)   # 표에 먹힌 표 밖 글(#989)
 
     merged_layout = []
     order = 1
@@ -1692,7 +1794,8 @@ def run(
             "heading_level": hlevel,
             "caption_ref": None,
             "flags": (["MINERU_FOOTER"] if raw_footer else [])
-                     + ([f"MINERU_{item['_nested'].upper()}"] if item.get("_nested") else []),
+                     + ([f"MINERU_{item['_nested'].upper()}"] if item.get("_nested") else [])
+                     + ([item["_flag"]] if item.get("_flag") else []),
         })
         order += 1
 
