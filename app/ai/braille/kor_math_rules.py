@@ -506,6 +506,41 @@ def caps_phrase_cells(cells: str, src: str = "") -> str:
     return _CAPS_OPEN + "".join(out) + _CAPS_CLOSE
 
 
+# ★ 「과학 점자」 제1항 · 제2항 — 원소 기호는 **원소마다** 대문자표를 적는다(C-129, T27).
+#   규정 예문 SO₄²⁻ = `,s,o;#d~#b9`(⠠⠎⠠⠕…) · 2027 gold `CO₂` = ⠠⠉⠠⠕ 등 원소마다 56 : 겹 1 : 첫 글자만 0.
+#   14단계가 이어진 대문자를 대문자 단어표 ⠠⠠ 로 묶고(`CO` → ⠠⠠⠉⠕), 첨자 토큰 경로가 그것을
+#   다시 홑 ⠠ 로 줄여(`⠠⠉⠕`) **`CO` 가 `Co`(코발트)로 읽혔다.** `KMnO₄` 는 `KMN O` 가 됐다.
+#   방아쇠는 제4항과 같은 틀이다 — 아래첨자 숫자나 이온 부호가 있고, 첨자에 문자가 없고,
+#   로마자 토막이 **전부** 원소 기호로 끊긴다. 3연 이상(제4항 구절표)은 caps_phrase_run 이 먼저 받는다.
+#   ⚠ 첨자 없는 대문자 낱말(`HIV` · `CPU` · `SNS`)은 원소로도 끊기지만 약어라 건드리지 않는다.
+def element_formula(src: str) -> bool:
+    t = re.sub(r"\\mathrm|\\text|\\rm|[{}$ ]", "", src or "")
+    if not re.search(r"_\d|\^\d*[+-]", t) or re.search(r"[_^][A-Za-z]", t):
+        return False
+    if _GEOMETRY_MARK_RE.search(src or ""):
+        return False
+    body = re.sub(r"\\[a-zA-Z]+", " ", t)
+    runs = re.findall(r"[A-Za-z]+", body)
+    return (bool(runs) and any(re.search(r"[A-Z]{2}", r) for r in runs)
+            and all(all(e in _ELEMENTS for e in re.findall(r"[A-Z][a-z]?|[a-z]", r)) for r in runs)
+            and not caps_phrase_run(src))
+
+
+def element_caps_cells(cells: str, src: str) -> str:
+    """14단계의 대문자 단어표 ⠠⠠+N글자를 원소마다 ⠠ 로 푼다. 원문 대문자 런과 셀 런이 안 맞으면 그대로."""
+    t = re.sub(r"\\mathrm|\\text|\\rm|\\[a-zA-Z]+|[{}$ ]", "", src or "")
+    runs = re.findall(r"[A-Z]{2,}", t)
+    hits = list(re.finditer(r"(?<!⠠)⠠⠠(?!⠠)", cells))
+    if len(hits) != len(runs):
+        return cells
+    out, last = [], 0
+    for m, run in zip(hits, runs):
+        letters = cells[m.end():m.end() + len(run)]
+        out.append(cells[last:m.start()] + "".join(_CAP + c for c in letters))
+        last = m.end() + len(run)
+    return "".join(out) + cells[last:]
+
+
 _CHEM_MARK_RE = re.compile(r"\\mathrm\s*\{|\\xrightarrow|\\longrightarrow|\\rightleftharpoons")
 # 기하 표기 신호 — 점·선분·각·도형 이름도 \mathrm으로 적고 글자가 원소 기호와 겹친다.
 _GEOMETRY_MARK_RE = re.compile(
@@ -2121,6 +2156,8 @@ def convert_latex(latex: str) -> str:
     # 18. 「과학 점자」 제1항 — 화학식은 로마자표로 열고 종료표로 닫는다(원장 M-01).
     #     규정 예문 `0,li1`,na1`,k4`(Li, Na, K)처럼 **식 전체를 한 번** 감싼다.
     #     맨 끝에 두는 이유: 앞 단계들이 로마자·첨자·화살표를 다 만든 뒤라야 감쌀 범위가 확정된다.
+    if result and element_formula(latex):          # 18-전. 과학 점자 제1·2항 원소마다 ⠠ (C-129)
+        result = element_caps_cells(result, latex)
     if _is_chem and result:
         # 제4항 — 원소 기호 3연 이상이면 낱 대문자표를 구절표로 갈아 끼운다.
         # ⚠ 화학식 판정(_is_chem) 밖으로 넓혀 봤다가 되돌렸다 — 규정쌍 412 -> 410.
