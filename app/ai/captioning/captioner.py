@@ -1025,6 +1025,37 @@ _UNREADABLE_LINE = re.compile(
 )
 
 
+# ★ 모델이 **앞으로 할 일을 말하는 혼잣말**(#1037). 원응답 첫머리에 붙어 캡션 머리가 됐다:
+#     "이미지에 실제로 그려진 내용을 확인해 보겠습니다."   "이 그림을 이해하기 위해 세부를 다시 확인하겠습니다."
+#     "…읽을 수 있는 형태만 근거로 서술하겠습니다."          "그림 자체만 설명하겠습니다."
+#   위 신호(불능·메타 + 존댓말)와 자기 보고 걷기(`gates._SELF_REPORT_RES` 의 의지형 `적·옮기·드리`)는
+#   이 꼴을 몰랐다 — 캐시 원응답 4,960개 중 5개가 관문을 지나 점자까지 나갔다.
+#   **문장 단위로** 걷는다. 혼잣말 뒤에 붙은 설명 문장은 산다. 세 조건을 다 봐야 건다:
+#   과정 동사 + '겠습니다' 로 끝나는 문장 · 그림을 가리키는 말 · 화자 머리 없음(그림 속 공약
+#   "후보1: …하겠습니다" 는 원본이다). 이 함수는 LLM 이 쓴 자리(캡션·그림 회수·시각 초안·표
+#   점역자주)만 탄다. 본문(고급 점역)에는 안 건다 — 교과서 발표문 "…살펴보겠습니다" 를 먹는다.
+_MONOLOGUE_END = re.compile(r"(?:확인|설명|서술|묘사|기술|정리|살펴|분석|파악|검토|관찰|판독)"
+                            r"\s*(?:해\s*보|하여\s*보|해|하|보)?겠습니다[.。!]?$")
+_MONOLOGUE_OBJ = re.compile(r"그림|이미지|사진|도표|그래프|세부|그려진|보이는|읽을\s*수\s*있는")
+_SENT_END = re.compile(r"(?<=[.。!?])\s+")
+
+
+def _monologue_on() -> bool:
+    """`GUARD_MONOLOGUE=0` 이면 종전대로. 관문을 통째로 끈 팔(`LLM_TEXT_GUARD=0`)에서도 꺼진다 —
+    그 팔은 develop 과 바이트로 같아야 하고 관문 로그도 0 이어야 한다(guard_llm_text 도크스트링)."""
+    from app.ai import gates
+    return gates.guard_on() and os.environ.get("GUARD_MONOLOGUE", "1") != "0"
+
+
+def _drop_monologue(line: str) -> str:
+    """줄 안의 혼잣말 문장만 뺀다. 뺀 게 없으면 줄을 그대로, 다 빠지면 빈 문자열."""
+    sents = _SENT_END.split(line.strip())
+    kept = [s for s in sents if not (_MONOLOGUE_END.search(s) and _MONOLOGUE_OBJ.search(s))]
+    if len(kept) == len(sents):
+        return line
+    return (line[:len(line) - len(line.lstrip())] + " ".join(kept)) if kept else ""
+
+
 def _strip_ai_voice(text: str) -> str:
     """AI가 사람에게 거는 말투 줄·못읽음 자리표시 줄을 **줄 단위로** 걷는다.
 
@@ -1039,7 +1070,8 @@ def _strip_ai_voice(text: str) -> str:
     """
     if not text:
         return ""
-    kept, dropped, vers = [], 0, 0
+    kept, dropped, vers, partial = [], 0, 0, 0
+    monologue_on = _monologue_on()
     for ln in text.splitlines():
         if VER_TAG_RE.search(ln):
             ln = VER_TAG_RE.sub("", ln)
@@ -1047,17 +1079,32 @@ def _strip_ai_voice(text: str) -> str:
             if not ln.strip():                  # 판 번호뿐이던 줄은 남길 게 없다
                 continue
         s = ln.strip()
+        speaker = _SPEAKER_HEAD.match(s) and not _TYPE_HEAD.match(s)
         ai_voice = (
             _AI_VOICE_SIGNAL.search(s) and _HONORIFIC_END.search(s)
-            and not (_SPEAKER_HEAD.match(s) and not _TYPE_HEAD.match(s))
+            and not speaker
         )
         if s and (ai_voice or _UNREADABLE_LINE.match(s)):
             dropped += 1
             continue
+        # 혼잣말 문장(#1037)은 **종전 줄 판정 뒤에** 본다. 먼저 떼면 그 줄을 걷게 하던 신호가 같이
+        # 빠져 메타 문장이 되살아난다(전수에서 1건 잡힘). 종전이 걷던 것은 그대로 걷힌다.
+        if s and not speaker and monologue_on:
+            cut = _drop_monologue(ln)
+            if cut != ln:
+                if not cut.strip():
+                    dropped += 1
+                    continue
+                partial += 1                          # 줄은 남는다 — 관문 계수는 따로 센다
+                ln = cut
         kept.append(ln)
     if dropped:
         logger.info("가드5 AI 말투 줄 걷어냄 %d줄", dropped,
                     extra={"guard": 5, "stage": "캡셔닝", "status": "STRIPPED"})
+    if partial:
+        # 줄 안에서 혼잣말 문장만 뺀 것은 줄 수로 안 잡힌다(guard_llm_text 는 줄을 센다). 따로 센다.
+        from app.ai import gates
+        gates.gate_hit("G1", "혼잣말 문장", partial)
     if vers:
         # 여기까지 왔으면 앞의 두 겹이 뚫린 것이다. 조용히 지우지 않는다.
         logger.warning("가드5 프롬프트 판 번호가 캡션에 샜다 %d줄 — 프롬프트를 확인하라", vers,

@@ -194,3 +194,56 @@ def test_G4_는_세기만_한다():
     assert gates.count_foreign_cells(["⠫⠉⠊ ⠁", "⠁⠃"]) == Counter()
     assert gates.count_foreign_cells(["⠫<!강조>"]) == Counter({"<": 1, "!": 1, "강": 1,
                                                                 "조": 1, ">": 1})
+
+
+# ── #1037 앞으로 할 일을 말하는 혼잣말 ─────────────────────────────────
+# 캐시 원응답 4,960개 중 5개가 관문을 지나 캡션 머리가 됐다(eval 09-30, 생명과학 p155 초안 1안).
+MONOLOGUE_PAIRS = [
+    # eval 이 찾은 원응답 둘의 앞머리 — 혼잣말 문장만 빠지고 같은 줄의 설명 문장은 산다
+    ("이미지에 실제로 그려진 내용을 확인해 보겠습니다. 원 안에 막대 모양 염색체 2개가 나란히 있다.\n\n"
+     "염색체 그림이다.",
+     "그림: 원 안에 막대 모양 염색체 2개가 나란히 있다.\n\n염색체 그림이다."),
+    ("이 그림을 이해하기 위해 세부를 다시 확인하겠습니다. 그림에는 원 안에 염색체 모양 2개가 그려져 있다.",
+     "그림: 그림에는 원 안에 염색체 모양 2개가 그려져 있다."),
+    ("그림에 대해 설명하겠습니다.\n\n염색체 2개가 나란히 있다.",
+     "그림: 염색체 2개가 나란히 있다."),
+]
+
+
+@pytest.mark.parametrize("raw,kept", MONOLOGUE_PAIRS)
+def test_혼잣말_문장만_걷고_같은_줄_설명은_남긴다(raw, kept):
+    assert _guard()(raw, "caption") == kept
+
+
+@pytest.mark.parametrize("kind", ["visual_draft", "figure", "table_tn"])
+def test_그림속_공약은_혼잣말이_아니다(kind):
+    """화자 머리가 달린 줄은 그림 **안에 있는 말**이다(실측: 선거 공약 만화 14건)."""
+    src = "후보1: 저는 교실 환경을 개선하기 위한 예산을 마련하겠습니다.\n후보2: 개정안을 발의하겠습니다."
+    assert _guard()(src, kind) == src
+
+
+def test_본문은_혼잣말_걷기를_안_받는다():
+    """교과서 발표문의 '…살펴보겠습니다' 는 원본이다. 본문은 이 사슬을 안 탄다."""
+    src = "지금부터 그림 자료를 살펴보겠습니다."
+    assert _guard()(src, "body") == src
+
+
+def test_종전_줄_판정이_먼저다():
+    """혼잣말을 먼저 떼면 그 줄을 걷게 하던 신호('보이는 대로')가 같이 빠져 앞 문장이 되살아났다
+    (전수에서 1건 잡힘). 종전이 줄째 걷던 것은 그대로 줄째 걷힌다."""
+    src = "이미지에 보이는 요소만 적습니다. 보이는 대로 설명하겠습니다.\n\n그림: 막대그래프"
+    assert _guard()(src, "figure") == "그림: 막대그래프"
+
+
+def test_줄_안에서만_뺀_것도_관문이_센다():
+    gates.gate_reset()
+    _guard()("이 그림을 다시 확인하겠습니다. 원 안에 삼각형이 있다.", "figure")
+    assert gates.gate_counts().get(("G1", "혼잣말 문장")) == 1
+
+
+def test_GUARD_MONOLOGUE_0_이면_종전대로(monkeypatch):
+    src = "그림에 대해 설명하겠습니다.\n원 안에 삼각형이 있다"
+    monkeypatch.setenv("GUARD_MONOLOGUE", "0")
+    assert _guard()(src, "figure") == src                # 대조군: 종전에는 샜다
+    monkeypatch.delenv("GUARD_MONOLOGUE")
+    assert _guard()(src, "figure") == "원 안에 삼각형이 있다"
