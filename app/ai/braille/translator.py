@@ -708,6 +708,76 @@ _OX_OPERAND_RE = re.compile(r"[0-9A-Za-z가-힣]")
 _ITEM_NO_RE = re.compile(r"^[0-9]{1,2}[.)]$")   # 답지 번호 '3.' '4)'
 
 
+# ── 「한글 점자」 제46항 — 한글 사이 연산·비교 기호는 앞뒤를 한 칸씩 띄운다 (#938 · 원장 R-80) ──
+# 재추출 2062행 예문: `나루 + 배 = 나룻배` · `5개-3개=2개` = ⠼⠑⠈⠗⠀⠔⠀⠼⠉⠈⠗⠀⠒⠒⠀⠼⠃⠈⠗ ·
+# `반지름×반지름×3.14` · `(해왕성>지구>금성)`. 종전엔 묵자의 빈칸을 그대로 옮겨 묵자가 붙여 쓰면
+# 붙였고, `-` 는 붙임표 ⠤ 로 나갔다(제45항 뺄셈표는 ⠔).
+# ★ 판정은 **기호 바로 양옆 글자**로 한다 — 왼쪽이 한글 음절이고 오른쪽이 한글·숫자일 때만.
+#   · 숫자 뒤 기호는 부호일 수 있다 — `원자핵이 1+이며`(전하)를 띄우면 역점역이 `1 + 이며` 로 읽는다
+#   · `2+0+0=2가` · `5.73=0.7582이다` 는 기호 양옆이 숫자라 안 건드린다(수식이지 한글 사이가 아니다)
+#   · `Rh+형` 처럼 로마자가 붙은 자리, `변화량은 +2` 같은 부호(앞이 빈칸)도 안 건드린다
+#   · `X는+2d` 처럼 `+`·`−` 오른쪽이 숫자면 같은 식에 `=` 가 있을 때만 띄운다(없으면 부호다)
+#   · `‘바>와’` 는 국어 음운 변화 표시다(비교 기호가 아니다) — 규정이 이 쓰임을 안 다뤄 관행대로 둔다
+# ★ `-` 는 뺄셈일 때만 ⠔ 다. 같은 식(빈칸 없이 이어진 덩어리)에 `=`·`+`·`×`·`÷` 가 함께 있을 때만
+#   뺄셈으로 본다 — `3-4쪽`·`[26004-0143]`·`가-나` 같은 붙임표는 그대로 둔다.
+# ⚠ 수식 태그 안(`<!수식>…`)·태그 표식(`<!상자>`)·홑화살괄호 묶음(`<보기>`·`<자료 1>`)은 건드리지 않는다.
+_ART46_OPS = "+-−×÷=<>≤≥≠"
+_ART46_OP_RE = re.compile("[" + re.escape(_ART46_OPS) + "]")
+_ART46_PROTECT_RE = re.compile(r"<!수식>.*?<!/수식>|<!/?[^>]*>|<[^<>\n]{1,40}>", re.DOTALL)
+_ART46_CHAIN_CH = set("0123456789." + _ART46_OPS)
+
+
+def _is_hangul_syl(ch: str) -> bool:
+    return "가" <= ch <= "힣"
+
+
+def _space_hangul_operators(text: str) -> str:
+    """제46항 — 한글 사이 연산·비교 기호 앞뒤를 한 칸씩 띄우고, 식 속 `-` 는 뺄셈 `−` 로."""
+    if not _ART46_OP_RE.search(text):
+        return text
+
+    def _one(seg: str) -> str:
+        out: list[str] = []
+        last = 0
+        for m in _ART46_OP_RE.finditer(seg):
+            i = m.start()
+            if i == 0 or i + 1 >= len(seg):
+                continue
+            left, right = seg[i - 1], seg[i + 1]
+            if not (_is_hangul_syl(left) and (_is_hangul_syl(right) or right.isdigit())):
+                continue
+            op = m.group()
+            a = i
+            while a > 0 and (_is_hangul_syl(seg[a - 1]) or seg[a - 1] in _ART46_CHAIN_CH):
+                a -= 1
+            b = i + 1
+            while b < len(seg) and (_is_hangul_syl(seg[b]) or seg[b] in _ART46_CHAIN_CH):
+                b += 1
+            chain = seg[a:b]
+            if op in "<>" and seg[a - 1:a] == "‘" and seg[b:b + 1] == "’":
+                continue                        # ‘바>와’ — 음운 변화 표시(비교가 아니다, 관행 유지 · 원장 R-80)
+            if op in "+-−" and right.isdigit() and "=" not in chain:
+                continue                        # 부호(`X는+2d`·`ⓐ~ⓒ는+30`) · 붙임표(`3-4쪽`)
+            if op == "-":
+                if not any(c in chain for c in "=+×÷"):
+                    continue                    # 붙임표(가-나)
+                op = "−"
+            out.append(seg[last:i])
+            out.append(f" {op} ")
+            last = i + 1
+        out.append(seg[last:])
+        return "".join(out)
+
+    parts: list[str] = []
+    last = 0
+    for m in _ART46_PROTECT_RE.finditer(text):
+        parts.append(_one(text[last:m.start()]))
+        parts.append(m.group())
+        last = m.end()
+    parts.append(_one(text[last:]))
+    return "".join(parts)
+
+
 def _ox_mark_repl(m: re.Match) -> str:
     """맞고 틀림 표시 ◯·× → 지침 (4) 점형. **곱셈 자리는 건드리지 않는다.**
 
@@ -2580,6 +2650,7 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     #   `_apply_book_style` 의 OX 규칙이 그 × 를 아예 못 봤다(곱셈 ⠡ 로 나갔다).
     #   여기서 점형으로 바꿔 두면 수식 구간 판정에 안 걸린다(`_AMP_RE` 와 같은 수법).
     text = _OX_MARK_RE.sub(_ox_mark_repl, text)
+    text = _space_hangul_operators(text)  # 제46항 — 수식 라우팅보다 먼저(#938)
     text = inline_math.wrap(text)
     if _BOOK_STYLE and not force_roman:
         # ★ 꼬리말(force_roman)에서는 이 관행을 끈다. 섹션번호 낱자형의 근거는 **본문** 실측
