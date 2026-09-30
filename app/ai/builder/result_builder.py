@@ -270,6 +270,14 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
                 #   "빈 응답" 이라 매번 누군가 모델 결함으로 알고 다시 조사했다.
                 #   장식은 **의도된 생략**이라 실패로 세지 않는다(위 `_note_caption_result` 주석).
                 if info.get("rejected_by") == "decoration":
+                    if info.get("decor_by") == "marker" and _decor_keep_on():
+                        # ★ (나) — 모델이 `⟦장식⟧` 표지를 내도 요소를 버리지 않는다(#1041, pm 09-30
+                        #   조건 ①). 진짜 그림이 조용히 사라지는 것이 이 변경의 최악 손해다. 요소는
+                        #   '생략' + R11 로 나가 점역사가 본다. 옛 무늬 판정(가드4)은 종전대로 버린다.
+                        el.setdefault("flags", []).append("DECOR_MARKER")
+                        logger.info("장식 표지 id=%s type=%s — 남기고 R11", eid, image_type,
+                                    extra={"guard": 4, "stage": "캡셔닝", "status": "DECOR_KEPT"})
+                        return "", mapped_type, False, subconf, vsub, False
                     logger.info("장식 판정(가드4) id=%s type=%s — 요소를 버린다", eid, image_type,
                                 extra={"guard": 4, "stage": "캡셔닝", "status": "DECORATION"})
                     return "", mapped_type, False, subconf, vsub, True
@@ -641,6 +649,11 @@ def _area_ratio(el: dict) -> float | None:
     return abs(x1 - x0) * abs(y1 - y0) / 1_000_000
 
 
+def _decor_keep_on() -> bool:
+    """`⟦장식⟧` 표지가 난 요소를 남길지(기본 남김, pm 판단 대기). 0 이면 버린다(가드4 와 같은 길)."""
+    return os.environ.get("CAPTION_DECOR_KEEP", "1") != "0"
+
+
 def _is_decoration(el: dict) -> bool:
     a = _area_ratio(el)
     return a is not None and a < _DECOR_AREA
@@ -691,7 +704,8 @@ def build(
         #   17~19KB 로 커서 면적 임계를 안 넘고, 그래서 지금까지 `그림 생략` + R11 로 나가
         #   쪽마다 점역사 일감이 됐다(2027 코퍼스 전수 20요소). 가드4 가 "배지·장식" 이라고
         #   판정한 것도 같은 조항이 말하는 장식이니 같이 버린다.
-        if caption_failed and (decor or _is_decoration(el)):
+        if caption_failed and (decor or (_is_decoration(el)
+                                         and "DECOR_MARKER" not in (el.get("flags") or []))):
             logger.info("장식 요소 제거(%s) id=%s type=%s",
                         "가드4 배지·장식" if decor else f"설명 없음·면적 {_area_ratio(el) or 0:.4f}",
                         str(el.get("element_id", ""))[:8], el["type"])

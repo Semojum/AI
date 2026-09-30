@@ -613,6 +613,50 @@ def _material_on() -> bool:
     return (os.getenv("CAPTION_MATERIAL", "") or "").strip().lower() in ("1", "true", "on", "yes")
 
 
+# ── 출력 약속: 표지 둘 (#1041) ─────────────────────────────────────────────
+# 캐시 캡션 4,960개를 관문 뒤에서 한 줄씩 읽었더니 모델 말이 든 캡션이 35개였다 — 그림 아님
+# (번호 배지·아이콘을 설명함) 12 · 메타(어떤 규칙으로 적겠다고 알림) 17 · 불능(못 읽는다) 11.
+# 셋 다 모델이 **따로 둘 자리가 없어** 설명 속에 섞은 말이다. 무늬로 사후에 걸러 온 방식
+# (가드4 장식 · 가드5 AI 말투 · #1037 혼잣말)은 문장이 조금만 달라도 샜다. 합니다체 문장 60개 중
+# 21개는 진짜 내용(사료 인용·채팅 화면)이라 말투로도 못 거른다.
+# 그래서 모델에게 **정해진 자리**를 주고 우리는 그 표지만 정확히 맞춘다(`_take_markers`).
+# 꼬리(user) 쪽에 붙인다 — system 블록(_PROMPTS)은 그대로라 프롬프트 캐싱이 안 깨진다.
+# 되돌리는 길 `CAPTION_MARKERS=0`(prompt_id 가 갈려 캐시도 갈린다).
+# ⚠ 장식 정의는 좁게 둔다 — 첫 판("원문자나 숫자 하나")이 정답편의 '답 ⑤' 글자 그림까지 장식으로
+#   버렸다(A/B 무작위 60쪽 중 국어 p40 두 개). 낱말이 적혀 있으면 장식이 아니다.
+_DECOR_MARK, _MEMO_MARK = "⟦장식⟧", "⟦메모⟧"
+_PROMPT_MARKERS = f"""
+
+[표지 두 가지]
+- 잘라 온 그림에 **설명할 내용이 없으면**(원문자나 숫자 하나만 있는 번호 배지, 아이콘, 로고,
+  창 틀 같은 화면 장식, 빈 칸) 다른 말 없이 `{_DECOR_MARK}` 한 줄만 쓰십시오.
+  **낱말이 적혀 있으면 장식이 아닙니다**(예: '답 ⑤'). 적힌 글자를 그대로 옮기십시오.
+- 설명 안에 **당신의 작업에 대한 말**(무엇을 못 읽었는지, 정보가 부족한지, 어떤 원칙으로
+  적었는지)을 쓰지 마십시오. 꼭 남길 말이 있으면 맨 끝에 `{_MEMO_MARK}` 로 시작하는 한 줄로만
+  쓰십시오. 그 줄은 점자로 나가지 않습니다. 글자 자리에 '읽을 수 없는 기호'라고 적는 것은
+  설명이므로 그대로 둡니다."""
+# 표지 변이(빈칸이 낀 `⟦ 메모 ⟧`)도 받는다 — 표지만 걷고 메모 문장이 남으면 그 문장이 점자로 간다.
+#   (점역기 입구 G3 `strip_format_tokens` 는 `⟦…⟧` 토큰만 걷고 뒤 문장은 못 걷는다.)
+_MEMO_LINE_RE = re.compile(r"⟦\s*메\s*모\s*⟧.*$", re.M)
+_DECOR_TOKEN_RE = re.compile(r"⟦\s*장\s*식\s*⟧")
+
+
+def _markers_on() -> bool:
+    return os.getenv("CAPTION_MARKERS", "1") != "0"
+
+
+def _take_markers(raw: str) -> tuple[str, bool]:
+    """모델이 낸 표지를 뗀다 → (남은 글, 장식인가). 표지 글자는 어떤 경우에도 남기지 않는다.
+
+    · `⟦메모⟧` 부터 그 줄 끝까지 버린다(줄 가운데 와도).
+    · 첫 줄이 `⟦장식⟧` 으로 시작하면(유형 제시어 `그림:` 이 앞에 붙어도) 장식이다.
+    """
+    text = _MEMO_LINE_RE.sub("", raw or "")
+    first = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+    decor = bool(_DECOR_TOKEN_RE.match(_TYPE_HEAD.sub("", first).lstrip()))
+    return _DECOR_TOKEN_RE.sub("", text), decor
+
+
 def split_material(text: str) -> tuple[str, list[tuple[str, str]]]:
     """캡션 문자열을 (설명, 재료) 로 가른다.
 
@@ -1232,6 +1276,12 @@ def _finish(raw: str, image_type: str, out: dict | None = None) -> str:
       (`_strip_situation_head`·`_drop_per_speech_narration`·`_split_enumerations`)이
       빠져 있었다. 한 자리로 모으면서 같이 붙는다.
     """
+    raw, decor = _take_markers(raw)            # 모델이 낸 표지(#1041) — 무늬가 아니라 약속
+    if decor:
+        if out is not None:
+            out["rejected_by"] = "decoration"  # 가드4 와 같은 길(원장 C-70)
+            out["decor_by"] = "marker"         # 모델 표지로 난 판정 — 빌더가 남길지 정한다(CAPTION_DECOR_KEEP)
+        return ""
     head, sep, tail = (raw or "").partition(_MATERIAL_MARK)
     # ★ 사슬을 단계로 푼다(#872) — 가드4 앞의 값을 봐야 "왜 비었는지" 를 밖에 알릴 수 있다.
     #   순서는 종전과 한 자도 다르지 않다.
@@ -1442,13 +1492,16 @@ def _cache_read(kind: str, new_path: Path | None, image_type: str,
     return guard_llm_text(text, "caption", image_type=image_type, out_info=out_info)
 
 
-def _cache_write(new_path: Path | None, answer: str, finished: str) -> None:
+def _cache_write(new_path: Path | None, answer: str, finished: str, *, decoration: bool = False) -> None:
     """**원응답 raw** 를 새 자리에 담는다. 가드는 읽을 때 다시 건다(설계 2-3 저장 정책).
 
     가드 판정 결과가 아니라 모델이 준 글을 담아야, 가드를 넓혔을 때 옛 항목에도 닿는다.
     빈 캡션은 안 담는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
+    ★ **장식 판정은 예외다**(#1041). 비어 나온 까닭이 실패가 아니라 판정이라, 안 담으면 재파생할
+      때마다 같은 그림을 다시 묻고(요금) 판정이 흔들린다(결정론). 원응답을 담으면 읽을 때 같은
+      판정이 다시 난다. A/B 실측: 장식 판정 28건이 캐시를 못 타 같은 job 재실행에서 33회 다시 불렸다.
     """
-    if not (finished or "").strip():
+    if not (finished or "").strip() and not decoration:
         return
     _cache_put(new_path, answer)
 
@@ -1491,7 +1544,8 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "",
     # 캐시 경계에서 가른다(#760) — `head` 는 유형별 고정(캐시에 얹는다), `tail` 은
     # 요소마다 달라지는 것. 이어 붙인 `prompt` 는 종전과 같은 글자라 캐시 열쇠도 그대로다.
     head = _PROMPTS.get(image_type, _PROMPTS["image"])
-    tail = _context_block(context) + (_MATERIAL_BLOCK if _material_on() else "")
+    tail = (_context_block(context) + (_MATERIAL_BLOCK if _material_on() else "")
+            + (_PROMPT_MARKERS if _markers_on() else ""))
     prompt = head + tail
 
     blank = _blank_crop_std(image_path)
@@ -1507,7 +1561,8 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "",
         raw = _maybe_upscale(f.read())   # 캐시 키도 확대본 기준 — 배율이 다르면 캐시가 갈린다
     b64 = base64.b64encode(raw).decode()
 
-    prompt_id = image_type + ("+material" if _material_on() else "")
+    prompt_id = (image_type + ("+material" if _material_on() else "")
+                 + ("+markers" if _markers_on() else ""))
     cache = _cache_new_file("caption", raw, prompt_id, context)
     # 적중분에도 이유를 채운다 — 안 그러면 캐시가 장식 판정을 비켜 가 `CAPTION_FAILED` 로 남는다.
     hit = _cache_read("caption", cache, image_type, out_info)   # 적중 · 미스 계수는 안에서 센다
@@ -1520,8 +1575,9 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "",
     if os.getenv("CAPTION_BACKEND", "anthropic") == "anthropic":
         answer = _caption_anthropic(b64, mime, head, tail)
         text = guard_llm_text(answer, "caption", image_type=image_type, out_info=out_info)
-        # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다.
-        _cache_write(cache, answer, text)
+        # 빈 응답은 캐시하지 않는다 — 한 번 비면 재실행이 영구히 빈 캡션을 재생한다(장식 판정은 담는다).
+        _cache_write(cache, answer, text,
+                     decoration=bool(out_info) and out_info.get("rejected_by") == "decoration")
         return text
 
     from app.utils.req_log import record_openai
@@ -1544,5 +1600,6 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "",
     record_openai("캡셔닝", "gpt-4o", getattr(resp, "usage", None))
     answer = resp.choices[0].message.content
     text = guard_llm_text(answer, "caption", image_type=image_type, out_info=out_info)
-    _cache_write(cache, answer, text)
+    _cache_write(cache, answer, text,
+                 decoration=bool(out_info) and out_info.get("rejected_by") == "decoration")
     return text
