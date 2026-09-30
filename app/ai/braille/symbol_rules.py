@@ -120,7 +120,7 @@ def square_unit_cells(unit: str) -> str | None:
     body = square_unit_body(unicodedata.normalize("NFKC", unit))
     if not body:
         return None
-    return "⠴" + body + ("" if re.search(r"⠘⠼[⠁-⠚]+$", body) else "⠲")
+    return "⠴" + body + ("" if re.search(r"⠘⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]+$", body) else "⠲")
 
 
 # ⚠ SYMBOL_TABLE 에 넣지 않는다 — 역점역이 그 표를 거꾸로 써서 규정 꼴 `⠴⠅⠉⠁⠇⠲` 를 `㎉` 로,

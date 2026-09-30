@@ -526,7 +526,7 @@ def _formula_like(latex: str) -> bool:
 #   예문 `2H₂ + O₂ → 2H₂O` = `#b,h;#b`5`,,,o;#b`3o`#b"h;#bo,'`(4817행). 수학 경로는 연산 기호를 붙인다
 #   (제45항) — 화학식에서는 그 규칙이 아니다. 이온 부호 `⁺`(⠘⠢ · ⠘⠼n⠢)와 제18항 2호 기체·침전 기호
 #   (`;3o`=⠰⠒⠕ · `^3o`=⠘⠒⠕, 분자식에 붙여 적는다)는 띄우지 않는다.
-_CHEM_OP_RE = re.compile(r"(⠘(?:⠼[⠁-⠚]+)?[⠢⠔]|[⠰⠘]⠒⠕)|[⠀ ]*(⠢⠢|⠔⠔|⠪⠶⠕|⠪⠒|⠒⠕|⠢)[⠀ ]*")
+_CHEM_OP_RE = re.compile(r"(⠘(?:⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]+)?[⠢⠔]|[⠰⠘]⠒⠕)|[⠀ ]*(⠢⠢|⠔⠔|⠪⠶⠕|⠪⠒|⠒⠕|⠢)[⠀ ]*")
 
 
 def chem_operator_spacing(cells: str) -> str:
@@ -2177,7 +2177,7 @@ def _stage0d_recurring(latex: str) -> str:
 # 정수부 없는 소수의 수표 겹침(`#4#dg`) — 소수점 바로 뒤 수표는 같은 수의 이어진
 # 자리라 잉여다(제8항 1호 `#4dg`).
 _DEC_DUP_NUM_RE = re.compile(
-    _NUMBER_INDICATOR + "⠲" + _NUMBER_INDICATOR + r"(?=[⠁-⠚⠈])")
+    _NUMBER_INDICATOR + "⠲" + _NUMBER_INDICATOR + r"(?=[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠈])")
 
 
 def _finish_recurring(result: str) -> str:
@@ -2189,7 +2189,7 @@ def _finish_recurring(result: str) -> str:
     # 표가 숫자열을 끊어 **뒤 숫자에 수표가 다시** 붙는다 — 같은 수의 이어진 자리라
     # 잉여다. 먼저 걷고, 표를 마디 첫 숫자 앞으로 옮긴다(제8항 2호).
     t = result.replace(_RECUR_MARK + _NUMBER_INDICATOR, _RECUR_MARK)
-    t = re.sub(r"([⠁-⠚])" + _RECUR_MARK, r"⠈\1", t).replace(_RECUR_MARK, "⠈")
+    t = re.sub(r"([⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚])" + _RECUR_MARK, r"⠈\1", t).replace(_RECUR_MARK, "⠈")
     # 정수부 없는 소수는 위에서 수표+소수점을 직접 냈으므로, 11단계가 뒤 숫자에 붙인
     # 수표가 겹친다(`#4#dg`). 소수점 바로 뒤 수표만 걷는다.
     return _DEC_DUP_NUM_RE.sub(_NUMBER_INDICATOR + "⠲", t)

@@ -39,3 +39,27 @@ def test_dot_명령도_같다(src, want):
 @pytest.mark.parametrize("src,want", [("0.5", "#j4e"), ("3.14", "#c4ad")])
 def test_평범한_소수는_그대로(src, want):
     assert _brf(src) == want
+
+
+# 숫자 셀은 연속 범위가 아니다(7=⠛ U+281B 가 ⠁-⠚ 밖). 범위식으로 찾던 자리에서
+# 7 이 든 수만 틀렸다(#1048). 기대값은 위 규정 예시(재추출 3176~3179행)와 같은 규칙.
+@pytest.mark.parametrize("src,want", [
+    (".47", "#4dg"),                    # 1호 규정 예시
+    (".75", "#4ge"),                    # 수표 겹침 걷기 — 종전 #4#ge
+    (r"0.\dot{7}\dot{4}", "#j4@gd"),     # 2호 — 종전 #j4g@d
+    (r"0.1\dot{7}", "#j4a@g"),           # 종전 #j4ag@
+])
+def test_숫자7_든_소수(src, want):
+    assert _brf(src) == want
+
+
+def test_앱_소스에_숫자_범위식이_없다():
+    """`[⠁-⠚]` 는 7 을 빼고 ⠂⠄⠈⠕ 같은 비숫자를 넣는다. 숫자 셀은 열 개를 적는다."""
+    import re
+    from pathlib import Path
+    app = Path(__file__).resolve().parents[3] / "app"
+    assert (app / "ai" / "braille").is_dir()   # 경로가 틀리면 빈 목록으로 공짜 통과한다
+    bad = [f"{p.relative_to(app)}:{i}" for p in app.rglob("*.py")
+           for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+           if re.search(r"⠁-⠚", line.split("#", 1)[0])]
+    assert not bad, bad
