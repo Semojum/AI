@@ -36,6 +36,7 @@ NOT_BOUNDARY = {
     "READING_ORDER_MODE": "경계 뒤 읽기순서(`_parse_txt_result`)", "READING_ORDER_LLM": "경계 뒤 읽기순서",
     "KEEP_PAGE_IMAGE": "QA 쪽 이미지 보관",
     "TABLE_KEEP_CELLS": "경계 뒤 표 칸 쪼개기(`_parse_txt_result`, #1042)",
+    "ITEM_CODE_FORM": "경계 뒤 문항코드 자리(`_parse_txt_result`, #1052)",
 }
 _ENV_RE = re.compile(r"""(?:os\.environ\.get|os\.getenv|os\.environ\.setdefault)\(\s*["']([A-Z0-9_]+)["']|os\.environ\[\s*["']([A-Z0-9_]+)["']\s*\]""")
 
