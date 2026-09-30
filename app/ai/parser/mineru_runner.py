@@ -1090,11 +1090,14 @@ def _has_math_font(fitz_page: fitz.Page, bbox: list[float]) -> bool:
       09-02 에 `MINERU_MATH_FONT_GUARD` 를 "중립"이라 끈 A/B 는 반만 켜진 팔로 잰 값이다.
     """
     try:
-        return any(_MATH_FONT_RE.match(sp.get("font") or "")
-                   for _lb, ln in _layer_lines(fitz_page, bbox)
-                   for sp in ln.get("spans", []))
+        return any(_math_font_line(ln) for _lb, ln in _layer_lines(fitz_page, bbox))
     except Exception:                       # noqa: BLE001 — 판정 실패는 '아님'으로 둔다
         return False
+
+
+def _math_font_line(ln: dict) -> bool:
+    """rawdict 줄에 한컴 수식 폰트 스팬이 있나."""
+    return any(_MATH_FONT_RE.match(sp.get("font") or "") for sp in ln.get("spans", []))
 
 
 # 추출 effort 라우터(I886)의 쪽 신호 — 한컴 수식 폰트 **가운데 기울인 변수체·분수/근호 구조체**
@@ -1130,7 +1133,7 @@ def _is_math_page(pdf_path: "Path | bytes", page_idx: int) -> bool:
         sum(1 for f in fonts if _MATH_STRUCT_FONT_RE.match(f)) / len(fonts) > _MATH_PAGE_MIN_SHARE
 
 
-def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
+def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float], skip_math: bool = False) -> str:
     """bbox 안의 텍스트를 어절 경계 복원해서 뽑는다.
 
     ⚠ get_text("text")를 그대로 쓰면 안 된다 — 교과서 PDF 다수가 공백 글리프 없이 글자
@@ -1145,6 +1148,8 @@ def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
     rot = fitz_page.rotation_matrix
     lines: list[tuple] = []
     for lb, ln in _layer_lines(fitz_page, bbox):
+        if skip_math and _math_font_line(ln):
+            continue                   # 수식 글꼴 줄만 뺀다(표 띠 되살리기, #1047)
         t = _line_text_with_word_gaps(ln, rot, uls)
         if t:
             # ★ 같은 인쇄 줄이 여러 line으로 쪼개진 것(정답표·선택지)은 rows_to_text가
@@ -1500,6 +1505,9 @@ def _code_text(body: str) -> str:
 #   수식 글꼴 조각. 고치려는 것은 상자에 먹힌 **대화·진술**이다.
 # ★ 한컴 수식 글꼴(EH·ST) 자리는 되살리지 않는다. 레이어가 `sin` 을 ``TJO`` 로 거짓말한다
 #   (`_has_math_font` 주석, 수학1 p071·p115 실측 `TJO`D` · `DPT`D`).
+#   2026-09-30(#1047) **그 줄만** 뺀다. 가드 좌표를 고치자 띠째 버리게 됐는데, 범례 화살표 한 줄
+#   (`A_'` · `A\r B`) 때문에 같은 띠의 보기 ㄱ~ㄹ · 선지 ①~⑤ 까지 빠졌다(val 생활과 윤리 p0029 · p0069 · p0154,
+#   gold 에 있는 줄 361셀). 종전 가드는 엉뚱한 자리를 봐서 이 띠들을 통째로 되살리고 있었다.
 _BAND_TBL_MIN = 0.6
 _BAND_MIN_CHARS = 8
 _BAND_DUP_MIN = 0.8
@@ -1568,11 +1576,11 @@ def _recover_table_bands(content_list: list[dict], fitz_page: fitz.Page, page_no
         for band_bb, dst in ((above, pre), (below, post)):
             if band_bb is None:
                 continue
-            text = _native_text_spaced(fitz_page, band_bb)
+            text = _native_text_spaced(fitz_page, band_bb, skip_math=True)
             q = _squash_text(text)
             g = _ngrams(q, 4)
             if (len(q) < _BAND_MIN_CHARS or not _BAND_PROSE_RE.search(text)
-                    or _layer_untrustworthy(text, fitz_page) or _has_math_font(fitz_page, band_bb)
+                    or _layer_untrustworthy(text, fitz_page)
                     or (g and sum(1 for x in g if x in seen) / len(g) >= _BAND_DUP_MIN)):
                 continue
             dst.append({"type": "text", "text": text, "bbox": [int(v) for v in band_bb],

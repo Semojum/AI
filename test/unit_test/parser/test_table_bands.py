@@ -112,3 +112,18 @@ def test_문장이_아닌_띠는_되살리지_않는다():
     put(290, "반응의 진행  반응물  생성물  흡수됨  방출됨")
     cl = [{"type": "table", "bbox": BB, "table_body": HTML}]
     assert _run(pg, cl) == cl
+
+
+def test_수식_글꼴_줄만_빼고_띠는_되살린다(monkeypatch):
+    """범례 화살표 한 줄이 수식 글꼴이라고 띠 전체(대화 · 보기 · 선지)를 버리지 않는다(#1047).
+
+    val 생활과 윤리 p0029: 가드 좌표를 고치자 `A_'`(깨진 화살표) 한 줄 때문에 보기 ㄱ~ㄹ · 선지까지 빠졌다.
+    시험 PDF 에는 한컴 글꼴이 없어 Helvetica 를 수식 글꼴로 친다.
+    """
+    import re
+    monkeypatch.setattr(M, "_MATH_FONT_RE", re.compile(r"^Helv"))
+    doc, pg = _page(extra_below=False)
+    pg.insert_text((130, 125), "A_' B", fontname="helv", fontsize=9)      # 띠 맨 위 수식 글꼴 줄
+    out = _run(pg, [{"type": "table", "bbox": BB, "table_body": HTML}])
+    assert [x["type"] for x in out] == ["text", "table"]
+    assert "구분할 수 있을까요" in out[0]["text"] and "A_'" not in out[0]["text"]
