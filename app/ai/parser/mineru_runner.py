@@ -1082,15 +1082,22 @@ _MATH_FONT_RE = re.compile(r"^(EH|ST)[A-Za-z]", re.I)
 
 
 def _has_math_font(fitz_page: fitz.Page, bbox: list[float]) -> bool:
-    """이 자리에 한컴 수식 폰트로 그린 글자가 있나."""
+    """이 자리(0~1000) 층 글에 한컴 수식 폰트로 그린 글자가 있나 — 층 글로 쓸 줄을 본다.
+
+    ★ 2026-09-30(#1047) 종전에는 0~1000 bbox 를 pt 로 알고 `clip=fitz.Rect(bbox)` 로 잘라 엉뚱한
+      자리를 봤다. 회전 쪽은 표시 좌표로 잘라(`get_text` clip 은 회전 전 좌표다) 늘 빈 글이었다.
+      d8c dev 에서 `log` 가 `MPH` 로 · `≤` 가 `\\x83` 으로 나오는 요소 49개 중 25개만 걸렸다.
+      09-02 에 `MINERU_MATH_FONT_GUARD` 를 "중립"이라 끈 A/B 는 반만 켜진 팔로 잰 값이다.
+    """
     try:
-        d = fitz_page.get_text("dict", clip=fitz.Rect(bbox))
+        return any(_math_font_line(ln) for _lb, ln in _layer_lines(fitz_page, bbox))
     except Exception:                       # noqa: BLE001 — 판정 실패는 '아님'으로 둔다
         return False
-    return any(_MATH_FONT_RE.match(sp.get("font") or "")
-               for bl in d.get("blocks", [])
-               for ln in bl.get("lines", [])
-               for sp in ln.get("spans", []))
+
+
+def _math_font_line(ln: dict) -> bool:
+    """rawdict 줄에 한컴 수식 폰트 스팬이 있나."""
+    return any(_MATH_FONT_RE.match(sp.get("font") or "") for sp in ln.get("spans", []))
 
 
 # 추출 effort 라우터(I886)의 쪽 신호 — 한컴 수식 폰트 **가운데 기울인 변수체·분수/근호 구조체**
@@ -1126,7 +1133,7 @@ def _is_math_page(pdf_path: "Path | bytes", page_idx: int) -> bool:
         sum(1 for f in fonts if _MATH_STRUCT_FONT_RE.match(f)) / len(fonts) > _MATH_PAGE_MIN_SHARE
 
 
-def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
+def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float], skip_math: bool = False) -> str:
     """bbox 안의 텍스트를 어절 경계 복원해서 뽑는다.
 
     ⚠ get_text("text")를 그대로 쓰면 안 된다 — 교과서 PDF 다수가 공백 글리프 없이 글자
@@ -1137,36 +1144,47 @@ def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float]) -> str:
     from app.ai.preprocessor.pdf_analyzer import (
         _line_text_with_word_gaps, rows_to_text, underline_rects)
 
-    w, h = fitz_page.rect.width, fitz_page.rect.height
     uls = underline_rects(fitz_page)   # 밑줄(드러냄표, 규정 제56항) — 벡터 선으로만 존재
-    rect = fitz.Rect(bbox[0] / 1000 * w, bbox[1] / 1000 * h,
-                     bbox[2] / 1000 * w, bbox[3] / 1000 * h)
-    # ⚠ 회전된 페이지(교과서 PDF에 흔함 — 언어 영역은 270°): rawdict의 줄 bbox는 회전 전
-    # 좌표계라 MinerU가 쓰는 렌더(표시) 좌표와 어긋난다. rotation_matrix로 표시 좌표로 옮긴다.
-    # (이걸 빠뜨리면 회전 페이지에서 매칭이 전부 실패해 OCR 오탈자가 그대로 남는다.)
     rot = fitz_page.rotation_matrix
     lines: list[tuple] = []
+    for lb, ln in _layer_lines(fitz_page, bbox):
+        if skip_math and _math_font_line(ln):
+            continue                   # 수식 글꼴 줄만 뺀다(표 띠 되살리기, #1047)
+        t = _line_text_with_word_gaps(ln, rot, uls)
+        if t:
+            # ★ 같은 인쇄 줄이 여러 line으로 쪼개진 것(정답표·선택지)은 rows_to_text가
+            #   한 줄로 이어 두 칸을 띈다 — 지침 3장 3절 4)(3)① (QA S4)
+            lines.append((lb, t))
+    return rows_to_text(lines)
+
+
+def _layer_lines(fitz_page: fitz.Page, bbox: list[float]):
+    """0~1000 bbox 에 드는 텍스트층 줄 → (표시 좌표 줄 bbox, rawdict 줄). 층 글과 수식 글꼴 판정이 같이 쓴다.
+
+    줄 단위로 고른다(블록 단위는 다단 레이아웃에서 요소 경계와 어긋난다).
+    줄 면적의 과반이 요소 bbox 안에 들어와야 채택 — 이웃 단 글자 혼입 방지.
+    ⚠ 회전된 페이지(교과서 PDF에 흔함 — 언어 영역은 270°): rawdict의 줄 bbox는 회전 전
+    좌표계라 MinerU가 쓰는 렌더(표시) 좌표와 어긋난다. rotation_matrix로 표시 좌표로 옮긴다.
+    (이걸 빠뜨리면 회전 페이지에서 매칭이 전부 실패해 OCR 오탈자가 그대로 남는다.)
+    """
+    w, h = fitz_page.rect.width, fitz_page.rect.height
+    rect = fitz.Rect(bbox[0] / 1000 * w, bbox[1] / 1000 * h,
+                     bbox[2] / 1000 * w, bbox[3] / 1000 * h)
+    rot = fitz_page.rotation_matrix
     for blk in fitz_page.get_text("rawdict").get("blocks", []):
         if blk.get("type") != 0:      # 0 = 텍스트 블록
             continue
         for ln in blk.get("lines", []):
             lb = fitz.Rect(ln.get("bbox") or (0, 0, 0, 0)) * rot
-            # 줄 단위로 고른다(블록 단위는 다단 레이아웃에서 요소 경계와 어긋난다).
-            # 줄 면적의 과반이 요소 bbox 안에 들어와야 채택 — 이웃 단 글자 혼입 방지.
             if lb.get_area() <= 0 or (lb & rect).get_area() / lb.get_area() < 0.6:
                 continue
-            t = _line_text_with_word_gaps(ln, rot, uls)
-            if t:
-                # ★ 같은 인쇄 줄이 여러 line으로 쪼개진 것(정답표·선택지)은 rows_to_text가
-                #   한 줄로 이어 두 칸을 띈다 — 지침 3장 3절 4)(3)① (QA S4)
-                lines.append((lb, t))
-    return rows_to_text(lines)
+            yield lb, ln
 
 
 def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) -> str | None:
     """텍스트 레이어로 대체할 값. 못 믿으면 None(= MinerU 결과 유지)."""
-    if _MATH_FONT_GUARD and _has_math_font(fitz_page, bbox):
-        return None                        # 위 _has_math_font 주석 참조
+    if _MATH_FONT_GUARD and (mineru_text or "").strip() and _has_math_font(fitz_page, bbox):
+        return None                        # 위 _has_math_font 주석 참조. MinerU 글이 비면 층이라도 쓴다
     native = _native_text_spaced(fitz_page, bbox)
     if not native or _layer_untrustworthy(native, fitz_page):
         return None
@@ -1190,6 +1208,9 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) 
 #   그린 글자를 똑같이 잘못 읽고 글자 수만 늘어(1,488→1,464 · 850→987) 잡음을 함께 들여온다.
 #   개별 지면에서는 분명히 낫다(수학 I p052 의 `삼각형 "#$` 가 사라진다). 그래서 코드는
 #   남기되 **켜는 것은 자리별 판단**으로 둔다 — `MINERU_MATH_FONT_GUARD=1`.
+# ★ 2026-09-30(#1047) 위 "중립"은 **반만 켜진 팔**로 잰 값이다. 그때 `_has_math_font` 는 0~1000 bbox 를
+#   pt 로 잘라 엉뚱한 자리를 봤다(d8c dev 깨진 글꼴 요소 49개 중 25개만 걸림). 켜고 끌지는 고친 가드로
+#   다시 잰다. 켜도 MinerU 글이 비었으면 층을 쓴다 — 수학 I p0012 상용로그표 설명 문단이 통째로 빈 글이 됐다.
 _MATH_FONT_GUARD = os.environ.get("MINERU_MATH_FONT_GUARD", "0") == "1"
 
 _MD_SEP_RE = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
@@ -1484,6 +1505,9 @@ def _code_text(body: str) -> str:
 #   수식 글꼴 조각. 고치려는 것은 상자에 먹힌 **대화·진술**이다.
 # ★ 한컴 수식 글꼴(EH·ST) 자리는 되살리지 않는다. 레이어가 `sin` 을 ``TJO`` 로 거짓말한다
 #   (`_has_math_font` 주석, 수학1 p071·p115 실측 `TJO`D` · `DPT`D`).
+#   2026-09-30(#1047) **그 줄만** 뺀다. 가드 좌표를 고치자 띠째 버리게 됐는데, 범례 화살표 한 줄
+#   (`A_'` · `A\r B`) 때문에 같은 띠의 보기 ㄱ~ㄹ · 선지 ①~⑤ 까지 빠졌다(val 생활과 윤리 p0029 · p0069 · p0154,
+#   gold 에 있는 줄 361셀). 종전 가드는 엉뚱한 자리를 봐서 이 띠들을 통째로 되살리고 있었다.
 _BAND_TBL_MIN = 0.6
 _BAND_MIN_CHARS = 8
 _BAND_DUP_MIN = 0.8
@@ -1552,11 +1576,11 @@ def _recover_table_bands(content_list: list[dict], fitz_page: fitz.Page, page_no
         for band_bb, dst in ((above, pre), (below, post)):
             if band_bb is None:
                 continue
-            text = _native_text_spaced(fitz_page, band_bb)
+            text = _native_text_spaced(fitz_page, band_bb, skip_math=True)
             q = _squash_text(text)
             g = _ngrams(q, 4)
             if (len(q) < _BAND_MIN_CHARS or not _BAND_PROSE_RE.search(text)
-                    or _layer_untrustworthy(text, fitz_page) or _has_math_font(fitz_page, band_bb)
+                    or _layer_untrustworthy(text, fitz_page)
                     or (g and sum(1 for x in g if x in seen) / len(g) >= _BAND_DUP_MIN)):
                 continue
             dst.append({"type": "text", "text": text, "bbox": [int(v) for v in band_bb],
