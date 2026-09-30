@@ -351,7 +351,7 @@ def _wrap_latin_units(text: str) -> str:
     """제69항 — 숫자 뒤 로마자 단위를 ⠴…⠲ 한 구간으로(`_LATIN_UNIT_RE` 주석)."""
     def repl(m: re.Match) -> str:
         cells = _unit_cells(m.group(2))
-        end = "" if re.search(r"⠘⠼[⠁-⠚]+$", cells) else _unit_end(text, m.end())   # ㎡ 표와 같이
+        end = "" if re.search(r"⠘⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]+$", cells) else _unit_end(text, m.end())   # ㎡ 표와 같이
         return m.group(1) + "⠴" + cells + end
     text = _LATIN_UNIT_RE.sub(repl, text)
     return _HANGUL_SLASH_UNIT_RE.sub(
