@@ -474,6 +474,46 @@ def _extract_text_native(fitz_page: fitz.Page, bbox: list[float]) -> str:
     return fitz_page.get_text("text", clip=rect).strip()
 
 
+# ── 그림으로 잘린 정답 표기 (#1045 · 원장 C-70 후속 3) ─────────────────────────
+# 2027 국어 정답편은 문항 머리 옆 `답 ⑤` 를 gold 가 제 줄에 적는다(E26-004 ans p0023 · p0024).
+# MinerU 는 같은 쪽의 같은 표기를 어떤 것은 글로, 어떤 것은 그림으로 잘라 온다. 그림으로 오면
+# 캡션이 `그림: 답 ⑤` 가 되고 가드4 의 `답` 무늬(C-70, 구판 근거)가 장식으로 버린다.
+# 그 자리 텍스트층이 **그 표기 한 줄뿐**이면 그림이 아니라 글이다 — 캡션을 안 부르고 글로 돌린다.
+_ANSWER_MARK_RE = re.compile(r"답\s*[①-⑳]")
+
+
+def _answer_mark_on() -> bool:
+    """그림 조각을 정답 표기 글로 돌린다(기본). `ANSWER_MARK_TEXT=0` 이 종전이다. 호출 때 읽는다."""
+    return os.environ.get("ANSWER_MARK_TEXT", "1") != "0"
+
+
+def _answer_mark_text(fitz_page: fitz.Page, bbox: list[float]) -> str | None:
+    """그림 조각 자리의 텍스트층이 `답 ⑤` 꼴 한 줄뿐이면 그 글, 아니면 None."""
+    text = _extract_text_native(fitz_page, bbox)
+    return text if _ANSWER_MARK_RE.fullmatch(text) else None
+
+
+def _seat_answer_marks(elements: list[dict], marks: set[str]) -> None:
+    """글로 돌린 정답 표기를 **같은 줄 왼쪽의 한 줄짜리 요소**(문항 제목) 바로 뒤로 옮긴다(제자리 수정).
+
+    MinerU 는 그림 조각을 제 순서로 내보내 글로 돌려도 그 자리가 남는다 — E26-004 ans p0023 의
+    `답 ④` 가 쪽 맨 앞에 섰다. gold 는 문항 제목 다음 줄에 적는다. 한 줄짜리만 보는 것은 옆 단
+    문단(여러 줄)이 같은 높이에 걸려도 그리로 안 가게 하려는 것이다.
+    """
+    for mark in [e for e in elements if e["element_id"] in marks]:
+        x0, y0, _, y1 = mark["bbox"]
+        h = y1 - y0
+        left = [e for e in elements if e is not mark and e["bbox"][2] <= x0
+                and e["bbox"][3] - e["bbox"][1] <= 2 * h
+                and min(y1, e["bbox"][3]) - max(y0, e["bbox"][1]) >= 0.5 * h]
+        if left:
+            host = max(left, key=lambda e: e["bbox"][2])
+            elements.remove(mark)
+            elements.insert(elements.index(host) + 1, mark)
+    for i, el in enumerate(elements, start=1):
+        el["reading_order"] = i
+
+
 # ── 텍스트 레이어 우선(하이브리드) ────────────────────────────────────────────
 # MinerU는 레이아웃(블록 경계·읽기순서·시각자료 탐지)에 쓰고, 글자는 PDF 텍스트 레이어에서
 # 가져온다. 교과서 PDF는 대부분 텍스트 레이어가 있는데도 표·그림 때문에 STANDARD(OCR)로
@@ -1621,6 +1661,7 @@ def run(
 
     merged_layout = []
     order = 1
+    answer_marks: set[str] = set()      # 글로 돌린 정답 표기(#1045) — 끝에서 자리를 잡아 준다
 
     # 글상자 사각형은 쪽당 한 번만 찾는다(표 판정에만 쓰이므로 표가 있을 때 처음 찾는다).
     _box_cache: list = []
@@ -1739,6 +1780,12 @@ def run(
         if mapped_type == "formula":
             content = _strip_block_math_delim(content)
 
+        if mapped_type in ("image", "chart_graph", "cartoon") and _answer_mark_on():
+            mark = _answer_mark_text(fitz_page, bb)       # 위 _ANSWER_MARK_RE 절 주석(#1045)
+            if mark:
+                mapped_type, content = "text", mark
+                answer_marks.add(element_id)
+
         # 글자는 PDF 텍스트 레이어 우선(하이브리드) — 티어와 무관하게 블록별로 시도한다.
         # TEXT_NATIVE(스캔 아님이 확실)면 가드 없이 대체, 그 외(OCR 라우팅)는 가드 통과 시만.
         if mapped_type in _NATIVE_TEXT_TYPES and not item.get("_nested_exact", True):
@@ -1819,6 +1866,8 @@ def run(
 
     # 지면에 안 그려진 글자 요소 버리기(C006) — fitz_page 를 닫기 전에 한다.
     merged_layout = _drop_unpainted(merged_layout, fitz_page, page_no)
+    if answer_marks:
+        _seat_answer_marks(merged_layout, answer_marks)
 
     doc.close()
 
