@@ -2925,6 +2925,42 @@ def _safe_to_unicode(seg: str, _split_eng: bool = True,
         return lead + "".join(out) + trail
 
 
+# ── LaTeX 로 온 단순 화학식 → 유니코드 화학식(원장 B-24 · #1058) ──────────────────
+# `$\mathrm{CO}_{2}$` 는 평문 화학 경로(inline_math `_CHEM_TOK`)를 안 타고 수식 조판으로 가서
+# 규정 예문(과학 제7항 1호, 재추출 4435~4437행 `0,h;#b,o4v`0,o;#b`eo2`)과 달리 식 앞뒤에 빈칸을
+# 넣고 둘째 식부터 로마자표를 빠뜨렸다. 괄호 앞에는 종료표를 안 적는데(제34항 1709행) `(CO₂)` 를
+# `8'``0,c,o;#b4``,0` 로 냈다. 식 전체가 화학식일 때만 유니코드로 풀어 평문 화학 경로 하나로 보낸다.
+# 가드: `\mathrm` 안 대문자 토막이 전부 원소 기호이고, 전하가 있거나 원소가 둘 이상이어야 한다.
+# 원소 하나 + 아래첨자(`O₂`)는 수식 쪽(MATH_PAGE)이 아닐 때만 — 수학의 점 `\mathrm{P}_{1}` 을 안 건드린다.
+_LATEX_MATHRM_RE = re.compile(r"\\mathrm\{((?:[^{}]|\{[^{}]*\})*)\}")
+_LATEX_CHEM_BODY_RE = re.compile(r"(?:[A-Z][a-z]?|_\{?\d+\}?|\^\{?\d*[+-]\}?|\{-\}|\s)+")
+_SUB_DIGITS = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
+_SUP_DIGITS = str.maketrans("0123456789+-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻")
+
+
+def _latex_chem_to_unicode(text: str) -> str:
+    def one(m: re.Match) -> str:
+        body = m.group(1)
+        if "\\mathrm" not in body:
+            return m.group(0)
+        flat = _LATEX_MATHRM_RE.sub(r"\1", body)
+        if "\\" in flat or not _LATEX_CHEM_BODY_RE.fullmatch(flat):
+            return m.group(0)
+        els = re.findall(r"[A-Z][a-z]?", flat)
+        charge = bool(re.search(r"\^\{?\d*[+-]", flat))
+        sub = "_" in flat
+        if not els or not all(e in _kor_math_rules._ELEMENTS for e in els) or not (charge or sub):
+            return m.group(0)
+        if not charge and len(els) < 2 and inline_math.MATH_PAGE.get():
+            return m.group(0)
+        out = re.sub(r"_\{?(\d+)\}?", lambda x: x.group(1).translate(_SUB_DIGITS), flat)
+        out = re.sub(r"\^\{?(\d*[+-])\}?", lambda x: x.group(1).translate(_SUP_DIGITS), out)
+        return re.sub(r"\s+", "", out.replace("{-}", "-"))
+    if not _HANGUL_SYL_RE.search(text):      # 식 하나만 선 줄은 수식 경로 그대로(로마자표·종료표를 거기서 붙인다)
+        return text
+    return re.sub(r"\$([^$\n]+)\$", one, text)
+
+
 def _normalize_inline_math(text: str) -> str:
     """텍스트 속 LaTeX 수식 구분자($…$ 등)를 <!수식>…<!/수식> 태그로 정규화한다.
 
@@ -3077,6 +3113,7 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     text = _UNIT_PRIME_RE.sub(lambda m: SYMBOL_TABLE[m.group()], text)
     text = _UNIT_BACKTICK_RE.sub("", text)
     text = _BACKTICK_MATH_RE.sub(lambda m: f"<!수식>{m.group(1).rstrip()}<!/수식> ", text)
+    text = _latex_chem_to_unicode(text)     # B-24 LaTeX 단순 화학식 → 평문 화학 경로
     text = inline_math.chem_chains(text)    # 반응식 식 경계(C-132) — $…$ 를 풀기 전에
     text = _normalize_inline_math(text)     # $…$/\(…\) → <!수식> (P1: 수식 라우팅)
     # 구분자 없는 평문 수식(cos 2α=1-2 sin² α)도 같은 경로로 보낸다 — 수학 본문의
