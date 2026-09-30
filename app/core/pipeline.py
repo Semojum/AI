@@ -1884,6 +1884,62 @@ def _rekey_elements(elements: list[dict], job_id: str, page_no: int) -> None:
             el["caption_ref"] = remap[str(el["caption_ref"])]
 
 
+# 문항 번호만 든 요소(`01` · `<!강조>02<!/강조>`) — 원장 C-107 (ㄴ).
+_ITEM_NUMBER_ONLY_RE = re.compile(r"^\s*(?:<!강조>)?\s*(?:0\d|[1-9]\d?)\s*(?:<!/강조>)?\s*$")
+
+
+def _join_item_numbers(items: list[BBoxItem], ext_map: dict, unit: float = 1.0) -> int:
+    """따로 뽑힌 문항 번호를 같은 줄 오른쪽 발문 앞에 붙이고 번호 요소를 뺀다. 붙인 수를 돌려준다.
+
+    번호를 색 네모에 찍는 책(004 등)은 MinerU 가 `01` 을 title·page_number·text 형 별도 요소로
+    낸다. 조판은 그걸 홀로 한 줄에 찍는데, gold 는 문항코드 꼴(C-107 X·Y)과 상관없이 모두
+    `01 발문` 한 줄이다. 실측(d8c dev·val, 제품 최종 차례): dev 136쪽 209곳 · val 129쪽 244곳,
+    gold 에서 번호와 발문이 한 줄 100%. 짝을 title 형까지 넓히면 단원 제목(`7 방어 작용`)이
+    섞여 짝은 text 형만 받는다.
+
+    짝: 번호 오른쪽 끝이 발문 왼쪽 끝 +5 이내이고 가로 틈 80 미만(0~1000 정규화 기준, `unit` 은
+    픽셀 배율), 세로로 낮은 쪽 높이의 30% 넘게 겹친다. 틈이 가장 좁은 발문 하나.
+    ★ 읽기 차례를 정한 **뒤**에 돈다. 차례를 정하기 전에 요소를 빼면 열 판정이 흔들린다
+      (원장 `dropping-element-shifts-layout` 전례). 번호 요소를 빼도 다른 요소끼리의 차례는 그대로다.
+    ★ 발문이 태그로 시작하면(`<!상자>` 등, `<!강조>` 만 예외) 붙이지 않는다 — 태그가 깨진다.
+    ⚠ 계약 변화: 번호 요소가 응답에서 사라지고 번호는 발문 칸 글에 합쳐진다.
+    """
+    def txt(b: BBoxItem) -> str:
+        c = ext_map.get(b.element_id)
+        return (c.corrected_text or "") if c else ""
+
+    def overlap(a, b) -> float:
+        return min(a[3], b[3]) - max(a[1], b[1])
+
+    joined, taken, drop = 0, set(), set()
+    for n in items:
+        if not _valid_bbox(n) or not _ITEM_NUMBER_ONLY_RE.match(txt(n)):
+            continue
+        best = None
+        for s in items:
+            body = txt(s).lstrip()
+            if (s is n or s.type != "text" or s.element_id in taken or s.element_id in drop
+                    or not _valid_bbox(s) or not body or _ITEM_NUMBER_ONLY_RE.match(body)
+                    or (body.startswith("<!") and not body.startswith("<!강조>"))):
+                continue
+            gap = s.bbox[0] - n.bbox[2]
+            h = min(n.bbox[3] - n.bbox[1], s.bbox[3] - s.bbox[1])
+            if gap >= -5 * unit and gap < 80 * unit and overlap(n.bbox, s.bbox) > 0.3 * h:
+                if best is None or gap < best[0]:
+                    best = (gap, s)
+        if best is None:
+            continue
+        s = best[1]
+        ext_map[s.element_id].corrected_text = f"{txt(n).strip()} {txt(s).lstrip()}"
+        taken.add(s.element_id); drop.add(n.element_id); joined += 1
+    if drop:
+        items[:] = [b for b in items if b.element_id not in drop]
+        for eid in drop:
+            ext_map.pop(eid, None)
+        logger.info("문항 번호 붙임(C-107 ㄴ): %d곳", joined)
+    return joined
+
+
 def _split_list_marker_items(elements: list[dict]) -> list[dict]:
     """list_item 요소 중 줄머리 마커가 2개 이상이면 항목별로 쪼갠다(원소 dict 목록 변환).
 
@@ -2262,6 +2318,7 @@ def _parse_txt_result(
             )
 
     _reorder_by_geometry(bbox_items, int(meta.get("page_rotation") or 0))
+    _join_item_numbers(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0)
     layout = LayoutResult(page_id=page_id, elements=bbox_items)
     return layout, ext_map, method
 
