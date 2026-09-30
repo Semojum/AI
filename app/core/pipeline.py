@@ -1940,6 +1940,97 @@ def _join_item_numbers(items: list[BBoxItem], ext_map: dict, unit: float = 1.0) 
     return joined
 
 
+# EBS 문항코드 `[26015-0017]` 만 든 요소 — 원장 C-107.
+_ITEM_CODE_ONLY_RE = re.compile(r"^\s*[\[【]\s*\d{5}\s*-\s*\d{4}\s*[\]】]\s*$")
+_ITEM_LEAD_NUM_RE = re.compile(r"^(\s*(?:<!강조>)?\s*\d{1,2}(?:<!/강조>)?)(?!\d)(?!\s*[)\].,쪽강])\s*")
+# ★ 기본 off = 종전 동작. gold 가 책마다 X(`01 [코드] 발문`)·Y(코드 윗줄 · `01 발문`)로 갈리고
+#   규정 조항이 없어 점역사 자문 대기다(C-107). 회신 뒤에 켠다(pm 2026-09-30).
+_ITEM_CODE_FORM = os.environ.get("ITEM_CODE_FORM", "off")
+
+
+def _item_code_stem(code: BBoxItem, items: list[BBoxItem], txt, ux: float, uy: float):
+    """문항코드의 발문(번호로 시작하는 요소)을 기하로 찾는다. 못 찾으면 None.
+
+    묵자에서 코드는 번호 발문 윗줄 오른쪽에 앉는다. 코드와 가로로 겹치거나(발문 첫 줄이 길 때),
+    코드 왼쪽 아래에서 끝나는(발문 첫 줄이 짧을 때) 발문 중, 윗변이 코드 아랫변 −25~+30
+    (0~1000 정규화) 안에 있는 것. 설계 후보 2b — d8c dev·val 번호 아는 코드 1,205개에서
+    맞음 1,103 · 틀림 0 · 못 찾음 102. 이웃 차례로 잡으면 다음 문항 코드를 앞 문항에 붙여
+    틀림 105 라 버렸다(T44 '답 ④' 와 같은 함정).
+    """
+    x0, y0, x1, y1 = code.bbox
+    best = None
+    for s in items:
+        if (s is code or s.type in ("header_footer", "page_number") or not _valid_bbox(s)
+                or not _ITEM_LEAD_NUM_RE.match(txt(s)) or _ITEM_CODE_ONLY_RE.match(txt(s))
+                or _ITEM_NUMBER_ONLY_RE.match(txt(s))):
+            continue
+        a0, b0, a1, b1 = s.bbox
+        d = (b0 - y1) / uy
+        if not -25 <= d <= 30:
+            continue
+        if min(x1, a1) - max(x0, a0) > 0:
+            score = abs(d)
+        elif a1 <= x0 + 5 * ux and (x0 - a1) / ux < 350:
+            score = 30 + (x0 - a1) / ux / 10          # 같은 줄 왼쪽 발문은 아래 겹침보다 뒤
+        else:
+            continue
+        if best is None or score < best[0]:
+            best = (score, s)
+    return best and best[1]
+
+
+def _place_item_codes(items: list[BBoxItem], ext_map: dict, ux: float = 1.0, uy: float = 1.0,
+                      form: str | None = None) -> int:
+    """문항코드 요소를 `form` 꼴로 제 발문 옆에 둔다. 옮긴 수를 돌려준다. `off` 면 아무것도 안 한다.
+
+    Y: 코드 요소를 발문 바로 앞 차례로 옮기고 제목 조판에서 뺀다(gold Y 꼴은 코드 줄이 문단 들여쓰기).
+    X: 코드 글을 발문 번호 뒤에 `01 [26004-0003] 발문` 으로 합치고 코드 요소를 뺀다.
+    `_join_item_numbers` 뒤에 돈다 — 번호가 따로 떨어져 있으면 발문을 못 알아본다.
+    """
+    form = form or _ITEM_CODE_FORM
+    if form not in ("X", "Y"):
+        return 0
+
+    def txt(b: BBoxItem) -> str:
+        c = ext_map.get(b.element_id)
+        return (c.corrected_text or "") if c else ""
+
+    pairs, used = [], set()
+    for c in items:
+        if _valid_bbox(c) and _ITEM_CODE_ONLY_RE.match(txt(c)):
+            s = _item_code_stem(c, items, txt, ux, uy)
+            if s is not None and s.element_id not in used:
+                used.add(s.element_id)
+                pairs.append((c, s))
+    if not pairs:
+        return 0
+    if form == "X":
+        drop = set()
+        for c, s in pairs:
+            ext_map[s.element_id].corrected_text = _ITEM_LEAD_NUM_RE.sub(
+                lambda m: f"{m.group(1)} {txt(c).strip()} ", txt(s), count=1)
+            drop.add(c.element_id)
+        items[:] = [b for b in items if b.element_id not in drop]
+        for eid in drop:
+            ext_map.pop(eid, None)
+    else:
+        codes = {c.element_id for c, _ in pairs}
+        before = {s.element_id: c for c, s in pairs}
+        order: list[BBoxItem] = []
+        for b in sorted(items, key=lambda b: b.reading_order):
+            if b.element_id in codes:
+                continue
+            if b.element_id in before:
+                order.append(before[b.element_id])
+            order.append(b)
+        for i, b in enumerate(order, start=1):
+            b.reading_order = i
+        for c, _ in pairs:
+            c.type, c.heading_level = "text", None
+    logger.info("문항코드 %s꼴 배치(C-107): %d곳", form, len(pairs))
+    return len(pairs)
+
+
 def _split_list_marker_items(elements: list[dict]) -> list[dict]:
     """list_item 요소 중 줄머리 마커가 2개 이상이면 항목별로 쪼갠다(원소 dict 목록 변환).
 
@@ -2319,6 +2410,8 @@ def _parse_txt_result(
 
     _reorder_by_geometry(bbox_items, int(meta.get("page_rotation") or 0))
     _join_item_numbers(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0)
+    _place_item_codes(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0,
+                      scale_bbox[1] if scale_bbox else 1.0)
     layout = LayoutResult(page_id=page_id, elements=bbox_items)
     return layout, ext_map, method
 
