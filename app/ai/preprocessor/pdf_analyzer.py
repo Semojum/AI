@@ -1095,6 +1095,39 @@ def _is_sidebar_note(rect, page_w: float, title: str, texts: list) -> bool:
     return (rect[2] - rect[0]) < _SIDEBAR_MAX_W * page_w
 
 
+# 문항 틀(#1110) — 문항 하나를 통째로 두른 사각형이다. 자기 몫(안쪽 사각형 밖) 글에 발문('…은?' · '옳은 것' · '고른 것')이나
+# 선택지 ①~⑤ 줄이 있다. 틀이 안쪽 자료 상자를 품으면 그 상자가 2단계로 올라간다. 2027 사회 네 권(동아시아사 · 사회·문화 ·
+# 생활과 윤리 · 세계사) gold 는 그런 틀을 글상자로 적지 않고 안쪽 상자를 1단계로 적는다(렌더 눈 확인: 동아시아사 p0015
+# '대표 기출 문제' · 사회·문화 p0017 '기출 플러스'). 틀을 상자로 치면 2단계가 초과로 나간다(#1110 A/B: gold 에 2단계가
+# 없는 58쪽 자 +3,105셀). 그래서 **안쪽 상자를 품은 틀만** 뺀다.
+# · 선택지 줄만 보는 갈래를 빼 보았다(발문만). 탐구 과정 ②③ 을 품은 상자(생명과학 p0117)는 덜 빠졌지만 수학 Ⅰ 문항 셋과
+#   생명과학 p0130 · 동아시아사 p0118 이 다시 나빠져 dev · val 모두 손해였다(101쪽, 자 +386 · 실물 +373). 그래서 둘 다 본다.
+# ⚠ 문항을 통째로 상자에 넣는지는 책마다 갈린다. gold 94권 1단계 상자 23,178개 중 발문과 선택지를 함께 품은 것이
+#   168개인데 수학 Ⅰ 162 중 62 · 확률과 통계 214 중 51 에 몰렸고 사회 네 권은 0이다(수학 Ⅰ p0094 '예제 6' 은
+#   틀이 1단계, 안의 증명 상자가 2단계). 원장 C-157(자문 대기).
+_Q_FRAME_RE = re.compile(r"(?:^|\n)\s*[①②③④⑤]|(?:은|는)\s*\?|옳은 것|옳지 않은 것|고른 것")
+
+
+def drop_question_frames(elements: list[dict], rects: list) -> list:
+    """글상자 후보에서 문항 틀을 뺀다(위 주석). 좌표계는 `tag_boxed_elements` 와 같아야 한다."""
+    def _in(bb, r) -> bool:
+        cx, cy = (bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2
+        return r[0] <= cx <= r[2] and r[1] <= cy <= r[3]
+
+    def _inside(a, b) -> bool:
+        return (b[0] <= a[0] and b[1] <= a[1] and a[2] <= b[2] and a[3] <= b[3]
+                and (a[2] - a[0]) * (a[3] - a[1]) < (b[2] - b[0]) * (b[3] - b[1]) * _BOX_SAME_AREA)
+
+    keep = []
+    for r in rects:
+        kids = [q for q in rects if _inside(q, r)]
+        own = [el for el in elements if el.get("bbox") and len(el["bbox"]) == 4 and _in(el["bbox"], r)
+               and not any(_in(el["bbox"], q) for q in kids)]
+        if not (kids and any(_Q_FRAME_RE.search(_tag_title(el)) for el in own)):
+            keep.append(r)
+    return keep
+
+
 def tag_boxed_elements(elements: list[dict], rects: list, page_w: float = 1000.0) -> int:
     """사각형이 감싼 텍스트 요소 앞뒤에 테두리 태그를 넣는다(in-place). 감싼 상자 수 반환.
 
