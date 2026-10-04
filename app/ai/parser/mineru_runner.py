@@ -1181,6 +1181,13 @@ def _is_math_page(pdf_path: "Path | bytes", page_idx: int) -> bool:
         sum(1 for f in fonts if _MATH_STRUCT_FONT_RE.match(f)) / len(fonts) > _MATH_PAGE_MIN_SHARE
 
 
+# 한컴 본문 글꼴은 고정폭 빈칸 · 탭 자리를 매핑 없는 제어 문자로 적는다(`\x07` · `\x08` · U+200C, 생명과학 p0051 `•\x07적록`).
+# 글꼴 거짓말이 아니라 빈칸이다 — 띄움으로 적는다(#1072). 종전엔 이 한 글자로 블록 층이 통째로 거부됐다.
+# ⚠ `pdf_analyzer._MANGLED_LAYER_RE` 는 건드리지 않는다 — 쪽 라우팅 신호도 겸해서 손대면 멀쩡한 쪽 티어가 바뀐다.
+_CTRL_TO_SPACE = ({c: " " for c in (*range(0x00, 0x09), 0x0B, 0x0C, *range(0x0E, 0x20), 0x200C)}
+                  if os.environ.get("LAYER_CTRL_TO_SPACE", "1") != "0" else {})     # 같은 커밋 A/B 스위치(끄면 종전)
+
+
 def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float], skip_math: bool = False) -> str:
     """bbox 안의 텍스트를 어절 경계 복원해서 뽑는다.
 
@@ -1189,15 +1196,16 @@ def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float], skip_math: bool
     규칙이라 그대로 점역하면 정답과 크게 어긋난다(세계사 p086 실측: cell_ns 0.87→0.39).
     pdf_analyzer의 글자 간격 기반 복원(_page_text_blocks_spaced)을 재사용한다.
     """
-    return _native_text_pair(fitz_page, bbox, skip_math)[1]
+    return _native_text_pair(fitz_page, bbox, skip_math)[1].translate(_CTRL_TO_SPACE)
 
 
 def _native_text_pair(fitz_page: fitz.Page, bbox: list[float], skip_math: bool = False) -> tuple[str, str]:
     """(층 글, 한컴 수식 글꼴 글자를 GID 로 되돌린 층 글)(#1060, `hancom_glyphs`).
 
-    ★ 층을 믿을지는 **앞 것**으로 정한다. 되돌리기가 거짓 글자를 지워 못 믿던 층을 믿게 만들면, MinerU 가
+    ★ 층을 믿을지는 **앞 것**으로 먼저 본다. 되돌리기가 거짓 글자를 지워 못 믿던 층을 믿게 만들면, MinerU 가
       읽은 구조(LaTeX)가 구조 없는 층 글로 바뀐다(수학 I p0012 `$2^{30}$` → `2  30`, `$\\frac{1}{100}$` → `;10!0;`).
-      그래서 되돌리기는 종전에 층을 쓰던 요소의 글자만 고친다.
+      ★ #1072 — 앞 것으로 거부된 요소는 `_native_override` 가 뒤 것으로 다시 본다. 구조 글꼴 · MinerU LaTeX
+      가드가 위 두 퇴화를 막는다. 그 전엔 생명과학 `Á`(=₁) · `l`(=μ) 같은 쓰레기 때문에 복원분이 통째로 버려졌다.
     """
     from app.ai.parser import hancom_glyphs
     from app.ai.preprocessor.pdf_analyzer import (
@@ -1246,12 +1254,58 @@ def _layer_lines(fitz_page: fitz.Page, bbox: list[float]):
             yield lb, ln
 
 
+# 분수 · 근호 구조 글꼴(boN · Root · Susic). 뜻이 글리프가 아니라 자리(분자 위 · 분모 아래)로 정해져 1:1 로 못 되돌린다
+# (층 `;2!;` = 1/2, #1055 몫). ★ `_MATH_STRUCT_FONT_RE` 는 쓰지 않는다 — `Italic` 도 걸어 되돌릴 수 있는 본문까지 막는다.
+_STRUCT_FONT_RE = re.compile(r"^(?:[A-Z]{6}\+)?(?:EH|ST)[\w-]*?(?:boN|Root|Susic)", re.I)
+# MinerU 가 LaTeX 로 살린 구조와 그것을 층 글이 담았는지 볼 글자(첨자 · 근호).
+_LATEX_STRUCT_RE = re.compile(r"\^|_\{|\\frac|\\sqrt")
+_SCRIPT_CHARS = frozenset("⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻₀₁₂₃₄₅₆₇₈₉₊₋√ᵃᵇᵈᵐⁿʰʳˣᴬᴮᴰᴴᴿₐₚᵢ")
+# #1072 같은 커밋 A/B 스위치. 끄면 종전(되돌리기 전 글로만 판정)이다.
+_GATE_AFTER_RESTORE = os.environ.get("LAYER_GATE_AFTER_RESTORE", "1") != "0"
+_LATEX_GUARD = os.environ.get("LAYER_GATE_LATEX_GUARD", "1") != "0"
+
+
+def _has_struct_font(fitz_page: fitz.Page, bbox: list[float]) -> bool:
+    """이 자리 층 글에 분수 · 근호 구조 글꼴이 있나. 판정 실패는 '있음'(종전처럼 MinerU 를 둔다)."""
+    try:
+        return any(_STRUCT_FONT_RE.match(sp.get("font") or "")
+                   for _lb, ln in _layer_lines(fitz_page, bbox) for sp in ln.get("spans", []))
+    except Exception:                       # noqa: BLE001
+        return True
+
+
+def _latex_lost(mineru_text: str, native: str) -> bool:
+    """MinerU 가 LaTeX 로 살린 첨자 · 분수 · 근호를 층 글이 잃는가(#1072).
+
+    층은 위첨자 숫자를 평범한 숫자로 적는다(수학 I p0012 `$2^{30}$` ↔ 층 `2  30`). 되돌린 층 글에 첨자 · √ 글자가
+    있으면 층도 구조를 담은 것이다(생명과학 `$t_{1}$` ↔ 층 `t₁`).
+    """
+    return bool(_LATEX_STRUCT_RE.search(mineru_text or "")) and not (_SCRIPT_CHARS & set(native))
+
+
+def _rescued_by_restore(fitz_page: fitz.Page, bbox: list[float], plain: str, native: str, mineru_text: str) -> bool:
+    """되돌리기 전 글로 거부된 요소를 되돌린 글로 살릴지(#1072, 조사 V2 `temp/n83/조사_글꼴경로.md`).
+
+    판정은 되돌린 글에서 **되돌리기가 적어 넣은 글자를 뺀 사본**으로 한다 — `²` 같은 복원 결과가 다시 거부 신호를
+    세우면 고친 요소만 골라 버리게 된다. 구조 글꼴이 들었거나 MinerU 의 LaTeX 구조를 잃으면 살리지 않는다.
+    """
+    from app.ai.parser.hancom_glyphs import EMITTED
+    if not _GATE_AFTER_RESTORE or native == plain:
+        return False
+    probe = "".join(c for c in native if c not in EMITTED)
+    return (not _layer_untrustworthy(probe, fitz_page)
+            and not _has_struct_font(fitz_page, bbox)
+            and not (_LATEX_GUARD and _latex_lost(mineru_text, native)))
+
+
 def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) -> str | None:
     """텍스트 레이어로 대체할 값. 못 믿으면 None(= MinerU 결과 유지)."""
     if _MATH_FONT_GUARD and (mineru_text or "").strip() and _has_math_font(fitz_page, bbox):
         return None                        # 위 _has_math_font 주석 참조. MinerU 글이 비면 층이라도 쓴다
     plain, native = _native_text_pair(fitz_page, bbox)        # 믿을지 · 닮았는지는 되돌리기 전 글로(#1060)
-    if not native or _layer_untrustworthy(plain, fitz_page):
+    plain, native = plain.translate(_CTRL_TO_SPACE), native.translate(_CTRL_TO_SPACE)   # 위 _CTRL_TO_SPACE 주석
+    if not native or (_layer_untrustworthy(plain, fitz_page)
+                      and not _rescued_by_restore(fitz_page, bbox, plain, native, mineru_text)):
         return None
     base = (mineru_text or "").strip()
     if not base:

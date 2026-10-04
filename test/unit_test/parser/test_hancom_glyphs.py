@@ -120,3 +120,9 @@ def test_쪽마다_한_번만_읽는다(_helv_is_ehsang):
     hg.glyph_fixes(page)
     hg.glyph_fixes(page)
     assert len(calls) == 1
+
+
+def test_긴_동치_화살표_한_벌과_되돌리기가_적는_글자():
+    """#1072 — EHSunm-Plain GID 28 · 49 · 29 는 ⟺ 한 벌(층 `HjK`). EMITTED 는 판정용 사본에서 뺄 비ASCII 글자."""
+    assert [hg.restored("EHSunm-Plain", g) for g in (28, 49, 29)] == ["⟺", "", ""]
+    assert {"²", "₁", "μ", "⁺", "×"} <= hg.EMITTED and not any(c.isascii() for c in hg.EMITTED)
