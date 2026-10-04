@@ -4224,7 +4224,9 @@ def _decode_line(s: str, *, sep: bool = True, mid_roman: bool = True) -> str:
         if ch == _ROMAN_START and best_ln >= 2 and i == _after_number:
             pass                       # 단위로 읽는다(아래 기호 분기로 떨어진다)
         elif (ch == _ROMAN_START and best_ln >= 2
-              and (i == 0 or s[i - 1] in (_SPACE_CELL, " "))):
+              and (i == 0 or s[i - 1] in (_SPACE_CELL, " ", _PAREN_OPEN_MARK))):
+            # ★ 여는 괄호 바로 뒤도 **낱말 앞**이다(#1109). 생활과 윤리 `(paternalistically)`
+            #   (⠦⠄⠴⠏⠁⠞⠻…)가 런을 못 열어 `⠴⠏` 가 `%` 로 먹히고 `(%a얼영엑사뎨다낙사사외)` 로 나갔다.
             # ★ 로마자표는 **낱말 앞**에 온다(제29항). 낱말 중간의 ⠴ 는 닫는 낫표·
             #   따옴표다 — `_merge_roman_tokens`·단축형 판정이 이미 쓰는 원칙이다.
             #   이 조건이 없으면 "긴 쪽이 이긴다"가 뒤집힌다: `『황명세법』을`
