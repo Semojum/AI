@@ -490,7 +490,7 @@ class TestPermutationCombination:
 
     @pytest.mark.parametrize("raw,want", [
         ("⠴⠠⠉⠷⠋⠑⠑⠲", "Coffee"),          # ⠷ 는 UEB 약자 `of` — 짝 맞는 ⠾ 를 요구한다
-        ("⠠⠓⠷⠍⠁⠝⠝⠲", "톤욱에에."),
+        ("⠠⠓⠷⠍⠁⠝⠝⠲", "H온욱에에."),   # 순열로 안 편다. 머리 ⠠⠓ 는 대문자 H(제30항 [붙임])
     ])
     def test_짝이_없으면_안_본다(self, raw: str, want: str) -> None:
         assert self._d(raw) == want

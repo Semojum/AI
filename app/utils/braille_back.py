@@ -4312,6 +4312,14 @@ def _decode_line(s: str, *, sep: bool = True) -> str:
             out.append(_MATH_REV_MULTI[s[i:i + _m]])
             i += _m
             continue
+        # 대문자표 + 낱자 — 로마자표 없이 선 대문자 기호표(제30항 [붙임], 재추출 1480~1482행).
+        # 아래 수식 역표가 `⠠` 를 지워 `⠠⠠⠁⠁⠂ ⠠⠁⠁`(AA, Aa · 001 body p0130 유전자형)가
+        # `AA, aa` 로 읽혔다. 한글로 못 푼 자리라 낱자 폴백과 같은 조건이다.
+        if (ch == _CAPITAL and s[i + 1:i + 2] in _ALPHA_REV
+                and os.environ.get("BRAILLE_ALPHA_FALLBACK", "1") == "1"):
+            out.append(_ALPHA_REV[s[i + 1]].upper())
+            i += 2
+            continue
         if ch in _MATH_REV_SINGLE:
             out.append(_MATH_REV_SINGLE[ch])
             i += 1
