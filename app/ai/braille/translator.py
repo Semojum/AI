@@ -1617,12 +1617,9 @@ _TAG_PAIR_MARKER: dict[str, tuple[str, str]] = {
     _TAGS.BOX_CHAR: ("⠸⠦", "⠴⠇"),
 }
 
-# 테두리(글상자 = 표, NLD-1.2.5): (캡, 채움) 글리프. 32칸 한 줄로 렌더.
-_BORDER_FILL: dict[str, tuple[str, str]] = {
-    _TAGS.BOX_TOP:    ("⠿", "⠛"),  # 위: 첫/끝 = , 중간 g
-    _TAGS.BOX_BOTTOM: ("⠿", "⠶"),  # 아래: 첫/끝 = , 중간 7
-}
-from app.ai.braille.constants import COLS as _BORDER_COLS  # noqa: E402 (공용 상수)
+# 테두리(글상자 = 표, NLD-1.2.5) 태그 → 종류. 글리프는 위계별 공용 표(`constants.BOX_LEVELS`)에 있다.
+_BORDER_KIND = {_TAGS.BOX_TOP: "top", _TAGS.BOX_BOTTOM: "bottom"}
+from app.ai.braille.constants import COLS as _BORDER_COLS, BOX_LEVELS as _BOX_LEVELS  # noqa: E402 (공용 상수)
 _BORDER_BLANK     = "⠀"   # 점자 빈칸(U+2800)
 _BORDER_LEFT_FILL = 4     # 캡 뒤 채움 칸 → 제목 7칸에서 시작(NLD-1.2.5(4)②: 캡1+채움4+빈칸1)
 
@@ -1630,16 +1627,21 @@ _BORDER_LEFT_FILL = 4     # 캡 뒤 채움 칸 → 제목 7칸에서 시작(NLD-
 # 위계: 이름 뒤 단계 숫자 옵션(<!상자2>=2단계, 없으면 1단계). group(1)=단계, group(2)=제목.
 _BORDER_PAIR_RE = {
     name: re.compile(rf"<!{re.escape(name)}([23]?)>(.*?)<!/?{re.escape(name)}\1>", re.DOTALL)
-    for name in _BORDER_FILL
+    for name in _BORDER_KIND
 }
 
 
-def _border_line(name: str, title_braille: str) -> str:
-    """글상자/표 테두리 32칸 줄. 제목 있으면 NLD-1.2.5(4)② 배치(7칸, 양옆 띔)."""
-    cap, fill = _BORDER_FILL[name]
+def _border_line(name: str, title_braille: str, level: int = 1) -> str:
+    """글상자/표 테두리 32칸 줄. 제목 있으면 NLD-1.2.5(4)② 배치(7칸, 양옆 띔).
+
+    ★ 위계(`<!상자2>` = 2단계)대로 그린다. 응답 `contents` 는 조판(layout) **앞에서** 굳으므로
+      여기서 1단계로 그리면 조판이 위계를 다시 그려도 BE · FE 가 받는 점자는 늘 1단계였다
+      (2027 dev 2단계 태그 70쌍 · val 85쌍이 전부 ⠿ 로 나감, gold 2단계 줄 dev 727 · val 368).
+    """
+    cap, fill, end = _BOX_LEVELS.get(level, _BOX_LEVELS[1])[_BORDER_KIND[name]]
     inner = _BORDER_COLS - 2
     if not title_braille:
-        return cap + fill * inner + cap
+        return cap + fill * inner + end
     # 케이스②: 캡1 + 채움4 + 빈칸1 + 제목 + 빈칸1 + 채움R + 캡1 = 32
     max_title = inner - _BORDER_LEFT_FILL - 2          # = 24
     # 초과분은 여기서 자른다. 케이스①(제목을 윗줄 5칸에 적고 테두리는 제목 없이 두기)은
@@ -1647,7 +1649,7 @@ def _border_line(name: str, title_braille: str) -> str:
     t = title_braille[:max_title]
     right_fill = inner - _BORDER_LEFT_FILL - 2 - len(t)
     return (cap + fill * _BORDER_LEFT_FILL + _BORDER_BLANK
-            + t + _BORDER_BLANK + fill * right_fill + cap)
+            + t + _BORDER_BLANK + fill * right_fill + end)
 
 
 # 글상자 테두리 태그(위/아래, 위계 옵션) 문서 순서 수집 — box_borders(NLD-1.2.5) layout 재렌더
@@ -1655,7 +1657,6 @@ def _border_line(name: str, title_braille: str) -> str:
 _BORDER_ANY_RE = re.compile(
     rf"<!({re.escape(_TAGS.BOX_TOP)}|{re.escape(_TAGS.BOX_BOTTOM)})([23]?)>(.*?)<!/?\1\2>",
     re.DOTALL)
-_BORDER_KIND = {_TAGS.BOX_TOP: "top", _TAGS.BOX_BOTTOM: "bottom"}
 
 
 def _braillify_box_title(raw: str) -> str:
@@ -1733,7 +1734,7 @@ def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
     """원본의 글상자 테두리 태그를 문서 순서대로 (kind, level, 제목점자)로 수집(NLD-1.2.5).
 
     layout이 이 목록으로 위계별 테두리·제목 배치(중간7칸/윗줄5칸/케이스①)를 재렌더한다.
-    translator는 인라인 32칸 테두리(위치 마커, 항상 1단계 ⠿ 형식)도 그대로 둔다(_border_line).
+    translator 는 인라인 32칸 테두리를 이미 위계 꼴로 그린다(_border_line). layout 은 제목 배치 · 빈 줄을 더한다.
     위계: 태그 이름 뒤 단계 숫자(<!상자2>=2단계, 없으면 1단계). ※§3-5 태그 규약 확장(태민 검토).
     """
     out: list[tuple[str, int, str]] = []
@@ -1746,10 +1747,6 @@ def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
         title = _braillify_box_title(title_raw) if (kind == "top" and title_raw) else ""
         out.append((kind, level, title))
     return out
-
-
-# 32칸 테두리 줄의 채움 글리프 → 테두리 종류. `_BORDER_FILL` 의 역방향이다.
-_BORDER_FILL_KIND = {fill: _BORDER_KIND[name] for name, (_cap, fill) in _BORDER_FILL.items()}
 
 
 def border_marker_spans(
@@ -1765,8 +1762,8 @@ def border_marker_spans(
       실측(fresh 실행, 사회문화 p010): 테두리 줄이 든 요소 4개의 `rule_trail` 이 전부 [].
 
     source-gated — 원본의 `<!상자>`·`<!상자끝>` 태그 순서·개수만큼만 짚는다. 표 격자도
-    같은 32칸 테두리를 그리므로(원장 C-01a) 출력 스캔만으로는 못 가른다. 채움 글리프로
-    종류(위 ⠛ / 아래 ⠶)까지 맞춰 어긋난 짝을 건너뛴다.
+    같은 32칸 테두리를 그리므로(원장 C-01a) 출력 스캔만으로는 못 가른다. 다음 태그의 종류 · 위계가
+    그리는 캡 · 채움(`constants.BOX_LEVELS`)과 맞는 줄만 짚고 어긋난 줄은 건너뛴다.
     """
     specs = box_borders_from_source(source_text)
     if not specs:
@@ -1774,9 +1771,9 @@ def border_marker_spans(
     spans: list[tuple[int, int, str]] = []
     si, pos = 0, 0
     for line in braille.split("\n"):
-        if si < len(specs) and len(line) == _BORDER_COLS and line[:1] == line[-1:] == "⠿" \
-                and _BORDER_FILL_KIND.get(line[1:2]) == specs[si][0]:
-            kind, level, title = specs[si]
+        kind, level, title = specs[si] if si < len(specs) else ("", 1, "")
+        cap, fill, end = _BOX_LEVELS.get(level, _BOX_LEVELS[1]).get(kind, ("", "", ""))
+        if kind and len(line) == _BORDER_COLS and line[:2] == cap + fill and line[-1:] == end:
             si += 1
             titled = "·제목있음" if (kind == "top" and title) else ""
             spans.append((pos, pos + len(line), f"box_{kind}·{level}단계{titled}"))
@@ -1899,10 +1896,11 @@ def substitute_tags(text: str) -> str:
     치환 결과는 점자 Unicode이므로 이후 _emit_mixed/braillify가 보존한다(이중 변환 없음).
     """
     text = _promote_literal_tn(text)
-    # 1) 테두리 쌍 (중간 제목 가능) → 32칸 줄(위치 마커). 위계는 box_borders로 layout이 재렌더.
+    # 1) 테두리 쌍 (중간 제목 가능) → 위계대로 32칸 줄. 제목 배치 · 빈 줄은 box_borders 로 layout 이 더한다.
     for name, pat in _BORDER_PAIR_RE.items():
         text = pat.sub(
-            lambda m, n=name: _border_line(n, _braillify_box_title(m.group(2).strip())), text
+            lambda m, n=name: _border_line(n, _braillify_box_title(m.group(2).strip()),
+                                           int(m.group(1) or 1)), text
         )
 
     # 2) 단일·대칭 인라인 마커 + 미지 태그 제거
@@ -1917,7 +1915,7 @@ def substitute_tags(text: str) -> str:
         # `_break_offsets`가 줄바꿈 자리를 찾느라 접두(`src[:sp]`)를 수천 번 재점역하면서
         # 늘 생긴다 — 전체 문자열 변환은 경고 0에 테두리도 정상이다(실측). 운영 로그를
         # 이 잡음으로 채우면 진짜 미지 태그가 묻힌다.
-        if name.rstrip("23") in _BORDER_FILL:
+        if name.rstrip("23") in _BORDER_KIND:
             return ""
         # 같은 이유로 미지 태그도 한 토큰이 수백 줄을 찍는다(실측: `<!표>` 하나에 172줄).
         # 토큰당 한 번만 남긴다 — 이 경고는 "이름이 틀렸다"는 신호라 한 번이면 족하고,
