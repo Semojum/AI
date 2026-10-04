@@ -23,6 +23,9 @@ def _doc():
     page.insert_text((84, 400), "뉴 미디어의 특성", fontname="korea", fontsize=11)
     page.insert_text((60, 600), "2부", fontname="korea", fontsize=11)
     page.insert_text((60, 700), "05 매체 언어", fontname="korea", fontsize=11)
+    page.insert_text((60, 650), "3 강", fontname="korea", fontsize=11)
+    page.insert_text((300, 200), "1", fontname="helv", fontsize=9)      # 가계도 안 개체 번호 둘
+    page.insert_text((300, 215), "2", fontname="helv", fontsize=9)
     return doc
 
 
@@ -32,7 +35,9 @@ def _doc():
     ([95, 855, 400, 880], None),             # 번호 + 글
     ([95, 480, 420, 505], None),             # 번호와 제목을 같이 덮는 자리
     ([0, 0, 1000, 600], None),               # 지면 2% 넘는 큰 조각(층에 번호뿐이어도)
-], ids=["번호", "N부", "번호+글", "제목까지", "큰 조각"])
+    ([95, 790, 150, 820], "3강"),             # 번호와 `강` 사이 띄움
+    ([480, 225, 540, 280], None),            # 그림 안 번호 둘(`1`·`2` 를 `12` 로 붙이지 않는다)
+], ids=["번호", "N부", "번호+글", "제목까지", "큰 조각", "N 강", "그림 안 번호 둘"])
 def test_층이_번호뿐인_작은_조각만_배지다(bbox, want):
     assert mr._num_badge_text(_doc()[0], bbox) == want
 

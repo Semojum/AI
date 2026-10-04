@@ -538,8 +538,10 @@ def _num_badge_text(fitz_page: fitz.Page, bbox: list[float]) -> str | None:
     """그림 조각 자리가 작고 텍스트층이 번호 한 토막뿐이면 그 번호, 아니면 None."""
     if (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) >= _NUM_BADGE_AREA_MAX * 1_000_000:
         return None
-    text = re.sub(r"\s+", "", _extract_text_native(fitz_page, bbox))       # `2 부` → `2부`
-    return text if _NUM_BADGE_RE.fullmatch(text) else None
+    # 띄움은 번호와 `부`·`강`·`회` 사이에만 허락한다. 통째로 지우면 그림 안 번호 둘(가계도 `1`·`2`)이 `12` 가 되어
+    # 그림이 배지로 빠진다(T45 A/B 생명과학 body p0149, 지면 1.5%).
+    text = _extract_text_native(fitz_page, bbox).strip()
+    return re.sub(r"\s+", "", text) if _NUM_BADGE_RE.fullmatch(text) else None     # `2 부` → `2부`
 
 
 def _seat_num_badges(elements: list[dict], badges: dict[str, str]) -> None:
