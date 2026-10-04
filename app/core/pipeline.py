@@ -1558,6 +1558,9 @@ def _reorder_sidebar(items: list[BBoxItem], valid: list[BBoxItem]) -> None:
         b.reading_order = k
 
 
+_BANDED = os.environ.get("READING_ORDER_BANDED", "1") != "0"   # #1079 가로 띠 신호(끄면 종전) · 같은 커밋 A/B 스위치
+
+
 def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
     """H3: 열 클러스터링 읽기순서.
 
@@ -1761,7 +1764,28 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
         if c.bbox[3] <= a.bbox[1]
         and min(a.bbox[2], c.bbox[2]) - max(a.bbox[0], c.bbox[0]) > 0
     )
-    main = sorted(main, key=_ykey) if (viol > 1 or hard) else by_mineru
+    # ★ 가로 띠 읽기(#1079). 깨끗한 2단 띠 읽기(좌상 → 우상 → 좌하 → 우하)는 단을 **건너뛰며** 되돌아가므로
+    #   위 `viol`(오른쪽 점프 아닌 되돌림)에도 `hard`(같은 단 역전)에도 안 걸려 정렬이 아예 안 켜졌다
+    #   (2027 사회·문화 body p0079: 문항 01 → 03 → 02 → 04, 조사 temp/n83/조사_합쳐짐순서.md B-1).
+    #   추출기 순번을 열 번호 런으로 쪼개, 같은 열을 다시 찾는데 뒤 런이 앞 런보다 통째로 아래이고 **그 사이에
+    #   다른 열의 런(3요소 이상)이 앞 런과 같은 높이에서 시작하면** 띠로 읽힌 것이다(좌상 → 우상 → 좌하).
+    #   ★ 사이 런 조건이 없으면 1단 본문이 여백 라벨 하나(`④` · `정답과 풀이 41쪽`)나 문항별 좁은 힌트 상자에
+    #     끊긴 쪽까지 켜진다(2027 dev·val 1,745쪽 중 181쪽이 바뀌고 수학 I p0071 τ 1.0 → 0.5 · 생명과학 p0038
+    #     0.371 → 0.143: 힌트 둘이 쪽 맨 앞으로 몰렸다).
+    #   가드를 통째로 빼는 안은 기각(384쪽 중 157쪽이 바뀌고 문항번호 역전 73 → 148).
+    runs: list[list] = []                      # [열, 위끝, 아래끝, 요소 수]
+    for b in by_mineru:
+        c = col_of[id(b)]
+        if runs and runs[-1][0] == c:
+            r = runs[-1]
+            r[1], r[2], r[3] = min(r[1], b.bbox[1]), max(r[2], b.bbox[3]), r[3] + 1
+        else:
+            runs.append([c, b.bbox[1], b.bbox[3], 1])
+    banded = _BANDED and any(
+        a[0] == c[0] and a[3] >= 3 and c[3] >= 3 and c[1] >= a[2]
+        and any(m[0] != a[0] and m[3] >= 3 and m[1] < a[2] for m in runs[i + 1:j])
+        for i, a in enumerate(runs) for j, c in enumerate(runs[i + 1:], start=i + 1))
+    main = sorted(main, key=_ykey) if (viol > 1 or hard or banded) else by_mineru
 
     # 5) 새 본문 순서 = main → 이동 열(x0 순, 각 y-정렬). 비본문은 원 슬롯 유지.
     deferred.sort(key=lambda cl: min(b.bbox[0] for b in cl))

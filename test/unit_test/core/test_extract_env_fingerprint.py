@@ -34,6 +34,7 @@ NOT_BOUNDARY = {
     "LLM_CACHE_DIR": "캐시 자리(같은 응답)", "_CACHE_DEMO": "자체 점검용",
     "BOUNDARY_REUSE": "재사용 스위치 자체(T39 S2)", "MINERU_RAW_REUSE": "재사용 스위치 자체(T39 S3)",
     "READING_ORDER_MODE": "경계 뒤 읽기순서(`_parse_txt_result`)", "READING_ORDER_LLM": "경계 뒤 읽기순서",
+    "READING_ORDER_BANDED": "경계 뒤 읽기순서(가로 띠 신호, #1079)",
     "KEEP_PAGE_IMAGE": "QA 쪽 이미지 보관",
     "TABLE_KEEP_CELLS": "경계 뒤 표 칸 쪼개기(`_parse_txt_result`, #1042)",
     "ITEM_CODE_FORM": "경계 뒤 문항코드 자리(`_parse_txt_result`, #1052)",

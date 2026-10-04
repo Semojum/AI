@@ -382,3 +382,59 @@ class TestBridgeAttachedAfterDeferral:
         right = next(b for b in items if b.bbox == (682, 188, 1059, 207))
         _reorder_columns(items)
         assert left.reading_order < right.reading_order
+
+
+class TestBandedTwoColumn:
+    """#1079 — 2단을 가로 띠로 읽은 쪽(좌상 → 우상 → 좌하 → 우하)도 열 우선으로 세운다.
+
+    2027 사회·문화 body p0079 축소판: 문항이 01 → 03 → 02 → 04 로 나왔다. 종전 발동 조건 `viol`·`hard` 는
+    단 안쪽 역전만 세서 단을 건너뛰며 되돌아가는 띠 읽기를 못 봤다.
+    """
+
+    @staticmethod
+    def _banded():
+        lt = [_box(1, 99, 100, 493, 160), _box(2, 99, 170, 493, 300), _box(3, 99, 310, 493, 520)]     # 01
+        rt = [_box(4, 531, 100, 924, 160), _box(5, 531, 170, 924, 300), _box(6, 531, 310, 924, 520)]  # 03
+        lb = [_box(7, 99, 600, 493, 660), _box(8, 99, 670, 493, 800), _box(9, 99, 810, 493, 1000)]   # 02
+        rb = [_box(10, 531, 600, 924, 660), _box(11, 531, 670, 924, 800), _box(12, 531, 810, 924, 1000)]  # 04
+        return lt, rt, lb, rb
+
+    def test_band_reading_is_sorted_column_first(self):
+        lt, rt, lb, rb = self._banded()
+        _reorder_columns(lt + rt + lb + rb)
+        assert _orders(lt + lb + rt + rb) == list(range(1, 13))
+
+    def test_switch_off_keeps_band_reading(self, monkeypatch):
+        import app.core.pipeline as P
+        monkeypatch.setattr(P, "_BANDED", False)
+        lt, rt, lb, rb = self._banded()
+        _reorder_columns(lt + rt + lb + rb)
+        assert _orders(lt + rt + lb + rb) == list(range(1, 13))
+
+    @staticmethod
+    def _same_with_and_without(monkeypatch, make) -> None:
+        """띠 신호가 안 켜지는 쪽: 켜든 끄든 차례가 같다(다른 규칙의 몫은 그대로 둔다)."""
+        import app.core.pipeline as P
+        got = []
+        for flag in (False, True):
+            monkeypatch.setattr(P, "_BANDED", flag)
+            items = make()
+            _reorder_columns(items)
+            got.append(_orders(items))
+        assert got[0] == got[1]
+
+    def test_one_column_cut_by_margin_label_is_not_banded(self, monkeypatch):
+        """수학 I p0071 꼴: 1단 본문이 오른쪽 여백 `④` 하나에 끊겼다. 띠가 아니다(같은 높이의 다른 열 런이 없다).
+        사이 런 조건이 없던 첫 판은 여기서 켜져 τ 1.0 → 0.5 였다."""
+        self._same_with_and_without(monkeypatch, lambda: [
+            _box(1, 146, 171, 636, 199), _box(2, 147, 242, 295, 267), _box(3, 146, 282, 916, 311),
+            _box(4, 183, 357, 790, 422), _box(5, 1034, 855, 1076, 877),
+            _box(6, 147, 929, 196, 957), _box(7, 135, 1010, 228, 1055), _box(8, 242, 1075, 935, 1147)])
+
+    def test_one_column_with_hint_boxes_is_not_banded(self, monkeypatch):
+        """생명과학 p0038 꼴: 문항마다 왼쪽 좁은 힌트 상자가 하나씩. 첫 판은 힌트 둘을 쪽 맨 앞으로 몰았다."""
+        self._same_with_and_without(monkeypatch, lambda: [
+            _box(1, 84, 121, 275, 243),
+            _box(2, 320, 115, 1044, 177), _box(3, 320, 473, 1044, 531), _box(4, 337, 565, 1030, 713),
+            _box(5, 84, 845, 275, 967),
+            _box(6, 320, 839, 1044, 901), _box(7, 320, 1122, 1044, 1179), _box(8, 326, 1190, 1036, 1365)])
