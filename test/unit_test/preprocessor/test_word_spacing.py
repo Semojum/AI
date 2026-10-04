@@ -210,6 +210,12 @@ class TestHanyangPua:
         assert text == "하ᄂᆞᆯᄀᆞᆮ티"
         assert translate_tagged_text(text) == "⠚⠉⠐⠼⠂⠈⠐⠼⠔⠓⠕"
 
+    def test_글꼴과_gold_가_다르면_글꼴을_따른다(self):
+        # F162 는 글꼴이 옛이응 ᅌᆡ 다. 언어와 매체 ans p0021 의 원문 조판 실수이고 gold 는 ᄋᆡ 로 고쳐 적었다.
+        # 표가 gold 의 교정을 받아들이면 층이 묵자가 아니라 gold 를 따르게 된다. 교정은 다른 층의 일이다.
+        line = self._span_line("ABCDEF+Haansoft-Batang", "\uf162")
+        assert _line_text_with_word_gaps(line) == "\u114c\u11a1"
+
     def test_같은_코드도_윤디자인_글꼴이면_기호다(self):
         line = self._span_line("ABCDEF+YDVYGOStd12", "")
         assert _line_text_with_word_gaps(line) == "○"
