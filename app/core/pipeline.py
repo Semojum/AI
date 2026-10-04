@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 import asyncio
 import hashlib
 import json
@@ -1884,6 +1885,159 @@ def _rekey_elements(elements: list[dict], job_id: str, page_no: int) -> None:
             el["caption_ref"] = remap[str(el["caption_ref"])]
 
 
+# 문항 번호만 든 요소(`01` · `<!강조>02<!/강조>`) — 원장 C-107 (ㄴ).
+_ITEM_NUMBER_ONLY_RE = re.compile(r"^\s*(?:<!강조>)?\s*(?:0\d|[1-9]\d?)\s*(?:<!/강조>)?\s*$")
+
+
+def _join_item_numbers(items: list[BBoxItem], ext_map: dict, unit: float = 1.0) -> int:
+    """따로 뽑힌 문항 번호를 같은 줄 오른쪽 발문 앞에 붙이고 번호 요소를 뺀다. 붙인 수를 돌려준다.
+
+    번호를 색 네모에 찍는 책(004 등)은 MinerU 가 `01` 을 title·page_number·text 형 별도 요소로
+    낸다. 조판은 그걸 홀로 한 줄에 찍는데, gold 는 문항코드 꼴(C-107 X·Y)과 상관없이 모두
+    `01 발문` 한 줄이다. 실측(d8c dev·val, 제품 최종 차례): dev 136쪽 209곳 · val 129쪽 244곳,
+    gold 에서 번호와 발문이 한 줄 100%. 짝을 title 형까지 넓히면 단원 제목(`7 방어 작용`)이
+    섞여 짝은 text 형만 받는다.
+
+    짝: 번호 오른쪽 끝이 발문 왼쪽 끝 +5 이내이고 가로 틈 80 미만(0~1000 정규화 기준, `unit` 은
+    픽셀 배율), 세로로 낮은 쪽 높이의 30% 넘게 겹친다. 틈이 가장 좁은 발문 하나.
+    ★ 읽기 차례를 정한 **뒤**에 돈다. 차례를 정하기 전에 요소를 빼면 열 판정이 흔들린다
+      (원장 `dropping-element-shifts-layout` 전례). 번호 요소를 빼도 다른 요소끼리의 차례는 그대로다.
+    ★ 발문이 태그로 시작하면(`<!상자>` 등, `<!강조>` 만 예외) 붙이지 않는다 — 태그가 깨진다.
+    ⚠ 계약 변화: 번호 요소가 응답에서 사라지고 번호는 발문 칸 글에 합쳐진다.
+    """
+    def txt(b: BBoxItem) -> str:
+        c = ext_map.get(b.element_id)
+        return (c.corrected_text or "") if c else ""
+
+    def overlap(a, b) -> float:
+        return min(a[3], b[3]) - max(a[1], b[1])
+
+    joined, taken, drop = 0, set(), set()
+    for n in items:
+        if not _valid_bbox(n) or not _ITEM_NUMBER_ONLY_RE.match(txt(n)):
+            continue
+        best = None
+        for s in items:
+            body = txt(s).lstrip()
+            if (s is n or s.type != "text" or s.element_id in taken or s.element_id in drop
+                    or not _valid_bbox(s) or not body or _ITEM_NUMBER_ONLY_RE.match(body)
+                    or (body.startswith("<!") and not body.startswith("<!강조>"))):
+                continue
+            gap = s.bbox[0] - n.bbox[2]
+            h = min(n.bbox[3] - n.bbox[1], s.bbox[3] - s.bbox[1])
+            if gap >= -5 * unit and gap < 80 * unit and overlap(n.bbox, s.bbox) > 0.3 * h:
+                if best is None or gap < best[0]:
+                    best = (gap, s)
+        if best is None:
+            continue
+        s = best[1]
+        ext_map[s.element_id].corrected_text = f"{txt(n).strip()} {txt(s).lstrip()}"
+        taken.add(s.element_id); drop.add(n.element_id); joined += 1
+    if drop:
+        items[:] = [b for b in items if b.element_id not in drop]
+        for eid in drop:
+            ext_map.pop(eid, None)
+        logger.info("문항 번호 붙임(C-107 ㄴ): %d곳", joined)
+    return joined
+
+
+# EBS 문항코드 `[26015-0017]` 만 든 요소 — 원장 C-107.
+_ITEM_CODE_ONLY_RE = re.compile(r"^\s*[\[【]\s*\d{5}\s*-\s*\d{4}\s*[\]】]\s*$")
+_ITEM_LEAD_NUM_RE = re.compile(r"^(\s*(?:<!강조>)?\s*\d{1,2}(?:<!/강조>)?)(?!\d)(?!\s*[)\].,쪽강])\s*")
+# ★ 기본 X(`01 [코드] 발문`), 점역사가 책마다 고른다(대표 결재 2026-10-04, 원장 C-107).
+#   gold 가 책마다 X · Y(코드 윗줄 · `01 발문`)로 갈리고 규정 조항이 없다. 꼴은 묵자에서 안 보이는 점역자 선택이라
+#   자동으로 정하지 않는다. 기본은 관행 다수 X(2027 비홀드아웃 12권 중 7권), 요청마다 `PageTask.item_code_form` 으로 바꾼다.
+#   ⚠ 기본 X 의 값(2027 dev·val, 대조 fe7a853): Y꼴 책 셋(001 · 009 · 013)에서 실제 손해가 난다(자 +487 · +370 · +431,
+#   실물 009 +602 · 013 +270). 점역사가 그 책에서 Y 로 바꾸면 이득이 된다(자 −1,011 · −2 · −608). 바꾸지 않으면 손해가 남는다.
+#   결과 V2 temp/n46/c/결과_C107_조합AB.md. 환경변수 `ITEM_CODE_FORM`(X · Y · off)은 서버 기본값이다.
+_ITEM_CODE_FORM = os.environ.get("ITEM_CODE_FORM", "X")
+# 요청(문서)마다 고른 꼴. `run()` 이 쪽 시작에 심는다 — 쪽 Task 마다 컨텍스트가 따로라 쪽 사이로 안 샌다.
+_ITEM_CODE_FORM_JOB: ContextVar[str] = ContextVar("item_code_form", default="")
+
+
+def _item_code_stem(code: BBoxItem, items: list[BBoxItem], txt, ux: float, uy: float):
+    """문항코드의 발문(번호로 시작하는 요소)을 기하로 찾는다. 못 찾으면 None.
+
+    묵자에서 코드는 번호 발문 윗줄 오른쪽에 앉는다. 코드와 가로로 겹치거나(발문 첫 줄이 길 때),
+    코드 왼쪽 아래에서 끝나는(발문 첫 줄이 짧을 때) 발문 중, 윗변이 코드 아랫변 −25~+30
+    (0~1000 정규화) 안에 있는 것. 설계 후보 2b — d8c dev·val 번호 아는 코드 1,205개에서
+    맞음 1,103 · 틀림 0 · 못 찾음 102. 이웃 차례로 잡으면 다음 문항 코드를 앞 문항에 붙여
+    틀림 105 라 버렸다(T44 '답 ④' 와 같은 함정).
+    """
+    x0, y0, x1, y1 = code.bbox
+    best = None
+    for s in items:
+        if (s is code or s.type in ("header_footer", "page_number") or not _valid_bbox(s)
+                or not _ITEM_LEAD_NUM_RE.match(txt(s)) or _ITEM_CODE_ONLY_RE.match(txt(s))
+                or _ITEM_NUMBER_ONLY_RE.match(txt(s))):
+            continue
+        a0, b0, a1, b1 = s.bbox
+        d = (b0 - y1) / uy
+        if not -25 <= d <= 30:
+            continue
+        if min(x1, a1) - max(x0, a0) > 0:
+            score = abs(d)
+        elif a1 <= x0 + 5 * ux and (x0 - a1) / ux < 350:
+            score = 30 + (x0 - a1) / ux / 10          # 같은 줄 왼쪽 발문은 아래 겹침보다 뒤
+        else:
+            continue
+        if best is None or score < best[0]:
+            best = (score, s)
+    return best and best[1]
+
+
+def _place_item_codes(items: list[BBoxItem], ext_map: dict, ux: float = 1.0, uy: float = 1.0,
+                      form: str | None = None) -> int:
+    """문항코드 요소를 `form` 꼴로 제 발문 옆에 둔다. 옮긴 수를 돌려준다. `off` 면 아무것도 안 한다.
+
+    Y: 코드 요소를 발문 바로 앞 차례로 옮기고 제목 조판에서 뺀다(gold Y 꼴은 코드 줄이 문단 들여쓰기).
+    X: 코드 글을 발문 번호 뒤에 `01 [26004-0003] 발문` 으로 합치고 코드 요소를 뺀다.
+    `_join_item_numbers` 뒤에 돈다 — 번호가 따로 떨어져 있으면 발문을 못 알아본다.
+    """
+    form = form or _ITEM_CODE_FORM_JOB.get() or _ITEM_CODE_FORM
+    if form not in ("X", "Y"):
+        return 0
+
+    def txt(b: BBoxItem) -> str:
+        c = ext_map.get(b.element_id)
+        return (c.corrected_text or "") if c else ""
+
+    pairs, used = [], set()
+    for c in items:
+        if _valid_bbox(c) and _ITEM_CODE_ONLY_RE.match(txt(c)):
+            s = _item_code_stem(c, items, txt, ux, uy)
+            if s is not None and s.element_id not in used:
+                used.add(s.element_id)
+                pairs.append((c, s))
+    if not pairs:
+        return 0
+    if form == "X":
+        drop = set()
+        for c, s in pairs:
+            ext_map[s.element_id].corrected_text = _ITEM_LEAD_NUM_RE.sub(
+                lambda m: f"{m.group(1)} {txt(c).strip()} ", txt(s), count=1)
+            drop.add(c.element_id)
+        items[:] = [b for b in items if b.element_id not in drop]
+        for eid in drop:
+            ext_map.pop(eid, None)
+    else:
+        codes = {c.element_id for c, _ in pairs}
+        before = {s.element_id: c for c, s in pairs}
+        order: list[BBoxItem] = []
+        for b in sorted(items, key=lambda b: b.reading_order):
+            if b.element_id in codes:
+                continue
+            if b.element_id in before:
+                order.append(before[b.element_id])
+            order.append(b)
+        for i, b in enumerate(order, start=1):
+            b.reading_order = i
+        for c, _ in pairs:
+            c.type, c.heading_level = "text", None
+    logger.info("문항코드 %s꼴 배치(C-107): %d곳", form, len(pairs))
+    return len(pairs)
+
+
 def _split_list_marker_items(elements: list[dict]) -> list[dict]:
     """list_item 요소 중 줄머리 마커가 2개 이상이면 항목별로 쪼갠다(원소 dict 목록 변환).
 
@@ -2262,6 +2416,9 @@ def _parse_txt_result(
             )
 
     _reorder_by_geometry(bbox_items, int(meta.get("page_rotation") or 0))
+    _join_item_numbers(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0)
+    _place_item_codes(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0,
+                      scale_bbox[1] if scale_bbox else 1.0)
     layout = LayoutResult(page_id=page_id, elements=bbox_items)
     return layout, ext_map, method
 
@@ -3284,6 +3441,7 @@ async def run(task: PageTask) -> dict:
     # 관문 계수기(재구조화 §2-2)는 **쪽마다** 새로 판다. 여러 쪽이 한 프로세스에서 겹쳐
     # 도는데 전역으로 세면 옆 쪽 발동이 이 쪽 review_flags 에 얹힌다(gates 도크스트링).
     gates.gate_reset()
+    _ITEM_CODE_FORM_JOB.set((task.item_code_form or "").upper())
     # 판 지문(0-c) — 점역사 피드백이 며칠 뒤에 올 때 어느 커밋·어느 프롬프트였는지 되짚는 줄.
     # ★ health_check 는 model_manager 를 거쳐 torch 를 끌고 온다. 모듈 최상단에서 부르면
     #   pipeline import 그래프가 바뀌고, torch 없는 빠른 게이트 레인이 통째로 깨진다.
