@@ -287,11 +287,18 @@ def _unbrace(s: str) -> str:
     s = s.strip()
     return s[1:-1] if s.startswith("{") and s.endswith("}") else s
 # ── 삼각함수 인수 묶음(제47항 [붙임]): 각이 곱·다항·분수면 묶는다(6s(#cx)) ──
+# 범위(원장 M-08 R2b, 2026-09-30): 수+글자 곱 · 수+명령 · 글자 둘 이상 · 그리스로 시작하는 곱(`πx`) ·
+# 분수(뒤로 이어지는 곱까지, `\frac{3}{4}π` 통째). 1f 입력에서 `\pi` 는 이미 `π` 다.
+# dev 수학 I 삼각 조각 1,055개 gold 일치: 안 묶음 94.0% · 종전 범위 97.1% · R2b 99.1% ·
+# 최대 곱 덩어리 96.6%(계수 곱 경계를 넘어 묶어 오히려 떨어짐). 한 글자 각(`2cosx`=`#b6cx`)은 안 묶는다.
+_TRIG_GREEK = "πθαβγδωφ"
+_TRIG_FRAC = r"\\frac\{[^{}]*\}\{[^{}]*\}"
 _TRIG_ARG_RE = re.compile(
     r"(\\(?:arc)?(?:sin|cos|tan|sec|csc|cot)h?)"
     r"(\^(?:\{[^{}]*\}|[0-9A-Za-z]))?\s*"
-    r"(\d+[A-Za-z][A-Za-z0-9]*|\d+\\[a-zA-Z]+|[A-Za-z]{2,}[A-Za-z0-9]*"
-    r"|\\frac\{[^{}]*\}\{[^{}]*\})")
+    rf"(\d+[A-Za-z{_TRIG_GREEK}][A-Za-z0-9{_TRIG_GREEK}]*|\d+\\[a-zA-Z]+|[A-Za-z]{{2,}}[A-Za-z0-9]*"
+    rf"|[{_TRIG_GREEK}][A-Za-z0-9{_TRIG_GREEK}]+"
+    rf"|{_TRIG_FRAC}\s*(?:\\[a-zA-Z]+|[A-Za-z{_TRIG_GREEK}])+|{_TRIG_FRAC})")
 
 
 def digits_to_braille(num_str: str) -> str:
@@ -1502,9 +1509,11 @@ def _stage1f_trig_arg_group(result: str) -> str:
       크게 과소 집계된다**(직전 라운드가 "429개 중 7개"로 오판한 원인). 실제 발동은
       429요소 중 25요소.
       `regulation` 모드는 규정 그대로 묶는다 — _NEQ·_CAP_GREEK와 동일한 관행 게이팅.
+
+    ★ 2026-09-30 (원장 M-08 · #1057): **book 모드에서도 묶는다.** 위 94.5% 는 **구판** gold 다.
+      2027 gold 는 규정형이다(수학 I 묶음 76 : 안 묶음 8 — 판본 역전). 규정이 명확하고 최신 판이
+      규정형이라 판정표상 규정대로 간다. 구판 채점 손해는 M-08 덮개(eval `--layer`)로 일부 닫는다.
     """
-    if _IS_BOOK_STYLE:
-        return result
     return _TRIG_ARG_RE.sub(
         lambda m: f"{m.group(1)}{m.group(2) or ''}{_WRAP_S}{m.group(3)}{_WRAP_E}", result)
 
