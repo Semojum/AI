@@ -169,3 +169,27 @@ class TestClosingMarkJoin:
     def test_태그로_끝난_줄은_손대지_않는다(self):
         # `모든<!/강조>` + `<!강조>사람이` — 뒤가 한글이 아니라 종전대로 공백
         assert _join_words("모든<!/강조>", "<!강조>사람이") == " "
+
+
+class TestYoondesignPua:
+    """윤디자인 확장 글꼴 기호 PUA → 인쇄면 기호(#1087). 글꼴 가족이 맞을 때만 푼다."""
+
+    @staticmethod
+    def _span_line(font: str, text: str) -> dict:
+        return {"spans": [{"size": 9.4, "font": font,
+                           "chars": [{"c": c, "bbox": (10.0 * i, 0.0, 10.0 * i + 9.0, 10.0)} for i, c in enumerate(text)]}]}
+
+    def test_윤디자인_기호를_되돌린다(self):
+        # 언어와 매체 p0022 층: ` coffee shop: 커피숍()` — gold `(예) … 커피숍(○)`
+        line = self._span_line("ABCDEF+YDVYGOStd12", " 커피숍()")
+        assert _line_text_with_word_gaps(line) == "(예) 커피숍(○)"
+
+    def test_기호_뒤_가는_띄움은_뺀다(self):
+        # 언어와 매체 p0010 층: `◇\u2009◇\u2009시` — 띄움을 두면 `◇ ◇ 시` 로 점역된다. gold `◇◇시` ⠸⠢⠢⠇⠠⠕
+        line = self._span_line("ABCDEF+YDVYMjOStd12", "\ue280\u2009\ue280\u2009시")
+        assert _line_text_with_word_gaps(line) == "◇◇시"
+
+    def test_다른_글꼴의_같은_코드는_그대로(self):
+        # 한컴 글꼴에서 이 영역은 한양 PUA 옛한글이다. 코드만 보고 바꾸면 안 된다.
+        line = self._span_line("ABCDEF+HaansoftBatang", "")
+        assert _line_text_with_word_gaps(line) == ""

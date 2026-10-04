@@ -239,6 +239,22 @@ def _is_underlined(cb, underlines) -> bool:
     return False
 
 
+# 윤디자인 확장 글꼴(YDVY* : 윤고딕 · 윤명조 Std 11~32 등) 기호 PUA → 인쇄면 기호(#1087).
+# 층이 `김○○은` 을 `김은` 으로 내 PUA 비율 문턱(mineru_runner._PUA_RATIO_MAX)에 걸려 층을 통째로 못 믿거나,
+# 층을 쓰면 점역 전에 PUA 가 지워져 기호가 사라졌다. 2027 dev · val 텍스트층 YDVY PUA 1,099자(22코드)가 이 표로 다 풀린다.
+# ★ (글꼴 가족, 코드) 쌍으로만 푼다. 같은 코드 영역이 한컴(Haansoft) 글꼴에서는 한양 PUA 옛한글이다(405자, 이 표 밖).
+# 표는 인쇄면을 잘라 눈으로 읽었다(코드마다 여러 글꼴 · 여러 쪽, V2 temp/n97/pua_sheet.png). gold 와 점역기 결과를 맞댔다:
+# ○ ⠸⠴⠴⠇ · (예) ⠦⠄⠌⠠⠴ · □ ⠸⠶⠶⠇ · ◇ ⠸⠢⠢⠇ · ↓ ⠘⠒⠕ · → ⠒⠕ · * ⠐⠔ · ⋮ ⠠⠠⠠ · ①②③ 모두 gold 와 같다.
+# gold 가 인쇄면과 달리 적은 곳(E281 ◇◇ → ○○ · E282 ◆◆◆ → △△△ · 날짜 가림 ** → ☆☆)은 전사자 관행이라 인쇄면을 따른다.
+_YD_FONT_RE = re.compile(r"^(?:[A-Z]{6}\+)?YDVY")
+_YD_PUA = {
+    "": "○", "": "○", "": "(예)", "": "(예)", "": "□", "": "□", "": "□",
+    "": "◇", "": "◇", "": "↓", "": "「", "": "」", "": "→", "": "*",
+    "": "◆", "": "■", "": "■", "": "⋮", "": "☜",
+    "": "①", "": "②", "": "③",
+}
+
+
 def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=None) -> str:
     """rawdict 한 줄 → 글자 간격으로 어절 경계를 복원한 텍스트.
 
@@ -252,8 +268,11 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
     판정은 원래 글자로 한다 — 한컴 수식 글꼴 글자를 GID 로 되돌릴 때 둘레 글이 안 흔들린다(#1060).
     """
     chars: list[tuple[str, float, float, float, bool]] = []  # (ch, x0, x1, size, underlined)
+    drop: set[int] = set()   # 윤디자인 기호 뒤에 겹쳐 붙은 가는 띄움(U+2009) — 기호 폭이지 띄어쓰기가 아니다(#1087)
+    sym = False
     for span in line.get("spans", []):
         size = float(span.get("size") or 0.0)
+        yd = bool(_YD_FONT_RE.match(span.get("font") or ""))
         for c in span.get("chars", []):
             bbox = c.get("bbox") or (0, 0, 0, 0)
             if matrix is not None:
@@ -261,7 +280,14 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
             else:
                 bbox = fitz.Rect(bbox)
             ul = bool(underlines) and _is_underlined(bbox, underlines)
-            chars.append((c.get("c", ""), float(bbox[0]), float(bbox[2]), size, ul))
+            ch = c.get("c", "")
+            if yd and ch in _YD_PUA:
+                ch, sym = _YD_PUA[ch], True
+            elif yd and sym and ch == "\u2009":
+                drop.add(len(chars))   # `◇\u2009◇\u2009시` 를 그대로 두면 `◇ ◇ 시` 로 점역된다(gold `◇◇시` ⠸⠢⠢⠇)
+            else:
+                sym = False
+            chars.append((ch, float(bbox[0]), float(bbox[2]), size, ul))
     if not chars:
         return ""
 
@@ -278,7 +304,7 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
     in_ul = False
     for i, (ch, x0, _x1, size, ul) in enumerate(chars):
         rep = subs.get(i) if subs else None
-        if rep == "":
+        if rep == "" or i in drop:
             continue
         # 밑줄 구간 여닫이 (규정 제56항) — 공백에서 열지 않는다(마커가 어절 밖으로 새는 것 방지)
         if ul and not in_ul and not ch.isspace():
