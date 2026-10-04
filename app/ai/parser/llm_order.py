@@ -33,15 +33,21 @@
   고른 값이 아니다. **켤 때 0 으로 내리는 것을 권고했다**(결과_r39-orderremeasure.md §8).
   ⚠ 내리는 결정은 대표 몫이라 이 파일은 안 건드렸다.
 
-⚠ 라우팅 배선이 아직 없다. 지금 apply 는 "비회전 ∧ 요소≥4" 만 거르고 **부류(2단+사이드바)도
-  수학 제외도 안 한다.** 그대로 켜면 비회전 653/1,131쪽을 다 불러 권당 3,522원이 되고
-  수학·3단·4단+ 에서 손해를 본다. 켜기 전에 temp/order/layout.py 의 부류 판정을 옮겨야 한다.
+★ 라우팅 = **2단(곁단 없음) 지면만** 부른다(#1086, pm 결재 2026-10-05). `_layout_class` 참조.
+  2027 1,746쪽 전권 A/B(커밋 72e1493, 안전판 0.7, 범위 밖 쪽은 끔 팔 값으로 둔 가상 적용):
+    켜는 범위                    쪽     비용/1,746쪽   자 %p    실물 %p   dev 자·실물     val 자·실물
+    전 쪽(종전 코드)             1,746   27.6달러      +0.351   +1.235   +0.407·+1.409   +0.303·+1.084
+    **2단(곁단 없음)만**           616    9.7달러      +0.225   +1.027   +0.228·+1.128   +0.223·+0.940
+    2단+곁단 · 비수학(r39 안)      615    9.7달러      +0.084   +0.125   +0.127·+0.193   +0.047·+0.067
+  같은 돈으로 r39 안은 실물 이득의 10%, 2단만은 83% 를 가져간다(V2 temp/n80/결과_읽기순서_전권AB.md §3-2).
+  r39 가 '2단+사이드바' 를 고른 것은 옛 6과목(1,131쪽) 표본이었고, 2027 전권에서는 곁단 쪽 이득이 작다.
 
 ★ LLM 이 죽으면 규칙 순서 그대로 간다. 순열이 아니어도, 예외가 나도, 키가 없어도 마찬가지다.
 """
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 import os
 import time
@@ -156,6 +162,40 @@ def _ask(prompt: str):
     return order, getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0)
 
 
+def _layout_class(items, width: float, height: float) -> tuple[int, bool]:
+    """(열 수, 곁단 유무). 라우팅 판정 — 측정에 쓴 V2 `temp/n10/r39-orderremeasure/classify39.work` 와 같은 규칙이다.
+
+    머리말 · 쪽 번호 · 전폭(0.6W 넘는) 요소와 위아래 4% 띠에 걸친 요소를 빼고, x 가 좁은 쪽 폭의 절반 넘게 겹치는
+    요소끼리 한 열로 묶는다. 넓이가 가장 큰 열이 본문이고, 그 폭의 절반 이하인 다른 열이 있으면 곁단이다.
+    남은 요소가 3개 미만이면 (0, False). 좌표는 `_parse_txt_result` 가 픽셀로 맞춘 값, 크기는 경계 meta 의 쪽 크기.
+    """
+    boxes = [b.bbox for b in items
+             if b.bbox[2] > b.bbox[0] and b.bbox[3] > b.bbox[1] and b.type not in ("header_footer", "page_number")
+             and b.bbox[2] - b.bbox[0] <= 0.60 * width and b.bbox[1] >= 0.04 * height and b.bbox[3] <= 0.96 * height]
+    if len(boxes) < 3:
+        return 0, False
+    par = list(range(len(boxes)))
+
+    def find(i):
+        while par[i] != i:
+            par[i] = par[par[i]]
+            i = par[i]
+        return i
+    for i, a in enumerate(boxes):
+        for j in range(i + 1, len(boxes)):
+            c = boxes[j]
+            w = min(a[2] - a[0], c[2] - c[0])
+            if w > 0 and min(a[2], c[2]) - max(a[0], c[0]) >= 0.5 * w:
+                par[find(i)] = find(j)
+    cols = collections.defaultdict(list)
+    for i, b in enumerate(boxes):
+        cols[find(i)].append(b)
+    cs = sorted(cols.values(), key=lambda c: -sum((b[2] - b[0]) * (b[3] - b[1]) for b in c))
+    h0, h1 = min(b[0] for b in cs[0]), max(b[2] for b in cs[0])
+    side = any(max(b[2] for b in c) - min(b[0] for b in c) <= 0.5 * (h1 - h0) for c in cs[1:])
+    return len(cs), side
+
+
 def displaced_ratio(items, order: list[int]) -> float:
     """본문류 요소 중 규칙 자리에서 2칸 이상 옮겨진 비율. 안전판 판정값."""
     body = [i for i, b in enumerate(items) if b.type in _BODY_TYPES]
@@ -165,9 +205,10 @@ def displaced_ratio(items, order: list[int]) -> float:
     return sum(1 for i in body if abs(pos[i] - i) >= 2) / len(body)
 
 
-async def apply(layout, ext_map, rotation: int) -> dict:
+async def apply(layout, ext_map, rotation: int, size: tuple[float, float] = (0, 0)) -> dict:
     """layout.elements 의 reading_order 를 LLM 판정으로 바꾼다(제자리). 실패하면 그대로 둔다.
 
+    size = 쪽 (너비, 높이) 픽셀. 2단(곁단 없음) 지면만 부른다(위 도크스트링 '라우팅'). 크기를 모르면 안 부른다.
     반환은 관측값이다 — 걸렸는지·되돌렸는지·얼마 썼는지.
     """
     out = {"called": False, "applied": False, "reverted": False, "ratio": 0.0,
@@ -180,6 +221,10 @@ async def apply(layout, ext_map, rotation: int) -> dict:
         out["reason"] = f"회전 {rotation}°"
     elif len(items) < 4:
         out["reason"] = "요소 4개 미만"
+    else:
+        ncol, side = _layout_class(items, *size)
+        if ncol != 2 or side:
+            out["reason"] = f"부류 {ncol}단{'+곁단' if side else ''}"
     if out["reason"]:
         logger.info("읽기순서 LLM 건너뜀 (%s)", out["reason"])
         return out

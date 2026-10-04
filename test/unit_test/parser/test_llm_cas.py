@@ -25,6 +25,15 @@ def cas(tmp_path, monkeypatch):
     return tmp_path / "cas" / "llm"
 
 
+_SIZE = (1000, 1400)   # 쪽 픽셀. 읽기순서 LLM 은 2단(곁단 없음) 지면만 부른다(#1086)
+
+
+def _two_column(n: int) -> list:
+    """좌우 두 단에 번갈아 놓인 본문 요소 n 개(reading_order 1..n)."""
+    return [SimpleNamespace(element_id=f"id{i}", type="text", reading_order=i + 1,
+                            bbox=(60 + 460 * (i % 2), 200 + 300 * (i // 2), 480 + 460 * (i % 2), 400 + 300 * (i // 2)))
+            for i in range(n)]
+
 class Test순서캐시:
     def _items(self, n=5):
         return [SimpleNamespace(element_id=f"id{i}", bbox=(i, i, i + 1, i + 1), type="text")
@@ -83,15 +92,14 @@ class Test순서캐시:
         """캐시는 결정성 장치이지 판정 우회로가 아니다."""
         from app.ai.parser import llm_order
 
-        items = [SimpleNamespace(element_id=f"id{i}", bbox=(i, i, i + 1, i + 1),
-                                 type="text", reading_order=i + 1) for i in range(5)]
+        items = _two_column(5)
         layout = SimpleNamespace(elements=items)
         k = llm_cache.key("order", llm_order.MODEL, llm_order._SYS,
                           llm_order._prompt(sorted(items, key=lambda b: b.reading_order), {}))
         llm_cache.put("order", k, json.dumps({"order": [4, 3, 2, 1, 0]}))   # 이동비율 0.8
         monkeypatch.setattr(llm_order.config, "anthropic_api_key", "sk-test", raising=False)
 
-        out = await llm_order.apply(layout, {}, 0)
+        out = await llm_order.apply(layout, {}, 0, _SIZE)
         assert out["called"] and out["reverted"] and out["reason"] == "안전판"
         assert [b.reading_order for b in items] == [1, 2, 3, 4, 5]          # 규칙 순서 그대로
 
@@ -107,10 +115,9 @@ class Test순서캐시:
         monkeypatch.setenv("LLM_CACHE_MODE", "ro")
         monkeypatch.setattr(llm_order.config, "anthropic_api_key", "sk-test", raising=False)
         monkeypatch.setattr("anthropic.Anthropic", lambda **kw: pytest.fail("ro 인데 불렀다"))
-        items = [SimpleNamespace(element_id=f"id{i}", bbox=(i, i, i + 1, i + 1),
-                                 type="text", reading_order=i + 1) for i in range(5)]
+        items = _two_column(5)
 
-        out = await llm_order.apply(SimpleNamespace(elements=items), {}, 0)
+        out = await llm_order.apply(SimpleNamespace(elements=items), {}, 0, _SIZE)
         assert not out["called"] and out["reason"].startswith("실패 CacheMiss")
         assert [b.reading_order for b in items] == [1, 2, 3, 4, 5]
 

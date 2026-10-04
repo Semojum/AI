@@ -2860,7 +2860,7 @@ async def _run_pipeline(task: PageTask) -> dict:
     from app.ai.parser import llm_order            # 지연 임포트(anthropic SDK 는 호출 때만)
     with stage("읽기순서 LLM") as st:
         _lo = await llm_order.apply(layout_result, ext_map,
-                                    int(_meta0.get("page_rotation") or 0))
+                                    int(_meta0.get("page_rotation") or 0), (image_width, image_height))
         st.note = (f"{'적용' if _lo['applied'] else _lo['reason'] or '건너뜀'}"
                    f" · 이동비율 {_lo['ratio']}")
         # ★ 관문 G2(재구조화 §2-2) — **기존 검사를 그대로 두고 기록만** 한다.
