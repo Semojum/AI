@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import unicodedata
 import uuid
 import zipfile
 from difflib import SequenceMatcher
@@ -1355,8 +1356,66 @@ def _rescued_by_restore(fitz_page: fitz.Page, bbox: list[float], plain: str, nat
             and not (_LATEX_GUARD and _latex_lost(mineru_text, native)))
 
 
-def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) -> str | None:
-    """텍스트 레이어로 대체할 값. 못 믿으면 None(= MinerU 결과 유지)."""
+# ── 환각 신호(#1078) ─────────────────────────────────────────────────────────
+# MinerU(VLM)가 지면에 없는 글을 지어낸다. 2027 dev·val 1,746쪽 중 96쪽(5.5%), 눈검사 10/10 진짜(temp/n84):
+# 어미를 한자로(`이므로` → `旦豆`), K4 꼴(`ㄱ, ㄹ` → `丿，己`), 영어 낱말 주입(`갈퉁` → `갈 Lung`), 토막 되풀이(`최,` × 50).
+# 쪽 원본 층(날 층 + 한컴 글꼴 되돌린 층)에 없는 한자 · 로마자 낱말(4자+) · 5회+ 되풀이를 신호로 본다.
+#  ① LaTeX 없는 요소: 층을 믿을 수 있으면 닮음 문턱 없이 층 글로 — 쓰레기가 닮음을 끌어내려 멀쩡한 층이 문턱에 막혔다.
+#     단 MinerU 글 속 **진짜 글**(쪽 층에 있는 낱말)을 그 자리 층 글이 못 담으면 덮지 않는다. 생활과 윤리 p0164 는
+#     선택지 줄에 다른 자리 본문 한 문단을 붙였고 그 문단은 다른 요소에 없다. 덮으면 환각 대신 누락이 된다.
+#  ② LaTeX 있는 요소 · 못 덮은 요소: 덮지 않고 R4 검토 표시(`HALLUCINATION_SUSPECT`). 수학은 층이 첨자 · 분수를
+#     평평하게 적어(`y=2  x`) 덮으면 MinerU 가 바르게 읽은 구조를 잃는다(시험 temp/n89/결과_환각규칙.md, pm 10-04 결재).
+_HALLUC_RULE = os.environ.get("LAYER_HALLUC_RULE", "1") != "0"       # 같은 커밋 A/B 스위치(끄면 종전)
+_HALLUC_LAT_RE = re.compile(r"(?<![\\A-Za-z])[A-Za-z]{4,}")
+_HALLUC_CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+_HALLUC_REP_RE = re.compile(r"(\S{1,6}?)(?:\s*\1){4,}")
+_HALLUC_TR = str.maketrans({"・": "·", "･": "·", "∙": "·", "•": "·", "–": "-", "—": "-", "―": "-", "−": "-",
+                            "‘": "'", "’": "'", "“": '"', "”": '"', "〈": "<", "〉": ">"})
+
+
+def _halluc_norm(s: str) -> str:
+    """담기 검사용: NFKC(① → 1, ² → 2) · 비슷한 기호 통일 · 빈칸 제거 · 소문자."""
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", s or "").translate(_HALLUC_TR)).lower()
+
+
+def _page_layer_norm(fitz_page: fitz.Page) -> str:
+    """쪽 원본 층을 담기 검사용으로: 날 층 · 줄끝 하이픈을 이은 날 층(영어 `commu-\\nnication`) · 되돌린 층."""
+    raw = fitz_page.get_text()
+    restored = _native_text_pair(fitz_page, [0, 0, 1000, 1000])[1]
+    return "\n".join(_halluc_norm(t) for t in (raw, re.sub(r"-\s*\n\s*", "", raw), restored))
+
+
+def _halluc_signs(text: str, layer) -> list[str]:
+    """MinerU 글에서 쪽 원본 층에 없는 한자 · 로마자 낱말 · 되풀이 토막(위 절 주석). LaTeX 명령 · 환경 이름은 뺀다.
+
+    layer 는 `_page_layer_norm` 값이나 그것을 돌려주는 함수다 — 후보가 없는 요소(대부분)는 쪽 층을 안 만든다.
+    """
+    t = re.sub(r"\\(?:begin|end)\{[^}]*\}|\\[A-Za-z]+", " ", text or "")
+    lat = _HALLUC_LAT_RE.findall(t)
+    cjk = _HALLUC_CJK_RE.findall(t)
+    rep = [m for m in _HALLUC_REP_RE.finditer(t) if re.search(r"[가-힣A-Za-z]", m.group(1))]
+    if not (lat or cjk or rep):
+        return []
+    lay = layer() if callable(layer) else layer
+    return sorted({w for w in lat if _halluc_norm(w) not in lay}
+                  | {c for c in cjk if c not in lay}
+                  | {m.group(0)[:12] for m in rep if _halluc_norm(m.group(0)) not in lay})
+
+
+def _halluc_keeps_real(mineru_text: str, native: str, layer: str) -> bool:
+    """층 글로 덮어도 MinerU 글 속 진짜 글(쪽 층에 있는 두 글자 이상 낱말)을 잃지 않는가 — 잃는 몫 2할까지."""
+    nat = _halluc_norm(native)
+    real = [w for w in map(_halluc_norm, mineru_text.split()) if len(w) >= 2 and w in layer]
+    return sum(len(w) for w in real if w not in nat) <= 0.2 * sum(len(w) for w in real)
+
+
+def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str,
+                     halluc_layer: str | None = None) -> str | None:
+    """텍스트 레이어로 대체할 값. 못 믿으면 None(= MinerU 결과 유지).
+
+    halluc_layer: MinerU 글에 환각 신호가 있고 LaTeX 가 없을 때 넘기는 쪽 원본 층(`_page_layer_norm`, #1078 ①).
+    닮음 문턱을 건너뛴다. 구조 글꼴이 들었거나 덮으면 진짜 글을 잃으면 None.
+    """
     if _MATH_FONT_GUARD and (mineru_text or "").strip() and _has_math_font(fitz_page, bbox):
         return None                        # 위 _has_math_font 주석 참조. MinerU 글이 비면 층이라도 쓴다
     plain, native = _native_text_pair(fitz_page, bbox)        # 믿을지 · 닮았는지는 되돌리기 전 글로(#1060)
@@ -1367,6 +1426,10 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) 
     base = (mineru_text or "").strip()
     if not base:
         return native
+    if halluc_layer is not None:           # 위 환각 절 ① — 쓰레기가 끌어내린 닮음은 안 본다
+        if _has_struct_font(fitz_page, bbox) or not _halluc_keeps_real(base, native, halluc_layer):
+            return None
+        return native
     # 같은 블록을 가리키는지 확인 — clip은 겹치는 글리프를 다 가져오므로 bbox가 어긋나면
     # 옆 블록 글자가 섞여 들어온다. 그런 경우는 MinerU 쪽을 그대로 둔다.
     from difflib import SequenceMatcher
@@ -1375,6 +1438,17 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) 
     if SequenceMatcher(None, a, b).ratio() < _SIM_MIN:
         return None
     return native
+
+
+def _native_or_flag(fitz_page: fitz.Page, bbox: list[float], mineru_text: str, page_layer) -> tuple[str, bool]:
+    """TEXT_NATIVE 아닌 쪽의 글자 요소 → (쓸 글, 환각 표시). 층 대체(`_native_override`) + 위 환각 절 ①②(#1078).
+
+    page_layer 는 쪽 원본 층을 돌려주는 함수다(쪽당 한 번 만든다).
+    """
+    signs = _halluc_signs(mineru_text, page_layer) if _HALLUC_RULE else []
+    flat = bool(signs) and "$" not in mineru_text and "\\" not in mineru_text      # LaTeX 없는 요소만 덮는다(①)
+    text = _native_override(fitz_page, bbox, mineru_text, page_layer() if flat else None) or mineru_text
+    return text, bool(signs) and bool(_halluc_signs(text, page_layer))           # 남았으면 표시(②)
 
 
 # ⚠ **기본은 꺼짐이다**(2026-09-02 실측). 수학 지면 40쪽을 같은 커밋에서 환경변수만
@@ -1876,7 +1950,16 @@ def run(
                 _box_cache.append([])
         return _box_cache[0]
 
+    # 쪽 원본 층(#1078 환각 신호)도 쪽당 한 번, 후보(한자 · 로마자 · 되풀이)가 든 요소가 처음 나올 때 만든다.
+    _layer_cache: list = []
+
+    def _page_layer() -> str:
+        if not _layer_cache:
+            _layer_cache.append(_page_layer_norm(fitz_page))
+        return _layer_cache[0]
+
     for item in content_list:
+        suspect = False                 # 환각 신호가 남은 요소(#1078 ②) — 아래 flags 에 R4 표지로
         item_type = item.get("type", "text")
         mapped_type = TYPE_MAP.get(item_type, "text")
         # ★ MinerU 는 `header` / `footer` / `page_number` 를 나눠서 준다. 위 표에 `footer` 가
@@ -2000,7 +2083,7 @@ def run(
             if extraction_method == "TEXT_NATIVE":
                 content = _native_text_spaced(fitz_page, bb) or content
             else:
-                content = _native_override(fitz_page, bb, content) or content
+                content, suspect = _native_or_flag(fitz_page, bb, content, _page_layer)
         elif mapped_type == "table" and _collapsed_table(content):
             # MinerU 표 인식 붕괴(#864) — 원 출력이 통째로 환각이라 버린다.
             # 텍스트 레이어에 진짜 글이 남아 있으면 그걸로 되찾고, 없으면(스캔본)
@@ -2067,7 +2150,8 @@ def run(
             "caption_ref": None,
             "flags": (["MINERU_FOOTER"] if raw_footer else [])
                      + ([f"MINERU_{item['_nested'].upper()}"] if item.get("_nested") else [])
-                     + ([item["_flag"]] if item.get("_flag") else []),
+                     + ([item["_flag"]] if item.get("_flag") else [])
+                     + (["HALLUCINATION_SUSPECT"] if suspect else []),
         })
         order += 1
 
