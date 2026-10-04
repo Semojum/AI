@@ -89,24 +89,36 @@ def restored(font: str, gid: int) -> str | None:
     return None
 
 
-def glyph_fixes(fitz_page) -> dict[tuple[str, float, float], str]:
-    """쪽의 EH 글꼴 글자 → 참 글자. 열쇠 = (글꼴, 원점 x, 원점 y). rawdict 글자와 원점으로 맞춘다.
+def glyph_fixes(fitz_page) -> dict[tuple[str, float, float, str], list[str]]:
+    """쪽의 EH 글꼴 글자 → 참 글자. 열쇠 = (글꼴, 원점 x, 원점 y, 층 글자), 값 = 그 열쇠에 놓인 차례대로의 참 글자.
 
-    `get_texttrace()` 가 글자마다 GID 를 준다. 쪽마다 한 번만 읽고 쪽 객체에 둔다(요소마다 부른다).
+    `get_texttrace()` 가 글자마다 GID 를 준다. rawdict 글자와 원점으로 맞춘다. 층 글자는 매핑이 없으면 chr(GID),
+    있으면 매핑 글자다(fitz rawdict 와 같다). 쪽마다 한 번만 읽고 쪽 객체에 둔다(요소마다 부른다).
+    ★ 위첨자 · 윗줄 글리프는 폭이 0 이라 뒤따르는 빈 글리프(가는 띄움)와 원점이 같다(d8c 2027 2,370곳, 수학 I `x²`
+    1,693 · 생명과학 `Xᵃ`). 원점만으로 맞추면 띄움이 첨자를 덮어 첨자가 사라진다. 그래서 층 글자를 열쇠에 넣고
+    같은 열쇠(둘 다 `` ` `` 로 매핑된 ᴬ · 띄움 81곳)는 차례로 쓴다.
+    폭 0 글리프와 원점이 같은 빈 글리프와 그 뒤에 잇달린 빈 글리프는 띄움이 아니라 첨자의 폭이라 뺀다("").
+    한컴은 첨자를 폭 없이 그리고 가는 띄움 한두 개로 그 폭만큼 나아간다(표본 675곳 중 139곳이 둘 이상).
+    gold 는 붙여 쓴다(생명과학 `XᴬXᵃBbDD`). 보통 글자 뒤 가는 띄움은 띄움이다(`log 2`).
     """
     cached = getattr(fitz_page, "_hancom_glyph_fixes", None)
     if cached is not None:
         return cached
-    fixes: dict[tuple[str, float, float], str] = {}
+    fixes: dict[tuple[str, float, float, str], list[str]] = {}
     try:
+        prev, width = None, False
         for span in fitz_page.get_texttrace():
             font = _font(span.get("font"))
-            if not font.startswith("EH"):
-                continue
             for ch in span.get("chars", ()):
-                real = restored(font, ch[1])
+                xy = (round(ch[2][0], 2), round(ch[2][1], 2))
+                real = restored(font, ch[1]) if font.startswith("EH") else None
+                width = real == " " and prev is not None and xy[1] == prev[1] and (width or abs(xy[0] - prev[0]) < 0.3)
+                if width:
+                    real = ""                              # 폭 0 글리프의 폭
                 if real is not None:
-                    fixes[(font, round(ch[2][0], 2), round(ch[2][1], 2))] = real
+                    raw = chr(ch[1]) if ch[0] == 0xFFFD else chr(ch[0])
+                    fixes.setdefault((font, *xy, raw), []).append(real)
+                prev = xy
     except Exception:                          # noqa: BLE001 — 되돌리기 실패는 종전 층 글로 둔다
         fixes = {}
     try:
@@ -120,14 +132,18 @@ def line_subs(line: dict, fixes: dict) -> dict[int, str] | None:
     """rawdict 줄의 글자 번호(스팬을 이어 센다) → 되돌린 글자. 바뀌는 것이 없으면 None."""
     if not fixes:
         return None
-    subs, i = {}, 0
+    subs, i, seen = {}, 0, {}
     for span in line.get("spans", ()):
         font = _font(span.get("font"))
         for c in span.get("chars", ()):
             if font.startswith("EH"):
                 o = c.get("origin") or (0, 0)
-                real = fixes.get((font, round(o[0], 2), round(o[1], 2)))
-                if real is not None and real != c.get("c"):
-                    subs[i] = real
+                key = (font, round(o[0], 2), round(o[1], 2), c.get("c"))
+                reals = fixes.get(key)
+                if reals:
+                    n = seen[key] = seen.get(key, -1) + 1
+                    real = reals[min(n, len(reals) - 1)]
+                    if real != c.get("c"):
+                        subs[i] = real
             i += 1
     return subs or None

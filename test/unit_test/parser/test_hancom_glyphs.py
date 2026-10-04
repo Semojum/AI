@@ -4,6 +4,8 @@
 (EHyak GID 12 는 윤곽이 ≠ 인데 `+`). 그래서 EH 글꼴 글자는 (글꼴, GID) 로 정한다. 시험 PDF 에는 한컴 글꼴이
 없어 helv 로 쓴 글자에 한컴 글꼴 texttrace(GID)를 입힌다.
 """
+import types
+
 import fitz
 import pytest
 
@@ -86,6 +88,28 @@ def test_ToUnicode_가_있어도_GID_로_정한다(monkeypatch):
                                    for b in page.get_text("rawdict")["blocks"] for ln in b["lines"] for sp in ln["spans"]
                                    if "Nimbus" in sp["font"] for c in sp["chars"]]}]
     assert mr._native_text_spaced(page, BB) == "조건 a≠1"
+
+
+def test_폭_0_첨자와_원점이_같은_띄움이_첨자를_덮지_않는다():
+    """위첨자 글리프는 폭이 0 이라 뒤 가는 띄움과 원점이 같다(생명과학 유전자형 XᴬXᵃ, 수학 I x² 1,693곳).
+    ᴬ(GID 96)와 띄움(GID 65)은 둘 다 `` ` `` 로 매핑돼 층 글자까지 같다 — 차례로 맞춘다. 첨자와 원점이 같은
+    띄움과 거기 잇달린 띄움은 첨자의 폭이라 뺀다(gold `XᴬXᵃ`). 보통 글자 뒤 띄움은 띄움이다(`log 2`).
+    (fitz 는 같은 자리 같은 글리프를 하나로 줄여 PDF 로 못 만든다)"""
+    raw, xs = "9```9b`:", (10, 17, 17, 19, 21, 28, 28, 30)
+    gids = (57, 96, 65, 65, 57, 98, 65, 58)                    # X ᴬ (폭) 띄움 X ᵃ (폭) Y
+    trace = [{"font": "ABCDEF+EHsang-Plain", "chars": [
+        (ord(c) if c == "`" else 0xFFFD, g, (x, 100.0), None) for c, g, x in zip(raw, gids, xs)]}]
+    page = types.SimpleNamespace(get_texttrace=lambda: trace)
+    line = {"spans": [{"font": "ABCDEF+EHsang-Plain", "chars": [{"c": c, "origin": (x, 100.0)} for c, x in zip(raw, xs)]}]}
+    subs = hg.line_subs(line, hg.glyph_fixes(page))
+    assert "".join(subs.get(i, c) for i, c in enumerate(raw)) == "XᴬXᵃY"
+
+    raw, xs, gids = "MPH`\x13", (40, 46, 52, 58, 61), (77, 80, 72, 65, 19)
+    trace[0]["chars"] = [(ord(c) if c == "`" else 0xFFFD, g, (x, 120.0), None) for c, g, x in zip(raw, gids, xs)]
+    page = types.SimpleNamespace(get_texttrace=lambda: trace)
+    line = {"spans": [{"font": "ABCDEF+EHsang-Plain", "chars": [{"c": c, "origin": (x, 120.0)} for c, x in zip(raw, xs)]}]}
+    subs = hg.line_subs(line, hg.glyph_fixes(page))
+    assert "".join(subs.get(i, c) for i, c in enumerate(raw)) == "log 2"
 
 
 def test_쪽마다_한_번만_읽는다(_helv_is_ehsang):
