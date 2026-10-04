@@ -208,6 +208,12 @@ def _book_roman_to_cells(text: str) -> str:
     return "".join(out)
 
 _FORMULA_RE      = re.compile(r"<!수식>(.*?)<!/수식>", re.DOTALL)
+# 수학 제11항(재추출 3234~3236행): 두 칸 대상인 수학적 표기에서 "분모와 분자가 수로 이루어진
+#   단순 분수와 소수를 제외"한다. 동그라미 숫자 선택지 뒤의 단순 수(정수 · 소수 · 음수 · 수/수 분수)는
+#   묵자 빈칸대로 한 칸이다 — 제64항 예(2585~2586행) `① ㄱ, ㄴ  ② ㄱ, ㄷ` = `#1`=a"`=3``#2…` (#1083).
+#   ⚠ 선택지 자리만 좁혔다. 자리를 안 가리는 넓은 꼴은 따로 재는 중이다(temp/n46/kjbl/결과_수식간격_N팔.md).
+_SIMPLE_NUM_MATH_RE = re.compile(r"\s*-?\s*(?:\\[dt]?frac\s*\{?\s*\d+\s*\}?\s*\{?\s*\d+\s*\}?|\d+(?:\.\d+)?)\s*")
+_CIRCLED_TAIL_RE = re.compile(r"[①-⑳]\s*$")
 _TAG_RE          = re.compile(r"<[^>]+>")
 # 잔여 <!…> 정식 태그만 안전 제거(아래 _ANGLE_LABEL_RE가 본문 <…>를 살린 뒤).
 _RESIDUAL_BANG_TAG_RE = re.compile(r"<!/?[^>]*>")
@@ -2087,7 +2093,9 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
                 chunks.append(("n", "⠤".join(convert_latex(x) for x in ions), False, False))
             else:
                 # "s" = 홑 기호(제70항·제60항 5호·제15항 한 칸). 그 밖은 "f"(제11항 두 칸).
-                chunks.append(("s" if _LONE_SPACED_SYM_RE.match(core) else "f",
+                simple = (_SIMPLE_NUM_MATH_RE.fullmatch(core)
+                          and _CIRCLED_TAIL_RE.search(parts[i - 1] if i else ""))
+                chunks.append(("p" if simple else "s" if _LONE_SPACED_SYM_RE.match(core) else "f",
                                convert_latex(part), False, False))
 
     # 수학 점자 규정 제11항: 수식 앞뒤 두 칸 공백(⠀⠀).
@@ -2112,6 +2120,9 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
             if kind in ("n", "s") or prev_kind in ("n", "s"):
                 # 이온은 한 칸(과학 제2항 붙임), 홑 기호도 한 칸(제70항·제60항 5호·제15항)
                 result_parts.append("⠀")
+            elif kind == "p":
+                if pending_ws or lead_ws:             # 선택지 뒤 단순 수: 묵자 빈칸 그대로(한 칸), 제11항
+                    result_parts.append("⠀")
             elif kind == "i" or prev_kind == "i":
                 if pending_ws or lead_ws:
                     result_parts.append("⠀")
