@@ -1645,6 +1645,11 @@ def _stage4_log(result: str) -> str:
     return result.replace("\\log", _LOG_IND)
 
 
+# 계수 뒤 함수 이름 붙임(#1096) — 아래 5c. 앞 토막이 LaTeX 명령으로 끝나면(group 2) 손대지 않는다.
+_COEF_FN_JOIN = os.environ.get("COEF_FN_JOIN", "1") != "0"
+_COEF_FN_RE = re.compile(r"((\\[A-Za-z]+)|[0-9A-Za-z)\]}⠁-⣿])[ ]+(⠖[⠎⠉⠞⠣⠤⠳]⠓?|⠇⠝|⠸(?=[⠰⠠⠼⠦⠷A-Za-z0-9]))")
+
+
 def _stage5_trig(result: str) -> str:
     """5. 삼각함수 (제47~49항) + 5b. 함수 기호 뒤 단일 인수 붙임.
 
@@ -1659,7 +1664,14 @@ def _stage5_trig(result: str) -> str:
     # 5b. 규정 예시가 전부 붙임(6shx·6sx^#c·arc6s,A·LNx·#b6cx·!f8x0).
     # LaTeX 관습 공백("\sin x")을 제거한다.
     # 대상: 삼각(⠖?·⠖?⠓)·ln(⠇⠝)·맨 log(⠸)·적분(⠮) 뒤 한 칸.
-    return re.sub(r"(⠖[⠎⠉⠞⠣⠤⠳]⠓?|⠇⠝|⠮⠮?|⠸)[ ]+(?=\S)", r"\1", result)
+    result = re.sub(r"(⠖[⠎⠉⠞⠣⠤⠳]⠓?|⠇⠝|⠮⠮?|⠸)[ ]+(?=\S)", r"\1", result)
+    # 5c. 계수 뒤 함수 이름도 붙인다(#1096) — 제46항(재추출 3812행) `2log7` = `#B_#G` ·
+    #   제47항(3865행) `2cosx` = `#b6cx`. LaTeX 의 빈칸은 뜻이 없는데 MinerU 가 `2 \log` · `a \sin` 처럼
+    #   띄워 적어 그 빈칸이 점자 빈칸으로 나갔다. gold 009 전권: 수 계수 뒤 붙음 231 : 띄움 28,
+    #   로마자 계수 뒤 붙음 98 : 0. ⚠ 앞이 LaTeX 명령(`\times \log`)이면 연산이라 띄움을 둔다.
+    if _COEF_FN_JOIN:
+        result = _COEF_FN_RE.sub(lambda m: m.group(0) if m.group(2) else m.group(1) + m.group(3), result)
+    return result
 
 
 def _stage6_abs(result: str) -> str:
