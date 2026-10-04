@@ -2561,6 +2561,7 @@ _MOJIBAKE_RE = re.compile(r"[ÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜ�
 #   ② 괄호 숫자 ⑴⑵⑶ — 유니코드 이름이 PARENTHESIZED DIGIT 다. `(1)` 로 편다(19건).
 #   ③ C1 제어문자(U+0080~U+009F) — `_CTRL_RE` 가 C0 만 잡고 있었다(`\x93` 실측 37건).
 _ZEROWIDTH_RE = re.compile(r"[\u200b-\u200f\u2060\ufeff\u20d0-\u20f0]")
+_ODD_SPACE_RE = re.compile(r"[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]")   # Zs 중 ASCII 공백 밖(#1067)
 _PAREN_DIGIT = {chr(0x2474 + i): f"({i + 1})" for i in range(20)}   # ⑴~⒇
 _PAREN_DIGIT_RE = re.compile("[" + "".join(_PAREN_DIGIT) + "]")
 
@@ -3094,7 +3095,7 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     #   지우고 있었으므로 그 경로의 동작은 안 바뀐다(같은 결과, 더 이른 자리).
     text = _TAGS._INDENT_TAG_RE.sub("", text)
     if not force_roman and _english_sentence_with_hangul(text):
-        return _translate_english_sentence(text)   # 제39항(#950)
+        return _ODD_SPACE_RE.sub("⠀", _translate_english_sentence(text))   # 제39항(#950) · #1067
     text = _restore_legacy_glyphs(text)     # 오디코딩 5자(⇂¤‹˘⇨)
     text = _restore_broken_subscripts(text)  # 깨진 아래첨자 ¡™£¢§ → ₁₂₃₄₆ (수식 라우팅 전, r16)
     text = _restore_ion_signs(text)         # 이온 전하 ±— → ⁺⁻ (과학점자 제2항, 아래첨자 복원 뒤)
@@ -3132,8 +3133,13 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
         text = _book_roman_to_cells(text)   # 로마 숫자 섹션번호 → 낱자 점형(도서 관행, 수식 밖만)
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     text = sanitize_for_braille(text)        # PUA·제어문자 정화(요소 전체 소실 방지)
-    return merge_hidden_runs(_translate_with_braillify(
-        text, force_roman=force_roman, qnum_period=qnum_period))
+    # ★ #1067 — 유니코드 공백 구분자(Zs)가 셀열에 남으면 빈칸 셀로 바꾼다. 영어 낱말이 섞인 경로가 원문의
+    #   가는 띄움(U+2009)을 그대로 옮겼다(수학 I 원본 58쪽 `각각 \u2009p, q이고` → G4 `U+2009×2`). 그러면 BRF 에
+    #   `⟨2009⟩` 가 찍히거나 파일을 못 낸다. **입구가 아니라 출구에서** 바꾼다 — 입구에서 보통 공백으로 바꾸면
+    #   줄 바꿈 없는 공백 뒤 로마자(`생명과학\u00a0I`)가 수식 경로로 빠져 383 요소가 달라졌다. 출구에서는 새던
+    #   글자만 바뀐다. 한 글자를 한 글자로 바꾸므로 끊을 자리 오프셋은 안 밀린다.
+    return _ODD_SPACE_RE.sub("⠀", merge_hidden_runs(_translate_with_braillify(
+        text, force_roman=force_roman, qnum_period=qnum_period)))
 
 
 # ── 음절 단위 줄바꿈 지점 산출 (NLD-1.2.1) ──────────────────────────────────
