@@ -373,14 +373,21 @@ def _shorten_columns(grid: list[list[str]]) -> tuple[list[list[str]], list[str]]
     return out, notes
 
 
-def _wrap_row(body: str, first_indent: int = 2, cont_indent: int = 4) -> list[str]:
+def _wrap_row(body: str, first_indent: int = 2) -> list[str]:
     """지침 §3.2.1 (3) — 줄이 넘어가는 내용은 두 줄로 나눈다.
 
     폭 기준은 `constants.COLS` 하나뿐이다 — 칸수를 바꾸면 여기도 따라간다.
 
-    "①열 제목: 해당 열 제목의 시작 지점과 동일한 위치에 적는다.
-      ②행 제목, 열 항목: 해당 행 제목의 시작 지점보다 오른쪽으로 두 칸 들여 쓴다."
-    행 단위 전개 형식에서는 행 제목이 3칸(앞 빈칸 2)에서 시작하므로 이어지는 줄은 5칸이다.
+    ★ 이어지는 줄은 **1칸(앞 빈칸 0)** 에서 적는다(#1113). 근거는 우리가 쓰는 꼴의 규정 예다 —
+      「점자 자료 제작 지침」 §3.3.1 '열 항목을 풀어 점역하는 표' [예 3-7](재추출 2107~2113행)이
+      열 제목 · 행을 3칸(2109 · 2112행)에 적고 **이어지는 줄을 1칸**(2110 · 2113행)에 적는다.
+      종전의 '두 칸 들임(5칸)'은 §3.2.1(3)② **원본 정렬을 유지하는 표**의 조문을 이 꼴에 끌어온
+      추론이었다(그 절도 (6) 행 제목은 1칸 · 이어지는 줄 3칸이라 우리 꼴과 맞지 않는다).
+      실물도 같다: 94권 전수(테두리 안, 앞빈칸 2 로 시작해 28칸 이상 찬 줄의 다음 줄 31,306줄)
+      0칸 88.9% · 2칸 10.6% · 4칸 0.4%(갈래 다섯 모두 0~0.9%, 가장 많은 권 MS-REF-007 4.1%).
+      2027 짝 쪽 완전일치로 우리 이어지는 줄 4칸을 gold 에서 찾으면 0칸 dev 93% · val 96%.
+      첫 줄 들여쓰기(행 2 · 번호 체계 6/4/2 · 표 제목 4)는 그대로다 — 표 제목 5칸(앞 빈칸 4)은 같은 예
+      2107행과 gold(dev 14 중 13)가 모두 맞다.
 
     ⚠ "두 줄을 넘어서는 안 된다"는 단서가 있으나, 셋째 줄이 필요한 만큼 긴 항목을
       잘라 버리면 내용을 잃는다. 여기서는 **자르지 않고** 필요한 만큼 나눈다 —
@@ -391,7 +398,7 @@ def _wrap_row(body: str, first_indent: int = 2, cont_indent: int = 4) -> list[st
         cand = (cur + "⠀" + tok) if cur else tok
         if len("⠀" * indent + cand) > _COLS and cur:
             lines.append("⠀" * indent + cur)
-            indent, cur = cont_indent, tok
+            indent, cur = 0, tok
         else:
             cur = cand
     if cur:
@@ -539,7 +546,7 @@ def _render_numbered(corrected_text: str) -> list[str]:
     for i, row in enumerate(grid[1:], start=1):
         rh = row[0].strip()
         out.extend(_wrap_row(_translate(f"{i}. {rh}") if rh else _translate(f"{i}."),
-                             first_indent=6, cont_indent=8))
+                             first_indent=6))
         for j, cell in enumerate(row[1:], start=1):
             name = heads[j].strip() if j < len(heads) else ""
             val = cell.strip()
@@ -548,11 +555,11 @@ def _render_numbered(corrected_text: str) -> list[str]:
             mark = _L2_MARKS[(j - 1) % len(_L2_MARKS)]
             if name:
                 out.extend(_wrap_row(_translate(f"{mark}. {name}"),
-                                     first_indent=4, cont_indent=6))
-                out.extend(_wrap_row(_translate(val), first_indent=2, cont_indent=4))
+                                     first_indent=4))
+                out.extend(_wrap_row(_translate(val), first_indent=2))
             else:
                 out.extend(_wrap_row(_translate(f"{mark}. {val}"),
-                                     first_indent=4, cont_indent=6))
+                                     first_indent=4))
     out.append(_TBL_BOT)
     return out
 
