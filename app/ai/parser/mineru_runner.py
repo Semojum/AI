@@ -1369,6 +1369,11 @@ _HALLUC_RULE = os.environ.get("LAYER_HALLUC_RULE", "1") != "0"       # 같은 �
 _HALLUC_LAT_RE = re.compile(r"(?<![\\A-Za-z])[A-Za-z]{4,}")
 _HALLUC_CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
 _HALLUC_REP_RE = re.compile(r"(\S{1,6}?)(?:\s*\1){4,}")
+# 이체자(같은 글자의 다른 꼴, pm 10-05). MinerU 는 정자를 간체 · 일본 신자체로 적곤 한다(언어와 매체 p0239 `黃河` → `黄河`).
+# 쪽 층에 정자가 있으면 지어낸 글이 아니다. 실제로 나온 쌍만 넣었다. 2027 dev · val 에서 신호가 난 요소 중 한자 한 글자가
+# 그 자리 층의 다른 한자 한 글자와 맞바뀐 것이 9건(8쌍)이고, 그중 이체자 6쌍과 교차 검증이 찾은 p0239 의 黄 이다.
+# 남은 2쌍(牲 → 性 · 輿 → 與)은 다른 글자라 신호가 맞다. 모은 법 V2 temp/n108/cjk_pairs.py.
+_HALLUC_CJK_VARIANT = {"黄": "黃", "恶": "惡", "悪": "惡", "清": "淸", "内": "內", "縁": "緣", "顕": "顯"}
 _HALLUC_TR = str.maketrans({"・": "·", "･": "·", "∙": "·", "•": "·", "–": "-", "—": "-", "―": "-", "−": "-",
                             "‘": "'", "’": "'", "“": '"', "”": '"', "〈": "<", "〉": ">"})
 
@@ -1398,7 +1403,7 @@ def _halluc_signs(text: str, layer) -> list[str]:
         return []
     lay = layer() if callable(layer) else layer
     return sorted({w for w in lat if _halluc_norm(w) not in lay}
-                  | {c for c in cjk if c not in lay}
+                  | {c for c in cjk if c not in lay and _HALLUC_CJK_VARIANT.get(c, c) not in lay}
                   | {m.group(0)[:12] for m in rep if _halluc_norm(m.group(0)) not in lay})
 
 
@@ -1414,7 +1419,7 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str,
     """텍스트 레이어로 대체할 값. 못 믿으면 None(= MinerU 결과 유지).
 
     halluc_layer: MinerU 글에 환각 신호가 있고 LaTeX 가 없을 때 넘기는 쪽 원본 층(`_page_layer_norm`, #1078 ①).
-    닮음 문턱을 건너뛴다. 구조 글꼴이 들었거나 덮으면 진짜 글을 잃으면 None.
+    닮음 문턱을 건너뛴다. 구조 글꼴이 들었거나 덮으면 진짜 글을 잃으면 종전 닮음 문턱으로 판정한다.
     """
     if _MATH_FONT_GUARD and (mineru_text or "").strip() and _has_math_font(fitz_page, bbox):
         return None                        # 위 _has_math_font 주석 참조. MinerU 글이 비면 층이라도 쓴다
@@ -1426,10 +1431,11 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str,
     base = (mineru_text or "").strip()
     if not base:
         return native
-    if halluc_layer is not None:           # 위 환각 절 ① — 쓰레기가 끌어내린 닮음은 안 본다
-        if _has_struct_font(fitz_page, bbox) or not _halluc_keeps_real(base, native, halluc_layer):
-            return None
-        return native
+    if (halluc_layer is not None and not _has_struct_font(fitz_page, bbox)
+            and _halluc_keeps_real(base, native, halluc_layer)):
+        return native                      # 위 환각 절 ① — 쓰레기가 끌어내린 닮음은 안 본다
+    # ① 을 못 타면 아래 종전 닮음 문턱으로 간다. 환각 신호가 종전보다 엄격해지면 안 된다 — 여기서 None 을
+    # 돌려줬더니 종전이 덮던 깨진 MinerU 글이 남았다(생명과학 해설 p0038 `X\x8c`Y` · `㉠10]叫`, 구조 글꼴 쪽).
     # 같은 블록을 가리키는지 확인 — clip은 겹치는 글리프를 다 가져오므로 bbox가 어긋나면
     # 옆 블록 글자가 섞여 들어온다. 그런 경우는 MinerU 쪽을 그대로 둔다.
     from difflib import SequenceMatcher

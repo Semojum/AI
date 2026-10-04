@@ -50,10 +50,21 @@ def test_다른_자리_진짜_글을_붙인_요소는_덮지_않고_표시한다
     assert M._native_or_flag(page, CHOICE, mineru, _layer(page)) == (mineru, True)
 
 
-def test_구조_글꼴이_든_자리는_덮지_않는다(monkeypatch):
-    monkeypatch.setattr(M, "_native_text_pair", lambda *_a, **_k: ("② ㄱ, ㄹ", "② ㄱ, ㄹ"))
+def test_구조_글꼴이_든_자리는_완화_없이_종전_문턱으로_판정한다(monkeypatch):
+    """구조 글꼴 자리는 ① 완화(문턱 없이 덮기)를 안 탄다. 그렇다고 종전보다 엄격해지면 안 된다.
+    생명과학 해설 p0038: 종전 문턱이 층 글(`XᵃY`)로 덮던 깨진 MinerU 글(`X\x8c`Y` · `㉠10]叫`)이 남았다."""
     monkeypatch.setattr(M, "_has_struct_font", lambda *_a, **_k: True)
-    assert M._native_override(None, CHOICE, "② 丿，己", "②ㄱ,ㄹ") is None
+    monkeypatch.setattr(M, "_native_text_pair", lambda *_a, **_k: ("② ㄱ, ㄹ", "② ㄱ, ㄹ"))
+    assert M._native_override(None, CHOICE, "② 丿，己", "②ㄱ,ㄹ") is None             # 닮음 0.25 < 0.45 — 종전도 못 덮음
+    layer = "1은 XᵃY, 3은 XᵃY이고 ㉠은 1이며 ⓑ는 5이다."
+    monkeypatch.setattr(M, "_native_text_pair", lambda *_a, **_k: (layer, layer))
+    assert M._native_override(None, CHOICE, "1은 XY, 3은 XY이고 ㉠10]叫 ⓑ는 5이다.", "…") == layer
+
+
+def test_이체자는_신호가_아니다():
+    """언어와 매체 p0239: 원본 `黃河` 를 MinerU 가 `黄河` 로 적었다. 다른 글자로 바꾼 것은 그대로 신호다."""
+    assert M._halluc_signs("黄河", "黃河") == []
+    assert M._halluc_signs("犧牲", "犧性") == ["牲"]
 
 
 def test_층에_있는_한자는_신호가_아니고_층에_없는_되풀이는_신호다():
