@@ -2023,6 +2023,12 @@ def _stage11c_math_context_symbols(result: str) -> str:
     #   만들었다 — 점자만 보면 그럴듯해 점역사가 못 찾는 오류였다.
     # 나머지 나열 쉼표(로마자·식 사이) = 문장부호 쉼표 ⠐
     # (규정 집합 예시 ,a337#b"#d"#f7 의 " = ⠐, 2026-07-19)
+    # ★ 쉼표 뒤는 **늘 한 칸**이다(#1115, 원장 M-09) — 4092행 `{1,2,3}` = `7#A"`#B"`#C7` ·
+    #   3102행 `{2,4,6,...}` = `7#b"`#d"`#f"`,,,7` · 3935·4003·4057행 `f(x,y)` = `F8X"`Y0`.
+    #   종전에는 쉼표 셀만 바꾸고 칸은 원문을 따라, 원문이 `{1,2,3}` 처럼 붙어 있으면 칸이 빠졌다.
+    #   gold 수학 네 권: `수,⠀수` 2,130 대 `수,수` 249. 뒤가 비었으면(식 끝 쉼표) 칸을 안 붙인다.
+    if _MATH_COMMA_SPACE:
+        result = re.sub(r",[ ]*(?=\S)", "⠐ ", result)
     result = result.replace(",", "⠐")
     # 계승(제62항 1호): 수식의 ! = ⠖ (gold 실측 #D6=4! 일치). 텍스트 느낌표와 분리.
     result = result.replace("!", "⠖")
@@ -2237,6 +2243,10 @@ def _finish_recurring(result: str) -> str:
     # 정수부 없는 소수는 위에서 수표+소수점을 직접 냈으므로, 11단계가 뒤 숫자에 붙인
     # 수표가 겹친다(`#4#dg`). 소수점 바로 뒤 수표만 걷는다.
     return _DEC_DUP_NUM_RE.sub(_NUMBER_INDICATOR + "⠲", t)
+
+
+# 수식 쉼표 뒤 한 칸(#1115) — A/B 스위치. 채택 뒤 굳힌다.
+_MATH_COMMA_SPACE = os.environ.get("MATH_COMMA_SPACE", "1") != "0"
 
 
 def convert_latex(latex: str) -> str:
