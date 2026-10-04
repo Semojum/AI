@@ -455,6 +455,10 @@ def _greek_span_at(s: str, i: int) -> tuple[str, int] | None:
     return "".join(out), m.end()
 
 
+# 한글 음절과 점형이 겹쳐 **홀로 선 낱말일 때만** 기호로 읽는 것(#1112) — _decode_line 참조.
+_WORD_ONLY_SYMBOLS = frozenset(("⠮⠮", "⠗⠋", "⠠⠨⠊", "⠠⠨⠑"))
+
+
 def _build_symbol_rev() -> dict[str, str]:
     """symbol_table(문자→점자) 역인덱스. 충돌 시 먼저 등록된 문자 유지."""
     rev: dict[str, str] = {}
@@ -4195,6 +4199,14 @@ def _decode_line(s: str, *, sep: bool = True, mid_roman: bool = True) -> str:
         best_ln = 0
         for ln in range(min(_MAX_CELLS, n - i), 0, -1):
             if s[i:i + ln] in _COMBINED:
+                # ★ 한글을 먹는 기호 점형은 **홀로 선 낱말일 때만** 기호다(#1112). 낱말 안에서는
+                #   음절로 읽는다 — gold 전권 실측 ⠮⠮(∬)=`을을` 126회 · ⠗⠋(ℵ)=`애카` 84회 ·
+                #   ⠠⠨⠊(Ι)=`짜다` 12회 · ⠠⠨⠑(Ε)=`짜마` 5회. `마을을` 이 `마∬`, `짜맞추어` 가
+                #   `Εk추어` 로 나갔다. 새 기호의 겹침은 test_reverse_map_collision_guard 가 잡는다.
+                if s[i:i + ln] in _WORD_ONLY_SYMBOLS and not (
+                        (i == 0 or s[i - 1] in (_SPACE_CELL, " "))
+                        and (i + ln >= n or s[i + ln] in (_SPACE_CELL, " "))):
+                    continue
                 best_ln = ln
                 break
         # ★ 대문자 구절표 ⠠⠠⠠ 는 **줄임표 `……` 와 같은 셀**이다(제28항 [붙임] / 제53항).
