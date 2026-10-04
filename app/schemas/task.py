@@ -19,6 +19,9 @@ class PageTask(BaseModel):
     source_text: str = ""   # mode b 전용
     # 고급 점역 — 켜면 MinerU 대신 LLM 이 쪽 이미지를 직접 읽는다(대표 결정 2026-09-01).
     advanced_ai: bool = False
+    # 문항코드 자리 꼴(원장 C-107): "X" `01 [코드] 발문` · "Y" 코드 윗줄 · "off" 종전. 빈 값이면 서버 기본(X).
+    #   점역사가 책마다 고르는 설정이다(대표 결재 2026-10-04). proto 필드가 생기면 그대로 받는다.
+    item_code_form: str = ""
 
     @classmethod
     def from_proto(cls, req) -> "PageTask":
@@ -29,6 +32,7 @@ class PageTask(BaseModel):
             total_pages=req.total_pages or 1,
             pdf_data=req.pdf_data,
             advanced_ai=bool(getattr(req, "advanced_ai", False)),
+            item_code_form=str(getattr(req, "item_code_form", "") or ""),
             mode=req.mode.lower() if req.mode else "c",
             source_text=req.source_text,
         )
