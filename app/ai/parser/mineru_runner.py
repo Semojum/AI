@@ -998,8 +998,8 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     """
     if not html or not bbox:
         return html
-    layer = _native_text_spaced(fitz_page, bbox)
-    if not layer or _layer_untrustworthy(layer, fitz_page):
+    plain, layer = _native_text_pair(fitz_page, bbox)        # 믿을지는 되돌리기 전 글로(#1060)
+    if not layer or _layer_untrustworthy(plain, fitz_page):
         return html
     # 레이어에는 우리가 붙이는 인라인 태그(<!강조> 등)가 들어 있다 — 대조 전에 걷어낸다.
     layer_ns = re.sub(r"\s+", "", re.sub(r"<!/?[^>]*>", "", layer))
@@ -1189,21 +1189,38 @@ def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float], skip_math: bool
     규칙이라 그대로 점역하면 정답과 크게 어긋난다(세계사 p086 실측: cell_ns 0.87→0.39).
     pdf_analyzer의 글자 간격 기반 복원(_page_text_blocks_spaced)을 재사용한다.
     """
+    return _native_text_pair(fitz_page, bbox, skip_math)[1]
+
+
+def _native_text_pair(fitz_page: fitz.Page, bbox: list[float], skip_math: bool = False) -> tuple[str, str]:
+    """(층 글, 한컴 수식 글꼴 글자를 GID 로 되돌린 층 글)(#1060, `hancom_glyphs`).
+
+    ★ 층을 믿을지는 **앞 것**으로 정한다. 되돌리기가 거짓 글자를 지워 못 믿던 층을 믿게 만들면, MinerU 가
+      읽은 구조(LaTeX)가 구조 없는 층 글로 바뀐다(수학 I p0012 `$2^{30}$` → `2  30`, `$\\frac{1}{100}$` → `;10!0;`).
+      그래서 되돌리기는 종전에 층을 쓰던 요소의 글자만 고친다.
+    """
+    from app.ai.parser import hancom_glyphs
     from app.ai.preprocessor.pdf_analyzer import (
         _line_text_with_word_gaps, rows_to_text, underline_rects)
 
     uls = underline_rects(fitz_page)   # 밑줄(드러냄표, 규정 제56항) — 벡터 선으로만 존재
     rot = fitz_page.rotation_matrix
-    lines: list[tuple] = []
+    fixes = hancom_glyphs.glyph_fixes(fitz_page) if hancom_glyphs.restore_on() else None
+    plain: list[tuple] = []
+    fixed: list[tuple] = []
     for lb, ln in _layer_lines(fitz_page, bbox):
         if skip_math and _math_font_line(ln):
             continue                   # 수식 글꼴 줄만 뺀다(표 띠 되살리기, #1047)
         t = _line_text_with_word_gaps(ln, rot, uls)
+        subs = hancom_glyphs.line_subs(ln, fixes)
+        f = _line_text_with_word_gaps(ln, rot, uls, subs) if subs else t
+        # ★ 같은 인쇄 줄이 여러 line으로 쪼개진 것(정답표·선택지)은 rows_to_text가
+        #   한 줄로 이어 두 칸을 띈다 — 지침 3장 3절 4)(3)① (QA S4)
         if t:
-            # ★ 같은 인쇄 줄이 여러 line으로 쪼개진 것(정답표·선택지)은 rows_to_text가
-            #   한 줄로 이어 두 칸을 띈다 — 지침 3장 3절 4)(3)① (QA S4)
-            lines.append((lb, t))
-    return rows_to_text(lines)
+            plain.append((lb, t))
+        if f:
+            fixed.append((lb, f))
+    return rows_to_text(plain), rows_to_text(fixed)
 
 
 def _layer_lines(fitz_page: fitz.Page, bbox: list[float]):
@@ -1233,8 +1250,8 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) 
     """텍스트 레이어로 대체할 값. 못 믿으면 None(= MinerU 결과 유지)."""
     if _MATH_FONT_GUARD and (mineru_text or "").strip() and _has_math_font(fitz_page, bbox):
         return None                        # 위 _has_math_font 주석 참조. MinerU 글이 비면 층이라도 쓴다
-    native = _native_text_spaced(fitz_page, bbox)
-    if not native or _layer_untrustworthy(native, fitz_page):
+    plain, native = _native_text_pair(fitz_page, bbox)        # 믿을지 · 닮았는지는 되돌리기 전 글로(#1060)
+    if not native or _layer_untrustworthy(plain, fitz_page):
         return None
     base = (mineru_text or "").strip()
     if not base:
@@ -1242,7 +1259,7 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str) 
     # 같은 블록을 가리키는지 확인 — clip은 겹치는 글리프를 다 가져오므로 bbox가 어긋나면
     # 옆 블록 글자가 섞여 들어온다. 그런 경우는 MinerU 쪽을 그대로 둔다.
     from difflib import SequenceMatcher
-    a = "".join(native.split())
+    a = "".join(plain.split())
     b = "".join(base.split())
     if SequenceMatcher(None, a, b).ratio() < _SIM_MIN:
         return None

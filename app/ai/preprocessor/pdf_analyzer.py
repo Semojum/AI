@@ -239,7 +239,7 @@ def _is_underlined(cb, underlines) -> bool:
     return False
 
 
-def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None) -> str:
+def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=None) -> str:
     """rawdict 한 줄 → 글자 간격으로 어절 경계를 복원한 텍스트.
 
     공백 글리프가 실제로 있는 자리는 그대로 두고, 한글이 낀 글자쌍에서만
@@ -248,6 +248,8 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None) -> str:
 
     matrix: 회전된 페이지의 rotation_matrix. rawdict 좌표는 회전 전 기준이라 270° 페이지에서는
     글자들이 세로로 늘어서 x 간격이 무의미해진다(어절 복원이 전멸). 표시 좌표로 옮겨서 잰다.
+    subs: {줄 안 글자 번호(스팬을 이어 센다): 대신 쓸 글}. 빈 글이면 그 글자를 뺀다. 띄어쓰기 · 밑줄
+    판정은 원래 글자로 한다 — 한컴 수식 글꼴 글자를 GID 로 되돌릴 때 둘레 글이 안 흔들린다(#1060).
     """
     chars: list[tuple[str, float, float, float, bool]] = []  # (ch, x0, x1, size, underlined)
     for span in line.get("spans", []):
@@ -275,6 +277,9 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None) -> str:
     out: list[str] = []
     in_ul = False
     for i, (ch, x0, _x1, size, ul) in enumerate(chars):
+        rep = subs.get(i) if subs else None
+        if rep == "":
+            continue
         # 밑줄 구간 여닫이 (규정 제56항) — 공백에서 열지 않는다(마커가 어절 밖으로 새는 것 방지)
         if ul and not in_ul and not ch.isspace():
             out.append(_UL_OPEN)
@@ -289,7 +294,7 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None) -> str:
                 threshold = base + max(_WORD_GAP_RATIO * (size or 10.0), _WORD_GAP_MIN_PT)
                 if (x0 - px1) > threshold:
                     out.insert(len(out) - 1 if (ul and not _pul) else len(out), " ")
-        out.append(ch)
+        out.append(ch if rep is None else rep)
     if in_ul:
         out.append(_UL_CLOSE)
     return "".join(out)
