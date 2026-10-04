@@ -19,3 +19,8 @@ def test_수표_없는_첨자_식_뒤_조사():
 def test_뒤에_조사가_없으면_종전대로():
     # 두 칸 사이에 섰어도 뒤가 조사가 아니면 자리 근거가 없다 — 한글 읽기를 그대로 둔다.
     assert "a_n" not in decode(_brf("o1^3j7``a;n``o1^3j7"))
+
+
+def test_그리스_대문자():
+    # 재추출 3937~3938행: `Δx`·`Δy` = `,.dx/,.dy` — 대문자표 ⠠ + 그리스 낱자.
+    assert decode(_brf(",.dx"), math=True) == "Δx"
