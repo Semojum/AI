@@ -22,16 +22,19 @@
   LLM 이 τ 0.881 → 0.886 으로 사실상 무차인데 돈만 든다. 라우팅을 비회전으로 좁히면
   걸리는 쪽이 68.3% 로 줄고 이득은 오히려 조금 낫다(-2.64 → -2.66%p, 권당 5,261 → 3,593원).
 
-★ 안전판(_GUARD_RATIO) — **현행 문안에서는 순손해다.** 값은 0.7 로 두되 근거를 알고 써라.
-  옛 문안에서는 분산 축소 장치였다(터진 쪽을 막아 전체 -1.12%p 이득). 현행 문안에서는
-  되돌리는 24쪽 중 **21쪽이 개선이고 악화는 2쪽**이라 전체 이득을 -3.27 → -2.44%p 로 깎는다.
-  이유: displaced_ratio 는 "얼마나 옮겼나"지 "옳게 옮겼나"가 아니다. 사이드바 한 덩어리를
-  통째로 옳게 뒤로 보내면 본문이 전부 2칸 이상 밀려 ratio 가 1.00 이 된다
-  (세계사/val/026: 규칙 76.4% → 28.1%, τ 0.33 → 1.0 인 개선인데 모든 임계가 되돌린다).
-  r39 책 단위 LOO — 한 권을 빼고 나머지 두 권에서 임계를 고르면 **세 번 모두 raw 가 뽑히고**
-  뺀 권에서도 net-positive 다(사회문화 -2.55 · 생물 -6.26 · 세계사 -1.49). 같은 표본에서
-  고른 값이 아니다. **켤 때 0 으로 내리는 것을 권고했다**(결과_r39-orderremeasure.md §8).
-  ⚠ 내리는 결정은 대표 몫이라 이 파일은 안 건드렸다.
+★ 안전판 = **2단 지면에서 LLM 순서의 첫 본문 요소가 오른쪽 단이면 규칙 순서로 되돌린다**(#1090, 대표 결재 2026-10-05).
+  「점자 도서 제작 지침」 5. 다단 점역 2)(1)② "일반적으로 왼쪽 단을 적은 후 오른쪽 단으로"(braille-source 1148행).
+  종전 안전판(본문 요소의 2칸 이상 이동 비율 ≥ 0.7)은 '얼마나 옮겼나' 라서 단을 통째로 옳게 바꾼 쪽과 틀리게 바꾼 쪽이
+  둘 다 1.0 이었다. 틀린 맞바꿈(사회 · 문화 해설 p0042, 실물 +2,356셀)은 오른쪽 단 머리 띠로 시작했고, 0.7 이 막던
+  큰 개선(생활과 윤리 해설 면, 쪽당 실물 약 3,000셀)은 왼쪽 단 꼭대기(앞 쪽에서 이어진 글)로 시작했다.
+  재생(호출 0, 72e1493, 라우팅 2단만, 끔 대비 자 · 실물 %p):
+    (가) 0.7          +0.225 · +1.027   dev +0.228 · +1.128   val +0.223 · +0.940
+    (나) 끔           +0.567 · +2.512   dev +0.199 · +1.017   val +0.885 · +3.805
+    **(다) 이 판정**   **+0.577 · +2.552**   dev +0.221 · +1.112   val +0.882 · +3.797
+    (다)+0.7 겹침     +0.221 · +1.016   (다)가 받은 28쪽을 다시 막는다, 28쪽 모두 LLM 순서가 낫다
+  ⚠ 약점: (가) 대비 dev 실물 −0.016%p. 오른쪽 단 꼭대기의 짧은 라벨(`정답과 해설 6쪽`)로 시작했지만 나머지가 맞던
+    쪽 9개(쪽당 +5~+77셀)를 되돌린다. 매개변수가 없어 문턱을 고를 일도 없다.
+  옮긴 비율(`displaced_ratio`)은 관측값으로만 남긴다(stage 메모 · 관문 G2).
 
 ★ 라우팅 = **2단(곁단 없음) 지면만** 부른다(#1086, pm 결재 2026-10-05). `_layout_class` 참조.
   2027 1,746쪽 전권 A/B(커밋 72e1493, 안전판 0.7, 범위 밖 쪽은 끔 팔 값으로 둔 가상 적용):
@@ -60,7 +63,6 @@ logger = get_logger(__name__)
 MODEL = "claude-opus-5"
 SNIPPET = 120                 # 요소당 넣는 본문 길이. 실측: 이걸 0 으로 줄이면 값이 28% 싸지는
                               # 대신 순이득의 70% 가 사라진다(정상 층 손해 +2.04 → +5.98%p).
-_GUARD_RATIO = 0.7            # 본문류 요소의 2칸 이상 이동 비율이 이 이상이면 규칙으로 되돌린다
 _BODY_TYPES = {"text", "title", "list_item", "caption", "footnote"}
 _MAX_TOKENS = 16000           # 사고가 상한을 먹어 빈 응답이 오는 것을 막는다
 
@@ -162,42 +164,60 @@ def _ask(prompt: str):
     return order, getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0)
 
 
-def _layout_class(items, width: float, height: float) -> tuple[int, bool]:
-    """(열 수, 곁단 유무). 라우팅 판정 — 측정에 쓴 V2 `temp/n10/r39-orderremeasure/classify39.work` 와 같은 규칙이다.
+def _columns(items, width: float, height: float) -> list[list[int]]:
+    """열 묶기 — 측정에 쓴 V2 `temp/n10/r39-orderremeasure/classify39.work` 와 같은 규칙. 열마다 items 의 번호 목록.
 
     머리말 · 쪽 번호 · 전폭(0.6W 넘는) 요소와 위아래 4% 띠에 걸친 요소를 빼고, x 가 좁은 쪽 폭의 절반 넘게 겹치는
-    요소끼리 한 열로 묶는다. 넓이가 가장 큰 열이 본문이고, 그 폭의 절반 이하인 다른 열이 있으면 곁단이다.
-    남은 요소가 3개 미만이면 (0, False). 좌표는 `_parse_txt_result` 가 픽셀로 맞춘 값, 크기는 경계 meta 의 쪽 크기.
+    요소끼리 한 열로 묶는다. 넓이가 가장 큰 열이 맨 앞이다. 좌표는 `_parse_txt_result` 가 픽셀로 맞춘 값.
     """
-    boxes = [b.bbox for b in items
-             if b.bbox[2] > b.bbox[0] and b.bbox[3] > b.bbox[1] and b.type not in ("header_footer", "page_number")
-             and b.bbox[2] - b.bbox[0] <= 0.60 * width and b.bbox[1] >= 0.04 * height and b.bbox[3] <= 0.96 * height]
-    if len(boxes) < 3:
-        return 0, False
-    par = list(range(len(boxes)))
+    cand = [i for i, b in enumerate(items)
+            if b.bbox[2] > b.bbox[0] and b.bbox[3] > b.bbox[1] and b.type not in ("header_footer", "page_number")
+            and b.bbox[2] - b.bbox[0] <= 0.60 * width and b.bbox[1] >= 0.04 * height and b.bbox[3] <= 0.96 * height]
+    par = {i: i for i in cand}
 
     def find(i):
         while par[i] != i:
             par[i] = par[par[i]]
             i = par[i]
         return i
-    for i, a in enumerate(boxes):
-        for j in range(i + 1, len(boxes)):
-            c = boxes[j]
+    for x, i in enumerate(cand):
+        for j in cand[x + 1:]:
+            a, c = items[i].bbox, items[j].bbox
             w = min(a[2] - a[0], c[2] - c[0])
             if w > 0 and min(a[2], c[2]) - max(a[0], c[0]) >= 0.5 * w:
                 par[find(i)] = find(j)
     cols = collections.defaultdict(list)
-    for i, b in enumerate(boxes):
-        cols[find(i)].append(b)
-    cs = sorted(cols.values(), key=lambda c: -sum((b[2] - b[0]) * (b[3] - b[1]) for b in c))
-    h0, h1 = min(b[0] for b in cs[0]), max(b[2] for b in cs[0])
-    side = any(max(b[2] for b in c) - min(b[0] for b in c) <= 0.5 * (h1 - h0) for c in cs[1:])
-    return len(cs), side
+    for i in cand:
+        cols[find(i)].append(i)
+    area = lambda c: sum((items[i].bbox[2] - items[i].bbox[0]) * (items[i].bbox[3] - items[i].bbox[1]) for i in c)
+    return sorted(cols.values(), key=lambda c: -area(c))
+
+
+def _layout_class(items, width: float, height: float) -> tuple[int, bool]:
+    """(열 수, 곁단 유무). 라우팅 판정. 남은 요소가 3개 미만이면 (0, False).
+    넓이가 가장 큰 열이 본문이고, 그 폭의 절반 이하인 다른 열이 있으면 곁단이다."""
+    cs = _columns(items, width, height)
+    if sum(map(len, cs)) < 3:
+        return 0, False
+    span = lambda c: max(items[i].bbox[2] for i in c) - min(items[i].bbox[0] for i in c)
+    return len(cs), any(span(c) <= 0.5 * span(cs[0]) for c in cs[1:])
+
+
+def _right_first(items, order: list[int], width: float, height: float) -> bool:
+    """안전판: 2단 지면에서 LLM 순서의 첫 본문 요소(열에 드는 것)가 오른쪽 단이면 True(= 되돌린다). 위 도크스트링 참조."""
+    cs = _columns(items, width, height)
+    if len(cs) != 2:
+        return False
+    right = max(cs, key=lambda c: min(items[i].bbox[0] for i in c))
+    member = {i for c in cs for i in c}
+    for i in order:
+        if items[i].type in _BODY_TYPES and i in member:
+            return i in right
+    return False
 
 
 def displaced_ratio(items, order: list[int]) -> float:
-    """본문류 요소 중 규칙 자리에서 2칸 이상 옮겨진 비율. 안전판 판정값."""
+    """본문류 요소 중 규칙 자리에서 2칸 이상 옮겨진 비율. 관측값(종전 안전판 판정값, #1090 에서 판정에서 뺌)."""
     body = [i for i, b in enumerate(items) if b.type in _BODY_TYPES]
     if not body:
         return 0.0
@@ -246,10 +266,10 @@ async def apply(layout, ext_map, rotation: int, size: tuple[float, float] = (0, 
         return out
 
     ratio = displaced_ratio(items, order)
-    out["ratio"] = round(ratio, 3)
-    if ratio >= _GUARD_RATIO:
-        # 안전판. 이득 장치가 아니라 분산 축소 장치다(도크스트링 참조).
-        logger.info("읽기순서 LLM 되돌림 (본문 이동비율 %.2f ≥ %.2f)", ratio, _GUARD_RATIO)
+    out["ratio"] = round(ratio, 3)                 # 관측값(안전판 아님)
+    if _right_first(items, order, *size):
+        # 안전판(#1090) — 동등 다단은 왼쪽 단부터 적는다(도크스트링 참조).
+        logger.info("읽기순서 LLM 되돌림 (오른쪽 단으로 시작 · 이동비율 %.2f)", ratio)
         out["reverted"] = True
         out["reason"] = "안전판"
         return out
@@ -263,7 +283,7 @@ async def apply(layout, ext_map, rotation: int, size: tuple[float, float] = (0, 
 
 
 def _demo() -> None:
-    """안전판 계산만 자체 점검한다(API 호출 없음)."""
+    """이동 비율 계산만 자체 점검한다(API 호출 없음)."""
     class B:
         def __init__(self, t):
             self.type = t
