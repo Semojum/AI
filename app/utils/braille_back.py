@@ -2087,6 +2087,12 @@ def _decode_math_token(tok: str) -> str:
             out.append(_bond[0])
             i = _bond[1]
             continue
+        # 그리스 대문자 — 대문자표 ⠠ + 그리스 낱자(「수학 점자」 재추출 3937~3938행 `Δx`·`Δy` = `,.dx/,.dy`).
+        #   대문자표가 홀로 버려져 `Δx` 가 `δx` 로 나갔다(#1097).
+        if c == _CAPITAL and tok[i + 1:i + 3] in _MATH_REV_MULTI and tok[i + 1] == "⠨":
+            out.append(_MATH_REV_MULTI[tok[i + 1:i + 3]].upper())
+            i += 3
+            continue
         matched = False                             # 다중 셀 수학 기호(≠·÷·그리스 등)
         for ln in range(min(_MATH_MAX, n - i), 1, -1):
             if tok[i:i + ln] in _MATH_REV_MULTI:
@@ -3604,6 +3610,20 @@ def _english_ctx(lines: list[str]) -> list[bool]:
     return ctx
 
 
+# 두 칸 수식 토막(#1097) — 아래 _decode_line_router 참조. 끄는 스위치는 전후 대조용이다.
+_GAP_MATH = os.environ.get("BR_GAP_MATH", "1").lower() not in ("0", "false", "off")
+# 수식 구조 셀(⠼ 는 위 분류가 이미 본다): 덧셈 · 뺄셈 · 아래 · 위첨자 · 근호 · 소괄호 · 대문자 + 낱자 · 그리스.
+_GAP_MATH_SIGNAL_RE = re.compile(r"[⠢⠔⠰⠘⠻⠜]|⠦.*⠴|⠠[⠁-⠵]|⠨[⠁⠃⠛⠙⠑⠵⠱⠹⠊⠅⠇⠍⠝⠭⠏⠗⠎⠞⠥⠋⠯⠽⠺]")
+# 수식 뒤 조사(두 칸 띄고 오는 것). `이` 로 여는 낱말(`이용`)과 안 겹치게 조사 꼴만 든다.
+_GAP_PARTICLE_RE = re.compile(r"(?:의|이|가|을|를|은|는|와|과|에|에서|에게|로|으로|도|만|까지|부터|보다|처럼|"
+                              r"이고|이다|이며|이면|이라|이므로|이지|일|인|임|이라고|이라는|이라면|이므로)(?![가-힣])")
+# 깨끗한 수식 읽기: 로마자 · 숫자 · 그리스 · 연산 · 괄호만, 로마자나 그리스가 하나는 있어야 한다.
+#   `·`(⠐)은 뺀다 — 유전자형 `A*`(⠠⠁⠘⠐⠔)가 `A^·-` 로 읽혀 별표를 잃는다.
+#   끝이 연산 · 첨자 · 근호면 식이 덜 끝난 것이라 뺀다 — 글자를 두 칸씩 띄운 낱말 퍼즐 `생  명  이` 의
+#   `명`(⠑⠻)이 `e√` 로 읽혔다.
+_GAP_MATH_CLEAN_RE = re.compile(r"(?=.*[A-Za-zα-ωΑ-Ω])[A-Za-z0-9α-ωΑ-Ω+\-=×÷^_()\[\]/√<>≤≥≠,.|']*[A-Za-z0-9α-ωΑ-Ω\-)\]/,.|']")
+
+
 def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False,
                         eng_tok: bool = False) -> str:
     """줄을 공백 단위로 나눠 수식 토큰은 수학 디코더로, 나머지는 한글 디코더로 라우팅."""
@@ -3726,6 +3746,28 @@ def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False,
         for _j in (_i - 1, _i + 1):
             if _is_operand(tokens[_j]):
                 is_math[_j] = True
+    # ★ 두 칸 뒤에 조사가 오는 토막은 수식이다 — 「수학 점자」 제11항(재추출 3234행) "수식의 앞뒤는
+    #   두 칸씩 띄어 쓴다". 한글 낱말은 조사를 **붙여** 쓰므로 `토막 ⠀⠀ 조사` 는 수식 뒤에만 선다.
+    #   수표 ⠼ 가 없는 수식은 위 분류에 안 걸려 한글로 떨어졌다(#1097):
+    #   `m+n  의 값`(⠍⠢⠝) → `움에  의 값` · `Sₙ  이라`(⠠⠎⠰⠝) → `서체  이라`.
+    #   한글 읽기만으로는 못 가른다 — kiwi 는 `움에`·`서체` 를 낱말로 받는다. 그래서 자리로 가른다.
+    #   ① 앞 두 칸(줄 머리 들여쓰기 제외) ② 뒤 두 칸 + 조사 ③ 수식 구조 셀 ④ 수식 읽기가 깨끗하다
+    #   ⑤ 지금 읽기에 한글이 있다(로마자 · 로마 숫자로 이미 바르게 읽힌 토막은 안 건드린다).
+    #   ⚠ 토막 자신이 조사로 읽히면(`-2z=-12  에서  z=6`) 뒤 수식의 `z`(⠵=은)가 조사처럼 보여 걸린다 — 뺀다.
+    #     뒤 토막이 이미 수식이어도 뺀다. 점역자 주표 ⠠⠄ 를 품은 토막도 뺀다(표지를 먹는다).
+    if not math and _GAP_MATH:
+        for idx, tok in enumerate(tokens):
+            if (not tok or is_math[idx] or setop[idx] or leadop[idx] or upper[idx]
+                    or idx == 0 or not tokens[idx - 1] or len(seps[idx - 1]) < 2
+                    or idx + 1 >= len(tokens) or not tokens[idx + 1] or len(seps[idx]) < 2
+                    or not _GAP_MATH_SIGNAL_RE.search(tok)):
+                continue
+            ko = _decode_line(tok)
+            if (_TN_MARKER not in tok and not is_math[idx + 1]
+                    and _GAP_MATH_CLEAN_RE.fullmatch(_decode_math_token(tok))
+                    and _HANGUL_SYL_RE.search(ko) and not _GAP_PARTICLE_RE.fullmatch(ko)
+                    and _GAP_PARTICLE_RE.match(_decode_line(tokens[idx + 1]))):
+                is_math[idx] = True
     # ── 줄 관문 (#905) ───────────────────────────────────────────────────
     # 그 줄의 **읽기에 이미 영어가 있을 때만** 토막 규칙을 켠다(로마자표로 열린 구간이 그렇다).
     # 관문이 없으면 영어가 한 글자도 없는 한글 줄에서 규칙이 돌아, 전 코퍼스 A/B 에서
