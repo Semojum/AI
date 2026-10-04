@@ -235,6 +235,15 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
                            "guard": 3, "iou": iou, "stage": "캡셔닝", "status": "SKIPPED"})
         return "", original_type, False, None, "", False
 
+    # 텍스트층이 번호뿐인 배지(#1056, `mineru_runner._NUM_BADGE_RE` 절) — 층으로 판정한 장식이라 캡셔너를 안 부르고
+    # 표기 없이 뺀다. 「점자 자료 제작 지침」 6.1 (3)② · (4)(재추출 2914 · 2916~2917행): 장식용 시각 자료는 생략하고
+    # 생략 여부를 알리지 않아도 된다. 모델 표지(`⟦장식⟧`)를 '생략' + R11 로 남기는 것(#1041 (나))은 모델 판정이
+    # 틀릴 수 있어서다. 여기는 텍스트층이 번호뿐인 지면 2% 미만 조각이다. 캡션을 끈 실행도 같은 길을 탄다.
+    if "DECOR_TEXTLAYER" in (el.get("flags") or []):
+        logger.info("번호 배지(텍스트층) — 캡션 없이 뺀다 id=%s", eid,
+                    extra={"guard": 4, "stage": "캡셔닝", "status": "DECORATION"})
+        return "", original_type, False, None, "", True
+
     if not img_path or not Path(img_path).exists():
         logger.warning("캡셔닝 불가 — 이미지 경로 없음 id=%s path=%r", eid, img_path)
         return "", original_type, False, None, "", False

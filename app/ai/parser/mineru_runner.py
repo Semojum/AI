@@ -514,6 +514,54 @@ def _seat_answer_marks(elements: list[dict], marks: set[str]) -> None:
         el["reading_order"] = i
 
 
+# ── 텍스트층이 번호뿐인 배지 조각 (#1056 · T45 · 원장 C-70) ─────────────────────────
+# 단원 · 소단원 번호 배지(`05` · `5` · `2부`)를 MinerU 가 그림으로 잘라 온다. 캡셔너는 그것을 표지(`⟦장식⟧`)로
+# 받아 '생략'(점자에 `그림 생략`) + R11 로 내거나(2027 dev · val 숫자 배지 38개 중 34) 표지 없이 `그림: 05` 로 써서
+# 점자로 샌다(3). 텍스트층이 번호뿐이면 캡셔너 없이 장식으로 표기 없이 뺀다(`result_builder._do_caption`,
+# 「점자 자료 제작 지침」 6.1 (3)② · (4)). 작은 조각 하나를 버리자 쪽 편집이 +509 뛴 적이 있어(읽기 순서 ·
+# 상자 묶음, #1043) 쪽 전체로 A/B 한다.
+# gold 가 번호를 제목 앞에 적는 7개(`01 뉴 미디어의 특성`)는 모두 배지가 **같은 줄 바로 오른쪽 제목**
+# (heading · 틈 ≤ 배지 높이 절반 · 배지가 제목 높이의 1.5배 이하)에 붙어 있다. 그중 5개는 제목 텍스트층이
+# 배지 글자까지 읽어 이미 번호가 있고(`5 성리학의 확산`), 번호가 없는 2개에만 붙인다. 오른쪽 글이 본문 문장 ·
+# `답 ④` · 멀리 떨어진 글이면 gold 도 안 붙인다(같은 38개 대조, V2 `temp/n59/결과_T45_C70무늬가지.md`).
+# 오른쪽 제목이 없는 배지는 gold 에 번호가 없다(쪽 머리 `Ⅰ 03` 이 단원을 싣는다).
+_NUM_BADGE_RE = re.compile(r"\d{1,2}(?:\s*[부강회])?")
+_NUM_BADGE_AREA_MAX = 0.02              # 지면의 2% — T45 조사 모집단(작은 크롭)과 같다
+
+
+def _num_badge_on() -> bool:
+    """번호 배지를 텍스트층으로 가른다(기본). `NUM_BADGE_TEXT=0` 이 종전이다. 호출 때 읽는다."""
+    return os.environ.get("NUM_BADGE_TEXT", "1") != "0"
+
+
+def _num_badge_text(fitz_page: fitz.Page, bbox: list[float]) -> str | None:
+    """그림 조각 자리가 작고 텍스트층이 번호 한 토막뿐이면 그 번호, 아니면 None."""
+    if (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) >= _NUM_BADGE_AREA_MAX * 1_000_000:
+        return None
+    # 띄움은 번호와 `부`·`강`·`회` 사이에만 허락한다. 통째로 지우면 그림 안 번호 둘(가계도 `1`·`2`)이 `12` 가 되어
+    # 그림이 배지로 빠진다(T45 A/B 생명과학 body p0149, 지면 1.5%).
+    text = _extract_text_native(fitz_page, bbox).strip()
+    return re.sub(r"\s+", "", text) if _NUM_BADGE_RE.fullmatch(text) else None     # `2 부` → `2부`
+
+
+def _seat_num_badges(elements: list[dict], badges: dict[str, str]) -> None:
+    """번호 배지가 같은 줄 바로 오른쪽 제목에 붙어 있고 그 제목에 번호가 없으면 번호를 제목 앞에 붙인다(제자리 수정)."""
+    for badge in [e for e in elements if e["element_id"] in badges]:
+        num = badges[badge["element_id"]]
+        x0, y0, x1, y1 = badge["bbox"]
+        h = y1 - y0
+        hosts = [e for e in elements if e is not badge and e.get("heading_level") and str(e.get("content") or "").strip()
+                 and abs(e["bbox"][0] - x1) <= 0.5 * h
+                 and h <= 1.5 * (e["bbox"][3] - e["bbox"][1])
+                 and min(y1, e["bbox"][3]) - max(y0, e["bbox"][1]) >= 0.5 * min(h, e["bbox"][3] - e["bbox"][1])]
+        if not hosts:
+            continue
+        host = min(hosts, key=lambda e: e["bbox"][0])
+        lead = re.match(r"\s*(\d+)", host["content"])
+        if not (lead and int(lead.group(1)) == int(re.match(r"\d+", num).group())):
+            host["content"] = f"{num} {host['content'].lstrip()}"
+
+
 # ── 텍스트 레이어 우선(하이브리드) ────────────────────────────────────────────
 # MinerU는 레이아웃(블록 경계·읽기순서·시각자료 탐지)에 쓰고, 글자는 PDF 텍스트 레이어에서
 # 가져온다. 교과서 PDF는 대부분 텍스트 레이어가 있는데도 표·그림 때문에 STANDARD(OCR)로
@@ -1686,6 +1734,7 @@ def run(
     merged_layout = []
     order = 1
     answer_marks: set[str] = set()      # 글로 돌린 정답 표기(#1045) — 끝에서 자리를 잡아 준다
+    num_badges: dict[str, str] = {}     # 텍스트층이 번호뿐인 배지(#1056) — 끝에서 옆 제목에 번호를 붙인다
 
     # 글상자 사각형은 쪽당 한 번만 찾는다(표 판정에만 쓰이므로 표가 있을 때 처음 찾는다).
     _box_cache: list = []
@@ -1809,6 +1858,11 @@ def run(
             if mark:
                 mapped_type, content = "text", mark
                 answer_marks.add(element_id)
+        if mapped_type in ("image", "chart_graph", "cartoon") and _num_badge_on() and not item.get("_flag"):
+            num = _num_badge_text(fitz_page, bb)          # 위 _NUM_BADGE_RE 절 주석(#1056)
+            if num:
+                item["_flag"] = "DECOR_TEXTLAYER"          # 캡셔너 없이 표지 길로(result_builder)
+                num_badges[element_id] = num
 
         # 글자는 PDF 텍스트 레이어 우선(하이브리드) — 티어와 무관하게 블록별로 시도한다.
         # TEXT_NATIVE(스캔 아님이 확실)면 가드 없이 대체, 그 외(OCR 라우팅)는 가드 통과 시만.
@@ -1892,6 +1946,8 @@ def run(
     merged_layout = _drop_unpainted(merged_layout, fitz_page, page_no)
     if answer_marks:
         _seat_answer_marks(merged_layout, answer_marks)
+    if num_badges:
+        _seat_num_badges(merged_layout, num_badges)
 
     doc.close()
 
