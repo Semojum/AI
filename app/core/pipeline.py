@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 import asyncio
 import hashlib
 import json
@@ -1943,9 +1944,15 @@ def _join_item_numbers(items: list[BBoxItem], ext_map: dict, unit: float = 1.0) 
 # EBS 문항코드 `[26015-0017]` 만 든 요소 — 원장 C-107.
 _ITEM_CODE_ONLY_RE = re.compile(r"^\s*[\[【]\s*\d{5}\s*-\s*\d{4}\s*[\]】]\s*$")
 _ITEM_LEAD_NUM_RE = re.compile(r"^(\s*(?:<!강조>)?\s*\d{1,2}(?:<!/강조>)?)(?!\d)(?!\s*[)\].,쪽강])\s*")
-# ★ 기본 off = 종전 동작. gold 가 책마다 X(`01 [코드] 발문`)·Y(코드 윗줄 · `01 발문`)로 갈리고
-#   규정 조항이 없어 점역사 자문 대기다(C-107). 회신 뒤에 켠다(pm 2026-09-30).
-_ITEM_CODE_FORM = os.environ.get("ITEM_CODE_FORM", "off")
+# ★ 기본 X(`01 [코드] 발문`), 점역사가 책마다 고른다(대표 결재 2026-10-04, 원장 C-107).
+#   gold 가 책마다 X · Y(코드 윗줄 · `01 발문`)로 갈리고 규정 조항이 없다. 꼴은 묵자에서 안 보이는 점역자 선택이라
+#   자동으로 정하지 않는다. 기본은 관행 다수 X(2027 비홀드아웃 12권 중 7권), 요청마다 `PageTask.item_code_form` 으로 바꾼다.
+#   ⚠ 기본 X 의 값(2027 dev·val, 대조 fe7a853): Y꼴 책 셋(001 · 009 · 013)에서 실제 손해가 난다(자 +487 · +370 · +431,
+#   실물 009 +602 · 013 +270). 점역사가 그 책에서 Y 로 바꾸면 이득이 된다(자 −1,011 · −2 · −608). 바꾸지 않으면 손해가 남는다.
+#   결과 V2 temp/n46/c/결과_C107_조합AB.md. 환경변수 `ITEM_CODE_FORM`(X · Y · off)은 서버 기본값이다.
+_ITEM_CODE_FORM = os.environ.get("ITEM_CODE_FORM", "X")
+# 요청(문서)마다 고른 꼴. `run()` 이 쪽 시작에 심는다 — 쪽 Task 마다 컨텍스트가 따로라 쪽 사이로 안 샌다.
+_ITEM_CODE_FORM_JOB: ContextVar[str] = ContextVar("item_code_form", default="")
 
 
 def _item_code_stem(code: BBoxItem, items: list[BBoxItem], txt, ux: float, uy: float):
@@ -1987,7 +1994,7 @@ def _place_item_codes(items: list[BBoxItem], ext_map: dict, ux: float = 1.0, uy:
     X: 코드 글을 발문 번호 뒤에 `01 [26004-0003] 발문` 으로 합치고 코드 요소를 뺀다.
     `_join_item_numbers` 뒤에 돈다 — 번호가 따로 떨어져 있으면 발문을 못 알아본다.
     """
-    form = form or _ITEM_CODE_FORM
+    form = form or _ITEM_CODE_FORM_JOB.get() or _ITEM_CODE_FORM
     if form not in ("X", "Y"):
         return 0
 
@@ -3434,6 +3441,7 @@ async def run(task: PageTask) -> dict:
     # 관문 계수기(재구조화 §2-2)는 **쪽마다** 새로 판다. 여러 쪽이 한 프로세스에서 겹쳐
     # 도는데 전역으로 세면 옆 쪽 발동이 이 쪽 review_flags 에 얹힌다(gates 도크스트링).
     gates.gate_reset()
+    _ITEM_CODE_FORM_JOB.set((task.item_code_form or "").upper())
     # 판 지문(0-c) — 점역사 피드백이 며칠 뒤에 올 때 어느 커밋·어느 프롬프트였는지 되짚는 줄.
     # ★ health_check 는 model_manager 를 거쳐 torch 를 끌고 온다. 모듈 최상단에서 부르면
     #   pipeline import 그래프가 바뀌고, torch 없는 빠른 게이트 레인이 통째로 깨진다.

@@ -4,7 +4,16 @@
 """
 from uuid import uuid4
 
+import pytest
+
+from app.core import pipeline
 from app.core.pipeline import _parse_txt_result
+
+
+@pytest.fixture(autouse=True)
+def _form_off(monkeypatch):
+    # 번호 붙이기만 본다. 코드 꼴(기본 X)은 test_place_item_codes.py 가 본다.
+    monkeypatch.setattr(pipeline, "_ITEM_CODE_FORM", "off")
 
 
 def _el(typ, content, bbox):
@@ -17,6 +26,16 @@ def _parse(els):
     lay, em, _ = _parse_txt_result(ex, "p")
     return [(b.type, em[b.element_id].corrected_text)
             for b in sorted(lay.elements, key=lambda b: b.reading_order)]
+
+
+def test_기본_X_꼴이면_번호_코드_발문이_한_줄(monkeypatch):
+    monkeypatch.setattr(pipeline, "_ITEM_CODE_FORM", "X")
+    out = _parse([
+        _el("title", "[26004-0003]", [222, 116, 305, 132]),
+        _el("title", "01", [145, 137, 183, 164]),
+        _el("text", "<보기>를 참고하여 탐구한 내용으로 적절한 것은?", [222, 139, 783, 158]),
+    ])
+    assert out[0] == ("text", "01 [26004-0003] <보기>를 참고하여 탐구한 내용으로 적절한 것은?")   # gold X 꼴(004)
 
 
 def test_번호가_발문_앞에_붙고_번호_요소는_빠진다():
