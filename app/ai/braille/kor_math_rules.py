@@ -1631,11 +1631,10 @@ def _stage4_log(result: str) -> str:
                 return f"{head}{_WRAP_S}{tail}{_WRAP_E}"
             return f"{head}{tail}"
         # 밑이 소수/분수인 경우 묶음 괄호 (수학 제46항 붙임1)
-        # #1074: 분수는 2단계를 지나 점자(⠌)라 `_needs_wrap` 이 못 본다. 숫자 거듭제곱 밑
-        # (`\log_{2^2}`)은 조항이 없어 관행을 따른다 — 2027 gold 숫자 거듭제곱 밑 11곳 모두 묶음,
-        # 문자 거듭제곱 밑(`_;a~m`) 4곳은 안 묶음. 안 묶으면 `_;#b~#b#c` 로 지수와 진수가 붙는다.
-        if (_needs_wrap(base_raw) or re.fullmatch(r"\d+\.\d+", base_raw) or "⠌" in base_raw
-                or re.fullmatch(r"\d+\^(?:\{[^{}]*\}|\d)", base_raw)):
+        # #1074: 분수는 2단계를 지나 점자(⠌)라 `_needs_wrap` 이 못 본다.
+        # ⚠ 숫자 거듭제곱 밑(`\log_{2^2}` → gold `_;(#b~#b)`)은 조항이 없어 여기서 묶지 않는다
+        #   (2027 gold 11:0 이지만 근거가 코퍼스뿐이다, 원장 등재 뒤 따로 판단).
+        if _needs_wrap(base_raw) or re.fullmatch(r"\d+\.\d+", base_raw) or "⠌" in base_raw:
             return f"{_LOG_IND}{_SUBSCRIPT_IND}{_wrap_ins(base)}{tail}"
         # [다만] 밑이 문자면 괄호 진수는 그대로 잇는다
         return f"{_LOG_IND}{_SUBSCRIPT_IND}{base}{tail}"
