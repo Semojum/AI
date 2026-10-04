@@ -64,8 +64,13 @@ GLYPHS: dict[str, dict[int, str]] = {
     "EHhabu-Italic": {98: "ₐ", 101: _SUB["4"], 102: _SUB["3"], 109: _SUB["2"], 115: _SUB["5"], 123: "ₚ", 125: _SUB["9"],
                       131: _SUB["1"], 147: "ᵢ"},
     "EHhabu-Plain": {109: _SUB["2"], 131: _SUB["1"], 151: _SUP["1"], 152: _SUP["2"], 154: _SUP["4"], 159: _SUP["0"]},
-    "EHSunm-Plain": {83: "▬", 90: "→", 104: "➡"},
+    # GID 28 · 49 · 29 는 긴 동치 화살표 ⟺ 한 벌이다(층 `HjK`, 수학 I body p0008 `a^x=N ⟺ x=log_a N`). 첫 글리프에 싣는다(#1072).
+    "EHSunm-Plain": {83: "▬", 90: "→", 104: "➡", 28: "⟺", 49: "", 29: ""},
 }
+
+# 되돌리기가 적어 넣는 비ASCII 글자. 층을 믿을지 볼 때는 이 글자를 빼고 본다(#1072) — `²` · `³` · `¹` · `±` · `ʰ` · `ʳ` · `ˣ` 가
+# `pdf_analyzer._MANGLED_LAYER_RE` 에 들어 있어, 제대로 되돌리면 그 결과 때문에 층이 다시 거부됐다.
+EMITTED = frozenset(ch for t in (*GLYPHS.values(), _FAMILY_FIXED) for s in t.values() for ch in s if not ch.isascii())
 
 def restore_on() -> bool:
     """EH 글꼴 글자를 GID 로 되돌린다. `TEXTLAYER_GLYPH_RESTORE=0` 이 종전이다. 호출 때 읽는다."""
