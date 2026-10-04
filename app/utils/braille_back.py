@@ -1929,9 +1929,12 @@ _SCRIPT_TAIL_RE = re.compile(r"[_^]\d+$")   # 첨자 숫자로 끝났나 (과학
 #     `P(x)`(⠠⠏⠦⠭⠴)가 초성 ㅅ+ㅝ+받침 ㅌ 으로 읽혀 `쉍옥”` 으로 나갔다.
 #     전권 실측 접두 `⠠낱자⠦…⠴` 1,433회·202쪽 중 지금 놓치는 것이 562회·122쪽·90꼴인데
 #     **순한글로 읽히는 꼴은 0종 0회**다 — 대문자표가 오히려 한글 오인을 줄인다.
+#   ★ 괄호 안 **그리스 낱자**(⠨ + 낱자, 「수학 점자」 제13항)도 받는다(#1097). `f(α), f(β), f(γ)` 가
+#     `캍작”, 캍잡”, 캍준”` 으로 나갔다(EBS-E26-009 ans 45 · body 80). ⠨ 는 초성 ㅈ 이라 **그리스 낱자 짝**으로만 든다.
 _FUNC_RE = re.compile(
     r"^⠠?[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵]"
-    r"⠦[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵⠼⠔⠢⠐⠌⠰⠘⠷⠾⠠]+⠴")
+    r"⠦(?:[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵⠼⠔⠢⠐⠌⠰⠘⠷⠾⠠]"
+    r"|⠨[⠁⠃⠛⠙⠑⠵⠱⠹⠊⠅⠇⠍⠝⠭⠏⠗⠎⠞⠥⠋⠯⠽⠺])+⠴")
 
 _PAREN_OPEN, _PAREN_CLOSE = "⠦", "⠴"   # 소괄호(제45항 `8`·`0`)
 _MATH_COLON = "⠐⠂"                     # 쌍점(「한글 점자」 문장 부호표 `"1`)
@@ -1971,6 +1974,11 @@ def _seq_inner(cells: str) -> str:
             out.append(_ALPHA_REV.get(c, c))
             i += 1
     return "".join(out)
+
+
+_PRIME = "⠤"                                       # 프라임(「수학 점자」 제17항)
+_PRIME_AFTER_RE = re.compile(r"[A-Za-zα-ωΑ-Ω)′]$")
+_HYPHEN_WORD_RE = re.compile(r"[a-z]{3}$")           # marble-greek 처럼 영단어 뒤 ⠤ 는 하이픈
 
 
 def _decode_math_token(tok: str) -> str:
@@ -2135,8 +2143,10 @@ def _decode_math_token(tok: str) -> str:
                 i and not _var_follows(tok, i) and _korean_tail(tok, i))):
             if tok[i + 1:i + 2] == _CAPITAL and tok[i + 2:i + 3] in _ALPHA_REV:
                 i += 2                                # 대문자 단어표 — 로마자 런 전체
-                while i < n and tok[i] in _ALPHA_REV:
-                    out.append(_ALPHA_REV[tok[i]].upper())
+                # 프라임 ⠤ 를 건너서도 이어진다 — 「수학 점자」 제39항 예(재추출 3734행) `A′B′` = `@c,,A-B-`.
+                #   종전에는 ⠤ 에서 끊겨 `A-b-` 로 나갔다(#1097).
+                while i < n and (tok[i] in _ALPHA_REV or (tok[i] == _PRIME and out)):
+                    out.append("′" if tok[i] == _PRIME else _ALPHA_REV[tok[i]].upper())
                     i += 1
                 continue
             if tok[i + 1:i + 2] in _ALPHA_REV:        # 대문자 기호표 — 한 글자
@@ -2228,6 +2238,15 @@ def _decode_math_token(tok: str) -> str:
             if i < n and tok[i] == "⠣":
                 out.append("^2")
                 i += 1
+            continue
+        # 프라임 — 「수학 점자」 제17항(재추출 3526~3527행) "프라임(′)은 -으로 적는다" `x′` = `x-` ·
+        #   `a′b` = `a-b`. 수식의 뺄셈은 ⠔ 라 ⠤ 와 안 겹친다. 로마자 · 그리스 · 닫는 괄호 · 프라임 뒤의
+        #   ⠤ 만 프라임으로 읽는다(#1097). 종전에는 하이픈 `-` 로 나가 `S′` 가 `S-` 였다.
+        #   영단어(소문자 셋 이상) 뒤와 주소(앞에 / 가 있는 토큰) 속은 하이픈이라 뺀다(marble-greek · 2019/02/about-c).
+        if (c == _PRIME and out and _PRIME_AFTER_RE.search(out[-1])
+                and not _HYPHEN_WORD_RE.search("".join(out[-3:])) and "/" not in "".join(out)):
+            out.append("′")
+            i += 1
             continue
         best = 0                                     # \text 한글·기호 폴백(긴 셀 우선)
         for ln in range(min(_MAX_CELLS, n - i), 0, -1):
@@ -3628,8 +3647,8 @@ def _english_ctx(lines: list[str]) -> list[bool]:
 
 # 두 칸 수식 토막(#1097) — 아래 _decode_line_router 참조. 끄는 스위치는 전후 대조용이다.
 _GAP_MATH = os.environ.get("BR_GAP_MATH", "1").lower() not in ("0", "false", "off")
-# 수식 구조 셀(⠼ 는 위 분류가 이미 본다): 덧셈 · 뺄셈 · 아래 · 위첨자 · 근호 · 소괄호 · 대문자 + 낱자 · 그리스.
-_GAP_MATH_SIGNAL_RE = re.compile(r"[⠢⠔⠰⠘⠻⠜]|⠦.*⠴|⠠[⠁-⠵]|⠨[⠁⠃⠛⠙⠑⠵⠱⠹⠊⠅⠇⠍⠝⠭⠏⠗⠎⠞⠥⠋⠯⠽⠺]")
+# 수식 구조 셀(⠼ 는 위 분류가 이미 본다, 절댓값 ⠳…⠳ 은 #1097 후속): 덧셈 · 뺄셈 · 아래 · 위첨자 · 근호 · 소괄호 · 대문자 + 낱자 · 그리스.
+_GAP_MATH_SIGNAL_RE = re.compile(r"[⠢⠔⠰⠘⠻⠜]|⠳.+⠳|⠦.*⠴|⠠[⠁-⠵]|⠨[⠁⠃⠛⠙⠑⠵⠱⠹⠊⠅⠇⠍⠝⠭⠏⠗⠎⠞⠥⠋⠯⠽⠺]")
 # 수식 뒤 조사(두 칸 띄고 오는 것). `이` 로 여는 낱말(`이용`)과 안 겹치게 조사 꼴만 든다.
 _GAP_PARTICLE_RE = re.compile(r"(?:의|이|가|을|를|은|는|와|과|에|에서|에게|로|으로|도|만|까지|부터|보다|처럼|"
                               r"이고|이다|이며|이면|이라|이므로|이지|일|인|임|이라고|이라는|이라면|이므로)(?![가-힣])")
@@ -3637,7 +3656,7 @@ _GAP_PARTICLE_RE = re.compile(r"(?:의|이|가|을|를|은|는|와|과|에|에�
 #   `·`(⠐)은 뺀다 — 유전자형 `A*`(⠠⠁⠘⠐⠔)가 `A^·-` 로 읽혀 별표를 잃는다.
 #   끝이 연산 · 첨자 · 근호면 식이 덜 끝난 것이라 뺀다 — 글자를 두 칸씩 띄운 낱말 퍼즐 `생  명  이` 의
 #   `명`(⠑⠻)이 `e√` 로 읽혔다.
-_GAP_MATH_CLEAN_RE = re.compile(r"(?=.*[A-Za-zα-ωΑ-Ω])[A-Za-z0-9α-ωΑ-Ω+\-=×÷^_()\[\]/√<>≤≥≠,.|']*[A-Za-z0-9α-ωΑ-Ω\-)\]/,.|']")
+_GAP_MATH_CLEAN_RE = re.compile(r"(?=.*[A-Za-zα-ωΑ-Ω])[A-Za-z0-9α-ωΑ-Ω+\-=×÷^_()\[\]/√<>≤≥≠,.|'′]*[A-Za-z0-9α-ωΑ-Ω\-)\]/,.|'′]")
 
 
 def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False,
