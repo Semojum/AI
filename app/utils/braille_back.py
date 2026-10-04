@@ -2243,6 +2243,10 @@ def _decode_math_token(tok: str) -> str:
 _RADIX_RE = re.compile(r"^⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠂⠲]+⠰⠦⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]+⠴$")
 
 
+_LIM_HEAD = "⠇⠊⠍⠰"          # lim + 변수표(제51항)
+_ARROW_RIGHT = "⠒⠕"         # 화살표 →(제51항 극한)
+
+
 def _classify_token(tok: str) -> str:
     """토큰을 MATH/NUM/OP/TEXT로 분류(인라인 수식 감지용).
 
@@ -2253,6 +2257,10 @@ def _classify_token(tok: str) -> str:
     """
     if tok in _BARE_OPS:
         return "OP"
+    # 극한 기호 lim — 「수학 점자」 제51항(재추출 3908~3916행) `LIM;X`3o`=`F8X0`(lim x→∞ f(x)).
+    #   `⠇⠊⠍`+변수표 ⠰ 로 여는 토막이다. 종전에는 한글 `사두촉` 으로 읽혔다(#1100).
+    if tok.startswith(_LIM_HEAD):
+        return "MATH"
     if tok in _GREEK_TOKENS:
         return "GREEK"
     # 삼각함수 접두 ⠖(규정 제47항)로 시작하고 뒤가 등록된 함수면 수식이다.
@@ -3333,8 +3341,12 @@ _TABLE_RULE_RE = re.compile(r"^[⠀ ]*([⠐⠂⠤⠒⠶])\1{5,}[⠀ ]*$")
 # `⠼⠋⠤⠼⠛`(6-7) 같은 범위다.
 _PAGE_CHANGE_RE = re.compile(r"^⠤{5,}(⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠤⠼]*)$")
 
+# ★ 제목 든 테두리는 제목 앞 채움이 **3칸**인 책도 있다(#1100). 지침 예 2-5(「점자 자료 제작 지침」
+#   619~622행)는 `=gggg`^u@o`ggg…=` 로 4칸이지만, gold 에 `=ggg`제목`ggg…=` 가 31줄 있고
+#   모서리 ⠿ 가 약자 '옹', 채움 ⠛ 가 '운' 으로 읽혀 `옹운운운 보기 운운…옹` 이 나갔다.
+#   3칸은 **제목이 뒤따를 때만** 받는다. 제목 없는 테두리는 종전대로 4칸 이상이다.
 _BOX_BORDER_RE = re.compile(
-    r"[⠿⠖⠓](⠛|⠶|⠒|⠐)\1{3,}(?:[⠀ ](.+?)[⠀ ]\1{3,})?[⠿⠲⠚]")
+    r"[⠿⠖⠓](⠛|⠶|⠒|⠐)(?:\1{3,}|\1{2}(?=[⠀ ]))(?:[⠀ ](.+?)[⠀ ]\1{2,})?[⠿⠲⠚]")
 
 
 # ── 수식 경계의 두 칸은 점자 조판이다 (「수학 점자」 제11·12항 1호, 과학 제6항) ─────
@@ -3768,6 +3780,10 @@ def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False,
                     and _HANGUL_SYL_RE.search(ko) and not _GAP_PARTICLE_RE.fullmatch(ko)
                     and _GAP_PARTICLE_RE.match(_decode_line(tokens[idx + 1]))):
                 is_math[idx] = True
+    # 극한의 점근값(제51항) — `lim 변수 → 값` 의 값 토막. 홀로 선 ∞(⠿)가 약자 '옹' 으로 읽혔다(#1100).
+    for idx in range(2, len(tokens)):
+        if tokens[idx - 1] == _ARROW_RIGHT and tokens[idx - 2].startswith(_LIM_HEAD):
+            is_math[idx] = True
     # ── 줄 관문 (#905) ───────────────────────────────────────────────────
     # 그 줄의 **읽기에 이미 영어가 있을 때만** 토막 규칙을 켠다(로마자표로 열린 구간이 그렇다).
     # 관문이 없으면 영어가 한 글자도 없는 한글 줄에서 규칙이 돌아, 전 코퍼스 A/B 에서
