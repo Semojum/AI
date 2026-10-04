@@ -438,3 +438,24 @@ class TestBandedTwoColumn:
             _box(2, 320, 115, 1044, 177), _box(3, 320, 473, 1044, 531), _box(4, 337, 565, 1030, 713),
             _box(5, 84, 845, 275, 967),
             _box(6, 320, 839, 1044, 901), _box(7, 320, 1122, 1044, 1179), _box(8, 326, 1190, 1036, 1365)])
+
+
+class TestRightColumnEmittedFirst:
+    """MinerU 가 오른쪽 단을 통째로 먼저 읽은 쪽 — 거스름이 한 번뿐이라 viol 문턱(2)에 안 걸렸다.
+
+    2027 생활과 윤리 해설 25쪽 축소판(τ 평균 0.00 → 0.998). 열 번호가 한 번만 내려가고(오른쪽 → 왼쪽)
+    한 번도 안 오르며 두 열이 정말 나란할 때만 열 우선으로 세운다.
+    """
+
+    def test_right_column_first_is_reordered(self):
+        right = [_box(i + 1, 610, 100 + i * 120, 1060, 200 + i * 120) for i in range(4)]
+        left = [_box(i + 5, 100, 100 + i * 120, 550, 200 + i * 120) for i in range(4)]
+        _reorder_columns(right + left)
+        assert max(b.reading_order for b in left) < min(b.reading_order for b in right)
+
+    def test_left_column_first_untouched(self):
+        left = [_box(i + 1, 100, 100 + i * 120, 550, 200 + i * 120) for i in range(4)]
+        right = [_box(i + 5, 610, 100 + i * 120, 1060, 200 + i * 120) for i in range(4)]
+        before = _orders(left + right)
+        _reorder_columns(left + right)
+        assert _orders(left + right) == before
