@@ -39,6 +39,29 @@ class TestPlacement:
         els = [_el("앞 문장이다.", (66, 328, 459, 363))]
         assert tag_answer_marks(els, [("X", [72, 333, 85, 344])]) == 0
 
+    def test_한_요소로_합쳐진_보기에_표시_둘이_다_붙는다(self) -> None:
+        """#1070 — MinerU 가 ㄱ · ㄴ 을 한 블록으로 내면 종전엔 첫 표시만 붙고 둘째가 사라졌다(자기 차단)."""
+        els = [_el("ㄱ.\t가가\nㄴ.\t나나", (66, 100, 459, 140))]
+        assert tag_answer_marks(els, [("O", [70, 103, 80, 113]), ("X", [70, 125, 80, 135])]) == 2
+        assert els[0]["content"] == "(O)ㄱ.\t가가\n(X)ㄴ.\t나나"
+
+    def test_로마자_머리_보기에도_붙는다(self) -> None:
+        els = [_el("A. 가가\nB. 나나\nC. 다다", (66, 100, 459, 160))]
+        assert tag_answer_marks(els, [("O", [70, 102, 80, 112]), ("O", [70, 123, 80, 133]),
+                                      ("X", [70, 145, 80, 155])]) == 3
+        assert els[0]["content"] == "(O)A. 가가\n(O)B. 나나\n(X)C. 다다"
+
+    def test_산문_뒤에_붙은_보기_줄에도_붙는다(self) -> None:
+        els = [_el("앞 문장이다.\nㄱ. 가가", (66, 100, 459, 140))]
+        assert tag_answer_marks(els, [("X", [70, 125, 80, 135])]) == 1
+        assert els[0]["content"] == "앞 문장이다.\n(X)ㄱ. 가가"
+
+    def test_이미_붙은_줄이면_이웃_줄로_밀지_않는다(self) -> None:
+        """같은 줄을 가리키는 표시가 둘이면 둘째는 버린다 — 엉뚱한 보기에 붙으면 못 찾는다."""
+        els = [_el("ㄱ. 가가\nㄴ. 나나", (66, 100, 459, 140))]
+        assert tag_answer_marks(els, [("O", [70, 103, 80, 113]), ("X", [70, 104, 80, 114])]) == 1
+        assert els[0]["content"] == "(O)ㄱ. 가가\nㄴ. 나나"
+
     def test_짝이_없으면_버린다(self) -> None:
         assert tag_answer_marks([], [("O", [1, 1, 2, 2])]) == 0
         assert tag_answer_marks([_el("x", (0, 0, 1, 1))], []) == 0

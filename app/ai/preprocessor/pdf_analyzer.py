@@ -774,8 +774,10 @@ def _drop_many_siblings(rects: list) -> list:
 #   · 곡선만(c) 20~60항목 = ○ · 곡선+선(cl) 40~120항목 = ×
 #   · 페이지 **안**에 있어야 한다 — 판면 밖 장식이 같은 모양으로 잡힌다
 #   · ○이 하나도 없는 쪽의 ×는 **곱셈 기호**다(정오 표기는 쌍으로 온다)
-# 표시가 붙는 자리 — 선지 번호로 시작하는 요소만(⌧는 번호 위에 겹쳐 찍힌다)
-_CHOICE_HEAD_RE = re.compile(r"^\s*(?:[①-⑳]|[㉠-㉻]|[ㄱ-ㅎ]\s*[.)]|\d{1,2}\s*[.)])")
+# 표시가 붙는 자리 — 선지 번호로 시작하는 줄만(⌧는 번호 위에 겹쳐 찍힌다).
+# 로마자 머리(`A.` · `B.`)는 해설의 항목 꼴이다(#1070, 생명과학 ans p0018 10번 A · B · C).
+_CHOICE_HEAD_RE = re.compile(r"^\s*(?:[①-⑳]|[㉠-㉻]|[ㄱ-ㅎ]\s*[.)]|[A-Za-z]\s*[.)]|\d{1,2}\s*[.)])")
+_MARK_PREFIX_RE = re.compile(r"^\s*\((?:O|X)\)")
 _MARK_MIN, _MARK_MAX = 4.0, 14.0      # 글리프 한 자 크기(pt)
 _MARK_SQUARE = 3.0                    # 가로세로 차이 상한 — 정사각이어야 글자다
 
@@ -835,32 +837,49 @@ def mark_glyphs_norm(pdf_data: bytes, page_no: int) -> list[tuple[str, list[floa
 
 
 def tag_answer_marks(elements: list[dict], marks: list) -> int:
-    """정오 표시를 **바로 뒤 요소** 앞에 글자로 붙인다(in-place). 붙인 개수 반환.
+    """정오 표시를 표시가 겹친 **선지 줄** 앞에 글자로 붙인다(in-place). 붙인 개수 반환.
 
     ★ 표시는 **선지 번호 위에 겹쳐** 찍힌다(⌧ = ① 위의 ×). 그래서 표시를 품은 요소를 찾아
-    그 **앞**에 붙인다 — gold 배치가 `…해당한다.(X)①아메바가…`라 번호보다 앞이다.
-    선지로 시작하는 요소에만 붙인다(엉뚱한 본문에 붙지 않게).
+    그 줄 **앞**에 붙인다 — gold 배치가 `…해당한다.(X)①아메바가…`라 번호보다 앞이다.
+    선지로 시작하는 줄에만 붙인다(엉뚱한 본문에 붙지 않게).
+
+    ★ 요소가 아니라 **요소 안의 줄** 단위다(#1070). MinerU 가 보기 ㄱ · ㄴ 을 한 블록으로 내면
+      종전(요소 맨 앞에 붙이기)은 첫 표시가 붙는 순간 content 가 `(O)…` 로 시작해 둘째 표시를
+      조용히 버렸다(자기 차단). 산문 뒤에 붙은 보기 줄도 후보가 못 됐다. 표시 y 를 bbox 안
+      줄 번호로 환산해 가장 가까운 선지 줄(±1 줄)에 붙인다. 그 줄에 이미 표시가 있으면
+      이웃 줄로 밀지 않고 버린다 — 엉뚱한 보기에 붙은 정오 표시는 점역사가 못 찾는다.
     """
     if not marks or not elements:
         return 0
     n = 0
     for kind, (mx0, my0, mx1, my1) in marks:
         cx, cy = (mx0 + mx1) / 2, (my0 + my1) / 2
-        best, best_d = None, None
+        best, best_d, best_line = None, None, None
         for el in elements:
             bb = el.get("bbox")
             if not bb or len(bb) != 4 or el.get("type") not in ("text", "list_item"):
                 continue
             if not (bb[0] - 6 <= cx <= bb[2] and bb[1] - 6 <= cy <= bb[3] + 6):
                 continue                                  # 표시를 품은(또는 줄머리에 붙은) 요소
-            if not _CHOICE_HEAD_RE.match(el.get("content") or ""):
-                continue                                  # 선지로 시작하는 것만
+            lines = (el.get("content") or "").split("\n")
+            heads = [i for i, ln in enumerate(lines) if _CHOICE_HEAD_RE.match(_MARK_PREFIX_RE.sub("", ln))]
+            if not heads:
+                continue                                  # 선지 줄이 있는 것만
+            at = min(len(lines) - 1, max(0, int((cy - bb[1]) / max(bb[3] - bb[1], 1e-9) * len(lines))))
+            line = min(heads, key=lambda h: abs(h - at))
+            if abs(line - at) > 1:
+                continue
             d = abs(bb[1] - my0)
             if best is None or d < best_d:
-                best, best_d = el, d
-        if best is not None:
-            best["content"] = f"({kind}){best['content']}"
-            n += 1
+                best, best_d, best_line = el, d, line
+        if best is None:
+            continue
+        lines = best["content"].split("\n")
+        if _MARK_PREFIX_RE.match(lines[best_line]):
+            continue                                      # 이미 붙은 줄 — 이웃으로 밀지 않는다
+        lines[best_line] = f"({kind}){lines[best_line]}"
+        best["content"] = "\n".join(lines)
+        n += 1
     return n
 
 
