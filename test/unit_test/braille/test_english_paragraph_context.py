@@ -202,7 +202,10 @@ def test_영어책에서_한글_섞인_줄의_영어_낱말을_되찾는다():
 def test_영어책이_아니면_안_바꾼다():
     """책 단위 경계 — ⠠ 는 초성 ㅅ 이기도 해서 비영어책에선 `습윤`·`세슘` 이 영어로 뒤집힌다."""
     from app.utils.braille_back import decode
-    assert decode(_READING) == "Reading 굴 싀애덜요."
+    out = decode(_READING)
+    # 의도만 단언한다: 영어책이 아니면 뒤 낱말을 영어로 되찾지 않는다. 한글로 읽힌 나머지
+    # (`굴 싀애덜요.`)는 깨진 꼴이라 기대값으로 못 박지 않는다(#1089).
+    assert out.startswith("Reading") and "Writing" not in out, out
 
 
 def test_실재하는_한국어_낱말은_안_바꾼다():
@@ -235,7 +238,8 @@ def test_토막_되찾기_스위치가_종전_동작으로_되돌린다(monkeypa
     monkeypatch.setenv("BR_ENG_TOKEN", "0")
     importlib.reload(bb)
     try:
-        assert bb.decode(_READING, english=True) == "Reading 굴 싀애덜요."
+        out = bb.decode(_READING, english=True)
+        assert out.startswith("Reading") and "Writing" not in out, out   # 종전 동작(토막 되찾기 없음), #1089
     finally:
         monkeypatch.delenv("BR_ENG_TOKEN", raising=False)
         importlib.reload(bb)

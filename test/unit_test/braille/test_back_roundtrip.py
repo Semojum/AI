@@ -490,10 +490,15 @@ class TestPermutationCombination:
 
     @pytest.mark.parametrize("raw,want", [
         ("⠴⠠⠉⠷⠋⠑⠑⠲", "Coffee"),          # ⠷ 는 UEB 약자 `of` — 짝 맞는 ⠾ 를 요구한다
-        ("⠠⠓⠷⠍⠁⠝⠝⠲", "H온욱에에."),   # 순열로 안 편다. 머리 ⠠⠓ 는 대문자 H(제30항 [붙임])
+        pytest.param("⠠⠓⠷⠍⠁⠝⠝⠲", "Hofmann.", marks=pytest.mark.xfail(strict=True, reason=(
+            "제28항(재추출 1329행) 로마자는 통일영어점자 — ⠷ 는 약자 of 인데 로마자표 없는 줄이라 "
+            "한글로 읽혀 지금은 `H온욱에에.` 다(#1089)"))),
     ])
     def test_짝이_없으면_안_본다(self, raw: str, want: str) -> None:
         assert self._d(raw) == want
+
+    def test_짝_없는_괄호는_순열로_안_편다(self) -> None:
+        assert "_" not in self._d("⠠⠓⠷⠍⠁⠝⠝⠲")   # 순열이면 `_7H_2` 꼴이 된다
 
 
 class TestMeanBar:
