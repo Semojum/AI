@@ -34,7 +34,8 @@ def test_부정이면_비원소기호(raw, want):
 @pytest.mark.parametrize("raw,want", [
     ("⠼⠃⠖⠡⠼⠉", "2!연3"),        # 계승 `2!` — ⠖ 뒤가 대문자표가 아니면 느낌표 그대로
     ("⠼⠁⠖⠖⠠⠭", "1≤x"),         # ⠖⠖ 는 ≤ (제4항) — 둘째 ⠖ 를 ∈ 로 먹으면 안 된다
-    ("⠐⠖⠠⠁", ",!A"),            # 통일영어점자 더하기 ⠐⠖ — `Ctrl+Alt+M` 류, ∈ 아님(⠠⠁ = 대문자 A)
+    pytest.param("⠐⠖⠠⠁", "+A", marks=pytest.mark.xfail(strict=True, reason=(
+        "제28항(재추출 1329행) 통일영어점자 더하기 ⠐⠖ — 지금은 `,!A` 로 읽힌다(#1089)"))),
     ("⠖⠎⠭", "sinx"),            # 삼각함수 접두 ⠖(제47항)
 ])
 def test_겹치는_셀은_안_먹는다(raw, want):
@@ -54,3 +55,7 @@ def test_역방향_원소기호는_기각_상태를_유지한다(raw):
     묵자 대조 1,361쪽에 ∋·∌ 는 0곳이라 얻을 것이 없다. 누가 되살리면 여기서 깨진다.
     """
     assert "∋" not in decode(raw) and "∌" not in decode(raw)
+
+
+def test_통일영어점자_더하기는_원소기호가_아니다():
+    assert "∈" not in decode("⠐⠖⠠⠁")   # `Ctrl+Alt+M` 류 — 바른 읽기 `+A` 는 위 xfail(#1089)
