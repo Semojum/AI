@@ -3994,12 +3994,33 @@ def _genotype_at(s: str, i: int) -> tuple[str, int] | None:
     return "".join(out), m.end()
 
 
-def _decode_line(s: str, *, sep: bool = True) -> str:
+# 낱말 가운데 로마자(#1097) — 위 _decode_line 참조. 끄는 스위치는 전후 대조용이다.
+_MIDWORD_ROMAN = os.environ.get("BR_MIDWORD_ROMAN", "1").lower() not in ("0", "false", "off")
+_MIDWORD_ROMAN_RE = re.compile(r"⠴([⠁-⠵]{1,4})⠲(?=[^⠀ \n⠲⠂⠆⠒⠦⠖⠴⠄⠐⠤⠸⠼])(?!⠠[⠴⠄]|⠦⠄)")
+
+
+def _decode_line(s: str, *, sep: bool = True, mid_roman: bool = True) -> str:
     # 구분표는 **토큰 경계이기도 하다.** 그냥 지우면 뒤 셀이 앞 음절의 받침으로 먹힌다 —
     # `⠣⠤⠌`(아예)가 `았`, `⠟⠺⠤⠌⠨⠕`(인의예지)가 `인읬지`, `⠠⠍⠤⠗⠁`(수액)이 `쉭` 이
     # 된다. 그래서 그 자리에서 **끊어 따로 읽고 붙인다**(드러냄표 센티넬과 같은 수법).
     if sep and _SEP_MARK_RE.search(s):
         return "".join(_decode_line(part) for part in _SEP_MARK_RE.split(s))
+    # ★ 낱말 **가운데** 로마자 — 「한글 점자」 제29항(재추출 1496행) 로마자표 ⠴ … 종료표 ⠲.
+    #   규정 예(3643행) `제n항까지의` = `.n0n4j7,$.ow`. ⠴ 는 낱말 가운데서 닫는 따옴표 · 받침 ㅎ 과
+    #   점형이 같아 음절 맞춤이 앞 모음과 함께 먹고 `제”에.항` 으로 나갔다(#1097).
+    #   한글 음절 바로 뒤 ⠴ 에서 낱자 1~4칸 + 종료표 ⠲ + **붙은 한글**일 때만 그 자리에서 끊어
+    #   로마자로 읽는다. 닫는 따옴표 · 마침표 뒤에 빈칸 없이 한글이 오는 꼴은 문장에 없다.
+    #   ⚠ ⠴ 는 받침 ㅎ 이기도 하다 — `않는다.)`(안+ㅎ · 는다 · 마침표)가 같은 꼴이다. 그래서 **종전 읽기가
+    #     실재하는 한국어 낱말이면**(kiwi) 손대지 않는다. 전권 첫 판에서 ㅎ 받침 낱말 216줄이 걸렸다.
+    if _MIDWORD_ROMAN and mid_roman:
+        for m in _MIDWORD_ROMAN_RE.finditer(s):
+            if m.start() and all(x in _ALPHA_REV for x in m.group(1)):
+                head = _decode_line(s[:m.start()], sep=sep, mid_roman=False)
+                ws = max(s.rfind("⠀", 0, m.start()), s.rfind(" ", 0, m.start())) + 1
+                if "가" <= head[-1:] <= "힣" and not _is_real_korean(
+                        _decode_line(s[ws:m.end()], sep=sep, mid_roman=False)):
+                    return (head + "".join(_ALPHA_REV[x] for x in m.group(1))
+                            + _decode_line(s[m.end():], sep=sep, mid_roman=mid_roman))
     out: list[str] = []
     i, n = 0, len(s)
     _after_number = -1        # 수표 숫자가 방금 끝난 자리(아래 단위표 가드용)
