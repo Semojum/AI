@@ -203,8 +203,10 @@ _LIM_RE    = re.compile(
 # \log_{base} 또는 \log_{base}(arg) — 괄호 진수는 제46항 [붙임2]·[다만] 분기용으로 캡처.
 # 이 단계 시점엔 소괄호가 이미 ⠦…⠴로 바뀌어 있다(변환 1단계) — 점자 괄호로 매칭.
 _LOG_BASE_RE = re.compile(r"\\log_\{([^{}]*)\}")
-_LOG_BASE_FULL_RE = re.compile(r"\\log_\{([^{}]*)\}(?:\s*⠦([^⠦⠴]*)⠴)?")
-# \log_base (단일 문자/숫자)
+# 밑은 한 겹 중괄호까지(`\log_{2^{2}}`). 밑 뒤 공백도 먹는다 — `\log_{3} \sqrt{6}` 의 공백이 빈칸 셀로 남아 `_,3⠀>#f` 가 됐다(#1074,
+# 규정·2027 gold 는 `_,3>#f`). 한 글자 밑 `\log_a` 는 4단계 머리에서 `\log_{a}` 로 맞춘다.
+_LOG_BASE_FULL_RE = re.compile(r"\\log_\{((?:[^{}]|\{[^{}]*\})*)\}\s*(?:⠦([^⠦⠴]*)⠴)?")
+# \log_base (단일 문자/숫자) — 규칙 이력(rule_trail) 잔여 계산용. 점역은 4단계가 중괄호 꼴로 맞춘다.
 _LOG_BASE1_RE = re.compile(r"\\log_([A-Za-z0-9])")
 # \abs{x} 또는 \left| ... \right|
 _ABS_RE    = re.compile(r"\\abs\{([^{}]*)\}|\\left\|([^|]*?)\\right\|")
@@ -299,6 +301,13 @@ _TRIG_ARG_RE = re.compile(
     rf"(\d+[A-Za-z{_TRIG_GREEK}][A-Za-z0-9{_TRIG_GREEK}]*|\d+\\[a-zA-Z]+|[A-Za-z]{{2,}}[A-Za-z0-9]*"
     rf"|[{_TRIG_GREEK}][A-Za-z0-9{_TRIG_GREEK}]+"
     rf"|{_TRIG_FRAC}\s*(?:\\[a-zA-Z]+|[A-Za-z{_TRIG_GREEK}])+|{_TRIG_FRAC})")
+# 진수 묶음(제46항 [붙임 2], #1074) — 괄호 없는 분수 · 곱 진수. 괄호 진수는 4단계가 본다.
+_LOG_HEAD = r"\\log(?:_\{[^{}]*\}|_[A-Za-z0-9])?"
+_LOG_ATOM = rf"(?:\\sqrt\{{[^{{}}]*\}}|[A-Za-z{_TRIG_GREEK}])"
+_LOG_ARG_RE = re.compile(
+    rf"({_LOG_HEAD})\s*"
+    rf"({_TRIG_FRAC}|(?:\d+(?:\.\d+)?|{_LOG_ATOM})(?:\s*{_LOG_ATOM})+)"
+    r"(?![\^_{⠦A-Za-z0-9])")
 
 
 def digits_to_braille(num_str: str) -> str:
@@ -1518,6 +1527,22 @@ def _stage1f_trig_arg_group(result: str) -> str:
         lambda m: f"{m.group(1)}{m.group(2) or ''}{_WRAP_S}{m.group(3)}{_WRAP_E}", result)
 
 
+def _stage1g_log_arg_group(result: str) -> str:
+    r"""1g. 로그 진수 묶음 (수학 제46항 [붙임 2], #1074).
+
+    [입력] \log 가 아직 LaTeX 이고 분수 · 근호도 LaTeX 꼴(2 · 2c 단계 전).
+    [출력] 괄호 없는 분수 · 곱 진수에 묶음표(_WRAP_S/E)가 씌워진 상태.
+
+    규정: 진수가 분수 · 곱 · 다항식 · 괄호면 묶음 괄호로 묶는다(`_;A(V/U)`). 괄호 진수는
+    4단계가 밑에 따라 가른다([다만] 밑이 문자면 안 묶음). 괄호 없는 다항식은 진수 끝을
+    알 수 없어 건드리지 않는다. 2027 gold(비홀드아웃): 분수 19 · 곱 9 묶음, 단일 수 ·
+    글자 · 근호는 안 묶음, 반례 0. 뒤에 ^ _ ( 가 붙으면(`3x^2`) 진수 끝이 아니라 안 묶는다.
+    """
+    # 진수 안 공백(`2 \sqrt{3}`)은 빈칸 셀로 남으면 안 되니 묶으며 걷는다.
+    return _LOG_ARG_RE.sub(
+        lambda m: m.group(1) + _WRAP_S + "".join(m.group(2).split()) + _WRAP_E, result)
+
+
 def _stage2c_sqrt(result: str) -> str:
     r"""2c. 제곱근 \sqrt{내용} → ⠜내용 (수학 제22항; n제곱근은 0b에서 선처리).
 
@@ -1587,6 +1612,8 @@ def _stage4_log(result: str) -> str:
     """
     # \ln → log_e
     result = result.replace("\\ln", _LN_BRAILLE)
+    # 한 글자 밑 `\log_a` 를 `\log_{a}` 로 맞춰 아래 한 정규식이 괄호 진수 · 밑 뒤 공백까지 본다(#1074).
+    result = re.sub(r"\\log_([A-Za-z0-9])", r"\\log_{\1}", result)
 
     def _log_base_replace(m: re.Match) -> str:
         base_raw = m.group(1).strip()
@@ -1598,26 +1625,22 @@ def _stage4_log(result: str) -> str:
             dropped = "".join(_digit_no_indicator(ch) for ch in base_raw)
             head = f"{_LOG_IND}{_LOG_NUM_SEP}{dropped}"
             # [붙임 2] 밑이 숫자이고 진수가 괄호식이면 묶음으로 다시 묶는다(_,2(8x5#a0)).
-            # 관행 모드는 묶음=소괄호꼴이라 겹괄호가 되므로 규정 모드만 겉묶음을 더한다.
-            if tail and not _IS_BOOK_STYLE:
+            # #1074: 모드 무관. 종전엔 book 모드 묶음이 소괄호꼴이라 겹괄호를 피해 뺐는데,
+            # 묶음은 08-15 부터 ⠷⠾ 로 고정이다. 2027 gold 숫자 밑 괄호 진수 44곳 모두 묶음.
+            if tail:
                 return f"{head}{_WRAP_S}{tail}{_WRAP_E}"
             return f"{head}{tail}"
         # 밑이 소수/분수인 경우 묶음 괄호 (수학 제46항 붙임1)
-        if _needs_wrap(base_raw) or re.fullmatch(r"\d+\.\d+", base_raw):
+        # #1074: 분수는 2단계를 지나 점자(⠌)라 `_needs_wrap` 이 못 본다.
+        # ⚠ 숫자 거듭제곱 밑(`\log_{2^2}` → gold `_;(#b~#b)`)은 조항이 없어 여기서 묶지 않는다
+        #   (2027 gold 11:0 이지만 근거가 코퍼스뿐이다, 원장 등재 뒤 따로 판단).
+        if _needs_wrap(base_raw) or re.fullmatch(r"\d+\.\d+", base_raw) or "⠌" in base_raw:
             return f"{_LOG_IND}{_SUBSCRIPT_IND}{_wrap_ins(base)}{tail}"
         # [다만] 밑이 문자면 괄호 진수는 그대로 잇는다
         return f"{_LOG_IND}{_SUBSCRIPT_IND}{base}{tail}"
 
     result = _LOG_BASE_FULL_RE.sub(_log_base_replace, result)
 
-    # \log_x (단일 문자/숫자)
-    def _log_base1_replace(m: re.Match) -> str:
-        b = m.group(1)
-        if b.isdigit():
-            return f"{_LOG_IND}{_LOG_NUM_SEP}{_digit_no_indicator(b)}"
-        return f"{_LOG_IND}{_SUBSCRIPT_IND}{_letter_braille(b)}"
-
-    result = _LOG_BASE1_RE.sub(_log_base1_replace, result)
     # 밑 없는 log
     return result.replace("\\log", _LOG_IND)
 
@@ -2225,6 +2248,7 @@ def convert_latex(latex: str) -> str:
     │ 1d │_stage1d_left_scripts  │{} 마커 살아있음       │왼쪽 첨자                   │
     │ 1e │_stage1e_integral_range│∫ + ASCII _ ^         │적분 범위(위첨자로 오인 방지)│
     │ 1f │_stage1f_trig_arg_group│\sin 등 명령 형태      │삼각 인수 경계              │
+    │ 1g │_stage1g_log_arg_group │\log · \frac LaTeX    │로그 진수 경계              │
     │ 2  │_apply_fracs           │\frac 구조            │분수 구조                   │
     │ 2c │_stage2c_sqrt          │\sqrt 구조            │근호 구조                   │
     │ 3  │_stage3_limit          │\lim·\to              │극한 구조                   │
@@ -2291,6 +2315,7 @@ def convert_latex(latex: str) -> str:
     result = _stage1d_left_scripts(result)          # 1d. 왼쪽 첨자
     result = _stage1e_integral_range(result)        # 1e. 정적분 범위
     result = _stage1f_trig_arg_group(result)        # 1f. 삼각함수 인수 묶음
+    result = _stage1g_log_arg_group(result)         # 1g. 로그 진수 묶음
     result = _apply_fracs(result)                   # 2.  분수
     result = _stage2c_sqrt(result)                  # 2c. 제곱근
     result = _stage3_limit(result)                  # 3.  극한
