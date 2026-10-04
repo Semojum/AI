@@ -38,3 +38,16 @@ def test_old_jamo_is_not_silently_dropped():
 def test_modern_text_untouched():
     """첫가끝 자모가 없는 줄은 종전 경로 그대로(약자·약어 보존)."""
     assert translate_plain("하늘") == "⠚⠉⠮"
+
+
+# 제25항 옛 모음자 ㆇ ~ ㆌ — 규정 예시 그대로(`braille-source/text/한국 점자 규정_재추출.txt` 행 번호, BRF 를 셀로 옮김).
+# 종전 표는 첫가끝 코드값을 잘못 걸어 ㆉ 를 ㆇ 로 적고 ㆊ · ㆋ · ㆌ 는 글자째 지웠다(#1093).
+@pytest.mark.parametrize("text, expected", [
+    ("ᄉᆈ고기", "⠠⠸⠬⠕⠈⠥⠈⠕"),        # 1270~1271 `,_+o@u@o` — ㆉ 요이(U+1188)
+    ("ᄃᆑᆫ", "⠊⠸⠩⠱⠒"),               # 1272 `i_%:3` — ㆊ 유여(U+1191)
+    ("ᄎᆒ", "⠰⠸⠩⠌"),                  # 1277 `;_%/` — ㆋ 유예(U+1192)
+    ("거ᄋᆔ라", "⠈⠎⠸⠩⠕⠐⠣"),          # 1280~1281 `@s_%o"<` — ㆌ 유이(U+1194), 첫소리 ㅇ 은 안 적는다
+    ("ᄎᆔᄒᆞ야", "⠰⠸⠩⠕⠚⠐⠼⠜"),        # 1282~1283 `;_%oj"#>`
+])
+def test_old_vowel_regulation_examples(text, expected):
+    assert translate_plain(text) == expected
