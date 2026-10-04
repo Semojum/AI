@@ -989,6 +989,63 @@ def _collapsed_table(html: str) -> bool:
     return False
 
 
+# 원문자(①~⓾ · ⓐ~ⓩ · ㉠~㉻ 등). MinerU 는 표를 그림으로 보고 읽어 셀의 원문자를 `\textcircled{7}` · 다른 원문자(㉡ → ⑫ · ⑪)로
+# 깨뜨린다(조사 V2 `temp/n83/조사_그림원문자.md` B, n71 384쪽에서 `\textcircled` 든 표 19/19). 층에는 바른 ㉠ 이 있다.
+_CIRCLED_RE = re.compile(r"[\u2460-\u24E9\u3260-\u327E]")
+_CIRCLED_TOKEN_RE = re.compile(r"\\textcircled\s*\{[^{}]*\}|[\u2460-\u24E9\u3260-\u327E]")
+
+
+def _restore_table_circled(fitz_page: fitz.Page, bbox: list[float], html: str) -> str:
+    """표 셀의 원문자 자리를 층의 원문자로 되돌린다(#1075).
+
+    층 원문자 목록과 셀의 원문자 자리 토큰(`\\textcircled{…}` · 원문자)을 **읽는 차례로 짝지어 개수가 같을 때만** 바꾼다
+    (전부-아니면-전무, `_correct_table_cells` 와 같은 원칙). 층 전체를 못 믿는 쪽이어도 층의 ㉠ 은 본문 글꼴 글자라 믿는다.
+    바꾼 뒤 LaTeX 명령이 없어진 수식 구간(`$㉠(2)$`)은 글로 푼다.
+    ★ `⑦ → ㉠` 같은 고정 치환표는 쓰지 않는다 — 숫자 인자가 ㉠ 일 때도 ㉣ 일 때도 있다(`kor_math_rules.py` 크롭 근거).
+    ⓐ 가 민 글자 `a` 로 나온 꼴은 표식이 없어 짝을 못 지으니 손대지 않는다.
+    """
+    if not html or not bbox:
+        return html
+    tokens = list(_CIRCLED_TOKEN_RE.finditer(html))
+    if not tokens:
+        return html
+    want = _CIRCLED_RE.findall(_native_text_pair(fitz_page, bbox)[0])
+    if len(want) != len(tokens) or all(t.group(0) == w for t, w in zip(tokens, want)):
+        return html
+    out = html
+    for t, w in sorted(zip(tokens, want), key=lambda tw: tw[0].start(), reverse=True):
+        out = out[:t.start()] + w + out[t.end():]
+    out = _CELL_RE.sub(lambda m: m.group(1) + _unwrap_circled_math(m.group(2)) + m.group(3), out)
+    # ★ 자리 확인 — 개수가 같아도 층과 셀의 읽는 차례가 다르면(두 줄로 접힌 셀) ㉠ · ㉡ 이 뒤바뀐 채 붙는다.
+    #   바뀐 셀(수식 명령 없는 것)마다 셀 글 전체나 '원문자 + 뒤 두 글자'가 되돌린 층에 있어야 한다.
+    #   하나라도 없으면 표째 그대로 둔다. 원문자와 바로 뒤 글자를 같이 보므로 뒤바뀐 짝은 여기서 걸린다.
+    layer_ns = re.sub(r"\s+", "", _native_text_pair(fitz_page, bbox)[1])
+    for old_m, new_m in zip(_CELL_RE.finditer(html), _CELL_RE.finditer(out)):
+        cell = re.sub(r"\s+|<[^>]*>|\$", "", new_m.group(2))
+        if new_m.group(2) == old_m.group(2) or "\\" in cell or cell in layer_ns:
+            continue
+        if not all(cell[m.start():m.start() + 3] in layer_ns for m in _CIRCLED_RE.finditer(cell)):
+            return html
+    return out
+
+
+def _unwrap_circled_math(cell: str) -> str:
+    """셀 안 `$…$` 짝 가운데 LaTeX 명령 없이 원문자가 든 구간을 글로 푼다(`$㉠(2)$` → `㉠(2)`).
+
+    ★ `$` 를 셀 안에서 차례로 짝짓는다. 정규식으로 `$…$` 를 찾으면 앞 구간이 안 맞을 때 닫는 `$` 와 다음 여는 `$`
+      사이(수식 밖 글)를 수식으로 잡아 구분자를 깨뜨린다. 짝이 홀수면 손대지 않는다.
+    """
+    parts = cell.split("$")
+    if len(parts) % 2 == 0:
+        return cell
+    out = [parts[0]]
+    for i in range(1, len(parts), 2):
+        math = parts[i]
+        out.append(math if "\\" not in math and _CIRCLED_RE.search(math) else f"${math}$")
+        out.append(parts[i + 1])
+    return "".join(out)
+
+
 def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> str:
     """표 셀의 한글 오독을 텍스트 레이어를 근거로 고친다. 구조(HTML)는 건드리지 않는다.
 
@@ -1914,6 +1971,7 @@ def run(
                 # 표는 구조 때문에 전면 대체를 못 하므로 글머리 기호(제72항)만 되돌리고,
                 # 셀 안 글자는 레이어를 근거로 한글 오독만 고친다(둘 다 전부-아니면-전무).
                 content = _restore_table_bullets(fitz_page, bb, content)
+                content = _restore_table_circled(fitz_page, bb, content)
                 content = _correct_table_cells(fitz_page, bb, content)
 
         # 인쇄 캡션 강제 적용(위 forced_caption) — 생성 placeholder/빈 content를 덮어쓴다.
