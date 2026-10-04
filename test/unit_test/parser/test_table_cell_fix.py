@@ -25,7 +25,7 @@ BBOX = [0, 0, 1000, 1000]
 def layer(monkeypatch):
     """텍스트 레이어를 원하는 문자열로 고정한다(PDF 없이 순수 로직 검증)."""
     def _set(text):
-        monkeypatch.setattr(MR, "_native_text_spaced", lambda page, bb: text)
+        monkeypatch.setattr(MR, "_native_text_pair", lambda page, bb, skip_math=False: (text, text))
     return _set
 
 
