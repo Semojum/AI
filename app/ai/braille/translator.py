@@ -209,11 +209,37 @@ def _book_roman_to_cells(text: str) -> str:
 
 _FORMULA_RE      = re.compile(r"<!수식>(.*?)<!/수식>", re.DOTALL)
 # 수학 제11항(재추출 3234~3236행): 두 칸 대상인 수학적 표기에서 "분모와 분자가 수로 이루어진
-#   단순 분수와 소수를 제외"한다. 동그라미 숫자 선택지 뒤의 단순 수(정수 · 소수 · 음수 · 수/수 분수)는
-#   묵자 빈칸대로 한 칸이다 — 제64항 예(2585~2586행) `① ㄱ, ㄴ  ② ㄱ, ㄷ` = `#1`=a"`=3``#2…` (#1083).
-#   ⚠ 선택지 자리만 좁혔다. 자리를 안 가리는 넓은 꼴은 따로 재는 중이다(temp/n46/kjbl/결과_수식간격_N팔.md).
+#   단순 분수와 소수를 제외"한다. 단순 수(정수 · 소수 · 음수 · 수/수 분수)는 자리를 가리지 않고 두 칸 대상이
+#   아니라 묵자 빈칸대로 한 칸 · 조사는 붙인다 — 제64항 예(2585~2586행) `① ㄱ, ㄴ  ② ㄱ, ㄷ` = `#1`=a"`=3``#2…`
+#   (#1083 선택지 뒤) · 글 속 `값은 $3$이다`(#1095 현장 지적 3). gold 94권 붙임 3,167 : 두 칸 11(원장 C-156).
+_CIRCLED_BR_RE = re.compile(r"⠼[⠂⠆⠒⠲⠢⠖⠶⠦⠔⠴]")    # 동그라미 숫자 ①~⑩ 점형(내려 쓴 수)
 _SIMPLE_NUM_MATH_RE = re.compile(r"\s*-?\s*(?:\\[dt]?frac\s*\{?\s*\d+\s*\}?\s*\{?\s*\d+\s*\}?|\d+(?:\.\d+)?)\s*")
-_CIRCLED_TAIL_RE = re.compile(r"[①-⑳]\s*$")
+# 글 속 글자 하나 수식(`$a$`)은 로마자다 — 제32항 예(재추출 1653행) `다음 a, b, c의 값` = `0a1 ;b1 ;c4w`
+#   (#1095 현장 지적 4). gold 94권 로마자꼴 11,692 : 수식꼴 77(원장 C-155).
+#   가드: 앞뒤 글에 로마자 · 수 · 연산 기호 · 괄호가 붙으면 식의 일부라 수식 그대로(`y=sin $x$`, `$f$(x)`).
+_SINGLE_LETTER_MATH_RE = re.compile(r"<!수식>\s*([A-Za-z])\s*<!/수식>([ \t]*)")
+# 로마자 뒤 조사는 붙인다(1653행 `c의` = `;c4w`). 추출이 `$k$ 의` 처럼 띄워 내보내는 빈칸을 지운다
+#   (009 ans 53 `k의 값` 이 `⠴⠅⠲⠀⠺` 로 나갔다, gold `⠴⠅⠲⠺`).
+_LETTER_PARTICLE_RE = re.compile(r"(?:의|이|가|을|를|은|는|와|과|에|에서|에게|로|으로|도|만|까지|부터|보다|처럼|"
+                                 r"이고|이다|이며|이면|이라|이므로|이지|일|인|임|이라고|이라는|이라면|이므로)(?![가-힣])")
+_MATH_NEIGHBOR_RE = re.compile(r"[A-Za-z0-9=+\-−<>≤≥×÷·/^_()\[\]{}|'′]")
+
+
+_PREV_FORMULA_COMMA_RE = re.compile(r"<!수식>((?:(?!<!).)*)<!/수식>\s*,$", re.S)
+_SINGLE_LETTER_RE = re.compile(r"[A-Za-z]")
+
+
+def _single_letter_math_repl(m: re.Match) -> str:
+    before = m.string[:m.start()].rstrip()
+    after = m.string[m.end():].lstrip()
+    if (before and _MATH_NEIGHBOR_RE.match(before[-1])) or (after and _MATH_NEIGHBOR_RE.match(after[0])):
+        return m.group(0)
+    # 수식 나열의 끝(`$\sqrt[3]{2}$ , $b$ 이므로`)이면 수식 그대로 — 앞 수식이 낱자가 아닐 때만.
+    #   낱자끼리의 나열(`다음 a, b, c의 값`, 「한글 점자」 제32항 1653행)은 로마자로 둔다.
+    prev = _PREV_FORMULA_COMMA_RE.search(before)
+    if prev and not _SINGLE_LETTER_RE.fullmatch(prev.group(1).strip()):
+        return m.group(0)
+    return m.group(1) + ("" if _LETTER_PARTICLE_RE.match(after) else m.group(2))
 _TAG_RE          = re.compile(r"<[^>]+>")
 # 잔여 <!…> 정식 태그만 안전 제거(아래 _ANGLE_LABEL_RE가 본문 <…>를 살린 뒤).
 _RESIDUAL_BANG_TAG_RE = re.compile(r"<!/?[^>]*>")
@@ -2091,8 +2117,7 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
                 chunks.append(("n", "⠤".join(convert_latex(x) for x in ions), False, False))
             else:
                 # "s" = 홑 기호(제70항·제60항 5호·제15항 한 칸). 그 밖은 "f"(제11항 두 칸).
-                simple = (_SIMPLE_NUM_MATH_RE.fullmatch(core)
-                          and _CIRCLED_TAIL_RE.search(parts[i - 1] if i else ""))
+                simple = _SIMPLE_NUM_MATH_RE.fullmatch(core)
                 chunks.append(("p" if simple else "s" if _LONE_SPACED_SYM_RE.match(core) else "f",
                                convert_latex(part), False, False))
 
@@ -2118,8 +2143,12 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
             if kind in ("n", "s") or prev_kind in ("n", "s"):
                 # 이온은 한 칸(과학 제2항 붙임), 홑 기호도 한 칸(제70항·제60항 5호·제15항)
                 result_parts.append("⠀")
-            elif kind == "p":
-                if pending_ws or lead_ws:             # 선택지 뒤 단순 수: 묵자 빈칸 그대로(한 칸), 제11항
+            elif kind == "p" or prev_kind == "p":
+                # 단순 수 앞뒤: 묵자 빈칸 그대로(한 칸), 제11항. 단 다음 선택지 번호 앞은 두 칸 —
+                #   제64항 예(2585~2586행) `① ㄱ, ㄴ  ② ㄱ, ㄷ` 의 선택지 사이(묵자가 한 칸이어도).
+                if prev_kind == "p" and _CIRCLED_BR_RE.match(braille):
+                    result_parts.append("⠀⠀")
+                elif pending_ws or lead_ws:
                     result_parts.append("⠀")
             elif kind == "i" or prev_kind == "i":
                 if pending_ws or lead_ws:
@@ -3126,6 +3155,8 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     text = _latex_chem_to_unicode(text)     # B-24 LaTeX 단순 화학식 → 평문 화학 경로
     text = inline_math.chem_chains(text)    # 반응식 식 경계(C-132) — $…$ 를 풀기 전에
     text = _normalize_inline_math(text)     # $…$/\(…\) → <!수식> (P1: 수식 라우팅)
+    if _HANGUL_SYL_RE.search(text):
+        text = _SINGLE_LETTER_MATH_RE.sub(_single_letter_math_repl, text)   # 현장 지적 4(#1095)
     # 구분자 없는 평문 수식(cos 2α=1-2 sin² α)도 같은 경로로 보낸다 — 수학 본문의
     # 16%가 이 형태다(inline_math 모듈이 오탐 없이 구간만 골라 태그를 붙인다).
     # ★ 맞고 틀림 표시는 **수식 라우팅보다 먼저** 고정한다(2026-08-26 2차).
