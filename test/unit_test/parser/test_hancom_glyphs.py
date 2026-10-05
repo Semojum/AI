@@ -126,3 +126,12 @@ def test_긴_동치_화살표_한_벌과_되돌리기가_적는_글자():
     """#1072 — EHSunm-Plain GID 28 · 49 · 29 는 ⟺ 한 벌(층 `HjK`). EMITTED 는 판정용 사본에서 뺄 비ASCII 글자."""
     assert [hg.restored("EHSunm-Plain", g) for g in (28, 49, 29)] == ["⟺", "", ""]
     assert {"²", "₁", "μ", "⁺", "×"} <= hg.EMITTED and not any(c.isascii() for c in hg.EMITTED)
+
+
+def test_큰_괄호_종류와_적분_합성():
+    """#1082 다음 묶음 — 수학 II 윤곽 + 지면 독립 검증(gold 무관). 큰 괄호 글꼴은 층이 괄호 종류를 바꿔 준다:
+    91 · 93 층 `{` `}` = 큰 소괄호, 60 · 61 층 `[` `]` = 큰 중괄호. ∫ 은 층 `:`, 합성 ∘ 은 층 `ç`."""
+    assert [hg.restored("EHboNA-Plain", g) for g in (91, 93, 60, 61, 63)] == ["(", ")", "{", "}", "×"]
+    assert [hg.restored("EHSusic-Plain", g) for g in (27, 10, 197, 34, 64, 5)] == ["∫", "₀", "₁", "ₐ", "₋", "⁴"]
+    assert hg.restored("EHyak-Plain", 151) == "∘"
+    assert hg.restored("EHboNA-Plain", 28) is None                 # 분수 조각은 1:1 로 못 되살린다(#1055 몫)
