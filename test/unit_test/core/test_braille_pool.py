@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 
 import pytest
@@ -79,21 +80,29 @@ class TestLoopNotBlocked:
         assert len(beats) <= 4, f"막혀야 하는데 심박 {len(beats)}회"
 
     def test_여러_페이지_점역이_겹쳐_흐른다(self) -> None:
-        """풀 크기 4면 100ms짜리 4건이 400ms가 아니라 대략 100ms대에 끝난다."""
+        """풀 크기 4면 네 건이 한꺼번에 돈다.
+
+        ★ 벽시계 문턱(직렬 0.4초 대신 0.35초 안)으로 재면 바쁜 러너에서 거짓 실패가 났다(#1127, CI 0.365초).
+          네 건이 **동시에 들어와 있는지**를 장벽으로 직접 본다. 넷이 동시에 못 들어오면(풀이 작거나 직렬이면)
+          장벽이 시간 초과로 깨진다. 부하와 상관없이 결정적이다.
+        """
         from app.core.config import config
 
         old = config.braille_max_concurrent
         config.braille_max_concurrent = 4
         limits._reset_for_tests()
+        barrier = threading.Barrier(4)
+
+        def job() -> str:
+            barrier.wait(timeout=10)          # 넷이 동시에 안 들어오면 BrokenBarrierError
+            return _burn(20)
+
         try:
             async def go():
-                t0 = time.perf_counter()
-                await asyncio.gather(*[limits.run_braille(_burn, 100) for _ in range(4)])
-                return time.perf_counter() - t0
+                return await asyncio.gather(*[limits.run_braille(job) for _ in range(4)])
 
-            elapsed = asyncio.run(go())
-            # GIL 때문에 완전 병렬은 아니지만 직렬(0.4s)보다는 확실히 빨라야 한다.
-            assert elapsed < 0.35, f"겹쳐 흐르지 않는다({elapsed:.3f}s)"
+            assert asyncio.run(go()) == ["done:True"] * 4
+            assert limits.braille_pool()._max_workers == 4
         finally:
             config.braille_max_concurrent = old
             limits._reset_for_tests()
