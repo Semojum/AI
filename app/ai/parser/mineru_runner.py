@@ -1321,6 +1321,16 @@ _SCRIPT_CHARS = frozenset("⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻₀₁₂₃₄₅�
 # #1072 같은 커밋 A/B 스위치. 끄면 종전(되돌리기 전 글로만 판정)이다.
 _GATE_AFTER_RESTORE = os.environ.get("LAYER_GATE_AFTER_RESTORE", "1") != "0"
 _LATEX_GUARD = os.environ.get("LAYER_GATE_LATEX_GUARD", "1") != "0"
+# #1130 — 첨자를 **몇 개** 담았는지로 본다. '하나라도 있으면' 판정은 수학 Ⅰ(009)에서 `a₁` 의 ₁ 하나로 통과해
+# `a_{n+1}` · `\frac` 을 평평한 층 글(`an+1`)로 덮었다(dev 009 요소 181개 · 89쪽, V2 temp/n117).
+# 수식 구간(`$…$`) 속 짧고 온전한 첨자 · 분수 · 근호만 센다. MinerU 가 깨진 글리프를 `\Xi ^ { | }` ·
+# `\frac { \textcircled { \dag }` 같은 쓰레기 LaTeX 로 적은 자리(생명과학)까지 세면 첨자를 다 담은 층 글(`t₁`)을 막는다.
+_LATEX_MATH_RE = re.compile(r"\$\$?(.+?)\$\$?", re.S)
+_LATEX_ARG = r"(?:\{[A-Za-z0-9+\-*\s]{1,8}\}|[A-Za-z0-9])"
+_LATEX_SCRIPT_RE = re.compile(
+    r"(?<!\\)[\^_]\s*(?:\{\s*(?:[A-Za-z0-9+\-*]{1,4}|\\ast|\\prime)(?:\s+[A-Za-z0-9+\-*]{1,4})*\s*\}|[A-Za-z0-9*])"
+    rf"|\\frac\s*{_LATEX_ARG}\s*{_LATEX_ARG}|\\sqrt\s*{_LATEX_ARG}")
+_LATEX_COUNT_GUARD = os.environ.get("LAYER_LATEX_COUNT_GUARD", "1") != "0"   # 같은 커밋 A/B 스위치(끄면 종전)
 
 
 def _has_struct_font(fitz_page: fitz.Page, bbox: list[float]) -> bool:
@@ -1336,9 +1346,13 @@ def _latex_lost(mineru_text: str, native: str) -> bool:
     """MinerU 가 LaTeX 로 살린 첨자 · 분수 · 근호를 층 글이 잃는가(#1072).
 
     층은 위첨자 숫자를 평범한 숫자로 적는다(수학 I p0012 `$2^{30}$` ↔ 층 `2  30`). 되돌린 층 글에 첨자 · √ 글자가
-    있으면 층도 구조를 담은 것이다(생명과학 `$t_{1}$` ↔ 층 `t₁`).
+    있으면 층도 구조를 담은 것이다(생명과학 `$t_{1}$` ↔ 층 `t₁`). ★ #1130 — 수식 구간 속 첨자 · 분수 · 근호 수만큼
+    있어야 한다. 하나만 보면 `$a_1 = a, a_{n+1} = a_n + d$` ↔ 층 `a₁=a, an+1=an+d` 가 `₁` 로 통과한다.
     """
-    return bool(_LATEX_STRUCT_RE.search(mineru_text or "")) and not (_SCRIPT_CHARS & set(native))
+    if not _LATEX_COUNT_GUARD:
+        return bool(_LATEX_STRUCT_RE.search(mineru_text or "")) and not (_SCRIPT_CHARS & set(native))
+    need = sum(len(_LATEX_SCRIPT_RE.findall(m)) for m in _LATEX_MATH_RE.findall(mineru_text or ""))
+    return sum(c in _SCRIPT_CHARS for c in native) < need
 
 
 def _rescued_by_restore(fitz_page: fitz.Page, bbox: list[float], plain: str, native: str, mineru_text: str) -> bool:
@@ -1431,6 +1445,8 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str,
     base = (mineru_text or "").strip()
     if not base:
         return native
+    if _LATEX_COUNT_GUARD and _latex_lost(base, native):
+        return None                        # #1130 — 층을 어느 경로로 믿었든(제어 문자 띄움 · 되돌리기 · 처음부터) 같다
     if (halluc_layer is not None and not _has_struct_font(fitz_page, bbox)
             and _halluc_keeps_real(base, native, halluc_layer)):
         return native                      # 위 환각 절 ① — 쓰레기가 끌어내린 닮음은 안 본다
