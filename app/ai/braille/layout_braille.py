@@ -164,13 +164,9 @@ _BORDER_BLANK = "⠀"     # 점자 빈칸(U+2800) — 제목 앞뒤 띔
 #     여기서 바꾸는 것은 **유니코드 점자 층**뿐이다.
 _PAD = "⠀"              # 들여쓰기·정렬에 쓰는 점자 빈칸
 _BORDER_LEFT_FILL = 4   # 캡1+채움4+빈칸1 → 제목 7칸째 시작 (NLD-1.2.5(4)②)
-# 위계별 테두리 (start_cap, fill, end_cap). 표준 Braille ASCII: =⠿ g⠛ 7⠶ 6⠖ 3⠒ 4⠲ h⠓ j⠚ "⠐
-# 현재 1단계만 발생(태그에 위계 없음). 2·3단계는 §3-5 태그 규약 확정 후 사용.
-_BOX_LEVELS: dict[int, dict[str, tuple[str, str, str]]] = {
-    1: {"top": ("⠿", "⠛", "⠿"), "bottom": ("⠿", "⠶", "⠿")},
-    2: {"top": ("⠖", "⠒", "⠲"), "bottom": ("⠓", "⠒", "⠚")},
-    3: {"top": ("⠖", "⠐", "⠲"), "bottom": ("⠓", "⠐", "⠚")},
-}
+# 위계별 테두리 (start_cap, fill, end_cap) — 공용 표(`constants.BOX_LEVELS`, 근거 행 번호도 거기).
+# 위계는 추출이 단다(`pdf_analyzer.tag_boxed_elements` 의 사각형 깊이 → `<!상자2>`).
+from app.ai.braille.constants import BOX_LEVELS as _BOX_LEVELS  # noqa: E402
 # 제목을 위 테두리 안(중간 7칸)에 둘 수 있는 최대 길이. 초과 시 윗줄 5칸(케이스①, 규정 26칸)
 _BOX_TITLE_INLINE_MAX = _COLS - 2 - _BORDER_LEFT_FILL - 2  # = 24
 _BOX_TITLE_INDENT = 4  # 케이스① 제목 윗줄 "5칸에서 시작" = 앞 빈칸 4 (2026-08-10 정정)

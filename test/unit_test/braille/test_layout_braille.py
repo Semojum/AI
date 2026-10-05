@@ -862,12 +862,14 @@ class TestBoxBorderBBPG125:
             assert _is_border_line(lb._render_box_top(lv, "")[0])
             assert _is_border_line(lb._render_box_bottom(lv))
 
-    def test_위계_inline마커_여전히_렌더(self) -> None:
-        # substitute_tags는 위계 태그도 인라인 32칸 마커(위치용)로 렌더 — 손실 없음
+    def test_위계_inline마커는_위계대로_그린다(self) -> None:
+        # 응답 contents 는 조판 앞에서 굳으므로 점역기 표식부터 위계 꼴이어야 한다.
+        # 「점자 도서 제작 지침」 1장 2절 5. 2)(5)② 제2단계 위 테두리 6…3…4(재추출 454~455행 · [예 1-14] 479행)
         from app.ai.braille.translator import substitute_tags
 
         out = substitute_tags("<!상자2>설명<!/상자2>")
-        assert len(out) == _COLS and out.startswith("⠿") and out.endswith("⠿")
+        assert len(out) == _COLS and out.startswith("⠖⠒⠒⠒⠒⠀") and out.endswith("⠒⠲")
+        assert substitute_tags("<!상자끝2><!/상자끝2>") == "⠓" + "⠒" * 30 + "⠚"   # 아래 h…3…j(485행)
 
     def test_expand_위계2단계_재렌더(self) -> None:
         from app.schemas.content import BoxBorder
