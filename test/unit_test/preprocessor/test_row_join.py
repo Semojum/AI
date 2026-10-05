@@ -13,10 +13,11 @@ from app.ai.preprocessor.pdf_analyzer import rows_to_text
 
 
 class _R:
-    """rows_to_text가 쓰는 rect 최소 인터페이스(x0/y0/y1)."""
+    """rows_to_text가 쓰는 rect 최소 인터페이스(x0/x1/y0/y1)."""
 
-    def __init__(self, x0: float, y0: float, y1: float):
+    def __init__(self, x0: float, y0: float, y1: float, x1: float | None = None):
         self.x0, self.y0, self.y1 = x0, y0, y1
+        self.x1 = x0 + 1 if x1 is None else x1
 
 
 class TestRowsToText:
@@ -42,6 +43,25 @@ class TestRowsToText:
         items = [(_R(10, 100, 120), "1 ③"), (_R(60, 100, 120), "2 ⑤"),
                  (_R(10, 130, 150), "3 ④"), (_R(60, 130, 150), "4 ②")]
         assert rows_to_text(items) == "1 ③  2 ⑤\n3 ④  4 ②"
+
+
+class TestTuckInner:
+    """장식 띠 배지가 띠 글자의 빈칸 런 위에 따로 놓인 줄(#1085). 좌표는 EBS-E26-001 body p0015 실측."""
+
+    def test_배지는_빈칸_런_자리에_끼운다(self):
+        items = [(_R(89.9, 44.6, 60.6, 203.6), "수능                테스트"),
+                 (_R(125.1, 34.6, 59.2, 153.5), "3점")]
+        assert rows_to_text(items) == "수능 3점 테스트"   # gold ⠠⠍⠉⠪⠶⠀⠼⠉⠨⠎⠢⠀⠓⠝⠠⠪⠓⠪
+
+    def test_강조_태그_안쪽_런도_같다(self):
+        items = [(_R(57.3, 45.1, 54.7, 128.2), "<!강조>수능               문제<!/강조>"),
+                 (_R(79.6, 39.3, 54.0, 96.7), "실전")]
+        assert rows_to_text(items) == "<!강조>수능 실전 문제<!/강조>"
+
+    def test_런이_없는_포함은_종전대로(self):
+        # 분수 · ∑ 아래첨자처럼 품은 조각에 빈칸 런이 없으면 x0 차례 그대로다.
+        items = [(_R(10, 100, 120, 80), "x + 1"), (_R(30, 104, 120, 40), "2")]
+        assert rows_to_text(items) == "x + 1  2"
 
 
 class TestTwoCellGapSurvivesBraille:

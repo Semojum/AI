@@ -125,10 +125,36 @@ def _row_sep(prev: str, nxt: str, num_head: bool) -> str:
     return _ITEM_GAP
 
 
+_INNER_GAP_RE = re.compile(r"(?<=\S)\s{3,}(?=\S)")   # 조각 안쪽 빈칸 런(앞뒤 끝 빈칸은 안 침)
+
+
+def _tuck_inner(row: list) -> list:
+    """다른 조각의 x 구간 안에 든 조각을 그 조각의 안쪽 빈칸 런 자리에 끼운다(#1085).
+
+    장식 띠 `수능 ␣…␣ 테스트` 는 한 line 이고 배지 `2점` 은 그 빈칸 위에 따로 놓인 line 이라,
+    x0 로만 줄 세우면 `수능 테스트 2점` 이 된다(gold `수능 2점 테스트`). 2027 전권에서 이 꼴 353행이
+    전부 장식 띠다(수능 기본 문제 · 실전 문제 · 2점 · 3점 테스트). 런이 없는 포함(분수 · ∑ 아래첨자)은 그대로 둔다.
+    """
+    for b in list(row):
+        rb, tb = b
+        if b not in row or re.search(r"\s{2,}", tb.strip()):
+            continue
+        for i, (ra, ta) in enumerate(row):
+            runs = list(_INNER_GAP_RE.finditer(ta)) if ra.x0 < rb.x0 and rb.x1 < ra.x1 else []
+            if not runs:
+                continue
+            mid = ((rb.x0 + rb.x1) / 2 - ra.x0) / (ra.x1 - ra.x0) * len(ta)   # 글자 수 비례(런이 여럿일 때만 쓰임)
+            m = min(runs, key=lambda m: abs((m.start() + m.end()) / 2 - mid))
+            row[i] = (ra, f"{ta[:m.start()]} {tb.strip()} {ta[m.end():]}")
+            row.remove(b)
+            break
+    return row
+
+
 def rows_to_text(items) -> str:
     """[(rect, text)] → 텍스트. 세로로 겹치는 조각은 한 줄로 잇는다(x 순서).
 
-    rect는 `.x0/.y0/.y1`만 쓰므로 fitz.Rect든 튜플 래퍼든 상관없다.
+    rect는 `.x0/.x1/.y0/.y1`만 쓰므로 fitz.Rect든 튜플 래퍼든 상관없다.
     """
     rows: list[list] = []
     for r, t in items:
@@ -142,6 +168,8 @@ def rows_to_text(items) -> str:
             rows.append([(r, t)])
     out: list[str] = []
     for row in rows:
+        if len(row) > 1:
+            row = _tuck_inner(row)
         if len(row) == 1:
             out.append(row[0][1])
             continue
