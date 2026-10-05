@@ -479,26 +479,34 @@ _L0, _L9 = 0x1100, 0x1112
 _V0, _V9 = 0x1161, 0x1175
 _T0, _T9 = 0x11A8, 0x11C2
 _JAMO_RUN_RE = re.compile(r"[\u1100-\u11FF\uA960-\uA97C\uD7B0-\uD7FB]+")
+_OLD_HANGUL_1098 = os.environ.get("OLD_HANGUL_1098", "1") != "0"   # #1098 \uAC19\uC740 \uCEE4\uBC0B A/B \uC2A4\uC704\uCE58(\uB044\uBA74 \uC885\uC804)
 
 
 def _old_hangul_to_braille(text: str) -> str:
-    """첫가끝 자모로만 조합되는 옛한글을 점자 셀로 바꾼다(규정 제19~25항).
-
-    규정에 점형이 없는 자모가 섞이면 그 런은 **손대지 않고** 종전 경로에 넘긴다.
-    """
+    """첫가끝 자모로만 조합되는 옛한글을 점자 셀로 바꾼다(규정 제19~25항)."""
     if not _JAMO_RUN_RE.search(text):
         return text
-    return _JAMO_RUN_RE.sub(lambda m: _old_run_cells(m.group()) or m.group(), text)
+    return _JAMO_RUN_RE.sub(lambda m: _old_run_cells(m.group()), text)
 
 
-def _old_run_cells(run: str) -> str | None:
-    out: list[str] = []
-    for syl in _split_jamo_syllables(run):
-        cells = _old_syllable_cells(syl)
-        if cells is None:
-            return None
-        out.append(cells)
-    return "".join(out)
+def _old_run_cells(run: str) -> str:
+    """음절 단위로 적는다. 규정에 점형이 없는 음절만 자모 그대로 남긴다(#1098).
+
+    종전엔 음절 하나라도 못 적으면 런 전체를 넘겨 braillify 가 거부하고 "변환 불가 글자 제거"가
+    **런을 통째로** 지웠다 — 적을 수 있는 음절까지 흔적 없이 빠졌다(`하ᄀᆞᄋᆉ다` → `⠚⠊`).
+    남긴 자모는 뒤 경로가 지우고, `dropped_old_jamo` 가 세어 쪽 플래그(R18)로 드러낸다.
+    """
+    syls = _split_jamo_syllables(run)
+    cells = [_old_syllable_cells(s) for s in syls]
+    if not _OLD_HANGUL_1098 and None in cells:
+        return run                         # 종전: 런 통째로 뒤 경로에(→ 지워짐)
+    return "".join(c or "".join(s) for c, s in zip(cells, syls))
+
+
+def dropped_old_jamo(text: str) -> collections.Counter:
+    """규정에 점형이 없어 점역에서 빠질 옛한글 음절을 센다. 페이지 플래그(R18)의 근거 수치다."""
+    return collections.Counter("".join(syl) for m in _JAMO_RUN_RE.finditer(text)
+                               for syl in _split_jamo_syllables(m.group()) if _old_syllable_cells(syl) is None)
 
 
 def _split_jamo_syllables(run: str) -> list[list[str]]:
@@ -541,6 +549,17 @@ def _old_syllable_cells(syl: list[str]) -> str | None:
         return cho
     v = jung_l[0]
     t = jong_l[0] if jong_l else ""
+    tail = ""
+    if t and _OLD_HANGUL_1098 and _jong_cell(t) is None:
+        # 제22항 [다만](규정_텍스트.txt 1147행) "현재 쓰이지 않는 겹받침 글자는 각 받침 글자를 어울러
+        # 적는다." 첫 성분까지는 아래 경로로 적어 약자를 살리고 나머지 성분 받침을 잇는다(#1098).
+        # gold(언어와 매체): `부ᇑ` ⠘⠯⠢⠁(울 약자) · `가ᇇ` ⠈⠣⠒⠄(제24항 — ㅏ 를 생략하는 약자 '가' 안 씀) ·
+        # `구ᇚ` ⠈⠍⠢⠁ · `ᄒᆞᇙ` ⠚⠐⠼⠂⠐⠴.
+        parts = _jong_parts(t)
+        rest = [_jong_cell(p) for p in parts[1:]] if parts else [None]
+        if None in rest:
+            return None
+        t, tail = parts[0], "".join(rest)
     # 현대 모음·받침이면 braillify에 맡겨 **약자를 살린다** — gold는 `ᄫᅳᆫ`을
     # ⠐⠘⠶⠵(옛 글자표 ㅸ + 약자 '은')로 적지 옛 ⠪⠒로 풀어 적지 않는다.
     # 옛 자음자 뒤 'ㅏ'는 약자가 없어 그대로 남는다 — 제24항이 요구하는 그대로다.
@@ -548,15 +567,30 @@ def _old_syllable_cells(syl: list[str]) -> str | None:
         code = (_HANGUL_BASE + 11 * _JUNGSEONG_CNT * _JONGSEONG_CNT
                 + (ord(v) - _V0) * _JONGSEONG_CNT + (ord(t) - _T0 + 1 if t else 0))
         try:
-            return cho + _braillify_lib.translate_to_unicode(chr(code))
+            return cho + _braillify_lib.translate_to_unicode(chr(code)) + tail
         except Exception:  # noqa: BLE001 — 폴백은 아래 규정 표로
             pass
     jung = (_JUNGSEONG[ord(v) - _V0] if _V0 <= ord(v) <= _V9 else _OLD_JUNG.get(v))
-    jong = ("" if not t else
-            _JONGSEONG[ord(t) - _T0 + 1] if _T0 <= ord(t) <= _T9 else _OLD_JONG.get(t))
+    jong = _jong_cell(t) if t else ""
     if jung is None or jong is None:
         return None
-    return cho + jung + jong
+    return cho + jung + jong + tail
+
+
+def _jong_cell(t: str) -> str | None:
+    """받침 자모 하나의 점형(현대 받침 · 제19 · 20항 옛 받침). 규정에 없으면 None."""
+    return _JONGSEONG[ord(t) - _T0 + 1] if _T0 <= ord(t) <= _T9 else _OLD_JONG.get(t)
+
+
+def _jong_parts(t: str) -> list[str] | None:
+    """옛 겹받침을 성분 받침 자모로 가른다 — 유니코드 이름이 성분을 적는다(`HANGUL JONGSEONG RIEUL-MIEUM-KIYEOK`)."""
+    pre, name = "HANGUL JONGSEONG ", unicodedata.name(t, "")
+    if not name.startswith(pre) or "-" not in name:
+        return None
+    try:
+        return [unicodedata.lookup(pre + p) for p in name[len(pre):].split("-")]
+    except KeyError:
+        return None
 
 
 def _is_hangul(ch: str) -> bool:

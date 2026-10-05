@@ -3422,6 +3422,19 @@ def _build_response(
             if response.get("status") == "COMPLETED":
                 response["status"] = "NEEDS_REVIEW"
                 response["quality_report"]["status"] = "NEEDS_REVIEW"
+        # 규정(제19~25항)에 점형이 없는 옛한글 음절도 같은 원칙이다(#1098) — 음절 하나만 빠지고 나머지는
+        # 적히지만, 빠진 자리는 점역사가 원문과 맞대지 않으면 못 찾는다. 무엇으로 적을지는 자문 대상이다.
+        from app.ai.braille.translator import dropped_old_jamo as _dropped_old_jamo
+        _old = _dropped_old_jamo("\n".join(
+            c for e in (response.get("text_list") or []) for c in (e.get("contents") or [])))
+        if _old and "quality_report" in response:
+            _syls = ", ".join(f"{s}×{n}" for s, n in _old.most_common())
+            response["quality_report"].setdefault("review_flags", []).append(
+                {"type": "R18", "element_id": "page",
+                 "message": f"규정에 점형이 없는 옛한글 음절 {sum(_old.values())}개가 점역에서 빠졌다 — 원본 확인 필요 ({_syls})"})
+            if response.get("status") == "COMPLETED":
+                response["status"] = "NEEDS_REVIEW"
+                response["quality_report"]["status"] = "NEEDS_REVIEW"
     except Exception as exc:  # noqa: BLE001 — 등급 실패가 점역 결과를 막지 않는다
         logger.warning("검수 등급 산출 실패(무시): %s", exc)
 
