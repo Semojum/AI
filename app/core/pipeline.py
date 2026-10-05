@@ -1472,7 +1472,9 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
 
 # 읽기순서 재배정 모드. off=원순서(MinerU content_list) | geom=순수 기하 위→아래(H1, 폐기)
 #   | sidebar=max-gap 사이드바 머지(H2, 폐기) | col=열 클러스터링(H3, 운영 기본).
-# dev 18p A/B(텍스트공간 τ, 2026-07-13): off 0.805 · sidebar 0.832 · col 0.965, off 대비 회귀 0건.
+# 깨끗한 자로 다시 잰 값(2026-10-04 eval, tau_prod.py · gold 백틱 cell): dev 171쪽 off 0.783 → col 0.919
+#   (나빠짐 1 · 좋아짐 35) · val 904쪽 off 0.803 → col 0.885(나빠짐 22 · 좋아짐 126). col 기본은 그대로 둔다.
+#   종전 이 자리의 'dev 18p off 0.805 · sidebar 0.832 · col 0.965, 회귀 0건'(07-13)은 gold 백틱을 띄움으로 읽은 자의 값이었다.
 # sidebar(H2)는 x0 최대간격 분할이라 분할선이 본문/사이드바를 관통하는 페이지에서 오발동·미발동
 # (세계사 p086 관통, p106 임계 3px 미달)이 잦아 col로 대체.
 _REORDER_MODE = os.environ.get("READING_ORDER_MODE", "col")
