@@ -286,6 +286,37 @@ _YD_PUA = {
 }
 
 
+# 한컴 분수 글꼴(EHboNA · EHboNB)의 작은 수 분수(#1055). 층은 `;분모 분자;` 로 적는다 — 분모는 숫자, 분자는
+# 시프트 기호(`!`=1 … `(`=9 · `)`=0). gold 생명과학 해설 p0033 `확률은 ;4!;이다` 자리가 ⠼⠙⠌⠼⠁(4 분의 1)다.
+# 그대로 두면 `⠰⠆⠼⠃⠖⠰⠆` 로 나간다. `$\frac{분자}{분모}$` 로 바꾸면 점역기가 규정대로 분모 먼저 적는다.
+# 분자 · 분모에 숫자 말고 다른 글자(π 의 `Ò` 등)가 섞인 꼴은 풀지 않는다.
+_FRAC_FONT_RE = re.compile(r"^(?:[A-Z]{6}\+)?(?:EH|ST)[\w-]*?boN", re.I)
+_FRAC_NUM = str.maketrans(")!@#$%^&*(", "0123456789")
+_FRAC_BODY = frozenset("0123456789)!@#$%^&*(")
+_FRACTION_ON = os.environ.get("HANCOM_FRACTION", "1") != "0"     # 같은 커밋 A/B 스위치(끄면 종전)
+
+
+def _fraction_subs(text: list[str], in_font: list[bool]) -> dict[int, str]:
+    """분수 글꼴 글자가 `;분모 분자;` 를 이루면 {첫 `;` 자리: `$\\frac{분자}{분모}$`, 나머지 자리: ""}."""
+    out: dict[int, str] = {}
+    i, n = 0, len(text)
+    while i < n:
+        if in_font[i] and text[i] == ";":
+            j = i + 1
+            while j < n and in_font[j] and text[j] in _FRAC_BODY:
+                j += 1
+            body = text[i + 1:j]
+            den = "".join(c for c in body if c.isdigit())
+            num = "".join(c for c in body if not c.isdigit()).translate(_FRAC_NUM)
+            if j < n and in_font[j] and text[j] == ";" and den and num:
+                out[i] = "$\\frac{%s}{%s}$" % (num, den)
+                out.update(dict.fromkeys(range(i + 1, j + 1), ""))
+                i = j + 1
+                continue
+        i += 1
+    return out
+
+
 def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=None) -> str:
     """rawdict 한 줄 → 글자 간격으로 어절 경계를 복원한 텍스트.
 
@@ -300,11 +331,13 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
     """
     chars: list[tuple[str, float, float, float, bool]] = []  # (ch, x0, x1, size, underlined)
     drop: set[int] = set()   # 윤디자인 기호 뒤에 겹쳐 붙은 가는 띄움(U+2009) — 기호 폭이지 띄어쓰기가 아니다(#1087)
+    frac_font: list[bool] = []   # 글자마다 한컴 분수 글꼴인가(위 `_fraction_subs`)
     sym = False
     for span in line.get("spans", []):
         size = float(span.get("size") or 0.0)
         yd = bool(_YD_FONT_RE.match(span.get("font") or ""))
         hy = bool(_HY_FONT_RE.match(span.get("font") or ""))
+        fr = _FRACTION_ON and bool(_FRAC_FONT_RE.match(span.get("font") or ""))
         for c in span.get("chars", []):
             bbox = c.get("bbox") or (0, 0, 0, 0)
             if matrix is not None:
@@ -322,8 +355,11 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
                 if hy and ch in HANYANG:
                     ch = HANYANG[ch]
             chars.append((ch, float(bbox[0]), float(bbox[2]), size, ul))
+            frac_font.append(fr)
     if not chars:
         return ""
+    if any(frac_font) and (frac := _fraction_subs([c[0] for c in chars], frac_font)):
+        subs = {**(subs or {}), **frac}
 
     # 간격 표본: 공백이 아닌 인접 글자쌍의 (다음 x0 - 이전 x1)
     gaps: list[float] = []

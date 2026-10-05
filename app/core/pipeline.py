@@ -370,6 +370,7 @@ _EXTRACT_ENV = (
     "LAYER_GATE_AFTER_RESTORE", "LAYER_GATE_LATEX_GUARD", "LAYER_CTRL_TO_SPACE",      # #1072 층 신뢰 게이트
     "LAYER_HALLUC_RULE",                                                               # #1078 환각 층 대체 · R4 표시
     "LAYER_LATEX_COUNT_GUARD",                                                         # #1130 층 글 첨자 수 가드
+    "HANCOM_FRACTION",                                                                 # #1055 한컴 작은 수 분수 풀기
     "SEMOJUM_NO_CAPTION", "CAPTION_MATERIAL", "CAPTION_UPSCALE", "CAPTION_FAIL_STREAK_LIMIT",
     "LLM_TEXT_GUARD", "LLM_CACHE_MODE", "SIDEBAR_AS_NOTE", "GRAFT_SIM_MIN",
     "ADVANCED_EXTRACT_MODE", "ADVANCED_EXTRACT_MODEL", "ADVANCED_EXTRACT_FALLBACK_MODEL",
