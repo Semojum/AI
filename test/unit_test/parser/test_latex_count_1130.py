@@ -42,6 +42,14 @@ def test_깨진_첨자와_수식_밖_밑줄은_세지_않는다():
     assert not M._latex_lost("(2_㉡의 길이) $t _ { 1 }$", "(2×㉡의 길이) t₁")
 
 
+def test_분자가_circ_하나이거나_빈_분수는_세지_않는다():
+    """MinerU 가 △△ · ○ 를 쓰레기 분수로 적는다(화법과 작문 `김△△` · 언어와 매체 `△△인`). 맞는 층 글을 막으면 안 된다."""
+    assert not M._latex_lost("김 $\\triangle \\triangle \\frac { \\circ ] } { }$ 「고등학생의", "김△△의 「고등학생의")
+    assert not M._latex_lost("$d _ { 1 } { \\sim } d _ { 5 } { \\frac { \\circ } { - } }$", "d₁~d₅의")
+    assert not M._latex_lost("$\\frac{}{2}$", "2")
+    assert M._latex_lost("$\\frac{1}{2}$", "1 2")                       # 진짜 분수는 그대로 센다
+
+
 def test_처음부터_믿는_층도_첨자를_잃으면_MinerU_에_둔다(monkeypatch):
     """제어 문자 띄움(#1072)으로 믿게 된 요소는 되살림 경로를 안 탄다 — 닮음 문턱만 보고 덮였다."""
     plain = native = "모든 자연수 n에 대하여 an+1-an=5이므로 수열 {an}은 등차수열이다."

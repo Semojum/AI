@@ -1327,10 +1327,12 @@ _LATEX_GUARD = os.environ.get("LAYER_GATE_LATEX_GUARD", "1") != "0"
 # 쓰레기 첨자로 적은 자리(생명과학)까지 세면 첨자를 다 담은 층 글(`t₁`)을 막는다. 분수 · 근호는 인자 꼴과 상관없이
 # 센다. 인자가 단순한 것만 셌더니 `\frac{\overline{AC}}{\sin (\angle APC)}` · `\frac{\pi}{4}` 가 빠져 종전 가드보다
 # 느슨해졌고, 층 글(`x=  w` · `x= <!강조>(-1)+7<!/강조>  =3 2`)이 분수를 덮었다(수학 Ⅰ, A/B 1차).
+# 단 분자가 `\circ` 하나이거나 빈 분수는 세지 않는다. MinerU 가 `△△` · `○` 를 `\frac { \circ ] } { }` 같은 꼴로
+# 적는다(화법과 작문 `김△△` · 언어와 매체 `△△인`). 수학에서 나올 수 없는 꼴이고, 세면 맞는 층 글을 막는다(A/B 2차).
 _LATEX_MATH_RE = re.compile(r"\$\$?(.+?)\$\$?", re.S)
 _LATEX_SCRIPT_RE = re.compile(
     r"(?<!\\)[\^_]\s*(?:\{\s*(?:[A-Za-z0-9+\-*]{1,4}|\\ast|\\prime)(?:\s+[A-Za-z0-9+\-*]{1,4})*\s*\}|[A-Za-z0-9*])"
-    r"|\\[dt]?frac(?![A-Za-z])|\\sqrt(?![A-Za-z])")
+    r"|\\[dt]?frac(?![A-Za-z])(?!\s*\{\s*(?:\\circ(?![A-Za-z])|\}))|\\sqrt(?![A-Za-z])")
 _LATEX_COUNT_GUARD = os.environ.get("LAYER_LATEX_COUNT_GUARD", "1") != "0"   # 같은 커밋 A/B 스위치(끄면 종전)
 
 
