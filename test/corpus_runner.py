@@ -587,6 +587,11 @@ def main():
         for jid, pg, st, err in bad[:30]:
             print(f"  {jid} p{pg}: {st} {err or ''}")
 
+    # ★ #1133 — 캡셔닝이 통째로 막혀 남은 쪽을 건너뛴 런은 실패로 끝낸다. exit 0 이면 `러너 && 채점` 이
+    #   부분 결과를 정상 런으로 채점한다(10-05 키 없는 워크트리 팔이 241/900쪽에서 멈추고 채점까지 탐).
+    if prog.get("cap_stop"):
+        sys.exit(3)
+
 
 if __name__ == "__main__":
     main()
