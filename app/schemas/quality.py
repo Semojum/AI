@@ -35,9 +35,10 @@ class ReviewFlag(BaseModel):
     R16: BBOX_MISSING — bbox 가 전부 (0,0,0,0) 인 쪽. 좌표가 죽었다(2026-09-08).
          `image_width`·`image_height` 는 정상값이라 응답만으로는 알 수 없어 짚어 준다.
     R17: SYMBOL_DROPPED — 점자 기호가 없는 기호(▶·★·↳ 등)가 점역에서 빠진 쪽(2026-09-29).
+    R18: OLD_JAMO_DROPPED — 규정(제19~25항)에 점형이 없는 옛한글 음절이 점역에서 빠진 쪽(#1098, 2026-10-05).
     """
 
-    type: str       # R1~R17
+    type: str       # R1~R18
     element_id: str
     message: str
 

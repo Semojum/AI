@@ -72,3 +72,25 @@ def test_old_vowel_regulation_table(vowel, expected):
 ])
 def test_old_vowel_regulation_examples(text, expected):
     assert translate_plain(text) == expected
+
+
+# ── #1098 — 점형 없는 음절 하나에 런이 통째로 빠지던 것 · 옛 겹받침 ─────────────────────────────
+# 기대값 출처: 「한국 점자 규정」제22항 [다만](`규정_텍스트.txt` 1147행) "현재 쓰이지 않는 겹받침 글자는
+# 각 받침 글자를 어울러 적는다." · 제24항(1195행) 옛 자음자가 포함된 글자의 ㅏ 는 생략하지 않는다 ·
+# 정답 도서 언어와 매체 gold(body p0035 · p0096, ans p0024).
+@pytest.mark.parametrize("text, expected", [
+    ("ᄒᆞᇙ", "⠚⠐⠼⠂⠐⠴"),   # ᄒᆞᇙ(ㄹㆆ) — gold body p0035 `몯ᄒᆞᇙ노미`
+    ("가ᇇ", "⠈⠣⠒⠄"),     # 가ᇇ(ㄴㅅ) — gold body p0096 `뒷가ᇇ`, 약자 '가'(⠫) 안 씀(제24항)
+    ("부ᇑ", "⠘⠯⠢⠁"),     # 부ᇑ(ㄹㅁㄱ) — gold body p0096 · ans p0024, 약자 '울'
+    ("구ᇚ", "⠈⠍⠢⠁"),     # 구ᇚ(ㅁㄱ) — gold ans p0024
+])
+def test_옛_겹받침은_각_받침을_어울러_적는다(text, expected):
+    assert translate_plain(text) == expected
+
+
+def test_점형_없는_음절_하나가_런을_통째로_지우지_않는다():
+    """`ᄋᆉ`(U-A)은 규정에 점형이 없다. 종전엔 `하ᄀᆞᄋᆉ다` → `⠚⠊` 로 ᄀᆞ 까지 사라졌다."""
+    from app.ai.braille.translator import dropped_old_jamo
+    assert translate_plain("하ᄀᆞᄋᆉ다") == "⠚⠈⠐⠼⠊"     # ᄀᆞ(⠈⠐⠼)는 남는다
+    assert dropped_old_jamo("하ᄀᆞᄋᆉ다") == {"ᄋᆉ": 1}   # 빠진 것은 세어 R18 로
+    assert not dropped_old_jamo("뒷가ᇇ ᄒᆞᇙ")           # 적히는 것은 안 센다
