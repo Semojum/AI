@@ -1323,13 +1323,14 @@ _GATE_AFTER_RESTORE = os.environ.get("LAYER_GATE_AFTER_RESTORE", "1") != "0"
 _LATEX_GUARD = os.environ.get("LAYER_GATE_LATEX_GUARD", "1") != "0"
 # #1130 — 첨자를 **몇 개** 담았는지로 본다. '하나라도 있으면' 판정은 수학 Ⅰ(009)에서 `a₁` 의 ₁ 하나로 통과해
 # `a_{n+1}` · `\frac` 을 평평한 층 글(`an+1`)로 덮었다(dev 009 요소 181개 · 89쪽, V2 temp/n117).
-# 수식 구간(`$…$`) 속 짧고 온전한 첨자 · 분수 · 근호만 센다. MinerU 가 깨진 글리프를 `\Xi ^ { | }` ·
-# `\frac { \textcircled { \dag }` 같은 쓰레기 LaTeX 로 적은 자리(생명과학)까지 세면 첨자를 다 담은 층 글(`t₁`)을 막는다.
+# 수식 구간(`$…$`) 속에서 센다. 첨자는 짧고 온전한 꼴만 센다 — MinerU 가 깨진 글리프를 `\Xi ^ { | }` 같은
+# 쓰레기 첨자로 적은 자리(생명과학)까지 세면 첨자를 다 담은 층 글(`t₁`)을 막는다. 분수 · 근호는 인자 꼴과 상관없이
+# 센다. 인자가 단순한 것만 셌더니 `\frac{\overline{AC}}{\sin (\angle APC)}` · `\frac{\pi}{4}` 가 빠져 종전 가드보다
+# 느슨해졌고, 층 글(`x=  w` · `x= <!강조>(-1)+7<!/강조>  =3 2`)이 분수를 덮었다(수학 Ⅰ, A/B 1차).
 _LATEX_MATH_RE = re.compile(r"\$\$?(.+?)\$\$?", re.S)
-_LATEX_ARG = r"(?:\{[A-Za-z0-9+\-*\s]{1,8}\}|[A-Za-z0-9])"
 _LATEX_SCRIPT_RE = re.compile(
     r"(?<!\\)[\^_]\s*(?:\{\s*(?:[A-Za-z0-9+\-*]{1,4}|\\ast|\\prime)(?:\s+[A-Za-z0-9+\-*]{1,4})*\s*\}|[A-Za-z0-9*])"
-    rf"|\\frac\s*{_LATEX_ARG}\s*{_LATEX_ARG}|\\sqrt\s*{_LATEX_ARG}")
+    r"|\\[dt]?frac(?![A-Za-z])|\\sqrt(?![A-Za-z])")
 _LATEX_COUNT_GUARD = os.environ.get("LAYER_LATEX_COUNT_GUARD", "1") != "0"   # 같은 커밋 A/B 스위치(끄면 종전)
 
 

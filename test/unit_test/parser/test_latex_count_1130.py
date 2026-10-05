@@ -23,17 +23,23 @@ def test_첨자를_하나만_담은_층은_잃은_것이다():
     assert M._latex_lost("$\\frac { 3 } { 8 }$", ";8#;") and M._latex_lost("$\\frac 1 4$", ";4!;")
 
 
+def test_인자가_복잡한_분수도_센다():
+    """인자가 단순한 분수만 셌더니 종전 가드보다 느슨해져 층 글이 분수를 덮었다(수학 Ⅰ, A/B 1차)."""
+    assert M._latex_lost("$x=\\frac{\\pi}{4}$", "x=  w")
+    assert M._latex_lost("$\\frac{\\overline{AC}}{\\sin (\\angle APC)}$", "<!강조>AC<!/강조>  CP sin (∠APC)")
+    assert M._latex_lost("$x=\\frac{(-1)+7}{2}=3$", "x= <!강조>(-1)+7<!/강조>  =3 2")
+
+
 def test_첨자를_다_담은_층은_그대로_쓴다():
     assert not M._latex_lost("$\\log_{2}a+\\log_{4}b$", "log₂ a+log₄ b")
     assert not M._latex_lost("$t _ { 1 }$ 일 때 $t _ { 2 }$", "t₁일 때 t₂")
     assert not M._latex_lost("$\\mathrm { N a } ^ { + }$", "Na⁺")
 
 
-def test_깨진_LaTeX_와_수식_밖_밑줄은_세지_않는다():
-    """MinerU 가 깨진 글리프를 쓰레기 LaTeX 로 적은 자리 · `×` 를 `_` 로 읽은 자리는 구조가 아니다(생명과학)."""
+def test_깨진_첨자와_수식_밖_밑줄은_세지_않는다():
+    """MinerU 가 깨진 글리프를 쓰레기 첨자로 적은 자리 · `×` 를 `_` 로 읽은 자리는 구조가 아니다(생명과학)."""
     assert not M._latex_lost("$t _ { 1 } ^ { \\phantom { + } }$ $\\Xi ^ { | } { \\circ }$", "t₁")
     assert not M._latex_lost("(2_㉡의 길이) $t _ { 1 }$", "(2×㉡의 길이) t₁")
-    assert not M._latex_lost("$\\frac { \\textcircled { \\dag } }$", "㉠")
 
 
 def test_처음부터_믿는_층도_첨자를_잃으면_MinerU_에_둔다(monkeypatch):
