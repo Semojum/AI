@@ -8,6 +8,7 @@ from typing import Optional
 
 import fitz
 
+from app.ai.preprocessor.hanyang_pua import HANYANG
 from app.schemas.layout import DocumentMeta
 from app.utils.logger import get_logger
 
@@ -161,7 +162,8 @@ def rows_to_text(items) -> str:
 
 
 def _is_hangul(ch: str) -> bool:
-    return "가" <= ch <= "힣" or "ㄱ" <= ch <= "ㅣ"
+    # 첫가끝 자모로 되돌린 옛한글 음절(#1092)은 여러 글자라 첫 글자로 본다
+    return "가" <= ch <= "힣" or "ㄱ" <= ch <= "ㅣ" or "\u1100" <= ch[:1] <= "\u11ff"
 
 
 # ── 밑줄(드러냄표) 감지 ──────────────────────────────────────────────────────
@@ -247,6 +249,7 @@ def _is_underlined(cb, underlines) -> bool:
 # ○ ⠸⠴⠴⠇ · (예) ⠦⠄⠌⠠⠴ · □ ⠸⠶⠶⠇ · ◇ ⠸⠢⠢⠇ · ↓ ⠘⠒⠕ · → ⠒⠕ · * ⠐⠔ · ⋮ ⠠⠠⠠ · ①②③ 모두 gold 와 같다.
 # gold 가 인쇄면과 달리 적은 곳(E281 ◇◇ → ○○ · E282 ◆◆◆ → △△△ · 날짜 가림 ** → ☆☆)은 전사자 관행이라 인쇄면을 따른다.
 _YD_FONT_RE = re.compile(r"^(?:[A-Z]{6}\+)?YDVY")
+_HY_FONT_RE = re.compile(r"^(?:[A-Z]{6}\+)?Haansoft")   # 한컴 글꼴의 PUA 는 한양 PUA 옛한글(#1092, hanyang_pua 표)
 _YD_PUA = {
     "": "○", "": "○", "": "(예)", "": "(예)", "": "□", "": "□", "": "□",
     "": "◇", "": "◇", "": "↓", "": "「", "": "」", "": "→", "": "*",
@@ -273,6 +276,7 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
     for span in line.get("spans", []):
         size = float(span.get("size") or 0.0)
         yd = bool(_YD_FONT_RE.match(span.get("font") or ""))
+        hy = bool(_HY_FONT_RE.match(span.get("font") or ""))
         for c in span.get("chars", []):
             bbox = c.get("bbox") or (0, 0, 0, 0)
             if matrix is not None:
@@ -287,6 +291,8 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
                 drop.add(len(chars))   # `◇\u2009◇\u2009시` 를 그대로 두면 `◇ ◇ 시` 로 점역된다(gold `◇◇시` ⠸⠢⠢⠇)
             else:
                 sym = False
+                if hy and ch in HANYANG:
+                    ch = HANYANG[ch]
             chars.append((ch, float(bbox[0]), float(bbox[2]), size, ul))
     if not chars:
         return ""

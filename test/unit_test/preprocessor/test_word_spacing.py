@@ -193,3 +193,29 @@ class TestYoondesignPua:
         # 한컴 글꼴에서 이 영역은 한양 PUA 옛한글이다. 코드만 보고 바꾸면 안 된다.
         line = self._span_line("ABCDEF+HaansoftBatang", "")
         assert _line_text_with_word_gaps(line) == ""
+
+
+class TestHanyangPua:
+    """한컴 글꼴 한양 PUA 옛한글 → 첫가끝 자모(#1092). 표는 윤곽 판독 + gold 대조로 만든 것."""
+
+    @staticmethod
+    def _span_line(font: str, text: str) -> dict:
+        return {"spans": [{"size": 9.4, "font": font,
+                           "chars": [{"c": c, "bbox": (10.0 * i, 0.0, 10.0 * i + 9.0, 10.0)} for i, c in enumerate(text)]}]}
+
+    def test_한컴_글꼴_옛한글을_자모로_되돌리고_gold_점형이_나온다(self):
+        from app.ai.braille.translator import translate_tagged_text
+        # 언어와 매체 해설 p0022 층 `하티` — gold 31행 ⠚⠉⠐⠼⠂⠈⠐⠼⠔⠓⠕ (하ᄂᆞᆯᄀᆞᆮ티)
+        text = _line_text_with_word_gaps(self._span_line("ABCDEF+Haansoft-Batang", "하티"))
+        assert text == "하ᄂᆞᆯᄀᆞᆮ티"
+        assert translate_tagged_text(text) == "⠚⠉⠐⠼⠂⠈⠐⠼⠔⠓⠕"
+
+    def test_글꼴과_gold_가_다르면_글꼴을_따른다(self):
+        # F162 는 글꼴이 옛이응 ᅌᆡ 다. 언어와 매체 ans p0021 의 원문 조판 실수이고 gold 는 ᄋᆡ 로 고쳐 적었다.
+        # 표가 gold 의 교정을 받아들이면 층이 묵자가 아니라 gold 를 따르게 된다. 교정은 다른 층의 일이다.
+        line = self._span_line("ABCDEF+Haansoft-Batang", "\uf162")
+        assert _line_text_with_word_gaps(line) == "\u114c\u11a1"
+
+    def test_같은_코드도_윤디자인_글꼴이면_기호다(self):
+        line = self._span_line("ABCDEF+YDVYGOStd12", "")
+        assert _line_text_with_word_gaps(line) == "○"
