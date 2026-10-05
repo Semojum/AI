@@ -96,7 +96,7 @@ class Test순서캐시:
         layout = SimpleNamespace(elements=items)
         k = llm_cache.key("order", llm_order.MODEL, llm_order._SYS,
                           llm_order._prompt(sorted(items, key=lambda b: b.reading_order), {}))
-        llm_cache.put("order", k, json.dumps({"order": [4, 3, 2, 1, 0]}))   # 이동비율 0.8
+        llm_cache.put("order", k, json.dumps({"order": [1, 0, 3, 2, 4]}))   # 오른쪽 단(1)으로 시작 — #1090 안전판
         monkeypatch.setattr(llm_order.config, "anthropic_api_key", "sk-test", raising=False)
 
         out = await llm_order.apply(layout, {}, 0, _SIZE)
