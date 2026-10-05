@@ -1785,7 +1785,18 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
         a[0] == c[0] and a[3] >= 3 and c[3] >= 3 and c[1] >= a[2]
         and any(m[0] != a[0] and m[3] >= 3 and m[1] < a[2] for m in runs[i + 1:j])
         for i, a in enumerate(runs) for j, c in enumerate(runs[i + 1:], start=i + 1))
-    main = sorted(main, key=_ykey) if (viol > 1 or hard or banded) else by_mineru
+    # ★ 오른쪽 단을 통째로 먼저 읽은 쪽(#1123). MinerU 열 번호가 한 번만 내려가고(오른쪽 → 왼쪽) 한 번도 안 오른다.
+    #   거스름이 단을 넘는 그 한 번뿐이라 `viol`(문턱 2)에도 `hard` 에도 안 걸렸다(2027 생활과 윤리 해설 25쪽,
+    #   τ 평균 0.00 → 0.998). 열 런이 둘뿐인 쪽이라 위 띠 읽기(같은 열을 다시 찾음)와 겹치지 않는다.
+    #   '거스름 한 번이면 정렬'(viol >= 1)로 넓히는 안은 기각(2027 τ val 좋 34 : 나 9 · dev 좋 9 : 나 10).
+    cols = [col_of[id(b)] for b in by_mineru]
+    swapped = (len(set(cols)) == 2 and sum(c < a for a, c in zip(cols, cols[1:])) == 1
+               and not any(c > a for a, c in zip(cols, cols[1:])))
+    if swapped:      # 두 열이 정말 나란한가 — 단을 가로지르는 넓은 제목이 '오른쪽 열'로 잡히는 쪽을 거른다(사회·문화 p0151)
+        lo, hi = min(cols), max(cols)
+        swapped = (min(b.bbox[0] for b in main if col_of[id(b)] == hi)
+                   >= max(b.bbox[2] for b in main if col_of[id(b)] == lo) - 0.02 * (hull1 - hull0))
+    main = sorted(main, key=_ykey) if (viol > 1 or hard or banded or swapped) else by_mineru
 
     # 5) 새 본문 순서 = main → 이동 열(x0 순, 각 y-정렬). 비본문은 원 슬롯 유지.
     deferred.sort(key=lambda cl: min(b.bbox[0] for b in cl))
