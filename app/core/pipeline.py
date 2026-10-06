@@ -2456,6 +2456,7 @@ def _parse_txt_result(
                 structure=el.get("structure"),
                 table_structure=el.get("table_structure"),
                 flags=flags,
+                box_level=int(el.get("box_level") or 0),
             )
 
     _reorder_by_geometry(bbox_items, int(meta.get("page_rotation") or 0))
@@ -2468,11 +2469,13 @@ def _parse_txt_result(
 
 
 def _mark_table_box_levels(items: list[BBoxItem], ext_map: dict[UUID, ExtractedContent]) -> None:
-    """최종 읽기순서로 글상자 태그를 따라가, 열린 상자 안에 든 표에 그 위계를 적는다(#1110, in-place).
+    """경계 키 `box_level`(추출 때 사각형 안 · 태그 구간 안 표)을 최종 읽기순서에서도 상자 안일 때만 남긴다(#1110, in-place).
 
-    표에는 상자 태그를 못 단다 — 표 HTML 안에 넣으면 표 체인이 깨진다(`tag_boxed_elements`).
-    그래서 표가 상자 안에 그려지는지는 **앞뒤 글 요소의 태그**로 가린다. 읽기순서 재배정 뒤에 보므로
-    실제로 그려지는 자리와 같다. 요소 flags 는 BE 응답으로 나가서 쓰지 않는다(`ExtractedContent.box_level`).
+    표에는 상자 태그를 못 단다 — 표 HTML 안에 넣으면 표 체인이 깨진다(`tag_boxed_elements`). 그래서 위계는
+    경계 키로 오고, 실제로 상자 안에 그려지는지는 **읽기순서 재배정 뒤** 앞뒤 글 요소의 태그로 다시 본다.
+    ★ 태그 깊이만 보면 안 된다. 재배정이 곁단 상자의 여는 태그와 닫는 태그를 갈라 놓으면 그 사이에 든
+      본문 표까지 상자 안으로 잡힌다(#1110 A/B 1차: 동아시아사 p0033 자 +233 · 생활과 윤리 p0096 +63).
+    요소 flags 는 BE 응답으로 나가서 쓰지 않는다(`ExtractedContent.box_level` 은 내부 값).
     """
     from app.ai.braille.translator import box_borders_from_source
     depth: list[int] = []
@@ -2481,7 +2484,8 @@ def _mark_table_box_levels(items: list[BBoxItem], ext_map: dict[UUID, ExtractedC
         if ext is None:
             continue
         if it.type == "table":
-            ext.box_level = depth[-1] if depth else 0
+            if not depth:
+                ext.box_level = 0
             continue
         for kind, level, _title in box_borders_from_source(ext.corrected_text or ""):
             if kind == "top":
