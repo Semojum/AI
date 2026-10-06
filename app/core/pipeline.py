@@ -2467,9 +2467,55 @@ def _parse_txt_result(
     _join_item_numbers(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0)
     _place_item_codes(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0,
                       scale_bbox[1] if scale_bbox else 1.0)
+    _box_concept_checks(bbox_items, ext_map)
     _mark_table_box_levels(bbox_items, ext_map)
     layout = LayoutResult(page_id=page_id, elements=bbox_items)
     return layout, ext_map, method
+
+
+# 곁단 '개념 체크' 글상자(#1155). 사회 네 권 곁단의 개념 체크(제목 · 문항 · 정답)에는 묵자 사각형이 따로 없다(곁단 바탕
+# 음영뿐, #1149 에서 상자 후보에서 뺐다). gold 는 그 묶음을 '개념 체크' 제목을 위 테두리에 박은 글상자로 적는다
+# (`=GGGG @RC:5 ;NF[ GGG…=`, 동아시아사 body p0009 · 생활과 윤리 body p0096). #1149 켠 팔 270쪽: 제목 있는 쪽 224 ·
+# gold 상자 221 · 우리 0. 최종 읽기순서에서 제목 → 번호 문항 → '정답' → 번호 답이 사이에 다른 글 없이 이어지는 쪽이 219다.
+# 되돌리기 `CONCEPT_CHECK_BOX=0`(호출 때 읽음).
+_CC_TITLE_RE = re.compile(r"^개념\s*체크$")
+_CC_ITEM_RE = re.compile(r"^\d{1,2}\s*\.")
+_INLINE_TAG_RE = re.compile(r"<!/?[^>]*>")
+
+
+def _box_concept_checks(items: list[BBoxItem], ext_map: dict[UUID, ExtractedContent]) -> None:
+    """'개념 체크' 제목 → 번호 문항 → '정답' → 번호 답 묶음을 글상자로 감싸고 제목은 위 테두리로 올린다(in-place)."""
+    if os.environ.get("CONCEPT_CHECK_BOX", "1") == "0":
+        return
+    order = [it for it in sorted(items, key=lambda b: b.reading_order) if it.element_id in ext_map]
+    texts = [_INLINE_TAG_RE.sub("", ext_map[it.element_id].corrected_text or "").strip() for it in order]
+    raw = [ext_map[it.element_id].corrected_text or "" for it in order]
+    drop: set = set()
+    depth = 0                                    # 열린 상자 수 — 상자 안 개념 체크는 건드리지 않는다
+    i = 0
+    while i < len(order):
+        if depth == 0 and _CC_TITLE_RE.match(texts[i]):
+            j = i + 1
+            while j < len(order) and _CC_ITEM_RE.match(texts[j]):
+                j += 1
+            k = j + 1 if j < len(order) and re.sub(r"[\s\u20de]", "", texts[j]) == "정답" else j
+            m = k
+            while k > j and m < len(order) and _CC_ITEM_RE.match(texts[m]):
+                m += 1
+            group = raw[i:m]
+            if j > i + 1 and m > k > j and not any("<!상자" in t for t in group):
+                first, last = ext_map[order[i + 1].element_id], ext_map[order[m - 1].element_id]
+                first.corrected_text = f"<!상자>{texts[i]}<!/상자>\n{first.corrected_text}"
+                last.corrected_text = f"{last.corrected_text}\n<!상자끝><!/상자끝>"
+                drop.add(order[i].element_id)
+                i = m
+                continue
+        depth += len(re.findall(r"<!상자\d?>", raw[i])) - len(re.findall(r"<!상자끝\d?>", raw[i]))
+        i += 1
+    if drop:
+        items[:] = [it for it in items if it.element_id not in drop]
+        for eid in drop:
+            ext_map.pop(eid, None)
 
 
 def _mark_table_box_levels(items: list[BBoxItem], ext_map: dict[UUID, ExtractedContent]) -> None:
