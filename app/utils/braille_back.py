@@ -2745,6 +2745,9 @@ _CTX_PAGE_SEED_RATIO = float(os.environ.get("BR_CTX_PAGE_SEED_RATIO", "0.25"))
 # 손해 하나에 잃는 이득 0.13 으로 -4.8(0.30)·-5.0(0.54)보다 정밀하다. 0 은 아니다 —
 # `'1나사이어가' → '1 closed'` 와 `'BOAT! / LAND! / 설의이' → '… / Two'` 를 잘못 막는다.
 _CTX_KOR_GUARD = os.environ.get("BR_CTX_KOR_GUARD", "1").lower() not in ("0", "false", "off")
+_CTX_KIWI_GUARD = os.environ.get("BR_CTX_KIWI_GUARD", "1").lower() not in ("0", "false", "off")
+_HANGUL_WORD_RE = re.compile("[가-힣]+")
+_KOR_SENT_END_RE = re.compile("[다요오까죠]$")
 _CTX_KOR_THRESHOLD = float(os.environ.get("BR_CTX_KOR_THRESHOLD", "-4.5"))
 # 토막 단위 영어 되찾기 (#905) — 한 줄에 한글이 섞이면 줄 단위 영어 판정이 통째로 실패한다.
 # gold 는 제29항 [다만](로마자표 생략 단위 = 문단)에 따라 낱말마다 로마자표를 안 붙이므로,
@@ -2852,8 +2855,24 @@ def _kor_guard_blocks(line: str) -> bool:
         return False
     # 한글 읽기를 그 자리에서 만들어 점수를 본다. 문맥 후보 줄만 부르므로 싸다.
     # `math=False` 고정 — 영어 줄 판정 자체가 `not math` 에서만 돈다.
-    kor = _kor_plausibility(_decode_line_router(line, False))
-    return kor is not None and kor > _CTX_KOR_THRESHOLD
+    ko = _decode_line_router(line, False)
+    kor = _kor_plausibility(ko)
+    return (kor is not None and kor > _CTX_KOR_THRESHOLD) or _kiwi_guard_blocks(line, ko)
+
+
+def _kiwi_guard_blocks(line: str, ko: str | None = None) -> bool:
+    """문맥 후보 줄의 한글 읽기가 **전부 실재어**면 안 바꾼다 — 음절 빈도로는 못 막는 짧은 줄.
+
+    `드러났다.`→`iowsomecsti.` · `쓰시오.`→`OWOU.` · `실망시키다`→`OeaeggOfoi` 가 이웃 줄
+    번짐으로 뒤집혔다. 씨앗 단계와 번짐 단계 둘 다 건다. `BR_CTX_KIWI_GUARD=0` 이면 끈다.
+    """
+    if not _CTX_KIWI_GUARD:
+        return False
+    words = _HANGUL_WORD_RE.findall(_decode_line_router(line, False) if ko is None else ko)
+    # 끝말이 한국어 문장 끝(다·요·오·까·죠)이어야 한다. kiwi 는 짧은 엉터리 음절도 받아 준다 —
+    # 실재어 조건만 걸면 `there.`→`를.` · `door.`→`피이애.` 처럼 진짜 영어도 막혔다(표본 30 중 15).
+    return (bool(words) and bool(_KOR_SENT_END_RE.search(words[-1]))
+            and all(_is_real_korean(w) for w in words))
 # 문맥으로 받는 줄에서 **한글 줄을 걸러 내는** 영어 음운 거르개 — 이 꼴은 영어 낱말에 없다.
 #   · 자음 뒤 z: 한글 받침 ㄴ(⠵=z)이 그 자리다 — `것은?` 이 `spiritz?` 로 읽힌다.
 #   · j 뒤 자음·낱말 끝 j: 한글 초성 ㅎ(⠚=j)이다 — `한다` 가 `jcci` 로 읽힌다.
@@ -2907,6 +2926,11 @@ _CIRCLED_NUM_RE = re.compile(r"^⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]+⠶$")
 #   빼도 영어 낱말 적중은 20,417 로 **똑같다**(전 코퍼스 1,251쪽 실측).
 _ENG_LONE_WORD = {"⠆": "be", "⠦": "his", "⠔": "in",
                   "⠴": "was", "⠶": "were", "⠖": "to", "⠔⠖": "into"}
+# 빈칸 `___` — 통일영어점자 밑줄 ⠨⠤ (한글 점자의 밑줄 빈칸 ⠸⠤ 와 다른 셀). 홀로 선 낱말로만 본다.
+# gold 전권 홀로 선 ⠨⠤ 7,684회(영어 책 7,029)가 전부 빈칸이다. 낱말로 못 읽어 줄 영어 판정이
+# 통째로 떨어졌다 — `___ is highlighted in a study` 가 `자- 더 타다사다얼가 - a 예오푀`.
+# 앞 ⠴ 는 로마자표다. 증거(기능어)로는 안 센다. 정방향은 한글 점자 꼴 ⠸⠤ 를 낸다(원장 C-05 부록 10-07).
+_ENG_BLANK_RE = re.compile(r"⠴?(?:⠨⠤)+([⠂⠲⠦⠖⠆⠒]?)")
 
 # 홑 낱자 단어기호(eng_braille.WORDSIGNS) — **줄 전체가 영어로 읽힌 뒤에만** 쓴다.
 # 같은 이유로 `_ENG_WORD` 에는 못 넣는다(한 칸짜리는 수식 변수와 겹쳐 32,036요소에서
@@ -3089,6 +3113,11 @@ def _english_line(line: str, *, evidence: bool = True, ctx: bool = False) -> str
             #   그 표기의 짝이다(외국어 224회 중 64회). 그 자리는 종전대로 둔다.
             out.append(_ENG_LONE_WORD[w])
             raw.append(_ENG_LONE_WORD[w])
+            prev = w
+            continue
+        if (bm := _ENG_BLANK_RE.fullmatch(w)):                 # 빈칸 `___`
+            out.append("___" + _ENG_TAIL_PUNCT.get(bm.group(1), ""))
+            raw.append("")
             prev = w
             continue
         if w[:1] == _CAPITAL and w[1:] in _ENG_LONE_WORD:      # 대문자표 + 홑 약자(`⠠⠦` = His)
@@ -3599,6 +3628,13 @@ def _english_any(line: str, *, ctx: bool = False) -> str | None:
     return eng
 
 
+# 점자 쪽 머리줄(`c166   Part II  20   375` = 점자 쪽 · 단원 · 묵자 쪽, gold 전권 20,417줄).
+# **로마자표 ⠴ 를 품은 머리줄만** 문맥 판정에서 뺀다 — 문맥 영어가 되면 종료표 ⠲ 가 마침표로
+# 읽혀 `Part I.` 이 된다. 로마자표 없이 영어를 적은 머리줄(`4  Reading  633`)은 문맥이 있어야
+# 영어로 읽히므로 그대로 둔다(통째로 빼면 `샐표` 로 떨어졌다).
+_BRAILLE_PAGE_HEAD_RE = re.compile(r"^[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]?⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]+⠀{3,}\S.*⠀{3,}⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]+⠀*$")
+
+
 def _english_ctx(lines: list[str]) -> list[bool]:
     """이웃 줄이 영어로 읽혀 **문단 문맥**으로 영어가 되는 줄 (제29항 [다만] · #842).
 
@@ -3612,7 +3648,9 @@ def _english_ctx(lines: list[str]) -> list[bool]:
     """
     n = len(lines)
     body = [bool(l.strip("⠀ ")) and not (_TABLE_RULE_RE.match(l) or _BOX_BORDER_RE.search(l)
-                                        or _PAGE_CHANGE_RE.match(l)) for l in lines]
+                                        or _PAGE_CHANGE_RE.match(l)
+                                        or (_ROMAN_START in l and _BRAILLE_PAGE_HEAD_RE.match(l)))
+            for l in lines]
     ok = [body[k] and _english_any(lines[k]) is not None for k in range(n)]
     ctx = [False] * n
     # ── 쪽 단위 씨앗 (#894) ────────────────────────────────────────────────
@@ -3662,7 +3700,8 @@ def _english_ctx(lines: list[str]) -> list[bool]:
                 #   **진짜 영어 짧은 줄**이 전부 판정 대상이 된다 — 그쪽이 훨씬 많다.
                 #   게다가 한 줄을 막으면 그 쪽 영어 문맥이 무너져 **가드가 손대지도 않은**
                 #   줄까지 깨졌다(p0227 보기 ③④⑤ 가 통째로).
-                loose[k] = _english_any(lines[k], ctx=True) is not None
+                loose[k] = (_english_any(lines[k], ctx=True) is not None
+                            and not _kiwi_guard_blocks(lines[k]))
             if loose[k]:
                 ctx[k] = True
                 changed = True
