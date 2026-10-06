@@ -19,6 +19,10 @@ from app.utils.braille_back import decode
     ("⠴⠶⠃⠶⠂", "(b),"),
     # HS-REF-007 ans p0128 — 순서 선택지
     ("⠶⠁⠶⠤⠶⠰⠑⠶⠤⠶⠰⠃⠶", "(a)-(e)-(b)"),
+    # 같은 책 ans p0045 — 범위, 물결 뒤 표지는 ⠰ 없이 적는다
+    ("⠴⠶⠁⠶⠈⠔⠶⠑⠶⠲⠀⠨⠍⠶", "(a)~(e) 중"),
+    # 같은 책 ans p0039 — 물음표가 붙은 범위
+    ("⠶⠁⠶⠈⠔⠶⠙⠶⠦", "(a)~(d)?"),
 ])
 def test_보기_표지(br, want):
     assert decode(br) == want
@@ -36,6 +40,7 @@ def test_동그라미_로마자(br, want):
 @pytest.mark.parametrize("br, want", [
     ("⠶⠫⠶", "㉮"),                         # ⠶ 틀 속 한글은 그대로
     ("⠶⠉⠶⠵", "㉯은"),                      # 낱자표 없는 ⠶⠉⠶ 는 ㉯ 다
+    ("⠶⠫⠶⠈⠔⠶⠑⠶", "㉮~㉲"),                  # 동그라미 한글 범위는 그대로
 ])
 def test_한글_틀은_그대로(br, want):
     assert decode(br) == want
