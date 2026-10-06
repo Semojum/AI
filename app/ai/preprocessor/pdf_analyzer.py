@@ -1204,6 +1204,29 @@ def _is_sidebar_note(rect, page_w: float, title: str, texts: list) -> bool:
 _Q_FRAME_RE = re.compile(r"(?:^|\n)\s*[①②③④⑤]|(?:은|는)\s*\?|옳은 것|옳지 않은 것|고른 것")
 
 
+# 가짜 바깥 상자(#1149 · 원장 C-158) — 글상자가 아닌 사각형 둘을 상자 후보에서 뺀다(되돌리기 `BOX_FALSE_OUTER=0`).
+# ① **곁단 바탕**: 사회 네 권 · 국어 두 권은 지면 왼쪽(x0 0.08) 또는 오른쪽(x0 0.73~0.77) 곁단 전체를 음영 사각형 하나로
+#    깐다. 2027 게이트 실행분(862227a) 사각형 3,097개 중 높이 0.8 · 폭 0.16~0.18 이 252개로 한 덩이이고, 다른 긴 사각형은
+#    폭이 0.26 이상이라 안 겹친다. gold 는 곁단을 상자로 안 적는다 — 용어는 본문 참조 자리에 주석(⊕ · C-77)으로, 개념 체크만
+#    글상자로(동아시아사 body p0009 · 생활과 윤리 body p0096 눈 확인). 우리는 곁단 요소를 통째로 상자 하나로 묶었다.
+# ② **표를 품은 문항 틀**: 안쪽 사각형 대신 표를 품은 문항 틀(C-157 은 안쪽 사각형만 봤다). 16개 중 gold 가 문항을 통째로
+#    상자에 넣은 것은 수학 Ⅰ 2개뿐이다(생활과 윤리 body p0029: 발문은 상자 밖, 칼럼은 지문 글상자).
+_SIDEBAR_COL_MIN_H = 0.6     # 지면 높이 비
+_SIDEBAR_COL_MAX_W = 0.2     # 지면 폭 비
+
+
+def box_false_outer_on() -> bool:
+    return os.environ.get("BOX_FALSE_OUTER", "1") != "0"
+
+
+def drop_sidebar_columns(rects: list, page_w: float, page_h: float) -> list:
+    """곁단 바탕 사각형(지면 높이 6할 이상 · 폭 2할 이하)을 글상자 후보에서 뺀다(#1149, 위 주석)."""
+    if not box_false_outer_on():
+        return rects
+    return [r for r in rects
+            if not ((r[3] - r[1]) >= _SIDEBAR_COL_MIN_H * page_h and (r[2] - r[0]) <= _SIDEBAR_COL_MAX_W * page_w)]
+
+
 def drop_question_frames(elements: list[dict], rects: list) -> list:
     """글상자 후보에서 문항 틀을 뺀다(위 주석). 좌표계는 `tag_boxed_elements` 와 같아야 한다."""
     def _in(bb, r) -> bool:
@@ -1219,7 +1242,8 @@ def drop_question_frames(elements: list[dict], rects: list) -> list:
         kids = [q for q in rects if _inside(q, r)]
         own = [el for el in elements if el.get("bbox") and len(el["bbox"]) == 4 and _in(el["bbox"], r)
                and not any(_in(el["bbox"], q) for q in kids)]
-        if not (kids and any(_Q_FRAME_RE.search(_tag_title(el)) for el in own)):
+        holds = kids or (box_false_outer_on() and any(el.get("type") == "table" for el in own))   # ② 표를 품은 틀(#1149)
+        if not (holds and any(_Q_FRAME_RE.search(_tag_title(el)) for el in own)):
             keep.append(r)
     return keep
 

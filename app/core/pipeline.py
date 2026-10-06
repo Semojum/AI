@@ -370,6 +370,7 @@ _EXTRACT_ENV = (
     "LAYER_GATE_AFTER_RESTORE", "LAYER_GATE_LATEX_GUARD", "LAYER_CTRL_TO_SPACE",      # #1072 층 신뢰 게이트
     "LAYER_HALLUC_RULE",                                                               # #1078 환각 층 대체 · R4 표시
     "LAYER_LATEX_COUNT_GUARD",                                                         # #1130 층 글 첨자 수 가드
+    "BOX_FALSE_OUTER",                                                                 # #1149 가짜 바깥 상자 빼기
     "HANCOM_FRACTION",                                                                 # #1055 한컴 작은 수 분수 풀기
     "SEMOJUM_NO_CAPTION", "CAPTION_MATERIAL", "CAPTION_UPSCALE", "CAPTION_FAIL_STREAK_LIMIT",
     "LLM_TEXT_GUARD", "LLM_CACHE_MODE", "SIDEBAR_AS_NOTE", "GRAFT_SIM_MIN",
@@ -1224,6 +1225,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         tag_answer_marks,
         tag_boxed_elements,
         drop_question_frames,
+        drop_sidebar_columns,
     )
 
     # analyze_pdf의 page_no는 1-indexed(0 이하만 내부 보정). 빼기 1을 넘기면
@@ -1347,8 +1349,10 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             logger.info("글상자 %d개 순서 재정렬 (page=%d)", n, task.page_no)
         # page_w — 곁단 판정(원장 C-77)이 상자 폭을 지면 폭과 견준다. 좌표계에 맞춘다.
         _page_w = float(image_width) if (bbox_space == "pixel" and image_width) else 1000.0
-        # 문항 틀은 글상자가 아니다(#1110, pdf_analyzer 주석). 순서 재정렬(위)은 종전대로 틀까지 쓴다.
-        if n := tag_boxed_elements(elements, drop_question_frames(elements, rects), _page_w):
+        # 문항 틀 · 곁단 바탕은 글상자가 아니다(#1110 · #1149, pdf_analyzer 주석). 순서 재정렬(위)은 종전대로 다 쓴다.
+        _page_h = float(image_height) if (bbox_space == "pixel" and image_height) else 1000.0
+        boxes = drop_sidebar_columns(drop_question_frames(elements, rects), _page_w, _page_h)
+        if n := tag_boxed_elements(elements, boxes, _page_w):
             logger.info("글상자 %d개 태깅 (page=%d)", n, task.page_no)
 
         # 정오 표시 ○·×(원장 M-04) — 채움 경로라 텍스트레이어에도 MinerU에도 안 잡힌다.
