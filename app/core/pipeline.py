@@ -2469,12 +2469,15 @@ def _parse_txt_result(
 
 
 def _mark_table_box_levels(items: list[BBoxItem], ext_map: dict[UUID, ExtractedContent]) -> None:
-    """경계 키 `box_level`(추출 때 사각형 안 · 태그 구간 안 표)을 최종 읽기순서에서도 상자 안일 때만 남긴다(#1110, in-place).
+    """표 위계 = min(경계 키 `box_level`, 최종 읽기순서에서 그 표를 감싼 상자 위계)(#1110, in-place).
 
-    표에는 상자 태그를 못 단다 — 표 HTML 안에 넣으면 표 체인이 깨진다(`tag_boxed_elements`). 그래서 위계는
-    경계 키로 오고, 실제로 상자 안에 그려지는지는 **읽기순서 재배정 뒤** 앞뒤 글 요소의 태그로 다시 본다.
-    ★ 태그 깊이만 보면 안 된다. 재배정이 곁단 상자의 여는 태그와 닫는 태그를 갈라 놓으면 그 사이에 든
-      본문 표까지 상자 안으로 잡힌다(#1110 A/B 1차: 동아시아사 p0033 자 +233 · 생활과 윤리 p0096 +63).
+    표에는 상자 태그를 못 단다 — 표 HTML 안에 넣으면 표 체인이 깨진다(`tag_boxed_elements`). 그래서 어느 상자
+    **사각형 안**인지는 경계 키로 오고, 실제로 상자 **안에 그려지는지**는 읽기순서 재배정 뒤 앞뒤 글 요소의
+    태그로 다시 본다. 둘 중 하나만 보면 틀린다(#1110 A/B):
+      · 태그 깊이만(1차) — 재배정이 곁단 상자의 여는 태그와 닫는 태그를 갈라 놓으면 그 사이에 낀 본문 표까지
+        상자 안으로 잡힌다(동아시아사 p0033 자 +233).
+      · 경계 키만 — 사각형 안이어도 첫 글 앞 · 끝 글 뒤에 그려지면 상자 밖이다.
+    작은 값을 쓰는 것은 바깥 상자 구간에만 든 안쪽 상자 표를 한 단계 더 올리지 않으려는 것이다.
     요소 flags 는 BE 응답으로 나가서 쓰지 않는다(`ExtractedContent.box_level` 은 내부 값).
     """
     from app.ai.braille.translator import box_borders_from_source
@@ -2484,8 +2487,7 @@ def _mark_table_box_levels(items: list[BBoxItem], ext_map: dict[UUID, ExtractedC
         if ext is None:
             continue
         if it.type == "table":
-            if not depth:
-                ext.box_level = 0
+            ext.box_level = min(ext.box_level, depth[-1]) if depth else 0
             continue
         for kind, level, _title in box_borders_from_source(ext.corrected_text or ""):
             if kind == "top":

@@ -61,12 +61,12 @@ def _el(typ, y, content="본문"):
     return {"id": str(uuid4()), "type": typ, "content": content, "bbox": [10, y, 90, y + 8]}
 
 
-def test_추출은_사각형_안_태그_구간_안_표에만_키를_단다():
+def test_추출은_사각형_안_표에_키를_단다():
     els = [_el("text", 40, "첫 줄 본문이 길어서 제목으로 안 올라간다"), _el("table", 55, "<table></table>"),
-           _el("text", 70), _el("table", 85, "<table></table>"),  # 상자 안이지만 끝 글 뒤 — 태그 밖에 그려진다
-           _el("table", 200, "<table></table>")]                 # 상자 밖
+           _el("text", 70), _el("table", 85, "<table></table>"),  # 끝 글 뒤 — 그려지는 자리는 점역이 다시 본다
+           _el("table", 200, "<table></table>")]                 # 사각형 밖
     assert tag_boxed_elements(els, [[0, 0, 100, 100]]) == 1
-    assert [e.get("box_level", 0) for e in els if e["type"] == "table"] == [1, 0, 0]
+    assert [e.get("box_level", 0) for e in els if e["type"] == "table"] == [1, 1, 0]
 
 
 def _page(*specs):
@@ -99,3 +99,15 @@ def test_찢어진_상자_사이에_낀_본문_표는_키가_없으면_그대로
     )
     _mark_table_box_levels(items, ext)
     assert [ext[it.element_id].box_level for it in items if it.type == "table"] == [0]
+
+
+def test_바깥_상자_구간에만_든_안쪽_사각형_표는_한_단계만_올린다():
+    """사각형으로는 2단계 상자 안인데 재배정으로 안쪽 상자 태그 밖(바깥 상자 안)에 그려지면 1이다."""
+    items, ext = _page(
+        ("text", "<!상자><!/상자>\n바깥", 0),
+        ("text", "<!상자2><!/상자2>\n안쪽\n<!상자끝2><!/상자끝2>", 0),
+        ("table", "<table></table>", 2),
+        ("text", "끝\n<!상자끝><!/상자끝>", 0),
+    )
+    _mark_table_box_levels(items, ext)
+    assert [ext[it.element_id].box_level for it in items if it.type == "table"] == [1]
