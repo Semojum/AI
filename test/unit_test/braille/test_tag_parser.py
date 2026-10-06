@@ -73,7 +73,10 @@ class TestMirroredCloseTag:
 
     def test_본문_부등호는_안_건드린다(self):
         # `<` 뒤가 태그 꼴이 아니면 그대로 수학 기호로 간다(제41항 ⠔⠔).
-        assert self._one("5 < 10 이고") == "⠼⠑⠲⠀⠔⠔⠀⠼⠁⠚⠀⠕⠈⠥"
+        # 종전 기대값 `⠼⠑⠲⠀⠔⠔…` 은 줄 첫 `5` 를 문제 번호로 본 마침표(C-41 오발동)까지 못 박았다.
+        # gold 전권에 `수⠲␣부등호` 는 0회다 — 의도(태그로 안 읽힘 · 부등호 ⠔⠔)만 단언한다.
+        got = self._one("5 < 10 이고")
+        assert "⠔⠔" in got and not got.startswith("⠼⠑⠲"), got
 
 
 class TestBorder:
