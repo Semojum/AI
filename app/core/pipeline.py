@@ -2462,8 +2462,33 @@ def _parse_txt_result(
     _join_item_numbers(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0)
     _place_item_codes(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0,
                       scale_bbox[1] if scale_bbox else 1.0)
+    _mark_table_box_levels(bbox_items, ext_map)
     layout = LayoutResult(page_id=page_id, elements=bbox_items)
     return layout, ext_map, method
+
+
+def _mark_table_box_levels(items: list[BBoxItem], ext_map: dict[UUID, ExtractedContent]) -> None:
+    """최종 읽기순서로 글상자 태그를 따라가, 열린 상자 안에 든 표에 그 위계를 적는다(#1110, in-place).
+
+    표에는 상자 태그를 못 단다 — 표 HTML 안에 넣으면 표 체인이 깨진다(`tag_boxed_elements`).
+    그래서 표가 상자 안에 그려지는지는 **앞뒤 글 요소의 태그**로 가린다. 읽기순서 재배정 뒤에 보므로
+    실제로 그려지는 자리와 같다. 요소 flags 는 BE 응답으로 나가서 쓰지 않는다(`ExtractedContent.box_level`).
+    """
+    from app.ai.braille.translator import box_borders_from_source
+    depth: list[int] = []
+    for it in sorted(items, key=lambda b: b.reading_order):
+        ext = ext_map.get(it.element_id)
+        if ext is None:
+            continue
+        if it.type == "table":
+            ext.box_level = depth[-1] if depth else 0
+            continue
+        for kind, level, _title in box_borders_from_source(ext.corrected_text or ""):
+            if kind == "top":
+                depth.append(level)
+            elif level in depth:
+                while depth.pop() != level:
+                    pass
 
 
 # ── 6-체인 (Phase 2: 태민 opt → braille, 단계별 json 기록) ──────────────────
@@ -2539,7 +2564,8 @@ async def _run_table_chain(
         from app.ai.braille.table_braille import TableBraille
         # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
         # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
-        braille_outputs = await run_braille(TableBraille().translate, llm_outputs)
+        box_levels = {e.element_id: e.box_level for e in extracted if e.box_level}
+        braille_outputs = await run_braille(TableBraille(box_levels).translate, llm_outputs)
         _write_stage(task, "table", "table_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs
