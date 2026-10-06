@@ -311,9 +311,15 @@ _LOG_ARG_RE = re.compile(
 
 
 def digits_to_braille(num_str: str) -> str:
-    """숫자 문자열 → 수표시 + 점자 (C5-critical)."""
-    result = [_NUMBER_INDICATOR]
-    for ch in num_str:
+    """숫자 문자열 → 수표시 + 점자 (C5-critical).
+
+    앞 `-` 는 음수다 — 뺄셈표 ⠔ 를 수표 앞에 적는다(수학 제2항 뺄셈표 `9` · 제4항 예문 `−1<x<3` → `9#a99x99#c`,
+    「한국 점자 규정」 재추출 3017~3018행 · 3060~3062행). 수식 경로는 앞 단계 `_stage10x_minus` 가 이미 ⠔ 로
+    바꿔 두어 여기에 `-` 가 안 온다. 종전 `⠼⠤` 는 제17항(프라임, 3526행)을 음수로 잘못 읽은 꼴이었다(#1146).
+    """
+    neg = num_str.startswith("-")
+    result = ["⠔", _NUMBER_INDICATOR] if neg else [_NUMBER_INDICATOR]
+    for ch in (num_str[1:] if neg else num_str):
         if ch in _DIGIT_MAP:
             result.append(_DIGIT_MAP[ch])
         elif ch == ".":
@@ -321,7 +327,7 @@ def digits_to_braille(num_str: str) -> str:
         elif ch == ",":
             result.append("⠂")   # 자릿점 (제41항: dot 2)
         elif ch == "-":
-            result.append("⠤")   # 음수 부호 (수학 제17항 - = ⠤)
+            result.append("⠤")   # 숫자 사이 붙임표 — `_NUM_RE` 가 앞 `-` 만 잡아 지금은 안 온다
         else:
             result.append(ch)
     return "".join(result)
