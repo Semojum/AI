@@ -35,7 +35,7 @@ from app.ai.braille.symbol_rules import SYMBOL_TABLE
 # 옛한글 점형표(규정 제19~25항)는 정방향이 정본이다 — 역방향은 그 표를 뒤집어 쓴다.
 from app.ai.braille.translator import (
     _CHOSEONG as _T_CHO, _JONGSEONG as _T_JONG,
-    _OLD_CHO as _T_OLD_CHO, _OLD_JUNG as _T_OLD_JUNG,
+    _OLD_CHO as _T_OLD_CHO, _OLD_JUNG as _T_OLD_JUNG, _CIRCLED as _T_CIRCLED,
 )
 
 _MAP_PATH = Path(__file__).with_name("braille_syllable_map.json")
@@ -775,6 +775,10 @@ _COMBINED["\ufdd3"] = ")"
 # 실제 피해: `윤혜정` → `윤핬정` · `혜산` → `핬산`.
 _YE_OVERRIDE = {"⠚⠌": "혜", "⠊⠌": "뎨"}
 _COMBINED.update(_YE_OVERRIDE)
+# 동그라미 로마자 ⓐ~ⓩ · Ⓐ~Ⓩ (규정 70a7 = ⠶⠴⠁⠶) — 정방향 표가 정본이다. symbol_table 엔
+# ⓐ~ⓔ · ⓧ 뿐이라 나머지가 `{g{` · `{Aggv` 로 샜다. gold 전권 206회(Ⓐ 78 · Ⓑ 39 · ⓕ 33 …)가
+# 전부 동그라미 로마자였고 한글로 읽히는 자리는 0이다(temp/n46/bk/circ_census.py).
+_COMBINED.update({_v: _k for _k, _v in _T_CIRCLED.items() if "Ⓐ" <= _k <= "ⓩ"})
 # ── 로마자로 쓰인 단위 기호(규정 제69항) — 역방향은 **로마자로 편다**. 원장 R-27 ──
 # 제69항은 로마자 단위를 `로마자표 + 낱자 + 종료표`로 적는다(`180cm` -> `#ahj0cm4`).
 # 그래서 `⠴⠉⠍⠲` 한 시퀀스가 묵자 `cm` 이기도 하고 `㎝` 이기도 하다 — 점자만으로는 못
@@ -2699,6 +2703,26 @@ _ENG_ITALIC = "⠨"
 # 규칙으로는 못 풀고(안쪽 ⠶ 가 gg 로 읽힌다) 통째로 편다. 원장 R-76 과 같은 관행.
 _ANSWER_ORDER_RE = re.compile(r"^⠶⠠[⠁⠃⠉⠙⠑]⠶(?:⠤+⠶⠠[⠁⠃⠉⠙⠑]⠶)+$")
 _ANSWER_ITEM_RE = re.compile(r"⠶⠠([⠁⠃⠉⠙⠑])⠶")
+# 영어 보기 표지 `(a)` `(b)` — EBAE 소괄호 ⠶ 가 여닫이 같은 셀이고, b 이후 홑 낱자는
+# 낱말기호(but·can·do…)와 갈리게 낱자표 ⠰ 를 앞세운다(a 는 표 없음). 한글 줄 안에 오면
+# 한글 디코더가 `{a〉` · `{_낭,` 로 읽었다. 앞 ⠴ 는 로마자표, 뒤 ⠲ 는 종료표다(원장 R-76 관행).
+# 낱말 **통째가** 이 꼴일 때만 본다 — gold 전권 1,800여 회가 전부 영어 교재 6권이고
+# 비영어 책은 0회다(⠶ 는 받침 ㅇ·㉮ 틀과 같은 셀, temp/n46/bk/label_census.py).
+# 로마자표 바로 뒤에선 ⠰ 없이도 쓴다(MS-REF-T25-078 `⠴⠶⠃⠶` 96회, 역시 영어 책뿐).
+_ENG_LABEL = r"⠶(?:⠁|⠰[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵])⠶"
+_ENG_LABEL_TOKEN_RE = re.compile(
+    rf"(?:⠴⠶[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵]⠶|⠴?{_ENG_LABEL})(?:⠤{_ENG_LABEL})*")
+_ENG_LABEL_TAIL_RE = re.compile(r"(⠂?)⠲?(.*)")
+
+
+def _eng_label_token(tok: str) -> str | None:
+    """`(a),` · `(b)에` · `(a)-(c)-(b)` 처럼 영어 보기 표지로 된 낱말을 편다."""
+    m = _ENG_LABEL_TOKEN_RE.match(tok)
+    if not m:
+        return None
+    labels = "-".join(f"({_ALPHA_REV[s[-2]]})" for s in m.group().split("⠤"))
+    comma, rest = _ENG_LABEL_TAIL_RE.fullmatch(tok, m.end()).groups()
+    return labels + ("," if comma else "") + (_decode_line(rest) if rest else "")
 # 낱말 안에 박힌 줄임표 ⠄⠄⠄ — 답지 짝 빈칸 `promote...detected`. 토큰으로 떼어 낸다.
 _ENG_ELLIPSIS_RE = re.compile(r"(?<=[⠁-⣿])⠄⠄⠄(?=[⠁-⣿])")
 # 이웃 줄이 영어일 때 요구하는 기능어 수 — 0 이면 낱말이 끝까지 읽히는 것만 본다.
@@ -3818,7 +3842,9 @@ def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False,
     pieces = []
     for idx, tok in enumerate(tokens):
         if tok:
-            if setop[idx]:
+            if (lab := _eng_label_token(tok)) is not None:
+                pieces.append(lab)
+            elif setop[idx]:
                 if tok not in _KEEP_GAP_OP:         # 제33항 ▷ 는 묵자도 칸을 남긴다
                     if pieces:
                         pieces[-1] = ""             # 앞의 한 칸을 지운다 — 묵자는 붙인다
