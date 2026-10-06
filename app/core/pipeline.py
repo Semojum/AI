@@ -2456,14 +2456,45 @@ def _parse_txt_result(
                 structure=el.get("structure"),
                 table_structure=el.get("table_structure"),
                 flags=flags,
+                box_level=int(el.get("box_level") or 0),
             )
 
     _reorder_by_geometry(bbox_items, int(meta.get("page_rotation") or 0))
     _join_item_numbers(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0)
     _place_item_codes(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0,
                       scale_bbox[1] if scale_bbox else 1.0)
+    _mark_table_box_levels(bbox_items, ext_map)
     layout = LayoutResult(page_id=page_id, elements=bbox_items)
     return layout, ext_map, method
+
+
+def _mark_table_box_levels(items: list[BBoxItem], ext_map: dict[UUID, ExtractedContent]) -> None:
+    """표 위계 = min(경계 키 `box_level`, 최종 읽기순서에서 그 표를 감싼 상자 위계)(#1110, in-place).
+
+    표에는 상자 태그를 못 단다 — 표 HTML 안에 넣으면 표 체인이 깨진다(`tag_boxed_elements`). 그래서 어느 상자
+    **사각형 안**인지는 경계 키로 오고, 실제로 상자 **안에 그려지는지**는 읽기순서 재배정 뒤 앞뒤 글 요소의
+    태그로 다시 본다. 둘 중 하나만 보면 틀린다(#1110 A/B):
+      · 태그 깊이만(1차) — 재배정이 곁단 상자의 여는 태그와 닫는 태그를 갈라 놓으면 그 사이에 낀 본문 표까지
+        상자 안으로 잡힌다(동아시아사 p0033 자 +233).
+      · 경계 키만 — 사각형 안이어도 첫 글 앞 · 끝 글 뒤에 그려지면 상자 밖이다.
+    작은 값을 쓰는 것은 바깥 상자 구간에만 든 안쪽 상자 표를 한 단계 더 올리지 않으려는 것이다.
+    요소 flags 는 BE 응답으로 나가서 쓰지 않는다(`ExtractedContent.box_level` 은 내부 값).
+    """
+    from app.ai.braille.translator import box_borders_from_source
+    depth: list[int] = []
+    for it in sorted(items, key=lambda b: b.reading_order):
+        ext = ext_map.get(it.element_id)
+        if ext is None:
+            continue
+        if it.type == "table":
+            ext.box_level = min(ext.box_level, depth[-1]) if depth else 0
+            continue
+        for kind, level, _title in box_borders_from_source(ext.corrected_text or ""):
+            if kind == "top":
+                depth.append(level)
+            elif level in depth:
+                while depth.pop() != level:
+                    pass
 
 
 # ── 6-체인 (Phase 2: 태민 opt → braille, 단계별 json 기록) ──────────────────
@@ -2539,7 +2570,8 @@ async def _run_table_chain(
         from app.ai.braille.table_braille import TableBraille
         # 점역은 순수 CPU 동기 작업이라 코루틴 안에서 부르면 이벤트 루프가 멈춘다
         # (실측 쪽당 p95 2.1초). 전용 풀로 내린다 — app/core/limits.py 참조.
-        braille_outputs = await run_braille(TableBraille().translate, llm_outputs)
+        box_levels = {e.element_id: e.box_level for e in extracted if e.box_level}
+        braille_outputs = await run_braille(TableBraille(box_levels).translate, llm_outputs)
         _write_stage(task, "table", "table_braille.json", braille_outputs)
 
     return extracted, llm_outputs, braille_outputs

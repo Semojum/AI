@@ -44,6 +44,9 @@ class ExtractedContent(BaseModel):
     structure: Optional[dict] = None
     flags: list[str] = Field(default_factory=list)
     # 플래그: C2_FALLBACK, C3_FALLBACK, C4_FALLBACK, VERTICAL_TEXT, SUBTYPE_UNCERTAIN
+    # 이 요소를 감싼 글상자 위계(0=상자 밖). 표만 쓴다 — 상자 안 표는 테두리를 한 단계 아래로 그린다(#1110).
+    # 내부 값이다. 응답(proto)에는 안 나간다 — flags 는 BE 로 나가므로 거기 넣지 않는다.
+    box_level: int = 0
 
 
 class Draft(BaseModel):

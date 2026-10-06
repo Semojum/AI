@@ -66,7 +66,7 @@ def _base_trail(
         trail += content_rules(source, lines)
     return trail
 
-from app.ai.braille.constants import COLS as _COLS, BOX_TITLE_PROMOTABLE  # noqa: E402 (공용 상수)
+from app.ai.braille.constants import COLS as _COLS, BOX_LEVELS, BOX_TITLE_PROMOTABLE  # noqa: E402 (공용 상수)
 _BORDER  = "⠿"  # 표 테두리
 _EMPTY_CELL = "⠿⠿"  # 빈 셀 (NLD-3.1.2(4))
 _SEP     = "⠒"  # 행·셀 구분선
@@ -169,6 +169,29 @@ _ROW_INDENT = 2     # 표 본문 "3칸에서 시작" = 앞 빈칸 2 (자료지�
 # 표 위/아래 테두리 (자료지침 §3.1.3(2) `=GGG…=` / `=777…=`). 격자·선형이 같이 쓴다.
 _TBL_TOP = "⠿" + "⠛" * (_COLS - 2) + "⠿"
 _TBL_BOT = "⠿" + "⠶" * (_COLS - 2) + "⠿"
+
+
+# 글상자 안 표는 속글상자다 — 상자보다 한 단계 아래 테두리로 그린다(#1110). 「점자 도서 제작 지침」
+# 3장 1절 1. 2) 표의 선 1~3단계 · 3) 중첩된 표는 안쪽이 한 단계 아래(재추출 1606~1615행 · 1629~1634행),
+# 1장 2절 5. 2)(3) 속글상자 · (5) 위계 3단계(396~397행 · 451~457행), 3장 지문 (4)(3094~3095행).
+# '글상자 안 표'를 직접 정한 조항은 없다. 같은 방향이고 gold 가 그렇게 적어 따른다.
+# gold 실측(2027 dev · val 게이트, 862227a): 우리가 1단계 글상자 안에 그린 표 75개(dev 68 · val 7)가 든 쪽
+# 60쪽 중 58쪽이 2단계 ⠖⠒…⠲ / ⠓⠒…⠚ 를 쓴다(생명과학 p0056 눈 확인: 상자 안 표가 2단계). 남은 2쪽은 생활과 윤리다.
+# 되돌리는 길 `TABLE_BOX_LEVEL=0`(호출 때 읽음).
+def box_level_on() -> bool:
+    return os.environ.get("TABLE_BOX_LEVEL", "1") != "0"
+
+
+def _relevel_borders(lines: list[str], level: int) -> None:
+    """표 위/아래 테두리를 `level` 단계 꼴로 바꿔 그린다(in-place).
+
+    ponytail: 32칸 1단계 줄과 똑같은 줄만 바꾼다. 제목을 박은 위 테두리(정답 상자)는 짝이 안 맞으니 통째로 둔다.
+    """
+    if _TBL_TOP not in lines or _TBL_BOT not in lines:
+        return
+    (ts, tf, te), (bs, bf, be) = BOX_LEVELS[level]["top"], BOX_LEVELS[level]["bottom"]
+    top, bot = ts + tf * (_COLS - 2) + te, bs + bf * (_COLS - 2) + be
+    lines[:] = [top if ln == _TBL_TOP else bot if ln == _TBL_BOT else ln for ln in lines]
 
 
 def _tn_transpose_line() -> str:
@@ -1216,7 +1239,13 @@ def _transpose_text(corrected_text: str) -> str:
 
 
 class TableBraille:
-    """LLMOutput 목록 → BrailleOutput 목록 (표). 격자/전치/선형 3안."""
+    """LLMOutput 목록 → BrailleOutput 목록 (표). 격자/전치/선형 3안.
+
+    `box_levels`: 요소 id → 그 표를 감싼 글상자 위계(`pipeline._mark_table_box_levels`). 없으면 상자 밖.
+    """
+
+    def __init__(self, box_levels: dict | None = None):
+        self._box_levels = box_levels or {}
 
     def translate(self, optimized: list[LLMOutput]) -> list[BrailleOutput]:
         # 요소별 격리: 한 표 점역 실패가 다른 요소를 막지 않는다.
@@ -1294,5 +1323,9 @@ class TableBraille:
             drafts=drafts,
             selected_idx=sel,
         )
+        lv = self._box_levels.get(opt.element_id, 0)
+        if lv and box_level_on():             # 덧붙일 그림 상자보다 먼저 — 표 자기 테두리만 바꾼다
+            for lines in (bo.braille_lines, *(d.braille_lines for d in drafts)):
+                _relevel_borders(lines, min(3, lv + 1))
         append_nested(bo, opt.nested_text)   # 표 안 그림(Q11) 글상자 1단 덧붙임
         return bo

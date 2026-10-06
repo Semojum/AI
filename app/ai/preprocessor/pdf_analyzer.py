@@ -1306,6 +1306,11 @@ def tag_boxed_elements(elements: list[dict], rects: list, page_w: float = 1000.0
         sfx = "" if level == 1 else str(level)        # <!상자2> = 2단계(translator 규약)
         opens.setdefault(first, []).append((level, f"<!상자{sfx}>{title}<!/상자{sfx}>"))
         closes.setdefault(last, []).append((level, f"<!상자끝{sfx}><!/상자끝{sfx}>"))
+        # 표에는 태그를 못 다니 위계를 경계 키로 남긴다(#1110). 사각형 안 표 전부 — 태그 안에 그려지는지는
+        # 읽기순서 재배정 뒤에 정해지므로 점역이 최종 순서로 다시 본다(`pipeline._mark_table_box_levels`).
+        for i in inside:
+            if elements[i].get("type") == "table":
+                elements[i]["box_level"] = max(elements[i].get("box_level", 0), level)
         for i in texts:                         # 안쪽 상자가 다시 감쌀 수 있게 위계를 기록
             claimed[i] = max(claimed.get(i, 0), level)
         n += 1
