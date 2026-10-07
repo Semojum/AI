@@ -38,6 +38,7 @@ NOT_BOUNDARY = {
     "KEEP_PAGE_IMAGE": "QA 쪽 이미지 보관",
     "TABLE_KEEP_CELLS": "경계 뒤 표 칸 쪼개기(`_parse_txt_result`, #1042)",
     "ITEM_CODE_FORM": "경계 뒤 문항코드 자리(`_parse_txt_result`, #1052)",
+    "CONCEPT_CHECK_BOX": "경계 뒤 개념 체크 글상자(`_parse_txt_result`, #1155)",
 }
 _ENV_RE = re.compile(r"""(?:os\.environ\.get|os\.getenv|os\.environ\.setdefault)\(\s*["']([A-Z0-9_]+)["']|os\.environ\[\s*["']([A-Z0-9_]+)["']\s*\]""")
 
