@@ -1324,7 +1324,7 @@ def _text_fraction_subs(rows: list, rot, fracs: list, fixes) -> dict[int, dict[i
     def key(r) -> tuple:
         return (round(r.x0, 1), round(r.y0, 1), round(r.x1, 1), round(r.y1, 1))
     role = {key(r): (k, part) for k, (_bar, *pair) in enumerate(fracs) for part, rs in enumerate(pair) for r in rs}
-    host: dict[int, tuple] = {}       # 분수 k → (본문 글자 수, -분수선과의 거리, 줄 id)
+    host: dict[int, tuple] = {}       # 분수 k → (본문 글자 수, 본문 행과 겹침, -줄 차례, 줄 id)
     hit: dict[int, dict[int, tuple]] = {}
     parts: dict[int, list[list[str]]] = {}
     for _lb, ln in rows:
@@ -1352,13 +1352,15 @@ def _text_fraction_subs(rows: list, rot, fracs: list, fixes) -> dict[int, dict[i
                         if j not in hit.get(id(ln), {}) and not c.get("c", " ").isspace())
             for _lb, ln in rows}
     rect = {id(ln): lb for lb, ln in rows}
+    order = {id(ln): n for n, (_lb, ln) in enumerate(rows)}
     for k, (bar, *_p) in enumerate(fracs):
         mains = [rect[i] for i, n in body.items() if n and rect[i].y0 <= bar.y0 <= rect[i].y1]
         for i, idx in hit.items():
             if any(kk == k for kk, _pp in idx.values()):
                 c = rect[i]
                 ov = max(((min(m.y1, c.y1) - max(m.y0, c.y0)) / max(1e-6, min(m.height, c.height)) for m in mains), default=0.0)
-                host[k] = max(host.get(k, (0, 0.0, 0)), (body[i], ov, i))
+                # 동점이면 앞 줄 — 줄 id 는 메모리 주소라 실행마다 달라 분수가 분자 줄 · 분모 줄을 오갔다(#1183 후속)
+                host[k] = max(host.get(k, (0, 0.0, -len(rows), 0)), (body[i], ov, -order[i], i))
     ok = {k for k, (num, den) in parts.items()
           if any(num) and any(den) and not _FRAC_TEXT_UNSAFE.search(" ".join(num + den))}
     out: dict[int, dict[int, str]] = {}
@@ -1368,7 +1370,7 @@ def _text_fraction_subs(rows: list, rot, fracs: list, fixes) -> dict[int, dict[i
         for j, (k, part) in sorted(hit.get(id(ln), {}).items()):
             if k not in ok:
                 continue
-            if host[k][2] == id(ln) and k not in done:
+            if host[k][3] == id(ln) and k not in done:
                 num, den = (" ".join(t for t in parts[k][p] if t) for p in (0, 1))
                 subs[j] = "$\\frac{\\text{%s}}{\\text{%s}}$" % (num, den)
                 done.add(k)

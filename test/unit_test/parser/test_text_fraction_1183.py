@@ -40,3 +40,23 @@ def test_끈_스위치는_종전처럼_잇는다(monkeypatch):
     doc, pg = _page()
     fixed = mr._native_text_pair(pg, [0, 0, 1000, 1000])[1]
     assert "\\frac" not in fixed and "산소" in fixed and "이산화" in fixed
+
+
+def test_넣을_줄이_동점이면_앞_줄이다():
+    """본문 글자가 없는 분수는 분자 줄 · 분모 줄이 동점이다. 종전엔 줄 id(메모리 주소)로 갈려 실행마다 넣는 줄이 바뀌었다.
+
+    id 가 작은 객체에 앞 줄(분자)을 담아, id 로 고르면 뒤 줄을 고르게 만든다.
+    """
+    doc = fitz.open()
+    pg = doc.new_page(width=600, height=800)
+    kw = dict(fontsize=12, fontname="korea")
+    pg.insert_text((130, 290), "이산화 탄소", **kw)
+    pg.draw_line((128, 293), (204, 293))
+    pg.insert_text((154, 306), "산소", **kw)
+    (lb0, ln0), (lb1, ln1) = list(mr._layer_lines(pg, [0, 0, 1000, 1000]))
+    lo, hi = sorted((dict(), dict()), key=id)
+    lo.update(ln0)
+    hi.update(ln1)
+    out = mr._text_fraction_subs([(lb0, lo), (lb1, hi)], pg.rotation_matrix, text_fractions(pg), None)
+    assert any("\\frac" in v for v in out[id(lo)].values())
+    assert not any(out[id(hi)].values())
