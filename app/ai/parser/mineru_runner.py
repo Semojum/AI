@@ -650,7 +650,7 @@ def _restore_table_bullets(fitz_page: fitz.Page, bbox: list[float], html: str) -
     """
     if not html or not bbox:
         return html
-    layer = _extract_text_native(fitz_page, bbox)
+    layer = _table_layer(_extract_text_native(fitz_page, bbox))
     if not layer or not _BULLET_ANY_RE.search(layer):
         return html
     if _layer_untrustworthy(layer, fitz_page):
@@ -1020,7 +1020,7 @@ def _restore_table_circled(fitz_page: fitz.Page, bbox: list[float], html: str) -
     # ★ 자리 확인 — 개수가 같아도 층과 셀의 읽는 차례가 다르면(두 줄로 접힌 셀) ㉠ · ㉡ 이 뒤바뀐 채 붙는다.
     #   바뀐 셀(수식 명령 없는 것)마다 셀 글 전체나 '원문자 + 뒤 두 글자'가 되돌린 층에 있어야 한다.
     #   하나라도 없으면 표째 그대로 둔다. 원문자와 바로 뒤 글자를 같이 보므로 뒤바뀐 짝은 여기서 걸린다.
-    layer_ns = re.sub(r"\s+", "", _native_text_pair(fitz_page, bbox)[1])
+    layer_ns = re.sub(r"\s+", "", _table_layer(_native_text_pair(fitz_page, bbox)[1]))
     for old_m, new_m in zip(_CELL_RE.finditer(html), _CELL_RE.finditer(out)):
         cell = re.sub(r"\s+|<[^>]*>|\$", "", new_m.group(2))
         if new_m.group(2) == old_m.group(2) or "\\" in cell or cell in layer_ns:
@@ -1056,7 +1056,7 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     """
     if not html or not bbox:
         return html
-    plain, layer = _native_text_pair(fitz_page, bbox)        # 믿을지는 되돌리기 전 글로(#1060)
+    plain, layer = map(_table_layer, _native_text_pair(fitz_page, bbox))   # 믿을지는 되돌리기 전 글로(#1060)
     if not layer or _layer_untrustworthy(plain, fitz_page):
         return html
     # 레이어에는 우리가 붙이는 인라인 태그(<!강조> 등)가 들어 있다 — 대조 전에 걷어낸다.
@@ -1244,6 +1244,17 @@ def _is_math_page(pdf_path: "Path | bytes", page_idx: int) -> bool:
 # ⚠ `pdf_analyzer._MANGLED_LAYER_RE` 는 건드리지 않는다 — 쪽 라우팅 신호도 겸해서 손대면 멀쩡한 쪽 티어가 바뀐다.
 _CTRL_TO_SPACE = ({c: " " for c in (*range(0x00, 0x09), 0x0B, 0x0C, *range(0x0E, 0x20), 0x200C)}
                   if os.environ.get("LAYER_CTRL_TO_SPACE", "1") != "0" else {})     # 같은 커밋 A/B 스위치(끄면 종전)
+
+
+def _table_layer(text: str) -> str:
+    """표 경로(칸 대조 · 원문자 · 글머리 되돌리기)의 층 글에도 위 띄움을 건다(#1148). `TABLE_LAYER_CTRL=0` 이 종전이다.
+
+    #1072 는 글 요소 경로에만 걸려, 표 경로는 `•\\x07사람을` 의 `\\x07` 한 글자로 층을 통째로 못 믿었다. 언어와 매체
+    문법 표 143개 중 32개가 이 거부로 칸 대조 전에 끝났고, gold 에만 있는 표 칸 강조 자리 표 22개 중 15개가 그랬다.
+    제어 문자는 InDesign 표지(`\\x07` · U+200C, 그리지 않는 글자 · 다음 글자와 원점이 같다)와 빈 글리프(`\\x01` = CID 1,
+    윤곽 없음)였다(V2 `temp/n136`). 호출 때 읽는다.
+    """
+    return text if os.environ.get("TABLE_LAYER_CTRL", "1") == "0" else text.translate(_CTRL_TO_SPACE)
 
 
 def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float], skip_math: bool = False) -> str:
