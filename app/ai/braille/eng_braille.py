@@ -124,7 +124,9 @@ SHORT_FORMS: dict[str, str] = {
     "after": "⠁⠋", "afternoon": "⠁⠋⠝", "afterward": "⠁⠋⠺", "again": "⠁⠛",
     "against": "⠁⠛⠌", "almost": "⠁⠇⠍", "already": "⠁⠇⠗", "also": "⠁⠇",
     "although": "⠁⠇⠹", "altogether": "⠁⠇⠞", "always": "⠁⠇⠺",
-    "because": "⠆⠉", "before": "⠆⠿", "behind": "⠆⠓", "below": "⠆⠇",
+    # before = bef(⠆⠋) — 통일영어점자 단축형. 종전 ⠆⠿(be+for 를 이어 붙인 꼴)는 단축형이 아니다(#1184).
+    #   gold 영어책(holdout 제외) 홀로 선 ⠆⠋ 343 : ⠆⠿ 0. beforehand 도 bef 를 그대로 쓴다(gold ⠆⠋⠓⠯).
+    "because": "⠆⠉", "before": "⠆⠋", "beforehand": "⠆⠋⠓⠯", "behind": "⠆⠓", "below": "⠆⠇",
     "beneath": "⠆⠝", "beside": "⠆⠎", "between": "⠆⠞", "beyond": "⠆⠽",
     "blind": "⠃⠇", "braille": "⠃⠗⠇", "children": "⠡⠝", "conceive": "⠒⠉⠧",
     "could": "⠉⠙", "deceive": "⠙⠉⠧", "declare": "⠙⠉⠇", "either": "⠑⠊",
