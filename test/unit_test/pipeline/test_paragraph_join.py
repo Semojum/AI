@@ -39,6 +39,20 @@ def test_번호_목록은_잇지_않는다():
     assert join(src) == src
 
 
+# #1169 — 앞 항목이 두 줄에 걸치면 이어 붙인 줄이 단 폭보다 길어 다음 자모 항목이 붙었다(생명과학 body p0038)
+JAMO = ("ㄱ. (가)에서 심장으로부터 나온 혈액은 아가미와 온몸의 모세 혈관을 모두 거친 후에 심장으\n로 돌아온다.\n"
+        "ㄴ. 심장과 혈관은 모두 순환계에 속한다.\nㄷ. 지점 d₁의 혈압은 지점 d₃의 혈압보다 작다.")
+
+
+def test_자모_글머리_항목은_잇지_않는다():
+    assert join(JAMO) == JAMO.replace("심장으\n로", "심장으로")
+
+
+def test_끈_스위치는_자모_항목을_종전처럼_잇는다(monkeypatch):
+    monkeypatch.setenv("JOIN_JAMO_HEAD", "0")
+    assert "돌아온다. ㄴ. 심장과" in join(JAMO)
+
+
 def test_빈_줄은_문단_경계라_유지된다():
     src = "앞 문단의 첫 줄이고 길이가 비슷하다\n앞 문단의 둘째 줄이고 길이 비슷\n\n뒤 문단"
     out = join(src)
