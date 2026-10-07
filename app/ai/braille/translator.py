@@ -1574,7 +1574,10 @@ def _collapse_spaces(braille: str) -> str:
 
 def _fix_leading_roman(text_orig: str, braille: str) -> str:
     """대문자 영어로 시작하는 한영 혼합 텍스트에서 ⠴ 누락을 보정."""
-    if not _HANGUL_SYL_RE.search(text_orig):
+    # 태그 이름(`<!밑줄>`·`<!강조>`·`<!수식>`)의 한글은 본문이 아니다 — 세면 한글 없는 영어 줄이
+    #   혼합으로 잡혀 첫 낱말에 ⠴…⠲ 가 붙는다(`I want to ___ you.` → ⠴⠠⠊⠲⠀…). 로마자 줄 문맥(_RomanCtx)도
+    #   태그를 빼고 센다.
+    if not _HANGUL_SYL_RE.search(_RESIDUAL_BANG_TAG_RE.sub("", text_orig)):
         return braille
     if not re.match(r"^[A-Z]", text_orig):
         return braille
