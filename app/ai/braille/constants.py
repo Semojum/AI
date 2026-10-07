@@ -4,6 +4,8 @@
 32칸·26줄을 한 곳으로 모은다. (NLD 1장1절3: 가로 32칸·세로 26줄 기본 규격.)
 """
 
+from contextvars import ContextVar
+
 COLS = 32  # 한 줄 칸 수
 ROWS = 26  # 한 페이지 줄 수 (NLD 1장1절3: 세로 26줄)
 
@@ -42,3 +44,9 @@ BOX_TITLE_PROMOTABLE = frozenset({
 # 라우팅이 달라진다(수학2 실측 173요소).
 WRAP_HYPHEN_OPEN = "\ufdd0"
 WRAP_HYPHEN_CLOSE = "\ufdd1"
+
+# 한글 1급(정자 점자, #1191) — 점역사가 문서를 올릴 때 고른다. 기본 False = 지금 동작(약자·약어를 쓰는 2급).
+#   켜면 「한국 점자 규정」 제2장 약자와 약어(제13~18항, 재추출 573~960행)를 쓰지 않는다. 받침 ㅆ ⠌ 는
+#   제1장 제4항(303행) 자모 규정이라 그대로다. 근거 「점자 자료 제작 지침」 1.1.2(재추출 240~242행) 한글 약자는
+#   초등학교 2학년용 교재부터 · 1.2(6)(268행) 정자 점자. 쪽 단위 문맥 값이다(`inline_math.MATH_PAGE` 와 같은 길).
+KOREAN_GRADE1: ContextVar[bool] = ContextVar("korean_grade1", default=False)

@@ -28,7 +28,7 @@ from functools import lru_cache
 from app.ai.braille.kor_math_rules import (convert_latex, digits_to_braille,
                                           caps_phrase_run, caps_phrase_cells, bond_chain)
 from app.ai.braille import eng_braille, inline_math
-from app.ai.braille.constants import WRAP_HYPHEN_CLOSE, WRAP_HYPHEN_OPEN
+from app.ai.braille.constants import KOREAN_GRADE1, WRAP_HYPHEN_CLOSE, WRAP_HYPHEN_OPEN
 from app.ai.braille.symbol_rules import (
     HIDDEN_TO_BULLET as _HIDDEN_TO_BULLET,
     SYMBOL_TABLE,
@@ -133,6 +133,53 @@ _HANGUL_BASE    = 0xAC00
 _HANGUL_END     = 0xD7A3
 _JONGSEONG_CNT  = 28
 _JUNGSEONG_CNT  = 21
+
+
+# ── 한글 1급(정자 점자, #1191) ─────────────────────────────────────────────────
+# braillify 는 약자를 끄는 옵션이 없다. 한글 음절 구간을 마스크 음절 '괭'(⠈⠧⠗⠶, 약자 없음 · 첫소리 ㄱ 은
+# 제44항 [다만] 대상이 아님)으로 바꿔 braillify 에 넘기고, 돌아온 마스크 자리에 위 자모 표로 적은 음절을 넣는다.
+# 따옴표 짝·숫자·문장 부호는 braillify 가 종전대로 맡는다(한글 자리를 비우지 않아 문맥이 그대로다).
+_KOR_G1_MASK, _KOR_G1_MASK_CELLS = "괭", "⠈⠧⠗⠶"
+_HANGUL_RUN_RE = re.compile(r"[가-힣]+")
+_KOR_G1_DIGIT_SPACE_CHO = frozenset((2, 3, 6, 15, 16, 17, 18))   # ㄴ ㄷ ㅁ ㅋ ㅌ ㅍ ㅎ (_CHOSEONG 차례)
+
+
+def _hangul_grade1(run: str) -> str:
+    """한글 음절 구간 → 약자 없는 자모 점자. 제11항(모음 뒤 '예')·제12항(ㅑ·ㅘ·ㅜ·ㅝ 뒤 '애') 구분표 ⠤ 포함."""
+    out: list[str] = []
+    prev_v = prev_t = -1
+    for ch in run:
+        code = ord(ch) - _HANGUL_BASE
+        c, v, t = code // (_JUNGSEONG_CNT * _JONGSEONG_CNT), code // _JONGSEONG_CNT % _JUNGSEONG_CNT, code % _JONGSEONG_CNT
+        if c == 11 and prev_t == 0 and (v == 7 or (v == 1 and prev_v in (2, 9, 13, 14))):
+            out.append("⠤")        # 제11항(재추출 538행) 아예 = ⠣⠤⠌ · 제12항(552행) 소화액 = ⠠⠥⠚⠧⠤⠗⠁
+        out.append(_CHOSEONG[c] + _JUNGSEONG[v] + _JONGSEONG[t])
+        prev_v, prev_t = v, t
+    return "".join(out)
+
+
+def _kor_unicode(text: str) -> str:
+    """braillify 한 겹. 한글 1급이 켜지면 한글 음절만 `_hangul_grade1` 로 적는다(꺼지면 braillify 그대로)."""
+    if not KOREAN_GRADE1.get() or not _HANGUL_SYL_RE.search(text):
+        return _braillify_lib.translate_to_unicode(text)
+    runs = [m for m in _HANGUL_RUN_RE.finditer(text)]
+    out = _braillify_lib.translate_to_unicode(_HANGUL_RUN_RE.sub(lambda m: _KOR_G1_MASK * len(m.group()), text))
+    res: list[str] = []
+    pos = 0
+    for m in runs:
+        blk = _KOR_G1_MASK_CELLS * len(m.group())
+        i = out.find(blk, pos)
+        if i < 0:
+            raise ValueError("한글 1급 마스크 자리를 못 찾음")   # 부르는 쪽 폴백(글자 단위)이 받는다
+        cells = _hangul_grade1(m.group())
+        # 제44항 [다만](재추출 2005~2006행) — 숫자와 헷갈리는 첫소리는 숫자 뒤에 붙어 나와도 띄어 쓴다.
+        first_cho = (ord(m.group()[0]) - _HANGUL_BASE) // (_JUNGSEONG_CNT * _JONGSEONG_CNT)
+        if m.start() and text[m.start() - 1].isdigit() and first_cho in _KOR_G1_DIGIT_SPACE_CHO:
+            cells = "⠀" + cells
+        res.append(out[pos:i] + cells)
+        pos = i + len(blk)
+    res.append(out[pos:])
+    return "".join(res)
 
 _ROMAN_START = "⠴"
 _ROMAN_END   = "⠲"
@@ -567,7 +614,7 @@ def _old_syllable_cells(syl: list[str]) -> str | None:
         code = (_HANGUL_BASE + 11 * _JUNGSEONG_CNT * _JONGSEONG_CNT
                 + (ord(v) - _V0) * _JONGSEONG_CNT + (ord(t) - _T0 + 1 if t else 0))
         try:
-            return cho + _braillify_lib.translate_to_unicode(chr(code)) + tail
+            return cho + _kor_unicode(chr(code)) + tail
         except Exception:  # noqa: BLE001 — 폴백은 아래 규정 표로
             pass
     jung = (_JUNGSEONG[ord(v) - _V0] if _V0 <= ord(v) <= _V9 else _OLD_JUNG.get(v))
@@ -3060,7 +3107,7 @@ def _safe_to_unicode(seg: str, _split_eng: bool = True,
         return lead
     seg = core
     try:
-        return lead + _braillify_lib.translate_to_unicode(seg) + trail
+        return lead + _kor_unicode(seg) + trail
     except Exception:  # noqa: BLE001 — 미지 글자 격리(줄 보존)
         # ★ 글자 단위 폴백은 약자·어절 공백을 깨뜨린다(䤎 하나로 '하였'의 ⠣ 소실,
         #   세계사 p019·021 실측 — 교차 31건). 먼저 변환 불가 글자만 제거하고 세그먼트를
@@ -3074,13 +3121,13 @@ def _safe_to_unicode(seg: str, _split_eng: bool = True,
         if bad:
             cleaned = "".join(ch for ch in seg if ch not in bad)
             try:
-                return lead + _braillify_lib.translate_to_unicode(cleaned) + trail
+                return lead + _kor_unicode(cleaned) + trail
             except Exception:  # noqa: BLE001
                 pass
         out = []
         for ch in seg:
             try:
-                out.append(_braillify_lib.translate_to_unicode(ch))
+                out.append(_kor_unicode(ch))
             except Exception:  # noqa: BLE001
                 out.append(" ")
         return lead + "".join(out) + trail
