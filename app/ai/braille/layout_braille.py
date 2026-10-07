@@ -100,6 +100,39 @@ _ITEM_HEAD = re.compile(
     r"|[가-힣]\.\s"                   # 가.
     r"|\d+\.\s)"                    # 1.
 )
+# 보기 항목 자모 글머리(`ㄱ. ` `ㄴ. `)도 항목 머리다(#1169, 줄 잇기 `pipeline._is_list_head` 와 같은 스위치).
+# 「점자 도서 제작 지침」 〈보기〉 예는 항목마다 줄을 바꾸고 2칸 들인다(재추출본 3201~3205행 묵자 ↔ 3243~3249행 점자).
+_ITEM_HEAD_JAMO = re.compile(r"^[ㄱ-ㅎ]\.\s")
+
+
+def _is_item_head(line: str) -> bool:
+    return bool(_ITEM_HEAD.match(line)
+                or (os.environ.get("JOIN_JAMO_HEAD", "1") != "0" and _ITEM_HEAD_JAMO.match(line)))
+
+
+# 원문 줄과 점자 줄 맞대기(항목 줄머리 · 접기, #1169). 점역기는 줄 끝 아래 테두리 태그(`… 까? <!상자끝><!/상자끝>`)를
+# 제 줄로 그리고 조판은 테두리 위에 빈 줄을 넣어, 글상자 요소는 원문 줄 수가 점자 줄 수와 달라 두 판정을 통째로
+# 건너뛰었다(상자 안 보기 ㄴ. ㄷ. 0칸, gold 2칸). 수가 다르면 **내용 줄끼리**(점자: 빈 줄 · 테두리 뺌 / 원문: 상자 제목 ·
+# 태그를 걷고 빈 줄 뺌) 맞대고, 그 수도 다르면 종전처럼 원문 줄 그대로 돌려준다(호출부가 건너뛴다).
+# ⚠ 자모 글머리가 든 요소에만 쓴다. 모든 상자에 쓰면(A/B 2차) 해설 정답표 상자의 `①` · `②` 줄까지 항목으로 들여
+# val 33쪽이 나빠졌다(자모 증분은 dev · val 모두 이득). 스위치는 `JOIN_JAMO_HEAD` 하나.
+_BOX_TITLE_SPAN_RE = re.compile(r"<!상자\d?>.*?<!/상자\d?>")
+
+
+def _aligned_src(corrected_text: str, lines: list[str]) -> list[str]:
+    src = (corrected_text or "").split("\n")
+    if len(src) == len(lines) or os.environ.get("JOIN_JAMO_HEAD", "1") == "0":
+        return src
+    s_txt = [_TAG_RE.sub("", ln) for ln in src if _TAG_RE.sub("", _BOX_TITLE_SPAN_RE.sub("", ln)).strip()]
+    b_idx = [i for i, ln in enumerate(lines) if ln.strip(" ⠀") and not _is_border_line(ln)]
+    if len(s_txt) != len(b_idx) or not any(_ITEM_HEAD_JAMO.match(t.strip()) for t in s_txt):
+        return src
+    out = [""] * len(lines)
+    for i, t in zip(b_idx, s_txt):
+        out[i] = t
+    return out
+
+
 _HEADING_DEEP_INDENT = 4  # NLD 2장2절1 3·4단계 제목 "5칸에서 시작" = 앞 빈칸 4
 # ★ MinerU가 제목으로 표시했지만 **단원명이 아닌** 항목 머리 — 문항 번호와 괄호 번호다.
 #   지침 2.4.2는 단원명에만 적용된다. 이것들은 문단이므로 "3칸에서 시작" = 앞 빈칸 2다.
@@ -922,10 +955,10 @@ class LayoutBraille:
             return
         if getattr(bo, "line_indents", None) is not None:  # 골격 들여쓰기 있으면 유지
             return
-        src = (getattr(bo, "corrected_text", "") or "").split("\n")
+        src = _aligned_src(getattr(bo, "corrected_text", "") or "", bo.braille_lines)
         if len(src) != len(bo.braille_lines) or len(src) < 2:
             return
-        heads = [i for i, ln in enumerate(src) if _ITEM_HEAD.match(ln.strip())]
+        heads = [i for i, ln in enumerate(src) if _is_item_head(ln.strip())]
         if len(heads) < 2:                   # 항목이 하나뿐이면 기본 동작으로 충분
             return
         bo.line_indents = [first_indent if i in set(heads) else 0 for i in range(len(src))]
@@ -1362,7 +1395,7 @@ def _fold_full_lines(lines: list[str], pads: list[int],
     for i in range(len(lines) - 1):
         width = (pads[i] if i < len(pads) else 0) + len(lines[i])
         # ★ 항목 머리 줄은 접지 않는다 — NLD 3장3절2 4)(3) "선택지는 한 줄에 하나".
-        if src is not None and _ITEM_HEAD.match(src[i + 1].strip()):
+        if src is not None and _is_item_head(src[i + 1].strip()):
             continue
         # ★ 테두리 줄은 접지 않는다. 위 `_FOLDABLE_TYPES` 주석이 "글상자는 32칸 줄이
         #   조판 결과가 아니라 구조"라고 적어 뒀는데, 글상자는 **유형이 아니라 줄**이다 —
@@ -1469,7 +1502,7 @@ def flatten_elements(
         etype, _order, hlevel = meta.get(bo.element_id, _DEFAULT_META)
         lines, pads = lb._indent_lines(bo, etype, hlevel)
         pads, seps = _fold_full_lines(
-            lines, pads, etype, (bo.corrected_text or "").split("\n"))
+            lines, pads, etype, _aligned_src(bo.corrected_text or "", lines))
         before, after = _HEADING_BLANK.get(hlevel, (0, 0))
         if etype in _BLANK_AROUND_TYPES:      # 표·시각자료 위아래(NLD 2장2절2 2)(2)④)
             before, after = max(before, 1), max(after, 1)

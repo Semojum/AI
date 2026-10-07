@@ -2195,6 +2195,16 @@ _PARA_MIN_COL = 15
 _LIST_HEAD_RE = re.compile(
     r"^\s*(?:[①-⑮㉠-㉪]|\(\s*(?:[가-힣]|[0-9]{1,2})\s*\)"
     r"|[0-9]{1,2}\s*[.)]|[가-핳]\s*[.)]|[-•·])\s*")
+# 보기 항목 자모 글머리(`ㄱ.` `ㄴ.`)도 새 항목이다(#1169). 위 `[가-핳]` 은 음절만 봐서, 앞 항목이 두 줄에 걸쳐 이어 붙으면
+# 다음 자모 항목이 늘 붙었다(이어 붙인 앞 줄은 단 폭보다 길어 `fits` 가 거짓이다). 게이트 실행분(862227a) 경계에서 줄 가운데
+# 붙은 자모 글머리 332(141쪽) → 18(남은 18은 경계에서 이미 한 줄). 「점자 도서 제작 지침」 〈보기〉 예는 항목마다 줄을 바꾸고
+# 2칸 들인다(재추출본 3201~3205행 묵자 ↔ 3243~3249행 점자). 되돌리기 `JOIN_JAMO_HEAD=0`(호출 때 읽음).
+_JAMO_HEAD_RE = re.compile(r"^\s*[ㄱ-ㅎ]\s*[.)]")
+
+
+def _is_list_head(line: str) -> bool:
+    return bool(_LIST_HEAD_RE.match(line)
+                or (os.environ.get("JOIN_JAMO_HEAD", "1") != "0" and _JAMO_HEAD_RE.match(line)))
 
 
 # 낱말 갈림을 볼 때 양쪽 끝이 진짜 글자인지 확인한다 — 태그·기호 줄을 거른다.
@@ -2313,7 +2323,7 @@ def _join_wrapped_lines(text: str) -> str:
             fits = len(merged[-1]) + 1 + len(head) < col
             # sep가 빈 문자열이면 어절 가운데서 갈린 것이라 무조건 잇는다 — 그 줄바꿈은
             # 어떤 조판에서도 내용일 수 없다(`총 5개` / `의 문항이`).
-            if sep and (fits or _LIST_HEAD_RE.match(nxt)):
+            if sep and (fits or _is_list_head(nxt)):
                 merged.append(nxt)               # 들어갔는데 바꾼 줄 = 내용상 줄바꿈
             else:
                 merged[-1] += sep + nxt
