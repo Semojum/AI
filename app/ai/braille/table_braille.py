@@ -400,9 +400,10 @@ def _shorten_columns(grid: list[list[str]]) -> tuple[list[list[str]], list[str]]
 # 3칸에 표기하고 다음 글자는 한 칸 띄어 적는다. 추출이 칸 안 줄바꿈을 잃어 항목이 `•A•B` 로 이어 오므로(#1188 이 되살린
 # 글머리) 글머리마다 새 줄 3칸에서 `⠸⠲⠀` 로 연다. gold 90권 •(⠸⠲) 29,951개 중 항목마다 새 줄 96.6%(59권) · 한 줄에 이어
 # 적기 1.4% · 글머리 뒤 한 칸 99.7%. 2)(1464~1465행, 한 문단 안 여러 글머리는 이어 적음)는 칸 글만으로 못 가른다.
-# ⚠ 행머리(이름표) 바로 뒤 첫 항목은 이름표 줄에 그대로 둔다. 이름표를 혼자 한 줄로 둘지는 갈래가 따로다(gold 테두리 안
-#   이름표 혼자 763(18권) · '이름표: • 첫 항목' 390(5권, ES-TXT-KA0171 328)). 따로 잰다(pm 10-07 20:35).
 # 끄기 `TABLE_CELL_BULLET_BREAK=0`.
+# 행머리(이름표) 바로 뒤 첫 항목도 새 줄에 두고 이름표를 혼자 한 줄로 적는다(세계사 p0042 `  발전:`). gold 테두리 안 '이름표:'
+# 뒤 글머리 목록은 이름표 혼자 763(18권) · '이름표: • 첫 항목' 390(5권, ES-TXT-KA0171 328 · dev 사회문화 35 : 20)이다.
+# 항목마다 새 줄과는 갈래가 달라 따로 쟀다(pm 10-07 20:35). 끄기 `TABLE_BULLET_LABEL_ALONE=0`(이름표 줄에 첫 항목).
 _CELL_BULLET = "•"
 
 
@@ -417,7 +418,8 @@ def _bullet_paras(cells: list[str], sep: str) -> list[str] | None:
         lead, *items = cell.split(_CELL_BULLET)
         if lead.strip() or not items:
             paras[-1] += _translate(lead.strip()) if lead.strip() else "⠿⠿"
-        label = j == 1 and not lead.strip() and _CELL_BULLET not in cells[0]   # 이름표 바로 뒤 첫 항목(위 ⚠)
+        label = (j == 1 and not lead.strip() and _CELL_BULLET not in cells[0]    # 이름표 바로 뒤 첫 항목(위 주석)
+                 and os.environ.get("TABLE_BULLET_LABEL_ALONE", "1") == "0")
         for n, it in enumerate(items):
             item = _translate(f"{_CELL_BULLET} {it.strip()}")
             if n == 0 and label:
