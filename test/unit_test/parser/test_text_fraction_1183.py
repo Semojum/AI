@@ -60,3 +60,25 @@ def test_넣을_줄이_동점이면_앞_줄이다():
     out = mr._text_fraction_subs([(lb0, lo), (lb1, hi)], pg.rotation_matrix, text_fractions(pg), None)
     assert any("\\frac" in v for v in out[id(lo)].values())
     assert not any(out[id(hi)].values())
+
+
+# ── 2차: 한글 분자 · 분모는 한글표 ⠸⠷ · ⠸⠾ 로 묶고 분수표는 붙인다(수학 제6항 [붙임], 재추출 3121~3124행) ──
+from app.ai.braille.translator import translate_body  # noqa: E402
+
+WORD = "$\\frac{\\text{A에서 빈도 수}}{\\text{B에서 빈도 수}}$"
+
+
+def test_한글_분자_분모는_한글표로_묶는다(monkeypatch):
+    monkeypatch.delenv("TEXT_FRACTION_WRAP", raising=False)
+    out = "".join(translate_body(WORD)[0])
+    assert out.startswith("⠸⠷") and "⠸⠾⠌⠸⠷" in out and out.endswith("⠸⠾")
+
+
+def test_숫자_분수는_그대로(monkeypatch):
+    monkeypatch.delenv("TEXT_FRACTION_WRAP", raising=False)
+    assert "".join(translate_body("$\\frac{1}{2}$")[0]) == "⠼⠃⠌⠼⠁"
+
+
+def test_끈_묶음_스위치는_한글표를_안_쓴다(monkeypatch):
+    monkeypatch.setenv("TEXT_FRACTION_WRAP", "0")
+    assert "⠸⠷" not in "".join(translate_body(WORD)[0])

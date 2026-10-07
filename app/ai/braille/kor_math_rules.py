@@ -816,6 +816,14 @@ _BARE_KOR_RE = re.compile(r"[가-힣ㄱ-ㅎㅏ-ㅣ]+(?: [가-힣ㄱ-ㅎㅏ-ㅣ]+
 _W2C_JAMO_ITEM_RE = re.compile(r"(?<![가-힣A-Za-z0-9])([ㄱ-ㅎ])\s*\.(?=\s|$)")
 
 
+class _TextStore(list):
+    """`_protect_text` 저장소 — 점자 목록에 한글이 든 sentinel 집합(`kor`)을 곁들인다."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.kor: set[str] = set()
+
+
 def _protect_text(latex: str) -> tuple[str, list[str]]:
     r"""수식 속 자연어(\text{한글}·맨 한글)를 점자로 변환해 PUA sentinel로 치환.
 
@@ -824,7 +832,7 @@ def _protect_text(latex: str) -> tuple[str, list[str]]:
     sentinel은 _hangul_or_sentinel이 '한글'로 판정해 제46항 띄어쓰기에 참여하고,
     괄호로 묶인 경우엔 인접 문자가 괄호라 수학편 [붙임]대로 연산·등호가 붙는다.
     """
-    store: list[str] = []
+    store = _TextStore()
 
     def _stash(content: str) -> str:
         brailled = content
@@ -834,7 +842,10 @@ def _protect_text(latex: str) -> tuple[str, list[str]]:
             except Exception:  # noqa: BLE001 — 훅 실패 시 원문 보존(빈 결과 금지)
                 brailled = content
         store.append(brailled)
-        return chr(0xE000 + len(store) - 1)   # BMP PUA sentinel(이후 단계에 불활성)
+        sentinel = chr(0xE000 + len(store) - 1)   # BMP PUA sentinel(이후 단계에 불활성)
+        if re.search("[가-힣]", content):
+            store.kor.add(sentinel)                # 한글 낱말 자리 — 분수 한글표 묶음(#1183)이 본다
+        return sentinel
 
     prev = None
     while prev != latex:
@@ -2346,7 +2357,7 @@ def convert_latex(latex: str) -> str:
     result = _stage1e_integral_range(result)        # 1e. 정적분 범위
     result = _stage1f_trig_arg_group(result)        # 1f. 삼각함수 인수 묶음
     result = _stage1g_log_arg_group(result)         # 1g. 로그 진수 묶음
-    result = _apply_fracs(result)                   # 2.  분수
+    result = _apply_fracs(result, _text_store.kor)   # 2.  분수
     result = _stage2c_sqrt(result)                  # 2c. 제곱근
     result = _stage3_limit(result)                  # 3.  극한
     result = _stage4_log(result)                    # 4.  로그
@@ -2756,7 +2767,24 @@ def _needs_wrap_out(raw: str, braille: str) -> bool:
     return (_needs_wrap(raw) or _is_monomial_product(raw)
             or _FRACTION_MID in braille)
 
-def _apply_fracs(latex: str) -> str:
+# 한글이 든 분자 · 분모는 한글표 ⠸⠷ · 한글 종료표 ⠸⠾ 로 묶고 분수표는 붙여 적는다(#1183 2차, 원장 B-26 관행 채택).
+# 「한국 점자 규정」 수학 제6항 [붙임](재추출본 3121~3124행): 한글이 포함된 수식에서 수식의 일부를 묶어야 할 경우
+# 한글을 한글표와 한글 종료표로 묶어 적고, 묶인 수식 사이의 사칙연산 기호 · 등호는 앞뒤를 붙여 적는다.
+# 낱말 분자 · 분모가 '묶어야 할 경우' 인지는 조항이 안 정한다(규정 모호) → gold 다수. 정답 도서 90권을 한 기준
+# (분수표 바로 앞뒤 낱말이 둘 다 한글 · 수표 · 로마자표 없음)으로 세면 한글표 42(5권) · 분수표 앞뒤 띄움 11(3권)
+# · 묶지도 띄우지도 않음 0. 띄움 꼴 책(통합과학 평가 문제집 · 물리학 교과서)에서는 나빠진다. 자문지 20261007 §5.
+# 되돌리기 `TEXT_FRACTION_WRAP=0`(호출 때 읽음).
+_KOR_GROUP_S, _KOR_GROUP_E = "⠸⠷", "⠸⠾"
+
+
+def _kor_group(raw: str, braille: str, kor: set) -> str | None:
+    """분자 · 분모 원문(`raw`, \\text 는 이미 sentinel)에 한글 sentinel 이 들면 한글표로 묶은 점형."""
+    if os.environ.get("TEXT_FRACTION_WRAP", "1") == "0" or not any(ch in kor for ch in raw):
+        return None
+    return f"{_KOR_GROUP_S}{braille.strip('⠀ ')}{_KOR_GROUP_E}"
+
+
+def _apply_fracs(latex: str, kor: set = frozenset()) -> str:
     """\\frac{...}{...} 변환 — 중괄호 중첩 대응 (\\sqrt{...} 안의 \\frac 포함)."""
     result = []
     i = 0
@@ -2767,12 +2795,10 @@ def _apply_fracs(latex: str) -> str:
                 den_raw, after_den = _extract_brace_content(latex, after_num)
                 num = convert_latex(num_raw)
                 den = convert_latex(den_raw)
-                den_wrapped = (_wrap_ins(den)
-                               if _needs_wrap(den_raw) or _is_monomial_product(den_raw)
-                               else den)
-                num_wrapped = (_wrap_ins(num)
-                               if _needs_wrap(num_raw) or _is_monomial_product(num_raw)
-                               else num)
+                den_wrapped = _kor_group(den_raw, den, kor) or (
+                    _wrap_ins(den) if _needs_wrap(den_raw) or _is_monomial_product(den_raw) else den)
+                num_wrapped = _kor_group(num_raw, num, kor) or (
+                    _wrap_ins(num) if _needs_wrap(num_raw) or _is_monomial_product(num_raw) else num)
                 frac = f"{den_wrapped}{_FRACTION_MID}{num_wrapped}"
                 # 범위 없는 Σ 바로 뒤 분수는 묶는다 — 제25항(재추출 3657~3659행) `∑1/n` = `,.S(N/#A)`
                 if re.search(r"\\sum\s*$", "".join(result)):
