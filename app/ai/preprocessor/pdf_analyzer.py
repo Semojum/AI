@@ -1328,9 +1328,30 @@ _Q_FRAME_RE = re.compile(r"(?:^|\n)\s*[①②③④⑤]|(?:은|는)\s*\?|옳은 
 _SIDEBAR_COL_MIN_H = 0.6     # 지면 높이 비
 _SIDEBAR_COL_MAX_W = 0.2     # 지면 폭 비
 
+# 가짜 바깥 상자 ② 표를 품은 문항 틀(#1149 남은 몫) — 안쪽 사각형 없이 표(자료)만 품은 틀. 위 1차의 발문 정규식 대신
+# 문항 틀에만 있는 구조 둘 중 하나로 가른다(되돌리기 `BOX_Q_FRAME_TABLE=0`).
+# · (가) 5지선다 — ①~⑤ 로 시작하는 요소가 다 있고 ⑥ 이상으로 시작하는 요소가 없다(언어와 매체 '시청자 게시판' 다섯 쪽).
+#   1차에서 나빠진 자료 상자는 탐구 과정 ①~⑦(생명과학 p0021) · 성질 목록 ①~⑥(수학 Ⅰ p0004)이거나 ①②③ 뿐이다.
+# · (나) 틀 맨 위 요소가 문항 머리 — 문항 코드 `[NNNNN-NNNN]` 또는 번호 + '?' 로 끝나는 발문(생활과 윤리 p0029).
+# gold 는 발문 · 선택지를 상자 밖에 두고 안 자료만 글상자로 적는다(언어와 매체 p0113 · 생활과 윤리 p0029 눈 확인).
+_Q_CHOICES = "①②③④⑤"
+_Q_CHOICES_OVER = "⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
+_Q_HEAD_RE = re.compile(r"\s*(?:\[\d{5}-\d{4}\]|\d{1,2}\s+\D.*\?\s*$)", re.S)
+
 
 def box_false_outer_on() -> bool:
     return os.environ.get("BOX_FALSE_OUTER", "1") != "0"
+
+
+def _is_table_question_frame(own: list[dict]) -> bool:
+    """표를 품은 문항 틀인가(위 ② 주석). `own` 은 틀 자기 몫 요소."""
+    if os.environ.get("BOX_Q_FRAME_TABLE", "1") == "0" or not any(el.get("type") == "table" for el in own):
+        return False
+    heads = {_tag_title(el)[:1] for el in own}
+    if set(_Q_CHOICES) <= heads and not heads & set(_Q_CHOICES_OVER):
+        return True
+    top = min(own, key=lambda el: (el["bbox"][1], el["bbox"][0]))     # 동점이면 요소 차례(앞 것)
+    return bool(_Q_HEAD_RE.match(_tag_title(top)))
 
 
 def drop_sidebar_columns(rects: list, page_w: float, page_h: float) -> list:
@@ -1356,8 +1377,11 @@ def drop_question_frames(elements: list[dict], rects: list) -> list:
         kids = [q for q in rects if _inside(q, r)]
         own = [el for el in elements if el.get("bbox") and len(el["bbox"]) == 4 and _in(el["bbox"], r)
                and not any(_in(el["bbox"], q) for q in kids)]
-        if not (kids and any(_Q_FRAME_RE.search(_tag_title(el)) for el in own)):
-            keep.append(r)
+        if kids and any(_Q_FRAME_RE.search(_tag_title(el)) for el in own):
+            continue
+        if not kids and _is_table_question_frame(own):
+            continue
+        keep.append(r)
     return keep
 
 
