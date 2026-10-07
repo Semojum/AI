@@ -1668,12 +1668,10 @@ _TAG_INLINE_MARKER: dict[str, str] = {
 #   시작하는 낱말 셋 이하 항목 끝 빈칸도 뜻 칸으로 본다(`05 In my mind, the world is ___` 는 문장이라 영어).
 #   gold 모의: 바뀌는 빈칸 3,115 중 gold 와 어긋나는 것 3(0.10%), `temp/n46/e9/blank_rule_sim.py`.
 # 빈칸 바로 뒤 쉼표·쌍점·쌍반점도 UEB 꼴로 적는다(한글 점자와 점형이 다른 셋, 제33항). gold `___, he` = ⠨⠤⠂.
+#   부호 표는 아래 `_UEB_PUNCT`(제32항 구간 내부 부호) 하나를 같이 쓴다.
 _ENG_BLANK = "⠨⠤"
 _ENG_WORD_RE = re.compile(r"[A-Za-z]+")
 _VOCAB_ITEM_NO_RE = re.compile(r"\s*\d+\.?\s")          # 단어장 항목 번호(`07 `·`3. `)
-_UEB_PUNCT = {",": "⠂", ";": "⠆", ":": "⠒"}
-
-
 def _blank_rule_glyph(m: re.Match) -> str:
     """`<!밑줄>` 토큰 하나 → ⠸⠤(한글 꼴) 또는 ⠨⠤+UEB 부호(영어 지문 속)."""
     src = m.string
@@ -2173,7 +2171,8 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
                 clean = _restore_wrap_hyphen(clean)
                 preprocessed = _wrap_square_unit_compound(_wrap_hangul_greek(_wrap_hangul_amp(_preprocess_units(_wrap_latin_units(_QUOTED_ELLIPSIS2_RE.sub("⠠⠠⠠⠠⠠⠠",
                     _apply_book_style(clean, qnum_period=qnum_period)))))))
-                substituted = _old_hangul_to_braille(substitute_symbols(preprocessed))
+                substituted = _old_hangul_to_braille(_unhold_eng_punct(
+                    substitute_symbols(_hold_eng_punct(preprocessed))))
                 text_result: list[str] = []
                 _emit_mixed(substituted, text_result, roman_ctx)
                 chunks.append(("t", _collapse_spaces("".join(text_result)),
@@ -2778,6 +2777,36 @@ def _english_spans(seg: str, runs: list[tuple[int, int]]) -> list[list[tuple[int
         else:
             spans.append([r])
     return spans
+
+
+# 제32항 — 영어 낱말 사이 쌍점·쌍반점(`beard: the hair` · `keeps; for`)은 구간 내부 부호라 UEB(⠒ · ⠆)다.
+#   그런데 symbol_table 이 `:`→⠐⠂ · `;`→⠰⠆ 를 구간 판정보다 먼저 치환해, 위 `_span_gap` 이 그 둘을 받을
+#   일이 없었다(#1175). 앞뒤가 로마자인 자리만 치환 전에 맡겨 두었다가 되돌려 구간 판정에 넘긴다.
+#   gold 영어책 영어 줄 `Patrick: I think` = ⠠⠏⠁⠞⠗⠊⠉⠅⠒⠀⠠⠊… · `keeps; for` = …⠅⠑⠑⠏⠎⠆⠀⠿.
+#   **한글 없는 줄만** 맡긴다. 한글이 섞인 줄의 말머리(`A: X의 총발생량이` · `B: Kelly, 이번 주말에`)는 gold 가
+#   쌍점을 한글 꼴 ⠐⠂ 로 적고 로마자 구간을 거기서 끊는다(`⠴⠠⠁⠐⠂⠀⠴⠠⠭⠲⠺`) — 첫 판에서 이 줄 61개가 깨졌다.
+#   한글과 로마자 사이(`WHO: 세계 보건 기구`)도 제33항 그대로 한글 꼴이다.
+#   자리표시자는 다른 경로가 안 쓰는 제어 문자다(\x01 = _GAP_MARK, \x02·\x03 = inline_math 화학 사슬).
+_ENG_PUNCT_HOLD = {":": "\x05", ";": "\x06"}
+#   부호 뒤가 띄어 쓴 영어 낱말이어야 하고(`RR:Rr:rr`·`a:b` 는 수학 비 ⠐⠂), 줄에 두 글자 이상 영어 낱말이
+#   둘 이상 있어야 한다(`A: O  X  X`·`D: D>0` 같은 홑 글자 이름표 줄은 gold 가 ⠐⠂).
+_ENG_PUNCT_RE = re.compile(r"(?<=[A-Za-z])[:;](?= +[A-Za-z])")
+_ENG_PROSE_WORD_RE = re.compile(r"[A-Za-z]{2,}")
+
+
+def _hold_eng_punct(text: str) -> str:
+    if any(ph in text for ph in _ENG_PUNCT_HOLD.values()):    # 깨진 글자층에 같은 제어 문자가 이미 있으면 안 맡긴다
+        return text
+    return "\n".join(_ENG_PUNCT_RE.sub(lambda m: _ENG_PUNCT_HOLD[m.group()], ln)
+                     if not _HANGUL_SYL_RE.search(_RESIDUAL_BANG_TAG_RE.sub("", ln))
+                     and len(_ENG_PROSE_WORD_RE.findall(ln)) >= 2 else ln
+                     for ln in text.split("\n"))
+
+
+def _unhold_eng_punct(text: str) -> str:
+    for ch, ph in _ENG_PUNCT_HOLD.items():
+        text = text.replace(ph, ch)
+    return text
 
 
 def _span_gap(gap: str) -> str:
