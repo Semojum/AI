@@ -407,7 +407,7 @@ _SQ_UNIT_COMPOUND_RE = re.compile(
 _LATIN_UNIT = r"(?:mm|cm|km|nm|mg|kg|mL|ml|dL|dl|kcal|cal|kPa|kJ|ha|in)"
 _LATIN_UNIT_RE = re.compile(
     rf"(?<![A-Za-z0-9.,])(\d+(?:[.,]\d+)*[^\S\n]?)({_LATIN_UNIT}(?:/(?:{_LATIN_UNIT}|[a-z]{{1,3}}|[\u3380-\u33df]))*)"
-    r"(?![A-Za-z])(?![^\S\n]*[A-Za-z])")
+    r"(?![A-Za-z])(?![^\S\n]*(?:\ufdd2⠸[⠂⠆⠶])?[A-Za-z])")   # 뒤 낱말 앞 영어 밑줄 표지(#1204)는 건너본다
 # `킬로미터/h` 처럼 한글 단위 뒤 빗금의 로마자 단위(예문 `80킬로미터/h` = `…_/0h4`). 줄 끝에서 종료표가 빠졌다.
 _HANGUL_SLASH_UNIT_RE = re.compile(r"(?<=[가-힣])/([a-z]{1,3})(?![A-Za-z])(?![^\S\n]*[A-Za-z])")
 
@@ -812,13 +812,31 @@ def _emit_mixed(text: str, result: list[str], ctx: "_RomanCtx | None" = None) ->
                     out += "⠲"
         return out
 
+    # 영어 밑줄 표지(#1204)는 깃발을 떼고 자리만 기억해 둔다 — 그 두 셀은 끊지 않고 글 조각에 남긴다.
+    keep: set[int] = set()
+    if _UL_FLAG in text:
+        buf: list[str] = []
+        for ch in text:
+            if ch == _UL_FLAG:
+                keep.add(len(buf))
+            else:
+                buf.append(ch)
+        text = "".join(buf)
     last = 0
     for m in _BRAILLE_RE.finditer(text):
-        pre = text[last:m.start()]
-        if pre:
-            result.append(_seg(pre, text[m.start():]))
-        result.append(m.group())
-        last = m.end()
+        i = m.start()
+        while i < m.end():
+            if i in keep:
+                i += 2
+                continue
+            j = i
+            while j < m.end() and j not in keep:
+                j += 1
+            pre = text[last:i]
+            if pre:
+                result.append(_seg(pre, text[i:]))
+            result.append(text[i:j])
+            last = i = j
     tail = text[last:]
     if tail:
         result.append(_seg(tail))
@@ -2801,7 +2819,7 @@ _ENG_RUN_RE = re.compile(r"[A-Za-z][A-Za-z'\- ]*[A-Za-z]|[A-Za-z]")
 # 제32항 — 로마자표와 종료표 사이는 통일영어점자를 따른다. 즉 라틴 런 사이에 공백·숫자·
 # 영어 문장부호만 끼면 그 전체가 **하나의 로마자 구간**이고 로마자표·종료표는 각각 한 번뿐이다.
 # 규정 실측: `KBS 1 TV 좀…` → ⠴⠠⠠KBS ⠼⠁ ⠠⠠TV⠲ (규정_텍스트.txt:1748).
-_SPAN_BRIDGE_RE = re.compile(r"[0-9,.:;'‐-―\- ]+")
+_SPAN_BRIDGE_RE = re.compile(r"[0-9,.:;'‐-―\- ⠸⠂⠆⠶⠄]+")   # 점자 셀은 세그 안에 영어 밑줄 표지로만 남는다(#1204)
 
 # 제32항 — 구간 내부 문장부호는 통일영어점자 점형. 한글 점자와 점형이 다른 것만 적는다
 # (`.`·`-`는 두 규정이 같은 셀이라 목록에 없어도 결과가 같다).
@@ -2851,7 +2869,7 @@ _ENG_PUNCT_HOLD = {":": "\x05", ";": "\x06"}
 #   부호 뒤가 띄어 쓴 영어 낱말이어야 하고(`RR:Rr:rr`·`a:b` 는 수학 비 ⠐⠂), 줄에 두 글자 이상 영어 낱말이
 #   둘 이상 있어야 한다(`A: O  X  X`·`D: D>0` 같은 홑 글자 이름표 줄은 gold 가 ⠐⠂). 영어 1급(#1189)은 한글 없는 줄
 #   전체가 로마자 구간이라 이 조건을 안 본다 — gold 초등 두 권 `Q: Can I ___?` = ⠴⠠⠟⠒⠀⠠⠉⠁⠝⠀⠠⠊⠀⠨⠤⠦.
-_ENG_PUNCT_RE = re.compile(r"(?<=[A-Za-z])[:;](?= +[A-Za-z])")
+_ENG_PUNCT_RE = re.compile(r"(?:(?<=[A-Za-z])|(?<=\ufdd2⠸⠄))[:;](?= +(?:\ufdd2⠸[⠂⠆⠶])?[A-Za-z])")   # 뒤 낱말 앞 밑줄 표지(#1204)는 건너본다
 _ENG_PROSE_WORD_RE = re.compile(r"[A-Za-z]{2,}")
 
 
@@ -2878,6 +2896,10 @@ def _span_gap(gap: str) -> str:
     """
     i = 0
     out: list[str] = []
+    lead = _UL_LEAD_RE.match(gap)            # 구절 종료표 ⠸⠄ 뒤 부호(`smile⠸⠄,`)도 런에 붙은 것이다(#1204)
+    if lead:
+        out.append(lead.group())
+        i = lead.end()
     while i < len(gap) and gap[i] in _UEB_PUNCT:
         out.append(_UEB_PUNCT[gap[i]])
         i += 1
@@ -2887,8 +2909,8 @@ def _span_gap(gap: str) -> str:
 
 
 def _eng_terminator(seg: str, end: int) -> str:
-    """구간 뒤에 로마자 종료표를 적을지 판정(제33·35항)."""
-    rest = seg[end:]
+    """구간 뒤에 로마자 종료표를 적을지 판정(제33·35항). 바로 뒤 영어 밑줄 표지(#1204)는 건너본다."""
+    rest = _UL_LEAD_RE.sub("", seg[end:])
     if not rest.strip():
         return "⠲"
     # 제35항 — 로마자와 숫자가 이어 나올 때에는 종료표를 적지 않는다.
@@ -3389,8 +3411,11 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     #   `⟨2009⟩` 가 찍히거나 파일을 못 낸다. **입구가 아니라 출구에서** 바꾼다 — 입구에서 보통 공백으로 바꾸면
     #   줄 바꿈 없는 공백 뒤 로마자(`생명과학\u00a0I`)가 수식 경로로 빠져 383 요소가 달라졌다. 출구에서는 새던
     #   글자만 바뀐다. 한 글자를 한 글자로 바꾸므로 끊을 자리 오프셋은 안 밀린다.
-    return _ODD_SPACE_RE.sub("⠀", merge_hidden_runs(_translate_with_braillify(
+    out = _ODD_SPACE_RE.sub("⠀", merge_hidden_runs(_translate_with_braillify(
         text, force_roman=force_roman, qnum_period=qnum_period)))
+    if ENGLISH_GRADE1.get() and not _HANGUL_ANY_RE.search(_TAG_TOKEN_RE.sub("", text)):
+        out = _UL_BEFORE_ROMAN_RE.sub(r"⠴\1", out)       # #1204 — 1급 줄은 ⠴ 가 typeform 표지 앞
+    return out
 
 
 # ── 음절 단위 줄바꿈 지점 산출 (NLD-1.2.1) ──────────────────────────────────
@@ -3477,10 +3502,57 @@ _EMPH_PAIR_RE = re.compile(r"<!강조>(.*?)<!/강조>", re.S)
 _HANGUL_ANY_RE = re.compile(r"[가-힣]")
 
 
+# ★ #1204 — 한글 없는 **영어 줄**의 밑줄은 영문 강조다. 「한국 점자 규정」 제7·28항(영어는 통일영어점자) ·
+#   점역사 Q&A A13(영문 강조는 UEB 규정) → UEB 밑줄 typeform 으로 적는다. 종전엔 위 오검출 방어에 같이 걸려 버려졌다.
+#   gold 영어책 12권(holdout 제외) 영어 줄 33,369 실측(`V2/temp/n46/e9/ul_census.py`):
+#     1~2 낱말은 낱말마다 ⠸⠂ — 낱말표 연속 1낱말 3,002 · 2낱말 777 (`Can I ⠸⠂sit ⠸⠂here?`)
+#     3낱말 이상은 구절 ⠸⠶ … ⠸⠄ — 한 줄 안 구절 3낱말+ 675 : 2낱말 1, 3낱말+ 을 낱말표로 이은 곳 79
+#     홑 글자 낱말은 기호표 ⠸⠆ (`Birds of ⠸⠆a feather`, a·I·A 낱말 ⠸⠆ 60 : ⠸⠂ 17) · 낱말 중간에서 끝나면 종료표 ⠸⠄ (`⠸⠂possession⠸⠄s`, 92곳)
+#   오검출 방어는 그대로 둔다. 줄에 한글이 없고, 태그 안이 로마자 낱말과 문장 부호뿐이고, 줄에 두 글자 이상
+#   로마자 낱말이 둘 이상일 때만 적는다 — 분수 분자(`1`·`2p`)·정답 번호·홀로 선 라벨(`A`·`an`)은 안 걸린다.
+#   ⚠ 그래서 한 낱말만 있는 줄(`Hello!`)의 밑줄은 못 적는다 — dev·val 의 한글 없는 강조 143 이 거의 다 그런 꼴의 오검출이었다.
+#   1급(#1189) 줄은 로마자표가 typeform 표지보다 앞이다 — gold `⠴⠸⠂` 166 · `⠴⠸⠶` 75 · `⠴⠸⠆` 22 대 반대 순서 67.
+#   한글 든 줄의 영어 밑줄은 종전대로 걷는다(gold 관행 미확인). 이탤릭 ⠨⠂ 은 추출이 안 가르므로 범위 밖(#1205).
+_UL_BODY_RE = re.compile(r"[A-Za-z'’‘“”\" ,.!?;:-]*[A-Za-z][A-Za-z'’‘“”\" ,.!?;:-]*")
+_LATIN_WORD2_RE = re.compile(r"[A-Za-z]{2,}")
+# 표지 앞 깃발 — `_emit_mixed` 가 점자 셀에서 세그를 끊는데, 표지에서 끊으면 영어 구간이 쪼개져 표지 밖 부호가
+#   한글 꼴로 바뀐다(`car, ⠸⠶…` 의 쉼표 ⠂→⠐ 122 · `Debora: ⠸⠶…` 의 쌍점 ⠒→⠐⠂ 19, 왕복 실측). 깃발 붙은 표지만
+#   글 조각 안에 남긴다. □(⠸⠶) 같은 다른 점자는 깃발이 없어 종전대로 끊는다. 비문자라 실문서에 없다(WRAP_HYPHEN 과 같은 수법).
+_UL_FLAG = "\ufdd2"
+_UL_WORD, _UL_SYMBOL, _UL_PASSAGE, _UL_TERM = (_UL_FLAG + c for c in ("⠸⠂", "⠸⠆", "⠸⠶", "⠸⠄"))
+_UL_BEFORE_ROMAN_RE = re.compile("(⠸[⠂⠆⠶])⠴")
+_UL_LEAD_RE = re.compile("^(?:⠸[⠂⠆⠶⠄])+")
+
+
+def _ueb_underline(text: str, m: "re.Match[str]") -> str | None:
+    """영어 줄 밑줄 쌍 → UEB 표지를 박은 글. 영어 줄이 아니면 None(#1204)."""
+    body = m.group(1)
+    core = body.strip()
+    if not _UL_BODY_RE.fullmatch(core):
+        return None
+    ls = text.rfind("\n", 0, m.start()) + 1
+    le = text.find("\n", m.end())
+    le = len(text) if le < 0 else le
+    if _HANGUL_ANY_RE.search(_TAG_TOKEN_RE.sub("", text[ls:le])):
+        return None
+    if len(_LATIN_WORD2_RE.findall(_TAG_TOKEN_RE.sub("", text[ls:le]))) < 2:
+        return None
+    words = core.split()
+    if len(words) >= 3:
+        marked = _UL_PASSAGE + core + _UL_TERM
+    else:
+        marked = " ".join((_UL_SYMBOL if sum(c.isalpha() for c in w) == 1 else _UL_WORD) + w for w in words)
+        if core[-1].isalpha() and text[m.end():m.end() + 1].isalpha():
+            marked += _UL_TERM
+    lead = body[:len(body) - len(body.lstrip())]
+    return lead + marked + body[len(body.rstrip()):]
+
+
 def _drop_nonkorean_emphasis(text: str) -> str:
-    """한글이 없는 드러냄 구간은 밑줄 오검출로 보고 태그만 제거(내용은 유지)."""
+    """한글이 없는 드러냄 구간은 밑줄 오검출로 보고 태그만 제거(내용은 유지). 영어 줄은 UEB 밑줄(#1204)."""
     return _EMPH_PAIR_RE.sub(
-        lambda m: m.group(1) if not _HANGUL_ANY_RE.search(m.group(1)) else m.group(0),
+        lambda m: m.group(0) if _HANGUL_ANY_RE.search(m.group(1))
+        else (_ueb_underline(text, m) or m.group(1)),
         text,
     )
 
