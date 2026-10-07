@@ -373,6 +373,7 @@ _EXTRACT_ENV = (
     "BOX_FALSE_OUTER",                                                                 # #1149 가짜 바깥 상자 빼기
     "UL_WIDTH_GUARD",                                                                  # #1148 글보다 넓은 선은 밑줄 아님(강조 축 C)
     "UL_FRAC_GUARD",                                                                   # #1166 분수선은 밑줄 아님(강조 축 E)
+    "TEXT_FRACTION",                                                                   # #1183 글로 된 분수 → 분모 ⠌ 분자
     "HANCOM_FRACTION",                                                                 # #1055 한컴 작은 수 분수 풀기
     "SEMOJUM_NO_CAPTION", "CAPTION_MATERIAL", "CAPTION_UPSCALE", "CAPTION_FAIL_STREAK_LIMIT",
     "LLM_TEXT_GUARD", "LLM_CACHE_MODE", "SIDEBAR_AS_NOTE", "GRAFT_SIM_MIN",

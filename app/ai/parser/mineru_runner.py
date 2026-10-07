@@ -1267,18 +1267,22 @@ def _native_text_pair(fitz_page: fitz.Page, bbox: list[float], skip_math: bool =
     """
     from app.ai.parser import hancom_glyphs
     from app.ai.preprocessor.pdf_analyzer import (
-        _line_text_with_word_gaps, rows_to_text, underline_rects)
+        _line_text_with_word_gaps, rows_to_text, text_fraction_on, text_fractions, underline_rects)
 
     uls = underline_rects(fitz_page)   # 밑줄(드러냄표, 규정 제56항) — 벡터 선으로만 존재
     rot = fitz_page.rotation_matrix
     fixes = hancom_glyphs.glyph_fixes(fitz_page) if hancom_glyphs.restore_on() else None
+    rows = list(_layer_lines(fitz_page, bbox))
+    fsubs = _text_fraction_subs(rows, rot, text_fractions(fitz_page), fixes) if text_fraction_on() else {}
     plain: list[tuple] = []
     fixed: list[tuple] = []
-    for lb, ln in _layer_lines(fitz_page, bbox):
+    for lb, ln in rows:
         if skip_math and _math_font_line(ln):
             continue                   # 수식 글꼴 줄만 뺀다(표 띠 되살리기, #1047)
         t = _line_text_with_word_gaps(ln, rot, uls)
         subs = hancom_glyphs.line_subs(ln, fixes)
+        if id(ln) in fsubs:            # 글로 된 분수(#1183) — 되돌린 글에만, 믿을지 · 닮았는지는 앞 글로 본다
+            subs = {**(subs or {}), **fsubs[id(ln)]}
         f = _line_text_with_word_gaps(ln, rot, uls, subs) if subs else t
         # ★ 같은 인쇄 줄이 여러 line으로 쪼개진 것(정답표·선택지)은 rows_to_text가
         #   한 줄로 이어 두 칸을 띈다 — 지침 3장 3절 4)(3)① (QA S4)
@@ -1287,6 +1291,81 @@ def _native_text_pair(fitz_page: fitz.Page, bbox: list[float], skip_math: bool =
         if f:
             fixed.append((lb, f))
     return rows_to_text(plain), rows_to_text(fixed)
+
+
+_FRAC_TEXT_UNSAFE = re.compile(r"[\\${}%#&_^~]")
+
+
+def _text_fraction_subs(rows: list, rot, fracs: list, fixes) -> dict[int, dict[int, str]]:
+    """글로 된 분수(#1183, `pdf_analyzer.text_fractions`) → {id(층 줄): subs}.
+
+    분수 글자가 든 줄 하나(본문 글자가 같이 든 줄, 없으면 분수선에 가장 가까운 줄)의 첫 분수 글자 자리에
+    `$\\frac{\\text{분자}}{\\text{분모}}$` 를 넣고 나머지 분자 · 분모 글자는 뺀다. 분자 줄 · 분모 줄이 따로면
+    `rows_to_text` 가 본문 행과 겹치는 쪽만 본문에 붙이므로, 다른 줄에 넣으면 분수가 문장 밖으로 밀린다.
+    수식 점역기가 분모 ⠌ 분자로 적는다(제47항). 분자 · 분모 글은 그 글자만 남긴 원래 줄을 같은 함수로 읽어 한컴 글꼴
+    되돌리기 · 띄어쓰기를 그대로 받는다. 분자나 분모가 이 요소 밖에 있거나 LaTeX 특수 문자가 들면 손대지 않는다.
+    """
+    from app.ai.parser import hancom_glyphs
+    from app.ai.preprocessor.pdf_analyzer import _line_text_with_word_gaps
+    if not fracs:
+        return {}
+
+    def key(r) -> tuple:
+        return (round(r.x0, 1), round(r.y0, 1), round(r.x1, 1), round(r.y1, 1))
+    role = {key(r): (k, part) for k, (_bar, *pair) in enumerate(fracs) for part, rs in enumerate(pair) for r in rs}
+    host: dict[int, tuple] = {}       # 분수 k → (본문 글자 수, -분수선과의 거리, 줄 id)
+    hit: dict[int, dict[int, tuple]] = {}
+    parts: dict[int, list[list[str]]] = {}
+    for _lb, ln in rows:
+        idx: dict[int, tuple] = {}
+        cs: list[str] = []
+        for sp in ln.get("spans", []):
+            for c in sp.get("chars", []):
+                kp = role.get(key(fitz.Rect(c.get("bbox") or (0, 0, 0, 0)) * rot))
+                if kp:
+                    idx[len(cs)] = kp
+                cs.append(c.get("c", ""))
+        if not idx:
+            continue
+        for kp in set(idx.values()):          # 분자 · 분모 안 빈칸 글리프도 그 몫이다(띄어쓰기를 지킨다)
+            js = [j for j, v in idx.items() if v == kp]
+            idx.update({j: kp for j in range(min(js), max(js)) if j not in idx and cs[j].isspace()})
+        hit[id(ln)] = idx
+        hs = hancom_glyphs.line_subs(ln, fixes) or {}
+        for k, part in set(idx.values()):
+            only = {j: "" for j in range(len(cs)) if idx.get(j) != (k, part)}
+            txt = _line_text_with_word_gaps(ln, rot, None, {**hs, **only}).strip()
+            parts.setdefault(k, [[], []])[part].append(txt)
+    # 넣을 줄: 본문 글자가 같이 든 줄 > 분수선 높이를 지나는 본문 줄과 가장 많이 겹치는 줄(`rows_to_text` 가 그 행에 붙인다)
+    body = {id(ln): sum(1 for j, c in enumerate(c for sp in ln.get("spans", []) for c in sp.get("chars", []))
+                        if j not in hit.get(id(ln), {}) and not c.get("c", " ").isspace())
+            for _lb, ln in rows}
+    rect = {id(ln): lb for lb, ln in rows}
+    for k, (bar, *_p) in enumerate(fracs):
+        mains = [rect[i] for i, n in body.items() if n and rect[i].y0 <= bar.y0 <= rect[i].y1]
+        for i, idx in hit.items():
+            if any(kk == k for kk, _pp in idx.values()):
+                c = rect[i]
+                ov = max(((min(m.y1, c.y1) - max(m.y0, c.y0)) / max(1e-6, min(m.height, c.height)) for m in mains), default=0.0)
+                host[k] = max(host.get(k, (0, 0.0, 0)), (body[i], ov, i))
+    ok = {k for k, (num, den) in parts.items()
+          if any(num) and any(den) and not _FRAC_TEXT_UNSAFE.search(" ".join(num + den))}
+    out: dict[int, dict[int, str]] = {}
+    done: set[int] = set()
+    for _lb, ln in rows:
+        subs: dict[int, str] = {}
+        for j, (k, part) in sorted(hit.get(id(ln), {}).items()):
+            if k not in ok:
+                continue
+            if host[k][2] == id(ln) and k not in done:
+                num, den = (" ".join(t for t in parts[k][p] if t) for p in (0, 1))
+                subs[j] = "$\\frac{\\text{%s}}{\\text{%s}}$" % (num, den)
+                done.add(k)
+            else:
+                subs[j] = ""
+        if subs:
+            out[id(ln)] = subs
+    return out
 
 
 def _layer_lines(fitz_page: fitz.Page, bbox: list[float]):

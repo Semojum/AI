@@ -267,20 +267,25 @@ def _ul_frac_guard_on() -> bool:
     return os.environ.get("UL_FRAC_GUARD", "1") != "0"
 
 
-def _is_frac_bar(u, chars: list, x0: float, x1: float) -> bool:
-    """`u` 가 분수선인가 — 바로 아래 행 전체가 밑줄 친 글 범위 `[x0, x1]` 안에 들고 가운데 맞춤이다."""
+def _frac_bar_row(u, chars: list, x0: float, x1: float) -> list | None:
+    """`u` 가 분수선이면 분모 행 글자 상자들 — 바로 아래 행 전체가 밑줄 친 글 범위 `[x0, x1]` 안에 들고 가운데 맞춤이다."""
     below = [cb for cb in chars if cb.y0 >= u.y0 - 0.5 and min(cb.x1, x1) - max(cb.x0, x0) > 0.3 * cb.width]
     if not below:
-        return False
+        return None
     gap = min(cb.y0 - u.y0 for cb in below)
     if gap > _FRAC_GAP_MAX:
-        return False
+        return None
     em = max(cb.height for cb in below if cb.y0 - u.y0 <= gap + 1.5)
     row = [cb for cb in chars if u.y0 - 0.5 <= cb.y0 <= u.y0 + gap + 1.5 and cb.x1 >= x0 - em and cb.x0 <= x1 + em]
     if not all(x0 - 2 <= cb.x0 and cb.x1 <= x1 + 2 for cb in row):
-        return False
+        return None
     rx0, rx1 = min(cb.x0 for cb in row), max(cb.x1 for cb in row)
-    return abs((rx0 + rx1) / 2 - (x0 + x1) / 2) <= _FRAC_CENTER * max(1.0, x1 - x0)
+    return row if abs((rx0 + rx1) / 2 - (x0 + x1) / 2) <= _FRAC_CENTER * max(1.0, x1 - x0) else None
+
+
+def _is_frac_bar(u, chars: list, x0: float, x1: float) -> bool:
+    """`u` 가 분수선인가(위 `_frac_bar_row`)."""
+    return _frac_bar_row(u, chars, x0, x1) is not None
 
 
 def _drop_fake_underlines(page, lines: list) -> list:
@@ -320,6 +325,46 @@ def underline_rects(page) -> list:
     grid = _grid_rules(out)
     lines = [r for r in out if id(r) not in grid]
     return _drop_fake_underlines(page, lines) if lines and (_ul_width_guard_on() or _ul_frac_guard_on()) else lines
+
+
+# 글로 된 분수(#1183). 생명과학 보기 `지점 d₁의 혈압 / 지점 d₂의 혈압` 을 층 글이 분자 · 분모를 그냥 이어 적었다.
+# 「한국 점자 규정」 제47항(재추출본 2078행) · 수학 제7항 1(3142행): 분모 · 분수표 ⠌ · 분자 순. 위 E 의 분수선 판정으로
+# 분자(선 위 글) · 분모(선 아래 행) 글자를 찾는다. 분자나 분모에 한글이 든 것만 — 수식 분수는 MinerU LaTeX · 한컴 분수
+# 글꼴(#1140) 몫이다. 2027 dev · val 묵자 50자리 · 37쪽(생명과학 44). 되돌리기 `TEXT_FRACTION=0`(추출 단계).
+def text_fraction_on() -> bool:
+    return os.environ.get("TEXT_FRACTION", "1") != "0"
+
+
+def text_fractions(page) -> list[tuple]:
+    """[(분수선, 분자 글자 상자들, 분모 글자 상자들)] — 표시 좌표 Rect. 분자나 분모에 한글이 든 분수선만."""
+    rot = page.rotation_matrix
+    page_w = page.rect.width
+    cand = []
+    for g in page.get_drawings():
+        r = fitz.Rect(g["rect"]) * rot
+        if r.height <= _UL_MAX_H and _UL_MIN_W <= r.width <= page_w * _UL_PAGE_W_RATIO:
+            cand.append(r)
+    grid = _grid_rules(cand)
+    chars: list[tuple[str, fitz.Rect]] = []
+    for blk in page.get_text("rawdict").get("blocks", []):
+        for ln in blk.get("lines", []):
+            for sp in ln.get("spans", []):
+                for c in sp.get("chars", []):
+                    cb = fitz.Rect(c["bbox"]) * rot
+                    if not c.get("c", " ").isspace() and cb.width > 0:
+                        chars.append((c["c"], cb))
+    rects = [cb for _ch, cb in chars]
+    text_of = {id(cb): ch for ch, cb in chars}
+    out = []
+    for u in (r for r in cand if id(r) not in grid):
+        num = [cb for cb in rects
+               if _UL_GAP_MIN <= u.y0 - cb.y1 <= _UL_GAP_MAX and (min(cb.x1, u.x1) - max(cb.x0, u.x0)) / cb.width >= _UL_COVER]
+        if not num:
+            continue
+        den = _frac_bar_row(u, rects, min(cb.x0 for cb in num), max(cb.x1 for cb in num))
+        if den and any(_is_hangul(text_of[id(cb)]) for cb in num + den):
+            out.append((u, num, den))
+    return out
 
 
 def _is_underlined(cb, underlines) -> bool:
