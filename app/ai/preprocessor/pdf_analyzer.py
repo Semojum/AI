@@ -241,8 +241,44 @@ def _grid_rules(cands: list) -> set:
     return out
 
 
+# 밑줄 친 글보다 훨씬 넓은 선은 밑줄이 아니다(강조 축 C · #1148). 표 머리행 아래 한 줄짜리 구분선 · 상자 아래 테두리 ·
+# 머리 띠 · 그림 창틀 선이 그 위 짧은 글을 강조로 만들었다(9-30 조사: 우리만 붙인 강조 dev 62 · val 86, 눈검사 9/9 가짜).
+# 표 머리행 구분선은 한 줄짜리라 `_grid_rules`(같은 x 분할이 두 줄 이상)에 안 걸린다 — 대표 지적 F04 와 같은 결함이다.
+# 비 = 선 폭 / 그 선이 밑줄 친 쪽 전체 글자 범위. gold 와 맞은 진짜 밑줄은 1.2 이상이 1,348 중 1(9-30) · 표본 234 중 0,
+# 가짜는 124 중 75. A/B(879쪽): 우리만 붙인 강조 dev 125 → 33 · val 87 → 13, gold 와 맞은 강조는 그대로.
+# ⚠ 표 칸에 층 강조를 옮기는 것(#1148 처음 안)은 이 가드 위에서 순손해라 넣지 않았다(자 +7, 13:12).
+# 되돌리기 `UL_WIDTH_GUARD=0`(추출 단계).
+_UL_RULE_OVER = 1.2
+
+
+def _ul_width_guard_on() -> bool:
+    return os.environ.get("UL_WIDTH_GUARD", "1") != "0"
+
+
+def _drop_wide_rules(page, lines: list) -> list:
+    """밑줄 후보 중 선 폭이 그 선이 밑줄 친 글자 범위의 `_UL_RULE_OVER` 배 이상인 것을 뺀다. 밑줄 친 글이 없는 선은 둔다."""
+    rot = page.rotation_matrix
+    ext = {id(u): [float("inf"), float("-inf")] for u in lines}
+    for blk in page.get_text("rawdict").get("blocks", []):
+        for ln in blk.get("lines", []):
+            for sp in ln.get("spans", []):
+                for c in sp.get("chars", []):
+                    if c.get("c", " ").isspace():
+                        continue
+                    cb = fitz.Rect(c["bbox"]) * rot
+                    if cb.width <= 0:
+                        continue
+                    for u in lines:          # `_is_underlined` 와 같은 조건
+                        if (_UL_GAP_MIN <= u.y0 - cb.y1 <= _UL_GAP_MAX
+                                and (min(cb.x1, u.x1) - max(cb.x0, u.x0)) / cb.width >= _UL_COVER):
+                            e = ext[id(u)]
+                            e[0], e[1] = min(e[0], cb.x0), max(e[1], cb.x1)
+    return [u for u in lines
+            if not (ext[id(u)][1] > ext[id(u)][0] and u.width >= _UL_RULE_OVER * (ext[id(u)][1] - ext[id(u)][0]))]
+
+
 def underline_rects(page) -> list:
-    """페이지의 밑줄 후보 선(표시 좌표계 Rect). 표 구분선은 뺀다(위 `_grid_rules`)."""
+    """페이지의 밑줄 후보 선(표시 좌표계 Rect). 표 구분선(위 `_grid_rules`)과 글보다 훨씬 넓은 선(`_drop_wide_rules`)은 뺀다."""
     rot = page.rotation_matrix
     page_w = page.rect.width
     out = []
@@ -251,7 +287,8 @@ def underline_rects(page) -> list:
         if r.height <= _UL_MAX_H and _UL_MIN_W <= r.width <= page_w * _UL_PAGE_W_RATIO:
             out.append(r)
     grid = _grid_rules(out)
-    return [r for r in out if id(r) not in grid]
+    lines = [r for r in out if id(r) not in grid]
+    return _drop_wide_rules(page, lines) if lines and _ul_width_guard_on() else lines
 
 
 def _is_underlined(cb, underlines) -> bool:
