@@ -856,7 +856,7 @@ def _build_eng_reverse() -> tuple[dict[str, str], dict[str, str], dict[str, str]
         anywhere.setdefault(cell, word)
     for word, cell in _E.EBAE_ONLY_GROUPS.items():      # 옛 EBAE 책(ble) — 정방향은 안 쓴다(#946)
         anywhere.setdefault(cell, word)
-    for word, cell in _E.WORD_INITIAL_SYLLABLE.items():
+    for word, cell in (*_E.WORD_INITIAL_SYLLABLE.items(), *_E.EBAE_ONLY_INITIAL.items()):   # com — 옛 EBAE(#1167)
         initial.setdefault(cell, word)
     for word, cell in _E.INITIAL_5.items():
         initial.setdefault("⠐" + cell, word)
@@ -2681,7 +2681,7 @@ def _build_eng_function() -> frozenset[str]:
     """영어 기능어 집합 — 로마자표 없는 영어 줄을 가려낼 때 마지막 증거로 쓴다."""
     from app.ai.braille import eng_braille as _E
 
-    return frozenset(w.lower() for w in (*_E.WORDSIGNS, *_E.SHORT_FORMS)) | {"a", "i", "of", "and", "the", "is", "are", "was", "for", "on", "at", "with"}
+    return frozenset(w.lower() for w in (*_E.WORDSIGNS, *_E.EBAE_ONLY_WORDSIGNS, *_E.SHORT_FORMS)) | {"a", "i", "of", "and", "the", "is", "are", "was", "for", "on", "at", "with"}
 
 
 _ENG_FUNCTION = _build_eng_function()
@@ -2946,7 +2946,7 @@ _ENG_BLANK_RE = re.compile(r"⠴?(?:⠨⠤)+([⠂⠲⠦⠖⠆⠒]?)")
 #   `But`·`Can` 으로 깨진다.
 def _build_eng_letter_words() -> dict[str, str]:
     from app.ai.braille import eng_braille as _E
-    return {c: w for w, c in _E.WORDSIGNS.items() if len(c) == 1}
+    return {c: w for w, c in (*_E.WORDSIGNS.items(), *_E.EBAE_ONLY_WORDSIGNS.items()) if len(c) == 1}
 
 
 _ENG_LETTER_WORD = _build_eng_letter_words()
