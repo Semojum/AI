@@ -1656,6 +1656,48 @@ _TAG_INLINE_MARKER: dict[str, str] = {
     _TAGS.BLANK_SQUARE: "⠸⠦⠀⠴⠇",
 }
 
+# ── 영어 지문 속 밑줄 빈칸 → 통일영어점자 밑줄 ⠨⠤ (#1170 · 원장 C-05 부록) ─────────────────
+# 「한국 점자 규정」 제7항(99행)·제28항(1329행)이 로마자를 「통일영어점자 규정」에 맡기고, UEB 밑줄은 ⠨⠤ 다.
+#   gold 영어책 11권(holdout 제외) 영어 줄 빈칸: ⠨⠤ 3,436 : ⠸⠤ 394, 빈칸 하나에 늘 ⠨⠤ 한 번.
+# 영어 빈칸으로 보는 자리: 줄에 한글이 없고, 뒤에 영어 낱말이 있거나 · 앞에 영어 낱말이 둘 이상이거나 ·
+#   바로 뒤가 문장 부호다. 단어장의 뜻 칸(뜻을 한글로 적는 칸)은 gold 가 ⠸⠤ 로 적는다(369개) —
+#   `humble ____`(앞 낱말 하나 · 뒤 없음)는 위 셋에 안 걸린다. `07 step forward ____` 처럼 번호로
+#   시작하는 낱말 셋 이하 항목 끝 빈칸도 뜻 칸으로 본다(`05 In my mind, the world is ___` 는 문장이라 영어).
+#   gold 모의: 바뀌는 빈칸 3,115 중 gold 와 어긋나는 것 3(0.10%), `temp/n46/e9/blank_rule_sim.py`.
+# 빈칸 바로 뒤 쉼표·쌍점·쌍반점도 UEB 꼴로 적는다(한글 점자와 점형이 다른 셋, 제33항). gold `___, he` = ⠨⠤⠂.
+_ENG_BLANK = "⠨⠤"
+_ENG_WORD_RE = re.compile(r"[A-Za-z]+")
+_VOCAB_ITEM_NO_RE = re.compile(r"\s*\d+\.?\s")          # 단어장 항목 번호(`07 `·`3. `)
+_UEB_PUNCT = {",": "⠂", ";": "⠆", ":": "⠒"}
+
+
+def _blank_rule_glyph(m: re.Match) -> str:
+    """`<!밑줄>` 토큰 하나 → ⠸⠤(한글 꼴) 또는 ⠨⠤+UEB 부호(영어 지문 속)."""
+    src = m.string
+    head = src[src.rfind("\n", 0, m.start()) + 1:m.start()]
+    nl = src.find("\n", m.end())
+    tail = src[m.end():nl if nl != -1 else len(src)]
+    head, tail = _TAG_TOKEN_RE.sub(" ", head), _TAG_TOKEN_RE.sub(" ", tail)
+    if _HANGUL_SYL_RE.search(head + tail):
+        return _TAG_INLINE_MARKER[_TAGS.BLANK_RULE]
+    nxt = tail.lstrip(" ")[:1]
+    before = _ENG_WORD_RE.findall(head)
+    if not nxt and _VOCAB_ITEM_NO_RE.match(head) and len(before) <= 3:     # 단어장 뜻 칸
+        return _TAG_INLINE_MARKER[_TAGS.BLANK_RULE]
+    if not (_ENG_WORD_RE.search(tail) or len(before) >= 2
+            or (nxt and nxt in ".?!,;:" and before)):
+        return _TAG_INLINE_MARKER[_TAGS.BLANK_RULE]
+    return _ENG_BLANK
+
+
+_BLANK_RULE_TOKEN_RE = re.compile(r"<!%s>([,;:]?)" % re.escape(_TAGS.BLANK_RULE))
+
+
+def _blank_rule_sub(m: re.Match) -> str:
+    glyph = _blank_rule_glyph(m)
+    return glyph + ((_UEB_PUNCT.get(m.group(1), "") if glyph == _ENG_BLANK else m.group(1)))
+
+
 # 비대칭 인라인 마커: (여는, 닫는)
 _TAG_PAIR_MARKER: dict[str, tuple[str, str]] = {
     # 규정 제56항: 밑줄·드러냄표로 강조된 글자체 = ⠠⠤ … ⠤⠄ (정답 도서 1204회)
@@ -1905,6 +1947,9 @@ def blank_marker_spans(
         start = 0
         for _ in range(count):
             i = braille.find(glyph, start)
+            if name == _TAGS.BLANK_RULE:          # 영어 지문 속 빈칸은 ⠨⠤(#1170) — 둘 중 앞선 것
+                j = braille.find(_ENG_BLANK, start)
+                i = j if i == -1 or (j != -1 and j < i) else i
             if i == -1:
                 break
             spans.append((i, i + len(glyph), _BLANK_TAG_NAMES[name]))
@@ -1995,6 +2040,7 @@ def substitute_tags(text: str) -> str:
             logger.warning("translator: 미지 태그 제거 %s (이름표는 tag_names.py)", tok)
         return ""
 
+    text = _BLANK_RULE_TOKEN_RE.sub(_blank_rule_sub, text)   # 영어 지문 속 빈칸(#1170)
     text = _TAG_TOKEN_RE.sub(_token_sub, text)
     # 3) 잔여 <!…> 정식 태그만 제거. 그 밖의 <보기>류는 본문이므로 삭제 금지 —
     #    홑화살괄호 〈 〉로 바꿔 점역(빈 결과 금지). symbol_table이 〈=⠐⠶·〉=⠶⠂로 치환.
