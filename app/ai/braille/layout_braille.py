@@ -177,18 +177,27 @@ _BORDER_START_CAPS = frozenset("⠿⠖⠓")
 _BORDER_END_CAPS = frozenset("⠿⠲⠚")
 
 
+# 테두리 줄은 캡 다음이 같은 채움 4칸이다(제목도 그 뒤에 선다, `_BORDER_LEFT_FILL`). 캡 · 길이만 보면 32칸 본문 줄이
+# 테두리로 잡힌다 — 보기 항목 `ㄴ. 동생은 … 한다.`(⠿⠒⠲ … ⠲)는 온표 ⠿ 로 시작해 마침표 ⠲(2단계 끝 캡)로 끝나서, 마침 32칸이면
+# 아래 테두리로 다시 그려져 항목 글이 사라졌다(#1172). 게이트 실행분(862227a) 경계, 자모 글머리 줄이 있는 371쪽에서
+# 가짜 테두리 줄 15 · 그중 8줄은 최종 출력에서 항목 글이 사라졌다(생명과학 7 · 사회문화 1).
+# 되돌리기 `BORDER_LINE_STRICT=0`(호출 때 읽음).
+# 표 전체 테두리 ⠿×32(`table_braille._border_line`)도 테두리다.
+_BORDER_FILLS = frozenset(f for lv in _BOX_LEVELS.values() for _s, f, _e in lv.values()) | {_BOX_BORDER_END}
+
+
 def _is_border_line(line: str) -> bool:
     """글상자/표 테두리 줄(32칸, 양 끝이 테두리 캡)인지 — 들여쓰기 금지 대상(B2).
 
     translator/table_braille가 32칸 테두리를 렌더하고 layout이 위계로 재렌더하므로,
     여기에 문단·글머리 들여(3칸)를 더하면 35칸이 되어 _break_line이 테두리를 망가뜨린다.
-    1·2·3단계 캡을 모두 인식한다.
+    1·2·3단계 캡을 모두 인식한다. 캡 다음 채움 4칸까지 본다(위 `_BORDER_FILLS` 주석).
     """
-    return (
-        len(line) == _COLS
-        and line[:1] in _BORDER_START_CAPS
-        and line[-1:] in _BORDER_END_CAPS
-    )
+    if not (len(line) == _COLS and line[:1] in _BORDER_START_CAPS and line[-1:] in _BORDER_END_CAPS):
+        return False
+    if os.environ.get("BORDER_LINE_STRICT", "1") == "0":
+        return True
+    return line[1] in _BORDER_FILLS and line[1:1 + _BORDER_LEFT_FILL] == line[1] * _BORDER_LEFT_FILL
 
 
 def _tail_blanks(lines: list[str]) -> int:
