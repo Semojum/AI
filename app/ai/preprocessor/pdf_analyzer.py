@@ -255,30 +255,61 @@ def _ul_width_guard_on() -> bool:
     return os.environ.get("UL_WIDTH_GUARD", "1") != "0"
 
 
-def _drop_wide_rules(page, lines: list) -> list:
-    """밑줄 후보 중 선 폭이 그 선이 밑줄 친 글자 범위의 `_UL_RULE_OVER` 배 이상인 것을 뺀다. 밑줄 친 글이 없는 선은 둔다."""
+# 분수선은 밑줄이 아니다(강조 축 E · #1166). 글로 된 분수(`A에서 활동 전위 발생 빈도 수` / `…`)의 분수선이 분자 글의 밑줄로
+# 잡혔다. 분수선은 분자 글 폭과 비슷해 위 C 에 안 걸린다. 가르는 신호: 선 바로 아래(`_FRAC_GAP_MAX` 안) 행 **전체**가 밑줄 친 글
+# 범위 안에 들고 가운데 맞춤이다(본문 줄은 선 끝 너머로 이어진다). C 켠 팔(879쪽) 남은 가짜 45 중 20 을 거르고 gold 와 맞은
+# 진짜 밑줄 294 중 0 을 잃는다(선 밑 글자만 보던 9-30 판정은 진짜 2 를 잃었다). 되돌리기 `UL_FRAC_GUARD=0`(추출 단계).
+_FRAC_GAP_MAX = 2.0      # 선과 분모 윗변 사이(pt)
+_FRAC_CENTER = 0.15      # 분모 가운데와 분자 가운데의 어긋남 상한(분자 폭 비)
+
+
+def _ul_frac_guard_on() -> bool:
+    return os.environ.get("UL_FRAC_GUARD", "1") != "0"
+
+
+def _is_frac_bar(u, chars: list, x0: float, x1: float) -> bool:
+    """`u` 가 분수선인가 — 바로 아래 행 전체가 밑줄 친 글 범위 `[x0, x1]` 안에 들고 가운데 맞춤이다."""
+    below = [cb for cb in chars if cb.y0 >= u.y0 - 0.5 and min(cb.x1, x1) - max(cb.x0, x0) > 0.3 * cb.width]
+    if not below:
+        return False
+    gap = min(cb.y0 - u.y0 for cb in below)
+    if gap > _FRAC_GAP_MAX:
+        return False
+    em = max(cb.height for cb in below if cb.y0 - u.y0 <= gap + 1.5)
+    row = [cb for cb in chars if u.y0 - 0.5 <= cb.y0 <= u.y0 + gap + 1.5 and cb.x1 >= x0 - em and cb.x0 <= x1 + em]
+    if not all(x0 - 2 <= cb.x0 and cb.x1 <= x1 + 2 for cb in row):
+        return False
+    rx0, rx1 = min(cb.x0 for cb in row), max(cb.x1 for cb in row)
+    return abs((rx0 + rx1) / 2 - (x0 + x1) / 2) <= _FRAC_CENTER * max(1.0, x1 - x0)
+
+
+def _drop_fake_underlines(page, lines: list) -> list:
+    """밑줄 후보 중 가짜를 뺀다 — 글보다 훨씬 넓은 선(C) · 분수선(E). 밑줄 친 글이 없는 선은 둔다."""
     rot = page.rotation_matrix
-    ext = {id(u): [float("inf"), float("-inf")] for u in lines}
+    chars = []
     for blk in page.get_text("rawdict").get("blocks", []):
         for ln in blk.get("lines", []):
             for sp in ln.get("spans", []):
                 for c in sp.get("chars", []):
-                    if c.get("c", " ").isspace():
-                        continue
-                    cb = fitz.Rect(c["bbox"]) * rot
-                    if cb.width <= 0:
-                        continue
-                    for u in lines:          # `_is_underlined` 와 같은 조건
-                        if (_UL_GAP_MIN <= u.y0 - cb.y1 <= _UL_GAP_MAX
-                                and (min(cb.x1, u.x1) - max(cb.x0, u.x0)) / cb.width >= _UL_COVER):
-                            e = ext[id(u)]
-                            e[0], e[1] = min(e[0], cb.x0), max(e[1], cb.x1)
-    return [u for u in lines
-            if not (ext[id(u)][1] > ext[id(u)][0] and u.width >= _UL_RULE_OVER * (ext[id(u)][1] - ext[id(u)][0]))]
+                    if not c.get("c", " ").isspace():
+                        cb = fitz.Rect(c["bbox"]) * rot
+                        if cb.width > 0:
+                            chars.append(cb)
+    wide, frac = _ul_width_guard_on(), _ul_frac_guard_on()
+    keep = []
+    for u in lines:
+        under = [cb for cb in chars          # `_is_underlined` 와 같은 조건
+                 if _UL_GAP_MIN <= u.y0 - cb.y1 <= _UL_GAP_MAX and (min(cb.x1, u.x1) - max(cb.x0, u.x0)) / cb.width >= _UL_COVER]
+        if under:
+            x0, x1 = min(cb.x0 for cb in under), max(cb.x1 for cb in under)
+            if (wide and u.width >= _UL_RULE_OVER * (x1 - x0)) or (frac and _is_frac_bar(u, chars, x0, x1)):
+                continue
+        keep.append(u)
+    return keep
 
 
 def underline_rects(page) -> list:
-    """페이지의 밑줄 후보 선(표시 좌표계 Rect). 표 구분선(위 `_grid_rules`)과 글보다 훨씬 넓은 선(`_drop_wide_rules`)은 뺀다."""
+    """페이지의 밑줄 후보 선(표시 좌표계 Rect). 표 구분선(위 `_grid_rules`) · 글보다 훨씬 넓은 선 · 분수선(`_drop_fake_underlines`)은 뺀다."""
     rot = page.rotation_matrix
     page_w = page.rect.width
     out = []
@@ -288,7 +319,7 @@ def underline_rects(page) -> list:
             out.append(r)
     grid = _grid_rules(out)
     lines = [r for r in out if id(r) not in grid]
-    return _drop_wide_rules(page, lines) if lines and _ul_width_guard_on() else lines
+    return _drop_fake_underlines(page, lines) if lines and (_ul_width_guard_on() or _ul_frac_guard_on()) else lines
 
 
 def _is_underlined(cb, underlines) -> bool:
