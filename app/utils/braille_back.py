@@ -3120,6 +3120,13 @@ def _english_line(line: str, *, evidence: bool = True, ctx: bool = False) -> str
             raw.append(_ENG_LONE_WORD[w])
             prev = w
             continue
+        if ((lm := _ENG_LABEL_TOKEN_RE.match(w))
+                and w[lm.end():] in ("", "⠂", "⠲", "⠂⠲")):          # 보기 표지 `(a),` — 영어 줄 안
+            out.append(_eng_label_token(w))
+            raw.append("")
+            strong.append(out[-1])          # 순서 선택지(`_ANSWER_ORDER_RE`)처럼 증거로 센다
+            prev = w
+            continue
         if (bm := _ENG_BLANK_RE.fullmatch(w)):                 # 빈칸 `___`
             out.append("___" + _ENG_TAIL_PUNCT.get(bm.group(1), ""))
             raw.append("")
@@ -3640,6 +3647,12 @@ def _english_any(line: str, *, ctx: bool = False) -> str | None:
 _BRAILLE_PAGE_HEAD_RE = re.compile(r"^[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]?⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]+⠀{3,}\S.*⠀{3,}⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]+⠀*$")
 
 
+def _ctx_english(line: str) -> bool:
+    """문맥 판정 — 줄 통째, 또는 (켜져 있으면) 머리를 뗀 몸통이 문맥 영어인가."""
+    return (_english_any(line, ctx=True) is not None
+            or (_HEAD_ENG_CTX and _head_split_english(line, ctx=True) is not None))
+
+
 def _english_ctx(lines: list[str]) -> list[bool]:
     """이웃 줄이 영어로 읽혀 **문단 문맥**으로 영어가 되는 줄 (제29항 [다만] · #842).
 
@@ -3656,7 +3669,9 @@ def _english_ctx(lines: list[str]) -> list[bool]:
                                         or _PAGE_CHANGE_RE.match(l)
                                         or (_ROMAN_START in l and _BRAILLE_PAGE_HEAD_RE.match(l)))
             for l in lines]
-    ok = [body[k] and _english_any(lines[k]) is not None for k in range(n)]
+    ok = [body[k] and (_english_any(lines[k]) is not None
+                       or (_HEAD_ENG_CTX and _head_split_english(lines[k]) is not None))
+          for k in range(n)]
     ctx = [False] * n
     # ── 쪽 단위 씨앗 (#894) ────────────────────────────────────────────────
     # 위 번짐은 **바로 옆**에서만 이어진다. 그래서 같은 쪽에 영어 블록이 둘 이상인데
@@ -3685,7 +3700,7 @@ def _english_ctx(lines: list[str]) -> list[bool]:
     if (_CTX_PAGE_SEED and sum(ok) >= 2
             and sum(ok) >= _CTX_PAGE_SEED_RATIO * max(_n_body, 1)):
         for k in range(n):
-            if (body[k] and not ok[k] and _english_any(lines[k], ctx=True) is not None
+            if (body[k] and not ok[k] and _ctx_english(lines[k])
                     and not _kor_guard_blocks(lines[k])):
                 ctx[k] = True
     loose: list[bool | None] = [None] * n
@@ -3705,8 +3720,7 @@ def _english_ctx(lines: list[str]) -> list[bool]:
                 #   **진짜 영어 짧은 줄**이 전부 판정 대상이 된다 — 그쪽이 훨씬 많다.
                 #   게다가 한 줄을 막으면 그 쪽 영어 문맥이 무너져 **가드가 손대지도 않은**
                 #   줄까지 깨졌다(p0227 보기 ③④⑤ 가 통째로).
-                loose[k] = (_english_any(lines[k], ctx=True) is not None
-                            and not _kiwi_guard_blocks(lines[k]))
+                loose[k] = _ctx_english(lines[k]) and not _kiwi_guard_blocks(lines[k])
             if loose[k]:
                 ctx[k] = True
                 changed = True
@@ -3725,6 +3739,55 @@ _GAP_PARTICLE_RE = re.compile(r"(?:의|이|가|을|를|은|는|와|과|에|에�
 #   끝이 연산 · 첨자 · 근호면 식이 덜 끝난 것이라 뺀다 — 글자를 두 칸씩 띄운 낱말 퍼즐 `생  명  이` 의
 #   `명`(⠑⠻)이 `e√` 로 읽혔다.
 _GAP_MATH_CLEAN_RE = re.compile(r"(?=.*[A-Za-zα-ωΑ-Ω])[A-Za-z0-9α-ωΑ-Ω+\-=×÷^_()\[\]/√<>≤≥≠,.|'′]*[A-Za-z0-9α-ωΑ-Ω\-)\]/,.|'′]")
+
+
+# ── 말머리·글머리 뒤 영어 몸통 (#1161) ─────────────────────────────────────────
+# 줄 통째로는 영어 판정이 안 되는데 머리 토막을 떼면 영어인 줄 — `• This provides students…` ·
+# `제이크: Where are you…` · `2. Data for other…`. 머리는 한글 경로로, 몸통은 영어 줄 판정
+# (`_english_any`, 엄격)으로 읽는다. 자르는 곳은 **줄 머리 한 번**뿐이고 머리는 닫힌 목록이다.
+# ⚠ 그냥 한글 낱말 머리는 안 받는다 — 비영어 책에서 몸통이 엄격 판정을 191줄 통과했다
+#   (`방식으로 읽는 것이 속도는 더`). 점역자주 표 ⠠⠄ 를 품은 머리(`【점역자주】그림:`)도 안 받는다.
+# 셈 temp/n46/e8/head_census.py · 설계 temp/n46/e8/설계_머리뒤영어.md.
+_HEAD_SYMBOLS = frozenset({"⠸⠲", "⠸⠶", "⠸⠴", "⠐⠔", "⠐⠶", _ARROW_RIGHT})   # • □ ∘ * 〈 →
+_HEAD_NUMBER_RE = re.compile(r"⠼[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]+⠲?")
+# 몸통 안에 로마자표로 열고 종료표로 닫은 구간 뒤에 토막이 더 있으면 그 줄은 한글 문맥이다(제29항).
+#   단어장 `□ ⠴retail⠲ 소매` 가 문맥 영어로 먹혀 `□ retail. Uer` 가 됐다(B팔 실측 40줄 안팎).
+_HEAD_CLOSED_ROMAN_RE = re.compile("⠴[^⠀]*(?:⠀[^⠀]+)*?⠲⠀+[^⠀]")
+# 머리 자른 줄을 쪽 문맥의 씨앗으로 세고, 문맥 판정(이웃 번짐)도 받게 한다. `BR_HEAD_ENG_CTX=0` 이면 끈다.
+_HEAD_ENG_CTX = os.environ.get("BR_HEAD_ENG_CTX", "1").lower() not in ("0", "false", "off")
+
+
+def _head_ok(tok: str) -> bool:
+    if tok in _HEAD_SYMBOLS or _HEAD_NUMBER_RE.fullmatch(tok):
+        return True
+    # 쌍점으로 끝나는 한글 말머리(`여:` · `정답:`) — 점역자주 표를 품은 것은 뺀다
+    return (tok.endswith(_MATH_COLON) and _TN_MARKER not in tok
+            and bool(_HANGUL_SYL_RE.search(_decode_line(tok[:-len(_MATH_COLON)]))))
+
+
+def _head_split_english(line: str, *, ctx: bool = False) -> str | None:
+    """줄 머리 토막 1~2개(글머리 · 번호 · 한글 말머리) 뒤 몸통이 영어면 그 읽기를 돌려준다.
+
+    `ctx=True` 는 `_english_ctx` 가 이 줄을 문맥 영어로 받은 때만 쓴다(`_HEAD_ENG_CTX`).
+    """
+    body = line.lstrip(_SPACE_CELL)
+    lead = line[:len(line) - len(body)]
+    toks = body.split(_SPACE_CELL)
+    if toks[:2] == [_BOX_CHAR_OPEN, _BOX_CHAR_CLOSE]:       # 네모 빈칸 ⠸⠦⠀⠴⠇ 는 한 머리다
+        toks = [_BOX_CHAR_OPEN + _SPACE_CELL + _BOX_CHAR_CLOSE] + toks[2:]
+    for n in (1, 2):
+        if len(toks) <= n + 1 or not all(
+                _head_ok(t) or t == _BOX_CHAR_OPEN + _SPACE_CELL + _BOX_CHAR_CLOSE for t in toks[:n]):
+            return None
+        rest = _SPACE_CELL.join(toks[n:])
+        if _HEAD_CLOSED_ROMAN_RE.search(rest):
+            return None              # 로마자 구간을 닫고 한글이 이어진다 — 단어장 `□ retail 소매`
+        gap = rest[:len(rest) - len(rest.lstrip(_SPACE_CELL))]
+        eng = _english_any(rest.lstrip(_SPACE_CELL), ctx=ctx)
+        if eng is not None:
+            head = _decode_line_router(lead + _SPACE_CELL.join(toks[:n]), False)
+            return head + " " * (1 + len(gap)) + eng
+    return None
 
 
 def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False,
@@ -3757,6 +3820,9 @@ def _decode_line_router(line: str, math: bool, *, eng_ctx: bool = False,
         # 수식 줄에 영어 판정을 대면 안 된다 — `a √ b`가
         eng = _english_any(line, ctx=eng_ctx)    # `a ar b`로 뒤집힌다(⠜=√ ↔ 영어 약자 ar)
         if eng is not None:          # 로마자표 없는 순수 영어 줄 (제29항 [다만])
+            return eng
+        eng = _head_split_english(line, ctx=eng_ctx and _HEAD_ENG_CTX)
+        if eng is not None:          # 말머리·글머리 + 영어 몸통
             return eng
         # 한·영 혼합 줄 — UEB 밑줄 구간표 짝 안쪽만 영어로 읽고 바깥은 한글로 읽는다
         # (제32항 · 원장 R-70). 표가 곧 증거이므로 안쪽은 `evidence=False` 로 본다.
