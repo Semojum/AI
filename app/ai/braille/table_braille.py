@@ -396,6 +396,37 @@ def _shorten_columns(grid: list[list[str]]) -> tuple[list[list[str]], list[str]]
     return out, notes
 
 
+# 칸 안 글머리 항목(#1201) — 「점자 도서 제작 지침」 2장 3절 5. 1)(재추출 1433~1434행): 문단 시작 위치의 글머리 기호는
+# 3칸에 표기하고 다음 글자는 한 칸 띄어 적는다. 추출이 칸 안 줄바꿈을 잃어 항목이 `•A•B` 로 이어 오므로(#1188 이 되살린
+# 글머리) 글머리마다 새 줄 3칸에서 `⠸⠲⠀` 로 연다. gold 90권 •(⠸⠲) 29,951개 중 항목마다 새 줄 96.6%(59권) · 한 줄에 이어
+# 적기 1.4% · 글머리 뒤 한 칸 99.7%. 2)(1464~1465행, 한 문단 안 여러 글머리는 이어 적음)는 칸 글만으로 못 가른다.
+# ⚠ 행머리(이름표) 바로 뒤 첫 항목은 이름표 줄에 그대로 둔다. 이름표를 혼자 한 줄로 둘지는 갈래가 따로다(gold 테두리 안
+#   이름표 혼자 763(18권) · '이름표: • 첫 항목' 390(5권, ES-TXT-KA0171 328)). 따로 잰다(pm 10-07 20:35).
+# 끄기 `TABLE_CELL_BULLET_BREAK=0`.
+_CELL_BULLET = "•"
+
+
+def _bullet_paras(cells: list[str], sep: str) -> list[str] | None:
+    """칸에 글머리가 있으면 한 행을 점자 문단들로 나눈다(위 주석). 글머리가 없거나 꺼졌으면 None."""
+    if os.environ.get("TABLE_CELL_BULLET_BREAK", "1") == "0" or not any(_CELL_BULLET in c for c in cells):
+        return None
+    paras = [""]
+    for j, cell in enumerate(cells):
+        if j:
+            paras[-1] += sep if j == 1 else "⠀⠀"
+        lead, *items = cell.split(_CELL_BULLET)
+        if lead.strip() or not items:
+            paras[-1] += _translate(lead.strip()) if lead.strip() else "⠿⠿"
+        label = j == 1 and not lead.strip() and _CELL_BULLET not in cells[0]   # 이름표 바로 뒤 첫 항목(위 ⚠)
+        for n, it in enumerate(items):
+            item = _translate(f"{_CELL_BULLET} {it.strip()}")
+            if n == 0 and label:
+                paras[-1] += item
+            else:
+                paras.append(item)
+    return [p.rstrip("⠀") for p in paras if p.strip("⠀")]
+
+
 def _wrap_row(body: str, first_indent: int = 2) -> list[str]:
     """지침 §3.2.1 (3) — 줄이 넘어가는 내용은 두 줄로 나눈다.
 
@@ -504,14 +535,17 @@ def _render_grid(corrected_text: str) -> list[str]:
         lines.extend(_wrap_row(_translate(_TN_OPEN + ", ".join(notes) + _TN_CLOSE)))
     for k, row in enumerate(rows):
         cells = [c.strip() for c in row.split("|")]
-        head = _translate(cells[0]) if cells[0] else "⠿⠿"
-        vals = [(_translate(c) if c else "⠿⠿") for c in cells[1:]]
-        body = head + (sep + "⠀⠀".join(vals) if vals else "")
-        # §3.2.1 (3) — 32칸을 넘으면 나눠 적고 이어지는 줄은 두 칸 더 들여쓴다.
-        if _SHORTEN and len("⠀⠀" + body) > _COLS:
-            lines.extend(_wrap_row(body))
-        else:
-            lines.append("⠀⠀" + body)
+        paras = _bullet_paras(cells, sep)
+        if paras is None:
+            head = _translate(cells[0]) if cells[0] else "⠿⠿"
+            vals = [(_translate(c) if c else "⠿⠿") for c in cells[1:]]
+            paras = [head + (sep + "⠀⠀".join(vals) if vals else "")]
+        for body in paras:
+            # §3.2.1 (3) — 32칸을 넘으면 나눠 적고 이어지는 줄은 두 칸 더 들여쓴다.
+            if _SHORTEN and len("⠀⠀" + body) > _COLS:
+                lines.extend(_wrap_row(body))
+            else:
+                lines.append("⠀⠀" + body)
         if k == 0 and len(rows) > 1 and _has_col_headers(cells):
             lines.append(rowsep)          # 머리행과 본문 사이(실측 위치)
     lines.append(bot)
@@ -576,13 +610,17 @@ def _render_numbered(corrected_text: str) -> list[str]:
             if not val:
                 continue
             mark = _L2_MARKS[(j - 1) % len(_L2_MARKS)]
+            # 칸 안 글머리는 항목마다 새 줄 3칸(#1201, `_bullet_paras` 주석). gold 사회문화 p0112 `  사례:` 뒤 `  • …`.
             if name:
                 out.extend(_wrap_row(_translate(f"{mark}. {name}"),
                                      first_indent=4))
-                out.extend(_wrap_row(_translate(val), first_indent=2))
+                for p in _bullet_paras([val], "") or [_translate(val)]:
+                    out.extend(_wrap_row(p, first_indent=2))
             else:
-                out.extend(_wrap_row(_translate(f"{mark}. {val}"),
-                                     first_indent=4))
+                first, *rest = _bullet_paras([f"{mark}.", val], "⠀") or [_translate(f"{mark}. {val}")]
+                out.extend(_wrap_row(first, first_indent=4))
+                for p in rest:
+                    out.extend(_wrap_row(p, first_indent=2))
     out.append(_TBL_BOT)
     return out
 
