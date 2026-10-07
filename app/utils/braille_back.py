@@ -2711,7 +2711,11 @@ _ANSWER_ITEM_RE = re.compile(r"⠶⠠([⠁⠃⠉⠙⠑])⠶")
 # 로마자표 바로 뒤에선 ⠰ 없이도 쓴다(MS-REF-T25-078 `⠴⠶⠃⠶` 96회, 역시 영어 책뿐).
 _ENG_LABEL = r"⠶(?:⠁|⠰[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵])⠶"
 _ENG_LABEL_TOKEN_RE = re.compile(
-    rf"(?:⠴⠶[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵]⠶|⠴?{_ENG_LABEL})(?:⠤{_ENG_LABEL})*")
+    rf"(?:⠴⠶[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵]⠶|⠴?{_ENG_LABEL})"
+    rf"(?:⠤{_ENG_LABEL}|⠈⠔⠶⠰?[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵]⠶)*")
+# 범위 `(a)~(e)` — 물결 ⠈⠔ 뒤 표지는 gold 가 낱자표 ⠰ 를 빼고 적는다(HS-REF-007 27회 전부).
+#   종전엔 그 표지가 동그라미 한글(⠶⠑⠶ = ㉲)로 읽혀 `(a)~㉲.` 로 나갔다. 영어 책에만 있다.
+_ENG_LABEL_SEP_RE = re.compile(r"(⠤|⠈⠔)")
 _ENG_LABEL_TAIL_RE = re.compile(r"(⠂?)⠲?(.*)")
 
 
@@ -2720,7 +2724,8 @@ def _eng_label_token(tok: str) -> str | None:
     m = _ENG_LABEL_TOKEN_RE.match(tok)
     if not m:
         return None
-    labels = "-".join(f"({_ALPHA_REV[s[-2]]})" for s in m.group().split("⠤"))
+    labels = "".join({"⠤": "-", "⠈⠔": "~"}.get(s) or f"({_ALPHA_REV[s[-2]]})"
+                     for s in _ENG_LABEL_SEP_RE.split(m.group()))
     comma, rest = _ENG_LABEL_TAIL_RE.fullmatch(tok, m.end()).groups()
     return labels + ("," if comma else "") + (_decode_line(rest) if rest else "")
 # 낱말 안에 박힌 줄임표 ⠄⠄⠄ — 답지 짝 빈칸 `promote...detected`. 토큰으로 떼어 낸다.
