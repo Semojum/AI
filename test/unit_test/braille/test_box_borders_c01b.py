@@ -124,3 +124,40 @@ class TestLayout:
         assert lines[first_content].startswith("⠀⠀")
         assert not lines[first_content][2].isspace()
         assert all(not ln.startswith("⠀") for ln in lines if _is_border_line(ln))
+
+
+# ── 32칸 본문 줄을 테두리로 오인해 글이 사라지던 결함 ───────────────────────────────
+# `ㄴ. 동생은 낚시하러 가겠다고 한다.` 는 온표 ⠿ 로 시작해 마침표 ⠲(2단계 끝 캡)로 끝나는 마침 32칸 줄이다.
+NIEUN = "⠿⠒⠲⠀⠊⠿⠠⠗⠶⠵⠀⠉⠁⠁⠠⠕⠚⠐⠎⠀⠫⠈⠝⠌⠊⠈⠥⠀⠚⠒⠊⠲"
+
+
+class TestBorderLineStrict:
+    def test_캡과_길이만_맞는_본문_줄은_테두리가_아니다(self):
+        assert len(NIEUN) == _COLS and not _is_border_line(NIEUN)
+
+    def test_진짜_테두리는_위계_제목과_상관없이_테두리다(self):
+        lb = LayoutBraille()
+        lines = [lb._render_box_bottom(lv) for lv in (1, 2, 3)]
+        lines += [ln for lv in (1, 2, 3) for t in ("", "보기") for ln in lb._render_box_top(lv, t)
+                  if len(ln) == _COLS]
+        assert lines and all(_is_border_line(ln) for ln in lines)
+
+    def test_끈_스위치는_종전처럼_캡과_길이만_본다(self, monkeypatch):
+        monkeypatch.setenv("BORDER_LINE_STRICT", "0")
+        assert _is_border_line(NIEUN)
+
+    def test_상자_속_32칸_항목이_조판에서_살아남는다(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        eid = uuid4()
+        src = ("<!상자>보기<!/상자>\nㄱ. 지금 떠나면 새벽에 도착하겠구나.\nㄴ. 동생은 낚시하러 가겠다고 한다.\n"
+               "ㄷ. 잠시 후 신랑 입장이 있겠습니다. <!상자끝><!/상자끝>")
+        opt = LLMOutput(element_id=eid, corrected_text=src, render_mode="text_only",
+                        routing_tier="ZERO", processing_time_ms=0)
+        bo = TextBraille().translate([opt])[0]
+        assert NIEUN in bo.braille_lines
+        lr = LayoutResult(page_id="p1", page_no=1, items=[
+            BBoxItem(element_id=eid, type="text", bbox=(0, 0, 10, 10), reading_order=1)])
+        LayoutBraille().layout([bo], 1, "border32", layout_result=lr)
+        body = "".join(bo.braille_lines)
+        assert NIEUN[4:] in body                                   # 항목 글이 남는다
+        assert sum(_is_border_line(ln) for ln in bo.braille_lines) == 2
