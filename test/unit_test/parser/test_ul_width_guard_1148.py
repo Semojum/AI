@@ -24,3 +24,28 @@ def test_끈_스위치는_넓은_선도_남긴다(monkeypatch):
     monkeypatch.setenv("UL_WIDTH_GUARD", "0")
     doc, pg = _page_with_lines()
     assert sorted(round(r.width) for r in underline_rects(pg)) == [30, 300]
+
+
+# ── 강조 축 E(#1166): 분수선은 밑줄이 아니다 ────────────────────────────────────
+def _page_with_fraction():
+    doc = fitz.open()
+    pg = doc.new_page(width=600, height=800)
+    pg.insert_text((100, 100), "numerator", fontsize=12)    # 분자
+    pg.draw_line((100, 103), (152, 103))                     # 분수선: 분자 폭과 비슷
+    pg.insert_text((112, 117), "den", fontsize=12)          # 분모: 윗변이 선 바로 아래(약 1pt) · 가운데 맞춤
+    pg.insert_text((100, 200), "under", fontsize=12)        # 진짜 밑줄
+    pg.draw_line((100, 203), (131, 203))
+    pg.insert_text((100, 217), "next body line continues far beyond", fontsize=12)   # 본문 줄: 선 끝 너머로 이어진다
+    return doc, pg
+
+
+def test_분수선은_빼고_본문_줄_위_밑줄은_남긴다(monkeypatch):
+    monkeypatch.delenv("UL_FRAC_GUARD", raising=False)
+    doc, pg = _page_with_fraction()
+    assert [round(r.y0) for r in underline_rects(pg)] == [203]
+
+
+def test_끈_분수_스위치는_분수선도_남긴다(monkeypatch):
+    monkeypatch.setenv("UL_FRAC_GUARD", "0")
+    doc, pg = _page_with_fraction()
+    assert sorted(round(r.y0) for r in underline_rects(pg)) == [103, 203]
