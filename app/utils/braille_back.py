@@ -856,8 +856,12 @@ def _build_eng_reverse() -> tuple[dict[str, str], dict[str, str], dict[str, str]
         anywhere.setdefault(cell, word)
     for word, cell in _E.EBAE_ONLY_GROUPS.items():      # 옛 EBAE 책(ble) — 정방향은 안 쓴다(#946)
         anywhere.setdefault(cell, word)
-    for word, cell in (*_E.WORD_INITIAL_SYLLABLE.items(), *_E.EBAE_ONLY_INITIAL.items()):   # com — 옛 EBAE(#1167)
+    # com(⠤, EBAE_ONLY_INITIAL)은 역맵에 넣지 않는다(#1178). 2027 gold 의 낱말 머리 ⠤ 는 전부 붙임표다 —
+    #   `-ing`·`-s`·`-est`·`-ship`(⠴⠤⠔⠛ 등). com 으로 읽으면 `coming`·`comship` 이 된다.
+    #   gold 전권(holdout 제외)에서 낱말 머리 ⠤+글자 153곳을 열어 진짜 com 약자 0(UEB 가 폐지, #1167).
+    for word, cell in _E.WORD_INITIAL_SYLLABLE.items():
         initial.setdefault(cell, word)
+    initial.setdefault("⠤", "-")
     for word, cell in _E.INITIAL_5.items():
         initial.setdefault("⠐" + cell, word)
     for word, cell in _E.INITIAL_45.items():
