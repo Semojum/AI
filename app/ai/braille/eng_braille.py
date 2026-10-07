@@ -268,7 +268,7 @@ def _is_abbrev(word: str) -> bool:
     return any(c.isupper() for c in letters[1:])
 
 
-def translate_word(word: str, ebae: bool = False) -> str:
+def translate_word(word: str, ebae: bool = False, uncontracted: bool = False) -> str:
     """영어 낱말 하나 → Grade 2 점자.
 
     약어·단위는 축약하지 않고 글자 그대로 적는다 — 축약하면 ATP·mV·pH·mmHg 같은
@@ -290,7 +290,7 @@ def translate_word(word: str, ebae: bool = False) -> str:
     # ⚠ 낱말 **안**(양옆이 로마자)일 때만이다. 홀로 선 `'` 는 제49항 작은따옴표일 수
     #   있어 건드리지 않는다.
     if _INNER_APOS_RE.search(word):
-        return _APOS_CELL.join(translate_word(p, ebae) for p in _INNER_APOS_RE.split(word))
+        return _APOS_CELL.join(translate_word(p, ebae, uncontracted) for p in _INNER_APOS_RE.split(word))
     letters = [c for c in word if c.isalpha()]
     if _is_abbrev(word):
         if all(c.isupper() for c in letters):
@@ -315,6 +315,10 @@ def translate_word(word: str, ebae: bool = False) -> str:
             else:
                 out.append(_CAPITAL * 2 + cells + ("⠠⠄" if m.end() < len(word) else ""))
         return "".join(out)
+    if uncontracted:
+        # 영어 1급(#1189) — 약자 없이 글자대로. 대문자 표기는 위 약어 갈래가 이미 맡았고 여기 오는 것은
+        #   첫 글자만 대문자이거나 전부 소문자인 낱말이다. gold 초등 두 권 `Read and Write` = ⠠⠗⠑⠁⠙⠀⠁⠝⠙⠀⠠⠺⠗⠊⠞⠑.
+        return (_CAPITAL if word[0].isupper() else "") + "".join(ALPHABET.get(c.lower(), c) for c in word)
     low = word.lower()
     caps = _CAPITAL if word[0].isupper() else ""
     if low in WORDSIGNS:
@@ -379,7 +383,7 @@ def _spell_out(w: str, text: str, m: re.Match, lead: bool) -> bool:
 
 
 @lru_cache(maxsize=4096)
-def translate(text: str, ebae: bool = False, grade1: str = "") -> str:
+def translate(text: str, ebae: bool = False, grade1: str = "", uncontracted: bool = False) -> str:
     """영어 구간 문자열 → Grade 2 점자(낱말 단위 적용, 그 외 문자는 그대로).
 
     캐시가 붙은 이유 — `_break_offsets`가 줄바꿈 지점을 찾으려고 문자 위치마다 접두를
@@ -397,6 +401,9 @@ def translate(text: str, ebae: bool = False, grade1: str = "") -> str:
       이어지는 약자꼴 홑 낱자는 적는다(`a, b, c` 의 b·c · `George V`)       gold 347/347
       두 글자 이상 약자꼴은 로마자표 바로 뒤라도 적는다(`CD 1장`)           gold 100/102
     ⚠ 구판 gold 는 셋 다 안 적는다(판본 역전). 구판 수치로 판정하지 말 것.
+
+    uncontracted — 영어 1급(#1189, `constants.ENGLISH_GRADE1`). 약자가 없으니 1종 지시자 ⠰ 도 적지 않는다
+    (gold 초등 두 권 `A` = ⠴⠠⠁⠲). 캐시 열쇠에 들어가야 해서 문맥 값을 여기서 읽지 않고 인자로 받는다.
     """
     words = list(_WORD_RE.finditer(text))
     passage: dict[int, str] = {}
@@ -429,6 +436,10 @@ def translate(text: str, ebae: bool = False, grade1: str = "") -> str:
     for k, m in enumerate(words):
         out.append(text[last:m.start()])
         w = m.group()
+        if uncontracted:
+            out.append(passage.get(k) or translate_word(w, ebae, True))
+            last = m.end()
+            continue
         mark = (grade1 and not ebae and k not in passage and _looks_contracted(w)
                 and not (grade1 == "lead" and k == 0 and m.start() == 0 and len(w) == 1))
         if grade1 and not ebae and k not in passage and _spell_out(w, text, m, grade1 == "lead" and k == 0):

@@ -84,3 +84,13 @@ def test_끄면_종전대로_2급():
 
 def test_기본값은_끔():
     assert KOREAN_GRADE1.get() is False
+
+
+def test_영어_1급과_같이_켜기():
+    """초등 1학년 자료 = 둘 다 켬(지침 1.1.2 학년 경계 둘). 영어는 글자대로 · 한글은 정자."""
+    from app.ai.braille.constants import ENGLISH_GRADE1
+    tok = ENGLISH_GRADE1.set(True)
+    try:
+        assert _br("the는") == "⠴⠞⠓⠑⠲⠉⠪⠒"
+    finally:
+        ENGLISH_GRADE1.reset(tok)
