@@ -21,8 +21,17 @@ def _body(text: str) -> list[str]:
     return [ln for ln in tb._render_grid(text) if ln.strip("⠀") and not ln.startswith(("⠿", "⠐⠐"))]
 
 
-def test_둘째_항목부터_새_줄_3칸이고_첫_항목은_이름표_줄에_둔다():
-    body = _body(TABLE)                 # 이름표를 혼자 한 줄로 둘지는 따로 잰다(pm 10-07 20:35)
+def test_이름표가_혼자_한_줄이고_항목마다_새_줄_3칸이다():
+    body = _body(TABLE)
+    i = body.index(BALJEON)
+    assert body[i + 1].startswith("⠀⠀" + ITEM1)
+    assert any(ln.startswith(ITEM2) for ln in body)
+    assert len([ln for ln in body if ln.startswith("⠀⠀⠸⠲⠀")]) == 2
+
+
+def test_이름표_혼자_끄면_첫_항목은_이름표_줄이다(monkeypatch):
+    monkeypatch.setenv("TABLE_BULLET_LABEL_ALONE", "0")
+    body = _body(TABLE)
     assert any(ln.startswith(BALJEON + "⠀" + ITEM1) for ln in body)
     assert any(ln.startswith(ITEM2) for ln in body)
     assert len([ln for ln in body if ln.startswith("⠀⠀⠸⠲⠀")]) == 1
