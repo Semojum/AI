@@ -155,6 +155,26 @@ def iter_words(text: str) -> Iterator[str]:
     return (m.group() for m in _WORD_RE.finditer(text))
 
 
+# UEB — be(⠆)도 첫 음절을 이룰 때만 쓴다(#1180). gold 영어책(holdout 제외) 낱말 머리 be:
+#   ⠆ — because 263 · being 114 · become 81 · became 73 · believe 58 · began 49 · below 48 · behind 40 …
+#   풀어씀 — been 246 · better 184 · best 122 · beard 79 · beautiful 55 · beach 50 · benefits 32 · beauty 30 …
+# 소리 마디를 철자로만 가르는 근사다: be 뒤가 홑 자음 + 모음(be-ca · be-li · be-ga · be-ne)이면 음절,
+#   겹자음(bett · bell · begg)·모음(bea · bee)·낱말 끝 자음(bed · best)이면 아니다. being 은 음절이다.
+#   철자로 안 갈리는 benefit(BEN-e-fit)은 목록으로 뺀다.
+# ponytail: 철자 근사 — 발음 사전이 없어 be-n-e 꼴(benefit·beneath)은 목록으로만 가른다. 틀린 낱말이 보이면 목록에 더한다.
+_BE_NOT_SYLLABLE = frozenset({"benefit", "benefits", "beneficial", "benefited", "benefiting", "benefactor"})
+_VOWELS_Y = frozenset("aeiouy")
+
+
+def _be_is_syllable(word: str) -> bool:
+    if word.startswith("being"):
+        return True
+    if word in _BE_NOT_SYLLABLE:
+        return False
+    c, v = word[2:3], word[3:4]
+    return bool(c) and c not in _VOWELS_Y and v in _VOWELS_Y and c != v
+
+
 def _apply_groups(word: str, ebae: bool = False) -> str:
     """소문자 낱말 → 약자 적용 셀열. 긴 약자 우선, 위치 제약 준수.
 
@@ -181,6 +201,8 @@ def _apply_groups(word: str, ebae: bool = False) -> str:
                 # UEB — 첫 음절을 이룰 때만 쓴다. `dish` 는 d-i-sh 라 dis 가 음절이 아니다
                 #   (규정 제39항 예문 `dishes` = di%es, #950)
                 if k == "dis" and word[3:4] == "h":
+                    continue
+                if k == "be" and not ebae and not _be_is_syllable(word):
                     continue
                 out.append(initial_syl[k])
             elif k in STRONG_GROUPS or k in EBAE_ONLY_GROUPS:
