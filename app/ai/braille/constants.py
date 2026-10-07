@@ -4,6 +4,8 @@
 32칸·26줄을 한 곳으로 모은다. (NLD 1장1절3: 가로 32칸·세로 26줄 기본 규격.)
 """
 
+from contextvars import ContextVar
+
 COLS = 32  # 한 줄 칸 수
 ROWS = 26  # 한 페이지 줄 수 (NLD 1장1절3: 세로 26줄)
 
@@ -42,3 +44,9 @@ BOX_TITLE_PROMOTABLE = frozenset({
 # 라우팅이 달라진다(수학2 실측 173요소).
 WRAP_HYPHEN_OPEN = "\ufdd0"
 WRAP_HYPHEN_CLOSE = "\ufdd1"
+
+# 영어 1급(#1189) — 점역사가 문서를 올릴 때 고른다. 기본 False = 지금 동작(2급 약자, 한글 없는 영어 줄은 로마자표 생략).
+#   켜면 약자 없이 글자대로 적고 영어 구간마다 로마자표 ⠴ … 종료표 ⠲ 를 적는다. 「점자 자료 제작 지침」 1.1.2(재추출
+#   240~242행) 영어 약자는 중학교 2학년용 교재부터 · 「점자 도서 제작 지침」 제2장 제4절 1.1)(1) 초급자 자료의 영어
+#   문단은 로마자표를 생략하지 않는다(원장 B-27). 쪽 단위 문맥 값이다 — `inline_math.MATH_PAGE` 와 같은 길로 흐른다.
+ENGLISH_GRADE1: ContextVar[bool] = ContextVar("english_grade1", default=False)
