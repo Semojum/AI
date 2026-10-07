@@ -51,20 +51,23 @@ STRONG_GROUPS: dict[str, str] = {
     "ch": "⠡", "gh": "⠣", "sh": "⠩", "th": "⠹", "wh": "⠱",
     "ed": "⠫", "er": "⠻", "ou": "⠳", "ow": "⠪",
     "st": "⠌", "ing": "⠬", "ar": "⠜",
-    "bb": "⠆", "cc": "⠒", "dd": "⠲", "ff": "⠖", "gg": "⠶",
+    "bb": "⠆", "cc": "⠒", "ff": "⠖", "gg": "⠶",
     "in": "⠔", "en": "⠢",
     "ea": "⠂",
 }
 # ble = 3456점(⠼) — EBAE 약자다. **UEB 가 폐지했다**(#946, 규정 제29항 예문 `Table of Contents` =
 #   ⠠⠞⠁⠃⠇⠑…). 정방향은 쓰지 않고, 역점역이 옛 EBAE 책을 되짚을 때만(`ebae=True`) 쓴다 — ation·ally(#932)와 같은 처리.
 #   2027 dev·val 묵자에 -ble 낱말은 0회다. ⠼는 한글 점자에서 수표(제40항)와 같은 점형이라 number_sign.py 가 가른다.
-EBAE_ONLY_GROUPS: dict[str, str] = {"ble": "⠼"}
+# dd(⠲)도 UEB 가 폐지했다(#1167) — gold 영어책은 `middle` 을 ⠍⠊⠙⠙⠇⠑ 로 풀어 쓴다.
+EBAE_ONLY_GROUPS: dict[str, str] = {"ble": "⠼", "dd": "⠲"}
 # 아래칸 약자(ea·bb·cc·dd·ff·gg)는 **낱말 첫머리·끝에 못 쓴다**(영어 점자 표준).
 # 위아래 칸이 비어 다른 셀과 혼동되기 때문이다.
 _LOWER_CELL = {"ea", "bb", "cc", "dd", "ff", "gg"}
 # 낱말 첫머리 전용 음절 약자 — 같은 셀이 낱말 중간에서는 겹자음(bb·cc·dd) 뜻이라
 # 위치로 갈린다(영어 점자 표준). be/con/dis 는 첫머리에서만 쓴다.
-WORD_INITIAL_SYLLABLE: dict[str, str] = {"be": "⠆", "con": "⠒", "dis": "⠲", "com": "⠤"}
+WORD_INITIAL_SYLLABLE: dict[str, str] = {"be": "⠆", "con": "⠒", "dis": "⠲"}
+# com(⠤)은 UEB 가 폐지했다(#1167) — gold 영어책 `company` = ⠉⠕⠍⠏⠁⠝⠽. 역점역(`ebae=True`)만 쓴다.
+EBAE_ONLY_INITIAL: dict[str, str] = {"com": "⠤"}
 # 위치 제약: 낱말 첫머리에는 쓰지 않는 약자(영어 점자 표준).
 _NOT_WORD_INITIAL = {"ing", "ble"} | _LOWER_CELL
 
@@ -77,9 +80,12 @@ WORDSIGNS: dict[str, str] = {
     "you": "⠽", "as": "⠵", "child": "⠡", "shall": "⠩", "this": "⠹",
     "which": "⠱", "out": "⠳", "still": "⠌", "enough": "⠢", "were": "⠶",
     "his": "⠦", "in": "⠔", "was": "⠴", "be": "⠆",
-    # 아래칸 단어기호 — 앞뒤 낱말에 붙여 적는다(영어 점자 표준)
-    "to": "⠖", "by": "⠴", "into": "⠔⠖",
 }
+# 아래칸 단어기호 to·by·into — EBAE 는 뒤 낱말에 붙여 적었다. **UEB 가 폐지했다**(#1167).
+#   「한국 점자 규정」 제7항(99행)·제28항(1329행)이 로마자를 「통일영어점자 규정」에 맡긴다.
+#   gold 영어책 12권 영어 줄: `to` 풀어씀 ⠞⠕ 6,777 : ⠖ 0 · `by` ⠃⠽ 929 : 0(holdout 제외, 2026-10-07).
+#   정방향은 쓰지 않고, 역점역이 옛 EBAE 책을 되짚을 때만(`ebae=True`·역맵) 쓴다 — ble·ation 과 같은 처리.
+EBAE_ONLY_WORDSIGNS: dict[str, str] = {"to": "⠖", "by": "⠴", "into": "⠔⠖"}
 
 # ── 3. 첫글자 약자 — 기호표 + 첫 글자 ────────────────────────────────────────
 INITIAL_5: dict[str, str] = {          # 점5(⠐) + 글자
@@ -156,8 +162,9 @@ def _apply_groups(word: str, ebae: bool = False) -> str:
     """
     # 긴 약자 우선, 길이가 같으면 **윗칸 약자가 아래칸 약자보다 우선**한다.
     # year·near·clear에서 ar(⠜)이 ea(⠂)를 이겨야 한다(실측 12건: 우리 ⠂⠗ vs 정답 ⠑⠜).
+    initial_syl = {**WORD_INITIAL_SYLLABLE, **EBAE_ONLY_INITIAL} if ebae else WORD_INITIAL_SYLLABLE
     keys = sorted(set(STRONG_GROUPS) | (set(FINAL_EBAE_ONLY) | set(EBAE_ONLY_GROUPS) if ebae else set())
-                  | set(WORD_INITIAL_SYLLABLE)
+                  | set(initial_syl)
                   | set(FINAL_46) | set(FINAL_56)
                   | set(INITIAL_5) | set(INITIAL_45) | set(INITIAL_456),
                   key=lambda k: (-len(k), k in _LOWER_CELL))
@@ -167,7 +174,7 @@ def _apply_groups(word: str, ebae: bool = False) -> str:
         for k in keys:
             if not word.startswith(k, i):
                 continue
-            if k in WORD_INITIAL_SYLLABLE:
+            if k in initial_syl:
                 # 첫머리 음절 약자는 뒤에 글자가 더 있어야 한다(be/con/dis 단독 아님)
                 if i != 0 or len(word) <= len(k):
                     continue
@@ -175,7 +182,7 @@ def _apply_groups(word: str, ebae: bool = False) -> str:
                 #   (규정 제39항 예문 `dishes` = di%es, #950)
                 if k == "dis" and word[3:4] == "h":
                     continue
-                out.append(WORD_INITIAL_SYLLABLE[k])
+                out.append(initial_syl[k])
             elif k in STRONG_GROUPS or k in EBAE_ONLY_GROUPS:
                 if i == 0 and k in _NOT_WORD_INITIAL:
                     continue
@@ -288,6 +295,8 @@ def translate_word(word: str, ebae: bool = False) -> str:
     caps = _CAPITAL if word[0].isupper() else ""
     if low in WORDSIGNS:
         return caps + WORDSIGNS[low]
+    if ebae and low in EBAE_ONLY_WORDSIGNS:
+        return caps + EBAE_ONLY_WORDSIGNS[low]
     if low in SHORT_FORMS:
         return caps + SHORT_FORMS[low]
     return caps + _apply_groups(low, ebae)
