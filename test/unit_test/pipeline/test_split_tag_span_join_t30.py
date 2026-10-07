@@ -12,7 +12,22 @@ def test_낱말_안이면_강조_한_덩이로_잇는다():
     assert _join_split_tag_spans("세우는 방식에는 주춧돌<!/강조>\n<!강조>을 정교하게") == "세우는 방식에는 주춧돌을 정교하게"
 
 
-def test_어절_경계면_그대로():
+def test_어절_경계면_태그만_걷고_줄바꿈은_남긴다(monkeypatch):
+    """#1164 — 인쇄 줄바꿈 사이로 갈린 강조는 어절 경계여도 gold 가 한 강조다(dev 142 · val 103 대 0).
+    줄바꿈은 남겨 뒤의 줄 잇기가 띄어쓰기를 정한다. 종전 이 시험은 '그대로'를 지켜 강조가 줄마다 끊겼다."""
+    monkeypatch.delenv("EMPH_LINE_JOIN", raising=False)
+    assert _join_split_tag_spans("<!강조>이슬람<!/강조>\n<!강조>세계의 확장<!/강조>") == "<!강조>이슬람\n세계의 확장<!/강조>"
+
+
+def test_같은_줄_빈칸_사이_강조는_따로_둔다(monkeypatch):
+    """언어와 매체 문법 예문의 낱말별 밑줄 — gold 도 두 강조다(dev body p0061)."""
+    monkeypatch.delenv("EMPH_LINE_JOIN", raising=False)
+    src = "㉠ 엄마는 <!강조>매끼를<!/강조> <!강조>새 밥으로<!/강조> 차려\n주셨었다."
+    assert _join_split_tag_spans(src) == src
+
+
+def test_끈_스위치는_어절_경계를_그대로(monkeypatch):
+    monkeypatch.setenv("EMPH_LINE_JOIN", "0")
     src = "이슬람<!/강조>\n<!강조>세계의 확장"
     assert _join_split_tag_spans(src) == src
 

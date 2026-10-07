@@ -2210,6 +2210,11 @@ _WORD_HEAD_RE = re.compile(r"^[0-9A-Za-z가-힣]")
 _SPLIT_TAG_SPAN_RE = re.compile(
     r"([0-9A-Za-z가-힣])<!/([^<>\s/]+)>[ \t]*\n[ \t]*<!\2>(?=[0-9A-Za-z가-힣])")
 _ANY_TAG_RE = re.compile(r"<!/?[^<>]*>")
+# 강조 축 D(#1164) — **어절 경계**에서 인쇄 줄마다 갈린 강조도 한 덩이로 잇는다. 태그만 걷고 줄바꿈은 남겨
+# 뒤의 줄 잇기(`_join_wrapped_lines`)가 띄어쓰기를 정하게 한다. 2027 게이트 실행분(862227a) 경계: 인쇄 줄바꿈 사이로
+# 갈린 강조 중 gold 에서 한 강조 dev 142 · val 103, 두 강조 0. 같은 줄 빈칸 사이로 갈린 강조(언어와 매체 문법 예문의
+# 낱말별 밑줄 `매끼를` · `새 밥으로`)는 gold 도 두 강조라 건드리지 않는다. 되돌리기 `EMPH_LINE_JOIN=0`(호출 때 읽음).
+_SPLIT_EMPH_NL_RE = re.compile(r"<!/강조>([ \t]*\n[ \t]*)<!강조>")
 
 
 def _join_split_tag_spans(text: str) -> str:
@@ -2225,7 +2230,10 @@ def _join_split_tag_spans(text: str) -> str:
             return m.group(1)
         return m.group(0)
 
-    return _SPLIT_TAG_SPAN_RE.sub(fix, text)
+    out = _SPLIT_TAG_SPAN_RE.sub(fix, text)
+    if os.environ.get("EMPH_LINE_JOIN", "1") != "0":
+        out = _SPLIT_EMPH_NL_RE.sub(lambda m: m.group(1), out)
+    return out
 
 
 def _join_split_words(text: str) -> str:
