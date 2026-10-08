@@ -26,6 +26,9 @@ class PageTask(BaseModel):
     #   `pipeline.run` 이 `constants.KOREAN_GRADE1` · `ENGLISH_GRADE1` 문맥 값으로 놓는다. 기본 False = 약자.
     korean_grade1: bool = False
     english_grade1: bool = False
+    # 선택지 한 줄에 하나(#1238, 원장 C-166) — 켜면 짧은 선택지도 합치지 않는다(「점자 도서 제작 지침」 3장 3절 2. 4)(3)④).
+    #   `pipeline.run` 이 `constants.CHOICES_ONE_PER_LINE` 문맥 값으로 놓는다. 기본 False = 3-2 · 2-2-1 로 합친다.
+    choices_one_per_line: bool = False
 
     @classmethod
     def from_proto(cls, req) -> "PageTask":
@@ -39,6 +42,7 @@ class PageTask(BaseModel):
             item_code_form=str(getattr(req, "item_code_form", "") or ""),
             korean_grade1=bool(getattr(req, "korean_grade1", False)),
             english_grade1=bool(getattr(req, "english_grade1", False)),
+            choices_one_per_line=bool(getattr(req, "choices_one_per_line", False)),
             mode=req.mode.lower() if req.mode else "c",
             source_text=req.source_text,
         )

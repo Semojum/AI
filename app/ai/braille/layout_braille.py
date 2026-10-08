@@ -133,6 +133,106 @@ def _aligned_src(corrected_text: str, lines: list[str]) -> list[str]:
     return out
 
 
+# 짧은 선택지 합치기(#1238, 원장 C-166). 「점자 도서 제작 지침」 3장 3절 2. 4)(3)(재추출 3449~3456행): 선택지는 한 줄에
+#   하나가 원칙이고, 짧아서 점자 한 줄에 둘 이상 들어가면 두 칸 띄워(①) 5지는 3개 들어가면 3-2(③) · 2개면 2-2-1(②)로 적는다.
+#   「점자 자료 제작 지침」 4.2.4(3)(2399~2401행)도 3-2 · 2-2-1 · 한 줄 하나로 조절할 수 있다고 둔다.
+#   gold 5지 묶음: 짝 8권 747/752(99.3%) · 짝 밖 중고 · EBS · 일반 2,490/2,738(90.9%)가 이 규칙과 같다(V2 temp/n166/choice_rule.py).
+#   4지는 둘씩 들어가면 2-2(gold 둘 들어가는 4지 2-2 70 : 한 줄 하나 13).
+#   `pipeline._split_inline_choices` 가 묵자 한 줄의 선택지를 먼저 줄마다 가르고, 점역이 끝난 셀 길이로 여기서 다시 묶는다.
+#   ④ "초등학교 이하의 학생들을 위해 제작되는 문제 형식의 점자 자료" 는 합치지 않는다. 요청 낱값 `choices_one_per_line`
+#   (constants.CHOICES_ONE_PER_LINE)으로 끈다. 서버 되돌리기 `CHOICE_COMBINE=0`(호출 때 읽음).
+_CHOICE_SRC_RE = re.compile(r"^\s*([①-⑳])")          # 원문 줄머리 ①~⑳
+_CHOICE_BR_RE = re.compile(r"^⠼[⠂⠆⠒⠲⠢]⠀")                       # 점자 줄머리 ①~⑤ + 빈칸
+_CHOICE_ROWS = {5: ((3, 2), (2, 2, 1)), 4: ((2, 2),)}
+_CHOICE_SEP = "⠀⠀"                                             # ① 선택지와 선택지 사이 두 칸
+_CHOICE_ROW_RE = re.compile(r"^\s*[①-⑳].*\s{2}[①-⑳]")   # 묶은 원문 줄(항목 둘 이상)
+
+
+def _choice_combine_on() -> bool:
+    from app.ai.braille.constants import CHOICES_ONE_PER_LINE
+    return not CHOICES_ONE_PER_LINE.get() and os.environ.get("CHOICE_COMBINE", "1") != "0"
+
+
+def _choice_rows(widths: list[int], indent: int) -> Optional[tuple[int, ...]]:
+    """항목 셀 길이 → 줄마다 항목 수. 어느 꼴도 32칸에 안 들어가면 None(한 줄에 하나)."""
+    for rows in _CHOICE_ROWS.get(len(widths), ()):
+        at = 0
+        for n in rows:
+            if indent + sum(widths[at:at + n]) + len(_CHOICE_SEP) * (n - 1) > _COLS:
+                break
+            at += n
+        else:
+            return rows
+    return None
+
+
+def _combine_choice_lines(bo: BrailleOutput, etype: str, indent: int) -> None:
+    """줄마다 하나인 짧은 선택지(①~⑤ · ①~④)를 3-2 · 2-2-1 · 2-2 로 묶는다(in-place, 멱등).
+
+    점자 줄 · 원문 줄 · 음절 끊을 자리 · rule_trail 좌표를 같이 옮긴다. 묶인 원문 줄은 두 칸으로 잇는다 —
+    `_mark_item_lines` 가 원문 줄머리(①·④)로 줄마다 들여쓰기를 준다. 다시 불러도 번호가 안 이어져 그대로다.
+    """
+    if (etype not in ("list_item", "text") or not indent or bo.drafts
+            or bo.line_indents is not None or not _choice_combine_on()):
+        return
+    lines = list(bo.braille_lines)
+    src = (bo.corrected_text or "").split("\n")
+    if len(src) != len(lines):
+        return
+    nums = []
+    for s in src:
+        m = _CHOICE_SRC_RE.match(_TAG_RE.sub("", s))
+        nums.append(ord(m.group(1)) - 0x2460 + 1 if m else 0)
+    groups: list[tuple[int, tuple[int, ...]]] = []
+    i = 0
+    while i < len(lines):
+        if nums[i] != 1:
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and nums[j] == j - i + 1:
+            j += 1
+        if j - i in _CHOICE_ROWS and (j == len(lines) or not nums[j]) and all(
+                _CHOICE_BR_RE.match(lines[k]) for k in range(i, j)):
+            rows = _choice_rows([len(lines[k].rstrip("⠀")) for k in range(i, j)], indent)
+            if rows:
+                groups.append((i, rows))
+        i = max(j, i + 1)
+    if not groups:
+        return
+    bps = list(bo.break_points) if len(bo.break_points) == len(lines) else None
+    trail = [r.model_copy() for r in bo.rule_trail]
+    for i, rows in reversed(groups):            # 아래 묶음부터 — 위 줄 번호가 안 밀린다
+        new_lines, new_src, new_bps, where = [], [], [], {}
+        k = i
+        for n in rows:
+            parts, off, row_bps = [], 0, []
+            for m in range(k, k + n):
+                t = lines[m].rstrip("⠀")
+                where[m] = (len(new_lines), off)
+                if bps is not None:
+                    row_bps += [off + b for b in bps[m] if b <= len(t)]
+                parts.append(t)
+                off += len(t) + len(_CHOICE_SEP)
+            new_lines.append(_CHOICE_SEP.join(parts))
+            new_src.append("  ".join(src[m].strip() for m in range(k, k + n)))
+            new_bps.append(row_bps)
+            k += n
+        end, gone = k, k - i - len(rows)
+        lines[i:end], src[i:end] = new_lines, new_src
+        if bps is not None:
+            bps[i:end] = new_bps
+        for r in trail:
+            if r.line_no in where:
+                row, off = where[r.line_no]
+                r.line_no, r.col_start, r.col_end = i + row, r.col_start + off, r.col_end + off
+            elif r.line_no >= end:
+                r.line_no -= gone
+    bo.braille_lines, bo.corrected_text, bo.rule_trail = lines, "\n".join(src), trail
+    if bps is not None:
+        bo.break_points = bps
+
+
 _HEADING_DEEP_INDENT = 4  # NLD 2장2절1 3·4단계 제목 "5칸에서 시작" = 앞 빈칸 4
 # ★ MinerU가 제목으로 표시했지만 **단원명이 아닌** 항목 머리 — 문항 번호와 괄호 번호다.
 #   지침 2.4.2는 단원명에만 적용된다. 이것들은 문단이므로 "3칸에서 시작" = 앞 빈칸 2다.
@@ -699,6 +799,7 @@ class LayoutBraille:
             self._apply_bullet_marker(bo)
         is_heading = hlevel >= 1
         first_indent = self._first_indent(bo, etype, is_heading, hlevel)
+        _combine_choice_lines(bo, etype, first_indent)   # 멱등 — flatten 이 먼저 묶고 layout 은 그대로 지나간다
         self._mark_item_lines(bo, etype, first_indent)
         # 32칸 테두리 줄(글상자 NLD-1.2.5·표 격자)은 layout이 폭을 소유하므로 들이지 않는다
         # — 들이면 35칸이 되어 _break_line이 테두리를 쪼갠다. 그렇다고 요소 전체의 들여쓰기를
@@ -983,6 +1084,7 @@ class LayoutBraille:
         is_heading = hlevel >= 1
         first_indent = self._first_indent(bo, etype, is_heading, hlevel)
         if not draft:
+            _combine_choice_lines(bo, etype, first_indent)
             self._mark_item_lines(bo, etype, first_indent)
         lines = list(lines if draft else bo.braille_lines)
         # 32칸 테두리 줄은 들이면 폭을 넘어 깨진다. 그렇다고 요소 전체의 들여쓰기를 버리면
@@ -1396,6 +1498,9 @@ def _fold_full_lines(lines: list[str], pads: list[int],
         width = (pads[i] if i < len(pads) else 0) + len(lines[i])
         # ★ 항목 머리 줄은 접지 않는다 — NLD 3장3절2 4)(3) "선택지는 한 줄에 하나".
         if src is not None and _is_item_head(src[i + 1].strip()):
+            continue
+        # 묶은 선택지 줄(`_combine_choice_lines`) 뒤도 접지 않는다 — 항목이 다 든 줄이라 다음 줄은 이어지는 글이 아니다.
+        if src is not None and _CHOICE_ROW_RE.match(src[i]):
             continue
         # ★ 테두리 줄은 접지 않는다. 위 `_FOLDABLE_TYPES` 주석이 "글상자는 32칸 줄이
         #   조판 결과가 아니라 구조"라고 적어 뒀는데, 글상자는 **유형이 아니라 줄**이다 —

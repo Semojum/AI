@@ -2189,6 +2189,7 @@ def _split_inline_choices(text: str) -> str:
 #   ※ 괄호 유무(`〈보기〉` vs `보기`)는 **책마다 갈린다** — 우리는 원문 그대로 둔다(원장 C-28 성격).
 from app.ai.braille.constants import BOX_TITLE_PROMOTABLE as _BOX_TITLE_PROMOTABLE  # noqa: E402 (정답 상자와 공유)
 from app.ai.braille.constants import ENGLISH_GRADE1 as _ENGLISH_GRADE1, KOREAN_GRADE1 as _KOREAN_GRADE1  # noqa: E402
+from app.ai.braille.constants import CHOICES_ONE_PER_LINE as _CHOICES_ONE_PER_LINE  # noqa: E402
 _BOX_BLOCK_RE = re.compile(
     r"(<!상자(\d?)>)(.*?)(<!/상자\2>)(.*?)(?=<!상자끝)", re.S)
 
@@ -3614,6 +3615,7 @@ async def run(task: PageTask) -> dict:
     #   쪽을 이어 돌리는 러너가 앞 쪽 값을 물려받지 않게. `run_braille` · `to_thread` 가 문맥을 복사해 점역 풀까지 간다.
     _KOREAN_GRADE1.set(bool(task.korean_grade1))
     _ENGLISH_GRADE1.set(bool(task.english_grade1))
+    _CHOICES_ONE_PER_LINE.set(bool(task.choices_one_per_line))   # 조판(flatten · layout)도 `run_braille` 로 같은 문맥에서 돈다
     # 판 지문(0-c) — 점역사 피드백이 며칠 뒤에 올 때 어느 커밋·어느 프롬프트였는지 되짚는 줄.
     # ★ health_check 는 model_manager 를 거쳐 torch 를 끌고 온다. 모듈 최상단에서 부르면
     #   pipeline import 그래프가 바뀌고, torch 없는 빠른 게이트 레인이 통째로 깨진다.

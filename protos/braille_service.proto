@@ -27,6 +27,7 @@ message BrailleRequest {
   bool   korean_grade1  = 9;   // 한글 정자(1급). false = 약자(2급)
   bool   english_grade1 = 10;  // 영어 정자(1급) · 로마자표와 종료표를 생략하지 않음. false = UEB 약자
   string item_code_form = 11;  // EBS 문항코드 자리(원장 C-107): "X" 번호 뒤 · "Y" 윗줄 · "off" 안 옮김. 빈 값 = 서버 기본 X
+  bool   choices_one_per_line = 12;  // 선택지를 한 줄에 하나씩(원장 C-166). false = 짧은 선택지를 3-2 · 2-2-1 로 합침
 }
 
 message TranslateTextRequest {
