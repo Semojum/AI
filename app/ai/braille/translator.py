@@ -3542,6 +3542,19 @@ def _no_cut_interior(src: str) -> list[bool]:
 _NO_BREAK_BEFORE = frozenset(".,?!:;…·)]}」』’”〉》")
 _CLOSERS = ")]}」』’”〉》"
 _HANGUL_OR_JAMO_RE = re.compile(r"[가-힣ㄱ-ㆎ]$")
+# 문장 부호(마침표 · 쉼표 · 쌍점 · 쌍반점 · 물음표 · 느낌표, 전각 포함)는 앞 글자가 무엇이든 그 앞에서 끊지 않는다(#1240).
+#   근거: 「한국 점자 규정」 제49항(재추출 2114~2115행) 문장 부호 띄어쓰기는 「한글 맞춤법」 문장 부호 규정(앞말에 붙여
+#   씀)을 따른다 · 제51항(2346행) 쌍점의 앞은 붙여 쓴다. 줄표 · 빗금 · 물결표는 줄 첫머리에 올 수 있어(제55항 2422행) 뺀다.
+#   위 막이는 한글 뒤만 봐서 음절 접기 실측(옛 동결 1,131쪽)에서 부호가 줄머리로 간 자리 14곳 중 10곳을 비켜 갔다:
+#   전각 쌍점 `수용‖：` 3 · 한글 아닌 글자 뒤 쉼표 `□□‖,` 2 · `Cl—‖,` · `BOD‖,` · `콤플렉스*‖,` · 닫는 태그 뒤 마침표
+#   `있다‖<!/드러냄>.` 1(태그를 걷고 다음 글자를 본다) · 한글 뒤 붙임표 1(`다‖-`, 이 막이 밖). 나머지 4곳은 여는 괄호 「 · [ 앞
+#   (부호가 다음 줄 머리로 가는 것이 맞다)과 깨진 글자다. 닫는 괄호 · 따옴표는 종전대로 한글 뒤만 본다(수식 줄 강제분리).
+_NO_BREAK_BEFORE_ANY = frozenset(".,?!:;，．？！：；")
+
+
+def _punct_any_on() -> bool:
+    """`BREAK_PUNCT_ANY=0` 이면 종전(한글 뒤만). 호출 때 읽는다 — A/B 팔을 같은 커밋에서 가른다."""
+    return os.environ.get("BREAK_PUNCT_ANY", "1") != "0"
 
 
 def _break_offsets(src: str, braille: str) -> list[int]:
@@ -3567,8 +3580,12 @@ def _break_offsets(src: str, braille: str) -> list[int]:
         # 앞 글자는 태그를 걷고 본다 — `<!드러냄>지도자<!/드러냄>의` 의 `자`.
         prev = _TAG_RE.sub("", src[:sp])[-1:]
         after_hangul = "가" <= prev <= "힣"
-        if src[sp] in _NO_BREAK_BEFORE and _HANGUL_OR_JAMO_RE.search(
-                _TAG_RE.sub("", src[:sp]).rstrip(_CLOSERS)):
+        head, nxt = _TAG_RE.sub("", src[:sp]), src[sp]
+        if _punct_any_on():
+            nxt = _TAG_RE.sub("", src[sp:])[:1]          # 태그를 걷고 다음 글자를 본다(`있다<!/드러냄>.`)
+            if nxt in _NO_BREAK_BEFORE_ANY and head[-1:].strip():
+                continue
+        if nxt in _NO_BREAK_BEFORE and _HANGUL_OR_JAMO_RE.search(head.rstrip(_CLOSERS)):
             continue
         pre = translate_tagged_text(src[:sp])
         if not (pre and len(pre) < len(braille) and braille.startswith(pre)):
