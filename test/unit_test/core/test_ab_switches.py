@@ -19,6 +19,12 @@ from app.utils import llm_cache  # noqa: E402
 from app.utils.req_log import llm_counter_line, start_request  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _measure_reuse(monkeypatch):
+    """이 시험들은 측정 러너의 재사용 동작을 본다. 제품 기본은 재사용을 끈다(#1212)."""
+    monkeypatch.setenv("SEMOJUM_MEASURE_REUSE", "1")
+
+
 @pytest.fixture
 def cap_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("CAPTION_CACHE_DIR", str(tmp_path))

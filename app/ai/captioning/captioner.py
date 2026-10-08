@@ -1408,7 +1408,10 @@ def _cache_new_file(kind: str, raw: bytes, prompt_id: str, context: str = "") ->
     ★ kind 를 **디렉터리로** 가른다. 캡션과 분류 라벨이 한 자리에 섞여 있으면 옮기거나
       쓸어 담을 때 라벨이 캡션 자리로 들어가 `그림: chart` 가 나온다(실제로 관찰됐다).
     """
+    from app.core.config import measure_reuse
     from app.utils import llm_cache
+    if not measure_reuse():         # 제품은 캡션 · 분류 · 세분류를 늘 다시 묻는다(#1212). 측정 러너만 재사용
+        return None
     if not llm_cache.scope():       # 격리 열쇠가 없으면 안 쓴다(3-e, fail closed)
         return None
     if llm_cache.mode() == "off":   # T39 S1 — `LLM_CACHE_MODE=off` 면 읽지도 쓰지도 않는다

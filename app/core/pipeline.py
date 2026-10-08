@@ -429,6 +429,9 @@ def _boundary_reuse(reuse_reason: str | None) -> str | None:
       다시 떠야 차이가 보인다. 지문에 안 잡히는 변경도 이 팔에서는 다시 돈다.
     프로세스 env 로만 읽는다(`.env` 아님 — `.env` 는 빈 값에도 진다).
     """
+    from app.core.config import measure_reuse
+    if not measure_reuse():                 # 제품은 같은 job 쪽도 늘 다시 뜬다(#1212, config.measure_reuse)
+        return "reconvert"
     mode = os.environ.get("BOUNDARY_REUSE", "")
     if mode == "never":
         return "never"
@@ -1127,7 +1130,7 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
 async def _fallback_text_layer(task: PageTask, doc_meta: DocumentMeta) -> tuple[list[dict], int, int]:
     """MinerU 실패/타임아웃 폴백: 텍스트레이어가 있으면 PyMuPDF로 본문만 추출.
 
-    C9(무거운 페이지)의 페이지 전체 BLOCKED 대신 부분 초안을 살린다. 표·그림
+    무거운 페이지의 페이지 전체 BLOCKED 대신 부분 초안을 살린다(오류 코드는 C1~C7 뿐이고 이 폴백은 R1). 표·그림
     구조는 잃으므로 각 요소에 C2_FALLBACK 플래그 → QualityChecker가 R1로 승격
     → 페이지 NEEDS_REVIEW(점역사 확인). 스캔 전용(텍스트레이어 없음)은 빈 결과."""
     if doc_meta.scan_only:

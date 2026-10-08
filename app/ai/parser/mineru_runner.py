@@ -305,7 +305,7 @@ def _run_mineru(pdf_path: Path, out_dir: Path, page_idx: int, timeout: float | N
     # 서버 엔진으로 오독한다(2026-09-08 동시성 오판이 정확히 그 오독이었다).
     _announce_engine(mineru_bin)
     try:
-        # timeout: 페이지 예산(C7)을 MinerU가 다 태우기 전에 서브프로세스를 끊는다(C9).
+        # timeout: 페이지 예산(C7)을 MinerU가 다 태우기 전에 서브프로세스를 끊는다(무거운 쪽 폴백, C2_FALLBACK → R1).
         # 초과 시 subprocess가 프로세스를 kill하므로 고아 프로세스가 남지 않는다.
         result = subprocess.run(cmd, capture_output=False, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
@@ -2046,8 +2046,10 @@ def _raw_dir(base: Path, mineru_cache_dir: str | None) -> tuple[Path, bool]:
       MinerU 가 안 돈다. 주어진 캐시 폴더(`mineru_cache_dir`)는 건드리지 않고 이 쪽 폴더를 비워 새로 받는다.
       프로세스 env 로만 읽는다.
     """
+    from app.core.config import measure_reuse
     raw_dir = Path(mineru_cache_dir) if mineru_cache_dir else base / "mineru_raw"
-    if os.environ.get("MINERU_RAW_REUSE", "") == "never":
+    # 제품은 같은 job 쪽도 MinerU 를 늘 다시 부른다(#1212). 측정 러너만 `SEMOJUM_MEASURE_REUSE=1` 로 재사용한다.
+    if os.environ.get("MINERU_RAW_REUSE", "") == "never" or not measure_reuse():
         raw_dir = base / "mineru_raw"
         shutil.rmtree(raw_dir, ignore_errors=True)
     return raw_dir, bool(list(raw_dir.rglob("*_content_list.json")))

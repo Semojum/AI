@@ -31,6 +31,7 @@ from pathlib import Path
 # 운영에서는 C7 BLOCKED 가 나는 쪽을 만들어, 코퍼스에서 초록인데 서버에서 빨간 쪽이
 # 지표에 안 잡혔다. 늘려야 할 사정이 있으면 env `PAGE_TIMEOUT_SECONDS` 로 그때만 올린다.
 os.environ.setdefault("PAGE_TIMEOUT_SECONDS", "180")
+os.environ.setdefault("SEMOJUM_MEASURE_REUSE", "1")     # 측정 러너 — 경계 · MinerU 원출력 · 캡션 캐시 재사용(#1212)
 
 # 캡션 캐시는 **운영 기본 켬**이다(2026-08-23 대표 결재). 키가 이미지 해시 + 백엔드 +
 # 모델 + 프롬프트라 하나라도 바뀌면 자동 무효고, 같은 모델·같은 프롬프트로 뽑은 결과를
