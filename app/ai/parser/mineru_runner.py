@@ -832,6 +832,44 @@ def _piece_windows(cell: str, pieces: list[str], table_ns: str) -> list[tuple[in
     return sorted(picked)
 
 
+# ── 표 칸 ㉠ → 민 숫자 되돌리기 (#1210) ─────────────────────────────────────
+# MinerU 는 표를 그림으로 보고 읽어 칸의 동그라미 한글을 민 숫자로 낸다(생명과학 p0027 `7의 농도 변화` ↔ 층
+# `㉠의 농도 변화`). 숫자는 차례 번호처럼 붙어 ㉠ 이 7 · 1 · 8 로 갈리고, 과학 표에서는 `7mL` 처럼 수로 읽혀 뜻이 바뀐다.
+# #1075 `_restore_table_circled` 는 `\textcircled{}` · 동그라미 숫자만 짝짓고 민 숫자는 못 본다(숫자는 어디에나 있다).
+# 칸 ↔ 층 창을 맞춘 뒤 칸의 숫자 한 글자가 층의 동그라미 한글 한 글자와 같은 자리에 서면 되돌린다.
+# ★ 글자는 창이 아니라 문맥으로 정한다. 앞뒤 글자(최대 _CIRC_CTX 자씩, 합쳐 2자 이상)를 붙였을 때 층에 들어맞는
+#   동그라미 한글이 생기는 가장 긴 문맥에서 그 글자가 딱 하나일 때만 그 글자로. 창은 나란한 칸(생명과학 p0041
+#   `㉠(3)` · `㉡(2)` · `㉢(1)`)에서 옆 칸 글자에 맞춰지기 쉽다. 면역 p0100 `㉠이 있는 사람` · `㉡이 있는 사람`
+#   처럼 문맥이 같으면 둘 다 맞으니 그대로 둔다.
+# 층에 동그라미 한글이 있는 표는 대조 닮음도 숫자와 동그라미 한글을 같은 글자로 본다(`7mL` 같은 짧은 칸이 대조에서
+# 떨어져 표째 막히지 않게). 끄기 `TABLE_CELL_CIRCLED_DIGIT=0`.
+_CIRCLED_HANGUL = "".join(chr(c) for c in range(0x3260, 0x3280))
+_CIRCLED_HANGUL_RE = re.compile(f"[{_CIRCLED_HANGUL}]")
+_CIRC_CTX = 6
+
+
+def _circled_digit_restores(seg: str, win: str, layer_ns: str) -> list[tuple[int, int, str]]:
+    """(칸 글 안 자리, 1, 동그라미 한글). 칸 숫자 한 글자 ↔ 창 동그라미 한글 한 글자이고, 글자가 문맥으로 하나로 정해질 때만."""
+    out: list[tuple[int, int, str]] = []
+    for tag, i1, i2, j1, j2 in SequenceMatcher(None, seg, win, autojunk=False).get_opcodes():
+        if tag != "replace" or i2 - i1 != 1 or j2 - j1 != 1:
+            continue
+        digit, circ = seg[i1], win[j1]
+        if not ("0" <= digit <= "9" and _CIRCLED_HANGUL_RE.match(circ)):
+            continue
+        for n in range(_CIRC_CTX, 1, -1):                 # 긴 문맥부터, 층에 들어맞는 글자가 생기는 가장 긴 문맥
+            before, after = seg[max(0, i1 - n):i1], seg[i2:i2 + n]
+            if len(before) + len(after) < 2:
+                fits = []
+                break
+            fits = [ch for ch in _CIRCLED_HANGUL if before + ch + after in layer_ns]
+            if fits:
+                break
+        if len(fits) == 1:                              # 창의 글자가 아니라 문맥으로 정해진 글자
+            out.append((i1, 1, fits[0]))
+    return out
+
+
 # ── 괘선 없는 '표'는 표가 아니다 (QA 9번, 2026-08-08) ────────────────────────
 # MinerU의 표 모델은 **글이 격자처럼 늘어선 쪽**을 통째로 표로 싼다. 대표 QA 실측:
 # 2026학년도 수능 수학 문제지 2쪽이 각각 쪽 본문 전체(폭 80%·높이 75%)가 <table> 한
@@ -1120,6 +1158,9 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     layer_ns = re.sub(r"\s+", "", re.sub(r"<!/?[^>]*>", "", layer))
     if not layer_ns:
         return html
+    # 층에 동그라미 한글이 있으면 대조에서 숫자 ↔ 동그라미 한글을 같은 글자로 본다(#1210, 위 절)
+    circ = os.environ.get("TABLE_CELL_CIRCLED_DIGIT", "1") != "0" and bool(_CIRCLED_HANGUL_RE.search(layer_ns))
+    cmp_layer = re.sub(f"[0-9{_CIRCLED_HANGUL}]", "\x01", layer_ns) if circ else layer_ns
 
     cells: list[tuple[int, str, list[int], float, int]] = []    # (칸 글 시작, 대조본, 원문 인덱스, 닮음, 창 자리)
     for m in _CELL_RE.finditer(html):
@@ -1143,7 +1184,7 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
         cell = "".join(ns_chars)
         if not cell:
             continue                            # 빈 셀은 대조 대상이 아니다
-        sim, pos = _best_layer_window(cell, layer_ns)
+        sim, pos = _best_layer_window(re.sub(r"[0-9]", "\x01", cell) if circ else cell, cmp_layer)
         if sim < _CELL_SIM_MIN and (len(cell) < _PIECE_CELL_MIN or os.environ.get("TABLE_CELL_PIECES", "1") == "0"):
             return html                         # 한 셀이라도 실패 → 이 표는 포기
         cells.append((m.start(2), cell, ns_idx, sim, pos))
@@ -1156,7 +1197,7 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
         table_ns = "\x00".join(c[1] for c in cells)
     edits: list[tuple[int, int, str]] = []
     for base, cell, ns_idx, sim, pos in cells:
-        if sim >= 1.0:
+        if sim >= 1.0 and layer_ns[pos:pos + len(cell)] == cell:
             continue
         if rescued and len(cell) >= _PIECE_CELL_MIN:
             found = _piece_windows(cell, pieces, table_ns)
@@ -1168,7 +1209,8 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
         else:
             wins = [(0, cell, layer_ns[pos:pos + len(cell)])]
         for start, seg, win in wins:           # seg = 창에 댄 칸 글(조각이면 칸 일부)
-            for off, ln, repl in _hangul_substitutions(seg, win):
+            subs = _hangul_substitutions(seg, win) + (_circled_digit_restores(seg, win, layer_ns) if circ else [])
+            for off, ln, repl in subs:
                 if rescued and (off == 0 or off + ln == len(seg)):
                     continue
                 src = ns_idx[start + off:start + off + ln]
@@ -1182,6 +1224,8 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     out = html
     for pos, ln, repl in sorted(edits, reverse=True):
         out = out[:pos] + repl + out[pos + ln:]
+    if any(_CIRCLED_HANGUL_RE.match(repl) for _pos, _ln, repl in edits):    # `$7(3)$` → `$㉠(3)$` 는 글로 푼다(#1075 와 같이)
+        out = _CELL_RE.sub(lambda m: m.group(1) + _unwrap_circled_math(m.group(2)) + m.group(3), out)
     return out
 
 
