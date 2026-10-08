@@ -3161,6 +3161,18 @@ def _selected_lines(bo, flat: dict) -> list[str]:
     return [fe.text] if fe else []
 
 
+def _selected_breaks(bo, flat: dict) -> list[int]:
+    """`contents[0]` 안에서 줄을 바꿔도 되는 자리(#1240, `layout_braille._flat_breaks`). 모르면 빈 목록."""
+    fe = flat.get(bo.element_id) if bo else None
+    return list(fe.breaks) if fe else []
+
+
+def _draft_breaks(bo, di: int, flat: dict) -> list[int]:
+    """초안 `contents[0]` 의 끊을 자리. `_draft_contents` 가 flat 초안을 못 쓰는 자리(옛 꼴로 이어 붙임)는 모른다."""
+    fe = flat.get(bo.element_id) if bo else None
+    return list(fe.draft_breaks[di]) if fe and di < len(fe.draft_breaks) else []
+
+
 # 초안 묵자에서 내부 태그를 벗긴다 (2026-08-06).
 # `<!주>…<!/주>` 는 점역기가 마커 점형으로 바꾸는 **기계 표식**이지 사람이
 # 읽을 글자가 아니다. FE는 이 값을 점자와 나란히 보여 주므로(와이어프레임) 태그가 그대로
@@ -3459,6 +3471,7 @@ def _build_response(
                 "contents": _selected_lines(
                     braille_by_id.get(o.element_id), flat
                 ),
+                "breaks": _selected_breaks(braille_by_id.get(o.element_id), flat),
                 # 좌표계가 통 문자열이라 flat의 것을 쓴다(layout이 재매핑한 조판 좌표 아님).
                 "rule_trail": [
                     r.model_dump()
@@ -3484,6 +3497,7 @@ def _build_response(
                         "contents": _draft_contents(
                             braille_by_id.get(o.element_id), d, di, flat
                         ),
+                        "breaks": _draft_breaks(braille_by_id.get(o.element_id), di, flat),
                     }
                     for di, d in enumerate(
                         braille_by_id[o.element_id].drafts

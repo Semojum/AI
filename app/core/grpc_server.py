@@ -77,6 +77,7 @@ def _dict_to_text_element(d: dict):
     elem.round_trip = d.get("round_trip", 0.0)
     for c in d.get("contents", []):
         elem.contents.append(c)
+    elem.breaks.extend(d.get("breaks", []))      # 줄을 바꿔도 되는 자리(#1240) — contents[0] 오프셋
     for rt in d.get("rule_trail", []):
         trail = elem.rule_trail.add()
         trail.rule_id = rt.get("rule_id", "")
@@ -114,6 +115,7 @@ def _dict_to_text_element(d: dict):
         draft.tn_text = dr.get("tn_text", "")
         for c in dr.get("contents", []):
             draft.contents.append(c)
+        draft.breaks.extend(dr.get("breaks", []))
     return elem
 
 

@@ -133,6 +133,7 @@ message Draft {                     // 시각 6안(기본 selected_idx=2 개조�
   // 점역사가 '만화'에서 '참조'로 바꿔도 화면 위칸이 만화 대사 그대로였다(대표 지적).
   // FE 는 고른 안의 이 값을 위칸에 그린다. `TextElement.tn_text` 는 그대로 두어 호환된다.
   string          tn_text  = 4;
+  repeated int32  breaks   = 5;     // 그 초안 contents[0] 기준. 뜻은 TextElement.breaks 와 같다(#1240)
 }
 
 message TextElement {
@@ -155,6 +156,10 @@ message TextElement {
   // 아래 둘은 BE·FE 가 안 읽어도 된다 — 쪽 단위 요약을 우리 요청 로그로 본다(#788).
   string             review_grade    = 17;   // 검수 등급 "high"|"medium"|"low"(소문자). 점자 요소만, 원문은 ""
   float              round_trip      = 18;   // 역점역 왕복 일치도 0~1. 못 재면 0
+  // 줄을 바꿔도 되는 자리(#1240). contents[0] 안의 UTF-16 인덱스, 그 셀 앞에서 끊어도 된다. 오름차순.
+  // 음절 경계 · 빈칸 · 꽉 찬 줄 이음 자리. 접는 쪽(braille-assist wrap)이 줄바꿈 '음절' 로 접을 때 쓴다.
+  // 빈 목록 = 모름(옛 응답 · 점역사가 점자를 직접 고친 요소). 그때는 '어절' 로 접는다.
+  repeated int32     breaks          = 19;
 }
 
 // ── 사용량 ──────────────────────────────────────────────────────

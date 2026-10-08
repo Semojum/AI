@@ -1442,6 +1442,8 @@ class FlatElement(NamedTuple):
     prefix/suffix — 초안(drafts)도 같은 구조적 빈 줄을 달아야 해서 따로 들고 있는다.
     draft_texts — 초안별 통 문자열. 들여쓰기·가운데 정렬까지 본문과 같은 규칙으로 넣는다
       (proto 불변식 `contents == drafts[selected_idx].contents`).
+    breaks · draft_breaks — `text` · 초안 통 문자열 안에서 줄을 바꿔도 되는 자리(`_flat_breaks`, #1240).
+      응답 `TextElement.breaks` · `Draft.breaks`.
     """
 
     text: str
@@ -1449,6 +1451,8 @@ class FlatElement(NamedTuple):
     prefix: str
     suffix: str
     draft_texts: tuple[str, ...] = ()
+    breaks: tuple[int, ...] = ()
+    draft_breaks: tuple[tuple[int, ...], ...] = ()
 
 
 # 통 문자열에서 접을 줄의 폭 임계. 이만큼 찬 줄 뒤 개행은 **칸수에 밀린 것**이라
@@ -1564,6 +1568,36 @@ def _flat_trail(
     return out
 
 
+def _flat_breaks(
+    lines: list[str], pads: list[int], line_breaks: list[list[int]], base: int,
+    seps: Optional[list[str]] = None,
+) -> tuple[int, ...]:
+    """줄별 끊을 자리(`break_points`: 음절 경계 · 빈칸) → 통 문자열 오프셋. 그 셀 앞에서 끊어도 된다(#1240).
+
+    접는 쪽(braille-assist `wrap` · 앱 사이드카)이 줄바꿈 '음절' 로 접을 때 쓴다. 좌표 셈은 `_flat_trail` 과 같다
+    (줄 사이 구분자를 실제 길이로 센다 — `_fold_full_lines` 의 구분자는 개행 · 빈칸 · 빈 문자열이다).
+    · 자리 목록이 없는 줄(격자 표 · 도표는 `break_points` 를 안 채운다)은 빈칸 무리의 첫 자리를 쓴다. 접는 쪽이 목록
+      없는 줄에서 하는 것과 같다. 그래서 빈칸이 하나라도 있는 요소는 목록이 비지 않고, 빈 목록은 '모름' 으로만 남는다.
+    · 줄머리 빈칸(들여쓰기 · 표 줄에 박힌 칸) 안에서는 안 끊는다.
+    · 꽉 찬 줄을 빈칸으로 이은 자리는 그 빈칸 앞에서 끊을 수 있다.
+    """
+    out: list[int] = []
+    acc = base
+    for i, ln in enumerate(lines):
+        pad = pads[i] if i < len(pads) else 0
+        bps = line_breaks[i] if i < len(line_breaks) else []
+        if not bps:
+            bps = [j for j, c in enumerate(ln) if c == _PAD and j and ln[j - 1] != _PAD]
+        lead = len(ln) - len(ln.lstrip(_PAD))
+        out += [acc + pad + b for b in bps if lead < b < len(ln)]
+        acc += pad + len(ln)
+        sep = seps[i] if seps and i < len(seps) else "\n"
+        if i < len(lines) - 1 and sep == _PAD:
+            out.append(acc)
+        acc += len(sep)
+    return tuple(sorted(set(out)))
+
+
 def flatten_elements(
     braille_outputs: list[BrailleOutput],
     layout_result: Optional["LayoutResult"] = None,
@@ -1633,15 +1667,18 @@ def flatten_elements(
         prefix = "\n" * before
         suffix = "\n" * (after + 1)           # +1 = 본문 마지막 줄 끝내기
         text_body = _pad_join(lines, pads, seps)
-        drafts = []
+        drafts, d_breaks = [], []
         for d in getattr(bo, "drafts", []) or []:
             d_lines, d_pads = lb._indent_lines(bo, etype, hlevel, list(d.braille_lines))
             drafts.append(prefix + _pad_join(d_lines, d_pads) + suffix)
+            d_breaks.append(_flat_breaks(d_lines, d_pads, getattr(d, "break_points", None) or [], len(prefix)))
         out[bo.element_id] = FlatElement(
             text=prefix + text_body + suffix,
             trail=_flat_trail(bo.rule_trail, lines, len(prefix), len(text_body), pads, seps),
             prefix=prefix,
             suffix=suffix,
             draft_texts=tuple(drafts),
+            breaks=_flat_breaks(lines, pads, bo.break_points, len(prefix), seps),
+            draft_breaks=tuple(d_breaks),
         )
     return out
