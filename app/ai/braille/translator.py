@@ -1054,6 +1054,18 @@ def _is_hangul_syl(ch: str) -> bool:
     return "가" <= ch <= "힣"
 
 
+# 제63항 긴소리표(ː)는 앞뒤를 붙여 쓴다. 묵자 층에는 `[야\u2009ː행썽]` · `눈ː\u2009〔雪〕` 처럼 가는 띄움이 끼어 있어
+# 그대로 옮기면 빈칸 셀이 생긴다(gold 는 붙여 씀, #1222). 줄바꿈은 건드리지 않는다.
+_LENGTH_MARK_GAP_RE = re.compile(r"[^\S\n]*ː[^\S\n]*")
+
+
+def _attach_length_mark(text: str) -> str:
+    """제63항 — 긴소리표 앞뒤 띄움을 걷는다. 끄기 `LAYER_LENGTH_MARK=0`(#1222 관문 고침과 한 묶음)."""
+    if "ː" not in text or os.environ.get("LAYER_LENGTH_MARK", "1") == "0":
+        return text
+    return _LENGTH_MARK_GAP_RE.sub("ː", text)
+
+
 def _space_hangul_operators(text: str) -> str:
     """제46항 — 한글 사이 연산·비교 기호 앞뒤를 한 칸씩 띄우고, 식 속 `-` 는 뺄셈 `−` 로."""
     if not _ART46_OP_RE.search(text):
@@ -3412,6 +3424,7 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     #   여기서 점형으로 바꿔 두면 수식 구간 판정에 안 걸린다(`_AMP_RE` 와 같은 수법).
     text = _OX_MARK_RE.sub(_ox_mark_repl, text)
     text = _space_hangul_operators(text)  # 제46항 — 수식 라우팅보다 먼저(#938)
+    text = _attach_length_mark(text)      # 제63항 — 긴소리표 앞뒤 붙임(#1222)
     text = inline_math.wrap(text)
     if _BOOK_STYLE and not force_roman:
         # ★ 꼬리말(force_roman)에서는 이 관행을 끈다. 섹션번호 낱자형의 근거는 **본문** 실측

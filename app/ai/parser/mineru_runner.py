@@ -1646,6 +1646,18 @@ def _halluc_keeps_real(mineru_text: str, native: str, layer: str) -> bool:
     return sum(len(w) for w in real if w not in nat) <= 0.2 * sum(len(w) for w in real)
 
 
+def _length_mark_mixed(plain: str) -> bool:
+    """긴소리표 ː 가 든 블록에 다른 깨진 글자(제어 문자 · PUA)가 같이 있나 — 띄움 바꾸기 · 글꼴 되돌리기 **전** 글로 본다.
+
+    관문은 ː 를 깨진 글자로 세지 않는다(#1222, `pdf_analyzer._LENGTH_MARK`). 그런데 제어 문자는 관문 앞에서
+    띄움으로 바뀌고(`_CTRL_TO_SPACE`) PUA 는 되돌리기로 살아나, 그런 블록도 ː 하나만 남아 같이 열린다.
+    언매 14쪽 A/B 에서 그 4블록이 두 칸 띄움(`→   ‘자료` · `2)   비분절` · `종성의  ㉡  이후`)으로 gold 와 같던 줄을
+    잃은 자리 전부였다. ː 만 든 블록만 연다(pm 10-08 범위). 끄기는 관문 쪽과 같은 `LAYER_LENGTH_MARK=0`.
+    """
+    from app.ai.preprocessor.pdf_analyzer import mangled_glyph_chars
+    return bool(mangled_glyph_chars(plain)[0])         # 켬이면 ː 는 이미 빠져 있다 · 남은 것은 다른 깨진 글자
+
+
 def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str,
                      halluc_layer: str | None = None) -> str | None:
     """텍스트 레이어로 대체할 값. 못 믿으면 None(= MinerU 결과 유지).
@@ -1656,6 +1668,8 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str,
     if _MATH_FONT_GUARD and (mineru_text or "").strip() and _has_math_font(fitz_page, bbox):
         return None                        # 위 _has_math_font 주석 참조. MinerU 글이 비면 층이라도 쓴다
     plain, native = _native_text_pair(fitz_page, bbox)        # 믿을지 · 닮았는지는 되돌리기 전 글로(#1060)
+    if "ː" in plain and _length_mark_mixed(plain):
+        return None                        # 위 _length_mark_mixed 주석
     plain, native = plain.translate(_CTRL_TO_SPACE), native.translate(_CTRL_TO_SPACE)   # 위 _CTRL_TO_SPACE 주석
     if not native or (_layer_untrustworthy(plain, fitz_page)
                       and not _rescued_by_restore(fitz_page, bbox, plain, native, mineru_text)):

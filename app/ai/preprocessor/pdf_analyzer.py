@@ -1640,6 +1640,13 @@ def _page_has_visual(page) -> bool:
     return _has_vector_figure(page)     # 벡터 지도·도표·그래프
 
 
+# 긴소리표 ː(U+02D0, 규정 제63항)는 위 A 의 수식 수정 문자 범위에 들지만 깨진 글자가 아니다. 언어와 매체 발음 표기
+# (`[마ː나]` · `[감ː따]`)에 실제로 나온다(묵자 14권 중 언매 14쪽 34자리, 다른 책 0). 이 글자 하나로 층을 버리면
+# 블록이 MinerU 글로 남아 `[마:나]`(쌍점)로 나갔다(#1222). 다른 깨진 글자가 같이 있으면 그 글자로 종전대로 버린다.
+# 끄기 `LAYER_LENGTH_MARK=0`(호출 때 읽는다).
+_LENGTH_MARK = "ː"
+
+
 def mangled_glyph_chars(text: str) -> tuple["collections.Counter[str]", "collections.Counter[str]"]:
     """글꼴 매핑이 어긋나 잘못 추출된 글자들 → (A: 레이어 폐기, B: 기호만 어긋남).
 
@@ -1650,8 +1657,10 @@ def mangled_glyph_chars(text: str) -> tuple["collections.Counter[str]", "collect
       (¤ = ² 또는 (ii)), 표가 있어도 2차원으로 찍힌 수식은 못 살린다. 위 주석 참조.
     """
     t = text or ""
-    return (collections.Counter(_MANGLED_LAYER_RE.findall(t)),
-            collections.Counter(_MANGLED_SYMBOL_RE.findall(t)))
+    layer = collections.Counter(_MANGLED_LAYER_RE.findall(t))
+    if os.environ.get("LAYER_LENGTH_MARK", "1") != "0":
+        layer.pop(_LENGTH_MARK, None)
+    return layer, collections.Counter(_MANGLED_SYMBOL_RE.findall(t))
 
 
 def _pua_ratio(text: str) -> float:
