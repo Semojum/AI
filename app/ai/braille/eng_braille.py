@@ -177,6 +177,12 @@ def _be_is_syllable(word: str) -> bool:
     return bool(c) and c not in _VOWELS_Y and v in _VOWELS_Y and c != v
 
 
+# 낱말 속 머리글자 약자를 규칙으로 못 가르는 gold 예외(#1216) — 낱말에 이 글자열이 들면 그 약자를 풀어 쓴다.
+#   gold 수: severe 22(severely · perseveres 포함, 같은 ever 라도 fever 3 · clever 5 · several 43 은 약자) · colonel 6.
+#   ponytail: 서너 번 이하인 것(antigone 3 · indonesia 2 · pioneer 2 · founder 2 · tournament 1 · centimeters 1)은 넣지 않았다 — 잔여를 0 까지 쫓지 않는다.
+_INITIAL_SPELLED: dict[str, tuple[str, ...]] = {"ever": ("severe",), "one": ("colonel",)}
+
+
 def _apply_groups(word: str, ebae: bool = False) -> str:
     """소문자 낱말 → 약자 적용 셀열. 긴 약자 우선, 위치 제약 준수.
 
@@ -227,8 +233,20 @@ def _apply_groups(word: str, ebae: bool = False) -> str:
                 if i == 0:
                     continue
                 out.append(("⠨" + FINAL_46[k]) if k in FINAL_46 else ("⠰" + FINAL_56[k]))
-            else:                    # 첫글자 약자 — 낱말 첫머리에서만
-                if i != 0:
+            else:                    # 머리글자 약자 — 낱말 속에서도 쓴다(#1216)
+                # UEB 10.7: 머리글자 약자는 낱말 첫머리만이 아니라 낱말 속에서도 쓴다 — gold `phone` = ⠏⠓⠐⠕ ·
+                #   `money` = ⠍⠐⠕⠽ · `never` = ⠝⠐⠑ · `bought` = ⠃⠐⠳. 영어책(holdout 제외) 낱말 단위 전수 gold 만 약자
+                #   1,645낱말 · 우리만 0(`V2/temp/n46/e9/ini_census.py`). 종전엔 첫머리에서만 써 낱말 속에서 다 풀어 적었다.
+                #   겹침은 위 왼→오 최장 규칙이 가른다(`shadow` 는 sh 먼저 · `coupon` 은 ou 먼저 · there 가 here 보다 먼저).
+                #   EBAE(옛 책 되짚기)는 종전대로 첫머리에서만.
+                if i != 0 and ebae:
+                    continue
+                # 낱말 속 one · there 의 끝 e 가 뒤 글자와 ed · er · en 을 이루면 쓰지 않는다 — gold 낱말 속에서 풀어씀 71 :
+                #   약자 0(postponed 7 · sooner 7 · component 6 · abandoned 5 · gathered 11 …). named · timer 는 약자다(35 · 11)라
+                #   두 약자에만 건다.
+                if i != 0 and k in ("one", "there") and word[i + len(k):i + len(k) + 1] in ("d", "n", "r"):
+                    continue
+                if i != 0 and any(w in word for w in _INITIAL_SPELLED.get(k, ())):
                     continue
                 if k in INITIAL_5:
                     out.append("⠐" + INITIAL_5[k])
