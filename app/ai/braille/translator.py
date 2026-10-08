@@ -689,7 +689,7 @@ class _RomanCtx:
     재점역하는 동안 문맥이 덮여 같은 줄이 호출 순서에 따라 다르게 나온다.
     """
 
-    __slots__ = ("has_hangul", "hangul_ratio", "opened", "tail_term", "hyphen_link", "follow")
+    __slots__ = ("has_hangul", "hangul_ratio", "opened", "tail_term", "hyphen_link", "follow", "eng_prose")
 
     def __init__(self, text: str, *, force: bool = False) -> None:
         han = len(_HANGUL_SYL_RE.findall(text))
@@ -709,6 +709,8 @@ class _RomanCtx:
         self.hyphen_link = False
         # 지금 세그 **뒤에** 이어지는 줄 글(점자로 먼저 바뀐 부호 포함). 영어 1급에서 구간을 이어 갈지 본다(#1189).
         self.follow = ""
+        # 한글 없는 영어 산문 줄인가(#1214) — 구간 밖 쉼표도 통일영어점자 ⠂ 로 적는다. `_hold_eng_punct` 와 같은 문턱.
+        self.eng_prose = not self.has_hangul and len(_ENG_PROSE_WORD_RE.findall(text)) >= 2
 
     def wants_roman(self) -> bool:
         """세그에 한글이 없어도 줄 문맥상 ⠴를 새로 열어야 하는가."""
@@ -2888,7 +2890,19 @@ def _unhold_eng_punct(text: str) -> str:
     return text
 
 
-def _span_gap(gap: str) -> str:
+# ★ #1214 — 한글 없는 영어 산문 줄에서는 라틴 런에 바로 붙지 않은 쉼표(줄 끝 `safety,` · 따옴표 앞 `like, "` ·
+#   숫자 뒤 `A256, but`)도 통일영어점자 ⠂ 다(제7·28항 · 제33항: 쉼표는 두 규정 점형이 다르다). 종전엔 한글 점역기로
+#   넘어가 ⠐ 가 됐다. gold 영어책 왕복(c0b514a) 이 갈래 862줄. 숫자 사이 쉼표(`1,000` 자릿점)는 가르지 않는다.
+#   한글이 한 글자라도 있는 줄은 종전대로다(`나는 사과, 배를` · 제33항 한글 사이).
+_ENG_COMMA_SPLIT_RE = re.compile(r"(?<!\d),|,(?!\d)")
+
+
+def _eng_line_gap(text: str) -> str:
+    """영어 산문 줄의 구간 밖 글 — 쉼표만 ⠂ 로 적고 나머지는 종전 길(#1214)."""
+    return "⠂".join(_braillify_korean(p) if p else "" for p in _ENG_COMMA_SPLIT_RE.split(text))
+
+
+def _span_gap(gap: str, eng_prose: bool = False) -> str:
     """구간 **내부** 간극(라틴 런 사이) 점역. 앞선 런에 바로 붙은 문장부호만 통일영어점자로.
 
     공백을 건너뛰어 붙지 않은 부호(예: 수 안의 `1,000`)까지 바꾸면 근거를 벗어나므로,
@@ -2904,7 +2918,7 @@ def _span_gap(gap: str) -> str:
         out.append(_UEB_PUNCT[gap[i]])
         i += 1
     if i < len(gap):
-        out.append(_braillify_korean(gap[i:]))
+        out.append((_eng_line_gap if eng_prose else _braillify_korean)(gap[i:]))
     return "".join(out)
 
 
@@ -2986,7 +3000,7 @@ def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
             pre = seg[last:start]
             if _HANGUL_SYL_RE.search(pre):
                 ctx.opened = False
-            out.append(_braillify_korean(pre))
+            out.append((_eng_line_gap if ctx.eng_prose else _braillify_korean)(pre))
         body: list[str] = []
         pos = start
         # 1종 지시자 ⠰(원장 C-99) — 로마자표를 적는 구간이면 첫 런은 ⠴ 바로 뒤("lead"), 뒤 런은 이어짐("cont").
@@ -3008,7 +3022,7 @@ def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
             g1 = ""
         for s, e in span:
             if s > pos:
-                body.append(_span_gap(seg[pos:s]))
+                body.append(_span_gap(seg[pos:s], ctx.eng_prose))
             # 낱말 사이 공백은 점자 빈칸으로 — 한글 구간(braillify) 출력과 통일한다.
             body.append(eng_braille.translate(seg[s:e], grade1=g1, uncontracted=eng_g1).replace(" ", "⠀"))
             if g1:
@@ -3048,7 +3062,7 @@ def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
     if seg[last:]:
         if _HANGUL_SYL_RE.search(seg[last:]):
             ctx.opened = False
-        out.append(_braillify_korean(seg[last:]))
+        out.append((_eng_line_gap if ctx.eng_prose else _braillify_korean)(seg[last:]))
         ctx.tail_term = False
     return "".join(out)
 
