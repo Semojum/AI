@@ -42,3 +42,12 @@ def test_끄면_종전대로(monkeypatch):
     monkeypatch.setenv("LAYER_LENGTH_MARK", "0")
     assert mangled_glyph_chars("[마ː나]")[0] == {"ː": 1}
     assert "⠀" in translate_tagged_text("[야 ː행썽]")
+
+
+def test_다른_깨진_글자가_섞인_블록은_종전대로_닫는다():
+    """제어 문자는 관문 앞에서 띄움이 되고 PUA 는 되돌리기로 살아나 ː 만 남는다. 그런 블록은 열지 않는다(pm 10-08 범위).
+    언매 A/B 에서 그 4블록이 두 칸 띄움으로 gold 와 같던 줄을 잃은 자리 전부였다."""
+    from app.ai.parser.mineru_runner import _length_mark_mixed
+    assert not _length_mark_mixed("‘많아[마ː나]’")
+    assert _length_mark_mixed("→ ‌\x01‘많아[마ː나]’")
+    assert _length_mark_mixed(" 눈ː〔雪〕")
