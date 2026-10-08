@@ -19,10 +19,14 @@ import argparse
 import asyncio
 import io
 import json
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+# demo_set 의 경계(txt_result)를 써 두고 파이프라인이 그걸 읽게 하는 러너라 경계를 재사용해야 한다.
+# 제품 기본은 재사용을 끈다(#1212). 끄면 가짜 PDF 를 다시 추출해 요소 0개 · BLOCKED 가 된다.
+os.environ.setdefault("SEMOJUM_MEASURE_REUSE", "1")
 
 _DEMO_DIR = Path(__file__).parent / "test_data" / "demo_set"
 
@@ -47,11 +51,17 @@ def load_pages(only_id: str | None = None) -> list[dict]:
 
 
 def _write_handoff(page: dict) -> str:
-    """페이지의 txt_result를 파이프라인이 읽는 storage 경로에 기록. job_id 반환."""
+    """페이지의 txt_result를 파이프라인이 읽는 storage 경로에 판 지문(stamp)과 함께 기록. job_id 반환.
+
+    지문이 없거나 코드 판과 다르면 파이프라인이 경계를 버리고 다시 추출한다(재구조화 3-d). 흰 쪽 PDF 라
+    다시 추출하면 요소 0개 · BLOCKED 다. 그래서 파이프라인이 쓰는 함수로 경계와 지문을 같이 쓴다.
+    """
+    from app.core import pipeline
+    from app.schemas.layout import DocumentMeta
+    from app.schemas.task import PageTask
     job_id = page["txt_result"]["meta"]["job_id"]
-    p = Path(f"storage/jobs/{job_id}/temp/page_001/data/001_txt_result.json")
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(page["txt_result"], ensure_ascii=False, indent=2), encoding="utf-8")
+    task = PageTask(job_id=job_id, page_no=1, total_pages=1, pdf_data=b"", mode="c")
+    pipeline._write_txt_result(task, page["txt_result"], DocumentMeta(pdf_confidence=1.0, routing_tier="ZERO"))
     return job_id
 
 
