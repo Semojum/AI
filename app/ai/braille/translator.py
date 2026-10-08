@@ -2926,7 +2926,26 @@ def _hold_eng_line(ln: str) -> str:
     if (ENGLISH_GRADE1.get() or len(_ENG_PROSE_WORD_RE.findall(ln)) < 2 or _ENG_BRACKET_SKIP_RE.search(ln)
             or _ART39_FUNC_RE.search(ln)):
         return ln
-    return _ENG_BRACKET_RE.sub(lambda m: m.group() if len(m.group()) > 1 else _ENG_BRACKET_HOLD[m.group()], ln)
+    return _ENG_BRACKET_RE.sub(_eng_bracket_repl, ln)
+
+
+# C-165 A-2(#1229) — 영어 산문 줄의 홑 낱자 보기 표지 `(a)` `(b)` 는 gold 관행 EBAE 괄호 ⠶ … ⠶ 로 적는다.
+#   gold 영어책 한글 없는 줄 표지 903곳 중 로마자표 ~ 종료표 구간 안 90 · 밖 807(앞에 한글, 그 뒤 로마자표 없음 784 ·
+#   괄호 안쪽 로마자표 23) · 판정 불가 6(`temp/n46/e9/label_span.py`) — 구간 밖이 다수라 제32항(재추출 1650~1651행) 밖으로
+#   보고 관행을 따른다(pm 10-08 18:5x 판정표 (나)). 꼴은 EBAE ⠶ 801(6권) · 한글 소괄호 92(85 가 HS-REF-T26-013 한 권).
+#   낱자가 a · i · o 가 아니면 통일영어점자 1급 기호 ⠰ 를 붙인다(그 셋은 영어에서 낱말이라 약자로 읽힐 일이 없다 · 나머지는 단어 약자 but · can … 과 같은 셀) — gold `(b)` = ⠶⠰⠃⠶ 286 · `(c)` = ⠶⠰⠉⠶ 111 · `(a)` = ⠶⠁⠶ 281.
+#   숫자 표지 `(1)` 은 gold 가 한글 소괄호(87)라 종전대로다.
+_EBAE_PAREN = "⠶"
+
+
+def _eng_bracket_repl(m: re.Match) -> str:
+    tok = m.group()
+    if len(tok) == 1:
+        return _ENG_BRACKET_HOLD[tok]
+    if tok[0] == "(" and tok[1].isalpha():
+        ch = tok[1]
+        return _EBAE_PAREN + ("" if ch.lower() in "aio" else "⠰") + eng_braille.translate(ch) + _EBAE_PAREN
+    return tok
 
 
 def _hold_eng_punct(text: str) -> str:
