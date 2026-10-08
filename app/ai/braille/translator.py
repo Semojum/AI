@@ -745,14 +745,28 @@ def _emit_mixed(text: str, result: list[str], ctx: "_RomanCtx | None" = None) ->
         #   회귀다(억제 없이 재면 val NET −27, 억제하면 +52. 재현 V2/temp/s2_ab3.py).
         #   #917 — 세그가 빈칸으로 시작하면(`범례 — A:`) `out` 머리가 ⠀ 라 그 확인이 빗나가
         #   `⠤⠤⠴⠀⠴⠠⠁` 로 겹쳤다. 머리 빈칸을 건너 보고, 붙일 때도 빈칸 뒤에 붙인다.
+        #   B-29(#1223) — 한글 없는 줄에서 **띄어 쓴** 줄표 · 빈칸(`- happy` · `___ what`, 빈칸 ⠨⠤ 도 ⠤ 로 끝난다)
+        #   뒤는 붙임표가 아니라 구간이 이어지는 자리다. gold 영어책 빈칸 뒤 ⠴ 0/2,261 · 줄표 뒤 12/385.
         body = out.lstrip("⠀")
+        eng_line = ctx is not None and not ctx.has_hangul
         if (result and result[-1].endswith("⠤")
                 and seg.strip() and all(c.isalpha() and c.isascii() for c in seg.strip())
                 and not body.startswith("⠴") and not linked
+                and not (eng_line and seg[:1].isspace())
                 and not (ctx is not None and ctx.opened and ENGLISH_GRADE1.get())):   # 1급 줄 구간이 이미 열림(#1189)
             out = out[:len(out) - len(body)] + "⠴" + body
             if ctx is not None:
                 ctx.opened = True
+        # C-164(#1223) — 한글 없는 줄에서 한글 꼴 화살표 ⠒⠕(제70항, 재추출 2773행) 뒤 영어는 로마자표를 다시 연다.
+        #   조항은 없고 gold 영어책 274/288(95%, 4권)이 그렇다 · 같은 책들이 통일영어점자 화살표 ⠰⠳⠕ 뒤엔 3/780.
+        #   여는 ⠴ 만 적는다(뒤 마침표 ⠲ 가 닫는다, 제33항 [다만]). 영어 산문 줄(소문자 두 글자 이상 낱말 둘 이상)만 —
+        #   원소 기호 반응식 `H, Cl → HCl`(과학 점자 제1항 예 꼴)은 넣지 않는다.
+        #   ponytail: 과학책 `→ C` 도 gold 가 ⠴ 를 적지만(MS-REF-T26-015) 영어책 밖은 안 쟀다 — 재면 넓힌다.
+        elif (eng_line and result and result[-1].rstrip("⠀").endswith("⠒⠕")
+                and len(_ENG_LOWER_WORD_RE.findall(text)) >= 2
+                and _LATIN_CHAR_RE.match(seg.lstrip()) and not body.startswith("⠴")):
+            out = out[:len(out) - len(body)] + "⠴" + body
+            ctx.opened = True
         # 제33항 — 로마자와 한글 사이의 쌍점·쌍반점·줄표는 종료표를 적지 않는다(#917).
         #   `:`·`;`·`—` 는 문자표가 **먼저** 점자로 바꿔 다음 조각으로 가므로, 한글 섞인 세그
         #   끝의 로마자(`이 PD: 먼저` · `학생 A: 많이` · `범례 ― A: 갑`)는 `_eng_terminator` 가
@@ -2873,6 +2887,7 @@ _ENG_PUNCT_HOLD = {":": "\x05", ";": "\x06"}
 #   전체가 로마자 구간이라 이 조건을 안 본다 — gold 초등 두 권 `Q: Can I ___?` = ⠴⠠⠟⠒⠀⠠⠉⠁⠝⠀⠠⠊⠀⠨⠤⠦.
 _ENG_PUNCT_RE = re.compile(r"(?:(?<=[A-Za-z])|(?<=\ufdd2⠸⠄))[:;](?= +(?:\ufdd2⠸[⠂⠆⠶])?[A-Za-z])")   # 뒤 낱말 앞 밑줄 표지(#1204)는 건너본다
 _ENG_PROSE_WORD_RE = re.compile(r"[A-Za-z]{2,}")
+_ENG_LOWER_WORD_RE = re.compile(r"[a-z]{2,}")
 
 
 def _hold_eng_punct(text: str) -> str:
