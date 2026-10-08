@@ -777,6 +777,61 @@ def _hangul_substitutions(cell: str, window: str) -> list[tuple[int, int, str]]:
     return out
 
 
+# ── 긴 칸 조각 대조 (#1208) ─────────────────────────────────────────────────
+# 층은 표 전체 폭을 줄 단위로 읽는다. 두 줄 이상인 칸은 층에서 줄 사이에 이웃 칸 글이 끼고 줄 차례도
+# 칸 차례와 다르다(생활과 윤리 p0084 롤스 칸: 둘째 항목 줄이 첫째 항목 줄보다 앞). 그래서 긴 칸이 같은
+# 길이 창 하나로 안 맞아 표의 교정이 통째로 막혔다(dev · val 막힌 표 73 · 101자리, V2 temp/n146).
+# 창 하나로 안 맞는 긴 칸은 층을 줄 · 넓은 띄움(2칸 이상) 단위 조각으로 나눠 조각마다 칸 안 자리를 찾고,
+# 겹치지 않는 조각들이 칸을 _PIECE_COVER_MIN 이상 덮으면 통과로 본다. 조각 차례는 보지 않는다.
+# ★ 창 어긋남 막이: 이렇게 살린 표에서는 창(조각) 가장자리에 닿는 치환을 하지 않는다. 막힌 교정 표본에서
+#   틀린 둘(`…검토해야함 → …검토장정리` · `시(인쇄매체) → 표(인쇄매체)`)이 둘 다 창이 칸 가장자리에서 이웃
+#   글로 넘어간 자리였다. 끄기 `TABLE_CELL_PIECES=0`(종전: 한 칸이라도 창 하나로 안 맞으면 표째 포기).
+_PIECE_CELL_MIN = 12      # 이 길이 이상인 칸만 조각으로 댄다
+_PIECE_MIN = 4            # 이보다 짧은 층 조각은 우연히 맞기 쉬워 안 쓴다
+_PIECE_COVER_MIN = 0.90   # 조각이 칸을 이만큼 덮어야 통과
+
+
+def _layer_pieces(layer: str) -> list[str]:
+    """층 글을 줄 · 넓은 띄움(2칸 이상) 단위 조각(공백 뺌)으로 나눈다. 짧은 조각은 버린다."""
+    out: list[str] = []
+    for line in re.sub(r"<!/?[^>]*>", "", layer).split("\n"):
+        for seg in re.split(r"\s{2,}", line):
+            seg = re.sub(r"\s+", "", seg)
+            if len(seg) >= _PIECE_MIN:
+                out.append(seg)
+    return out
+
+
+def _piece_windows(cell: str, pieces: list[str], table_ns: str) -> list[tuple[int, str]] | None:
+    """칸을 덮는 층 조각들의 (칸 안 시작, 조각 글), 칸 안 차례로. 덮음이 모자라면 None.
+
+    조각마다 칸 안에서 같은 길이로 가장 닮은 자리를 찾아(같으면 앞 자리) 닮음이 _CELL_SIM_MIN 이상인 것만
+    후보로 두고, 더 닮은 조각부터(같으면 긴 것 · 앞 자리) 겹치지 않게 고른다. 똑같은 조각이 먼저 자리를 잡아야
+    나란한 옆 칸 문장(`동화 작용은 … 흡수되는` ↔ `이화 작용은 … 방출되는`)이 그 자리를 못 뺏는다.
+    ★ 칸과 조금 다른 조각이 표의 다른 칸 글(table_ns, 칸마다 \\x00 로 이음)에 그대로 있으면 그 칸 것이라 안 쓴다.
+    """
+    cand: list[tuple[int, float, int, str]] = []
+    for p in pieces:
+        n = len(p)
+        best, best_pos = 0.0, -1
+        for s in range(len(cell) - n + 1):
+            r = SequenceMatcher(None, p, cell[s:s + n], autojunk=False).ratio()
+            if r > best:
+                best, best_pos = r, s
+        if best >= _CELL_SIM_MIN and (best >= 1.0 or p not in table_ns):
+            cand.append((n, best, best_pos, p))
+    used = [False] * len(cell)
+    picked: list[tuple[int, str]] = []
+    for n, _sim, pos, p in sorted(cand, key=lambda c: (-c[1], -c[0], c[2], c[3])):
+        if any(used[pos:pos + n]):
+            continue
+        used[pos:pos + n] = [True] * n
+        picked.append((pos, p))
+    if sum(used) < _PIECE_COVER_MIN * len(cell):
+        return None
+    return sorted(picked)
+
+
 # ── 괘선 없는 '표'는 표가 아니다 (QA 9번, 2026-08-08) ────────────────────────
 # MinerU의 표 모델은 **글이 격자처럼 늘어선 쪽**을 통째로 표로 싼다. 대표 QA 실측:
 # 2026학년도 수능 수학 문제지 2쪽이 각각 쪽 본문 전체(폭 80%·높이 75%)가 <table> 한
@@ -1053,6 +1108,8 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     ★ 부분 교정 금지(_restore_table_bullets와 같은 원칙): 내용 있는 셀 하나라도 레이어에서
     못 찾으면 그 표는 통째로 손대지 않는다. 못 찾는다는 건 레이어와 표가 다른 것을
     가리킨다는 뜻이라, 찾은 셀의 교정도 근거가 없다.
+    창 하나로 안 맞는 긴 칸은 층 조각으로 대어 본다(#1208, 위 절). 그렇게 살린 표에서는 창 가장자리에
+    닿는 치환을 버린다.
     """
     if not html or not bbox:
         return html
@@ -1064,7 +1121,7 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     if not layer_ns:
         return html
 
-    edits: list[tuple[int, int, str]] = []
+    cells: list[tuple[int, str, list[int], float, int]] = []    # (칸 글 시작, 대조본, 원문 인덱스, 닮음, 창 자리)
     for m in _CELL_RE.finditer(html):
         inner = m.group(2)
         # 대조본(태그·공백·수식 구분자 $ 제거) ↔ 원문 인덱스 대응
@@ -1087,16 +1144,38 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
         if not cell:
             continue                            # 빈 셀은 대조 대상이 아니다
         sim, pos = _best_layer_window(cell, layer_ns)
-        if sim < _CELL_SIM_MIN:
+        if sim < _CELL_SIM_MIN and (len(cell) < _PIECE_CELL_MIN or os.environ.get("TABLE_CELL_PIECES", "1") == "0"):
             return html                         # 한 셀이라도 실패 → 이 표는 포기
+        cells.append((m.start(2), cell, ns_idx, sim, pos))
+
+    # 창 하나로 안 맞은 긴 칸이 있으면 '살린 표'다. 층이 칸을 섞어 읽는 표라 창 하나 대조를 못 믿는다.
+    # 긴 칸은 조각으로만 고치고(다른 칸 글과 똑같은 조각은 그 칸 것이라 안 씀), 가장자리 치환은 버린다(위 절 ★).
+    rescued = any(c[3] < _CELL_SIM_MIN for c in cells)
+    if rescued:
+        pieces = _layer_pieces(layer)
+        table_ns = "\x00".join(c[1] for c in cells)
+    edits: list[tuple[int, int, str]] = []
+    for base, cell, ns_idx, sim, pos in cells:
         if sim >= 1.0:
             continue
-        for off, ln, repl in _hangul_substitutions(cell, layer_ns[pos:pos + len(cell)]):
-            src = ns_idx[off:off + ln]
-            # 원문에서도 연속이어야 한다 — 중간에 태그·공백이 끼어 있으면 건드리지 않는다.
-            if src != list(range(src[0], src[0] + ln)):
-                continue
-            edits.append((m.start(2) + src[0], ln, repl))
+        if rescued and len(cell) >= _PIECE_CELL_MIN:
+            found = _piece_windows(cell, pieces, table_ns)
+            if found is None:
+                if sim < _CELL_SIM_MIN:
+                    return html
+                continue                        # 창 하나로는 맞았지만 조각으로 못 덮으면 고치지 않는다
+            wins = [(start, cell[start:start + len(p)], p) for start, p in found]
+        else:
+            wins = [(0, cell, layer_ns[pos:pos + len(cell)])]
+        for start, seg, win in wins:           # seg = 창에 댄 칸 글(조각이면 칸 일부)
+            for off, ln, repl in _hangul_substitutions(seg, win):
+                if rescued and (off == 0 or off + ln == len(seg)):
+                    continue
+                src = ns_idx[start + off:start + off + ln]
+                # 원문에서도 연속이어야 한다 — 중간에 태그·공백이 끼어 있으면 건드리지 않는다.
+                if src != list(range(src[0], src[0] + ln)):
+                    continue
+                edits.append((base + src[0], ln, repl))
 
     if not edits:
         return html
