@@ -20,8 +20,12 @@ class PageTask(BaseModel):
     # 고급 점역 — 켜면 MinerU 대신 LLM 이 쪽 이미지를 직접 읽는다(대표 결정 2026-09-01).
     advanced_ai: bool = False
     # 문항코드 자리 꼴(원장 C-107): "X" `01 [코드] 발문` · "Y" 코드 윗줄 · "off" 종전. 빈 값이면 서버 기본(X).
-    #   점역사가 책마다 고르는 설정이다(대표 결재 2026-10-04). proto 필드가 생기면 그대로 받는다.
+    #   점역사가 책마다 고르는 설정이다(대표 결재 2026-10-04). proto `BrailleRequest` 11 로 받는다(#1235).
     item_code_form: str = ""
+    # 한글 · 영어 정자(1급, #1191 · #1189) — 점역사가 업로드 때 고르는 낱값(대표 결재 2026-10-08).
+    #   `pipeline.run` 이 `constants.KOREAN_GRADE1` · `ENGLISH_GRADE1` 문맥 값으로 놓는다. 기본 False = 약자.
+    korean_grade1: bool = False
+    english_grade1: bool = False
 
     @classmethod
     def from_proto(cls, req) -> "PageTask":
@@ -33,6 +37,8 @@ class PageTask(BaseModel):
             pdf_data=req.pdf_data,
             advanced_ai=bool(getattr(req, "advanced_ai", False)),
             item_code_form=str(getattr(req, "item_code_form", "") or ""),
+            korean_grade1=bool(getattr(req, "korean_grade1", False)),
+            english_grade1=bool(getattr(req, "english_grade1", False)),
             mode=req.mode.lower() if req.mode else "c",
             source_text=req.source_text,
         )

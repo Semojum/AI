@@ -991,13 +991,19 @@ _CIRCLED.update({chr(0x24B6 + i): "⠶⠴⠠" + _ALPHA_MAP[chr(ord("a") + i)] + 
 _CIRCLED_RE = re.compile("[" + "".join(_CIRCLED) + "]")
 
 
-@lru_cache(maxsize=64)
 def _circled_braille(ch: str) -> str:
-    """동그라미 자모·음절 → 규정 제64항 감쌈형 ⠶…⠶ (㉠ → ⠶⠿⠁⠶, ㉮ → ⠶⠫⠶).
+    """동그라미 자모·음절 → 규정 제64항 감쌈형 ⠶…⠶ (㉠ → ⠶⠿⠁⠶, ㉮ → ⠶⠫⠶, 한글 1급이면 ⠶⠈⠣⠶).
 
     점형은 `_safe_to_unicode`에서 가져온다(정본 하나). 로마자 ⓐ~ⓩ는 `_CIRCLED`에
     이미 완성형이 들어 있어 이 경로를 타지 않는다.
     """
+    return _circled_braille_cached(ch, KOREAN_GRADE1.get())
+
+
+@lru_cache(maxsize=128)
+def _circled_braille_cached(ch: str, grade1: bool) -> str:
+    # ★ `grade1` 은 캐시 열쇠로만 쓴다(#1235). 안의 `_kor_unicode` 가 같은 값을 문맥에서 읽는다.
+    #   글자만 열쇠로 두면 한 서버 프로세스에서 먼저 돈 요청의 꼴(약자 ⠫ · 정자 ⠈⠣)로 굳는다.
     return "⠶" + _safe_to_unicode(_CIRCLED_PLAIN[ch]) + "⠶"
 
 # 괄호 안이 한글·숫자면 붙임표로 감싼다. 영문이 섞이면 규정 소괄호를 유지한다.

@@ -2188,6 +2188,7 @@ def _split_inline_choices(text: str) -> str:
 #   〈보기〉 549 · 개념 체크 292 · 보기 285 · 수능 기본/실전 문제 각 72 · 자료 플러스 57 …).
 #   ※ 괄호 유무(`〈보기〉` vs `보기`)는 **책마다 갈린다** — 우리는 원문 그대로 둔다(원장 C-28 성격).
 from app.ai.braille.constants import BOX_TITLE_PROMOTABLE as _BOX_TITLE_PROMOTABLE  # noqa: E402 (정답 상자와 공유)
+from app.ai.braille.constants import ENGLISH_GRADE1 as _ENGLISH_GRADE1, KOREAN_GRADE1 as _KOREAN_GRADE1  # noqa: E402
 _BOX_BLOCK_RE = re.compile(
     r"(<!상자(\d?)>)(.*?)(<!/상자\2>)(.*?)(?=<!상자끝)", re.S)
 
@@ -3609,6 +3610,10 @@ async def run(task: PageTask) -> dict:
     # 도는데 전역으로 세면 옆 쪽 발동이 이 쪽 review_flags 에 얹힌다(gates 도크스트링).
     gates.gate_reset()
     _ITEM_CODE_FORM_JOB.set((task.item_code_form or "").upper())
+    # 한글 · 영어 정자(#1235) — 요청 낱값을 쪽 단위 문맥 값으로 놓는다. 끈 값도 늘 놓는다: 한 문맥에서
+    #   쪽을 이어 돌리는 러너가 앞 쪽 값을 물려받지 않게. `run_braille` · `to_thread` 가 문맥을 복사해 점역 풀까지 간다.
+    _KOREAN_GRADE1.set(bool(task.korean_grade1))
+    _ENGLISH_GRADE1.set(bool(task.english_grade1))
     # 판 지문(0-c) — 점역사 피드백이 며칠 뒤에 올 때 어느 커밋·어느 프롬프트였는지 되짚는 줄.
     # ★ health_check 는 model_manager 를 거쳐 torch 를 끌고 온다. 모듈 최상단에서 부르면
     #   pipeline import 그래프가 바뀌고, torch 없는 빠른 게이트 레인이 통째로 깨진다.

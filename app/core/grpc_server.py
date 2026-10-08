@@ -9,6 +9,7 @@ from __future__ import annotations
 import grpc
 
 from app.ai.braille.regulations import rule_meta
+from app.ai.braille.constants import ENGLISH_GRADE1, KOREAN_GRADE1
 from app.ai.braille.translator import translate_plain
 from app.core.config import config
 from app.core import pipeline
@@ -292,6 +293,10 @@ class BrailleServiceServicer(braille_service_pb2_grpc.BrailleServiceServicer):
                 f"TranslateText는 짧은 묵자 전용이다 — {_TRANSLATE_TEXT_MAX}자 이하 "
                 f"(받은 길이 {len(text)}). 본문 점역은 ProcessPage를 쓸 것",
             )
+        # 정자(#1235) — 본문(`BrailleRequest` 9 · 10)과 같은 값을 받아 꼬리말도 같은 규칙으로 적는다.
+        #   이 호출 안에서만 놓고 되돌린다(이벤트 루프 스레드에서 바로 점역한다).
+        k_tok = KOREAN_GRADE1.set(bool(getattr(request, "korean_grade1", False)))
+        e_tok = ENGLISH_GRADE1.set(bool(getattr(request, "english_grade1", False)))
         try:
             braille = translate_plain(text)
         except Exception as exc:
@@ -300,6 +305,9 @@ class BrailleServiceServicer(braille_service_pb2_grpc.BrailleServiceServicer):
                 grpc.StatusCode.INTERNAL, f"점역 실패: {type(exc).__name__}: {exc}"
             )
             return
+        finally:
+            KOREAN_GRADE1.reset(k_tok)
+            ENGLISH_GRADE1.reset(e_tok)
         logger.info("TranslateText peer=%s %d자 → %d셀", context.peer(), len(text), len(braille))
         return braille_service_pb2.TranslateTextReply(braille=braille)
 
