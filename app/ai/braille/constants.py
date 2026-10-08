@@ -56,3 +56,8 @@ ENGLISH_GRADE1: ContextVar[bool] = ContextVar("english_grade1", default=False)
 #   제1장 제4항(303행) 자모 규정이라 그대로다. 근거 「점자 자료 제작 지침」 1.1.2(재추출 240~242행) 한글 약자는
 #   초등학교 2학년용 교재부터 · 1.2(6)(268행) 정자 점자. 쪽 단위 문맥 값이다(`inline_math.MATH_PAGE` 와 같은 길).
 KOREAN_GRADE1: ContextVar[bool] = ContextVar("korean_grade1", default=False)
+
+# 선택지 한 줄에 하나(#1238) — 점역사가 문서를 올릴 때 고른다. 기본 False = 짧은 선택지를 3-2 · 2-2-1 로 합친다
+#   (`layout_braille._combine_choice_lines`). 켜면 「점자 도서 제작 지침」 3장 3절 2. 4)(3)④(재추출 3457~3458행)
+#   "초등학교 이하의 학생들을 위해 제작되는 문제 형식의 점자 자료" 처럼 합치지 않는다. 쪽 단위 문맥 값이다.
+CHOICES_ONE_PER_LINE: ContextVar[bool] = ContextVar("choices_one_per_line", default=False)
