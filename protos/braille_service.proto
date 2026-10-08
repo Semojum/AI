@@ -23,10 +23,16 @@ message BrailleRequest {
   // job 경계를 넘는 캐시 재사용은 2026-10-07 대표 결정으로 하지 않는다(새 책은 새로 돈다).
   // 그래서 이 번호를 되살리지 않는다. 다른 뜻으로도 재사용하지 말 것.
   reserved 8;
+  // 점역 옵션 낱값(대표 결재 2026-10-08). AI 는 양식 이름을 모르고 값만 받는다. 비우면 지금 동작.
+  bool   korean_grade1  = 9;   // 한글 정자(1급). false = 약자(2급)
+  bool   english_grade1 = 10;  // 영어 정자(1급) · 로마자표와 종료표를 생략하지 않음. false = UEB 약자
+  string item_code_form = 11;  // EBS 문항코드 자리(원장 C-107): "X" 번호 뒤 · "Y" 윗줄 · "off" 안 옮김. 빈 값 = 서버 기본 X
 }
 
 message TranslateTextRequest {
-  string text = 1;          // 묵자 (예: "수특 사회문화 2")
+  string text           = 1;  // 묵자 (예: "수특 사회문화 2")
+  bool   korean_grade1  = 2;  // 꼬리말을 본문과 같은 규칙으로(BrailleRequest 9 · 10 과 같은 값)
+  bool   english_grade1 = 3;
 }
 
 // ── 서브메시지 ───────────────────────────────────────────────────
