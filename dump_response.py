@@ -11,6 +11,7 @@ BE에 "내가 보낸 데이터가 이거다"라고 보여줄 때 사용.
 """
 import asyncio
 import json
+import os
 import sys
 
 from google.protobuf.json_format import MessageToDict
@@ -18,6 +19,11 @@ from google.protobuf.json_format import MessageToDict
 from app.core import pipeline
 from app.core.grpc_server import _build_proto_response
 from app.schemas.task import PageTask
+
+# 저장된 경계 파일로 응답을 다시 만드는 도구라 경계를 재사용해야 한다. 제품 기본은 재사용을 끈다(#1212).
+# 경계를 만든 뒤 코드가 바뀌어 판 지문이 달라도 그 경계를 그대로 쓴다(always). 다시 추출하면 빈 PDF 라 BLOCKED 다.
+os.environ.setdefault("SEMOJUM_MEASURE_REUSE", "1")
+os.environ.setdefault("BOUNDARY_REUSE", "always")
 
 
 def main() -> None:
