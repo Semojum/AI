@@ -2875,10 +2875,37 @@ _ENG_PUNCT_RE = re.compile(r"(?:(?<=[A-Za-z])|(?<=\ufdd2⠸⠄))[:;](?= +(?:\ufd
 _ENG_PROSE_WORD_RE = re.compile(r"[A-Za-z]{2,}")
 
 
+# B-30 · C-165 A-1(#1224) — 한글 없는 영어 산문 줄의 괄호도 구간 안 부호라 통일영어점자 꼴이다. 제32항(재추출
+#   1650~1651행) · 예(1664~1666행) `모음에는 (a), (e) …` = `0"<a">1`"<;e">1…`(소괄호 ⠐⠣ ⠐⠜). symbol_table 은 한글 꼴
+#   (⠦⠄ ⠠⠴ · ⠦⠆ ⠰⠴)로 먼저 바꾸므로 쌍점처럼 치환 전에 맡겨 두었다가 UEB 셀로 되돌린다.
+#   대괄호 ⠨⠣ ⠨⠜: gold 영어책 264 : 한글 꼴 191(그중 189 가 HS-REF-T26-013 한 권 관행). 소괄호: gold 는 UEB 꼴을 0 번 썼지만
+#   (EBAE ⠶ · 한글 꼴) 조항과 예가 명확해 규정을 따른다(원장 C-165, pm 10-08 승인).
+#   ⚠ 홑 글자 · 홑 숫자 표지 `(a)` `(1)` 은 맡기지 않는다 — gold 가 EBAE ⠶a⠶ 801 · 한글 꼴 92 로 갈려 판정 보류(C-165 A-2).
+#   번호 머리 `1)` `a)` 도 표지라 종전대로다(gold `1) - Check-up Test` = ⠼⠁⠠⠴).
+#   영어 1급(#1189) 줄은 종전대로 둔다(초등 gold `(Answers)` = ⠦⠄⠴…⠠⠴, 안 쟀다).
+#   함수명(sin · log …)이 든 줄은 종전대로다 — 수식 글이 쪼개져 한글 없는 조각이 된 것이고, gold 수식 괄호는 한글 꼴이다
+#   (dev EBS-E26-009 `TJO`(∠"#1) : …` 한컴 흔적 = sin · gold body p0059 `8'…,0`).
+#   메일 · 주소(`@`)가 든 줄도 종전대로다 — 한글 문장의 괄호가 줄바꿈으로 갈린 자리였다(dev EBS-E26-004 `Kkim@.com)` ·
+#   gold body p0124 101행 `…com,0` 한글 닫는 괄호). `= + →` 가 든 줄도 종전대로다 — 그 기호를 한글 점자 꼴(⠒⠒ · ⠢ · ⠒⠕)로 적는 줄은 gold 가 한글 문맥으로 본다
+#   (단어장 어원 줄 `dis(= not) +` = ⠴⠙⠊⠎⠦⠄⠒⠒⠀⠴⠝⠕⠞⠠⠴⠀⠢, HS-REF-T25-023 48줄이 첫 판에서 나빠졌다).
+_ENG_BRACKET_HOLD = {"(": "\x10", ")": "\x11", "[": "\x12", "]": "\x13"}
+_ENG_BRACKET_CELL = {"\x10": "⠐⠣", "\x11": "⠐⠜", "\x12": "⠨⠣", "\x13": "⠨⠜"}
+_ENG_BRACKET_RE = re.compile(r"\([A-Za-z0-9]\)|(?<![^\s])[A-Za-z0-9]{1,2}\)|[()\[\]]")
+_ENG_BRACKET_SKIP_RE = re.compile(r"[=+→@]")
+
+
+def _hold_eng_line(ln: str) -> str:
+    ln = _ENG_PUNCT_RE.sub(lambda m: _ENG_PUNCT_HOLD[m.group()], ln)
+    if (ENGLISH_GRADE1.get() or len(_ENG_PROSE_WORD_RE.findall(ln)) < 2 or _ENG_BRACKET_SKIP_RE.search(ln)
+            or _ART39_FUNC_RE.search(ln)):
+        return ln
+    return _ENG_BRACKET_RE.sub(lambda m: m.group() if len(m.group()) > 1 else _ENG_BRACKET_HOLD[m.group()], ln)
+
+
 def _hold_eng_punct(text: str) -> str:
-    if any(ph in text for ph in _ENG_PUNCT_HOLD.values()):    # 깨진 글자층에 같은 제어 문자가 이미 있으면 안 맡긴다
+    if any(ph in text for ph in (*_ENG_PUNCT_HOLD.values(), *_ENG_BRACKET_CELL)):    # 깨진 글자층에 같은 제어 문자가 이미 있으면 안 맡긴다
         return text
-    return "\n".join(_ENG_PUNCT_RE.sub(lambda m: _ENG_PUNCT_HOLD[m.group()], ln)
+    return "\n".join(_hold_eng_line(ln)
                      if not _HANGUL_SYL_RE.search(_RESIDUAL_BANG_TAG_RE.sub("", ln))
                      and (len(_ENG_PROSE_WORD_RE.findall(ln)) >= 2 or ENGLISH_GRADE1.get()) else ln
                      for ln in text.split("\n"))
@@ -2887,6 +2914,8 @@ def _hold_eng_punct(text: str) -> str:
 def _unhold_eng_punct(text: str) -> str:
     for ch, ph in _ENG_PUNCT_HOLD.items():
         text = text.replace(ph, ch)
+    for ph, cell in _ENG_BRACKET_CELL.items():
+        text = text.replace(ph, cell)
     return text
 
 
