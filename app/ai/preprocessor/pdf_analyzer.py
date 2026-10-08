@@ -12,7 +12,7 @@ from app.ai.preprocessor.hanyang_pua import HANYANG
 from app.schemas.layout import DocumentMeta
 from app.utils.logger import get_logger
 
-from app.ai.braille.tag_names import BOX_CHAR as TAG_BOX_CHAR
+from app.ai.braille.tag_names import BOX_CHAR as TAG_BOX_CHAR, ITALIC as TAG_ITALIC
 
 logger = get_logger(__name__)
 
@@ -430,7 +430,45 @@ def _fraction_subs(text: list[str], in_font: list[bool]) -> dict[int, str]:
     return out
 
 
-def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=None) -> str:
+# 영어 줄의 기울임 글자 → `<!기울임>…<!/기울임>`(#1205). fitz 는 조각마다 기울임 비트(flags 2)를 주는데 종전엔 버렸다
+# (MinerU 산출물엔 글꼴 칸이 아예 없다). gold 영어 자습서 · 문법서 4권이 UEB 이탤릭으로 적은 자리가 241곳 · 63쪽이다
+# (`He ⠨⠂availed himself` · `⠨⠂kimchi fried rice`). 그 책들은 묵자 짝이 없어 효과도 손해도 코퍼스로 못 잰다. 그래서 좁게 건다.
+# 2027 dev · val 묵자의 기울임 조각 23,594 는 아래 셋에 다 걸린다:
+#   · 한컴 수식 글꼴(EH · ST) 조각 — 수식 변수다(23,532).
+#   · 윗첨자 비트, 줄에서 가장 큰 글자보다 눈에 띄게 작은 조각 — 첨자다(생명과학 `Pi` 의 i, TKupItalic).
+#   · 한글이 든 줄, 두 글자 이상 로마자 낱말이 없는 구간 — 한글 글 속 기울임은 gold 관행을 모른다(#1204 밑줄과 같은 범위).
+# 점역기는 아직 이 태그를 걷어 낸다(점자 불변). 되돌리기 `ITALIC_TAG=0`(추출 단계).
+_IT_OPEN, _IT_CLOSE = f"<!{TAG_ITALIC}>", f"<!/{TAG_ITALIC}>"
+_IT_MATH_FONT_RE = re.compile(r"^(?:[A-Z]{6}\+)?(?:EH|ST)")
+_IT_SMALL = 0.8          # 줄에서 가장 큰 글자의 이 비율보다 작으면 첨자
+_LATIN_WORD2_RE = re.compile(r"[A-Za-z]{2,}")
+
+
+def italic_tag_on() -> bool:
+    return os.environ.get("ITALIC_TAG", "1") != "0"
+
+
+def _italic_runs(text: list[str], italic: list[bool]) -> list[tuple[int, int]]:
+    """기울임 구간 [(첫 글자, 끝 글자)] — 줄 안 글자 번호. 사이 빈칸은 구간에 들고, 여닫는 자리는 글자다(`to buy` 한 구간)."""
+    if any(_is_hangul(c) for c in text):
+        return []
+    runs: list[tuple[int, int]] = []
+    start = end = -1
+    for i, c in enumerate(text):
+        if c.isspace():
+            continue
+        if italic[i]:
+            start = i if start < 0 else start
+            end = i
+        elif start >= 0:
+            runs.append((start, end))
+            start = -1
+    if start >= 0:
+        runs.append((start, end))
+    return [(a, b) for a, b in runs if _LATIN_WORD2_RE.search("".join(text[a:b + 1]))]
+
+
+def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=None, italic: bool = False) -> str:
     """rawdict 한 줄 → 글자 간격으로 어절 경계를 복원한 텍스트.
 
     공백 글리프가 실제로 있는 자리는 그대로 두고, 한글이 낀 글자쌍에서만
@@ -441,8 +479,10 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
     글자들이 세로로 늘어서 x 간격이 무의미해진다(어절 복원이 전멸). 표시 좌표로 옮겨서 잰다.
     subs: {줄 안 글자 번호(스팬을 이어 센다): 대신 쓸 글}. 빈 글이면 그 글자를 뺀다. 띄어쓰기 · 밑줄
     판정은 원래 글자로 한다 — 한컴 수식 글꼴 글자를 GID 로 되돌릴 때 둘레 글이 안 흔들린다(#1060).
+    italic: 영어 줄 기울임 구간을 `<!기울임>` 으로 감싼다(위 `_italic_runs`). 태그를 내보낼 글을 만드는 호출부만 켠다.
     """
     chars: list[tuple[str, float, float, float, bool]] = []  # (ch, x0, x1, size, underlined)
+    itf: list[bool] = []     # 글자마다 기울임 조각인가(수식 글꼴 · 윗첨자 빼고)
     drop: set[int] = set()   # 윤디자인 기호 뒤에 겹쳐 붙은 가는 띄움(U+2009) — 기호 폭이지 띄어쓰기가 아니다(#1087)
     frac_font: list[bool] = []   # 글자마다 한컴 분수 글꼴인가(위 `_fraction_subs`)
     sym = False
@@ -451,6 +491,8 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
         yd = bool(_YD_FONT_RE.match(span.get("font") or ""))
         hy = bool(_HY_FONT_RE.match(span.get("font") or ""))
         fr = _FRACTION_ON and bool(_FRAC_FONT_RE.match(span.get("font") or ""))
+        flags = int(span.get("flags") or 0)
+        it = italic and bool(flags & 2) and not flags & 1 and not _IT_MATH_FONT_RE.match(span.get("font") or "")
         for c in span.get("chars", []):
             bbox = c.get("bbox") or (0, 0, 0, 0)
             if matrix is not None:
@@ -469,10 +511,19 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
                     ch = HANYANG[ch]
             chars.append((ch, float(bbox[0]), float(bbox[2]), size, ul))
             frac_font.append(fr)
+            itf.append(it)
     if not chars:
         return ""
     if any(frac_font) and (frac := _fraction_subs([c[0] for c in chars], frac_font)):
         subs = {**(subs or {}), **frac}
+    it_open: set[int] = set()
+    it_close: set[int] = set()
+    if any(itf) and italic_tag_on():
+        big = max(c[3] for c in chars)
+        gone = drop | {i for i, r in (subs or {}).items() if r == ""}   # 안 나가는 글자에서 여닫지 않는다
+        runs = _italic_runs([" " if i in gone else c[0] for i, c in enumerate(chars)],
+                            [f and chars[i][3] >= _IT_SMALL * big for i, f in enumerate(itf)])
+        it_open, it_close = {a for a, _b in runs}, {b for _a, b in runs}
 
     # 간격 표본: 공백이 아닌 인접 글자쌍의 (다음 x0 - 이전 x1)
     gaps: list[float] = []
@@ -503,16 +554,20 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
                 threshold = base + max(_WORD_GAP_RATIO * (size or 10.0), _WORD_GAP_MIN_PT)
                 if (x0 - px1) > threshold:
                     out.insert(len(out) - 1 if (ul and not _pul) else len(out), " ")
+        if i in it_open:
+            out.append(_IT_OPEN)
         out.append(ch if rep is None else rep)
+        if i in it_close:
+            out.append(_IT_CLOSE)
     if in_ul:
         out.append(_UL_CLOSE)
     return "".join(out)
 
 
-def _page_text_blocks_spaced(page) -> list[dict]:
+def _page_text_blocks_spaced(page, italic: bool = False) -> list[dict]:
     """페이지 텍스트 블록 추출(어절 경계 복원 포함) — get_text('blocks') 대체.
 
-    반환 요소: {"content": str, "bbox": [x0,y0,x1,y1] (PyMuPDF 포인트)}.
+    반환 요소: {"content": str, "bbox": [x0,y0,x1,y1] (PyMuPDF 포인트)}. italic 은 `_line_text_with_word_gaps` 로 넘긴다.
     """
     raw = page.get_text("rawdict")
     rot = page.rotation_matrix
@@ -522,7 +577,7 @@ def _page_text_blocks_spaced(page) -> list[dict]:
         if b.get("type") != 0:      # 0 = 텍스트 블록
             continue
         items = [(fitz.Rect(ln.get("bbox") or (0, 0, 0, 0)) * rot,
-                  _line_text_with_word_gaps(ln, rot, uls)) for ln in b.get("lines", [])]
+                  _line_text_with_word_gaps(ln, rot, uls, italic=italic)) for ln in b.get("lines", [])]
         text = rows_to_text([(r, t) for r, t in items if t])
         if not text:
             continue
@@ -754,7 +809,7 @@ def extract_text_blocks(pdf_data: bytes, page_no: int) -> tuple[list[dict], int,
             #   rotation_matrix를 곱하면 표시 좌표가 된다(실측 21/21 전부 정상 범위).
             rot = page.rotation_matrix if page.rotation else None
             blocks: list[dict] = []
-            for b in _merge_paragraph_blocks(_page_text_blocks_spaced(page)):
+            for b in _merge_paragraph_blocks(_page_text_blocks_spaced(page, italic=True)):
                 x0, y0, x1, y1 = b["bbox"]
                 if rot is not None:
                     r = fitz.Rect(x0, y0, x1, y1) * rot
