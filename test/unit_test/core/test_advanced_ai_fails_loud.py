@@ -83,6 +83,11 @@ class Test경계_재사용도_고급_점역을_안_무시한다:
     class _재파생함(RuntimeError):
         pass
 
+    @pytest.fixture(autouse=True)
+    def _measure_reuse(self, monkeypatch):
+        """경계 재사용은 이제 측정 러너만 한다(#1212). 제품은 늘 다시 떠서 이 자리가 생기지 않는다."""
+        monkeypatch.setenv("SEMOJUM_MEASURE_REUSE", "1")
+
     def _boundary(self, monkeypatch, tmp_path, method):
         """MinerU(또는 LLM_VISION) 로 만든 경계 파일 + 지문을 깔아 둔다."""
         monkeypatch.chdir(tmp_path)
