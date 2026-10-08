@@ -576,6 +576,24 @@ def _record_lines(grid: list[list[str]]) -> list[str]:
 _L2_MARKS = "가나다라마바사아자차카타파하"
 
 
+def _numbered_split(grid: list[list[str]]) -> tuple[list[str], list[list[str]]]:
+    """번호 체계 표 → (열 제목, 자료 행들). 첫 행은 칸이 **모두 짧을 때만** 열 제목이다(#1226).
+
+    문장 표는 값이 길고 열 제목은 라벨이라 짧다(`_HEAD_CELL_MAX`, 2열 구분선 판정과 같은 문턱).
+    종전에는 첫 행을 무조건 열 제목으로 써서, 머리행 없이 첫 행부터 자료인 표(`조사 | 격 조사 | 앞에 오는 …` ·
+    `특징 | • 북조 : …`)에서 첫 행 내용이 다른 행마다 `가.` 열 이름으로 되풀이되고 첫 행은 자료로 안 나갔다.
+    gold 는 그 첫 행을 자료로 적는다(세계사 body p0018 `1. 특징` · 언매 body p0019 `조사` + `격 조사: …`).
+    dev · val 번호 체계 표 66개 중 27개. `_has_col_headers` 는 3칸 이상이면 늘 참이라 이 표를 못 가린다.
+    끄기 `TABLE_NUMBERED_HEAD=0`(종전: 첫 행은 늘 열 제목).
+    """
+    if not grid:
+        return [], []
+    if (os.environ.get("TABLE_NUMBERED_HEAD", "1") == "0"
+            or all(len(c.strip()) <= _HEAD_CELL_MAX for c in grid[0] if c.strip())):
+        return grid[0], grid[1:]
+    return [], grid
+
+
 def _render_numbered(corrected_text: str) -> list[str]:
     """지침 §3.1.1 (1)③ — 번호 체계를 활용하여 풀어 적는다.
 
@@ -600,9 +618,9 @@ def _render_numbered(corrected_text: str) -> list[str]:
     if not rows:
         return [_TBL_TOP, _TBL_BOT]
     grid = [[c.strip() for c in r.split("|")] for r in rows]
-    heads = grid[0]
+    heads, body = _numbered_split(grid)
     out: list[str] = [_TBL_TOP]
-    for i, row in enumerate(grid[1:], start=1):
+    for i, row in enumerate(body, start=1):
         rh = row[0].strip()
         out.extend(_wrap_row(_translate(f"{i}. {rh}") if rh else _translate(f"{i}."),
                              first_indent=6))
@@ -1159,8 +1177,8 @@ def print_layout(corrected_text: str, mode: str) -> str:
     if mode == "numbered":                    # §3.1.1 (1)③ 번호 체계
         # 번호 체계·줄 나눔은 점자 쪽(`_render_numbered`)과 **같아야 한다** — 피커가
         # 묵자와 점자를 나란히 보이므로 어긋나면 점역사가 다른 안을 보고 고른다.
-        heads = rows[0]
-        for i, r in enumerate(rows[1:], start=1):
+        heads, body = _numbered_split(rows)
+        for i, r in enumerate(body, start=1):
             out.append(f"{i}. {r[0].strip()}" if r and r[0].strip() else f"{i}.")
             for j, cell in enumerate(r[1:], start=1):
                 v = cell.strip()
