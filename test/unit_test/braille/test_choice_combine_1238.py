@@ -4,22 +4,19 @@
 두 칸 띄워 5지는 3개면 3-2, 2개면 2-2-1 로 적는다. 기대값은 같은 절 [예 3-68](3459~3479행)의 점자 줄 그대로다 —
 3470~3471행 `①ⓐ` 다섯 = 3-2 · 3477~3479행 `①㉠, ㉡` 다섯 = 2-2-1(셋이면 들임 2 + 13 × 3 + 4 = 45칸이라 안 들어간다).
 화면(통 문자열 `flatten_elements`)과 다운로드(조판 `layout`)가 같은 줄을 내야 한다.
+요청 낱값 배선(proto 12 · PageTask · run → 조판 풀)은 `test/unit_test/core/test_choice_request_1238.py` 에 있다
+(점역 단위 게이트 test-fast 는 proto 를 만들지 않는다).
 """
 from __future__ import annotations
 
-import asyncio
 import contextvars
-from unittest.mock import patch
 from uuid import uuid4
 
 from app.ai.braille.constants import CHOICES_ONE_PER_LINE
 from app.ai.braille.layout_braille import LayoutBraille, _combine_choice_lines, flatten_elements
 from app.ai.braille.translator import translate_body
-from app.core import limits, pipeline
 from app.schemas.content import BrailleOutput, RuleApplication
 from app.schemas.layout import BBoxItem, LayoutResult
-from app.schemas.task import PageTask
-from protos.generated import braille_service_pb2 as pb
 
 _A = "①ⓐ\n②ⓑ\n③ⓒ\n④ⓓ\n⑤ⓔ"
 _K = "①㉠, ㉡\n②㉠, ㉢\n③㉡, ㉢\n④㉡, ㉣\n⑤㉢, ㉣"
@@ -110,34 +107,3 @@ def test_묶은_줄_뒤_글은_안_접는다():
     """2-2 둘째 줄이 30칸이라 접기 문턱(28)을 넘는다. 다음 글을 묶은 줄 끝에 이으면 안 된다."""
     flat, _ = _both("①㉠, ㉡\n②㉠, ㉢\n③㉡, ㉢\n④㉡, ㉣\n다음 글을 읽고 물음에 답하시오.", etype="text")
     assert flat[:2] == _K_ROWS[:2] and len(flat) == 3
-
-
-# ── 요청 낱값 배선(BrailleRequest 12) ─────────────────────────────────────────
-
-def test_번호와_빈_값():
-    assert pb.BrailleRequest.DESCRIPTOR.fields_by_name["choices_one_per_line"].number == 12
-    old = pb.BrailleRequest(job_id="j", page_no=3, mode="c")
-    assert old.SerializeToString() == pb.BrailleRequest(job_id="j", page_no=3, mode="c",
-                                                        choices_one_per_line=False).SerializeToString()
-    assert PageTask.from_proto(pb.BrailleRequest(job_id="j", page_no=1, choices_one_per_line=True)).choices_one_per_line
-    assert not PageTask.from_proto(old).choices_one_per_line
-
-
-def test_run_이_조판_풀까지_값을_넘긴다():
-    """조판(flatten · layout)도 `run_braille` 로 돈다. 동시 요청끼리, 이어 돈 쪽끼리 안 섞인다."""
-    seen: dict = {}
-
-    async def fake(task):
-        seen[task.job_id] = await limits.run_braille(CHOICES_ONE_PER_LINE.get)
-        await asyncio.sleep(0.01)
-        return {"status": "OK", "processing_meta": {}, "braille_text_list": []}
-
-    async def go():
-        await asyncio.gather(pipeline.run(PageTask(job_id="on", page_no=1, mode="c", choices_one_per_line=True)),
-                             pipeline.run(PageTask(job_id="off", page_no=1, mode="c")))
-        await pipeline.run(PageTask(job_id="after", page_no=1, mode="c"))
-
-    with patch.object(pipeline, "_run_pipeline", fake), \
-         patch.object(pipeline, "_record_metrics", lambda *a, **k: None):
-        asyncio.run(go())
-    assert seen == {"on": True, "off": False, "after": False}
