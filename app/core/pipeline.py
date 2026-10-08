@@ -377,6 +377,7 @@ _EXTRACT_ENV = (
     "TEXT_FRACTION",                                                                   # #1183 글로 된 분수 → 분모 ⠌ 분자
     "TABLE_LAYER_CTRL",                                                                # #1148 표 경로 층 글의 제어 문자 띄움
     "TABLE_CELL_PIECES",                                                               # #1208 긴 칸 층 조각 대조
+    "TABLE_CELL_CIRCLED_DIGIT",                                                        # #1210 표 칸 ㉠ → 민 숫자 되돌리기
     "HANCOM_FRACTION",                                                                 # #1055 한컴 작은 수 분수 풀기
     "SEMOJUM_NO_CAPTION", "CAPTION_MATERIAL", "CAPTION_UPSCALE", "CAPTION_FAIL_STREAK_LIMIT",
     "LLM_TEXT_GUARD", "LLM_CACHE_MODE", "SIDEBAR_AS_NOTE", "GRAFT_SIM_MIN",
