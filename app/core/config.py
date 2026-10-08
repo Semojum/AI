@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from dotenv import load_dotenv
+import os
+
+from dotenv import dotenv_values, load_dotenv
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -14,6 +16,19 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # ⚠ `override=False`(기본)다 — **프로세스 env 가 항상 이긴다.** A/B 는 `.env` 가 아니라
 #   프로세스 env 로 주입한다(`FOO=1 python …`).
 load_dotenv()
+
+# ── 재사용은 측정 러너만 (대표 결정 2026-10-08, #1212) ─────────────────────────
+# 같은 job 쪽을 다시 변환해도 매번 다시 추출한다. 경계 파일 · MinerU 원출력 · 캡션/분류 캐시 재사용은
+# **측정 러너만** 프로세스 env `SEMOJUM_MEASURE_REUSE=1` 로 켠다(abx · corpus_runner · e2e_runner --reuse).
+# 제품 서버는 진입점과 상관없이 늘 다시 뜬다(같은 코드에 env 하나로 가름, 진입점으로 가르지 않음).
+# ★ `.env` 로는 못 켠다. 위 `load_dotenv()` 가 `.env` 값을 `os.environ` 에 넣으므로 `.env` 에 적힌 키는 거른다.
+_DOTENV_KEYS = frozenset(dotenv_values())
+
+
+def measure_reuse() -> bool:
+    """측정 러너 재사용 스위치. 프로세스 env 만 본다(`.env` 에 적힌 값은 무시)."""
+    return os.environ.get("SEMOJUM_MEASURE_REUSE") == "1" and "SEMOJUM_MEASURE_REUSE" not in _DOTENV_KEYS
+
 
 # HCXT 추론 백엔드 허용값 — 아래 hcxt_backend 주석 참조.
 _HCXT_BACKENDS = {"off", "transformers", "vllm"}
@@ -35,7 +50,7 @@ class Settings(BaseSettings):
     # ── 타임아웃 / 임계값 ─────────────────────────────────────────
     page_timeout_seconds: float = 180.0   # 페이지 하드 타임아웃(C7). 운영 정본 = 180초.
     # MinerU 추출 서브 타임아웃(초). 0 = 자동(아래 mineru_timeout_resolved).
-    # 병리적으로 무거운 페이지(C9)에서 MinerU가 페이지 예산을 다 태우고 C7 BLOCKED로
+    # 병리적으로 무거운 페이지에서 MinerU가 페이지 예산을 다 태우고 C7 BLOCKED로
     # 죽는 대신, 추출을 먼저 끊고 텍스트레이어 폴백으로 부분 초안을 살리기 위한 예산.
     mineru_timeout_seconds: float = 0.0
     ocr_confidence_threshold: float = 0.90

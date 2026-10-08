@@ -18,6 +18,12 @@ from app.utils import llm_cache
 
 
 @pytest.fixture(autouse=True)
+def _measure_reuse(monkeypatch):
+    """이 시험들은 측정 러너의 재사용 동작을 본다. 제품 기본은 재사용을 끈다(#1212)."""
+    monkeypatch.setenv("SEMOJUM_MEASURE_REUSE", "1")
+
+
+@pytest.fixture(autouse=True)
 def scope():
     """캐시는 격리 열쇠가 걸려 있을 때만 돈다(3-e)."""
     llm_cache.set_scope("job-A")

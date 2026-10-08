@@ -37,8 +37,9 @@ def _build_info() -> dict:
             ).stdout.strip()
         except Exception:                   # noqa: BLE001
             commit = ""
+    from app.core.config import measure_reuse
     cache_dir = os.getenv("CAPTION_CACHE_DIR")
-    if cache_dir and Path(cache_dir).is_dir():
+    if measure_reuse() and cache_dir and Path(cache_dir).is_dir():     # 제품은 캡션 캐시를 안 쓴다(#1212)
         caption_cache = {"enabled": True, "entries": len(list(Path(cache_dir).glob("*.txt")))}
     else:
         caption_cache = {"enabled": False, "entries": 0}

@@ -95,13 +95,21 @@ def mode() -> str:
     return _mode()
 
 
+# 제품에서도 LLM 응답 캐시를 쓰나. 대표 결재 대기(2026-10-08, #1212): 경계 · MinerU 원출력 · 캡션/분류 캐시는
+# 제품에서 껐고 이것만 3-e 대표 결재대로 둔다. 회신으로 끄게 되면 이 한 줄을 False 로 바꾼다(측정 러너는
+# `SEMOJUM_MEASURE_REUSE=1` 이라 그대로 쓴다).
+LLM_CACHE_IN_PRODUCT = True
+
+
 def root() -> Path | None:
     """`cas/llm` 뿌리. `LLM_CACHE_DIR` 이 **빈 값**이면 None = 캐시 끔.
 
     ★ 기본값은 `Settings.llm_cache_dir`(재구조화 3-e, 운영 기본 켬)에서 온다. 되돌리는 길은
-      `.env` 에 `LLM_CACHE_DIR=` 한 줄이다.
+      `.env` 에 `LLM_CACHE_DIR=` 한 줄이다. `LLM_CACHE_IN_PRODUCT=False` 면 측정 러너 밖에서는 끈다.
     """
-    from app.core.config import config      # 지연 import — 모듈 최상단이면 순환이다
+    from app.core.config import config, measure_reuse      # 지연 import — 모듈 최상단이면 순환이다
+    if not LLM_CACHE_IN_PRODUCT and not measure_reuse():
+        return None
     d = resolve_dir("LLM_CACHE_DIR", config.llm_cache_dir)
     return (d / "cas" / "llm") if d else None
 

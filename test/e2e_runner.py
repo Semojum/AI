@@ -209,6 +209,8 @@ def main() -> None:
     ap.add_argument("--no-scan", action="store_true", help="스캔(MinerU) 슬라이스 제외")
     ap.add_argument("--reuse", action="store_true", help="기존 추출 캐시 보존, opt→braille만 갱신")
     args = ap.parse_args()
+    if args.reuse:          # 제품 기본은 재사용 끔(#1212) — 이 러너의 --reuse 는 측정 재사용을 켠다
+        os.environ["SEMOJUM_MEASURE_REUSE"] = "1"
 
     only = set(args.only.split(",")) if args.only else None
     modes_filter = set(args.modes.split(",")) if args.modes else None
