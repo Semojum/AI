@@ -576,22 +576,38 @@ def _record_lines(grid: list[list[str]]) -> list[str]:
 _L2_MARKS = "가나다라마바사아자차카타파하"
 
 
-def _numbered_split(grid: list[list[str]]) -> tuple[list[str], list[list[str]]]:
-    """번호 체계 표 → (열 제목, 자료 행들). 첫 행은 칸이 **모두 짧을 때만** 열 제목이다(#1226).
+# 번호 체계 표 첫 행 판정(#1226). 첫 행 칸이 **문장**이면 열 제목이 아니라 자료 행이다.
+# 문장 = 괄호 속 풀이 · LaTeX 를 뺀 글이 20자를 넘거나, 글머리(• · 칸 첫머리 ·) · 화살표 · 괄호 밖 쉼표가 있다.
+# 실측(2026-10-08, temp/n158/label.py · heads82.py):
+#   dev · val 번호 체계 표 66개 첫 행을 눈으로 가름 = 열 제목 49 · 자료 행 17.
+#   열 제목은 괄호 · LaTeX 뺀 길이 최장 14, 표지 없는 자료 행은 최단 22 → 그 사이 골.
+#   이 판정: 자료 행 16/17 맞힘 · 열 제목을 자료로 잘못 0/49. 놓친 1은 칸 전체가 LaTeX 인 수학 문항 행.
+#   종전 10자(날 길이)는 자료 17/17 이지만 열 제목 10/49 를 자료로 잘못 봤다(`모래시계형 계층 구조` 11 ·
+#   `정보 표현에 사용되는 언어` 14 · `‘안’ 부정문(단순 부정, 의지 부정)` 21).
+#   짝 12권 밖 82권 gold 의 열 제목 칸(머리행 구분선 바로 위 줄, 3,615칸): 10자 초과 11.0% · 20자 초과 1.4%.
+_NUM_HEAD_MAX = 20
+_NUM_SENT_MARK = re.compile(r"[•◦▪→⇒⇨]|, |^·\s")      # 쌍점은 안 본다(gold 머리행 꼴 `구분: 내용` 이 붙인 것)
+_NUM_PAREN = re.compile(r"\([^()]*\)|（[^（）]*）")
+_NUM_LATEX = re.compile(r"\$[^$]*\$")
 
-    문장 표는 값이 길고 열 제목은 라벨이라 짧다(`_HEAD_CELL_MAX`, 2열 구분선 판정과 같은 문턱).
+
+def _numbered_split(grid: list[list[str]]) -> tuple[list[str], list[list[str]]]:
+    """번호 체계 표 → (열 제목, 자료 행들). 첫 행 칸이 문장이면 첫 행부터 자료로 푼다(#1226, 위 실측).
+
     종전에는 첫 행을 무조건 열 제목으로 써서, 머리행 없이 첫 행부터 자료인 표(`조사 | 격 조사 | 앞에 오는 …` ·
     `특징 | • 북조 : …`)에서 첫 행 내용이 다른 행마다 `가.` 열 이름으로 되풀이되고 첫 행은 자료로 안 나갔다.
     gold 는 그 첫 행을 자료로 적는다(세계사 body p0018 `1. 특징` · 언매 body p0019 `조사` + `격 조사: …`).
-    dev · val 번호 체계 표 66개 중 27개. `_has_col_headers` 는 3칸 이상이면 늘 참이라 이 표를 못 가린다.
-    끄기 `TABLE_NUMBERED_HEAD=0`(종전: 첫 행은 늘 열 제목).
+    `_has_col_headers` 는 3칸 이상이면 늘 참이라 이 표를 못 가린다. 끄기 `TABLE_NUMBERED_HEAD=0`(첫 행은 늘 열 제목).
     """
     if not grid:
         return [], []
-    if (os.environ.get("TABLE_NUMBERED_HEAD", "1") == "0"
-            or all(len(c.strip()) <= _HEAD_CELL_MAX for c in grid[0] if c.strip())):
+    if os.environ.get("TABLE_NUMBERED_HEAD", "1") == "0":
         return grid[0], grid[1:]
-    return [], grid
+    for c in grid[0]:
+        t = _NUM_LATEX.sub("", _NUM_PAREN.sub("", c)).strip()
+        if len(t) > _NUM_HEAD_MAX or _NUM_SENT_MARK.search(t):
+            return [], grid
+    return grid[0], grid[1:]
 
 
 def _render_numbered(corrected_text: str) -> list[str]:
