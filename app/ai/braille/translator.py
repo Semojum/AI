@@ -3444,6 +3444,9 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     # R-72 — 뒤집힌 닫는 태그(`</!이름>`). 여기에도 두는 이유는 `table_braille` 이
     # 이 함수를 **직접** 부르기 때문이다(표 칸 269건 중 14건). 멱등이라 겹쳐도 무해하다.
     text = _MIRRORED_CLOSE_RE.sub("<!/", text)
+    # 기울임 태그(#1205)는 아직 점형이 없다 — 맨 먼저 걷어 점자를 태그 없는 글과 같게 둔다.
+    #   UEB 이탤릭(⠨⠂ · ⠨⠶…⠨⠄)은 gold 와 맞댈 묵자 짝이 생기면 단다(gold 이탤릭 242곳이 전부 짝 없는 책).
+    text = _TAGS.ITALIC_TAG_RE.sub("", text)
     # ★ 관문 G3(재구조화 §2-2) — 점역기 입구는 **제거만** 한다. 여기는 요소를 비울 수도
     #   R11 을 붙일 수도 없는 자리다(`str -> str`). AI 해설문 판정은 G1 몫이라 여기 두지
     #   않는다. 형식 토큰(`⟦재료⟧`)만 걷는다 — 뒤집힌 태그(R-72, 위)·마크업 조각(#667,
@@ -3860,6 +3863,7 @@ def translate_with_breaks(text: str, *, force_roman: bool = False,
     #   한다: 아래 _drop_nonkorean_emphasis·isolate_border_tags·substitute_tags 가 전부
     #   `<!` 앵커로 짝을 세기 때문이다(_MIRRORED_CLOSE_RE 주석 참조).
     text = _MIRRORED_CLOSE_RE.sub("<!/", text)
+    text = _TAGS.ITALIC_TAG_RE.sub("", text)   # 기울임(#1205) — 요소 전체를 보는 아래 단계 전에(`translate_tagged_text` 주석)
     text = _strip_markup_fragments(text)   # #667 마크업 조각
     text = isolate_border_tags(text)
     if qnum_period:

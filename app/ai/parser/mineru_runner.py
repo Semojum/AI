@@ -1380,7 +1380,7 @@ def _table_layer(text: str) -> str:
     return text if os.environ.get("TABLE_LAYER_CTRL", "1") == "0" else text.translate(_CTRL_TO_SPACE)
 
 
-def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float], skip_math: bool = False) -> str:
+def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float], skip_math: bool = False, italic: bool = False) -> str:
     """bbox 안의 텍스트를 어절 경계 복원해서 뽑는다.
 
     ⚠ get_text("text")를 그대로 쓰면 안 된다 — 교과서 PDF 다수가 공백 글리프 없이 글자
@@ -1388,10 +1388,11 @@ def _native_text_spaced(fitz_page: fitz.Page, bbox: list[float], skip_math: bool
     규칙이라 그대로 점역하면 정답과 크게 어긋난다(세계사 p086 실측: cell_ns 0.87→0.39).
     pdf_analyzer의 글자 간격 기반 복원(_page_text_blocks_spaced)을 재사용한다.
     """
-    return _native_text_pair(fitz_page, bbox, skip_math)[1].translate(_CTRL_TO_SPACE)
+    return _native_text_pair(fitz_page, bbox, skip_math, italic)[1].translate(_CTRL_TO_SPACE)
 
 
-def _native_text_pair(fitz_page: fitz.Page, bbox: list[float], skip_math: bool = False) -> tuple[str, str]:
+def _native_text_pair(fitz_page: fitz.Page, bbox: list[float], skip_math: bool = False,
+                      italic: bool = False) -> tuple[str, str]:
     """(층 글, 한컴 수식 글꼴 글자를 GID 로 되돌린 층 글)(#1060, `hancom_glyphs`).
 
     ★ 층을 믿을지는 **앞 것**으로 먼저 본다. 되돌리기가 거짓 글자를 지워 못 믿던 층을 믿게 만들면, MinerU 가
@@ -1413,11 +1414,11 @@ def _native_text_pair(fitz_page: fitz.Page, bbox: list[float], skip_math: bool =
     for lb, ln in rows:
         if skip_math and _math_font_line(ln):
             continue                   # 수식 글꼴 줄만 뺀다(표 띠 되살리기, #1047)
-        t = _line_text_with_word_gaps(ln, rot, uls)
+        t = _line_text_with_word_gaps(ln, rot, uls, italic=italic)
         subs = hancom_glyphs.line_subs(ln, fixes)
         if id(ln) in fsubs:            # 글로 된 분수(#1183) — 되돌린 글에만, 믿을지 · 닮았는지는 앞 글로 본다
             subs = {**(subs or {}), **fsubs[id(ln)]}
-        f = _line_text_with_word_gaps(ln, rot, uls, subs) if subs else t
+        f = _line_text_with_word_gaps(ln, rot, uls, subs, italic=italic) if subs else t
         # ★ 같은 인쇄 줄이 여러 line으로 쪼개진 것(정답표·선택지)은 rows_to_text가
         #   한 줄로 이어 두 칸을 띈다 — 지침 3장 3절 4)(3)① (QA S4)
         if t:
@@ -1667,7 +1668,11 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str,
     """
     if _MATH_FONT_GUARD and (mineru_text or "").strip() and _has_math_font(fitz_page, bbox):
         return None                        # 위 _has_math_font 주석 참조. MinerU 글이 비면 층이라도 쓴다
-    plain, native = _native_text_pair(fitz_page, bbox)        # 믿을지 · 닮았는지는 되돌리기 전 글로(#1060)
+    from app.ai.braille.tag_names import ITALIC_TAG_RE
+    plain, native = _native_text_pair(fitz_page, bbox, italic=True)   # 믿을지 · 닮았는지는 되돌리기 전 글로(#1060)
+    # 기울임 태그(#1205)는 내보낼 글에만 남긴다. 판정은 종전 글로 본다 — 태그 13자가 짧은 요소의 닮음 문턱을 흔든다.
+    tagged = native.translate(_CTRL_TO_SPACE)
+    plain, native = ITALIC_TAG_RE.sub("", plain), ITALIC_TAG_RE.sub("", native)
     if "ː" in plain and _length_mark_mixed(plain):
         return None                        # 위 _length_mark_mixed 주석
     plain, native = plain.translate(_CTRL_TO_SPACE), native.translate(_CTRL_TO_SPACE)   # 위 _CTRL_TO_SPACE 주석
@@ -1676,12 +1681,12 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str,
         return None
     base = (mineru_text or "").strip()
     if not base:
-        return native
+        return tagged
     if _LATEX_COUNT_GUARD and _latex_lost(base, native):
         return None                        # #1130 — 층을 어느 경로로 믿었든(제어 문자 띄움 · 되돌리기 · 처음부터) 같다
     if (halluc_layer is not None and not _has_struct_font(fitz_page, bbox)
             and _halluc_keeps_real(base, native, halluc_layer)):
-        return native                      # 위 환각 절 ① — 쓰레기가 끌어내린 닮음은 안 본다
+        return tagged                      # 위 환각 절 ① — 쓰레기가 끌어내린 닮음은 안 본다
     # ① 을 못 타면 아래 종전 닮음 문턱으로 간다. 환각 신호가 종전보다 엄격해지면 안 된다 — 여기서 None 을
     # 돌려줬더니 종전이 덮던 깨진 MinerU 글이 남았다(생명과학 해설 p0038 `X\x8c`Y` · `㉠10]叫`, 구조 글꼴 쪽).
     # 같은 블록을 가리키는지 확인 — clip은 겹치는 글리프를 다 가져오므로 bbox가 어긋나면
@@ -1691,7 +1696,7 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str,
     b = "".join(base.split())
     if SequenceMatcher(None, a, b).ratio() < _SIM_MIN:
         return None
-    return native
+    return tagged
 
 
 def _native_or_flag(fitz_page: fitz.Page, bbox: list[float], mineru_text: str, page_layer) -> tuple[str, bool]:
@@ -2337,7 +2342,7 @@ def run(
             pass                       # 부모 bbox 를 빌린 펼친 글(#986) — 그 자리 레이어는 부모 글이다
         elif mapped_type in _NATIVE_TEXT_TYPES:
             if extraction_method == "TEXT_NATIVE":
-                content = _native_text_spaced(fitz_page, bb) or content
+                content = _native_text_spaced(fitz_page, bb, italic=True) or content   # 기울임 태그(#1205)
             else:
                 content, suspect = _native_or_flag(fitz_page, bb, content, _page_layer)
         elif mapped_type == "table" and _collapsed_table(content):
