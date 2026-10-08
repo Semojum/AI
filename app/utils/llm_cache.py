@@ -96,17 +96,17 @@ def mode() -> str:
     return _mode()
 
 
-# 제품에서도 LLM 응답 캐시를 쓰나. 대표 결재 대기(2026-10-08, #1212): 경계 · MinerU 원출력 · 캡션/분류 캐시는
-# 제품에서 껐고 이것만 3-e 대표 결재대로 둔다. 회신으로 끄게 되면 이 한 줄을 False 로 바꾼다(측정 러너는
-# `SEMOJUM_MEASURE_REUSE=1` 이라 그대로 쓴다).
-LLM_CACHE_IN_PRODUCT = True
+# 제품에서도 LLM 응답 캐시를 쓰나. **안 쓴다**(대표 결재 2026-10-08, #1227 · DECISIONS.md). 3-e 에서 켠 것을
+# 뒤집었다. 같은 job 쪽을 다시 변환하면 경계 · MinerU 원출력 · 캡션/분류(#1212)처럼 LLM 도 다시 부른다.
+# 측정 러너는 `SEMOJUM_MEASURE_REUSE=1` 이라 그대로 쓴다. 되살리려면 이 한 줄을 True 로.
+LLM_CACHE_IN_PRODUCT = False
 
 
 def root() -> Path | None:
     """`cas/llm` 뿌리. `LLM_CACHE_DIR` 이 **빈 값**이면 None = 캐시 끔.
 
-    ★ 기본값은 `Settings.llm_cache_dir`(재구조화 3-e, 운영 기본 켬)에서 온다. 되돌리는 길은
-      `.env` 에 `LLM_CACHE_DIR=` 한 줄이다. `LLM_CACHE_IN_PRODUCT=False` 면 측정 러너 밖에서는 끈다.
+    ★ 제품(측정 러너 밖)에서는 늘 None 이다(`LLM_CACHE_IN_PRODUCT=False`, #1227). 측정 러너에서는 기본값이
+      `Settings.llm_cache_dir` 에서 오고, `LLM_CACHE_DIR=` 한 줄(빈 값)이 끄는 길이다.
     """
     from app.core.config import config, measure_reuse      # 지연 import — 모듈 최상단이면 순환이다
     if not LLM_CACHE_IN_PRODUCT and not measure_reuse():

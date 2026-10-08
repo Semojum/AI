@@ -1,8 +1,8 @@
 """같은 job 쪽을 다시 변환해도 매번 다시 추출한다(대표 결정 2026-10-08, #1212).
 
-제품 기본은 경계 파일 · MinerU 원출력 · 캡션/분류 캐시 재사용을 끈다. 측정 러너만 프로세스 env
+제품 기본은 경계 파일 · MinerU 원출력 · 캡션/분류 캐시 · LLM 응답 캐시(#1227) 재사용을 끈다. 측정 러너만 프로세스 env
 `SEMOJUM_MEASURE_REUSE=1` 로 재사용을 켜고, `.env` 에 적힌 값으로는 못 켠다. LLM 응답 캐시는 대표 결재
-대기라 `llm_cache.LLM_CACHE_IN_PRODUCT` 한 줄로 가른다.
+(2026-10-08)로 끄고 `llm_cache.LLM_CACHE_IN_PRODUCT` 한 줄로 가른다.
 """
 import sys
 from pathlib import Path
@@ -67,10 +67,12 @@ def test_제품은_캡션_분류_캐시를_안_쓴다(product, monkeypatch, tmp_
         llm_cache.set_scope("")
 
 
-def test_LLM_캐시는_한_줄로_가른다(product, monkeypatch, tmp_path):
+def test_LLM_캐시는_제품에서_끈다(product, monkeypatch, tmp_path):
+    """대표 결재(2026-10-08, #1227)로 LLM 응답 캐시도 제품에서 끈다. 측정 러너는 그대로 쓴다."""
     monkeypatch.setenv("LLM_CACHE_DIR", str(tmp_path))
-    assert llm_cache.root() is not None                      # 대표 결재 전: 제품에서도 지금대로
-    monkeypatch.setattr(llm_cache, "LLM_CACHE_IN_PRODUCT", False)
-    assert llm_cache.root() is None                          # 결재로 끄면 제품에서 꺼진다
+    assert llm_cache.root() is None                          # 제품: 꺼짐
     monkeypatch.setenv("SEMOJUM_MEASURE_REUSE", "1")
     assert llm_cache.root() is not None                      # 측정 러너는 그대로
+    monkeypatch.delenv("SEMOJUM_MEASURE_REUSE")
+    monkeypatch.setattr(llm_cache, "LLM_CACHE_IN_PRODUCT", True)
+    assert llm_cache.root() is not None                      # 되살리는 길은 이 한 줄
