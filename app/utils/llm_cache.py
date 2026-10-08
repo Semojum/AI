@@ -87,7 +87,8 @@ def scope() -> str:
 
 
 def _mode() -> str:
-    return os.environ.get("LLM_CACHE_MODE", "rw").strip().lower()
+    from app.core.config import process_env                # 지연 import — root() 와 같다
+    return (process_env("LLM_CACHE_MODE") or "rw").strip().lower()
 
 
 def mode() -> str:

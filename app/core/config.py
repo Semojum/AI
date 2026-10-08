@@ -25,9 +25,19 @@ load_dotenv()
 _DOTENV_KEYS = frozenset(dotenv_values())
 
 
+def process_env(key: str) -> str | None:
+    """측정 · 시험 스위치 값. 프로세스 env 만 본다(`.env` 에 적힌 키는 무시).
+
+    제품에서 켜지면 출력이 조용히 나빠지는 스위치는 이걸로 읽는다. 그냥 `os.environ` 으로 읽으면 서버 `.env`
+    한 줄로 켜진다. 지금 일곱: `SEMOJUM_MEASURE_REUSE` · `BOUNDARY_REUSE` · `MINERU_RAW_REUSE` ·
+    `LLM_CACHE_MODE`(ro 면 LLM 을 안 부른다) · `SEMOJUM_NO_CAPTION` · `DISABLE_LLM_FALLBACK` · `CHAIN_SEQUENTIAL`.
+    """
+    return None if key in _DOTENV_KEYS else os.environ.get(key)
+
+
 def measure_reuse() -> bool:
     """측정 러너 재사용 스위치. 프로세스 env 만 본다(`.env` 에 적힌 값은 무시)."""
-    return os.environ.get("SEMOJUM_MEASURE_REUSE") == "1" and "SEMOJUM_MEASURE_REUSE" not in _DOTENV_KEYS
+    return process_env("SEMOJUM_MEASURE_REUSE") == "1"
 
 
 # HCXT 추론 백엔드 허용값 — 아래 hcxt_backend 주석 참조.
