@@ -4,7 +4,7 @@
 예(1664~1666행) `모음에는 (a), (e) …` = `0"<a">1`"<;e">1…` — 소괄호 ⠐⠣ ⠐⠜.
 대괄호 ⠨⠣ ⠨⠜ 는 gold 영어책 264 : 한글 꼴 191(그중 189 가 HS-REF-T26-013 한 권).
 """
-from app.ai.braille.translator import translate_tagged_text
+from app.ai.braille.translator import translate_body, translate_tagged_text
 
 _BRF = " A1B'K2L@CIF/MSP\"E3H9O6R^DJG>NTQ,*5<-U8V.%[$+X!&;:4\\0Z7(_?W]#Y)="
 
@@ -25,9 +25,17 @@ def test_낱말_소괄호는_통일영어점자_꼴() -> None:
     assert "⠦⠄" not in out and "⠠⠴" not in out
 
 
-def test_홑_글자_보기_표지는_종전대로() -> None:
-    # C-165 A-2 판정 보류 — gold 가 EBAE ⠶a⠶ 801 · 한글 꼴 92 로 갈린다
-    assert translate_tagged_text("(a) the hair or nails").startswith("⠦⠄⠁⠠⠴")
+def test_홑_낱자_보기_표지는_EBAE_괄호() -> None:
+    # C-165 A-2(#1229) — 표지 903곳 중 로마자표 구간 밖 807 이라 관행 ⠶ … ⠶(801, 6권). HS-REF-007 ans p0039 12행
+    # 밑줄(#1207)은 본문 경로(translate_body)가 적는다
+    assert translate_body("(a) <!강조>him<!/강조> about a Spanish barber")[0] == [_u("7a7 _1hm ab a ,spani% b>b]")]
+    # a · i · o 밖의 낱자는 1급 기호 ⠰ — gold `(b)` = ⠶⠰⠃⠶ 286
+    assert "⠶⠰⠃⠶" in translate_tagged_text("his home (b) the old one")
+
+
+def test_숫자_보기_표지는_한글_소괄호() -> None:
+    # gold 숫자 표지 `(1)` 은 한글 소괄호 87
+    assert translate_tagged_text("See (1) and (2) here please").count("⠦⠄") == 2
 
 
 def test_한글_줄은_종전대로() -> None:
