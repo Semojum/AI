@@ -18,6 +18,7 @@ from PIL import Image, ImageDraw, ImageFont
 from app.ai.captioning.captioner import backend_status, caption, log_backend_status
 from app.ai.captioning.classifier import classify_with_confidence
 from app.ai.llm.diagram_structure import subtype_from_caption
+from app.core.config import process_env
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -215,7 +216,7 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
     # _is_fatal에 걸려 실행이 잠긴다. 결과는 설계대로(빈 캡션 + CAPTION_FAILED)지만
     # 로그에 `CAPTION_ERR:TypeError`가 남아 **"캡셔닝이 100% 죽었다"로 읽힌다** —
     # 실제로 그 오독으로 두 세션이 몇 시간을 썼다(2026-08-16). 조용히 건너뛴다.
-    if os.environ.get("DISABLE_LLM_FALLBACK") == "1":
+    if process_env("DISABLE_LLM_FALLBACK") == "1":
         logger.debug("캡셔닝 건너뜀(DISABLE_LLM_FALLBACK=1) id=%s", eid)
         return "", original_type, False, None, "", False
 
@@ -254,7 +255,7 @@ def _do_caption(el: dict, context: str = "") -> tuple[str, str, bool, float | No
     #   규정상 '생략' 표기를 내고 품질검사가 R11로 띄운다(요소는 살아 있다).
     #   ⚠ 이 산출물로 **시각 축을 재면 안 된다.** 그래서 응답 메타에 표시를 박는다
     #      (pipeline의 processing_meta.caption_disabled).
-    if os.getenv("SEMOJUM_NO_CAPTION") == "1":
+    if process_env("SEMOJUM_NO_CAPTION") == "1":
         logger.info("캡셔닝 꺼짐(SEMOJUM_NO_CAPTION=1) — 생략 처리 id=%s", eid)
         return "", original_type, False, None, "", False
 

@@ -2090,10 +2090,10 @@ def _raw_dir(base: Path, mineru_cache_dir: str | None) -> tuple[Path, bool]:
       MinerU 가 안 돈다. 주어진 캐시 폴더(`mineru_cache_dir`)는 건드리지 않고 이 쪽 폴더를 비워 새로 받는다.
       프로세스 env 로만 읽는다.
     """
-    from app.core.config import measure_reuse
+    from app.core.config import measure_reuse, process_env
     raw_dir = Path(mineru_cache_dir) if mineru_cache_dir else base / "mineru_raw"
     # 제품은 같은 job 쪽도 MinerU 를 늘 다시 부른다(#1212). 측정 러너만 `SEMOJUM_MEASURE_REUSE=1` 로 재사용한다.
-    if os.environ.get("MINERU_RAW_REUSE", "") == "never" or not measure_reuse():
+    if process_env("MINERU_RAW_REUSE") == "never" or not measure_reuse():
         raw_dir = base / "mineru_raw"
         shutil.rmtree(raw_dir, ignore_errors=True)
     return raw_dir, bool(list(raw_dir.rglob("*_content_list.json")))

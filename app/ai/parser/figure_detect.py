@@ -20,7 +20,7 @@ import json
 import os
 import re
 
-from app.core.config import config
+from app.core.config import config, process_env
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -60,7 +60,7 @@ _ASK = """이 교과서 페이지에서 **시각자료**를 모두 찾아 주십
 
 def enabled() -> bool:
     """켤 조건 — A/B(무-LLM) 실행과 키 없는 환경에서는 돌지 않는다."""
-    if os.environ.get("DISABLE_LLM_FALLBACK") == "1":
+    if process_env("DISABLE_LLM_FALLBACK") == "1":
         return False
     if os.environ.get("FIGURE_DETECT", "1") != "1":
         return False

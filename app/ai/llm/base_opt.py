@@ -20,7 +20,7 @@ import re
 import time
 from typing import Callable, Optional
 
-from app.core.config import config
+from app.core.config import config, process_env
 from app.core.model_manager import model_manager
 from app.schemas.content import ExtractedContent, LLMOutput
 from app.schemas.layout import LayoutResult
@@ -154,7 +154,7 @@ async def fallback_optimize(prompt: str, *, max_tokens: int = 300, kind: str = "
     """
     from app.core.limits import estimate_tokens, llm_limiter, llm_slot
 
-    if os.environ.get("DISABLE_LLM_FALLBACK") == "1":
+    if process_env("DISABLE_LLM_FALLBACK") == "1":
         logger.warning("LLM 폴백 차단됨(DISABLE_LLM_FALLBACK=1) — %s", kind)
         return ""
 

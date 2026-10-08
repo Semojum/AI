@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Optional
 from uuid import UUID, uuid4, uuid5
 
-from app.core.config import config
+from app.core.config import config, process_env
 from app.ai import gates
 from app.schemas.content import BrailleOutput, ExtractedContent, LLMOutput
 from app.schemas.layout import BBoxItem, DocumentMeta, LayoutResult
@@ -433,7 +433,7 @@ def _boundary_reuse(reuse_reason: str | None) -> str | None:
     from app.core.config import measure_reuse
     if not measure_reuse():                 # 제품은 같은 job 쪽도 늘 다시 뜬다(#1212, config.measure_reuse)
         return "reconvert"
-    mode = os.environ.get("BOUNDARY_REUSE", "")
+    mode = process_env("BOUNDARY_REUSE") or ""
     if mode == "never":
         return "never"
     if reuse_reason and reuse_reason != "no_doc_meta" and mode == "always":
@@ -516,7 +516,7 @@ async def _gather_chains(coros):
       필요하다. 순차에서도 갈리면 동시성이 아니고, 안 갈리면 동시성이 원인이다.
       기본은 꺼져 있고, 켜면 느려지므로 운영에서는 쓰지 않는다.
     """
-    if os.environ.get("CHAIN_SEQUENTIAL") == "1":
+    if process_env("CHAIN_SEQUENTIAL") == "1":
         out = []
         for c in coros:
             try:
@@ -1472,7 +1472,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             # 캡셔닝을 끄고 뜬 경계인가. **경계와 함께 다닌다** — 응답 표시(processing_meta.caption_disabled)는
             # 요청 때 env 가 아니라 이 값을 옮긴다. 경계를 재사용·복사하면 env 와 내용이 갈리기 때문이다
             # (arm.py 108곳: 캡션 든 d8c 경계에 True 가 찍혔다). 이 키가 없는 옛 경계는 '모름'(None)이다.
-            "caption_disabled": os.getenv("SEMOJUM_NO_CAPTION") == "1",
+            "caption_disabled": process_env("SEMOJUM_NO_CAPTION") == "1",
             # 추출 중에 센 관문 발동(G1 등). 재사용 때 되살린다 — 추출이 안 돌면 안 세져서
             # 재요청마다 검토 표시가 빠졌다(#1032). 이 키가 없는 옛 경계는 종전대로 표시 없음.
             "gate_counts": [[g, r, n] for (g, r), n in sorted(gates.gate_counts().items())],
@@ -3352,7 +3352,7 @@ def _build_response(
             "scan_only": doc_meta.scan_only if doc_meta else False,
             # 캡셔닝을 끄고 뜬 경계로 낸 산출물이면 박아 둔다 — 이걸로 시각 축을 재면 안 된다.
             # 값은 경계 meta 에서 온다(True · False · 모름=None). 경계가 없는 모드 b 는 요청 때 env.
-            "caption_disabled": (os.getenv("SEMOJUM_NO_CAPTION") == "1"
+            "caption_disabled": (process_env("SEMOJUM_NO_CAPTION") == "1"
                                  if caption_disabled is _ENV_CAPTION else caption_disabled),
         },
         "quality_report": quality_report.model_dump(),
