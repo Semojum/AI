@@ -1,0 +1,195 @@
+[
+    [
+        {
+            "type": "header",
+            "bbox": [
+                0.117,
+                0.045,
+                0.246,
+                0.061
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "paragraph_title",
+            "bbox": [
+                0.118,
+                0.1,
+                0.338,
+                0.124
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.114,
+                0.139,
+                0.864,
+                0.178
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "image",
+            "bbox": [
+                0.423,
+                0.263,
+                0.575,
+                0.46
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.128,
+                0.514,
+                0.54,
+                0.534
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.128,
+                0.54,
+                0.589,
+                0.56
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.128,
+                0.566,
+                0.511,
+                0.586
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "table",
+            "bbox": [
+                0.149,
+                0.627,
+                0.849,
+                0.736
+            ],
+            "angle": 0,
+            "content": "<table><tr><td>상태 변화</td><td>열의 출입</td><td>예</td></tr><tr><td>융해</td><td>흡수</td><td>얼음이 녹는다</td></tr><tr><td>응고</td><td>방출</td><td>물이 얻다</td></tr></table>"
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.488,
+                0.946,
+                0.502,
+                0.958
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.119,
+                0.046,
+                0.243,
+                0.062
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.12,
+                0.1,
+                0.333,
+                0.125
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.12,
+                0.141,
+                0.858,
+                0.156
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.12,
+                0.16,
+                0.858,
+                0.176
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.516,
+                0.535,
+                0.533
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.134,
+                0.543,
+                0.585,
+                0.558
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.569,
+                0.506,
+                0.585
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.489,
+                0.947,
+                0.5,
+                0.959
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ]
+]

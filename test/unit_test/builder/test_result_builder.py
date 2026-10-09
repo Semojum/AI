@@ -75,11 +75,10 @@ def test_header_footer_position():
     if first_body is None:
         return
 
-    for el in elements[:first_body]:
-        assert el["type"] in hf_types, f"본문 앞에 비-header 요소: {el}"
-
-    for el in elements[last_body + 1:]:
-        assert el["type"] in hf_types, f"본문 뒤에 비-footer 요소: {el}"
+    # 첫 본문 앞 · 끝 본문 뒤는 정의상 늘 머리말 · 꼬리말이라 그쪽을 보면 이 시험은 깨질 수가 없었다(#1257 에서
+    # 값을 틀리게 넣어 보다가 알았다). 본문 사이에 머리말 · 꼬리말 · 쪽 번호가 끼었는지를 본다.
+    middle = [el for el in elements[first_body:last_body + 1] if el["type"] in hf_types]
+    assert not middle, f"본문 사이에 머리말 · 꼬리말 · 쪽 번호: {middle}"
 
 
 def test_id_matches_element_id():

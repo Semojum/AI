@@ -1,0 +1,108 @@
+[
+    {
+        "type": "text",
+        "text": "1. 물의 상태 변화",
+        "text_level": 2,
+        "bbox": [
+            117,
+            99,
+            337,
+            123
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "물은 온도에 따라 고체, 액체, 기체로 상태가 바뀐다. 얼음이 녹아 물이 되는 것을 융해라고 하고,물이 끓어 수증기가 되는 것을 기화라고 한다. 아래 그림은 얼음이 든 비커를 가열하는 모습이다.",
+        "bbox": [
+            112,
+            138,
+            863,
+            176
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "image",
+        "img_path": "images/322bfb89f01314296e299c1bf3cc27c88a716e3b8bb0f274adab30bb420c8b1b.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            421,
+            262,
+            574,
+            459
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "① 얼음이 녹는 동안에는 온도가 일정하게 유지된다.",
+        "bbox": [
+            127,
+            513,
+            539,
+            533
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "② 물이 끓는 동안에도 가한 열은 상태를 바꾸는 데 쓰인다.",
+        "bbox": [
+            127,
+            539,
+            588,
+            559
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "③ 수증기가 다시 물이 되는 것을 액화라고 한다.",
+        "bbox": [
+            127,
+            565,
+            510,
+            585
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "table",
+        "img_path": "images/e3ecf8047dd05e4228b41c5a908a795b835ab561c80848dd846297c3cfa8e637.jpg",
+        "table_caption": [],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>상태 변화</td><td>열의 출입</td><td>예</td></tr><tr><td>융해</td><td>흡수</td><td>얼음이 녹는다</td></tr><tr><td>응고</td><td>방출</td><td>물이 얻다</td></tr></table>",
+        "bbox": [
+            147,
+            625,
+            848,
+            735
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "header",
+        "text": "통합과학 연습 자료",
+        "bbox": [
+            115,
+            43,
+            245,
+            60
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "page_number",
+        "text": "3",
+        "bbox": [
+            487,
+            945,
+            500,
+            957
+        ],
+        "page_idx": 0
+    }
+]

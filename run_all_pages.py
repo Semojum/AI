@@ -1,6 +1,7 @@
 """
-test.pdf 전체 페이지 파이프라인 실행 스크립트.
-usage: python run_all_pages.py [pdf_path] [job_id] [total_pages]
+PDF 전체 페이지 파이프라인 실행 스크립트.
+usage: python run_all_pages.py <pdf_path> [job_id] [total_pages]
+total_pages 를 안 주면 PDF 의 쪽 수 전부를 돈다.
 """
 import json
 import subprocess
@@ -9,9 +10,13 @@ import time
 from collections import Counter
 from pathlib import Path
 
-PDF_PATH    = sys.argv[1] if len(sys.argv) > 1 else "test/samples/test.pdf"
+import fitz
+
+if len(sys.argv) < 2:
+    sys.exit(__doc__)
+PDF_PATH    = sys.argv[1]
 JOB_ID      = sys.argv[2] if len(sys.argv) > 2 else "test-job-001"
-TOTAL_PAGES = int(sys.argv[3]) if len(sys.argv) > 3 else 10
+TOTAL_PAGES = int(sys.argv[3]) if len(sys.argv) > 3 else fitz.open(PDF_PATH).page_count
 
 errors = []
 

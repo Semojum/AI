@@ -1,6 +1,6 @@
 """
 전체 파이프라인 실행 스크립트.
-usage: python run_pipeline.py [pdf_path] [job_id] [page_no]
+usage: python run_pipeline.py <pdf_path> [job_id] [page_no]
 """
 import subprocess
 import sys
@@ -101,7 +101,9 @@ class _VramPoller:
         return peak
 
 
-PDF_PATH = sys.argv[1] if len(sys.argv) > 1 else "test/samples/test.pdf"
+if len(sys.argv) < 2:
+    sys.exit(__doc__)
+PDF_PATH = sys.argv[1]
 JOB_ID   = sys.argv[2] if len(sys.argv) > 2 else "test-job-001"
 PAGE_NO  = int(sys.argv[3]) if len(sys.argv) > 3 else 1
 DEBUG    = "--debug" in sys.argv

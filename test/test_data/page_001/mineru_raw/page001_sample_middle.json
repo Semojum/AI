@@ -1,0 +1,663 @@
+{
+    "pdf_info": [
+        {
+            "preproc_blocks": [
+                {
+                    "bbox": [
+                        70,
+                        84,
+                        201,
+                        104
+                    ],
+                    "type": "title",
+                    "angle": 0,
+                    "index": 1,
+                    "lines": [
+                        {
+                            "bbox": [
+                                71,
+                                84,
+                                198,
+                                105
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        71,
+                                        84,
+                                        198,
+                                        105
+                                    ],
+                                    "type": "text",
+                                    "content": "1. 물의 상태 변화",
+                                    "score": 1.0
+                                }
+                            ]
+                        }
+                    ],
+                    "level": 2
+                },
+                {
+                    "bbox": [
+                        67,
+                        117,
+                        514,
+                        149
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "index": 2,
+                    "lines": [
+                        {
+                            "bbox": [
+                                71,
+                                118,
+                                510,
+                                131
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        71,
+                                        118,
+                                        510,
+                                        131
+                                    ],
+                                    "type": "text",
+                                    "content": "물은 온도에 따라 고체, 액체, 기체로 상태가 바뀐다. 얼음이 녹아 물이 되는 것을 융해라고 하고,",
+                                    "score": 1.0
+                                }
+                            ]
+                        },
+                        {
+                            "bbox": [
+                                71,
+                                134,
+                                510,
+                                148
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        71,
+                                        134,
+                                        510,
+                                        148
+                                    ],
+                                    "type": "text",
+                                    "content": "물이 끓어 수증기가 되는 것을 기화라고 한다. 아래 그림은 얼음이 든 비커를 가열하는 모습이다.",
+                                    "score": 1.0
+                                }
+                            ]
+                        }
+                    ],
+                    "merge_prev": false
+                },
+                {
+                    "type": "image",
+                    "bbox": [
+                        251,
+                        221,
+                        342,
+                        387
+                    ],
+                    "blocks": [
+                        {
+                            "bbox": [
+                                251,
+                                221,
+                                342,
+                                387
+                            ],
+                            "type": "image_body",
+                            "angle": 0,
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        251,
+                                        221,
+                                        342,
+                                        387
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                251,
+                                                221,
+                                                342,
+                                                387
+                                            ],
+                                            "type": "image",
+                                            "image_path": "322bfb89f01314296e299c1bf3cc27c88a716e3b8bb0f274adab30bb420c8b1b.jpg"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "index": 3
+                        }
+                    ],
+                    "index": 3
+                },
+                {
+                    "bbox": [
+                        76,
+                        432,
+                        321,
+                        449
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "index": 4,
+                    "lines": [
+                        {
+                            "bbox": [
+                                79,
+                                434,
+                                318,
+                                448
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        79,
+                                        434,
+                                        318,
+                                        448
+                                    ],
+                                    "type": "text",
+                                    "content": "① 얼음이 녹는 동안에는 온도가 일정하게 유지된다.",
+                                    "score": 1.0
+                                }
+                            ]
+                        }
+                    ],
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        76,
+                        454,
+                        350,
+                        471
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "index": 5,
+                    "lines": [
+                        {
+                            "bbox": [
+                                79,
+                                457,
+                                348,
+                                469
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        79,
+                                        457,
+                                        348,
+                                        469
+                                    ],
+                                    "type": "text",
+                                    "content": "② 물이 끓는 동안에도 가한 열은 상태를 바꾸는 데 쓰인다.",
+                                    "score": 1.0
+                                }
+                            ]
+                        }
+                    ],
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        76,
+                        476,
+                        304,
+                        493
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "index": 6,
+                    "lines": [
+                        {
+                            "bbox": [
+                                79,
+                                479,
+                                301,
+                                492
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        79,
+                                        479,
+                                        301,
+                                        492
+                                    ],
+                                    "type": "text",
+                                    "content": "③ 수증기가 다시 물이 되는 것을 액화라고 한다.",
+                                    "score": 1.0
+                                }
+                            ]
+                        }
+                    ],
+                    "merge_prev": false
+                },
+                {
+                    "type": "table",
+                    "bbox": [
+                        88,
+                        527,
+                        505,
+                        619
+                    ],
+                    "blocks": [
+                        {
+                            "bbox": [
+                                88,
+                                527,
+                                505,
+                                619
+                            ],
+                            "type": "table_body",
+                            "angle": 0,
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        88,
+                                        527,
+                                        505,
+                                        619
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                88,
+                                                527,
+                                                505,
+                                                619
+                                            ],
+                                            "type": "table",
+                                            "html": "<table><tr><td>상태 변화</td><td>열의 출입</td><td>예</td></tr><tr><td>융해</td><td>흡수</td><td>얼음이 녹는다</td></tr><tr><td>응고</td><td>방출</td><td>물이 얻다</td></tr></table>",
+                                            "image_path": "e3ecf8047dd05e4228b41c5a908a795b835ab561c80848dd846297c3cfa8e637.jpg"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "index": 7
+                        }
+                    ],
+                    "index": 7
+                }
+            ],
+            "discarded_blocks": [
+                {
+                    "bbox": [
+                        69,
+                        37,
+                        146,
+                        51
+                    ],
+                    "type": "header",
+                    "angle": 0,
+                    "index": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                70,
+                                38,
+                                144,
+                                52
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        70,
+                                        38,
+                                        144,
+                                        52
+                                    ],
+                                    "type": "text",
+                                    "content": "통합과학 연습 자료",
+                                    "score": 1.0
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "bbox": [
+                        290,
+                        796,
+                        298,
+                        806
+                    ],
+                    "type": "page_number",
+                    "angle": 0,
+                    "index": 8,
+                    "lines": [
+                        {
+                            "bbox": [
+                                290,
+                                797,
+                                297,
+                                807
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        290,
+                                        797,
+                                        297,
+                                        807
+                                    ],
+                                    "type": "text",
+                                    "content": "3",
+                                    "score": 1.0
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "page_size": [
+                595,
+                842
+            ],
+            "page_idx": 0,
+            "para_blocks": [
+                {
+                    "bbox": [
+                        70,
+                        84,
+                        201,
+                        104
+                    ],
+                    "type": "title",
+                    "angle": 0,
+                    "index": 1,
+                    "lines": [
+                        {
+                            "bbox": [
+                                71,
+                                84,
+                                198,
+                                105
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        71,
+                                        84,
+                                        198,
+                                        105
+                                    ],
+                                    "type": "text",
+                                    "content": "1. 물의 상태 변화",
+                                    "score": 1.0
+                                }
+                            ]
+                        }
+                    ],
+                    "level": 2
+                },
+                {
+                    "bbox": [
+                        67,
+                        117,
+                        514,
+                        149
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "index": 2,
+                    "lines": [
+                        {
+                            "bbox": [
+                                71,
+                                118,
+                                510,
+                                131
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        71,
+                                        118,
+                                        510,
+                                        131
+                                    ],
+                                    "type": "text",
+                                    "content": "물은 온도에 따라 고체, 액체, 기체로 상태가 바뀐다. 얼음이 녹아 물이 되는 것을 융해라고 하고,",
+                                    "score": 1.0
+                                }
+                            ]
+                        },
+                        {
+                            "bbox": [
+                                71,
+                                134,
+                                510,
+                                148
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        71,
+                                        134,
+                                        510,
+                                        148
+                                    ],
+                                    "type": "text",
+                                    "content": "물이 끓어 수증기가 되는 것을 기화라고 한다. 아래 그림은 얼음이 든 비커를 가열하는 모습이다.",
+                                    "score": 1.0
+                                }
+                            ]
+                        }
+                    ],
+                    "merge_prev": false
+                },
+                {
+                    "type": "image",
+                    "bbox": [
+                        251,
+                        221,
+                        342,
+                        387
+                    ],
+                    "blocks": [
+                        {
+                            "bbox": [
+                                251,
+                                221,
+                                342,
+                                387
+                            ],
+                            "type": "image_body",
+                            "angle": 0,
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        251,
+                                        221,
+                                        342,
+                                        387
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                251,
+                                                221,
+                                                342,
+                                                387
+                                            ],
+                                            "type": "image",
+                                            "image_path": "322bfb89f01314296e299c1bf3cc27c88a716e3b8bb0f274adab30bb420c8b1b.jpg"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "index": 3
+                        }
+                    ],
+                    "index": 3
+                },
+                {
+                    "bbox": [
+                        76,
+                        432,
+                        321,
+                        449
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "index": 4,
+                    "lines": [
+                        {
+                            "bbox": [
+                                79,
+                                434,
+                                318,
+                                448
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        79,
+                                        434,
+                                        318,
+                                        448
+                                    ],
+                                    "type": "text",
+                                    "content": "① 얼음이 녹는 동안에는 온도가 일정하게 유지된다.",
+                                    "score": 1.0
+                                }
+                            ]
+                        }
+                    ],
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        76,
+                        454,
+                        350,
+                        471
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "index": 5,
+                    "lines": [
+                        {
+                            "bbox": [
+                                79,
+                                457,
+                                348,
+                                469
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        79,
+                                        457,
+                                        348,
+                                        469
+                                    ],
+                                    "type": "text",
+                                    "content": "② 물이 끓는 동안에도 가한 열은 상태를 바꾸는 데 쓰인다.",
+                                    "score": 1.0
+                                }
+                            ]
+                        }
+                    ],
+                    "merge_prev": false
+                },
+                {
+                    "bbox": [
+                        76,
+                        476,
+                        304,
+                        493
+                    ],
+                    "type": "text",
+                    "angle": 0,
+                    "index": 6,
+                    "lines": [
+                        {
+                            "bbox": [
+                                79,
+                                479,
+                                301,
+                                492
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        79,
+                                        479,
+                                        301,
+                                        492
+                                    ],
+                                    "type": "text",
+                                    "content": "③ 수증기가 다시 물이 되는 것을 액화라고 한다.",
+                                    "score": 1.0
+                                }
+                            ]
+                        }
+                    ],
+                    "merge_prev": false
+                },
+                {
+                    "type": "table",
+                    "bbox": [
+                        88,
+                        527,
+                        505,
+                        619
+                    ],
+                    "blocks": [
+                        {
+                            "bbox": [
+                                88,
+                                527,
+                                505,
+                                619
+                            ],
+                            "type": "table_body",
+                            "angle": 0,
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        88,
+                                        527,
+                                        505,
+                                        619
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                88,
+                                                527,
+                                                505,
+                                                619
+                                            ],
+                                            "type": "table",
+                                            "html": "<table><tr><td>상태 변화</td><td>열의 출입</td><td>예</td></tr><tr><td>융해</td><td>흡수</td><td>얼음이 녹는다</td></tr><tr><td>응고</td><td>방출</td><td>물이 얻다</td></tr></table>",
+                                            "image_path": "e3ecf8047dd05e4228b41c5a908a795b835ab561c80848dd846297c3cfa8e637.jpg"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "index": 7
+                        }
+                    ],
+                    "index": 7
+                }
+            ]
+        }
+    ],
+    "_backend": "hybrid",
+    "_effort": "medium",
+    "_ocr_enable": false,
+    "_version_name": "3.4.0"
+}

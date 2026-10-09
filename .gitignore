@@ -27,5 +27,6 @@ test/data/
 # 런타임 잡 산출물 (페이지별 중간·최종 결과 — git 제외)
 output/
 
-# 코드에서 참조하지 않는 잔재 샘플 (실제 경로는 test/samples/test.pdf)
+# 바깥 자료 샘플 PDF 는 저장소에 두지 않는다(#1257). 시험 입력은 시험 안에서 fitz 로 만든다
 images/test.pdf
+test/samples/
