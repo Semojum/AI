@@ -11,11 +11,11 @@ MINERU_RAW  = _TEST_DATA / "mineru_raw"
 
 _PROJECT_ROOT = Path(__file__).parents[3]
 
-VALID_TYPES = {
-    "title", "text", "caption", "formula", "list_item",
-    "footnote", "sidebar", "header_footer", "page_number",
-    "table", "image", "chart", "cartoon",
-}
+from app.ai.parser.mineru_runner import TYPE_MAP  # noqa: E402
+
+# 러너가 레이아웃에 싣는 type 은 TYPE_MAP 의 값이다. 목록을 따로 적어 두면 어긋난다
+# (#1259: 시험은 `chart`, 러너는 `chart_graph`. 차트 없는 픽스처라 여태 안 걸렸다).
+VALID_TYPES = set(TYPE_MAP.values())
 
 
 def test_fixture_exists():
@@ -28,7 +28,7 @@ def _load():
 
 
 def test_merged_layout_schema():
-    """필수 필드 전체 존재, type이 13종 이내."""
+    """필수 필드 전체 존재, type 이 러너 어휘(TYPE_MAP 값) 안."""
     data = _load()
     assert len(data) > 0
     for el in data:
