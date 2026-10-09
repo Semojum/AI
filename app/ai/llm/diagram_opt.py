@@ -83,7 +83,7 @@ from app.schemas.content import Draft, ExtractedContent, LLMOutput, RuleApplicat
 _RULE_ID = "NISE-6.6.1"   # 도표 골격 (점자 자료 제작 지침 §6.6)
 # ★ 단위 = **앞 빈칸 수**. 규정의 "N칸에서 시작"은 앞 빈칸 N-1이다.
 #   `line_indents`를 소비하는 곳이 `" " * indent + line`로 쓰기 때문(layout_braille._indent_lines,
-#   같은 파일 `_PARA_INDENT = 2  # "3칸에서 시작" = 앞 빈칸 2`). 2026-08-09 이전에는 여기 상수가
+#   `constants.PARA_INDENT = 2`: "3칸에서 시작" = 앞 빈칸 2). 2026-08-09 이전에는 여기 상수가
 #   칸 번호(5·3·1)로 들어 있어 8종 전부가 한 칸씩 오른쪽으로 밀려 나갔다 — 규정 정답 쌍
 #   (test_data/regulation_visual, 지침 예6-18~6-25) 대조로 확인.
 #
@@ -93,7 +93,7 @@ _RULE_ID = "NISE-6.6.1"   # 도표 골격 (점자 자료 제작 지침 §6.6)
 #   때 쪽경계 복구가 끌어온 것으로 보인다.
 #   그래서 개념도 위계(7/5/3칸 → 앞 빈칸 6/4/2)는 **§6.6.1 조문으로만** 세웠다.
 #   실물로 확정하려면 지침 p137~138 원문을 눈으로 봐야 한다.
-_TITLE_INDENT = 4         # §6.3.3(1) 제목 5칸      — 정답 예6-25[0]
+from app.ai.braille.constants import TITLE_INDENT as _TITLE_INDENT  # noqa: E402 — §6.3.3(1) 제목 5칸, 정답 예6-25[0](#1232 한 곳)
 # ★ 2026-09-08 정정(원장 C-D3) — 4(=5칸)였다. 인용하던 「점자 자료 제작 지침」 §2.1.8(3)은
 #   **자료 위에 따로 얹는 주**의 자리지 유형 제시어 머리줄이 아니다. 머리줄을 직접 규정한
 #   조항은 「점자 도서 제작 지침」 제3장 제2절 4)(1)(2) L2367-2369·L2383-2385 이고 값은
@@ -130,7 +130,7 @@ _OUTPUT_TYPE_WORD = "그림"
 #        유형어·쌍점·내용이 모두 주 안인 것이 3,429건(97.4%), 규정 꼴은 90건(2.6%).
 #        **빈도만으로는 규정을 못 뒤집는다**(원장 C-84). 원장 C-D4 에 올려 자문으로 넘긴다.
 _TYPE_NOTE_LINE = _TN.tn(_OUTPUT_TYPE_WORD) + ":"
-_NOTE_INDENT = 2          # 형식 안내 점역자 주 3칸 — 정답 예6-19·6-22·6-23·6-24·6-25
+from app.ai.braille.constants import NOTE_INDENT as _NOTE_INDENT  # noqa: E402 — 형식 안내 점역자 주 3칸(#1232 한 곳)
 _ITEM_INDENT = 2          # 규정이 칸을 안 정한 유형(양식·연대표·화면이미지·슬라이드)의 항목 3칸
 _BRANCH_INDENT = 2        # §6.6.2(4)⑥ 선택지 3칸   — 정답 예6-19
 _HIER_BASE = 0            # §6.6.5(2)·§6.6.4(2)② 최상위 1칸 — 정답 예6-21·6-22

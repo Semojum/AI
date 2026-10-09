@@ -156,7 +156,7 @@ _TN_SRC_MARK = "⠠⠄"                                  # 점역자 주 마커(
 #   규정 실물 5건 — 도서지침 예3-1·3-5·3-9·3-2, 자료지침 예3-4 모두 앞 빈칸 4
 #   코퍼스 관행   — dev+val 2027의 `〈표 N〉` 제목 줄 6/6이 앞 빈칸 4
 #   같은 오해가 오늘 도표 축(diagram_opt._TITLE_INDENT)에서도 4로 고쳐졌다
-_TITLE_INDENT = 4
+from app.ai.braille.constants import TITLE_INDENT as _TITLE_INDENT  # noqa: E402 — 제목 5칸(#1232 한 곳)
 
 # ★ 점자 지면의 빈칸은 전부 U+2800 이다(대표 지적 R1, 2026-08-24). 표 경로는 그때 빠졌다 —
 #   줄머리를 ASCII 공백 `"  "`로 적고 있었고 **눈으로는 `"⠀⠀"`와 구별이 안 돼** 넉 달을 살아남았다.
