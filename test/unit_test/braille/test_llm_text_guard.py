@@ -280,6 +280,30 @@ def test_표지_약속은_스위치로_끈다(monkeypatch):
     assert not cap._markers_on()
 
 
+def test_그림_속_글자는_원문_언어로_스위치로_끈다(monkeypatch, tmp_path):
+    """#1066 — 영어 그래프의 제목·범례를 번역하면 시험 답을 알려 준다. 둘레 글이 영어인 차트에만 규칙이 붙고 열쇠가 갈린다.
+
+    둘레 글이 한국어 · 수식뿐이거나 차트가 아니면 안 붙는다(한국어 차트에서 숫자를 뒤바꿔 읽는 일이 늘었다,
+    동아시아사 p0129). 판별은 낱말 수다 — 글자 비율로 가르면 수학 그래프가 걸린다.
+    """
+    cap = _cap()
+    seen = []
+    monkeypatch.setattr(cap, "_caption_anthropic", lambda b64, mime, prompt, tail="": seen.append(prompt) or "그래프: 막대그래프이다.")
+    monkeypatch.setattr(cap, "_cache_new_file", lambda kind, raw, prompt_id, context="": seen.append(prompt_id))
+    monkeypatch.setenv("CAPTION_BACKEND", "anthropic")
+    img = tmp_path / "c.png"
+    from PIL import Image, ImageDraw
+    im = Image.new("RGB", (60, 40), "white"); ImageDraw.Draw(im).rectangle((5, 5, 30, 35), fill="black"); im.save(img)
+    en = "The graph above shows how students spend their free time. Which is NOT consistent with the graph?"
+    on = lambda t, ctx: (seen.clear(), cap.caption(str(img), t, context=ctx), ("+src" in seen[0], "[그림 속 글자]" in seen[1]))[2]
+    assert on("chart", en) == (True, True)
+    assert on("image", en) == (False, False)                                   # 차트에만
+    assert on("chart", "다음은 연령대별 하루 평균 독서 시간을 나타낸 그래프이다.") == (False, False)
+    assert on("chart", "두 함수 $y=\\sin x$, $y=\\cos x$ 의 그래프와 직선 $y=\\frac{1}{2}$ 이 만나는 점 (i) k=1 이면 DNA ATP") == (False, False)
+    monkeypatch.setenv("CAPTION_KEEP_SOURCE", "0")
+    assert on("chart", en) == (False, False)
+
+
 @pytest.mark.parametrize("raw", ["⟦ 장식 ⟧", "사진: ⟦장 식⟧"])
 def test_장식_표지_변이도_받는다(raw):
     cap, info = _cap(), {}
