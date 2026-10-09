@@ -660,7 +660,7 @@ class LayoutBraille:
         제품과 **같은 조판 furniture** 를 볼 수 있게 하려고 갈랐다(설계 §3-1 4-4 축).
         """
         meta = self._build_meta(layout_result)
-        body, page_line_items = self._partition(braille_outputs, meta)
+        body, page_line_items = self._partition(braille_outputs, meta, layout_result)
         body.sort(key=lambda b: meta.get(b.element_id, _DEFAULT_META)[1])
 
         formatted: list[tuple[int, str, list[str]]] = []  # (heading_level, etype, 조판 줄)
@@ -1114,7 +1114,8 @@ class LayoutBraille:
         }
 
     def _partition(
-        self, braille_outputs: list[BrailleOutput], meta: dict
+        self, braille_outputs: list[BrailleOutput], meta: dict,
+        layout_result: Optional["LayoutResult"] = None,
     ) -> tuple[list[BrailleOutput], list[BrailleOutput]]:
         """본문 요소와 페이지행 요소(page_number) 분리.
 
@@ -1151,18 +1152,21 @@ class LayoutBraille:
         '⠕⠂⠘⠷⠐ ⠟⠊⠥⠐ ⠊⠿⠉⠢ ⠣⠠⠕⠣ ⠠⠝'으로 잘려 반복 인쇄됐고 본문엔 없었다. 지금은
         본문 첫 줄에 '⠕⠂⠘⠷⠐ ⠟⠊⠥⠐ ⠊⠿⠉⠢ ⠣⠠⠕⠣ ⠠⠝⠈⠌⠺ ⠨⠾⠈⠗'로 온전히 실리며,
         정답 도서도 같은 내용을 본문 첫 줄에 싣는다(gold 0행).
+
+        ★ 후보가 둘 이상이면 쪽에서 가장 아래 것을 쓴다(#1248). 쪽 위 띠의 단원 · 강 번호
+        (`06 직업과 청렴의 윤리` 의 `06`)도 page_number 로 오는데, 읽기 순서로 첫 것을 쓰면
+        그 번호가 원본 쪽 번호 자리를 차지하고 진짜 쪽 번호는 본문 끝에 홀로 선다
+        (dev · val 13쪽, 진짜 쪽 번호는 1,413쪽 모두 쪽 아래 띠다). 좌표가 하나라도 없으면 종전대로 첫 것.
         """
-        body, page_line = [], []
-        taken: set[str] = set()
-        for bo in braille_outputs:
-            etype = meta.get(bo.element_id, _DEFAULT_META)[0]
-            if (etype in _PAGE_LINE_TYPES and etype not in taken
-                    and any(ln.strip() for ln in bo.braille_lines)):
-                taken.add(etype)
-                page_line.append(bo)
-            else:
-                body.append(bo)
-        return body, page_line
+        cands = [bo for bo in braille_outputs
+                 if meta.get(bo.element_id, _DEFAULT_META)[0] in _PAGE_LINE_TYPES
+                 and any(ln.strip() for ln in bo.braille_lines)]
+        pick = cands[0] if cands else None
+        bottom = {e.element_id: e.bbox[3] for e in getattr(layout_result, "elements", None) or []
+                  if getattr(e, "bbox", None) and e.bbox[3] > e.bbox[1]}
+        if len(cands) > 1 and all(bo.element_id in bottom for bo in cands):
+            pick = max(cands, key=lambda bo: bottom[bo.element_id])     # 같으면 앞의 것
+        return [bo for bo in braille_outputs if bo is not pick], [pick] if pick else []
 
     def _first_nonempty(self, page_line_items: list[BrailleOutput], meta: dict, want: str) -> str:
         """page_line_items 중 type==want 요소의 첫 비어있지 않은 점자 줄."""
@@ -1584,7 +1588,7 @@ def flatten_elements(
     """
     lb = LayoutBraille()
     meta = lb._build_meta(layout_result)
-    body, page_line = lb._partition(braille_outputs, meta)
+    body, page_line = lb._partition(braille_outputs, meta, layout_result)
     body.sort(key=lambda b: meta.get(b.element_id, _DEFAULT_META)[1])
 
     out: dict = {}
