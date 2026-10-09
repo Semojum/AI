@@ -1963,6 +1963,16 @@ def _join_item_numbers(items: list[BBoxItem], ext_map: dict, unit: float = 1.0) 
       (원장 `dropping-element-shifts-layout` 전례). 번호 요소를 빼도 다른 요소끼리의 차례는 그대로다.
     ★ 발문이 태그로 시작하면(`<!상자>` 등, `<!강조>` 만 예외) 붙이지 않는다 — 태그가 깨진다.
     ⚠ 계약 변화: 번호 요소가 응답에서 사라지고 번호는 발문 칸 글에 합쳐진다.
+    ★★ **번호 요소의 형은 일부러 안 가린다**(#1068). MinerU 는 문항 번호 배지를 `page_number` 형으로도 내고
+      ZERO 층 글도 숫자만 든 블록을 `page_number` 로 적는다. d8c dev·val 에서 쪽 가운데 `page_number` 번호
+      232개 중 209(MinerU 91 · ZERO 118)가 **여기서 발문에 붙어 살아난다.** 번호 쪽 형을 `text` 로 조이면 그 209 가
+      한꺼번에 사라지고 첫 `page_number` 가 페이지행 원본 쪽 번호 자리(`02`)를 차지한다. 조이려면 아래
+      `_unpage_item_numbers`(#1068)와 같이 되돌려 봐라. 시험 `test_join_item_numbers.py::test_page_number_형_번호도_붙는다` 가
+      이 동작을 지킨다(그 시험이 깨지면 209 가 깨진 것이다).
+    ★ 위 짝을 못 찾으면 **왼쪽 끝이 같은 발문**을 본다(#1068, `ITEM_NUMBER_JOIN_ALIGNED=0` 이면 끔). ZERO 층 블록은 발문
+      상자가 번호 자리까지 덮어(`06` [92,691,123,736] · 발문 [92,705,549,757]) 가로 틈이 음수라 위 조건에 안 걸린다.
+      발문 왼쪽 끝이 번호 왼쪽 끝 ±5 이고 발문 윗변이 번호 높이 안에서 시작하는 것. 종전 짝이 있으면 안 본다.
+      d8c dev·val 에서 18곳이 여기로 붙고 다른 쪽 출력은 안 바뀐다(결과 V2 temp/n10/결과_문항번호쪽번호_1068.md).
     """
     def txt(b: BBoxItem) -> str:
         c = ext_map.get(b.element_id)
@@ -1971,11 +1981,13 @@ def _join_item_numbers(items: list[BBoxItem], ext_map: dict, unit: float = 1.0) 
     def overlap(a, b) -> float:
         return min(a[3], b[3]) - max(a[1], b[1])
 
+    aligned_on = os.environ.get("ITEM_NUMBER_JOIN_ALIGNED", "1") != "0"
     joined, taken, drop = 0, set(), set()
     for n in items:
         if not _valid_bbox(n) or not _ITEM_NUMBER_ONLY_RE.match(txt(n)):
             continue
         best = None
+        aligned = None              # 왼쪽 끝이 같은 발문(위 ★) — (윗변 차, 차례, 요소)
         for s in items:
             body = txt(s).lstrip()
             if (s is n or s.type != "text" or s.element_id in taken or s.element_id in drop
@@ -1987,6 +1999,13 @@ def _join_item_numbers(items: list[BBoxItem], ext_map: dict, unit: float = 1.0) 
             if gap >= -5 * unit and gap < 80 * unit and overlap(n.bbox, s.bbox) > 0.3 * h:
                 if best is None or gap < best[0]:
                     best = (gap, s)
+            elif (aligned_on and abs(s.bbox[0] - n.bbox[0]) <= 5 * unit and s.bbox[2] > n.bbox[2]
+                    and n.bbox[1] - 5 * unit <= s.bbox[1] <= n.bbox[3] and not body.startswith(txt(n).strip())):
+                key = (abs(s.bbox[1] - n.bbox[1]), s.reading_order)
+                if aligned is None or key < aligned[:2]:
+                    aligned = (*key, s)
+        if best is None and aligned is not None:
+            best = (0, aligned[2])
         if best is None:
             continue
         s = best[1]
@@ -1998,6 +2017,28 @@ def _join_item_numbers(items: list[BBoxItem], ext_map: dict, unit: float = 1.0) 
             ext_map.pop(eid, None)
         logger.info("문항 번호 붙임(C-107 ㄴ): %d곳", joined)
     return joined
+
+
+def _unpage_item_numbers(items: list[BBoxItem], ext_map: dict, page_h: float) -> int:
+    """붙이기(`_join_item_numbers`) 뒤에도 남은 `page_number` 형 문항 번호를 본문(`text`)으로 되돌린다. 고친 수(#1068).
+
+    번호만 들었고(`_ITEM_NUMBER_ONLY_RE`) 쪽 위아래 10% 띠 밖에 있는 것만. d8c dev·val 쪽 번호(`page_number` 숫자)는
+    전부 그 띠 안이다(아래 띠 1,445 · 위 띠 14, MinerU 원출력). 두면 페이지행이 첫 `page_number` 를 원본 쪽 번호로 써서
+    `02` · `a02` 가 쪽 번호 자리에 찍히고 진짜 쪽 번호(`53`)는 본문에 홀로 밀려난다(언매 p0053 · 화작 p0073, 번호 옆이
+    발문 아닌 표라 붙일 짝이 없는 꼴). 읽기 차례 뒤라 차례 슬롯은 그대로다. 되돌리기 `ITEM_NUMBER_UNPAGE=0`(호출 때 읽음).
+    ⚠ 이것만 켜면(왼쪽 끝 붙이기 끔) ZERO 번호 19곳이 본래 차례(지문 한가운데)에 홀로 서서 실물이 dev·val 둘 다 나빠진다.
+    """
+    if not page_h or os.environ.get("ITEM_NUMBER_UNPAGE", "1") == "0":
+        return 0
+    n = 0
+    for b in items:
+        if (b.type == "page_number" and _valid_bbox(b) and b.bbox[3] > 0.1 * page_h and b.bbox[1] < 0.9 * page_h
+                and (c := ext_map.get(b.element_id)) and _ITEM_NUMBER_ONLY_RE.match(c.corrected_text or "")):
+            b.type = "text"
+            n += 1
+    if n:
+        logger.info("쪽 가운데 page_number 번호 → 본문(#1068): %d곳", n)
+    return n
 
 
 # EBS 문항코드 `[26015-0017]` 만 든 요소 — 원장 C-107.
@@ -2497,6 +2538,8 @@ def _parse_txt_result(
 
     _reorder_by_geometry(bbox_items, int(meta.get("page_rotation") or 0))
     _join_item_numbers(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0)
+    # 쪽 높이(bbox 와 같은 좌표계): 정규화를 픽셀로 늘렸으면 픽셀 높이, 정규화 그대로면 1000, 픽셀이면 메타 높이.
+    _unpage_item_numbers(bbox_items, ext_map, ih if (scale_bbox or space == "pixel") else 1000)
     _place_item_codes(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0,
                       scale_bbox[1] if scale_bbox else 1.0)
     _box_concept_checks(bbox_items, ext_map)
