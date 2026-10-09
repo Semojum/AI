@@ -381,6 +381,7 @@ _EXTRACT_ENV = (
     "LAYER_LENGTH_MARK",                                                               # #1222 긴소리표 ː 를 층 관문에서 안 셈
     "HANCOM_FRACTION",                                                                 # #1055 한컴 작은 수 분수 풀기
     "ITALIC_TAG",                                                                      # #1205 영어 줄 기울임 태그
+    "ZERO_FOOT_PAGE_NUMBER",                                                           # #1247 ZERO 꼬리말 쪽 번호 떼기
     "SEMOJUM_NO_CAPTION", "CAPTION_MATERIAL", "CAPTION_UPSCALE", "CAPTION_FAIL_STREAK_LIMIT",
     "LLM_TEXT_GUARD", "LLM_CACHE_MODE", "SIDEBAR_AS_NOTE", "GRAFT_SIM_MIN",
     "ADVANCED_EXTRACT_MODE", "ADVANCED_EXTRACT_MODEL", "ADVANCED_EXTRACT_FALLBACK_MODEL",
@@ -546,7 +547,7 @@ def _blocks_from_text(pdf_text: Optional[str]) -> list[dict]:
     return elements
 
 
-def _blocks_with_bbox(blocks: list[dict]) -> list[dict]:
+def _blocks_with_bbox(blocks: list[dict], page_h: float = 0) -> list[dict]:
     """ZERO Tier: PyMuPDF 블록(content+bbox) → 경계 요소(bbox 포함)."""
     elements: list[dict] = []
     for order, b in enumerate(blocks, start=1):
@@ -558,7 +559,42 @@ def _blocks_with_bbox(blocks: list[dict]) -> list[dict]:
             "id": str(uuid4()), "order": order, "type": etype,
             "content": content, "bbox": b.get("bbox"),
         })
-    return elements
+    return _split_foot_number(elements, page_h)
+
+
+# ZERO 꼬리말 블록의 쪽 번호(#1247). ZERO 층은 쪽 번호가 꼬리말 글과 한 블록으로 온다(`24  2027학년도 EBS
+# 수능특강 생활과 윤리` · `06강 항상성  85`). 숫자만 든 블록이 아니라 `page_number` 로 안 잡혀, d8c dev·val ZERO
+# 300쪽 중 페이지행 원본 쪽 번호가 맞은 쪽이 0 이었다. 300쪽 모두 쪽의 가장 아래 블록이 그 꼬리말이고(윗변이 쪽
+# 높이 94%), 앞이나 뒤 숫자가 그 쪽 번호다(앞 147 · 뒤 153, 다른 꼴 0). 결과 V2 temp/n10/결과_ZERO쪽번호_1247.md.
+_FOOT_NUM_RE = re.compile(r"(\d{1,3})\s{2,}(\S.*)|(.*\S)\s{2,}(\d{1,3})", re.S)
+_FOOT_BAND = 0.9                # 블록 윗변이 쪽 높이의 이 비율 아래
+
+
+def _split_foot_number(elements: list[dict], page_h: float) -> list[dict]:
+    """쪽 가장 아래 블록이 아래 띠의 꼬리말이면 앞이나 뒤 쪽 번호를 `page_number` 요소로 떼어 맨 앞에 둔다(#1247).
+
+    ★ 맨 앞에 둔다. 페이지행은 첫 `page_number` 를 원본 쪽 번호로 쓰는데, 꼬리말은 대개 차례 끝 블록이고
+      쪽 안 그래프 눈금 `0` 같은 숫자 블록이 그 앞에 온다(생명과학 p0085).
+    ★ 좌표를 안 단다(`_blocks_from_text` 요소처럼). 꼬리말 글과 같은 사각형을 주면 문항 번호 붙이기(`_join_item_numbers`
+      왼쪽 끝 짝)가 번호를 꼬리말 글에 도로 붙인다. 좌표 없는 요소는 붙이기 · 되돌리기(`_unpage_item_numbers`)와
+      지면 가장자리 띠(`_page_edge_band`)가 안 본다. (0,0,0,0)을 달면 띠 윗변이 0 으로 끌려 머리글 억제가 흔들린다.
+    꼬리말 글은 그대로 둔다. 적을지 말지는 규정(제작 지침 §2.1.2 '페이지행에 꼬리말을 적는다')과 gold(91.4% 안 적음)가
+    갈려 자문 대기다(원장 C-86). `수능특강` · `정답과 해설` 배너는 종전대로 `_is_edge_header` 가 거른다.
+    끄기 `ZERO_FOOT_PAGE_NUMBER=0`.
+    """
+    if not page_h or os.environ.get("ZERO_FOOT_PAGE_NUMBER", "1") == "0":
+        return elements
+    boxed = [e for e in elements if isinstance(e.get("bbox"), (list, tuple)) and len(e["bbox"]) >= 4]
+    if not boxed:
+        return elements
+    foot = max(boxed, key=lambda e: e["bbox"][1])
+    m = _FOOT_NUM_RE.fullmatch(foot["content"]) if foot["bbox"][1] >= _FOOT_BAND * page_h else None
+    if not m:
+        return elements
+    foot["content"] = m.group(2) or m.group(3)
+    for e in elements:
+        e["order"] += 1
+    return [{"id": str(uuid4()), "order": 1, "type": "page_number", "content": m.group(1) or m.group(4)}] + elements
 
 
 async def _extract_via_models(
@@ -1142,7 +1178,7 @@ async def _fallback_text_layer(task: PageTask, doc_meta: DocumentMeta) -> tuple[
     try:
         from app.ai.preprocessor.pdf_analyzer import extract_text_blocks
         blocks, w, h = await asyncio.to_thread(extract_text_blocks, task.pdf_data, task.page_no)
-        elements = _blocks_with_bbox(blocks)
+        elements = _blocks_with_bbox(blocks, h)
         for el in elements:
             el["flags"] = ["C2_FALLBACK"]
         if elements:
@@ -1342,7 +1378,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         blocks, image_width, image_height = await asyncio.to_thread(
             extract_text_blocks, task.pdf_data, task.page_no
         )
-        elements = _blocks_with_bbox(blocks) or _blocks_from_text(pdf_text)
+        elements = _blocks_with_bbox(blocks, image_height) or _blocks_from_text(pdf_text)
     else:
         method = "OCR"
         elements, image_width, image_height, bbox_space = await _extract_via_models(task, doc_meta)
