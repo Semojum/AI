@@ -460,10 +460,13 @@ _GREEK_MATH_LEFT = frozenset("-−+±=<>≤≥×÷/^_∠")   # 연산 기호 바
 # 따옴표 안에 줄임표만 있으면 부호 자체를 가리키는 자리다. `…` 하나와 `...` 는 지금도 개수대로
 # 나가고 `……` 만 ⠠⠠⠠ 하나로 합쳐졌다(symbol_table `……`). 그 자리만 여섯 점으로 둔다.
 _QUOTED_ELLIPSIS2_RE = re.compile(r"(?<=[‘“])……(?=[’”])")
-# 「한국 점자 규정」 제72항 [붙임](재추출 2913행) — ○ 와 ◎ 가 함께 나와 구별해야 할 때 ◎ 는 `_00`(⠸⠴⠴).
-# 예문 `◎ 실장급 인사발령 / ○ 승진 인사`. 줄머리 ◎ 는 따로 나오면 `_LINE_BULLET_MAP` 대로 ⠸⠴ 다.
+# 「한국 점자 규정」 제72항 [붙임](재추출 2912~2913행) — ○, □ 가 ◎, ▣ 와 함께 나와 구별해야 할 때
+# ◎ 는 `_00`(⠸⠴⠴), ▣ 는 `_77`(⠸⠶⠶). 예문 `◎ 실장급 인사발령 / ○ 승진 인사`.
+# 따로 나오면 줄머리 ◎ 는 `_LINE_BULLET_MAP` 대로 ⠸⠴, ▣ 는 문자표대로 ⠸⠲ 다(원장 B-10 · #1106).
 _LINE_HEAD_O_RE = re.compile(r"(?m)^[ \t]*○[ \t]")
 _LINE_HEAD_DOUBLE_O_RE = re.compile(r"(?m)^([ \t]*)◎(?=[ \t])")
+_LINE_HEAD_SQ_RE = re.compile(r"(?m)^[ \t]*□[ \t]")
+_LINE_HEAD_FILLED_SQ_RE = re.compile(r"(?m)^([ \t]*)▣(?=[ \t])")
 _HANGUL_SYL_RE   = re.compile(r"[가-힣]")        # 완성형 한글 음절
 _LATIN_CHAR_RE   = re.compile(r"[A-Za-z]")       # 로마자 낱글자(줄 문맥 비율 계산용)
 
@@ -3903,6 +3906,8 @@ def translate_with_breaks(text: str, *, force_roman: bool = False,
     text = _normalize_apostrophe(text)
     if _LINE_HEAD_O_RE.search(text):          # 제72항 [붙임] — 줄을 가로질러 봐야 해서 여기서
         text = _LINE_HEAD_DOUBLE_O_RE.sub(r"\1⠸⠴⠴", text)
+    if _LINE_HEAD_SQ_RE.search(text):
+        text = _LINE_HEAD_FILLED_SQ_RE.sub(r"\1⠸⠶⠶", text)
     if _BOOK_STYLE:
         # ★ 보기 마커 원문 복원(ㄱㄴㄷㄹ)은 나열 시퀀스가 필요해 요소 전체에서 선적용해야
         #   한다 — 줄 분리 후엔 줄당 마커 1개라 ≥2 가드에 걸려 발동 못 한다(2026-07-18).
