@@ -698,8 +698,8 @@ class LayoutBraille:
     ) -> list[list[str]]:
         """이미 조판된 블록 줄들을 페이지로 조립(NLD): 제목·표·시각자료 빈 줄 + 페이지 + 페이지행.
 
-        재-wrap·들여쓰기는 하지 않는다(블록 줄은 이미 32칸 조판본). layout()(초안)과
-        finalize()(편집본)가 공유하는 순수 조립부.
+        재-wrap·들여쓰기는 하지 않는다(블록 줄은 이미 32칸 조판본). layout()의 순수 조립부다
+        (편집본을 조립하던 REST `/finalize` 와 `finalize()` 는 #1233 으로 지웠다).
 
         ★ 인접 빈 줄 병합은 **실제로 쌓인 빈 줄**을 세서 한다(선언값 before/after가 아니라).
         `_expand_box_borders`가 글상자 위아래 빈 줄을 el_lines **안에** 박아 넣기 때문이다 —
@@ -736,43 +736,6 @@ class LayoutBraille:
         if pending:
             lines.append("")
         return self._paginate(lines, page_no, footer, orig_page)
-
-    def finalize(self, blocks: list[dict], page_no: int = 1) -> list[list[str]]:
-        """점역사가 편집한 블록(이미 32칸 줄)을 규정대로 페이지 조립(REST /finalize 전용).
-
-        blocks 항목: {type, heading_level, order, lines:[점자 줄...]}.
-        page_number type만 페이지행으로 분리(header_footer는 본문 — _partition 주석).
-        본문은 order로 정렬.
-        재-wrap 없음(줄 단위 편집 가정) — 점자 규정 조판은 AI가 소유, BE/FE는 호출만.
-        반환: 점자 페이지 목록(각 32칸×25줄).
-        """
-        def _first_line(want: str) -> str:
-            for b in blocks:
-                if b.get("type") == want:
-                    for ln in b.get("lines", []):
-                        if ln.strip():
-                            return ln.strip()
-            return ""
-
-        body = sorted(
-            (b for b in blocks if b.get("type") not in _PAGE_LINE_TYPES),
-            key=lambda b: b.get("order", 1_000_000),
-        )
-        formatted = [(int(b.get("heading_level") or 0), b.get("type") or "", list(b.get("lines", [])))
-                     for b in body]
-        # 꼬리말 = 페이지의 1·2단계 제목 (지침 제1장 3-3) — _footer_text 주석과 같은 규칙)
-        footer = ""
-        for lvl in _FOOTER_HEADING_LEVELS:
-            cands = [b for b in body if int(b.get("heading_level") or 0) == lvl]
-            for b in cands:
-                line = next((ln.strip() for ln in b.get("lines", []) if ln.strip()), "")
-                if line:
-                    footer = line
-                    break
-            if footer:
-                break
-        orig_page = _first_line("page_number")
-        return self._assemble_pages(formatted, footer, orig_page, page_no)
 
     def _format_element(
         self, bo: BrailleOutput, etype: str, hlevel: int, *, tight_box: bool = False
