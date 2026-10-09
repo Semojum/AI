@@ -1490,9 +1490,17 @@ def _fold_full_lines(lines: list[str], pads: list[int],
       그중 2건이 OCR 이 깨진 수식 쪽(`x` 를 `⑦` 로 읽은 자리)이다.
 
     반환: (조정된 pads, 줄 사이 구분자 목록 — 길이 len(lines)-1)
+
+    ★ **기본은 안 잇는다**(#1242, 대표 결재 2026-10-09). 응답 = 쪽 조판이 된다(구분자가 모두 개행).
+      위 잇기는 2026-08-17(#207 · #208)에 넣었는데, 이은 자리 898곳 중 앞 줄이 28~32칸(32칸에 밀린 꼴)인 것은
+      70곳(7.8%)뿐이고 828곳은 32칸보다 긴 원문 줄 뒤였다(그 줄은 접는 쪽이 어차피 접는다). 잇기를 끄면
+      dev · val 1,746쪽 응답 접은 줄이 gold 와 같은 줄 dev +52 · val +37, 응답 접은 줄 중 쪽 출력에 없는 줄이
+      3,882 → 69(남은 것은 글상자 테두리 같은 32칸 구조 줄). 앱은 로컬 엔진이 음절 단위로 접으므로 끊을 자리
+      (`breaks`)만 정확하면 된다. 결과 V2 temp/n10/결과_응답잇기끄기_1242.md. 되돌리기 `RESPONSE_FOLD_JOIN=1`.
     """
     seps = ["\n"] * max(0, len(lines) - 1)
-    if len(lines) < 2 or etype not in _FOLDABLE_TYPES:
+    if (len(lines) < 2 or etype not in _FOLDABLE_TYPES
+            or os.environ.get("RESPONSE_FOLD_JOIN", "0") != "1"):
         return list(pads), seps
     out_pads = list(pads)
     src = src_lines if src_lines and len(src_lines) == len(lines) else None
