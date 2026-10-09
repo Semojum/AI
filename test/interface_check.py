@@ -6,7 +6,7 @@ server_selftest.py가 "정상 요청의 결과가 쓸 만한가"를 본다면, �
 
   A. 연결·TLS   정상 접속 / authority 불일치 거부 / 평문 거부 / REST https 강제
   B. gRPC       mode a·b·c 필드 채움 · id 정합 · 계약 불변식 · 잘못된 입력 방어
-  C. REST       /health · /models/status · /finalize 왕복(32칸·26줄) · 없는 경로
+  C. REST       /health · /models/status · 지운 /finalize 는 404(#1233) · 없는 경로
 
 사용 (작업 디렉토리 = code/AI/)
   python test/interface_check.py
@@ -29,13 +29,12 @@ import grpc                                                    # noqa: E402
 import requests                                                # noqa: E402
 from protos.generated import braille_service_pb2 as pb         # noqa: E402
 from protos.generated import braille_service_pb2_grpc as pbg   # noqa: E402
-from app.ai.braille.constants import COLS, ROWS                 # noqa: E402
+from app.ai.braille.constants import COLS                       # noqa: E402
 
 warnings.filterwarnings("ignore")          # 자체 서명 인증서 경고
 CERT = "/etc/ssl/semojum/server.crt"
 MAX_MSG = 20 * 1024 * 1024
 CELL_W = COLS      # 32칸 (NLD 1장1절3)
-PAGE_ROWS = ROWS   # 26줄 — 단면은 본문 25 + 페이지행 1. '25줄'이 아니다
 SAMPLE_TEXT = "다음 그림은 2024년 자료이다. 빈칸 □ 에 알맞은 말을 쓰시오."
 
 RESULTS: list[tuple[str, str, bool, str]] = []   # (구역, 항목, 통과, 메모)
@@ -266,38 +265,13 @@ def main() -> None:
     except Exception as exc:                       # noqa: BLE001
         rec("C REST", "/models/status", False, str(exc)[:60])
 
-    # /finalize 왕복 — BE는 응답 contents를 그대로 되돌려주면 된다
-    try:
-        if c is None:
-            raise RuntimeError("mode c 응답이 없어 왕복 검사 불가")
-        blocks = [{"id": e.id, "type": e.type, "heading_level": e.heading_level,
-                   "order": e.order, "lines": list(e.contents)}
-                  for e in c.braille_text_list[:8]]
-        fr = requests.post(f"{a.rest}/finalize", verify=False, timeout=60, json={
-            "job_id": "ifchk", "page_no": 1, "total_pages": 1, "blocks": blocks})
-        ok = fr.status_code == 200
-        fj = fr.json() if ok else {}
-        rec("C REST", "/finalize 왕복(응답 contents 그대로)", ok, f"{fr.status_code}")
-        pages = fj.get("pages") or []
-        rec("C REST", "  pages 반환", bool(pages), f"{len(pages)}쪽")
-        if pages:
-            widths = [len(l) for p in pages for l in p.get("lines", [])]
-            rec("C REST", "  32칸 이내", all(w <= CELL_W for w in widths),
-                f"최대 {max(widths) if widths else 0}칸")
-            rec("C REST", f"  {PAGE_ROWS}줄 이내",
-                all(len(p.get("lines", [])) <= PAGE_ROWS for p in pages),
-                f"최대 {max(len(p.get('lines', [])) for p in pages)}줄 "
-                f"(본문 {PAGE_ROWS-1} + 페이지행 1)")
-        rec("C REST", "  brf 문자열 반환", bool(fj.get("brf")), f"{len(fj.get('brf',''))}자")
-    except Exception as exc:                       # noqa: BLE001
-        rec("C REST", "/finalize 왕복(응답 contents 그대로)", False, str(exc)[:60])
-
+    # /finalize 는 지웠다(#1233, 2026-08-05 폐기). 남아 있으면 BE 가 다시 부를 빌미가 된다.
     try:
         fe = requests.post(f"{a.rest}/finalize", verify=False, timeout=20,
                            json={"job_id": "e", "page_no": 1, "total_pages": 1, "blocks": []})
-        rec("C REST", "/finalize 빈 blocks → 200", fe.status_code == 200, f"{fe.status_code}")
+        rec("C REST", "지운 /finalize → 404", fe.status_code == 404, f"{fe.status_code}")
     except Exception as exc:                       # noqa: BLE001
-        rec("C REST", "/finalize 빈 blocks → 200", False, str(exc)[:60])
+        rec("C REST", "지운 /finalize → 404", False, str(exc)[:60])
 
     try:
         nf = requests.get(f"{a.rest}/nope", verify=False, timeout=10)

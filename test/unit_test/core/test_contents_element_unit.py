@@ -14,7 +14,6 @@
 
 이력: 07-28 '항목 = 초안' → 07-31 '항목 = 32칸 조판 줄'(BE proto) →
 08-05 '항목 = 통 문자열'(조판 가이드, AI finalize 폐기). 세 번 다 직렬화 경계만 바뀌었다.
-`/finalize`는 그 시기 응답을 저장해 둔 BE를 위해 여러 형식을 계속 받는다.
 
 이 파일이 지키는 것:
   1. `_selected_lines`가 통 문자열 1개를 낸다(빈 요소는 빈 배열 유지).
@@ -22,7 +21,7 @@
      붙이면 지침대로 배치된다.
   3. 불변식 `contents == drafts[selected_idx].contents`.
   4. 초안 **정규 순서를 재배열하지 않는다**(라벨·근거가 순서에 묶여 있다).
-  5. `/finalize`가 줄 배열·줄바꿈 결합 두 형식을 모두 받는다.
+(`/finalize` 가 두 형식을 받는지 보던 시험은 라우트와 함께 지웠다, #1233.)
 """
 from __future__ import annotations
 
@@ -30,7 +29,6 @@ from uuid import uuid4
 
 from app.ai.braille.layout_braille import flatten_elements
 from app.core.pipeline import _draft_contents, _selected_lines
-from app.core.routes import FinalizeBlock
 from app.schemas.content import BrailleOutput, RuleApplication
 from app.schemas.layout import BBoxItem, LayoutResult
 
@@ -242,36 +240,6 @@ class TestDraftsInvariant:
         assert len(got) == 2
         assert got[0][0].strip(" ⠀\n") == ""
         assert got[1][0].strip(" ⠀\n") == _L1
-
-
-class TestFinalizeAcceptsBothForms:
-    """BE가 옛 형식 응답을 저장해 뒀을 수 있어 결합 형식도 계속 받는다."""
-
-    def test_줄_배열_형식(self) -> None:
-        assert FinalizeBlock(lines=[_L1, _L2]).normalized_lines() == [_L1, _L2]
-
-    def test_줄바꿈_결합_형식(self) -> None:
-        assert FinalizeBlock(lines=[f"{_L1}\n{_L2}"]).normalized_lines() == [_L1, _L2]
-
-    def test_두_형식이_같은_결과(self) -> None:
-        a = FinalizeBlock(lines=[_L1, _L2, _L3]).normalized_lines()
-        c = FinalizeBlock(lines=[f"{_L1}\n{_L2}\n{_L3}"]).normalized_lines()
-        assert a == c
-
-    def test_혼합_형식도_펴진다(self) -> None:
-        b = FinalizeBlock(lines=[f"{_L1}\n{_L2}", _L3])
-        assert b.normalized_lines() == [_L1, _L2, _L3]
-
-    def test_빈_블록(self) -> None:
-        assert FinalizeBlock().normalized_lines() == []
-
-
-def test_왕복_직렬화_후_줄이_안_깨진다() -> None:
-    """AI 응답(통 문자열) → BE 저장 → /finalize 왕복에서 줄이 보존된다."""
-    bo, flat = _flat_of([_L1, _L2, _L3])
-    serialized = _selected_lines(bo, flat)                          # AI → BE
-    restored = FinalizeBlock(lines=serialized).normalized_lines()   # BE → AI
-    assert [ln.strip(" ⠀\n") for ln in restored if ln.strip(" ⠀\n")] == [_L1, _L2, _L3]
 
 
 def test_flat_indent_matches_layout() -> None:
