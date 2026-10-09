@@ -3553,11 +3553,24 @@ _HANGUL_OR_JAMO_RE = re.compile(r"[가-힣ㄱ-ㆎ]$")
 #   `있다‖<!/드러냄>.` 1(태그를 걷고 다음 글자를 본다) · 한글 뒤 붙임표 1(`다‖-`, 이 막이 밖). 나머지 4곳은 여는 괄호 「 · [ 앞
 #   (부호가 다음 줄 머리로 가는 것이 맞다)과 깨진 글자다. 닫는 괄호 · 따옴표는 종전대로 한글 뒤만 본다(수식 줄 강제분리).
 _NO_BREAK_BEFORE_ANY = frozenset(".,?!:;，．？！：；")
+# 여는 괄호 · 따옴표 바로 뒤, 그리고 뒤에 문장 부호가 붙은 닫는 괄호 · 따옴표(`).` `’,` `”,`) 앞은 끊지 않는다(#1243).
+#   근거: 「한국 점자 규정」 제54항(재추출 2406행) 여는 따옴표와 여는 괄호 뒤, 닫는 따옴표와 닫는 괄호 앞은 붙여 쓴다.
+#   #1240 이 문장 부호 앞을 막자 종전부터 있던 자리가 골라졌다(dev · val 응답 접기에서 처음 갈린 46곳 중
+#   `되었다(1861‖).` · `들리시나요?‖’,` 같은 꼴 6 · `영상(‖https://…` 같은 여는 괄호 줄 끝 3).
+#   닫는 부호 앞 전부를 막지 않는 것은 위 `_NO_BREAK_BEFORE` 의 까닭(수식 줄 `cos2α)` 강제분리) 때문이다.
+#   부호가 붙은 닫는 부호는 어차피 부호가 줄머리로 가므로 막아도 그 까닭에 안 걸린다.
+#   ASCII `"` `'` 는 여닫이를 못 가려 뺀다.
+_OPENERS = frozenset("([{「『‘“〈《")
 
 
 def _punct_any_on() -> bool:
     """`BREAK_PUNCT_ANY=0` 이면 종전(한글 뒤만). 호출 때 읽는다 — A/B 팔을 같은 커밋에서 가른다."""
     return os.environ.get("BREAK_PUNCT_ANY", "1") != "0"
+
+
+def _bracket_attach_on() -> bool:
+    """`BREAK_BRACKET_ATTACH=0` 이면 종전(#1243 전). 호출 때 읽는다."""
+    return os.environ.get("BREAK_BRACKET_ATTACH", "1") != "0"
 
 
 def _break_offsets(src: str, braille: str) -> list[int]:
@@ -3587,6 +3600,13 @@ def _break_offsets(src: str, braille: str) -> list[int]:
         if _punct_any_on():
             nxt = _TAG_RE.sub("", src[sp:])[:1]          # 태그를 걷고 다음 글자를 본다(`있다<!/드러냄>.`)
             if nxt in _NO_BREAK_BEFORE_ANY and head[-1:].strip():
+                continue
+        if _bracket_attach_on():
+            if head[-1:] in _OPENERS:
+                continue
+            rest = _TAG_RE.sub("", src[sp:])
+            if (rest[:1] and rest[0] in _CLOSERS and head[-1:].strip()
+                    and rest.lstrip(_CLOSERS)[:1] in _NO_BREAK_BEFORE_ANY):
                 continue
         if nxt in _NO_BREAK_BEFORE and _HANGUL_OR_JAMO_RE.search(head.rstrip(_CLOSERS)):
             continue
