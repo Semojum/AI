@@ -71,7 +71,7 @@ class TestFileHandoffE2E:
         job_id, _ = job
         result = asyncio.run(pipeline.run(PageTask(job_id=job_id, page_no=_PAGE, mode="c")))
         assert result["status"] == "COMPLETED"
-        assert len(result["braille_text_list"]) == 6
+        assert len(result["braille_text_list"]) == 5      # 쪽 번호(page_number)는 점자 목록에서 빠진다(#1262)
         for el in result["braille_text_list"]:
             assert el["contents"], f"빈 점자 출력: {el['id']}"
 
@@ -101,12 +101,17 @@ class TestFileHandoffE2E:
         combined = "".join(formula_el["contents"])
         assert "⠌" in combined, f"분수표(⠌) 없음: {combined!r}"
 
-    def test_page_number_has_numeral_sign(self, job):
-        job_id, _ = job
+    def test_page_number_stays_out_of_braille_list(self, job):
+        """#1262. FE · BE · 앱은 점자 목록을 종류 안 가리고 본문에 싣는다. 쪽 번호가 본문에 홀로 찍히지 않게
+        점자 목록에서만 빼고, 묵자 목록 · 상자 목록에는 남긴다. 페이지행(result.txt)에는 수표를 단 채 찍힌다."""
+        job_id, extraction = job
+        pn_id = next(e["id"] for e in extraction["elements"] if e["type"] == "page_number")
         result = asyncio.run(pipeline.run(PageTask(job_id=job_id, page_no=_PAGE, mode="c")))
-        pn = next(e for e in result["braille_text_list"] if e["type"] == "page_number")
-        combined = "".join(pn["contents"])
-        assert "⠼" in combined, f"수표(⠼) 없음: {combined!r}"
+        assert pn_id not in {e["id"] for e in result["braille_text_list"]}
+        assert next(e for e in result["text_list"] if e["id"] == pn_id)["contents"] == ["39"]
+        assert pn_id in {b["id"] for b in result["bounding_box_list"]}
+        txt = next((_page_dir(job_id) / "result").glob("*_result.txt")).read_text(encoding="utf-8")
+        assert any(line.startswith("⠼⠉⠊⠀") for line in txt.split("\n")), "페이지행 원본 쪽 번호 39 없음"
 
 
 def _read(job_id: str) -> dict:

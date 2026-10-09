@@ -3594,6 +3594,11 @@ def _build_response(
                 **_meta_fields(o.element_id),
             }
             for i, o in enumerate(llm_outputs)
+            # ★ 쪽 번호(page_number)는 점자 목록에서 뺀다(#1262). FE · BE · 앱은 이 목록을 종류를
+            #   가리지 않고 본문에 싣고 원본 쪽 번호는 자기 쪽 순번으로 매긴다. 그래서 이 요소가
+            #   본문에 홀로 선 줄로 찍혔다(dev · val 1,714/1,746쪽, 정답 본문 0쪽).
+            #   `text_list` · `bounding_box_list` 에는 남긴다. result.txt 페이지행은 layout 이 따로 본다.
+            if elem_by_id.get(o.element_id, _DUMMY_ELEM).type != "page_number"
         ]
 
     # 요소별 검수 등급 — 점역사가 어디부터 볼지 정하는 신호(정답 없이 런타임 계산).
