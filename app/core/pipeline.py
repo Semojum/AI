@@ -387,6 +387,7 @@ _EXTRACT_ENV = (
     "ADVANCED_EXTRACT_RELABEL", "ADVANCED_EXTRACT_MAX_TOKENS", "ADVANCED_EXTRACT_RETRY_BUDGET",
     "ADVANCED_KEEP_CAPTIONS", "STABLE_ELEMENT_ID", "GUARD_MONOLOGUE", "ANSWER_BOX_TEXTLAYER", "CAPTION_MARKERS", "CAPTION_DECOR_KEEP",
     "ANSWER_MARK_TEXT", "NUM_BADGE_TEXT", "TEXTLAYER_GLYPH_RESTORE", "CAPTION_KEEP_SOURCE",
+    "IMAGE_AS_CAPTION_NOTE", "ORPHAN_CAPTION_FORM",                                     # #1073 인쇄 캡션 그림 표지 · F07 꼴
 )
 
 
@@ -2256,8 +2257,14 @@ _LIST_HEAD_RE = re.compile(
 _JAMO_HEAD_RE = re.compile(r"^\s*[ㄱ-ㅎ]\s*[.)]")
 
 
+# 짝 없는 캡션의 생략 주 줄(원장 C-148, #1073 `result_builder._notify_orphan_captions`). 제목 줄 다음 줄이 내용이라
+# 잇지 않는다 — 이으면 `거란(요)과 송(북송)의 영역 【점역자주】그림 생략【점역자주】` 한 문단이 된다(gold 는 두 줄).
+# 이 꼴 그대로의 줄은 그 함수만 만든다(옛 꼴은 `생략: 제목` 이 표지 안에 들고, 캡션 끈 그림의 생략 주는 시각 요소라 여기 안 온다).
+_OMIT_NOTE_LINE = "<!주>그림 생략<!/주>"
+
+
 def _is_list_head(line: str) -> bool:
-    return bool(_LIST_HEAD_RE.match(line)
+    return bool(_LIST_HEAD_RE.match(line) or line == _OMIT_NOTE_LINE
                 or (os.environ.get("JOIN_JAMO_HEAD", "1") != "0" and _JAMO_HEAD_RE.match(line)))
 
 

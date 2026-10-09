@@ -2246,7 +2246,10 @@ def run(
         forced_caption = (printed_cap or "").strip() if mapped_type in ("image", "chart_graph", "cartoon") else ""
         has_data = bool(_chart_data_table(item.get("content", ""))
                         or _flowchart_lines(item.get("content", "")))
-        if forced_caption and not has_data:
+        # ★ 그림을 캡션으로 바꾼 자리에는 표지를 남긴다(#1073). 종전엔 표지가 없어 결과 단계의 짝 찾기가 쪽의
+        #   아무 시각요소에 짝을 지었고, 그림이 있었다는 사실이 출력 어디에도 안 남았다(n71 384쪽 중 63쪽).
+        image_as_caption = bool(forced_caption and not has_data)
+        if image_as_caption:
             mapped_type = "caption"
         bb = item.get("bbox")
         if bb is None:
@@ -2410,6 +2413,7 @@ def run(
             "heading_level": hlevel,
             "caption_ref": None,
             "flags": (["MINERU_FOOTER"] if raw_footer else [])
+                     + (["IMAGE_AS_CAPTION"] if image_as_caption and os.environ.get("IMAGE_AS_CAPTION_NOTE", "1") != "0" else [])
                      + ([f"MINERU_{item['_nested'].upper()}"] if item.get("_nested") else [])
                      + ([item["_flag"]] if item.get("_flag") else [])
                      + (["HALLUCINATION_SUSPECT"] if suspect else []),

@@ -472,6 +472,8 @@ def _link_captions(elements: list[dict]) -> None:
     for cap in elements:
         if cap["type"] != "caption" or not cap.get("bbox"):
             continue
+        if "IMAGE_AS_CAPTION" in (cap.get("flags") or []):
+            continue                  # 제 그림을 캡션으로 바꾼 것이다(#1073) — 남의 그림에 짝짓지 않는다
         cb = cap["bbox"]
         cy = (cb[1] + cb[3]) / 2
         best, best_d = None, float("inf")
@@ -497,11 +499,19 @@ def _link_captions(elements: list[dict]) -> None:
 # 규정 §6.1.1(4)·§6.3.4(2)② — 생략이 허용되는 것은 **장식 용도**이거나 **본문 이해에
 # 불필요**한 경우뿐이다. 캡션이 달린 자료는 그 둘이 아니다. 최소한 **생략했다는 사실은
 # 알려야** 한다. 설명을 못 붙이는 것(크롭이 없다)과 안 알리는 것은 다른 문제다.
+#
+# ★ 꼴은 「제목 줄 + 다음 줄 `그림 생략` 점역자 주」다(원장 C-148, #1073, pm 2026-10-09 확정). 종전 꼴
+#   `<!주>그림 생략: 제목<!/주>`(제목이 표지 안)은 gold 에서 사실상 안 쓴다. dev · val 인쇄 캡션 그림 118건 중
+#   제목이 표지 밖 106(90%) · 안 12, gold 90권 셈에서 표지 안 `생략: 제목` 은 7건 · 2권뿐이다(V2 `temp/n175/`).
+#   「점자 자료 제작 지침」(재추출) 6.3.3(1) 3168행 제목은 윗줄 5칸 · 6.3.4(1) 3175-3176행 제목 있는 자료는
+#   표지에 유형만 · 6.3.4(2)② 3180행 `유형 생략` 은 제목 없는 자료의 자리다. 지침만 있고 규정 조항이 없어
+#   관행(제목 밖)을 따르고, 설명을 만들 수 없는 그림이라 `생략` 을 둔다. ⚠ 유형 표지 꼴(`【점역자주】사진【점역자주】
+#   제목`)이 다수인 10권(val 012 · 014 · 015 포함)은 손해 쪽이다. 되돌리기 `ORPHAN_CAPTION_FORM=inside`.
 _CAP_LEAD_RE = re.compile(r"^\s*[▲▼◀▶△▽■□●○※*]\s*")
 
 
 def _notify_orphan_captions(elements: list[dict]) -> int:
-    """짝을 못 찾은 캡션을 '그림 생략' 점역자 주로 바꾼다. 바꾼 개수 반환."""
+    """짝을 못 찾은 캡션 뒤에 '그림 생략' 점역자 주를 붙인다(제목은 표지 밖 줄). 바꾼 개수 반환."""
     from app.ai.braille.tag_names import tn
     n = 0
     for cap in elements:
@@ -510,7 +520,11 @@ def _notify_orphan_captions(elements: list[dict]) -> int:
         body = _CAP_LEAD_RE.sub("", (cap.get("content") or "").strip())
         if not body or body.startswith("<!"):
             continue
-        cap["content"] = tn(f"그림 생략: {body}")
+        if os.environ.get("ORPHAN_CAPTION_FORM", "title") == "inside":
+            cap["content"] = tn(f"그림 생략: {body}")
+        else:
+            # 이 생략 줄은 경계 뒤 줄 잇기가 잇지 않는다(`pipeline._OMIT_NOTE_LINE`) — 이으면 제목에 붙어 한 문단이 된다.
+            cap["content"] = f"{body}\n{tn('그림 생략')}"
         cap.setdefault("flags", []).append("ORPHAN_CAPTION")
         n += 1
     return n
