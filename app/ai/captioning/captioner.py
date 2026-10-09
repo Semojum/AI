@@ -645,6 +645,52 @@ def _markers_on() -> bool:
     return os.getenv("CAPTION_MARKERS", "1") != "0"
 
 
+# ── 그림 속 글자는 적힌 언어 그대로(#1066) ───────────────────────────────────────
+# 한국점자도서관 앱 테스트(결과보고서 09-17, 3쪽): 영어 지문 그래프를 우리말로 옮기면 "문제지의 답을
+# 직접적으로 알려주는 형식" 이 된다. 요구는 "범례를 입력할 때 텍스트 원문과 같게". 같은 칸 1번은 그래프 속
+# 텍스트가 다 안 옮겨지는 것이다. 지침 6.1.4 에는 이 자리의 조항이 없어 현장 요구를 따른다.
+# 합성 그래프 5종 × 2회 실측(develop 249bcb2, V2 `temp/n78/`): 범례는 원문 10/10 이지만 영어 제목 6/6 번역 ·
+# `Age 18-34` → `18-34세` · 그래프 아래 `Note:` 문장 0/2. 예시는 시험 그래프와 무관한 것으로 둔다(과적합).
+# 되돌리는 길 `CAPTION_KEEP_SOURCE=0`(prompt_id 가 갈려 캐시도 갈린다).
+# ★ 차트(`chart`)에만 붙인다. 그림 · 만화 · 도식까지 넓히면 그 셋의 캡션이 다 바뀌는데 dev · val 에 영어 그래프가
+#   0 이라 효과는 못 재고 손해만 질 수 있다. 비회귀 범위를 차트로 가둔다(pm 2026-10-09).
+# ★★ 그중에서도 **둘레 글이 영어인 차트**에만 붙인다(`_english_context`, pm 2026-10-09). 모든 차트에 붙였더니
+#   dev · val 에서 숫자를 틀리게 읽는 차트가 늘었다(같은 프롬프트 두 번 호출 B · B2 가 둘 다 틀림, 끈 팔 A 는 gold 와 같음):
+#   동아시아사 p0129 꺾은선 1948년 11월 gold 290 · 300 → 300 · 290(계열별로 다시 묶다 선이 엇갈리는 자리에서 뒤바꿈) ·
+#   언매 p0185 2,000건 → 약 2,050건. 숫자 다른 (묶음, 항목) 열쇠 A↔B 7 · A↔B2 6 · 바닥 B↔B2 3(V2
+#   `temp/n10/결과_그래프원문언어_1066.md`). 고칠 결함은 영어 차트에만 나므로 범위를 거기로 좁힌다.
+#   판별은 낱말 수다. 글자 비율로 가르면 수학 그래프 22개(LaTeX 명령 · 변수)가 잘못 걸린다. 수식 토막 · LaTeX
+#   명령을 걷고 대문자 약어(`DNA`) · 수학 함수 이름 · 로마 숫자를 뺀 3자 이상 낱말이 5개 이상이면 건다.
+#   dev · val 차트 164개 중 0개가 걸린다.
+#   ⚠ 구멍 둘: 문턱이 5낱말이라 둘레 글이 짧은 영어 차트는 안 걸린다. 판별이 그림 속 글자가 아니라 캡션 문맥
+#   (`result_builder._neighbor_text`)이라 영어 차트라도 둘레 글이 한국어면 안 걸린다.
+_KEEP_SOURCE = """
+
+[그림 속 글자]
+- 그림에 적힌 글자(제목·축 이름·범례·항목 이름·이름표·주석)는 **적힌 언어 그대로** 옮기십시오.
+  영어로 적혀 있으면 영어로 적고 **번역하지 마십시오**(영어 시험지에서 번역은 답을 알려 줍니다).
+  우리말로 쓰는 것은 자료의 종류와 설명 문장뿐입니다.
+  예) 범례 `Bicycle` → `Bicycle: 30%`(O) / `자전거: 30%`(X)
+- 그래프 아래나 옆에 인쇄된 **주(Note) 문장도 그대로** 옮기십시오. 해석이 아니라 자료의 글자입니다."""
+
+
+_EN_MIN_WORDS = 5
+_MATH_FUNC_WORDS = {"sin", "cos", "tan", "sec", "csc", "cot", "log", "lim", "max", "min", "exp"}
+
+
+def _english_context(context: str) -> bool:
+    """캡션 문맥이 영어 글인가 — 수식 · LaTeX 명령을 걷고 남은 3자 이상 영어 낱말(약어 · 함수 이름 · 로마 숫자 뺌)이 5개 이상."""
+    t = re.sub(r"\\[A-Za-z]+", " ", re.sub(r"\$[^$]*\$", " ", context or ""))
+    words = [w for w in re.findall(r"\b[A-Za-z]{3,}\b", t)
+             if not w.isupper() and w.lower() not in _MATH_FUNC_WORDS and not re.fullmatch(r"[ivxIVX]+", w)]
+    return len(words) >= _EN_MIN_WORDS
+
+
+def _keep_source_on(image_type: str, context: str = "") -> bool:
+    return (image_type == "chart" and os.getenv("CAPTION_KEEP_SOURCE", "1") != "0"
+            and _english_context(context))
+
+
 def _take_markers(raw: str) -> tuple[str, bool]:
     """모델이 낸 표지를 뗀다 → (남은 글, 장식인가). 표지 글자는 어떤 경우에도 남기지 않는다.
 
@@ -1546,7 +1592,7 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "",
     """
     # 캐시 경계에서 가른다(#760) — `head` 는 유형별 고정(캐시에 얹는다), `tail` 은
     # 요소마다 달라지는 것. 이어 붙인 `prompt` 는 종전과 같은 글자라 캐시 열쇠도 그대로다.
-    head = _PROMPTS.get(image_type, _PROMPTS["image"])
+    head = _PROMPTS.get(image_type, _PROMPTS["image"]) + (_KEEP_SOURCE if _keep_source_on(image_type, context) else "")
     tail = (_context_block(context) + (_MATERIAL_BLOCK if _material_on() else "")
             + (_PROMPT_MARKERS if _markers_on() else ""))
     prompt = head + tail
@@ -1565,7 +1611,7 @@ def caption(image_path: str, image_type: str = "image", *, context: str = "",
     b64 = base64.b64encode(raw).decode()
 
     prompt_id = (image_type + ("+material" if _material_on() else "")
-                 + ("+markers" if _markers_on() else ""))
+                 + ("+markers" if _markers_on() else "") + ("+src" if _keep_source_on(image_type, context) else ""))
     cache = _cache_new_file("caption", raw, prompt_id, context)
     # 적중분에도 이유를 채운다 — 안 그러면 캐시가 장식 판정을 비켜 가 `CAPTION_FAILED` 로 남는다.
     hit = _cache_read("caption", cache, image_type, out_info)   # 적중 · 미스 계수는 안에서 센다
