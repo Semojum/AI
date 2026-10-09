@@ -5,9 +5,20 @@ proto §TextElement.contents는 통 문자열이고 32칸 자름은 FE·BE 몫�
 
 대표 기준(2026-08-16) 그대로다 — 칸수 초과 때문이면 한 줄로, 의도된 줄바꿈이면 살린다.
 셀 폭은 AI만 아니까 자리도 여기다.
+
+★ 2026-10-09(#1242, 대표 결재) 기본은 안 잇는다 — 응답 = 쪽 조판. 아래 잇기 시험은 되돌리기
+스위치 `RESPONSE_FOLD_JOIN=1` 경로를 지킨다(맨 아래 `test_기본은_안_잇는다` 만 기본값).
 """
+import pytest
+
 from app.ai.braille.layout_braille import _fold_full_lines, _pad_join, _flat_trail
 from app.schemas.content import RuleApplication
+
+
+@pytest.fixture(autouse=True)
+def _join_on(monkeypatch, request):
+    if request.node.name != "test_기본은_안_잇는다":
+        monkeypatch.setenv("RESPONSE_FOLD_JOIN", "1")
 
 
 def _trail(n: int) -> list[RuleApplication]:
@@ -115,3 +126,11 @@ def test_원문_줄_끝_빈칸이면_구분자를_비운다():
     assert "⠀⠀" not in body
     for i, r in enumerate(_flat_trail(_trail(len(lines)), lines, 0, len(body), pads2, seps)):
         assert body[r.col_start] == lines[i][0], f"줄 {i}"
+
+
+def test_기본은_안_잇는다(monkeypatch):
+    """#1242 대표 결재(2026-10-09): 응답 = 쪽 조판. 꽉 찬 줄 뒤도 개행을 그대로 두고 들여쓰기도 안 지운다."""
+    monkeypatch.delenv("RESPONSE_FOLD_JOIN", raising=False)
+    lines, pads = ["⠁" * 31, "⠃⠉", "⠙" * 30, "⠑"], [0, 2, 0, 2]
+    pads2, seps = _fold_full_lines(lines, pads, "text")
+    assert seps == ["\n", "\n", "\n"] and pads2 == pads
