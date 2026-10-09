@@ -1840,7 +1840,7 @@ _TAG_PAIR_MARKER: dict[str, tuple[str, str]] = {
 _BORDER_KIND = {_TAGS.BOX_TOP: "top", _TAGS.BOX_BOTTOM: "bottom"}
 from app.ai.braille.constants import COLS as _BORDER_COLS, BOX_LEVELS as _BOX_LEVELS  # noqa: E402 (공용 상수)
 _BORDER_BLANK     = "⠀"   # 점자 빈칸(U+2800)
-_BORDER_LEFT_FILL = 4     # 캡 뒤 채움 칸 → 제목 7칸에서 시작(NLD-1.2.5(4)②: 캡1+채움4+빈칸1)
+from app.ai.braille.constants import BORDER_LEFT_FILL as _BORDER_LEFT_FILL  # noqa: E402 — 캡 뒤 채움 칸 → 제목 7칸에서 시작(NLD-1.2.5(4)②, #1232 한 곳)
 
 # 신형식 <!이름>…<!/이름> + 구형식 <!이름>…<!이름> 모두 수용(닫기 슬래시 옵션).
 # 위계: 이름 뒤 단계 숫자 옵션(<!상자2>=2단계, 없으면 1단계). group(1)=단계, group(2)=제목.

@@ -86,8 +86,8 @@ _RULE_HIDDEN_SINGLE = "MCST-한글-6.13.49"  # 숨김표 단일(제49항) — li
 #   정답 코퍼스 1131p/85,600줄 전수 검증: 빈칸은 0(66.0%)·2(31.3%)·4(2.2%)·6(0.4%)칸만
 #   나오고 홀수는 사실상 없다 → 규정의 1·3·5·7칸 시작과 정확히 일치.
 #   (2026-07-16 이전엔 상수를 시작 칸 숫자 그대로 써서 전 줄이 1칸씩 밀려 있었다.)
-_PARA_INDENT = 2        # NLD 2장2절2 새 문단 "3칸에서 시작" = 앞 빈칸 2 (text)
-_BULLET_LINE_INDENT = 2  # NLD 2장3절5 글머리/목록 "3칸에서 시작" = 앞 빈칸 2 (list_item)
+from app.ai.braille.constants import PARA_INDENT as _PARA_INDENT  # noqa: E402 — NLD 2장2절2 새 문단 "3칸에서 시작"(#1232 한 곳)
+from app.ai.braille.constants import BULLET_INDENT as _BULLET_INDENT  # noqa: E402 — NLD 2장3절5 글머리/목록 "3칸에서 시작"(#1232 한 곳)
 
 # ★ MinerU는 선택지(①②③…)를 한 요소로 묶어서 낸다. 요소 첫 줄만 들이면 ②③…이
 #   이어지는 줄(0칸)로 흘러 정답(각 항목 2칸 시작)과 어긋난다.
@@ -271,10 +271,8 @@ _UNDERLINE_BLANK_MARKER = "⠸⠤"
 # ── NLD 2장3절5 글머리 기호 — 위계 2단계 (글리프 MCST 제72항) ────────────────
 # 1단계(상위) 동그라미 ⠸⠴, 2단계(하위) 붙임표 ⠤
 _BULLET_MARKERS: dict[int, str] = {1: "⠸⠴", 2: "⠤"}
-_BULLET_INDENT = 2  # 3칸에 표기(2칸 들여 후 3번째 칸)
 
 # ── NLD 2장2절2 문단 형식 ──────────────────────────────────────────────────
-_PARAGRAPH_INDENT = 2  # 새 문단은 "3칸에서 시작" = 앞 빈칸 2
 
 # ── NLD 2장2절6 출전 ──────────────────────────────────────────────────────
 _CITATION_INDENT = 2  # 인용 "3칸에서 시작" = 앞 빈칸 2
@@ -296,7 +294,7 @@ _BORDER_BLANK = "⠀"     # 점자 빈칸(U+2800) — 제목 앞뒤 띔
 #   ⚠ `.brf`(BRF-ASCII) 내보내기는 `unicode_to_ascii` 가 담당하고 그쪽 빈칸은 U+0020 이 맞다.
 #     여기서 바꾸는 것은 **유니코드 점자 층**뿐이다.
 _PAD = "⠀"              # 들여쓰기·정렬에 쓰는 점자 빈칸
-_BORDER_LEFT_FILL = 4   # 캡1+채움4+빈칸1 → 제목 7칸째 시작 (NLD-1.2.5(4)②)
+from app.ai.braille.constants import BORDER_LEFT_FILL as _BORDER_LEFT_FILL  # noqa: E402 — 캡1+채움4+빈칸1 → 제목 7칸째 시작 (NLD-1.2.5(4)②, #1232 한 곳)
 # 위계별 테두리 (start_cap, fill, end_cap) — 공용 표(`constants.BOX_LEVELS`, 근거 행 번호도 거기).
 # 위계는 추출이 단다(`pdf_analyzer.tag_boxed_elements` 의 사각형 깊이 → `<!상자2>`).
 from app.ai.braille.constants import BOX_LEVELS as _BOX_LEVELS  # noqa: E402
@@ -365,7 +363,7 @@ def format_citation(text: str) -> str:
 
 def format_paragraph_start(text: str) -> str:
     """새 문단을 3칸에서 시작 (NLD 2장2절2 문단 형식)."""
-    return _PAD * _PARAGRAPH_INDENT + text
+    return _PAD * _PARA_INDENT + text
 
 
 def format_bullet_item(text: str, tier: int) -> str:
@@ -1138,7 +1136,7 @@ class LayoutBraille:
             #     **0개**다. val은 악화가 아니라 변화 없음(중립)이다.
             return _PARA_INDENT
         if etype == "list_item":
-            return _BULLET_LINE_INDENT
+            return _BULLET_INDENT
         return 0
 
     def _build_meta(
