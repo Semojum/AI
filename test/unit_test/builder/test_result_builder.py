@@ -277,8 +277,21 @@ def test_orphan_caption_becomes_omission_notice():
             "bbox": [0, 0, 10, 10], "caption_ref": ""},
            {"id": "t1", "type": "text", "content": "본문", "bbox": [0, 20, 10, 30]}]
     _link_captions(els)
-    assert els[0]["content"] == "<!주>그림 생략: 참호전<!/주>"
+    # 제목은 표지 밖 줄, 다음 줄에 생략 주(원장 C-148 · #1073). gold 90권에서 표지 안 `생략: 제목` 은 7건뿐이다.
+    assert els[0]["content"] == "참호전\n<!주>그림 생략<!/주>"
     assert "ORPHAN_CAPTION" in els[0]["flags"]
+
+
+def test_orphan_caption_inside_form_switch(monkeypatch):
+    """`ORPHAN_CAPTION_FORM=inside` 면 종전 꼴(제목이 표지 안)로 되돌린다 — A/B 끄기 팔."""
+    from app.ai.builder.result_builder import _link_captions
+
+    monkeypatch.setenv("ORPHAN_CAPTION_FORM", "inside")
+    els = [{"id": "c1", "type": "caption", "content": "▲ 참호전",
+            "bbox": [0, 0, 10, 10], "caption_ref": ""},
+           {"id": "t1", "type": "text", "content": "본문", "bbox": [0, 20, 10, 30]}]
+    _link_captions(els)
+    assert els[0]["content"] == "<!주>그림 생략: 참호전<!/주>"
 
 
 def test_caption_with_a_visual_is_left_alone():
@@ -292,6 +305,22 @@ def test_caption_with_a_visual_is_left_alone():
     _link_captions(els)
     assert els[0]["content"] == "▲ 참호전"
     assert els[0]["caption_ref"] == "i1"
+
+
+def test_image_replaced_by_its_caption_is_not_paired_with_another_visual():
+    """#1073 — MinerU 가 인쇄 캡션을 붙인 그림은 추출 단계가 caption 요소로 바꾼다(IMAGE_AS_CAPTION).
+
+    종전엔 짝 찾기에 거리 상한이 없어 쪽의 다른 그림(다른 단이어도)에 짝이 지어져, 그림이 있었다는 사실이
+    출력 어디에도 안 남았다(n71 384쪽 중 63쪽). 제 그림을 잃은 캡션이니 남의 그림에 짝짓지 않고 알린다.
+    """
+    from app.ai.builder.result_builder import _link_captions
+
+    els = [{"id": "c1", "type": "caption", "content": "(가)", "bbox": [0, 200, 10, 210],
+            "caption_ref": "", "flags": ["IMAGE_AS_CAPTION"]},
+           {"id": "i1", "type": "image", "content": "그림", "bbox": [500, 600, 900, 700], "caption_ref": ""}]
+    _link_captions(els)
+    assert not els[0]["caption_ref"]
+    assert els[0]["content"] == "(가)\n<!주>그림 생략<!/주>"
 
 
 def test_infigure_label_moves_behind_its_figure():

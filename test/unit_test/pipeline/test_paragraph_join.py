@@ -99,3 +99,11 @@ class TestEdgeHeaderSuppression:
         from app.core.pipeline import _is_edge_header
 
         assert not _is_edge_header("정답과 해설  19", [0, 700, 500, 720], self.BAND)
+
+
+def test_짝_없는_캡션의_생략_주_줄은_제목에_안_잇는다():
+    """원장 C-148(#1073) — 제목 줄 다음 `그림 생략` 주 줄은 내용이다. 제목이 그 단에서 가장 긴 줄이라 종전 규칙이면 이었다."""
+    t = "<!상자><!/상자>\n거란(요)과 송(북송)의 영역\n<!주>그림 생략<!/주>\n<!상자끝><!/상자끝>"
+    assert "영역\n<!주>그림 생략<!/주>" in join(t)
+    # 옛 꼴(제목이 표지 안)은 종전대로 잇는다
+    assert "영역 <!주>그림 생략: 참호전<!/주>" in join(t.replace("그림 생략<", "그림 생략: 참호전<"))
