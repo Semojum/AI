@@ -10,11 +10,12 @@ _TEST_DATA  = Path(__file__).parents[2] / "test_data" / "page_001"
 RESULT_JSON = _TEST_DATA / "data" / "001_txt_result.json"
 LAYOUT_JSON = _TEST_DATA / "merged_layout.json"
 
-VALID_TYPES = {
-    "title", "text", "caption", "formula", "list_item",
-    "footnote", "sidebar", "header_footer", "page_number",
-    "table", "image", "chart", "cartoon",
-}
+from app.ai.builder.result_builder import _CLASSIFY_TYPE_MAP, _VISUAL_TYPES  # noqa: E402
+from app.ai.parser.mineru_runner import TYPE_MAP  # noqa: E402
+
+# 결과 파일 type = 러너 어휘(TYPE_MAP 값) + 시각 요소 재분류(_CLASSIFY_TYPE_MAP 값, `diagram` 이 더해진다).
+# 목록을 따로 적어 두면 어긋난다(#1259: 시험은 `chart`, 파이프라인은 `chart_graph`).
+VALID_TYPES = set(TYPE_MAP.values()) | set(_CLASSIFY_TYPE_MAP.values())
 
 _PLACEHOLDERS = {"이미지 캡셔닝 대기", "[이미지 경로 없음]", "[캡셔닝 실패]"}
 
@@ -49,7 +50,7 @@ def test_result_schema():
 
 
 def test_types_valid():
-    """모든 type이 13종 이내."""
+    """모든 type 이 파이프라인 어휘(러너 · 재분류) 안."""
     data = _load_result()
     for el in data["elements"]:
         assert el["type"] in VALID_TYPES, f"알 수 없는 type: {el['type']}"
@@ -126,8 +127,8 @@ def test_image_captioning_result(monkeypatch):
     layout = json.loads(LAYOUT_JSON.read_text(encoding="utf-8"))
     result = build(layout, "test-fixture", PAGE_NO, "TEXT_NATIVE")
 
-    visual = [e for e in result["elements"] if e["type"] in ("image", "cartoon", "chart")]
-    assert len(visual) > 0, "시각 요소 없음 — fixture에 image/cartoon/chart 요소가 필요합니다"
+    visual = [e for e in result["elements"] if e["type"] in _VISUAL_TYPES]
+    assert len(visual) > 0, "시각 요소 없음 — fixture에 image/cartoon/chart_graph 요소가 필요합니다"
     for el in visual:
         assert el["content"] not in _PLACEHOLDERS, \
             f"캡셔닝 미완료 ({el['type']}): '{el['content']}'"
