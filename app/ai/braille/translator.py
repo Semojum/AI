@@ -2231,19 +2231,44 @@ def _has_hangul_outside_math(parts: list[str]) -> bool:
                for i in range(0, len(parts), 2))
 
 
-def _inline_sub_braille(b: str, src: str = "") -> str:
+def _inline_sub_braille(b: str, src: str = "", follow: str | None = None) -> str:
     """인라인 첨자 토큰 점형: 로마자표 ⠴ 접두 + 대문자 구절표 ⠠⠠ → 홑 대문자표 ⠠.
 
     ★ 2026-09-07 — 「과학 점자」 제4항(원문 4363행). **한 글자 원소 기호가 3개 이상 이어**
       나오는 토막은 낱 대문자표가 아니라 **대문자 구절표** ⠠⠠⠠…⠠⠄ 로 묶고 로마자
       종료표를 적는다(4367-4368행 `0,,,ch;#c"cooh,'4`). 방아쇠 근거와 오발동 실측은
       `kor_math_rules.caps_phrase_run` 주석에 있다(코퍼스 1,361쪽 발동 3회·오발동 0).
+
+    ★ 2026-10-10(#1269) — 토막 끝과 바로 뒤 원문(`follow`)으로 가른다.
+      · 원소 기호로 끝나고 **한글이 바로 붙으면** 종료표를 적는다. 「과학 점자」 제7항 1호 예(재추출
+        4435~4436행) `H₂O와` = `0,h;#b,o4v` · gold `H₂O로` 2곳(MS-REF-T26-015).
+        ⚠ 빈칸 · 줄 끝 앞은 종전대로 안 적는다. gold 가 3 : 4 로 갈리고(gold 전용 왕복 1,062줄) 안 적는 쪽이
+          화살표 · 반응식 줄에 몰린다 — 한글 섞인 도식은 화학식마다 ⠴ 만 적는 관행(원장 C-132)과 겹친다.
+      · 숫자 첨자로 끝나면 안 적는다. 제7항 6호(4463~4464행) "숫자 첨자 뒤에는 … 로마자 종료표를 적지
+        않는다", 예 `O₂이다` = `0,o;#boi4`. 2027 gold `O₂와` = `0,o;#bv` 등 첨자 끝 토막 + 한글 66곳이 이 꼴이다.
+        다만 숫자와 헷갈리는 한글이 붙어 나오면 한 칸 띄운다. 6호 예 `H₂는` = `0,h;#b`cz`(4467~4468행) ·
+        「한글 점자」 제68항 [붙임 1](2656행) · 제44항 [다만](2005~2006행).
+      괄호 · 붙임표 안 토막(`follow=None`)은 종전대로 둔다(제34항, 묶인 로마자에는 종료표를 안 적는다).
     """
     if "⠠⠠⠠" in b:                     # convert_latex 가 식 전체 구절표를 이미 적었다(T36 ②-b)
         return _ROMAN_START + b + _ROMAN_END
     if src and caps_phrase_run(src):
         return _ROMAN_START + caps_phrase_cells(b, src) + _ROMAN_END
-    return _ROMAN_START + b.replace(_CAPITAL_IND * 2, _CAPITAL_IND)
+    cells = _ROMAN_START + b.replace(_CAPITAL_IND * 2, _CAPITAL_IND)
+    if not follow:
+        return cells
+    follow = _RESIDUAL_BANG_TAG_RE.sub("", follow)
+    if _ELEMENT_TAIL_RE.search(src):
+        return cells + _ROMAN_END if _HANGUL_SYL_RE.match(follow) else cells
+    nxt = follow[:1]
+    if not src[-1:].isalpha() and "가" <= nxt <= "힣" and (
+            (ord(nxt) - 0xAC00) // 588 in _NUM_GAP_INITIALS or nxt == "운"):
+        return cells + "⠀"
+    return cells
+
+
+# 첨자 뒤에 원소 기호가 붙어 끝나는가(`H_{2}O` · `NH_{4}Cl`). 소문자 끝(`log_{2}x` 류)은 원소가 아니라 뺀다.
+_ELEMENT_TAIL_RE = re.compile(r"(?:\}|\d)(?:[A-Z][a-z]?)+$")
 
 
 def _translate_with_braillify(text: str, *, force_roman: bool = False,
@@ -2295,7 +2320,8 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
             part = _restore_wrap_hyphen(part)
             core = part.strip()
             if inline_sub and _INLINE_SUB_TOKEN_RE.match(core):
-                chunks.append(("i", _inline_sub_braille(convert_latex(core), core),
+                follow = parts[i + 1] if i + 1 < len(parts) else ""
+                chunks.append(("i", _inline_sub_braille(convert_latex(core), core, follow),
                                False, False))
             elif inline_sub and (_INLINE_SUB_PAREN_RE.match(core)
                                  or _INLINE_SUB_HYPHEN_RE.match(core)):
