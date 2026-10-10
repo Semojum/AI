@@ -189,3 +189,48 @@ def test_추출_표지는_검토_플래그로_새지_않는다():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+# ── 같은 틀 이웃 줄에 가린 손실(#1298) ──────────────────────────────────────────
+OPT = ("가. 첫째 자료를 보니 모음으로 시작하는 어미 앞에서 바뀌었구나",
+       "나. 둘째 자료를 보니 자음으로 시작하는 조사 앞에서 바뀌었구나",
+       "다. 셋째 자료를 보니 모음으로 시작하는 조사 앞에서 바뀌었구나")
+
+
+def _opt_page():
+    doc = fitz.open()
+    pg = doc.new_page(width=500, height=1000)
+    for y, t in zip((100, 130, 160), OPT):
+        pg.insert_text((20, y), t, fontname="korea", fontsize=9)
+    return doc, pg
+
+
+def test_같은_틀_이웃_줄에_가린_줄을_적는다(tmp_path):
+    """선택지 '나'만 빠졌다. 쪽 전체 6-gram 대조로는 '가' · '다'에 덮여 '있음'이었다(2027 언매 p0096 선택지 ②)."""
+    doc, pg = _opt_page()
+    items = [{"type": "text", "text": t, "bbox": [30, y, 970, y + 20]} for y, t in ((85, OPT[0]), (145, OPT[2]))]
+    losses, _ = L.extraction_losses([{"content": OPT[0]}, {"content": OPT[2]}], pg, _raw(tmp_path, items))
+    sib = [x for x in losses if x.get("reason") == "sibling"]
+    assert [(x["class"], " ".join(x["text"].split())) for x in sib] == [("unseen", OPT[1])]
+    assert not [x for x in losses if x.get("reason") != "sibling"]          # 종전 대조로는 손실 없음
+
+
+def test_MinerU_가_본_이웃_줄_손실은_dropped(tmp_path):
+    doc, pg = _opt_page()
+    items = [{"type": "text", "text": t, "bbox": [30, 85 + 30 * k, 970, 105 + 30 * k]} for k, t in enumerate(OPT)]
+    losses, _ = L.extraction_losses([{"content": OPT[0]}, {"content": OPT[2]}], pg, _raw(tmp_path, items))
+    assert [(x["class"], " ".join(x["text"].split())) for x in losses if x.get("reason") == "sibling"] == [("dropped", OPT[1])]
+
+
+def test_다_있으면_이웃_줄_손실이_없다(tmp_path):
+    doc, pg = _opt_page()
+    losses, _ = L.extraction_losses([{"content": t} for t in OPT], pg, None)
+    assert losses == []
+
+
+def test_짧은_이름표_줄이_긴_문장_자리를_빼앗지_않는다():
+    """짧은 줄('세포 하나의 유전 물질 양')이 긴 문장 속 같은 문구 자리를 먼저 차지해 그 문장(한 음절 오독이 있어 닮음 1 아래)을
+    밀어내면 안 된다. 길이가 비슷한 줄끼리만 자리를 다툰다."""
+    lines = [(None, "세포 하나의 유전 물질 양은"), (None, "감수 분열에서 세포 하나의 유전 물질 양은 절반이 되고 염색체 수도 같이 준다")]
+    have, lost = L._sibling_match(lines, ["감수 분열에서 세포 하나의 유전 물질 양은 절반이 되고 염색채 수도 같이 준다"])
+    assert lost == set() and have == {0, 1}
