@@ -2,6 +2,7 @@
 
 좌표는 d8c 경계 파일 그대로(2x 픽셀). 생명과학 Ⅰ body p0085: 꼬리말 `06강 항상성  85` 가 차례 첫 블록이고
 그래프 눈금 `0` 이 숫자만 든 블록이라 `page_number` 로 잡혀 페이지행 원본 번호 자리를 차지했다.
+MinerU 쪽(#1264)은 사회·문화 body p0023 경계 좌표(0~1000) 그대로다.
 """
 import pytest
 
@@ -49,3 +50,28 @@ def test_떼어_낸_번호가_첫_쪽_번호로_남고_발문에_안_붙는다()
     got = [(b.type, em[b.element_id].corrected_text) for b in sorted(lay.elements, key=lambda b: b.reading_order)]
     assert got[0] == ("page_number", "85")
     assert ("text", "06강 항상성") in got
+
+
+MINERU = {"extraction_method": "OCR", "bbox_space": "norm1000", "image_width": 1167, "image_height": H}
+M_FOOT = {"type": "text", "content": "02. 사회·문화 현상의 연구 방법  23", "bbox": [735, 945, 891, 960]}
+M_PN = {"type": "page_number", "content": "23", "bbox": [902, 947, 922, 960]}
+M_BODY = {"type": "text", "content": "① 갑, 을  ② 갑, 병  ③ 을, 정  ④ 갑, 병, 정  ⑤ 을, 병, 정", "bbox": [101, 903, 699, 926]}
+
+
+def _parsed(els):
+    els = [dict(e, order=i) for i, e in enumerate(els, start=1)]
+    lay, em, _ = _parse_txt_result({"meta": MINERU, "elements": els}, "p")
+    return [(b.type, em[b.element_id].corrected_text) for b in sorted(lay.elements, key=lambda b: b.reading_order)]
+
+
+def test_MinerU_꼬리말에_겹친_쪽_번호는_글에서만_뗀다():
+    # 쪽 번호 블록이 꼬리말보다 아래(윗변 947 > 945)라도 꼬리말을 고른다. 같은 번호가 있으니 새로 안 낸다.
+    got = _parsed([M_BODY, M_FOOT, M_PN])
+    assert ("text", "02. 사회·문화 현상의 연구 방법") in got
+    assert [g for g in got if g[0] == "page_number"] == [("page_number", "23")]
+
+
+def test_MinerU_쪽_번호가_따로_없으면_떼어_맨_앞에_둔다():
+    got = _parsed([M_BODY, M_FOOT])
+    assert got[0] == ("page_number", "23")
+    assert ("text", "02. 사회·문화 현상의 연구 방법") in got
