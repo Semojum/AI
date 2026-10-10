@@ -80,12 +80,12 @@ class TestCJKOnlyElement:
     def test_한자_전용_요소는_플레이스홀더를_만들지_않는다(self, cjk: str) -> None:
         out = isolation.safe_translate([_opt(cjk)], lambda _o: _empty_out())
         joined = "".join(out[0].braille_lines)
-        assert "처리 불가" not in joined, f"{cjk!r} → {joined!r}"
+        assert not isolation.is_blocked_braille(out[0].braille_lines), f"{cjk!r} → {joined!r}"
 
     def test_한글이_섞여_있으면_여전히_소실로_잡는다(self) -> None:
         """진짜 소실까지 눈감으면 안 된다 — 가드의 본래 목적은 유지."""
         out = isolation.safe_translate([_opt("과목(果木)")], lambda _o: _empty_out())
-        assert "처리 불가" in "".join(out[0].braille_lines)
+        assert isolation.is_blocked_braille(out[0].braille_lines)
 
     def test_점자가_정상이면_손대지_않는다(self) -> None:
         ok = BrailleOutput(element_id=_EID, braille_lines=["⠈⠕⠈⠍"], rule_trail=[])
@@ -97,7 +97,7 @@ class TestCJKOnlyElement:
         def boom(_o):
             raise RuntimeError("boom")
         out = isolation.safe_translate([_opt("匙")], boom)
-        assert "처리 불가" in "".join(out[0].braille_lines)
+        assert isolation.is_blocked_braille(out[0].braille_lines)
 
 
 def test_점자_파일에_한글_리터럴이_남지_않는다() -> None:

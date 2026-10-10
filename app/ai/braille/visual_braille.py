@@ -34,7 +34,7 @@
 from __future__ import annotations
 
 from app.ai.braille import tag_names as _TAGS
-from app.ai.braille.isolation import safe_translate
+from app.ai.braille.isolation import blocked_braille, safe_translate
 from app.ai.braille.nested_block import append_nested
 from app.ai.braille.regulations import make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
@@ -82,7 +82,7 @@ def _base_trail(lines: list[str], source: str = "") -> list[RuleApplication]:
 def _to_braille(text: str) -> tuple[list[str], list[list[int]]]:
     """논리 줄 + 음절 줄바꿈 offset. 32칸 줄바꿈은 layout(NLD-1.2.1)."""
     if text.startswith("[처리 불가"):
-        return [text], [[]]
+        return [blocked_braille()], [[]]       # 자리표시는 묵자 쪽에만(#1275)
     return translate_visual(text)   # 시각 설명은 항목 번호 마침표 관행을 안 탄다(C-41)
 
 

@@ -38,6 +38,7 @@ from __future__ import annotations
 import re
 from typing import Iterable, Optional
 
+from app.ai.braille.isolation import is_blocked_braille
 from app.ai.braille.number_sign import _TAG_TOKEN_RE, has_number_sign
 from app.schemas.content import BrailleOutput, ExtractedContent, LLMOutput
 from app.schemas.layout import LayoutResult
@@ -260,7 +261,7 @@ class QualityChecker:
             eid = str(b.element_id)
             if eid in blocked_ids:
                 continue
-            if any(ln.startswith("[처리 불가") for ln in b.braille_lines):
+            if is_blocked_braille(b.braille_lines):
                 criticals.append(CriticalError(
                     type="C2", element_id=eid,
                     message="점역 실패 — 처리 불가 placeholder 삽입",
@@ -416,6 +417,13 @@ class QualityChecker:
                 message=f"32칸 초과율 {line_overflow_rate:.2f} > {C6_OVERFLOW_THRESHOLD}",
             ))
 
+        # 점역 못 한 요소에는 검토 표시도 붙인다(#1275). 점자 칸에는 점역자 주 '점역 못 함'만 있고 까닭은 묵자 창에 있다.
+        r1_ids = {f.element_id for f in reviews if f.type == "R1"}
+        for eid in sorted(blocked_ids - r1_ids):
+            reviews.append(ReviewFlag(
+                type="R1", element_id=eid,
+                message="점역 못 한 요소입니다. 점자 칸에는 점역자 주 '점역 못 함'만 있으니 묵자 창의 원문을 보고 직접 점역해야 합니다",
+            ))
         status = self._decide_status(criticals, reviews)
         conf = [e.ocr_confidence for e in extracted]
         report = QualityReport(

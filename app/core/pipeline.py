@@ -2282,6 +2282,7 @@ def _split_inline_choices(text: str) -> str:
 from app.ai.braille.constants import BOX_TITLE_PROMOTABLE as _BOX_TITLE_PROMOTABLE  # noqa: E402 (정답 상자와 공유)
 from app.ai.braille.constants import ENGLISH_GRADE1 as _ENGLISH_GRADE1, KOREAN_GRADE1 as _KOREAN_GRADE1  # noqa: E402
 from app.ai.braille.constants import CHOICES_ONE_PER_LINE as _CHOICES_ONE_PER_LINE  # noqa: E402
+from app.ai.braille.isolation import is_blocked_braille  # noqa: E402 (점역 못 한 요소 판정, #1275)
 _BOX_BLOCK_RE = re.compile(
     r"(<!상자(\d?)>)(.*?)(<!/상자\2>)(.*?)(?=<!상자끝)", re.S)
 
@@ -3563,10 +3564,8 @@ def _build_response(
                 # opt(텍스트)뿐 아니라 braille 단계 실패(요소 격리 placeholder)도 블록으로 집계.
                 "is_blocked": (
                     "[처리 불가" in o.corrected_text
-                    or any("[처리 불가" in ln for ln in (
-                        braille_by_id[o.element_id].braille_lines
-                        if o.element_id in braille_by_id else []
-                    ))
+                    or is_blocked_braille(braille_by_id[o.element_id].braille_lines
+                                          if o.element_id in braille_by_id else [])
                 ),
                 "render_mode": o.render_mode,
                 "contents": _selected_lines(
