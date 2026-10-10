@@ -1020,7 +1020,9 @@ class LayoutBraille:
         src = _aligned_src(getattr(bo, "corrected_text", "") or "", bo.braille_lines)
         if len(src) != len(bo.braille_lines) or len(src) < 2:
             return
-        heads = [i for i, ln in enumerate(src) if _is_item_head(ln.strip())]
+        # 묵자 창 글은 첫 줄에 들여쓰기 태그가 붙어 온다(`pipeline._print_contents`, mode b · 앱 다시 점역).
+        # 태그를 떼고 봐야 첫 항목도 항목 머리다. 종전에는 첫 줄만 0칸이 됐다(하네스 ⑥, 2027 dev · val 2%).
+        heads = [i for i, ln in enumerate(src) if _is_item_head(split_indent(ln.strip())[1])]
         if len(heads) < 2:                   # 항목이 하나뿐이면 기본 동작으로 충분
             return
         bo.line_indents = [first_indent if i in set(heads) else 0 for i in range(len(src))]
