@@ -317,18 +317,43 @@ def _drop_fake_underlines(page, lines: list) -> list:
     return keep
 
 
+# ★ 쪽 객체마다 한 번만 계산해 담아 둔다(#1271). `mineru_runner._native_text_pair` 가 **블록마다** 아래 두 함수를 불러,
+#   그림 경로가 많은 쪽(수학 풀이 · 지도 · 도표)은 한 번에 1~3초인 `get_drawings()` 를 블록 수 × 2 만큼 되풀이했다.
+#   수학Ⅱ 풀이 p0030 후처리 174초(92번 · 120초) · 사회문화 p0147 277초(60번 · 194초, cProfile 켬) → 쪽 예산 180초를 넘겨
+#   C7 로 쪽이 통째로 막혔다. 10-07 #1187(`text_fractions`)이 호출을 하나 더 얹으며 넘어섰다. 결과는 읽기 전용으로만 쓴다.
+def _page_memo(page, key: str, build):
+    hit = getattr(page, key, None)
+    if hit is None:
+        hit = build()
+        try:
+            setattr(page, key, hit)
+        except AttributeError:          # 속성을 못 다는 쪽 객체는 그때마다 계산한다
+            pass
+    return hit
+
+
+def page_drawings(page) -> list:
+    """`page.get_drawings()` — 같은 쪽 객체에서는 한 번만 읽는다(#1271)."""
+    return _page_memo(page, "_semojum_drawings", page.get_drawings)
+
+
 def underline_rects(page) -> list:
     """페이지의 밑줄 후보 선(표시 좌표계 Rect). 표 구분선(위 `_grid_rules`) · 글보다 훨씬 넓은 선 · 분수선(`_drop_fake_underlines`)은 뺀다."""
+    guards = (_ul_width_guard_on(), _ul_frac_guard_on())
+    return _page_memo(page, f"_semojum_ul_{guards[0]:d}{guards[1]:d}", lambda: _underline_rects(page, any(guards)))
+
+
+def _underline_rects(page, guard: bool) -> list:
     rot = page.rotation_matrix
     page_w = page.rect.width
     out = []
-    for g in page.get_drawings():
+    for g in page_drawings(page):
         r = fitz.Rect(g["rect"]) * rot
         if r.height <= _UL_MAX_H and _UL_MIN_W <= r.width <= page_w * _UL_PAGE_W_RATIO:
             out.append(r)
     grid = _grid_rules(out)
     lines = [r for r in out if id(r) not in grid]
-    return _drop_fake_underlines(page, lines) if lines and (_ul_width_guard_on() or _ul_frac_guard_on()) else lines
+    return _drop_fake_underlines(page, lines) if lines and guard else lines
 
 
 # 글로 된 분수(#1183). 생명과학 보기 `지점 d₁의 혈압 / 지점 d₂의 혈압` 을 층 글이 분자 · 분모를 그냥 이어 적었다.
@@ -341,10 +366,14 @@ def text_fraction_on() -> bool:
 
 def text_fractions(page) -> list[tuple]:
     """[(분수선, 분자 글자 상자들, 분모 글자 상자들)] — 표시 좌표 Rect. 분자나 분모에 한글이 든 분수선만."""
+    return _page_memo(page, "_semojum_text_fractions", lambda: _text_fractions(page))
+
+
+def _text_fractions(page) -> list[tuple]:
     rot = page.rotation_matrix
     page_w = page.rect.width
     cand = []
-    for g in page.get_drawings():
+    for g in page_drawings(page):
         r = fitz.Rect(g["rect"]) * rot
         if r.height <= _UL_MAX_H and _UL_MIN_W <= r.width <= page_w * _UL_PAGE_W_RATIO:
             cand.append(r)
