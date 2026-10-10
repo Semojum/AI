@@ -894,6 +894,7 @@ _RULE_IMG_COVER = 0.6  # 래스터 이미지가 이 비율 이상 덮으면 벡�
 
 def _h_rules(fitz_page: fitz.Page, bbox: list[float]) -> int | None:
     """bbox 안 가로 괘선 수. 벡터로 판단할 수 없으면 None."""
+    from app.ai.preprocessor.pdf_analyzer import page_drawings
     w, h = fitz_page.rect.width, fitz_page.rect.height
     r = fitz.Rect(bbox[0] / 1000 * w, bbox[1] / 1000 * h,
                   bbox[2] / 1000 * w, bbox[3] / 1000 * h)
@@ -907,7 +908,7 @@ def _h_rules(fitz_page: fitz.Page, bbox: list[float]) -> int | None:
             if (ib & r).get_area() >= r.get_area() * _RULE_IMG_COVER:
                 return None
     segs: list[tuple[float, float, float, float]] = []
-    for g in fitz_page.get_drawings():
+    for g in page_drawings(fitz_page):      # 쪽마다 한 번(#1271)
         for it in g["items"]:
             if it[0] == "l":
                 p1, p2 = it[1] * rot, it[2] * rot
@@ -952,12 +953,13 @@ _BOX_COVER = 0.9         # 글상자 사각형이 표 자리를 이만큼 덮으
 
 def _inner_separators(fitz_page: fitz.Page, bbox: list[float]) -> tuple[int, int]:
     """bbox **속**(테두리 제외) 가로·세로 구분선 수."""
+    from app.ai.preprocessor.pdf_analyzer import page_drawings
     w, h = fitz_page.rect.width, fitz_page.rect.height
     r = fitz.Rect(bbox[0] / 1000 * w, bbox[1] / 1000 * h,
                   bbox[2] / 1000 * w, bbox[3] / 1000 * h)
     rot = fitz_page.rotation_matrix
     segs: list[tuple[float, float, float, float]] = []
-    for g in fitz_page.get_drawings():
+    for g in page_drawings(fitz_page):      # 쪽마다 한 번(#1271)
         for it in g["items"]:
             if it[0] == "l":
                 p1, p2 = it[1] * rot, it[2] * rot
