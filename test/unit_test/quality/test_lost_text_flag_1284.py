@@ -94,3 +94,43 @@ def test_이웃_줄에_가린_손실은_한글_토막_거르기를_건너뛴다(
     assert lost_text_hosts([sib], [host], math_page=False) == {"a": [opt]}
     assert lost_text_hosts([{**sib, "reason": "not_carried"}], [host], math_page=False) == {}     # 그 밖 dropped 는 종전대로
     assert lost_text_hosts([{**sib, "class": "unseen", "reason": None}], [host], math_page=False) == {}   # 종전 거르기
+
+
+# ── 걸친 요소가 없는 손실(#1300) ────────────────────────────────────────────────
+_LINE = "진행자: 선수께서 지난 올림픽에서 접전 끝에 금메달을 따는 모습으로 큰 감동을 주셨는데"
+
+
+def test_걸친_요소가_없으면_같은_단의_가장_가까운_요소에_위_아래를_적어_단다():
+    """2027 언매 p0202 '진행자: …' 줄은 MinerU 가 자리조차 안 잡아 R1 을 달 곳이 없었다."""
+    lost = _loss(text=_LINE, region=None, bbox=(100, 200, 600, 215))
+    els = [_el("far", "다른 문항", (100, 500, 600, 520)), _el("next", "데 이렇게 뵙게 되어 반갑습니다.", (100, 220, 600, 240))]
+    assert lost_text_hosts([lost], els, math_page=False) == {"next": [f"(이 요소 위) {_LINE}"]}
+    els = [_el("prev", "사회자 소개 문단", (100, 150, 600, 195))]
+    assert lost_text_hosts([lost], els, math_page=False) == {"prev": [f"(이 요소 아래) {_LINE}"]}
+
+
+def test_간격이_같으면_경계_순서가_앞선_요소에_단다():
+    lost = _loss(text=_LINE, region=None, bbox=(100, 200, 600, 215))
+    below, above = _el("below", "아래 줄", (100, 220, 600, 240)), _el("above", "위 줄", (100, 175, 600, 195))
+    assert set(lost_text_hosts([lost], [below, above], math_page=False)) == {"below"}
+    assert set(lost_text_hosts([lost], [above, below], math_page=False)) == {"above"}
+
+
+def test_다른_단이거나_멀면_달지_않는다():
+    lost = _loss(text=_LINE, region=None, bbox=(100, 200, 450, 215))
+    assert lost_text_hosts([lost], [_el("col2", "오른쪽 단", (520, 220, 900, 240))], math_page=False) == {}
+    assert lost_text_hosts([lost], [_el("far", "먼 요소", (100, 300, 450, 320))], math_page=False) == {}   # 간격 85
+
+
+def test_가까운_요소에_단_문구에_위_아래가_보인다():
+    a = uuid4()
+    msg = [f for f in _check({str(a): [f"(이 요소 위) {_LINE}"]}, [a]).review_flags if f.type == "R1"][0].message
+    assert msg.startswith("원본에 있는 글이 추출에서 빠짐: (이 요소 위) 진행자:")
+
+
+def test_가까운_요소에는_한글_토막_거르기를_걸지_않는다():
+    """가까운 요소는 그 글의 자리가 아니다. 이웃 줄의 흔한 토막에 걸려 놓치던 꼴(2027 생명과학 p0103 '(나) …')."""
+    line = "(나) (가)에 ⓑ를 첨가하고 슬라이드를 세척한다."
+    lost = _loss(text=line, region=None, bbox=(100, 200, 600, 215))
+    near = _el("next", "(다) 형광 현미경으로 슬라이드를 관찰한 결과, (가)에 ⓒ를 첨가한 A 가 빛났다.", (100, 216, 600, 240))
+    assert lost_text_hosts([lost], [near], math_page=False) == {"next": [f"(이 요소 위) {line}"]}
