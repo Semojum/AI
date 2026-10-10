@@ -380,6 +380,7 @@ _EXTRACT_ENV = (
     "TABLE_LAYER_CTRL",                                                                # #1148 표 경로 층 글의 제어 문자 띄움
     "TABLE_CELL_PIECES",                                                               # #1208 긴 칸 층 조각 대조
     "TABLE_CELL_CIRCLED_DIGIT",                                                        # #1210 표 칸 ㉠ → 민 숫자 되돌리기
+    "TABLE_MISREAD_FIX",                                                               # #1296 포기한 표의 한 음절 오독 고치기
     "LAYER_LENGTH_MARK",                                                               # #1222 긴소리표 ː 를 층 관문에서 안 셈
     "LAYER_UNKNOWN_GLYPH",                                                             # #376 표에 없는 수식 글꼴 글리프 블록은 층 불신
     "HANCOM_FRACTION",                                                                 # #1055 한컴 작은 수 분수 풀기
@@ -3124,9 +3125,12 @@ async def _run_pipeline(task: PageTask) -> dict:
         lost_text = lost_text_hosts(extraction.get("extraction_losses"), extraction.get("elements") or [], math_page)
     # 표 칸 한 음절 오독(#1296) — 표 교정이 못 고친 한글 오독(정벌 → 정별)을 그 표 요소에 R4 로 짚는다. 점자 · 응답 꼴은
     # 안 바뀐다. 표 교정과 같은 층 글(`_native_text_pair`)을 본다. 끄기 `TABLE_MISREAD_FLAG=0`.
+    #   추출이 이미 고친 자리(경계 요소 `table_fixes`, B3)도 R4 로 남긴다. 고침이 틀렸을 때 점역사가 볼 신호다.
     misread: dict = {}
     _tables = [e for e in extraction.get("elements") or [] if e.get("type") == "table" and "<t" in (e.get("content") or "")]
-    if _tables and _meta0.get("bbox_space") == "norm1000" and task.pdf_data and process_env("TABLE_MISREAD_FLAG") != "0":
+    _misread_on = _meta0.get("bbox_space") == "norm1000" and process_env("TABLE_MISREAD_FLAG") != "0"
+    table_fixed = {str(e.get("id")): e["table_fixes"] for e in _tables if e.get("table_fixes")} if _misread_on else {}
+    if _tables and _misread_on and task.pdf_data:
         try:
             import fitz
             from app.ai.parser.mineru_runner import table_misreads
@@ -3226,6 +3230,7 @@ async def _run_pipeline(task: PageTask) -> dict:
         caption_disabled=extraction.get("meta", {}).get("caption_disabled"),
         lost_text=lost_text,
         misread=misread,
+        table_fixed=table_fixed,
     )
 
 
@@ -3444,6 +3449,7 @@ def _build_response(
     caption_disabled: Optional[bool] = _ENV_CAPTION,
     lost_text: Optional[dict] = None,
     misread: Optional[dict] = None,
+    table_fixed: Optional[dict] = None,
 ) -> dict:
     elem_by_id = {e.element_id: e for e in layout_result.elements}
     braille_by_id = {b.element_id: b for b in braille_outputs}
@@ -3488,6 +3494,7 @@ def _build_response(
         flat_text={str(k): fe.text for k, fe in (flat or {}).items()},
         lost_text=lost_text,
         misread=misread,
+        table_fixed=table_fixed,
     )
 
     response: dict = {

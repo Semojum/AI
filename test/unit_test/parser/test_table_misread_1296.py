@@ -55,3 +55,43 @@ def test_층을_못_믿으면_짚지_않는다(layer, monkeypatch):
     layer("청일전쟁 승리 조선에 대한 정벌 주장 → 실행 보류")
     monkeypatch.setattr(MR, "_layer_untrustworthy", lambda s, page=None: True)
     assert MR.table_misreads(None, BBOX, "<table><tr><td>조선에 대한 정별 주장 → 실행 보류</td></tr></table>") == []
+
+
+# ── B3: 같은 잣대로 고친다(fix_table_misreads) ───────────────────────────────────
+
+def test_포기한_표에서도_확실한_자리는_고친다(layer):
+    """교정이 포기한 표에서 짚던 자리를 층 글자로 고친다. 다른 칸('흔성반')은 그대로 둔다."""
+    layer("남학생반 여학생반 혼성반 조선에 대한 정벌 주장 → 실행 보류")
+    html = ("<table><tr><td>남학생반</td><td>여학생반</td><td>흔성반</td></tr>"
+            "<tr><td>조선에 대한 정별 주장 → 실행 보류</td></tr></table>")
+    assert MR._correct_table_cells(None, BBOX, html) == html           # 교정은 여전히 포기한다
+    out, fixed = MR.fix_table_misreads(None, BBOX, html)
+    assert out == html.replace("정별", "정벌")
+    assert fixed == ["한정{별→벌}주장"]
+    assert MR.table_misreads(None, BBOX, out) == []                     # 고친 뒤에는 짚을 것이 없다
+
+
+def test_글자_사이에_태그가_끼면_고치지_않고_짚기만_한다(layer):
+    """원문에서 연속이 아닌 자리는 바꿀 자리를 확정할 수 없다(_correct_table_cells 와 같은 규칙)."""
+    layer("조선에 대한 정벌하자 주장")
+    html = "<table><tr><td>조선에 대한 정별<b></b>허자 주장</td></tr></table>"
+    assert MR.fix_table_misreads(None, BBOX, html) == (html, [])
+    assert MR.table_misreads(None, BBOX, html) == ["한정{별허→벌하}자주"]
+
+
+def test_칸_안_태그_공백은_건너뛰고_자리를_맞춘다(layer):
+    """대조본은 태그 · 공백 · $ 를 뺀 글이다. 고칠 때는 html 자리로 되돌려 그 글자만 바꾼다."""
+    layer("청일전쟁 승리 조선에 대한 정벌 주장 → 실행 보류")
+    html = "<table><tr><td>청일전쟁 <b>승리</b></td><td>조선에 대한 정별 주장 → $실행$ 보류</td></tr></table>"
+    out, fixed = MR.fix_table_misreads(None, BBOX, html)
+    assert out == html.replace("정별", "정벌") and fixed == ["한정{별→벌}주장"]
+
+
+def test_끄거나_층을_못_믿으면_고치지_않는다(layer, monkeypatch):
+    layer("청일전쟁 승리 조선에 대한 정벌 주장 → 실행 보류")
+    html = "<table><tr><td>조선에 대한 정별 주장 → 실행 보류</td></tr></table>"
+    monkeypatch.setenv("TABLE_MISREAD_FIX", "0")
+    assert MR.fix_table_misreads(None, BBOX, html) == (html, [])
+    monkeypatch.delenv("TABLE_MISREAD_FIX")
+    monkeypatch.setattr(MR, "_layer_untrustworthy", lambda s, page=None: True)
+    assert MR.fix_table_misreads(None, BBOX, html) == (html, [])

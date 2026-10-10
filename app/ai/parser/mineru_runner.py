@@ -1231,31 +1231,46 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     return out
 
 
-# ── 표 칸 한 음절 오독 표시(#1296) ─────────────────────────────────────────────
+# ── 표 칸 한 음절 오독 고치기 · 표시(#1296) ───────────────────────────────────────
 # 위 교정은 칸 하나라도 층에서 못 찾으면 표를 통째로 안 고친다(부분 교정 금지). 그래서 고치지 못한 한글 오독이
 # 표시 없이 남았다. 2027 dev · val 표 899 중 360 이 교정을 포기했고, 남은 오독(정벌 → 정별 · 쑨원 → 쓰원 · 콩팥 → 콩팔)
-# 약 106자리 중 약 85자리가 R4 없는 표에 있었다. R4 는 한자 · 로마자만 본다. 여기서는 고치지 않고 자리만 짚는다.
+# 약 106자리 중 약 85자리가 R4 없는 표에 있었다. R4 는 한자 · 로마자만 본다.
 # 잣대: 표 칸 글 전체(칸 사이 \x00)를 그 자리 층 글과 한 번에 맞대어, **앞뒤 3자가 두 쪽에서 같은** 한글 1~2자
 #   같은 길이 치환만 센다. dev · val 에서 이 잣대로 잡힌 78자리를 전수로 보았고 78 모두 진짜 오독이었다.
 #   ⚠ 재현율은 하한이다(약 106 중 78). 칸 끝에 걸친 오독 · 짧은 칸이 통째로 틀린 것('맏형[마텽]' → '만형[마팅]')은 못 잡는다.
+# 처음(A4)은 자리만 짚었다. B3 부터는 같은 잣대로 **고친다**(`fix_table_misreads`, 위 교정 뒤에 늘 한 번). 포기 판정은
+#   그대로 두고 확실한 자리만 고친다. 고친 자리는 경계 요소 `table_fixes` 에 남겨 R4 '고침' 문구로 띄운다
+#   (고침이 틀렸을 때 점역사가 볼 신호를 지우지 않는다, pm 2026-10-11). 원문에서 연속이 아닌 자리는 짚기만 한다.
 _MISREAD_RE = re.compile(r"^[가-힣]{1,2}$")
 _MISREAD_ANCHOR = 3
+_CELL_KEEP_RE = re.compile(r"<[^>]*>|[\s$　]|(.)", re.DOTALL)    # 칸 대조본: 태그 · 공백 · $ 를 뺀 글자(group 1)
 
 
-def table_misreads(fitz_page: fitz.Page, bbox: list[float], html: str) -> list[str]:
-    """표 칸 글에 남은 한글 한 음절 오독 → ['한정{별→벌}주장', …](우리 글 → 층 글). 층을 못 믿으면 빈 목록.
+def _misread_spots(fitz_page: fitz.Page, bbox: list[float],
+                   html: str) -> tuple[list[tuple[int, int, str, str]], list[int | None]]:
+    """([(대조본 i1, i2, 층 글자, 표지 '한정{별→벌}주장')], 대조본 글자마다 html 자리). 층을 못 믿으면 빈 목록.
 
     표지는 중괄호다. 대괄호는 발음 표기('빛[빋]')와 섞여 '→[[검→걷]찌]'처럼 읽기 어렵다.
     """
     if not html or not bbox:
-        return []
+        return [], []
     plain, layer = map(_table_layer, _native_text_pair(fitz_page, bbox))
     if not layer or _layer_untrustworthy(plain, fitz_page):
-        return []
+        return [], []
     lay = re.sub(r"\s+", "", re.sub(r"<!/?[^>]*>", "", layer))
-    ours = "\x00".join(c for c in (re.sub(r"<[^>]*>|[\s$　]", "", m.group(2)) for m in _CELL_RE.finditer(html)) if c)
+    chars: list[str] = []
+    idx: list[int | None] = []                     # 칸 사이 \x00 은 None
+    for m in _CELL_RE.finditer(html):
+        kept = [(k.start(), k.group(1)) for k in _CELL_KEEP_RE.finditer(m.group(2)) if k.group(1) is not None]
+        if kept and chars:
+            chars.append("\x00")
+            idx.append(None)
+        for off, ch in kept:
+            chars.append(ch)
+            idx.append(m.start(2) + off)
+    ours = "".join(chars)
     n = _MISREAD_ANCHOR
-    out: list[str] = []
+    out: list[tuple[int, int, str, str]] = []
     for tag, i1, i2, j1, j2 in SequenceMatcher(None, ours, lay, autojunk=False).get_opcodes():
         a, b = ours[i1:i2], lay[j1:j2]
         if tag != "replace" or len(a) != len(b) or not (_MISREAD_RE.match(a) and _MISREAD_RE.match(b)):
@@ -1264,8 +1279,32 @@ def table_misreads(fitz_page: fitz.Page, bbox: list[float], html: str) -> list[s
         if (len(left) < n or len(right) < n or "\x00" in left + right
                 or lay[max(0, j1 - n):j1] != left or lay[j2:j2 + n] != right):
             continue
-        out.append(f"{left[-2:]}{{{a}→{b}}}{right[:2]}")
-    return out
+        out.append((i1, i2, b, f"{left[-2:]}{{{a}→{b}}}{right[:2]}"))
+    return out, idx
+
+
+def table_misreads(fitz_page: fitz.Page, bbox: list[float], html: str) -> list[str]:
+    """표 칸 글에 남은 한글 한 음절 오독 → ['한정{별→벌}주장', …](우리 글 → 층 글). 층을 못 믿으면 빈 목록."""
+    return [label for *_x, label in _misread_spots(fitz_page, bbox, html)[0]]
+
+
+def fix_table_misreads(fitz_page: fitz.Page, bbox: list[float], html: str) -> tuple[str, list[str]]:
+    """`table_misreads` 가 짚는 자리를 층 글자로 고친다 → (고친 html, 고친 자리 표지). 끄기 `TABLE_MISREAD_FIX=0`.
+
+    원문에서 연속이 아닌 자리(글자 사이에 태그 · 공백이 낀 자리)는 안 고친다(`_correct_table_cells` 와 같다).
+    """
+    if os.environ.get("TABLE_MISREAD_FIX", "1") == "0":
+        return html, []
+    spots, idx = _misread_spots(fitz_page, bbox, html)
+    edits = []
+    for i1, i2, repl, label in spots:
+        src = idx[i1:i2]
+        if src == list(range(src[0], src[0] + len(src))):
+            edits.append((src[0], len(src), repl, label))
+    out = html
+    for pos, ln, repl, _label in sorted(edits, reverse=True):
+        out = out[:pos] + repl + out[pos + ln:]
+    return out, [label for *_x, label in edits]
 
 
 def _pua_ratio(s: str) -> float:
@@ -2303,6 +2342,7 @@ def run(
 
     for item in content_list:
         suspect = False                 # 환각 신호가 남은 요소(#1078 ②) — 아래 flags 에 R4 표지로
+        table_fixes: list[str] = []      # 표 칸 한 음절 오독을 고친 자리(#1296 B3) — 경계 요소에 실어 R4 '고침'으로
         item_type = item.get("type", "text")
         mapped_type = TYPE_MAP.get(item_type, "text")
         # ★ MinerU 는 `header` / `footer` / `page_number` 를 나눠서 준다. 위 표에 `footer` 가
@@ -2456,6 +2496,7 @@ def run(
                 content = _restore_table_bullets(fitz_page, bb, content)
                 content = _restore_table_circled(fitz_page, bb, content)
                 content = _correct_table_cells(fitz_page, bb, content)
+                content, table_fixes = fix_table_misreads(fitz_page, bb, content)   # 포기한 표도 확실한 자리는(#1296)
 
         # 인쇄 캡션 강제 적용(위 forced_caption) — 생성 placeholder/빈 content를 덮어쓴다.
         if forced_caption and mapped_type == "caption":
@@ -2498,6 +2539,7 @@ def run(
             "content": content,
             "image_path": image_path,
             "heading_level": hlevel,
+            "table_fixes": table_fixes,
             "caption_ref": None,
             "flags": (["MINERU_FOOTER"] if raw_footer else [])
                      + (["IMAGE_AS_CAPTION"] if image_as_caption and os.environ.get("IMAGE_AS_CAPTION_NOTE", "1") != "0" else [])
