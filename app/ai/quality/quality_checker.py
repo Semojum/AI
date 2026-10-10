@@ -332,6 +332,7 @@ class QualityChecker:
         flat_text: Optional[dict] = None,
         lost_text: Optional[dict] = None,
         misread: Optional[dict] = None,
+        table_fixed: Optional[dict] = None,
     ) -> QualityReport:
         extracted = list(extracted)
         llm_outputs = list(llm_outputs)
@@ -536,14 +537,20 @@ class QualityChecker:
             ))
         # 표 칸 한 음절 오독(#1296) — 표 교정이 못 고친 한글 오독 자리를 R4 로 짚는다. 고르는 곳은 `mineru_runner.table_misreads`.
         #   R4 의 다른 갈래(한자 · 로마자 환각)와 달리 그럴듯한 한글이라 자리를 글자째 보여 준다.
-        for eid, spots in sorted((misread or {}).items()):
+        #   추출이 같은 잣대로 이미 고친 자리(`table_fixed`, B3)도 지우지 않고 '고침' 문구로 남긴다. 틀리게 고친 것은
+        #   안 고친 것보다 나쁘다(점역사가 고쳐졌다고 믿고 넘어간다, pm 2026-10-11). 표마다 R4 하나다.
+        def _spots(xs: list[str]) -> str:
+            return " · ".join(xs[:3]) + (f" 외 {len(xs) - 3}곳" if len(xs) > 3 else "")
+        misread, table_fixed = misread or {}, table_fixed or {}
+        for eid in sorted(set(misread) | set(table_fixed)):
             if live is not None and eid not in live:
                 continue
-            more = f" 외 {len(spots) - 3}곳" if len(spots) > 3 else ""
-            reviews.append(ReviewFlag(
-                type="R4", element_id=eid,
-                message=f"표 칸 글자가 원본과 다름(오독 의심, {{우리→원본}}): {' · '.join(spots[:3])}{more}",
-            ))
+            parts = []
+            if eid in table_fixed:
+                parts.append(f"표 칸 글자를 원본으로 고침({{고치기 전→고친 뒤}}): {_spots(table_fixed[eid])}")
+            if eid in misread:
+                parts.append(f"표 칸 글자가 원본과 다름(오독 의심, {{우리→원본}}): {_spots(misread[eid])}")
+            reviews.append(ReviewFlag(type="R4", element_id=eid, message=" / ".join(parts)))
         status = self._decide_status(criticals, reviews)
         conf = [e.ocr_confidence for e in extracted]
         report = QualityReport(

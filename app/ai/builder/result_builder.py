@@ -764,6 +764,9 @@ def build(
         # mineru_runner가 MinerU의 text_level을 걸러 넣어 준다.
         if el.get("heading_level"):
             entry["heading_level"] = el["heading_level"]
+        # 표 칸 한 음절 오독을 고친 자리(#1296 B3, mineru_runner.fix_table_misreads) — 품질 검사가 R4 '고침'으로 띄운다.
+        if el.get("table_fixes"):
+            entry["table_fixes"] = el["table_fixes"]
         if subconf is not None:
             entry["subtype_confidence"] = subconf
         # 도표 세분류(§6.6 8종) — **분류 콜이 직접 준 낱말**이다(2026-09-08 #784).
