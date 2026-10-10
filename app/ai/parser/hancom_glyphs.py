@@ -47,8 +47,10 @@ _THIN = " "                                   # 한컴 가는 띄움 — 위 doc
 GLYPHS: dict[str, dict[int, str]] = {
     "EHsang-Plain": {96: "ᴬ", 98: "ᵃ", 107: "ʳ", 121: "ᵈ", 125: "ᵇ", 162: "ᴿ", 166: "ᴰ", 168: "ᴴ", 173: "ᴮ", 178: "ʰ",
                      147: "\u0305", 101: _SUB["4"], 102: _SUB["3"], 109: _SUB["2"], 115: _SUB["5"], 116: "⁺",
-                     129: "℃", 132: _SUB["1"], 145: "⁻", 153: _SUP["2"], 154: _SUP["3"], 155: _SUP["4"], 177: "°", 197: "!"},
-    "EHsang-Italic": {120: "ᵐ", 136: "ˣ", 138: "ⁿ", 147: "\u0305", 100: _SUP["8"], 101: _SUB["4"], 102: _SUB["3"], 103: _SUB["6"], 104: _SUB["8"], 105: _SUB["7"],
+                     129: "℃", 132: _SUB["1"], 145: "⁻", 153: _SUP["2"], 154: _SUP["3"], 155: _SUP["4"], 177: "°", 197: "!",
+                     160: _SUP["0"]},     # 층 `â`(생명과학 해설 p0050 · #376)
+    "EHsang-Italic": {197: "!",          # 계승 — 층도 `!` 지만 규칙(GID+0x1F) 밖이라 표에 둔다(#376, Plain 197 과 같은 꼴)
+                      120: "ᵐ", 136: "ˣ", 138: "ⁿ", 147: "\u0305", 100: _SUP["8"], 101: _SUB["4"], 102: _SUB["3"], 103: _SUB["6"], 104: _SUB["8"], 105: _SUB["7"],
                       109: _SUB["2"], 115: _SUB["5"], 116: "⁺", 126: _SUB["9"], 127: _SUB["0"], 132: _SUB["1"], 145: "⁻",
                       150: "÷", 152: _SUP["1"], 153: _SUP["2"], 154: _SUP["3"], 155: _SUP["4"], 156: _SUP["5"],
                       157: _SUP["6"], 158: _SUP["7"], 159: _SUP["9"], 160: _SUP["0"]},
@@ -65,13 +67,20 @@ GLYPHS: dict[str, dict[int, str]] = {
     "EHyak-Bold": {3: _THIN, 12: "≠", 61: "α", 62: "β", 68: "θ", 72: "μ", 76: "π", 166: "*"},
     "EHhabu-Italic": {98: "ₐ", 101: _SUB["4"], 102: _SUB["3"], 109: _SUB["2"], 115: _SUB["5"], 123: "ₚ", 125: _SUB["9"],
                       131: _SUB["1"], 147: "ᵢ"},
-    "EHhabu-Plain": {109: _SUB["2"], 131: _SUB["1"], 151: _SUP["1"], 152: _SUP["2"], 154: _SUP["4"], 159: _SUP["0"]},
+    "EHhabu-Plain": {109: _SUB["2"], 131: _SUB["1"], 151: _SUP["1"], 152: _SUP["2"], 154: _SUP["4"], 159: _SUP["0"],
+                     # 생명과학 body p0191 · 층은 라틴-1(`µ` `Ç` `Ô` `Ñ` `Ü`)이다(#376). 윤곽 높이로 위 · 아래첨자를 가렸다.
+                     119: "ₘ", 137: "ₙ", 147: "ᵢ", 144: "⁻", 153: _SUP["3"]},
+    "EHKiho-Plain": {20: "μ"},          # 층 `%` — 멀쩡한 글자로 보여 아무 검사에도 안 걸렸다(생명과학 body p0076 · #376)
     # GID 28 · 49 · 29 는 긴 동치 화살표 ⟺ 한 벌이다(층 `HjK`, 수학 I body p0008 `a^x=N ⟺ x=log_a N`). 첫 글리프에 싣는다(#1072).
-    "EHSunm-Plain": {83: "▬", 90: "→", 104: "➡", 28: "⟺", 49: "", 29: ""},
+    # ★ GID 10 만은 **윤곽이 아니라 맥락으로** 정했다(#376). 윤곽은 가로선 하나라 글자를 못 정한다. 2027 dev 네 곳 모두
+    # 바로 뒤에 머리 90(→)이 붙어 긴 화살표 몸통으로 본다(생명과학 p0019 `산소 ⟶`, 층 `1→` 이었다). ⟺ 조각처럼 머리에 싣고
+    # 몸통은 비운다. 화살표 머리 없이 홀로 나오는 자리를 보면 다시 확인한다.
+    "EHSunm-Plain": {83: "▬", 90: "→", 104: "➡", 28: "⟺", 49: "", 29: "", 10: ""},
     # ∫(층 `:`, 수학 II 459자)와 적분 아래 한계 첨자(10=0 · 197=1 · 34=a · 64=−)·위 한계 5=4. 위 한계의 다른 숫자 · 문자는
     # GID+0x1F 그대로 맞다(19=2 · 20=3 · 21=4 · 67=b · 85=t). 근거: 수학 II(짝 없는 책) 윤곽 + 지면 독립 검증
     # (V2 temp/n104/점검_수학2.md §2, gold 와 무관).
-    "EHSusic-Plain": {27: "∫", 10: _SUB["0"], 197: _SUB["1"], 34: "ₐ", 64: "₋", 5: _SUP["4"]},
+    "EHSusic-Plain": {27: "∫", 10: _SUB["0"], 197: _SUB["1"], 34: "ₐ", 64: "₋", 5: _SUP["4"],
+                      132: "∑"},         # 층 `Á`(수학 I 수열 25쪽 · #376). 위아래 한계는 따로 찍혀 구조는 MinerU 몫이다(구조 글꼴)
     # ★ 큰 괄호 글꼴은 층이 괄호 **종류를 바꿔** 준다: 91 · 93 은 층 `{` `}` 인데 실제는 큰 소괄호, 60 · 61 은 층 `[` `]` 인데
     # 큰 중괄호다(같은 검증). 멀쩡한 괄호로 보여 어떤 검사에도 안 걸리고, 그대로 점역하면 다른 괄호가 된다.
     # 2027 dev · val 에도 91 · 93 각 596 · 60 · 61 각 52 가 있다. 63 은 ×(EHsang 64 와 같은 꼴).
@@ -163,3 +172,49 @@ def line_subs(line: dict, fixes: dict) -> dict[int, str] | None:
                         subs[i] = real
             i += 1
     return subs or None
+
+
+# 구조 글리프(분수 가로선 · 근호 조각)는 글자로 안 푼다 — 스팬(#1055) · MinerU LaTeX 몫이라 '모르는 글리프'로 세지 않는다.
+_STRUCT_PREFIX = ("EHboN", "EHRoot")
+
+
+def unknown_glyphs(fitz_page) -> frozenset:
+    """표에 없는 EH 글꼴 글리프의 열쇠 — (글꼴, 원점 x, 원점 y, 층 글자). 쪽마다 한 번만 읽고 쪽 객체에 둔다(#376 B).
+
+    층 글자가 그 글리프를 말한다고 볼 수 없는 것만 센다. 빼는 것: 구조 글꼴 · 띄움 · 층 글자가 GID+0x1F 와 같은 것
+    (EHsang 규칙과 같아 맞을 공산이 크다, 10-04 전수에서 '그대로 두면 맞을 듯' 5,335자).
+    """
+    cached = getattr(fitz_page, "_hancom_unknown", None)
+    if cached is not None:
+        return cached
+    keys = set()
+    try:
+        for span in fitz_page.get_texttrace():
+            font = _font(span.get("font"))
+            if not font.startswith("EH") or font.startswith(_STRUCT_PREFIX):
+                continue
+            for ch in span.get("chars", ()):
+                raw = chr(ch[1]) if ch[0] == 0xFFFD else chr(ch[0])
+                if restored(font, ch[1]) is None and not raw.isspace() and raw != chr(ch[1] + 0x1F):
+                    keys.add((font, round(ch[2][0], 2), round(ch[2][1], 2), raw))
+    except Exception:                          # noqa: BLE001 — 읽기 실패는 '없음'(종전 동작)으로 둔다
+        keys = set()
+    keys = frozenset(keys)
+    try:
+        fitz_page._hancom_unknown = keys
+    except Exception:                          # noqa: BLE001
+        pass
+    return keys
+
+
+def line_has_unknown(line: dict, keys: frozenset) -> bool:
+    """rawdict 줄에 `unknown_glyphs` 열쇠에 드는 글자가 있나."""
+    for span in line.get("spans", ()):
+        font = _font(span.get("font"))
+        if not font.startswith("EH"):
+            continue
+        for c in span.get("chars", ()):
+            o = c.get("origin") or (0, 0)
+            if (font, round(o[0], 2), round(o[1], 2), c.get("c")) in keys:
+                return True
+    return False

@@ -135,3 +135,39 @@ def test_큰_괄호_종류와_적분_합성():
     assert [hg.restored("EHSusic-Plain", g) for g in (27, 10, 197, 34, 64, 5)] == ["∫", "₀", "₁", "ₐ", "₋", "⁴"]
     assert hg.restored("EHyak-Plain", 151) == "∘"
     assert hg.restored("EHboNA-Plain", 28) is None                 # 분수 조각은 1:1 로 못 되살린다(#1055 몫)
+
+
+def test_376_윤곽으로_본_글자():
+    """#376 A — dev 에서 본 거짓 글자 꼴을 박힌 글꼴 윤곽으로 읽은 것(V2 temp/n198/glyph/sheet_*.png)."""
+    assert hg.restored("EHSusic-Plain", 132) == "∑"          # 층 `Á`(수학 I 수열)
+    assert hg.restored("EHKiho-Plain", 20) == "μ"            # 층 `%`
+    assert hg.restored("EHsang-Italic", 197) == "!"          # 층도 `!`, 규칙(GID+0x1F) 밖
+    assert hg.restored("EHsang-Plain", 160) == "⁰"           # 층 `â`
+    assert [hg.restored("EHhabu-Plain", g) for g in (119, 137, 147, 144, 153)] == ["ₘ", "ₙ", "ᵢ", "⁻", "³"]
+    assert hg.restored("EHSunm-Plain", 47) is None           # 큰 괄호 조각은 글자 1:1 이 아니라 안 넣는다
+    assert hg.restored("EHSunm-Plain", 10) == ""             # 긴 화살표 몸통(뒤에 머리 90 → 가 붙는다)
+
+
+def test_376_모르는_글리프에서_빼는_것():
+    """#376 B — 구조 글꼴 · 띄움 · 층 글자가 GID+0x1F 와 같은 것 · 표에 있는 것은 '모르는 글리프'가 아니다."""
+    trace = [{"font": "ABCDEF+EHboNA-Plain", "chars": [(0xFFFD, 28, (10, 100.0), None)]},      # 분수 가로선
+             {"font": "ABCDEF+EHSunm-Plain", "chars": [(0x2009, 3, (20, 100.0), None),          # 띄움
+                                                     (ord("g"), 47, (30, 100.0), None),         # 큰 괄호 조각 → 모름
+                                                     (ord("Ú"), 90, (40, 100.0), None)]},       # → (표에 있음)
+             {"font": "ABCDEF+EHsang-Plain", "chars": [(ord("!"), 2, (50, 100.0), None)]}]      # chr(2+0x1F)
+    page = types.SimpleNamespace(get_texttrace=lambda: trace)
+    assert hg.unknown_glyphs(page) == frozenset({("EHSunm-Plain", 30, 100.0, "g")})
+
+
+def test_376_표에_없는_글리프가_든_블록은_MinerU_글을_둔다(monkeypatch):
+    """#376 B — EHSunm 큰 괄호 조각(GID 47)을 ToUnicode 가 `g` 로 알려 준다. 멀쩡한 글자로 보여 층 거부 검사에
+    안 걸리고 MinerU 글을 덮었다. 표에 없는 글리프가 든 블록은 층을 안 믿는다. 스위치를 끄면 종전대로 층이 이긴다."""
+    monkeypatch.setattr(hg, "_font", lambda n: "EHSunm-Plain" if "Nimbus" in (n or "") else (n or ""))
+    doc, page = _page(("연립방정식 ", False), ("g", True), ("x+y=3", False))
+    chars = [c for b in page.get_text("rawdict")["blocks"] for ln in b["lines"] for sp in ln["spans"]
+             if "Nimbus" in sp["font"] for c in sp["chars"]]
+    page.get_texttrace = lambda: [{"font": "NimbusSans-Regular", "chars": [(ord("g"), 47, c["origin"], c["bbox"]) for c in chars]}]
+    assert mr._has_unknown_glyph(page, BB)
+    assert mr._native_override(page, BB, "연립방정식 {x+y=3") is None
+    monkeypatch.setattr(mr, "_UNKNOWN_GLYPH_GUARD", False)
+    assert mr._native_override(page, BB, "연립방정식 {x+y=3") is not None
