@@ -333,6 +333,7 @@ class QualityChecker:
         lost_text: Optional[dict] = None,
         misread: Optional[dict] = None,
         table_fixed: Optional[dict] = None,
+        lost_restored: Optional[dict] = None,
     ) -> QualityReport:
         extracted = list(extracted)
         llm_outputs = list(llm_outputs)
@@ -525,15 +526,25 @@ class QualityChecker:
             ))
         # 추출이 버린 본문 글(#1284) — 원본 글자층에는 있는데 묵자에 없다. 화면에는 번호(①)만 남아 빠진 줄을 알 길이 없다.
         #   고를 자리는 `extraction_losses.lost_text_hosts`(대조 잡음 거름)이고, 여기서는 그 요소에 R1 을 단다.
+        #   그 줄을 원본 글자층으로 되살린 요소(#1303, `preprocessor.lost_lines`)도 R1 을 지우지 않고 문구만 바꾼다. 층이 틀리면
+        #   되살린 글도 틀린다. 그 요소에 못 넣은 손실이 하나라도 있으면 종전 문구다. 못 읽은 PUA 글자 수는 문구에 싣는다.
         live = {str(e.element_id) for e in layout_result.elements} if layout_result else None
         r1_ids = {f.element_id for f in reviews if f.type == "R1"}
+        restored = lost_restored or {}
         for eid, texts in sorted((lost_text or {}).items()):
             if eid in r1_ids or (live is not None and eid not in live):
                 continue
-            head = " ".join(texts[0].split())
+            left = [t for t in texts if t not in restored]
+            if left:
+                what, head = "원본에 있는 글이 추출에서 빠짐", left[0]
+            else:
+                miss = sum(restored[t][1] for t in texts)
+                what = "추출에서 빠진 글을 원본 글자층으로 되살림" + (f", 못 읽은 글자 {miss}자" if miss else "")
+                head = restored[texts[0]][0]
+            head = " ".join(head.split())
             reviews.append(ReviewFlag(
                 type="R1", element_id=eid,
-                message=f"원본에 있는 글이 추출에서 빠짐: {head[:30].rstrip()}{'…' if len(head) > 30 else ''}",
+                message=f"{what}: {head[:30].rstrip()}{'…' if len(head) > 30 else ''}",
             ))
         # 표 칸 한 음절 오독(#1296) — 표 교정이 못 고친 한글 오독 자리를 R4 로 짚는다. 고르는 곳은 `mineru_runner.table_misreads`.
         #   R4 의 다른 갈래(한자 · 로마자 환각)와 달리 그럴듯한 한글이라 자리를 글자째 보여 준다.

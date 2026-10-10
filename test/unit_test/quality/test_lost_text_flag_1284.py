@@ -134,3 +134,34 @@ def test_가까운_요소에는_한글_토막_거르기를_걸지_않는다():
     lost = _loss(text=line, region=None, bbox=(100, 200, 600, 215))
     near = _el("next", "(다) 형광 현미경으로 슬라이드를 관찰한 결과, (가)에 ⓒ를 첨가한 A 가 빛났다.", (100, 216, 600, 240))
     assert lost_text_hosts([lost], [near], math_page=False) == {"next": [f"(이 요소 위) {line}"]}
+
+
+# ── #1303 원본 글자층으로 되살린 손실: R1 을 지우지 않고 문구만 바꾼다 ─────────────────────
+
+def _check_restored(lost, restored, ids):
+    items = [BBoxItem(element_id=i, type="text", bbox=(0, 0, 10, 10), reading_order=k + 1) for k, i in enumerate(ids)]
+    outs = [LLMOutput(element_id=i, corrected_text="①", render_mode="text_only", routing_tier="ZERO", processing_time_ms=0)
+            for i in ids]
+    return QualityChecker().check("p_001", layout_result=LayoutResult(page_id="p_001", elements=items),
+                                  llm_outputs=outs, lost_text=lost, lost_restored=restored)
+
+
+def test_되살린_손실은_R1_문구가_되살림이고_넣은_글을_보인다():
+    a = uuid4()
+    report = _check_restored({str(a): [_CHOICES]}, {_CHOICES: ("① 바다와 같이 넓고 깊은 ○○ 문화 예술의 보고", 0)}, [a])
+    flags = [f for f in report.review_flags if f.type == "R1"]
+    assert [f.message for f in flags] == ["추출에서 빠진 글을 원본 글자층으로 되살림: ① 바다와 같이 넓고 깊은 ○○ 문화 예술의 보고"]
+    assert report.status == "NEEDS_REVIEW"
+
+
+def test_못_읽은_글자가_남으면_그_수를_적는다():
+    a = uuid4()
+    flags = [f for f in _check_restored({str(a): [_CHOICES]}, {_CHOICES: ("① 바다", 2)}, [a]).review_flags if f.type == "R1"]
+    assert flags[0].message == "추출에서 빠진 글을 원본 글자층으로 되살림, 못 읽은 글자 2자: ① 바다"
+
+
+def test_한_요소에_못_넣은_손실이_있으면_종전_문구다():
+    a = uuid4()
+    other = "③ 다양한 영감을 느낄 수 있는 지역 문화 예술 여행"
+    flags = [f for f in _check_restored({str(a): [_CHOICES, other]}, {_CHOICES: ("① 바다", 0)}, [a]).review_flags if f.type == "R1"]
+    assert flags[0].message == "원본에 있는 글이 추출에서 빠짐: ③ 다양한 영감을 느낄 수 있는 지역 문화 예술 여행"
