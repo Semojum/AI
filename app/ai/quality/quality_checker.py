@@ -467,8 +467,10 @@ class QualityChecker:
             ))
 
         # 점역 못 한 요소에는 검토 표시도 붙인다(#1275). 점자 칸에는 점역자 주 '점역 못 함'만 있고 까닭은 묵자 창에 있다.
+        #   C5(수표만 빠짐)도 뒤 R 검사를 건너뛰려고 blocked_ids 에 들지만 점자는 있으니 이 문구를 달지 않는다(#1286).
         r1_ids = {f.element_id for f in reviews if f.type == "R1"}
-        for eid in sorted(blocked_ids - r1_ids):
+        c5_ids = {c.element_id for c in criticals if c.type == "C5"}
+        for eid in sorted(blocked_ids - r1_ids - c5_ids):
             reviews.append(ReviewFlag(
                 type="R1", element_id=eid,
                 message="점역 못 한 요소입니다. 점자 칸에는 점역자 주 '점역 못 함'만 있으니 묵자 창의 원문을 보고 직접 점역해야 합니다",

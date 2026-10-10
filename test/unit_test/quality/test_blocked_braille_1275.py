@@ -69,3 +69,18 @@ def test_점역_못_한_요소에는_C2_와_R1_이_하나씩_붙는다():
         assert [c.type for c in report.critical_errors if c.element_id == eid] == ["C2"]
         assert [r.type for r in report.review_flags if r.element_id == eid and r.type == "R1"] == ["R1"]
     assert report.status == "NEEDS_REVIEW"
+
+
+def test_수표만_빠진_요소에는_점역_못_함_문구를_달지_않는다():
+    """#1286 C5 요소도 blocked_ids 에 들지만 점자는 있다. 2027 수학Ⅰ p024 `\\log_ {3}` 꼴 5요소에 문구가 잘못 붙었다."""
+    item = BBoxItem(element_id=uuid4(), type="formula", bbox=(0, 0, 10, 10), reading_order=1)
+    eid = item.element_id
+    report = QualityChecker().check(
+        "p_001", layout_result=LayoutResult(page_id="p_001", elements=[item]),
+        llm_outputs=[LLMOutput(element_id=eid, corrected_text="사과 3개", render_mode="text_only",
+                               routing_tier="ZERO", processing_time_ms=0)],
+        braille_outputs=[BrailleOutput(element_id=eid, braille_lines=["⠇⠈⠧⠀⠉⠈⠗"])],      # 수표 없는 '사과 3개'
+    )
+    assert [c.type for c in report.critical_errors] == ["C5"]
+    assert not [r for r in report.review_flags if r.type == "R1"]
+    assert report.status == "NEEDS_REVIEW"
