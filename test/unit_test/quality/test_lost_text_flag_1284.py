@@ -84,3 +84,13 @@ def test_이_쪽에_없는_요소에는_달지_않는다():
     a = uuid4()
     report = _check({str(uuid4()): [_CHOICES]}, [a])
     assert not [f for f in report.review_flags if f.type == "R1"]
+
+
+def test_이웃_줄에_가린_손실은_한글_토막_거르기를_건너뛴다():
+    """#1298 같은 틀 이웃 줄 글이 그 자리 요소에 있어 '한글 토막 절반' 거르기에 늘 걸린다. MinerU 가 본 줄(dropped)이어도 띄운다."""
+    opt = "② 둘째 자료를 보니 자음으로 시작하는 조사 앞에서 바뀌었구나"
+    host = _el("a", "① 첫째 자료를 보니 모음으로 시작하는 어미 앞에서 바뀌었구나\n③ 셋째 자료를 보니 모음으로 시작하는 조사 앞에서 바뀌었구나")
+    sib = {**_loss(text=opt), "class": "dropped", "reason": "sibling"}
+    assert lost_text_hosts([sib], [host], math_page=False) == {"a": [opt]}
+    assert lost_text_hosts([{**sib, "reason": "not_carried"}], [host], math_page=False) == {}     # 그 밖 dropped 는 종전대로
+    assert lost_text_hosts([{**sib, "class": "unseen", "reason": None}], [host], math_page=False) == {}   # 종전 거르기

@@ -8,6 +8,7 @@
           "dropped" MinerU 항목 글인데 경계 요소 글에 없다(T33 C).
   source  "textlayer" | "mineru:<content_list type>" | "mineru:<펼친 필드>"(table_footnote·code_body …)
   reason  dropped 만. "figure_text"(그림·그래프 안 글, 캡셔닝 몫으로 둔다) | "not_carried"(그 밖)
+          · "sibling"(두 갈래 다): 같은 틀 이웃 줄에 가려 쪽 전체 대조로는 '있음'이던 층 줄(#1298, 아래 절)
   region  unseen 만. 그 글 자리에 걸친 MinerU 항목 type(없으면 None). 영역을 잘못 본 것인지
           영역조차 없는 것인지 가른다(T33 "D 의 MinerU 자리").
   text    그 글(묵자). 채점기가 gold 해독문과 음절 n-gram 으로 맞춘다.
@@ -25,6 +26,7 @@ from __future__ import annotations
 
 import json
 import re
+from difflib import SequenceMatcher
 from pathlib import Path
 
 import fitz
@@ -192,6 +194,69 @@ def locate(boundary: dict, text: str) -> str | None:
     return None
 
 
+# ── 같은 틀 이웃 줄에 가린 손실(#1298) ──────────────────────────────────────────
+# 위 대조는 층 줄마다 쪽 전체 글에서 6-gram 이 반 넘게 덮이면 '있다'로 친다. 같은 틀 이웃 줄이 남아 있으면 통째로 빠진 줄도
+# 그 이웃 글로 덮여 목록에 안 올랐다(2027 언매 p0096 선택지 ② · 화작 p0176 '재학생 200명' · 생명과학 p0141 보기 ㄱ).
+# 그래서 층 줄 하나가 글 한 자리만 차지하게 짝짓는다. 닮음 높은 줄부터(같으면 긴 줄 · 층 차례) 닮은 자리(_SIB_SIM 이상)를 잡고,
+# **길이가 비슷한 줄끼리만** 자리를 다툰다. 짧은 이름표 줄('DNA 상대량')이 긴 문장 속 같은 문구 자리를 빼앗지 않게.
+# 닮은 자리가 있는데 모두 이웃 줄이 먼저 차지했고, 아무 줄도 안 차지한 글에서도 반 넘게 안 덮이는 줄이 손실이다
+# (분수 분자 · 분모 줄이 한 요소 안에서 차례만 바뀐 꼴은 남은 글에 있어 빠진다).
+# 묵자(경계 요소)와 MinerU 원출력을 **따로** 짝짓는다. 합쳐 대면 같은 틀 글이 두 벌이라 빠진 줄이 남은 한 벌을 차지한다.
+# 2027 dev · val 시제품 후보 7, 7 모두 진짜(V2 temp/n220/assign2.py).
+_SIB_SIM = 0.8
+_SIB_LEN = 0.7                  # 길이가 이 배 ~ 1/이 배 사이인 줄끼리만 다툰다
+_SIB_MIN_HANGUL = 10
+_LATEX_CMD_RE = re.compile(r"\\[a-zA-Z]+")
+_HANGUL_SYL_RE = re.compile(r"[가-힣]")
+
+
+def _sib_plain(s: str | None) -> str:
+    return _plain(_LATEX_CMD_RE.sub("", s or ""))
+
+
+def _sib_windows(q: str, k: str) -> list[tuple[float, int]]:
+    """k 에서 q 와 같은 길이 자리 중 닮음 _SIB_SIM 이상 [(닮음, 시작)], 높은 차례. 머리 · 가운데 · 꼬리 4자로 자리를 찾는다."""
+    n, starts = len(q), set()
+    for off in {0, max(0, n // 2 - 2), max(0, n - 4)}:
+        probe = q[off:off + 4]
+        if len(probe) == 4:
+            starts.update(m.start() - off for m in re.finditer(re.escape(probe), k))
+    got = [(SequenceMatcher(None, q, k[s:s + n], autojunk=False).ratio(), s) for s in starts if 0 <= s <= len(k) - n]
+    return sorted((x for x in got if x[0] >= _SIB_SIM), key=lambda x: (-x[0], x[1]))
+
+
+def _sibling_match(lines: list[tuple], texts) -> tuple[set[int], set[int]]:
+    """lines[(자리, 글)] 를 texts 와 짝짓는다 → (글에 있는 줄 번호, 같은 틀 이웃 줄에 자리를 빼앗긴 줄 번호)."""
+    k = "\x00".join(q for q in map(_sib_plain, texts) if q)
+    rows = []
+    for i, (_r, t) in enumerate(lines):
+        q = _sib_plain(t)
+        w = _sib_windows(q, k) if len(q) >= _MIN_CHARS else []
+        if w:
+            rows.append((w[0][0], i, q, w))
+    taken: list[tuple[int, int]] = []
+    have: set[int] = set()
+    pend: list[tuple[int, str]] = []
+    for _best, i, q, w in sorted(rows, key=lambda x: (-x[0], -len(x[2]), x[1])):
+        n = len(q)
+        s = next((s for _r, s in w if not any(
+            min(s + n, e) - max(s, b) > min(n, e - b) / 2 and _SIB_LEN <= (e - b) / n <= 1 / _SIB_LEN
+            for b, e in taken)), None)
+        if s is not None:
+            taken.append((s, s + n))
+            have.add(i)
+        elif len(_HANGUL_SYL_RE.findall(q)) >= _SIB_MIN_HANGUL:
+            pend.append((i, q))
+    free = list(k)
+    for b, e in taken:
+        free[b:e] = "\x00" * (e - b)
+    rest = _Pool("".join(free).split("\x00"))
+    lost = set()
+    for i, q in pend:
+        (have if rest.has(q) else lost).add(i)
+    return have, lost
+
+
 def extraction_losses(elements: list[dict], page: fitz.Page,
                       raw_dir: Path | None) -> tuple[list[dict], list[str]]:
     """경계 요소(최종) · MinerU 원출력 · 텍스트 레이어를 대조해 (손실 목록, 대조한 것)을 돌려준다."""
@@ -243,11 +308,23 @@ def extraction_losses(elements: list[dict], page: fitz.Page,
     # 그림 밖 레이어 줄을 **레이어 순서대로 한 줄로 이어** 잰다. PyMuPDF 는 정답 칸 `1. 가설` 같은 줄을
     # 블록 하나씩으로 쪼개 준다 — 블록마다 재면 짧은 줄이 또 혼자 남는다(생명과학 p10).
     seen = _Pool(seen_texts)
-    for run in _lost_runs(outside, [kept, seen]):
+    runs = _lost_runs(outside, [kept, seen])
+    for run in runs:
         r = fitz.Rect(run[0][0])
         for rr, _ in run[1:]:
             r |= rr
         bb = _norm(r, page)
         losses.append({"class": "unseen", "source": "textlayer", "region": _region(bb, items),
                        "text": "\n".join(t for _, t in run), "bbox": bb})
+    # 같은 틀 이웃 줄에 가린 손실(#1298, 위 절). 위에서 이미 잃은 줄은 뺀다. MinerU 원출력에 있으면 dropped 다.
+    gone = {id(p) for run in runs for p in run}
+    rest = [p for p in outside if id(p) not in gone]
+    _have, lost = _sibling_match(rest, [el.get("content") for el in elements]) if rest else (set(), set())
+    if lost:
+        mu_have = _sibling_match(rest, seen_texts)[0] if items else set()
+        for i in sorted(lost):
+            r, t = rest[i]
+            bb = _norm(r, page)
+            losses.append({"class": "dropped" if i in mu_have else "unseen", "source": "textlayer",
+                           "reason": "sibling", "region": _region(bb, items), "text": t, "bbox": bb})
     return losses, checks

@@ -271,14 +271,17 @@ def lost_text_hosts(losses: list[dict] | None, elements: list[dict], math_page: 
     for x in sorted(losses or [], key=lambda x: x.get("region") is None):
         text = x.get("text") or ""
         region = x.get("region")
-        if (x.get("class") != "unseen" or len(_HANGUL_RE.findall(text)) < _FLAG_MIN_HANGUL
+        # 같은 틀 이웃 줄에 가린 손실(#1298, `extraction_losses` 짝짓기)은 MinerU 가 본 줄(dropped)이어도 묵자에서 빠졌다.
+        #   그 자리에는 이웃 줄 글이 있어 아래 '한글 토막 절반' 거르기에 늘 걸리므로 그 거르기를 건너뛴다.
+        sibling = x.get("reason") == "sibling"
+        if ((x.get("class") != "unseen" and not sibling) or len(_HANGUL_RE.findall(text)) < _FLAG_MIN_HANGUL
                 or not (region in _FLAG_REGIONS
                         or (region is None and max(len(s.strip()) for s in text.split("\n")) >= _NONE_REGION_MIN_LINE))):
             continue
         hosts = [e for e in elements if _overlap(e.get("bbox"), x.get("bbox"))]
         runs = _HANGUL_RUN_RE.findall(text)
         here = "\n".join(e.get("content") or "" for e in hosts)
-        if not hosts or 2 * sum(r in here for r in runs) >= len(runs):
+        if not hosts or (not sibling and 2 * sum(r in here for r in runs) >= len(runs)):
             continue
         for e in hosts:
             out.setdefault(str(e.get("id")), []).append(text)
