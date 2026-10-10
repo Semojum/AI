@@ -15,6 +15,7 @@ from app.core.pipeline import _is_extraction_refusal
     "저는 AI 언어 모델이라 이미지를 직접 볼 수 없습니다.",
     "이 이미지에는 텍스트가 없습니다",
     "No discernible text in this page.",
+    "이 지면은 흐려서 추출할 수 없습니다.",          # 머리 '죄송합니다' 없이도(#1288 좁힌 패턴)
 ]
 
 본문 = [
@@ -23,6 +24,9 @@ from app.core.pipeline import _is_extraction_refusal
     "표에 없는 값은 0으로 본다.",
     "이 페이지에는 그림 3개와 표 1개가 있다.",
     "죄송하다는 말을 반복하는 인물의 심리를 서술하시오.",
+    # #1288 전권 묵자 글자층에서 걸렸던 본문 둘(한다체). 문단이 통째로 비었다.
+    "살아 있는 동안 육체와 영혼은 서로 얽혀 순수하게 인식할 수 없으므로",                  # 생활과 윤리 p0037
+    "ㄹ. 인간은 이성을 통해 자연적 성향을 인식할 수 없다.",                                 # 윤리와 사상 p0088
 ]
 
 
@@ -34,3 +38,15 @@ def test_해설문은_막는다(t):
 @pytest.mark.parametrize("t", 본문)
 def test_본문은_살린다(t):
     assert not _is_extraction_refusal(t)
+
+
+def test_글자층_글에는_해설문_검사를_걸지_않는다():
+    """#1288 글자층(TEXT_NATIVE)에는 모델 해설문이 생길 수 없다. 걸리면 본문만 지운다."""
+    from app.core.pipeline import _parse_txt_result
+    el = {"id": "00000000-0000-0000-0000-000000001288", "order": 1, "type": "text",
+          "content": "이 지면은 흐려서 추출할 수 없습니다.", "bbox": [10, 10, 200, 40]}
+    for method, kept in (("TEXT_NATIVE", True), ("OCR", False)):
+        lay, em, _ = _parse_txt_result({"meta": {"extraction_method": method}, "elements": [el]}, "p")
+        b = lay.elements[0]
+        assert (em[b.element_id].corrected_text == el["content"]) is kept
+        assert ("R11" in b.flags) is not kept

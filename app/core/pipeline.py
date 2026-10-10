@@ -2539,7 +2539,8 @@ def _parse_txt_result(
             logger.info("지면 가장자리 머리글 억제(%s): %.60s", etype, content)
             continue
         # 추출 모델의 '못 읽었다' 해설문 → 내용 비우고 R11(원본 확인 요망)로 넘긴다.
-        refused = _is_extraction_refusal(content)
+        # 글자층에서 뽑은 글(TEXT_NATIVE)에는 모델 해설문이 생길 수 없다. 본문만 잘못 지운다(#1288).
+        refused = method != "TEXT_NATIVE" and _is_extraction_refusal(content)
         if refused:
             logger.info("추출 실패 안내문 억제(%s): %.60s", etype, content)
             content = ""
