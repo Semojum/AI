@@ -480,6 +480,26 @@ class TestC5TagDigitFalsePositive:
         rep = self._report(r"세포 $\textcircled{7}$ 상대량", "⠠⠗⠙⠥⠀⠼⠒")
         assert not any(c.type == "C5" for c in rep.critical_errors)
 
+    # ── #1290 MinerU 가 띄어 쓴 꼴(2027 수학Ⅰ 5요소가 규정대로 낸 점자로 C5) ──────────
+    def test_띄어_쓴_로그_밑도_게이트를_안_연다(self):
+        # 수학Ⅰ 본문 p0077. 밑 2 는 수학 점자 제46항 1호대로 수표 없이 내려 적었다(⠠⠆).
+        rep = self._report(r"b _ {n} = \log_ {2} a _ {n}", "⠃⠰⠝⠒⠒⠸⠠⠆⠁⠰⠝")
+        assert not any(c.type == "C5" for c in rep.critical_errors)
+        rep = self._report(r"\log _ {3} (x - n)", "⠸⠠⠒⠷⠦⠭⠔⠝⠴⠾")          # 밑 앞뒤를 다 띄운 꼴
+        assert not any(c.type == "C5" for c in rep.critical_errors)
+
+    def test_띄어_쓴_원문자도_게이트를_안_연다(self):
+        # 수학Ⅰ 본문 p0029. 원본 글자층은 ㉠ 이고 점역기가 ㉠ 으로 바로잡았다(kor_math_rules._TC_JAMO_CELLS).
+        rep = self._report(r"\dots \textcircled {7}", "⠠⠠⠠⠀⠿⠁")
+        assert not any(c.type == "C5" for c in rep.critical_errors)
+
+    def test_괄호_없는_밑은_한_자리만_뺀다(self):
+        # `\log_28` 은 밑 2 · 진수 8 이다. 진수 8 에 수표가 없으면 잡는다(종전 정규식은 28 을 통째로 빼 가렸다).
+        rep = self._report(r"\log_28", "⠸⠠⠆⠓")
+        assert [c.type for c in rep.critical_errors] == ["C5"]
+        rep = self._report(r"\log_28", "⠸⠠⠆⠼⠓")
+        assert not any(c.type == "C5" for c in rep.critical_errors)
+
     def test_태그가_있어도_본문_숫자_누락은_잡는다(self):
         rep = self._report("<!상자2><!/상자2>\n정답은 3번", "⠿⠛⠛⠀⠨⠻⠊⠣⠃⠵⠀⠉⠘⠞")
         assert [c.type for c in rep.critical_errors] == ["C5"]
