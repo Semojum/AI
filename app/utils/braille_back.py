@@ -32,10 +32,12 @@ from pathlib import Path
 
 from app.ai.braille.kor_math_rules import _ELEMENTS as _CHEM_ELEMENTS
 from app.ai.braille.symbol_rules import SYMBOL_TABLE
+from app.ai.braille.constants import KOREAN_GRADE1
 # 옛한글 점형표(규정 제19~25항)는 정방향이 정본이다 — 역방향은 그 표를 뒤집어 쓴다.
 from app.ai.braille.translator import (
     _CHOSEONG as _T_CHO, _JONGSEONG as _T_JONG,
     _OLD_CHO as _T_OLD_CHO, _OLD_JUNG as _T_OLD_JUNG, _CIRCLED as _T_CIRCLED,
+    _hangul_grade1 as _T_HANGUL_G1,
 )
 
 _MAP_PATH = Path(__file__).with_name("braille_syllable_map.json")
@@ -65,8 +67,9 @@ def _cells_are_hangul(s: str, at: int) -> bool:
     seg = s[at:at + 4]
     if not seg:
         return False
+    syl_rev = _maps()[0]
     for ln in (3, 2, 1):
-        syl = _SYLLABLE_REV.get(seg[:ln])
+        syl = syl_rev.get(seg[:ln])
         if syl and "가" <= syl[0] <= "힣":
             return syl[0] in _JOSA_HEAD
     return False
@@ -817,6 +820,57 @@ for _m in (_SYMBOL_REV, _COMBINED):
     _m.update(_ROMAN_UNIT_REV)
     _m.update(_FENCED_SYM_REV)
 _MAX_CELLS = max((len(k) for k in _COMBINED), default=1)
+
+
+# ── 한글 정자(1급) 역점역 (#1276) ──────────────────────────────────────────────
+# 정자는 약자 · 약어 없이 자모로 적는다(`translator._hangul_grade1`, #1191). 위 맵은 2급(braillify
+# 정방향) 꼴이라 정자 점자를 읽으면 받침 ㄹ ⠂ 을 쉼표로, 받침 ㄴ ⠒ 을 `=` 로, ⠁⠎ 를 약어 '그래서'로
+# 읽는다(gold 글 4,000줄 왕복 2급 3,529 · 정자 215). 정자 문서는 음절 역맵을 정자 꼴로 바꾸고
+# 2급 음절 · 약어 항목을 뺀 맵으로 읽는다. 정자는 음절마다 모음 칸이 있고 첫소리 칸과 받침 칸이
+# 겹치지 않아 긴 칸 우선 맞춤으로 풀린다. 고르는 값은 점역과 같은 문맥 값 `KOREAN_GRADE1` 이다.
+_G1_CACHE: list = []
+
+
+def _grade1_maps() -> tuple[dict[str, str], dict[str, str], int, frozenset]:
+    """(정자 음절 역맵, 정자 통합 역맵, 가장 긴 키, 낱말로 설 때만 기호인 점형). 처음 부를 때 한 번 만든다."""
+    if not _G1_CACHE:
+        from app.ai.braille.translator import translate_tagged_text
+        syl: dict[str, str] = {}
+        for code in range(0xAC00, 0xD7A4):
+            syl.setdefault(_T_HANGUL_G1(chr(code)), chr(code))
+        comb = {k: v for k, v in _COMBINED.items()
+                if _SYLLABLE_REV.get(k) != v and _WORD_ABBR.get(k) != v}
+        # 동그라미 · 괄호 한글 음절(㉮ = ⠶⠫⠶)은 안의 음절도 정자로 풀린다(⠶⠈⠣⠶).
+        tok = KOREAN_GRADE1.set(True)
+        try:
+            for ch in map(chr, (*range(0x320E, 0x321D), *range(0x326E, 0x327C))):
+                cells = translate_tagged_text(ch)
+                cells = (cells[0] if isinstance(cells, tuple) else cells).strip("⠀ ")
+                if cells and cells not in comb:
+                    comb[cells] = ch
+        finally:
+            KOREAN_GRADE1.reset(tok)
+        comb.update(syl)
+        # 정자 음절열과 점형이 같은 기호(⠪⠒⠕ ↔ = `은이`)는 #1112 처럼 홀로 선 낱말일 때만 기호로 읽는다.
+        word_only = set(_WORD_ONLY_SYMBOLS)
+        for k in comb:
+            if k not in syl and len(k) >= 2:
+                ok = [True] + [False] * len(k)
+                for i in range(len(k)):
+                    if ok[i]:
+                        for ln in range(1, len(k) - i + 1):
+                            ok[i + ln] = ok[i + ln] or k[i:i + ln] in syl
+                if ok[-1]:
+                    word_only.add(k)
+        _G1_CACHE.append((syl, comb, max(len(k) for k in comb), frozenset(word_only)))
+    return _G1_CACHE[0]
+
+
+def _maps() -> tuple[dict[str, str], dict[str, str], int, frozenset]:
+    """(음절 역맵, 통합 역맵, 가장 긴 키, 낱말로 설 때만 기호인 점형) — 정자 문맥이면 정자 맵."""
+    if KOREAN_GRADE1.get():
+        return _grade1_maps()
+    return _SYLLABLE_REV, _COMBINED, _MAX_CELLS, _WORD_ONLY_SYMBOLS
 
 
 _SUBSCRIPT = "⠰"   # 첨자·약물 표 등 — 로마자 런 안에서는 근사로 건너뜀
@@ -2262,12 +2316,13 @@ def _decode_math_token(tok: str) -> str:
             i += 1
             continue
         best = 0                                     # \text 한글·기호 폴백(긴 셀 우선)
-        for ln in range(min(_MAX_CELLS, n - i), 0, -1):
-            if tok[i:i + ln] in _COMBINED:
+        _, comb, maxc, _ = _maps()
+        for ln in range(min(maxc, n - i), 0, -1):
+            if tok[i:i + ln] in comb:
                 best = ln
                 break
         if best:
-            out.append(_COMBINED[tok[i:i + best]])
+            out.append(comb[tok[i:i + best]])
             i += best
             continue
         out.append(f"⟨{ord(c):04X}⟩")
@@ -2486,14 +2541,24 @@ def _closing_follows(s: str, at: int) -> bool:
     return any(s.startswith(c, at) for c in _PERIOD_CLOSERS)
 
 
-def decode(braille: str, *, math: bool = False, english: bool = False) -> str:
+def decode(braille: str, *, math: bool = False, english: bool = False,
+           korean_grade1: bool | None = None) -> str:
     """점자 BRF 문자열 → 한국어 텍스트(근사). 줄바꿈은 보존.
 
     math=True면 전체를 수식 구역으로 보고 디코드한다(요소 type이 formula일 때 호출자가 지정).
     기본(False)은 공백 단위 토큰별로 수식/한글을 자동 판별한다(인라인 수식).
     english=True 는 **영어 교과의 책**이라는 뜻이다(호출부가 과목으로 정한다). 한글이 섞인
     줄에서 한글로 떨어진 영어 토막을 되찾는다(#905). 비영어책에선 켜지 말 것.
+    korean_grade1=True 는 한글 정자(약자 · 약어 없음)로 점역한 점자라는 뜻이다(#1276). 주지 않으면
+    점역과 같은 문맥 값 `KOREAN_GRADE1` 을 따른다 — 파이프라인은 쪽 문맥에 이미 놓아 두어 검수 등급이
+    따로 넘기지 않아도 정자로 읽는다.
     """
+    if korean_grade1 is not None:
+        tok = KOREAN_GRADE1.set(korean_grade1)
+        try:
+            return decode(braille, math=math, english=english)
+        finally:
+            KOREAN_GRADE1.reset(tok)
     # BRF 의 쪽 나눔(form feed)은 셀이 아니라 줄 경계다 — 남겨 두면 그 쪽 첫 낱말에 붙어
     # 영어 줄 판정을 막는다(동결 코퍼스 실측 375줄·9,727셀, #842).
     braille = braille.replace("\f", "\n")
@@ -4205,6 +4270,7 @@ def _decode_line(s: str, *, sep: bool = True, mid_roman: bool = True) -> str:
                         _decode_line(s[ws:m.end()], sep=sep, mid_roman=False)):
                     return (head + "".join(_ALPHA_REV[x] for x in m.group(1))
                             + _decode_line(s[m.end():], sep=sep, mid_roman=mid_roman))
+    syl_rev, comb, maxc, word_only = _maps()    # 정자 문맥이면 정자 맵(#1276)
     out: list[str] = []
     i, n = 0, len(s)
     _after_number = -1        # 수표 숫자가 방금 끝난 자리(아래 단위표 가드용)
@@ -4361,13 +4427,13 @@ def _decode_line(s: str, *, sep: bool = True, mid_roman: bool = True) -> str:
         # 긴 셀 우선 매칭(단위·기호·약어·음절). 단위(℃=⠴⠙…)를 로마자보다 먼저
         # 잡아야 로마자 런이 멀리 있는 마침표 ⠲까지 삼키지 않는다.
         best_ln = 0
-        for ln in range(min(_MAX_CELLS, n - i), 0, -1):
-            if s[i:i + ln] in _COMBINED:
+        for ln in range(min(maxc, n - i), 0, -1):
+            if s[i:i + ln] in comb:
                 # ★ 한글을 먹는 기호 점형은 **홀로 선 낱말일 때만** 기호다(#1112). 낱말 안에서는
                 #   음절로 읽는다 — gold 전권 실측 ⠮⠮(∬)=`을을` 126회 · ⠗⠋(ℵ)=`애카` 84회 ·
                 #   ⠠⠨⠊(Ι)=`짜다` 12회 · ⠠⠨⠑(Ε)=`짜마` 5회. `마을을` 이 `마∬`, `짜맞추어` 가
                 #   `Εk추어` 로 나갔다. 새 기호의 겹침은 test_reverse_map_collision_guard 가 잡는다.
-                if s[i:i + ln] in _WORD_ONLY_SYMBOLS and not (
+                if s[i:i + ln] in word_only and not (
                         (i == 0 or s[i - 1] in (_SPACE_CELL, " "))
                         and (i + ln >= n or s[i + ln] in (_SPACE_CELL, " "))):
                     continue
@@ -4418,8 +4484,8 @@ def _decode_line(s: str, *, sep: bool = True, mid_roman: bool = True) -> str:
         # 뒤 셀이 ⠄면 부호가 맞다 — 홀로 선 ⠄는 한국어 음절에 없다.
         # 실측 dev-2027 900쪽: gold 1,933줄 · 우리 출력 2,305줄이 이 한 가지로 깨졌다.
         if (best_ln >= 2 and s[i + best_ln:i + best_ln + 1] == "⠄"
-                and s[i + best_ln - 1] == "⠴" and s[i:i + best_ln - 1] in _COMBINED):
-            out.append(_COMBINED[s[i:i + best_ln - 1]])
+                and s[i + best_ln - 1] == "⠴" and s[i:i + best_ln - 1] in comb):
+            out.append(comb[s[i:i + best_ln - 1]])
             out.append("’")
             i += best_ln + 1
             continue
@@ -4431,22 +4497,22 @@ def _decode_line(s: str, *, sep: bool = True, mid_roman: bool = True) -> str:
             # ★기호로 등록된 시퀀스(≥=⠲⠲, ⊃=⠐⠲, ㎏=…⠲ 등)는 분리하지 않는다(2026-07-19).
             if seg[-1] == "⠲" and seg in _SYMBOL_REV:
                 out.append(_SYMBOL_REV[seg])
-            elif (seg[-1] == "⠲" and seg[:-1] in _COMBINED
-                  and (_COMBINED.get(seg) not in _PIEUP_FINAL
+            elif (seg[-1] == "⠲" and seg[:-1] in comb
+                  and (comb.get(seg) not in _PIEUP_FINAL
                        # ★ 받침 ㅍ 음절이라도 **낱말 끝에 못 서는 어간**이면 온점이다.
                        #   `있어.` 가 `있엎` 으로, `밝혀야지.` 가 `밝혀야짚` 으로 나갔다.
-                       or (_COMBINED.get(seg) in _PIEUP_STEM_ONLY
+                       or (comb.get(seg) in _PIEUP_STEM_ONLY
                            and (_final(i + best_ln)
                                 or _closing_follows(s, i + best_ln))))):
                 # ⠲는 마침표이자 **받침 ㅍ**이라(높=⠉⠥⠲) 무조건 분리하면 받침 ㅍ이 든 말이
                 # 전부 깨진다(높다→'노.다' · 앞으로→'아.으로'). 위치로 가르면 닫는 따옴표
                 # 앞에서 또 틀리므로(`나타난다.’`→`나타난닾’`) **실제로 쓰이는 받침 ㅍ 음절**
                 # 목록으로 가른다 — 닫힌 집합이라 안전하다. 승패: 개선 58 · 악화 0.
-                out.append(_COMBINED[seg[:-1]])
+                out.append(comb[seg[:-1]])
                 out.append(".")
-            elif (seg[-1] == "⠴" and seg[:-1] in _COMBINED
+            elif (seg[-1] == "⠴" and seg[:-1] in comb
                   and seg not in _SYMBOL_REV
-                  and (_COMBINED.get(seg) not in _HIEUT_FINAL
+                  and (comb.get(seg) not in _HIEUT_FINAL
                        # ★ 받침 ㅎ 음절이 목록에 있어도, 뒤 셀이 ⠂ 면 닫는 홑낫표
                        #   `」`(⠴⠂)가 맞다. `국가」라는` 이 `국갛,라는` 으로 나갔다.
                        #   실측(전 코퍼스 1,131쪽): 점자 ⠴⠂ **187건** · 묵자 `」`
@@ -4455,28 +4521,28 @@ def _decode_line(s: str, *, sep: bool = True, mid_roman: bool = True) -> str:
                        or s[i + best_ln:i + best_ln + 1] == "⠂")):
                 # ⠴는 닫는 큰따옴표이자 **받침 ㅎ**이라(좋=⠨⠥⠴) 탐욕 매칭이 앞 음절에
                 # 붙여 먹는다. 받침 ㅍ과 같이 **실제로 쓰이는 음절 목록**으로 가른다.
-                out.append(_COMBINED[seg[:-1]])
+                out.append(comb[seg[:-1]])
                 # ★ 떼어낸 ⠴ 가 **뒤 셀과 함께 등록된 기호**를 이루면(』=⠴⠆ · ’=⠴⠄)
                 #   여기서 닫는 큰따옴표로 굳히면 안 된다. 한 칸 물러나 다음 바퀴가
                 #   두 셀로 읽게 둔다 — `『천연론』` 이 `『천연론”;` 로 나가던 자리다.
-                if ("⠴" + s[i + best_ln:i + best_ln + 1]) in _COMBINED:
+                if ("⠴" + s[i + best_ln:i + best_ln + 1]) in comb:
                     i += best_ln - 1
                     continue
                 out.append("”")
-            elif (seg[-1] == "⠦" and seg[:-1] in _COMBINED
+            elif (seg[-1] == "⠦" and seg[:-1] in comb
                   and s[i + best_ln:i + best_ln + 1] in ("⠄", "⠆")):
                 # ⠦ 는 **받침 ㅌ**(제3항)이자 여는 소괄호 `⠦⠄`·여는 대괄호 `⠦⠆` 의 첫
                 # 셀이다. 짝을 못 찾으면 탐욕 매칭이 앞 음절에 받침으로 붙여 먹는다 —
                 # `구체(` → `구쳍'` · `중도[중]` → `중돝;중]`. 남은 ⠄·⠆ 는 `'`·`;` 로 샜다.
                 # 홀로 선 ⠄·⠆ 는 한국어 음절에 없으므로(닫는 작은따옴표 ⠴⠄ 가드와 같은
                 # 근거) 뒤 셀이 ⠄·⠆ 면 부호가 맞다.
-                out.append(_COMBINED[seg[:-1]])
+                out.append(comb[seg[:-1]])
                 i += best_ln - 1     # 한 칸 물러나 다음 바퀴가 두 셀 부호로 읽게 둔다
                 continue
-            elif (seg in _SYLLABLE_REV and seg[-1] in _SENT_END
-                  and seg[:-1] in _COMBINED
+            elif (seg in syl_rev and seg[-1] in _SENT_END
+                  and seg[:-1] in comb
                   # ★ 어말 ⠦·⠖ 는 **받침 ㅌ·ㅋ**(제3항)이기도 하다. 위 _JONG_FINAL 참조.
-                  and not _jong_final_ok(_COMBINED[seg], out)
+                  and not _jong_final_ok(comb[seg], out)
                   # ★ 닫는 부호 앞도 어말이다. ⠦·⠖ 는 받침 ㅌ·ㅋ(제3항)과 같은 셀인데
                   #   받침으로 읽어도 되는 음절은 위 _jong_final_ok 가 이미 걸러 냈으므로
                   #   나머지는 부호가 맞다 — `하라!”` 가 `랔”`, `…뭐!)` 가 `…뭌)` 로,
@@ -4484,10 +4550,10 @@ def _decode_line(s: str, *, sep: bool = True, mid_roman: bool = True) -> str:
                   #   ⠦ 쪽은 첫 판에서 빠져 전 코퍼스 1,251쪽에 44건이 남아 있었다.
                   and (_final(i + best_ln) or _closing_follows(s, i + best_ln))):
                 # 한글 음절로 오인 흡수된 경우만 분리(요?=⠬⠦) — 기호(「=⠐⠦)는 그대로 둔다.
-                out.append(_COMBINED[seg[:-1]])
+                out.append(comb[seg[:-1]])
                 out.append(_SENT_END[seg[-1]])
             else:
-                out.append(_COMBINED[seg])
+                out.append(comb[seg])
             i += best_ln
             continue
         # 로마자 런(로마자표 ⠴ 또는 대문자 단어표 ⠠⠠+알파벳) — 단독 ⠴(따옴표)보다 우선
@@ -4554,7 +4620,7 @@ def _decode_line(s: str, *, sep: bool = True, mid_roman: bool = True) -> str:
             continue
         # 단일 셀 매칭(따옴표·쉼표 등)
         if best_ln == 1:
-            out.append(_COMBINED[ch])
+            out.append(comb[ch])
             i += 1
             continue
         # 한글 표에 없으면 **수학 역표를 한 번 더 본다**. 인라인 수식으로 분류되지 못한
