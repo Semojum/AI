@@ -98,3 +98,12 @@ def test_수식_쪽은_안_넣는다():
     page = _page(["② 하늘은 파랗고 넓다 시원하다"])
     el = {"id": "a", "type": "text", "content": "②，", "bbox": _box(page, 0)}
     assert LL.restore_lost_lines([el], [_loss(page, 0)], page, True) == {}
+
+
+def test_번호와_잡문자만_남은_머리는_빼고_넣는다():
+    """화작 p0105 꼴: MinerU 가 두 줄 선택지의 첫 줄을 버리고 '②，' 만 남겼다. 그대로 두면 '②，② …' 로 번호가 두 번 나간다."""
+    page = _page(["② 하늘은 파랗고 넓고 시원하며 그 바다는", "깊고 푸르다."], gap=16)
+    el = {"id": "a", "type": "text", "content": "<!2칸>②，깊고 푸르다.", "bbox": _box(page, 0, 1)}
+    LL.restore_lost_lines([el], [_loss(page, 0)], page, False)
+    assert el["content"].startswith("<!2칸>② 하늘은 파랗고 넓고 시원하며 그 바다는")
+    assert el["content"].count("②") == 1

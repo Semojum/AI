@@ -307,11 +307,12 @@ def _insert(page: fitz.Page, cols: list[fitz.Rect], c: str, rows: list[tuple], m
 
 
 def _drop_head(pre: str, block: str) -> str:
-    """넣을 자리 바로 앞(같은 줄)에 한글 없는 머리만 남아 있으면 뺀다: 넣을 글이 그 머리로 시작하거나(MinerU 가 두 줄
-    선택지의 첫 줄을 버리고 번호만 남긴 꼴, 언매 해설 p0024 '②한 분석이다.') 문장부호 · 기호뿐일 때(화작 p0162 '，')."""
+    """넣을 자리 바로 앞(같은 줄)에 한글 없는 머리만 남아 있으면 뺀다. 문장부호 · 기호를 걷은 머리가 비었거나 넣을 글이
+    그 머리로 시작할 때다. MinerU 가 두 줄 선택지의 첫 줄을 버리고 번호(와 잡문자)만 남긴 꼴이다: 언매 해설 p0024
+    '②한 분석이다.' · 화작 p0105 '②，을것입니다.'(쉼표가 붙어 '②，② …' 로 번호가 두 번 나갔다) · 화작 p0162 '，'."""
     m = re.search(r"([^\n>]*)$", pre)
     tail = m.group(1).strip() if m else ""
-    if tail and not _HANGUL_RE.search(tail) and (
-            block.startswith(tail) or all(unicodedata.category(ch)[0] in "PSZ" for ch in tail)):
+    core = "".join(ch for ch in tail if unicodedata.category(ch)[0] not in "PSZ")
+    if tail and not _HANGUL_RE.search(tail) and (not core or block.startswith(core)):
         return pre[:len(pre) - len(m.group(1))]
     return pre
