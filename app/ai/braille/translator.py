@@ -2731,13 +2731,21 @@ def _symbol_droppable(ch: str) -> bool:
         return True
 
 
+# 표 묵자 초안의 테두리 · 구분선 표지 줄(`table_braille._print_frame` 의 `┌ ├ └`, 점자 쪽 글상자 · 표 구분선의 짝).
+# 지면 글자가 아니라 우리가 두른 표지다. R17 이 이걸 '빠진 기호'로 세어 2027 dev · val 1,746쪽 중 571쪽에 붙고
+# 265쪽을 그것 하나로 NEEDS_REVIEW 로 세웠다(#1280). 표지는 늘 한 글자뿐인 줄이라 그 줄만 뺀다 — 글 가운데 낀
+# 진짜 `┌` 는 그대로 센다.
+_PRINT_FRAME_LINE_RE = re.compile(r"^[┌├└]$", re.M)
+
+
 def dropped_symbols(text: str) -> collections.Counter:
     """점역에서 조용히 빠질 기호를 글자별로 센다. 페이지 플래그(R17)의 근거 수치다.
 
     문맥으로 점형을 받는 자리는 먼저 걷는다 — `정답 해설 ▶` 의 ▶ 는 쌍점으로 나간다
     (`_ARROW_LABEL_RE`, 2027 8권 128회). 안 걷으면 플래그가 멀쩡한 쪽에 켜진다.
+    표 묵자 초안의 테두리 표지 줄(위 `_PRINT_FRAME_LINE_RE`)도 걷는다.
     """
-    text = _ARROW_LABEL_RE.sub("", text)
+    text = _ARROW_LABEL_RE.sub("", _PRINT_FRAME_LINE_RE.sub("", text))
     return collections.Counter(ch for ch in text if _symbol_droppable(ch))
 
 
