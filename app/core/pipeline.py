@@ -580,11 +580,18 @@ def _split_foot_number(elements: list[dict], page_h: float) -> list[dict]:
       지면 가장자리 띠(`_page_edge_band`)가 안 본다. (0,0,0,0)을 달면 띠 윗변이 0 으로 끌려 머리글 억제가 흔들린다.
     꼬리말 글은 그대로 둔다. 적을지 말지는 규정(제작 지침 §2.1.2 '페이지행에 꼬리말을 적는다')과 gold(91.4% 안 적음)가
     갈려 자문 대기다(원장 C-86). `수능특강` · `정답과 해설` 배너는 종전대로 `_is_edge_header` 가 거른다.
-    끄기 `ZERO_FOOT_PAGE_NUMBER=0`.
+    ★ MinerU 도 꼬리말을 쪽 번호와 한 블록으로 낸다(`02. 사회·문화 현상의 연구 방법  23`, #1264). 그래서
+      `_parse_txt_result` 가 모든 경로에 이 함수를 다시 건다(ZERO 는 이미 뗐으니 그대로 지나간다).
+      · MinerU 는 대개 같은 번호를 `page_number` 로 따로도 낸다(dev · val 659쪽 중 656). 그때는 글에서만 뗀다.
+      · 꼬리말 고르기에서 `page_number` 는 뺀다. 쪽 번호 블록이 꼬리말보다 조금 아래 있으면(윗변 947 대 945)
+        그것이 가장 아래 블록이 되어 꼬리말을 못 골랐다.
+      · 남겨 두면 32칸에서 접혀 쪽 번호만 홀로 선 줄이 본문에 생긴다(16줄, #1264).
+    끄기 `ZERO_FOOT_PAGE_NUMBER=0`(이름과 달리 MinerU 쪽도 같이 끈다).
     """
     if not page_h or os.environ.get("ZERO_FOOT_PAGE_NUMBER", "1") == "0":
         return elements
-    boxed = [e for e in elements if isinstance(e.get("bbox"), (list, tuple)) and len(e["bbox"]) >= 4]
+    boxed = [e for e in elements if isinstance(e.get("bbox"), (list, tuple)) and len(e["bbox"]) >= 4
+             and e.get("type") != "page_number"]
     if not boxed:
         return elements
     foot = max(boxed, key=lambda e: e["bbox"][1])
@@ -592,9 +599,13 @@ def _split_foot_number(elements: list[dict], page_h: float) -> list[dict]:
     if not m:
         return elements
     foot["content"] = m.group(2) or m.group(3)
+    num = m.group(1) or m.group(4)
+    if any(e.get("type") == "page_number" and str(e.get("content") or "").strip() == num for e in elements):
+        return elements
     for e in elements:
         e["order"] += 1
-    return [{"id": str(uuid4()), "order": 1, "type": "page_number", "content": m.group(1) or m.group(4)}] + elements
+    pid = uuid5(_EID_NS, f"{foot['id']}|page_number") if _stable_ids() and foot.get("id") else uuid4()
+    return [{"id": str(pid), "order": 1, "type": "page_number", "content": num}] + elements
 
 
 async def _extract_via_models(
@@ -2491,6 +2502,7 @@ def _parse_txt_result(
     ext_map: dict[UUID, ExtractedContent] = {}
 
     _els = _split_list_marker_items(extraction.get("elements", []))
+    _els = _split_foot_number(_els, 1000 if space == "norm1000" else ih)     # 꼬리말에 든 쪽 번호(#1264)
     _band = _page_edge_band(_els)
     for idx, el in enumerate(_els, start=1):
         try:
