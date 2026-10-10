@@ -647,6 +647,23 @@ class TestLayoutBody:
         assert page_line.rstrip(" ⠀").endswith("⠼⠁")  # 우측 점자 페이지번호(⠼1, 마침표 없음)
         assert "⠼⠉⠊" not in "\n".join(_read_lines(tmp_path, "pgn")[:-1])  # 본문 아님
 
+    def test_page_line_takes_bottom_page_number(self, lb, tmp_path) -> None:
+        """#1248. 쪽 위 띠 단원 번호(`06 직업과 청렴의 윤리` 의 06)도 page_number 로 온다.
+        후보가 둘이면 쪽에서 가장 아래 것(62)이 원본 번호다. 좌표가 없으면 종전대로 첫 것."""
+        e1, e2, e3 = uuid4(), uuid4(), uuid4()
+        items = [(e1, "page_number", (73, 26, 114, 54)), (e2, "text", (73, 100, 900, 200)),
+                 (e3, "page_number", (75, 948, 95, 961))]           # 생윤 p0062 경계 좌표
+        outs = lambda: [_out(["⠼⠚⠋"], e1), _out(["본문"], e2), _out(["⠼⠋⠃"], e3)]
+        lr = LayoutResult(page_id="p", elements=[BBoxItem(element_id=e, type=t, bbox=b, reading_order=k)
+                                                 for k, (e, t, b) in enumerate(items, 1)])
+        lb.layout(outs(), page_no=1, job_id="pgn2", layout_result=lr)
+        lines = _read_lines(tmp_path, "pgn2")
+        assert lines[-1].startswith("⠼⠋⠃⠀")                                  # 쪽 아래 62
+        assert any(ln.strip("⠀ ") == "⠼⠚⠋" for ln in lines[:-1])             # 06 은 본문으로
+        lb.layout(outs(), page_no=1, job_id="pgn3",
+                  layout_result=_layout((e1, "page_number", 1, 0), (e2, "text", 2, 0), (e3, "page_number", 3, 0)))
+        assert _read_lines(tmp_path, "pgn3")[-1].startswith("⠼⠚⠋⠀")           # 좌표 없음 = 첫 것
+
 
 class TestBorderIndentB2:
     """B2 회귀: 32칸 테두리에 문단·글머리 들여(3칸)를 더하면 _break_line이 테두리를
