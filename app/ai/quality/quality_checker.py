@@ -251,14 +251,37 @@ def _overlap(a, b) -> bool:
         not (a[2] < b[0] or a[0] > b[2] or a[3] < b[1] or a[1] > b[3])
 
 
+# 걸친 요소가 없는 손실(#1300) — MinerU 가 자리조차 안 잡은 줄이라 R1 을 달 곳이 없었다(2027 언매 p0202 '진행자: …' ·
+#   화작 p0143 '전문가 1: …'). 같은 단(가로로 좁은 쪽 폭의 _NEAR_COL 넘게 겹침)에서 세로로 가장 가까운 요소에 단다.
+#   간격이 _NEAR_GAP(0~1000)를 넘으면 안 단다(엉뚱한 요소에 붙지 않게). 간격이 같으면 경계 순서(읽기 차례)가 앞선 요소다.
+#   2027 dev · val 후보 14 의 간격은 1~41 이었고 가장 가까운 요소는 대부분 빠진 줄의 바로 다음 줄이다.
+_NEAR_COL = 0.3
+_NEAR_GAP = 60
+
+
+def _near_host(elements: list[dict], bb) -> tuple[dict, str] | None:
+    """손실 자리 bb 와 같은 단에서 세로로 가장 가까운 요소와, 빠진 글이 그 요소의 '위' · '아래' 중 어디인지."""
+    if not bb or len(bb) != 4:
+        return None
+    best = None
+    for k, e in enumerate(elements):
+        eb = e.get("bbox")
+        if not eb or len(eb) != 4 or min(eb[2], bb[2]) - max(eb[0], bb[0]) <= _NEAR_COL * min(eb[2] - eb[0], bb[2] - bb[0]):
+            continue
+        gap, side = (bb[1] - eb[3], "아래") if eb[3] <= bb[1] else (eb[1] - bb[3], "위")
+        if gap <= _NEAR_GAP and (best is None or (gap, k) < best[0]):
+            best = ((gap, k), e, side)
+    return (best[1], best[2]) if best else None
+
+
 def lost_text_hosts(losses: list[dict] | None, elements: list[dict], math_page: bool) -> dict[str, list[str]]:
     """손실 목록 중 점역사에게 알릴 것 → {경계 요소 id: [빠진 글, …]}. 손실 글 자리(0~1000)에 걸친 요소에 단다.
 
     거르는 것:
       · 수식 쪽 전부 — 층에서 수식 글꼴을 걷은 한글 토막과 LaTeX 가 낀 요소 글이 6-gram 으로 안 맞아 거의 다 잡음이다
         (수학Ⅰ 329 중 325).
-      · region 이 글 · 목록 · 표도 None 도 아닌 것(꼬리말 등), None 인데 줄이 다 짧은 것(그림 이름표 · 쪽 장식),
-        걸친 요소가 없는 것.
+      · region 이 글 · 목록 · 표도 None 도 아닌 것(꼬리말 등), None 인데 줄이 다 짧은 것(그림 이름표 · 쪽 장식).
+      · 걸친 요소가 없고 같은 단 가까이(_NEAR_GAP)에도 요소가 없는 것. 가까이 있으면 그 요소에 '(이 요소 위/아래)'를 붙여 단다(#1300).
       · 손실 글의 한글 토막(띄어쓰기로 갈린 한글 덩이) 절반 이상이 걸친 요소 글에 있는 것 — 띄어쓰기 · 기호만 달라
         대조가 빗나간 자리다(`갑, 병` 같은 한 음절 낱말도 센다).
     `elements` 는 경계 요소(`id` · `bbox` · `content`)다. 사각형이 0~1000 일 때만 부른다.
@@ -279,12 +302,17 @@ def lost_text_hosts(losses: list[dict] | None, elements: list[dict], math_page: 
                         or (region is None and max(len(s.strip()) for s in text.split("\n")) >= _NONE_REGION_MIN_LINE))):
             continue
         hosts = [e for e in elements if _overlap(e.get("bbox"), x.get("bbox"))]
+        shown, half_check = text, not sibling
+        if not hosts and (near := _near_host(elements, x.get("bbox"))):     # 걸친 요소 없음(#1300, 위 절)
+            # 가까운 요소는 그 글의 자리가 아니다. 쪽 전체 6-gram 대조로 이미 '없음'인 글이라 아래 '한글 토막 절반' 거르기는
+            #   이웃 줄의 흔한 토막('가' · '를' · '슬라이드를')에 걸려 놓침만 만든다(2027 생명과학 p0103 '(나) (가)에 ⓑ를 첨가하고 …').
+            hosts, shown, half_check = [near[0]], f"(이 요소 {near[1]}) {text}", False
         runs = _HANGUL_RUN_RE.findall(text)
         here = "\n".join(e.get("content") or "" for e in hosts)
-        if not hosts or (not sibling and 2 * sum(r in here for r in runs) >= len(runs)):
+        if not hosts or (half_check and 2 * sum(r in here for r in runs) >= len(runs)):
             continue
         for e in hosts:
-            out.setdefault(str(e.get("id")), []).append(text)
+            out.setdefault(str(e.get("id")), []).append(shown)
     return out
 
 
