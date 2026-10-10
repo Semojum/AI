@@ -10,6 +10,7 @@ from app.schemas.content import LLMOutput
 from app.schemas.layout import BBoxItem, LayoutResult
 
 _CHOICES = "① 바다와 같이 넓고 깊은 문화 예술의 보고\n② 문화 예술의 고장에서 창의의 물결을 느껴 봐요!"
+_LABELS = "남극 대륙 연구 기지\n북극 해빙 면적"      # 지도 이름표 꼴 — 한글 10자 이상이지만 줄이 다 짧다
 
 
 def _loss(text=_CHOICES, region="text", bbox=(100, 200, 600, 260)):
@@ -29,11 +30,27 @@ def test_번호만_남은_요소에_빠진_글을_단다():
 def test_대조_잡음은_거른다():
     els = [_el("a", "<!2칸>①")]
     assert lost_text_hosts([_loss()], els, math_page=True) == {}                       # 수식 쪽
-    assert lost_text_hosts([_loss(region=None)], els, math_page=False) == {}            # MinerU 항목 없는 자리(그림 이름표 · 쪽 장식)
+    assert lost_text_hosts([_loss(text=_LABELS, region=None)], els, math_page=False) == {}   # 항목 없는 자리의 짧은 줄(그림 이름표 · 쪽 장식)
+    assert lost_text_hosts([_loss(region="footer")], els, math_page=False) == {}        # 글 자리도 None 도 아닌 곳
     assert lost_text_hosts([_loss(text="① 하늘 ② 논밭")], els, math_page=False) == {}    # 한글 10자 미만
     assert lost_text_hosts([_loss(bbox=(700, 900, 800, 950))], els, math_page=False) == {}   # 걸친 요소 없음
     dropped = {**_loss(), "class": "dropped"}
     assert lost_text_hosts([dropped], els, math_page=False) == {}                       # MinerU 는 본 글(채점기 몫)
+
+
+def test_자리_없는_손실도_긴_줄이면_단다():
+    """#1294 MinerU 가 자리조차 안 잡은 줄(region None)도 빠진 본문이면 띄운다(2027 언매 p0036 '님금하 아쇼셔(임금이시여, 아소서.)')."""
+    els = [_el("a", "(,)"), _el("b", "2) 의문문", (100, 230, 600, 255))]
+    got = lost_text_hosts([_loss(region=None)], els, math_page=False)
+    assert set(got) == {"a", "b"} and got["a"] == [_CHOICES]
+
+
+def test_자리_없는_손실은_글_자리_손실_뒤에_붙는다():
+    """R1 문구는 첫 손실 글이다. 그 요소 몫인 글 자리 손실이 문구로 남아야 한다(#1294)."""
+    els = [_el("a", "<!상자>① 바다")]
+    own = _loss(text="사료 상자에서 빠진 문장 하나가 여기 있다", region="text")
+    got = lost_text_hosts([_loss(region=None), own], els, math_page=False)
+    assert got["a"] == [own["text"], _CHOICES]
 
 
 def test_띄어쓰기만_다른_자리는_빠진_것이_아니다():
