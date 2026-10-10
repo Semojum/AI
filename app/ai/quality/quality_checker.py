@@ -237,7 +237,11 @@ _GENERIC_R_FLAG = re.compile(r"^R([1-9]|1[0-2])$")
 # ★ 파서(`extraction_losses.py`)가 아니라 여기 둔다. 그 파일은 경계 지문(`pipeline._EXTRACT_SOURCES`)에 들어 있어
 #   고치면 모든 경계가 옛 판이 되어 다시 추출된다. 이것은 경계를 읽기만 한다.
 _FLAG_MIN_HANGUL = 10                                   # 한글 음절이 이보다 적은 손실은 안 띄운다(번호 · 조각)
-_FLAG_REGIONS = frozenset({"text", "list", "table"})    # MinerU 가 글 자리로 본 곳. 항목이 없는 자리(None)는 그림 속 이름표 · 쪽 장식이 섞인다
+_FLAG_REGIONS = frozenset({"text", "list", "table"})    # MinerU 가 글 자리로 본 곳
+# MinerU 항목이 없는 자리(region None)도 띄운다(#1294). MinerU 가 자리조차 안 잡은 대화 줄 · 보기 줄이 여기 든다(언매 p0036
+#   '님금하 아쇼셔(임금이시여, 아소서.)'). 같은 자리에 그림 속 이름표 · 쪽 장식도 섞이는데 그런 줄은 짧다. 그래서 가장 긴 줄이
+#   이 글자 수 미만이면 안 띄운다(지도 이름표 '중국 대륙' · 쪽 장식 '물질대사와 건강 / 03 / 지시약' · 그림 '세계사 신문').
+_NONE_REGION_MIN_LINE = 12
 _HANGUL_RE = re.compile(r"[가-힣]")
 _HANGUL_RUN_RE = re.compile(r"[가-힣]+")
 
@@ -253,7 +257,8 @@ def lost_text_hosts(losses: list[dict] | None, elements: list[dict], math_page: 
     거르는 것:
       · 수식 쪽 전부 — 층에서 수식 글꼴을 걷은 한글 토막과 LaTeX 가 낀 요소 글이 6-gram 으로 안 맞아 거의 다 잡음이다
         (수학Ⅰ 329 중 325).
-      · region 이 글 · 목록 · 표가 아닌 것, 걸친 요소가 없는 것.
+      · region 이 글 · 목록 · 표도 None 도 아닌 것(꼬리말 등), None 인데 줄이 다 짧은 것(그림 이름표 · 쪽 장식),
+        걸친 요소가 없는 것.
       · 손실 글의 한글 토막(띄어쓰기로 갈린 한글 덩이) 절반 이상이 걸친 요소 글에 있는 것 — 띄어쓰기 · 기호만 달라
         대조가 빗나간 자리다(`갑, 병` 같은 한 음절 낱말도 센다).
     `elements` 는 경계 요소(`id` · `bbox` · `content`)다. 사각형이 0~1000 일 때만 부른다.
@@ -261,10 +266,14 @@ def lost_text_hosts(losses: list[dict] | None, elements: list[dict], math_page: 
     if math_page:
         return {}
     out: dict[str, list[str]] = {}
-    for x in losses or []:
+    # 글 자리 손실을 앞에 둔다. R1 문구는 요소의 첫 손실 글로 쓰는데, 자리 없는 손실(그 요소 몫이 아닐 수 있다)이 앞서면
+    #   그 요소에서 빠진 글을 알리던 문구가 이웃 사진 설명으로 바뀐다(2027 동아시아사 p0020 사료 상자, #1294 A/B).
+    for x in sorted(losses or [], key=lambda x: x.get("region") is None):
         text = x.get("text") or ""
-        if (x.get("class") != "unseen" or x.get("region") not in _FLAG_REGIONS
-                or len(_HANGUL_RE.findall(text)) < _FLAG_MIN_HANGUL):
+        region = x.get("region")
+        if (x.get("class") != "unseen" or len(_HANGUL_RE.findall(text)) < _FLAG_MIN_HANGUL
+                or not (region in _FLAG_REGIONS
+                        or (region is None and max(len(s.strip()) for s in text.split("\n")) >= _NONE_REGION_MIN_LINE))):
             continue
         hosts = [e for e in elements if _overlap(e.get("bbox"), x.get("bbox"))]
         runs = _HANGUL_RUN_RE.findall(text)
