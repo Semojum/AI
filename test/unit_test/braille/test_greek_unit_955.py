@@ -45,4 +45,5 @@ def test_줄머리_단위_수량에_문항번호_마침표가_없다():
     # 주자 2027 생명과학 표 셀 `7 mL`·`4 kg` 이 문항 번호로 읽혀 ⠼⠛⠲ 가 됐다
     for s in ("7 mL", "4 kg", "1 mm", "3 ㎠"):
         assert not _body(s).startswith(_body(s)[:2] + "⠲"), s
-    assert _body("3 m").startswith("⠼⠉⠲")        # 한 글자 단위는 번호와 못 가른다(그대로)
+    assert not _body("3 m").startswith("⠼⠉⠲")    # 줄에 한글이 없으면 영어 줄이라 마침표를 안 붙인다(#1197)
+    assert _body("3 m의 값을 구하시오").startswith("⠼⠉⠲")   # 한글 줄의 한 글자 단위는 번호와 못 가른다(그대로)

@@ -1533,6 +1533,18 @@ _QNUM_COMPARE = r"[^\S\n]+(?:[≤≥≦≧≠]|[<>][^\S\n])"
 # 한 자리 번호만 본다(위 M006). 두 자리·영패딩은 정답이 마침표를 안 찍는다.
 _QNUM_RE = re.compile(
     rf"^(\d)(?!{_QNUM_QUANTITY})(?!{_QNUM_COMPARE})(?=\s+(?![{_QNUM_NOT_BODY}])\S)")
+# ★ 2026-10-10 열째 — **영어 줄**은 안 탄다(#1197). 번호 뒤가 로마자로 시작하고 그 줄에 한글이 없으면 영어 교재의
+#   낱말 · 문항 번호다(`1 hello  ___`). 마침표 관행은 본책 한국어 번호의 것이고, 「점자 도서 제작 지침」 4194행
+#   "번호 체계는 원본 자료의 체계에 따라 적는다"대로 묵자에 없는 마침표를 만들지 않는다. gold 영어책은
+#   `⠼⠁⠀⠴⠓⠑⠇⠇⠕⠲` 다. 태그 이름(`<!밑줄>`)이 한글이라 태그를 지우고 본다.
+_QNUM_ENGLISH_RE = re.compile(r"\d\s+[A-Za-z][^\n가-힣ㄱ-ㅣ]*(?:\n|$)")   # 번호가 제 줄에 홀로 와도(`_QNUM_RE` 와 같이 \s+)
+
+
+def _qnum_period(text: str) -> str:
+    """요소 첫머리 한 자리 문항 번호 뒤에 마침표를 적는다(원장 C-41). 영어 줄은 빼고(#1197)."""
+    if _QNUM_ENGLISH_RE.match(_TAG_TOKEN_RE.sub("", text)):
+        return text
+    return _QNUM_RE.sub(r"\1.", text)
 # ★ 2026-09-08 일곱째 — **시각 자료 설명·전사는 이 규칙을 아예 안 탄다**(원장 C-41,
 #   `qnum_period=False`). 위 여섯 갈래는 "번호 뒤에 무엇이 오나"로 갈랐지만, 뒤가 한글인
 #   `1 태양을 중심으로 지구가…`(흐름도 개조식 항목)는 본책 단원 번호와 글자로 구분되지
@@ -1621,7 +1633,7 @@ def _apply_book_style(text: str, *, qnum_period: bool = True) -> str:
     if _BRACKET_BOOK_STYLE:              # 기본 꺼짐 — 대괄호는 규정 제49항 셀 그대로 나간다
         text = _SRC_BRACKET_RE.sub(_src_bracket_repl, text)
     if qnum_period:
-        text = _QNUM_RE.sub(r"\1.", text)
+        text = _qnum_period(text)
     text = _CIRCLED_RE.sub(
         lambda m: (_circled_braille(m.group()) if m.group() in _CIRCLED_PLAIN
                    else _CIRCLED[m.group()]), text)
@@ -3890,7 +3902,7 @@ def translate_with_breaks(text: str, *, force_roman: bool = False,
     text = _strip_markup_fragments(text)   # #667 마크업 조각
     text = isolate_border_tags(text)
     if qnum_period:
-        text = _QNUM_RE.sub(r"\1.", text)
+        text = _qnum_period(text)
     # ★ '만을\n에서' 소실 구멍·개행 낀 괄호는 줄 단위 관행 정규화가 못 잡는다 —
     #   요소 전체 수준에서 선적용(이 개행은 원문 구조가 아니라 추출 산물).
     text = _BOGI_GAP_RE.sub(r"\1 ‘보기’\2", text)

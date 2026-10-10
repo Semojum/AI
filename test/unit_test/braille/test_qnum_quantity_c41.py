@@ -42,3 +42,14 @@ def test_비교_기호가_띄어_따라오면_식이다():
 def test_붙어_오는_화살괄호는_문항_번호_그대로():
     # 여섯째 가드가 일부러 남긴 자리(gold 마침표) — 비교 가드가 먹지 않는다.
     assert _b("5 <보기>의 내용").startswith("⠼⠑⠲⠀")
+
+
+def test_영어_줄_번호는_묵자대로_마침표를_안_붙인다():
+    # #1197 — 영어 교재의 낱말 · 문항 번호. gold HS-REF-T26-013 body p0147 그대로.
+    assert _b("1 through 3.") == "⠼⠁⠀⠐⠹⠀⠼⠉⠲"
+    assert _b("1 hello  <!밑줄>").startswith("⠼⠁⠀")        # 태그 이름(`밑줄`)의 한글은 안 센다
+    assert _b("1\nhello world").startswith("⠼⠁\n")         # 번호가 제 줄에 홀로 와도
+
+
+def test_한글이_든_줄의_번호는_그대로():
+    assert _b("3 DNA의 구조를 보자").startswith("⠼⠉⠲")
