@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+from functools import lru_cache
 from typing import Callable, Iterable
 
 from app.ai.braille.regulations import make_rule
@@ -123,15 +124,55 @@ def _w2c_lost_source(opt: LLMOutput, out: BrailleOutput) -> str | None:
     return src.strip()
 
 
-def _placeholder(opt: LLMOutput, reason: str = "점역 오류") -> BrailleOutput:
-    """실패 요소 → [처리 불가] (placeholder 관례 = 리터럴 줄, 비어있지 않게).
+# ── 점역 못 한 요소의 점자 칸 (#1275) ──────────────────────────────────────────────
+# 자리표시 `[처리 불가: …]` 는 묵자 쪽 표시다. 점자 칸에 한글 그대로 실으면 BRF 로 못 옮겨 BE 가 내려받는
+# .brf 에 `⟨XXXX⟩` 마커가 찍혔다(하네스 ④, 2027 dev · val 2줄, 동아시아사 MinerU 가 지어낸 글리프). 점자 칸에는
+# 점자만 싣는다 — 점역자 주 꼴로 '점역 못 함' 을 적는다(pm 10-10 결정). 까닭은 묵자 창과 검토 표시(R1)로 본다.
+# 수식 · 표 · 시각 체인도 opt 단계 자리표시(`[처리 불가`·`[수식 재확인`·`[표 수동`)를 그대로 점자 줄로 넘기던 것을
+# 이것으로 바꾼다.
+BLOCKED_TEXT_PREFIXES = ("[처리 불가", "[수식 재확인", "[표 수동")
+_BLOCKED_NOTE = "점역 못 함"
 
-    불변 규칙 2(rule_trail 필수): 실패 요소도 포괄 규정(MCST-0.1)을 달아 응답 계약을 지킨다.
-    사유에 원문 조각을 실어 점역사가 무엇이 빠졌는지 바로 보게 한다. quality_checker가
-    "[처리 불가" 접두로 C2를 올리므로 접두는 바꾸지 않는다.
+
+def blocked_braille() -> str:
+    """점역 못 한 요소의 점자 줄(점역자 주 '점역 못 함'). 지금 문맥(정자 · 2급)으로 적는다."""
+    from app.ai.braille.tag_names import tn
+    from app.ai.braille.translator import translate_tagged_text
+    out = translate_tagged_text(tn(_BLOCKED_NOTE))
+    return out[0] if isinstance(out, tuple) else out
+
+
+@lru_cache(maxsize=1)
+def _blocked_forms() -> frozenset[str]:
+    from app.ai.braille.constants import KOREAN_GRADE1
+    forms = set()
+    for g1 in (False, True):
+        tok = KOREAN_GRADE1.set(g1)
+        try:
+            forms.add(blocked_braille().strip("⠀ "))
+        finally:
+            KOREAN_GRADE1.reset(tok)
+    return frozenset(forms)
+
+
+def is_blocked_braille(lines: Iterable[str]) -> bool:
+    """점자 줄이 점역 못 한 요소의 것인가. 옛 꼴(한글 리터럴 `[처리 불가`)도 받는다.
+
+    줄 머리 들여쓰기 칸(⠀)을 걷고 본다. 종전 검사기는 `ln.startswith("[처리 불가")` 라 조판이 들인 줄
+    (`⠀⠀[처리 불가: …]`)을 놓쳐, 점역 못 한 요소가 든 쪽이 C2 없이 COMPLETED 로 나갔다(2027 동아시아사 2쪽).
     """
+    forms = _blocked_forms()
+    return any((t := ln.strip("⠀ ")).startswith("[처리 불가") or t in forms for ln in lines)
+
+
+def _placeholder(opt: LLMOutput, reason: str = "점역 오류") -> BrailleOutput:
+    """실패 요소 → 점역자 주 '점역 못 함'(위 절). 사유는 로그로 남긴다(원문 조각은 점자로 못 적는 글자일 수 있다).
+
+    불변 규칙 1(빈 결과 금지)과 2(rule_trail 필수)는 그대로다. quality_checker 는 `is_blocked_braille` 로 C2 · R1 을 올린다.
+    """
+    logger.warning("요소 점역 못 함 id=%s: %s", getattr(opt, "element_id", "?"), reason[:60])
     return BrailleOutput(
         element_id=opt.element_id,
-        braille_lines=[f"[처리 불가: {reason}]"],
+        braille_lines=[blocked_braille()],
         rule_trail=[make_rule("MCST-기본-1")],
     )

@@ -121,10 +121,13 @@ class TestFormulaBrailleOutput:
         assert "MCST-수학-1.1" not in rids
         assert "NLD-1.2.1" not in rids
 
-    def test_placeholder_preserved_as_is(self):
-        placeholder = "[처리 불가: 수식 OCR 실패]"
-        results = FormulaBraille().translate([_formula_out(placeholder)])
-        assert results[0].braille_lines == [placeholder]
+    def test_placeholder_becomes_tn_braille(self):
+        """#1275 — 자리표시는 묵자 쪽에만 둔다. 점자 칸에 한글이 실리면 BRF 로 못 옮긴다."""
+        from app.ai.braille.isolation import blocked_braille, is_blocked_braille
+        for placeholder in ("[처리 불가: 수식 OCR 실패]", "[수식 재확인 필요]"):
+            results = FormulaBraille().translate([_formula_out(placeholder)])
+            assert results[0].braille_lines == [blocked_braille()]
+            assert is_blocked_braille(results[0].braille_lines)
 
     def test_round_trip(self):
         results = FormulaBraille().translate([_formula_out("\\sqrt{x}")])

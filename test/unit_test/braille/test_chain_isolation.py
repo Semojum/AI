@@ -10,7 +10,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from app.ai.braille import text_braille as _tb
-from app.ai.braille.isolation import safe_translate
+from app.ai.braille.isolation import safe_translate, is_blocked_braille
 from app.ai.braille.text_braille import TextBraille
 from app.schemas.content import BrailleOutput, LLMOutput
 
@@ -32,7 +32,8 @@ class TestSafeTranslate:
         assert len(out) == 3                                  # 길이·순서 보존
         assert out[0].braille_lines == ["정상1"]
         assert out[2].braille_lines == ["정상2"]
-        assert "[처리 불가" in "".join(out[1].braille_lines)  # 실패 요소만 placeholder
+        assert is_blocked_braille(out[1].braille_lines)       # 실패 요소만 placeholder(점자 칸은 점역자 주, #1275)
+        assert all("⠀" <= c <= "⣿" for c in "".join(out[1].braille_lines))   # 점자 칸에 한글 리터럴 없음
         assert out[1].element_id == opts[1].element_id        # element_id 보존
         assert out[1].rule_trail and out[1].rule_trail[0].rule_id  # 리뷰 #5: placeholder도 rule_trail 필수
 
@@ -41,7 +42,7 @@ class TestSafeTranslate:
         out = safe_translate(
             opts, lambda o: BrailleOutput(element_id=o.element_id, braille_lines=[o.corrected_text])
         )
-        assert all("[처리 불가" not in "".join(b.braille_lines) for b in out)
+        assert not any(is_blocked_braille(b.braille_lines) for b in out)
 
 
 class TestTextBrailleIsolation:
@@ -62,7 +63,7 @@ class TestTextBrailleIsolation:
         out = TextBraille().translate(opts)
 
         assert len(out) == 3
-        assert "[처리 불가" in "".join(out[1].braille_lines)
+        assert is_blocked_braille(out[1].braille_lines)
         # 정상 요소는 placeholder가 아니어야 함
-        assert "[처리 불가" not in "".join(out[0].braille_lines)
-        assert "[처리 불가" not in "".join(out[2].braille_lines)
+        assert not is_blocked_braille(out[0].braille_lines)
+        assert not is_blocked_braille(out[2].braille_lines)
