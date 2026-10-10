@@ -1649,6 +1649,28 @@ def _halluc_keeps_real(mineru_text: str, native: str, layer: str) -> bool:
     return sum(len(w) for w in real if w not in nat) <= 0.2 * sum(len(w) for w in real)
 
 
+# ── 표 · 수식 요소의 환각 표시(#1274) ───────────────────────────────────────────────
+# 위 환각 절은 글 요소만 본다(`_native_or_flag`). 2027 dev · val 1,746쪽에서 묵자 창에 층에 없는 한자가 남은 요소 110개 중
+# 글 요소 6개는 R4 가 붙었고, 표 22 · 수식 82 는 하나도 안 붙었다 — 언매 자음표 `ㅅ → 人` · 보기 `ㄴ → 乚` ·
+# `생콩즙 → 생콩挤压` · 수학 `므로 → 旦豆`. 한자는 점역에서 소리 없이 빠지므로 점역사가 자리를 못 찾는다.
+# 표 · 수식은 층 글로 덮으면 구조를 잃으니(위 ②와 같은 까닭) **표시만** 한다.
+#   표: HTML 태그를 걷고 글 요소와 같은 신호(한자 · 로마자 낱말 · 되풀이).
+#   수식: 한자만. LaTeX 안 로마자 낱말(`\operatorname{area}`)은 층과 꼴이 달라 신호로 못 쓴다.
+_HALLUC_STRUCT = os.environ.get("LAYER_HALLUC_STRUCT", "1") != "0"     # 같은 커밋 A/B 스위치(끄면 종전)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _halluc_struct_signs(content: str, kind: str, layer) -> list[str]:
+    """표 · 수식 요소 글에서 쪽 원본 층에 없는 신호. layer 는 `_halluc_signs` 와 같다(값이나 함수)."""
+    if kind != "formula":
+        return _halluc_signs(_HTML_TAG_RE.sub(" ", content or ""), layer)
+    cjk = set(_HALLUC_CJK_RE.findall(content or ""))
+    if not cjk:
+        return []
+    lay = layer() if callable(layer) else layer
+    return sorted(c for c in cjk if c not in lay and _HALLUC_CJK_VARIANT.get(c, c) not in lay)
+
+
 def _length_mark_mixed(plain: str) -> bool:
     """긴소리표 ː 가 든 블록에 다른 깨진 글자(제어 문자 · PUA)가 같이 있나 — 띄움 바꾸기 · 글꼴 되돌리기 **전** 글로 본다.
 
@@ -2416,6 +2438,11 @@ def run(
         # 그림 쪽에만 비용(중앙 41ms/장)이 붙게 둔다.
         if image_path and mapped_type in ("image", "chart_graph", "cartoon"):
             _recrop_hidpi(fitz_page, bb, image_path, page_img_info)
+
+        # 표 · 수식은 위 글 요소 환각 절을 안 탄다 — 표시만 붙인다(#1274). 표에서 글로 바뀐 것도 표 꼴로 본다.
+        if (_HALLUC_RULE and _HALLUC_STRUCT and not suspect
+                and (mapped_type in ("table", "formula") or item_type == "table")):
+            suspect = bool(_halluc_struct_signs(content, mapped_type, _page_layer))
 
         # MinerU bbox는 0~1000 정규화 좌표 → 실제 픽셀로 변환
         bb_px = [bb[0] / 1000 * img_w, bb[1] / 1000 * img_h,

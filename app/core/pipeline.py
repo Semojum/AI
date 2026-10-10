@@ -370,6 +370,7 @@ _EXTRACT_ENV = (
     "MINERU_MATH_FONT_GUARD", "MINERU_EFFORT", "MINERU_BACKEND", "MINERU_ENGINE",
     "LAYER_GATE_AFTER_RESTORE", "LAYER_GATE_LATEX_GUARD", "LAYER_CTRL_TO_SPACE",      # #1072 층 신뢰 게이트
     "LAYER_HALLUC_RULE",                                                               # #1078 환각 층 대체 · R4 표시
+    "LAYER_HALLUC_STRUCT",                                                             # #1274 표 · 수식 환각 R4 표시
     "LAYER_LATEX_COUNT_GUARD",                                                         # #1130 층 글 첨자 수 가드
     "BOX_FALSE_OUTER",                                                                 # #1149 가짜 바깥 상자 빼기
     "BOX_Q_FRAME_TABLE",                                                               # #1149 표 품은 문항 틀 빼기
