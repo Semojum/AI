@@ -3122,6 +3122,23 @@ async def _run_pipeline(task: PageTask) -> dict:
     if _meta0.get("bbox_space") == "norm1000" and process_env("LOST_TEXT_FLAG") != "0":
         from app.ai.quality.quality_checker import lost_text_hosts
         lost_text = lost_text_hosts(extraction.get("extraction_losses"), extraction.get("elements") or [], math_page)
+    # 표 칸 한 음절 오독(#1296) — 표 교정이 못 고친 한글 오독(정벌 → 정별)을 그 표 요소에 R4 로 짚는다. 점자 · 응답 꼴은
+    # 안 바뀐다. 표 교정과 같은 층 글(`_native_text_pair`)을 본다. 끄기 `TABLE_MISREAD_FLAG=0`.
+    misread: dict = {}
+    _tables = [e for e in extraction.get("elements") or [] if e.get("type") == "table" and "<t" in (e.get("content") or "")]
+    if _tables and _meta0.get("bbox_space") == "norm1000" and task.pdf_data and process_env("TABLE_MISREAD_FLAG") != "0":
+        try:
+            import fitz
+            from app.ai.parser.mineru_runner import table_misreads
+            from app.ai.preprocessor.pdf_analyzer import _coerce_pdf_bytes
+            with fitz.open(stream=_coerce_pdf_bytes(task.pdf_data), filetype="pdf") as _d:
+                _pg = _d[max(0, min(task.page_no - 1, _d.page_count - 1))]
+                for e in _tables:
+                    spots = table_misreads(_pg, e.get("bbox"), e["content"])
+                    if spots:
+                        misread[str(e.get("id"))] = spots
+        except Exception as exc:          # noqa: BLE001 — 표시는 있으면 좋은 것, 실패는 격리
+            logger.warning("표 칸 오독 표시 건너뜀 (page=%d): %s", task.page_no, exc)
     # 읽기순서 LLM 보정(원장 C-106 · 대표 결재 2026-09-07). 비회전 쪽만 태우고,
     # 실패·순열아님·안전판이면 규칙 순서 그대로 간다. 근거·수치는 llm_order 도크스트링.
     from app.ai.parser import llm_order            # 지연 임포트(anthropic SDK 는 호출 때만)
@@ -3208,6 +3225,7 @@ async def _run_pipeline(task: PageTask) -> dict:
         layout_result, all_extracted, all_llm, all_braille, flat=flat,
         caption_disabled=extraction.get("meta", {}).get("caption_disabled"),
         lost_text=lost_text,
+        misread=misread,
     )
 
 
@@ -3425,6 +3443,7 @@ def _build_response(
     flat: Optional[dict] = None,
     caption_disabled: Optional[bool] = _ENV_CAPTION,
     lost_text: Optional[dict] = None,
+    misread: Optional[dict] = None,
 ) -> dict:
     elem_by_id = {e.element_id: e for e in layout_result.elements}
     braille_by_id = {b.element_id: b for b in braille_outputs}
@@ -3468,6 +3487,7 @@ def _build_response(
         # 응답에 실리는 통 문자열을 넘긴다 — 검사기가 조판본 대신 이걸 본다(C5 오탐).
         flat_text={str(k): fe.text for k, fe in (flat or {}).items()},
         lost_text=lost_text,
+        misread=misread,
     )
 
     response: dict = {

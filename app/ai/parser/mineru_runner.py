@@ -1231,6 +1231,43 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     return out
 
 
+# ── 표 칸 한 음절 오독 표시(#1296) ─────────────────────────────────────────────
+# 위 교정은 칸 하나라도 층에서 못 찾으면 표를 통째로 안 고친다(부분 교정 금지). 그래서 고치지 못한 한글 오독이
+# 표시 없이 남았다. 2027 dev · val 표 899 중 360 이 교정을 포기했고, 남은 오독(정벌 → 정별 · 쑨원 → 쓰원 · 콩팥 → 콩팔)
+# 약 106자리 중 약 85자리가 R4 없는 표에 있었다. R4 는 한자 · 로마자만 본다. 여기서는 고치지 않고 자리만 짚는다.
+# 잣대: 표 칸 글 전체(칸 사이 \x00)를 그 자리 층 글과 한 번에 맞대어, **앞뒤 3자가 두 쪽에서 같은** 한글 1~2자
+#   같은 길이 치환만 센다. dev · val 에서 이 잣대로 잡힌 78자리를 전수로 보았고 78 모두 진짜 오독이었다.
+#   ⚠ 재현율은 하한이다(약 106 중 78). 칸 끝에 걸친 오독 · 짧은 칸이 통째로 틀린 것('맏형[마텽]' → '만형[마팅]')은 못 잡는다.
+_MISREAD_RE = re.compile(r"^[가-힣]{1,2}$")
+_MISREAD_ANCHOR = 3
+
+
+def table_misreads(fitz_page: fitz.Page, bbox: list[float], html: str) -> list[str]:
+    """표 칸 글에 남은 한글 한 음절 오독 → ['한정{별→벌}주장', …](우리 글 → 층 글). 층을 못 믿으면 빈 목록.
+
+    표지는 중괄호다. 대괄호는 발음 표기('빛[빋]')와 섞여 '→[[검→걷]찌]'처럼 읽기 어렵다.
+    """
+    if not html or not bbox:
+        return []
+    plain, layer = map(_table_layer, _native_text_pair(fitz_page, bbox))
+    if not layer or _layer_untrustworthy(plain, fitz_page):
+        return []
+    lay = re.sub(r"\s+", "", re.sub(r"<!/?[^>]*>", "", layer))
+    ours = "\x00".join(c for c in (re.sub(r"<[^>]*>|[\s$　]", "", m.group(2)) for m in _CELL_RE.finditer(html)) if c)
+    n = _MISREAD_ANCHOR
+    out: list[str] = []
+    for tag, i1, i2, j1, j2 in SequenceMatcher(None, ours, lay, autojunk=False).get_opcodes():
+        a, b = ours[i1:i2], lay[j1:j2]
+        if tag != "replace" or len(a) != len(b) or not (_MISREAD_RE.match(a) and _MISREAD_RE.match(b)):
+            continue
+        left, right = ours[max(0, i1 - n):i1], ours[i2:i2 + n]
+        if (len(left) < n or len(right) < n or "\x00" in left + right
+                or lay[max(0, j1 - n):j1] != left or lay[j2:j2 + n] != right):
+            continue
+        out.append(f"{left[-2:]}{{{a}→{b}}}{right[:2]}")
+    return out
+
+
 def _pua_ratio(s: str) -> float:
     if not s:
         return 0.0
