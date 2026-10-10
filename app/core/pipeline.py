@@ -349,6 +349,7 @@ def _write_txt_result(task: PageTask, extraction: dict,
 #   본문 점역·조판 커밋으로는 값이 안 바뀌어야 재파생이 헛돌지 않는다.
 _EXTRACT_SOURCES = (
     "app/ai/parser/mineru_runner.py",
+    "app/ai/parser/hancom_glyphs.py",       # 층 글 되돌리기 표 · 모르는 글리프(#1060 · #376) — 경계 글이 바뀐다
     "app/ai/parser/figure_detect.py",
     "app/ai/parser/opus_fallback.py",
     "app/ai/captioning/captioner.py",
@@ -379,6 +380,7 @@ _EXTRACT_ENV = (
     "TABLE_CELL_PIECES",                                                               # #1208 긴 칸 층 조각 대조
     "TABLE_CELL_CIRCLED_DIGIT",                                                        # #1210 표 칸 ㉠ → 민 숫자 되돌리기
     "LAYER_LENGTH_MARK",                                                               # #1222 긴소리표 ː 를 층 관문에서 안 셈
+    "LAYER_UNKNOWN_GLYPH",                                                             # #376 표에 없는 수식 글꼴 글리프 블록은 층 불신
     "HANCOM_FRACTION",                                                                 # #1055 한컴 작은 수 분수 풀기
     "ITALIC_TAG",                                                                      # #1205 영어 줄 기울임 태그
     "ZERO_FOOT_PAGE_NUMBER",                                                           # #1247 ZERO 꼬리말 쪽 번호 떼기

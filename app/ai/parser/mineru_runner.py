@@ -1668,6 +1668,8 @@ def _native_override(fitz_page: fitz.Page, bbox: list[float], mineru_text: str,
     """
     if _MATH_FONT_GUARD and (mineru_text or "").strip() and _has_math_font(fitz_page, bbox):
         return None                        # 위 _has_math_font 주석 참조. MinerU 글이 비면 층이라도 쓴다
+    if _UNKNOWN_GLYPH_GUARD and (mineru_text or "").strip() and _has_unknown_glyph(fitz_page, bbox):
+        return None                        # 아래 #376 B 절 주석. MinerU 글이 비면 층이라도 쓴다
     from app.ai.braille.tag_names import ITALIC_TAG_RE
     plain, native = _native_text_pair(fitz_page, bbox, italic=True)   # 믿을지 · 닮았는지는 되돌리기 전 글로(#1060)
     # 기울임 태그(#1205)는 내보낼 글에만 남긴다. 판정은 종전 글로 본다 — 태그 13자가 짧은 요소의 닮음 문턱을 흔든다.
@@ -1721,6 +1723,25 @@ def _native_or_flag(fitz_page: fitz.Page, bbox: list[float], mineru_text: str, p
 #   pt 로 잘라 엉뚱한 자리를 봤다(d8c dev 깨진 글꼴 요소 49개 중 25개만 걸림). 켜고 끌지는 고친 가드로
 #   다시 잰다. 켜도 MinerU 글이 비었으면 층을 쓴다 — 수학 I p0012 상용로그표 설명 문단이 통째로 빈 글이 됐다.
 _MATH_FONT_GUARD = os.environ.get("MINERU_MATH_FONT_GUARD", "0") == "1"
+
+# ── 표에 없는 한컴 수식 글꼴 글리프(#376 B) ────────────────────────────────────
+# 되돌리기 표(`hancom_glyphs`)에 없는 수식 글꼴 글리프가 든 블록은 층을 믿지 않는다(MinerU 글을 둔다).
+# ToUnicode 가 있는데 거짓인 갈래는 멀쩡한 글자로 보여 `_layer_untrustworthy` 에 안 걸리고 MinerU 글을 덮었다 —
+# EHSunm 큰 괄호 조각이 `g` · `{` · `9` · `M` · `|` 로, EHKiho μ 가 `%` 로(2027 dev 수학 I 18쪽 · 생명과학 2쪽, 59자).
+# 위 `_MATH_FONT_GUARD` 는 수식 글꼴이 있기만 해도 버려 멀쩡한 층까지 버렸다(걸리는 3,170요소 중 1,863 은 층이 멀쩡).
+# 이것은 못 되돌리는 글리프가 있을 때만 건다. 처음 보는 책의 새 글리프도 이 길로 MinerU 에 남는다.
+# 같은 커밋 A/B 스위치 `LAYER_UNKNOWN_GLYPH=0`(끄면 종전).
+_UNKNOWN_GLYPH_GUARD = os.environ.get("LAYER_UNKNOWN_GLYPH", "1") != "0"
+
+
+def _has_unknown_glyph(fitz_page: fitz.Page, bbox: list[float]) -> bool:
+    """이 자리 층 글에 표에 없는 한컴 수식 글꼴 글리프가 있나(위 절). 판정 실패는 '없음'(종전 동작)."""
+    from app.ai.parser import hancom_glyphs
+    try:
+        keys = hancom_glyphs.unknown_glyphs(fitz_page)
+        return bool(keys) and any(hancom_glyphs.line_has_unknown(ln, keys) for _lb, ln in _layer_lines(fitz_page, bbox))
+    except Exception:                       # noqa: BLE001
+        return False
 
 _MD_SEP_RE = re.compile(r"^\s*\|?[\s:|-]+\|?\s*$")
 
