@@ -3109,11 +3109,18 @@ async def _run_pipeline(task: PageTask) -> dict:
     layout_result, ext_map, _method = _parse_txt_result(extraction, page_id)
     # 수식 지면이면 평문 속 `p-q`·`(x, y)` 도 수식으로 보낸다(T16 · 원장 R-85). 신호는 추출 effort
     # 라우터와 같은 한컴 수식 글꼴 비율이다. PDF 가 없는 요청(mode b)은 종전대로 꺼 둔다.
+    math_page = False
     if task.pdf_data:
         from app.ai.braille import inline_math
         from app.ai.parser.mineru_runner import _is_math_page
-        inline_math.MATH_PAGE.set(await asyncio.to_thread(
-            _is_math_page, task.pdf_data, max(0, task.page_no - 1)))
+        math_page = await asyncio.to_thread(_is_math_page, task.pdf_data, max(0, task.page_no - 1))
+        inline_math.MATH_PAGE.set(math_page)
+    # 추출이 버린 본문 글(#1284) — 원본 글자층에는 있는데 MinerU 가 못 읽어 묵자에 없는 글. 경계 손실 목록 중 대조 잡음을
+    # 거른 것만 그 자리 요소에 R1 로 단다(품질 검사). 점자 · 응답 꼴은 안 바뀐다. 끄기 `LOST_TEXT_FLAG=0`.
+    lost_text: dict = {}
+    if _meta0.get("bbox_space") == "norm1000" and process_env("LOST_TEXT_FLAG") != "0":
+        from app.ai.quality.quality_checker import lost_text_hosts
+        lost_text = lost_text_hosts(extraction.get("extraction_losses"), extraction.get("elements") or [], math_page)
     # 읽기순서 LLM 보정(원장 C-106 · 대표 결재 2026-09-07). 비회전 쪽만 태우고,
     # 실패·순열아님·안전판이면 규칙 순서 그대로 간다. 근거·수치는 llm_order 도크스트링.
     from app.ai.parser import llm_order            # 지연 임포트(anthropic SDK 는 호출 때만)
@@ -3199,6 +3206,7 @@ async def _run_pipeline(task: PageTask) -> dict:
         task, page_id, doc_meta, routing_tier, image_width, image_height,
         layout_result, all_extracted, all_llm, all_braille, flat=flat,
         caption_disabled=extraction.get("meta", {}).get("caption_disabled"),
+        lost_text=lost_text,
     )
 
 
@@ -3415,6 +3423,7 @@ def _build_response(
     braille_outputs: list[BrailleOutput],
     flat: Optional[dict] = None,
     caption_disabled: Optional[bool] = _ENV_CAPTION,
+    lost_text: Optional[dict] = None,
 ) -> dict:
     elem_by_id = {e.element_id: e for e in layout_result.elements}
     braille_by_id = {b.element_id: b for b in braille_outputs}
@@ -3457,6 +3466,7 @@ def _build_response(
         blank_page=blank_page,
         # 응답에 실리는 통 문자열을 넘긴다 — 검사기가 조판본 대신 이걸 본다(C5 오탐).
         flat_text={str(k): fe.text for k, fe in (flat or {}).items()},
+        lost_text=lost_text,
     )
 
     response: dict = {

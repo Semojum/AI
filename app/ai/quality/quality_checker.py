@@ -222,6 +222,53 @@ _FLAG_TO_REVIEW: dict[str, tuple[str, str]] = {
 _GENERIC_R_FLAG = re.compile(r"^R([1-9]|1[0-2])$")
 
 
+
+# ── 점역사에게 알릴 손실(#1284) ─────────────────────────────────────────────────
+# 경계 `extraction_losses`(파서 T35)는 채점기 몫이라 대조 잡음까지 다 적는다. 화면에 띄울 것은 그중 **틀림없이 빠진 본문 글**만 고른다.
+# 거르는 기준과 수(2027 dev · val 1,746쪽, 한글 10자 이상 unseen 520건): 대조 잡음 418 · 걸친 요소 없음 21 · 남는 것 81.
+# 되살리기(층 글로 바꾸기)는 #1274 (나)와 한 묶음으로 따로 설계한다 — 이 기준이 그때 분모다.
+# ★ 파서(`extraction_losses.py`)가 아니라 여기 둔다. 그 파일은 경계 지문(`pipeline._EXTRACT_SOURCES`)에 들어 있어
+#   고치면 모든 경계가 옛 판이 되어 다시 추출된다. 이것은 경계를 읽기만 한다.
+_FLAG_MIN_HANGUL = 10                                   # 한글 음절이 이보다 적은 손실은 안 띄운다(번호 · 조각)
+_FLAG_REGIONS = frozenset({"text", "list", "table"})    # MinerU 가 글 자리로 본 곳. 항목이 없는 자리(None)는 그림 속 이름표 · 쪽 장식이 섞인다
+_HANGUL_RE = re.compile(r"[가-힣]")
+_HANGUL_RUN_RE = re.compile(r"[가-힣]+")
+
+
+def _overlap(a, b) -> bool:
+    return bool(a) and bool(b) and len(a) == 4 and len(b) == 4 and \
+        not (a[2] < b[0] or a[0] > b[2] or a[3] < b[1] or a[1] > b[3])
+
+
+def lost_text_hosts(losses: list[dict] | None, elements: list[dict], math_page: bool) -> dict[str, list[str]]:
+    """손실 목록 중 점역사에게 알릴 것 → {경계 요소 id: [빠진 글, …]}. 손실 글 자리(0~1000)에 걸친 요소에 단다.
+
+    거르는 것:
+      · 수식 쪽 전부 — 층에서 수식 글꼴을 걷은 한글 토막과 LaTeX 가 낀 요소 글이 6-gram 으로 안 맞아 거의 다 잡음이다
+        (수학Ⅰ 329 중 325).
+      · region 이 글 · 목록 · 표가 아닌 것, 걸친 요소가 없는 것.
+      · 손실 글의 한글 토막(띄어쓰기로 갈린 한글 덩이) 절반 이상이 걸친 요소 글에 있는 것 — 띄어쓰기 · 기호만 달라
+        대조가 빗나간 자리다(`갑, 병` 같은 한 음절 낱말도 센다).
+    `elements` 는 경계 요소(`id` · `bbox` · `content`)다. 사각형이 0~1000 일 때만 부른다.
+    """
+    if math_page:
+        return {}
+    out: dict[str, list[str]] = {}
+    for x in losses or []:
+        text = x.get("text") or ""
+        if (x.get("class") != "unseen" or x.get("region") not in _FLAG_REGIONS
+                or len(_HANGUL_RE.findall(text)) < _FLAG_MIN_HANGUL):
+            continue
+        hosts = [e for e in elements if _overlap(e.get("bbox"), x.get("bbox"))]
+        runs = _HANGUL_RUN_RE.findall(text)
+        here = "\n".join(e.get("content") or "" for e in hosts)
+        if not hosts or 2 * sum(r in here for r in runs) >= len(runs):
+            continue
+        for e in hosts:
+            out.setdefault(str(e.get("id")), []).append(text)
+    return out
+
+
 class QualityChecker:
     """규칙 기반 페이지 품질 판정. 상태 없음 — check()만 노출."""
 
@@ -236,6 +283,7 @@ class QualityChecker:
         line_overflow_rate: float = 0.0,
         blank_page: bool = False,
         flat_text: Optional[dict] = None,
+        lost_text: Optional[dict] = None,
     ) -> QualityReport:
         extracted = list(extracted)
         llm_outputs = list(llm_outputs)
@@ -423,6 +471,18 @@ class QualityChecker:
             reviews.append(ReviewFlag(
                 type="R1", element_id=eid,
                 message="점역 못 한 요소입니다. 점자 칸에는 점역자 주 '점역 못 함'만 있으니 묵자 창의 원문을 보고 직접 점역해야 합니다",
+            ))
+        # 추출이 버린 본문 글(#1284) — 원본 글자층에는 있는데 묵자에 없다. 화면에는 번호(①)만 남아 빠진 줄을 알 길이 없다.
+        #   고를 자리는 `extraction_losses.lost_text_hosts`(대조 잡음 거름)이고, 여기서는 그 요소에 R1 을 단다.
+        live = {str(e.element_id) for e in layout_result.elements} if layout_result else None
+        r1_ids = {f.element_id for f in reviews if f.type == "R1"}
+        for eid, texts in sorted((lost_text or {}).items()):
+            if eid in r1_ids or (live is not None and eid not in live):
+                continue
+            head = " ".join(texts[0].split())
+            reviews.append(ReviewFlag(
+                type="R1", element_id=eid,
+                message=f"원본에 있는 글이 추출에서 빠짐: {head[:30].rstrip()}{'…' if len(head) > 30 else ''}",
             ))
         status = self._decide_status(criticals, reviews)
         conf = [e.ocr_confidence for e in extracted]
