@@ -3920,6 +3920,11 @@ def translate_with_breaks(text: str, *, force_roman: bool = False,
     #   한다: 아래 _drop_nonkorean_emphasis·isolate_border_tags·substitute_tags 가 전부
     #   `<!` 앵커로 짝을 세기 때문이다(_MIRRORED_CLOSE_RE 주석 참조).
     text = _MIRRORED_CLOSE_RE.sub("<!/", text)
+    # ★ 첫 줄 들여쓰기 태그 `<!N칸>` 은 조판 표시다. 요소 첫머리를 보는 아래 판정(_QNUM_RE 문항 번호 등)보다
+    #   먼저 뗀다(#1282). 묵자 창 글은 첫 줄에 이 태그를 달고 나가(`pipeline._print_contents`) mode b · 앱이
+    #   그대로 되돌린다. 줄마다 `translate_tagged_text` 가 어차피 떼던 것이고, 들여쓰기 값은 layout 이
+    #   `corrected_text` 에서 읽으므로 여기서 떼도 잃지 않는다.
+    text = _TAGS._INDENT_TAG_RE.sub("", text)
     text = _TAGS.ITALIC_TAG_RE.sub("", text)   # 기울임(#1205) — 요소 전체를 보는 아래 단계 전에(`translate_tagged_text` 주석)
     text = _strip_markup_fragments(text)   # #667 마크업 조각
     text = isolate_border_tags(text)
