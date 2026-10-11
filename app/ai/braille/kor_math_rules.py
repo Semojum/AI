@@ -957,7 +957,9 @@ _TEXTCIRCLED_RE = re.compile(r"\\textcircled\s*\*?\s*\{([^{}]*)\}")
 # 숫자는 매핑하지 않는다: 수학2 p020의 \textcircled{2}는 실제로 ㉣이지만(크롭 확인),
 #   ②는 선택지로 흔해서 일반 매핑하면 진짜 ②를 조용히 망친다. 잔여 오류로 남긴다.
 #
-# 점형은 유니코드 경로와 1:1로 맞춘다(translator 실측: ㉠⠿⠁ ㉡⠿⠒ ㉢⠿⠔ ㉣⠿⠂ — 제8항 온표+자모).
+# 점형은 유니코드 경로와 1:1로 맞춘다 — 제8항 온표+자모(㉠⠿⠁ ㉡⠿⠒ ㉢⠿⠔ ㉣⠿⠂)를 제64항 동그라미 문자 ⠶…⠶ 로 감싼다
+# (재추출 2573~2574행 ㉠ = `7=a7` = ⠶⠿⠁⠶, 원장 R-03). 감쌈은 R-03 재판정(08-06) 때 유니코드 경로에만 들어가 이 자리는
+# 감쌈 없이 ⠿⠁ 로 남아 있었다(n260 수식 축: 25요소 695셀).
 _TC_JAMO_CELLS = {
     "7": "⠿⠁", "T": "⠿⠁", "\\neg": "⠿⠁",   # ㉠
     "L": "⠿⠒",                              # ㉡
@@ -973,8 +975,8 @@ _TC_JAMO_CELLS_DOT = {**{k: v for k, v in _TC_JAMO_CELLS.items() if k != "\\neg"
 def _textcircled_repl(m: re.Match) -> str:
     """\\textcircled{X} → 제64항 원문자 점형. 못 다루는 인자는 원문 보존."""
     arg = m.group(1).strip()
-    if arg in _TC_JAMO_CELLS:                          # ㉠~㉣ 자형 오독 복원
-        return _TC_JAMO_CELLS[arg]
+    if arg in _TC_JAMO_CELLS:                          # ㉠~㉣ 자형 오독 복원 — 제64항 동그라미 문자 ⠶…⠶ 로 감싼다
+        return _CIRCLED_OPEN + _TC_JAMO_CELLS[arg] + _CIRCLED_CLOSE
     if arg.isdigit():                                  # ① ⑩ ㉘ — 수표 + 내린 숫자
         return "⠼" + "".join(_DROPPED_DIGIT[c] for c in arg)
     if len(arg) == 1 and arg.lower() in _ROMAN_CELL:   # ⓐ Ⓐ — 7 로마자표 x 7
