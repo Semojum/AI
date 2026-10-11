@@ -385,6 +385,7 @@ _EXTRACT_ENV = (
     "LAYER_UNKNOWN_GLYPH",                                                             # #376 표에 없는 수식 글꼴 글리프 블록은 층 불신
     "HANCOM_FRACTION",                                                                 # #1055 한컴 작은 수 분수 풀기
     "ITALIC_TAG",                                                                      # #1205 영어 줄 기울임 태그
+    "BADGE_LABEL",                                                                     # C-144 줄 머리 배지 라벨 괄호
     "ZERO_FOOT_PAGE_NUMBER",                                                           # #1247 ZERO 꼬리말 쪽 번호 떼기
     "SEMOJUM_NO_CAPTION", "CAPTION_MATERIAL", "CAPTION_UPSCALE", "CAPTION_FAIL_STREAK_LIMIT",
     "LLM_TEXT_GUARD", "LLM_CACHE_MODE", "SIDEBAR_AS_NOTE", "GRAFT_SIM_MIN",

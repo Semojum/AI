@@ -501,6 +501,46 @@ def _italic_runs(text: list[str], italic: list[bool]) -> list[tuple[int, int]]:
     return [(a, b) for a, b in runs if _LATIN_WORD2_RE.search("".join(text[a:b + 1]))]
 
 
+# 줄 머리 배지 라벨 → `(라벨)`(원장 C-144). 해설 · 개념 글이 문단 머리에 작은 글꼴 배지(`문제 분석` · `정답 찾기` ·
+# `오답 피하기` · 수학 `설명` · `참고` · 생명과학 `질병`)를 붙이는데, 묵자에는 괄호가 없고 gold 는 괄호로 감싼다(dev 1,324 ·
+# val 2,592곳, 우리 0). 규정 조항이 없다. 도서지침 2장 1. 7)(재추출 874행)은 제목 장식을 반영하지 말라고만 하고, 참고용
+# 자료지침 2.4.10(3)(1276행)은 색 강조를 점역자 정의 글자체표로 적으라 하지만 둘 다 라벨을 직접 다루지 않는다. 판정표대로
+# gold 관행을 따른다. (원장이 근거로 들던 도서지침 1222행은 '6. 출전' 조항이라 이 자리가 아니다.)
+# 낱말 사전을 쓰지 않는다. 배지는 묵자 글자층에서 꼴로 갈린다: 줄 머리 토막이 뒤 글과 **다른 글꼴**이고 크기비(토막 최대 /
+# 뒤 글 최대)가 문턱 이하이며 한글 낱말 2~12자뿐이고, 뒤 글에 한글이 있다. 쪽 머리말(뒤 글이 쪽 번호뿐) · 말하는 이 표지
+# (`선생님:`) · 부호 섞인 토막(`즉,`)은 이 조건에서 빠진다.
+# 문턱은 holdout 뺀 묵자 10권 전 줄의 크기비 분포로 정했다: gold 가 감싼 라벨 0.54~0.80(2,857) · 라벨 아닌 후보 0.864~
+# (1,757, 언매 전시 제목 · 생명과학 그림 속 글 · 수학 문장 머리 등). 그 틈 가운데 0.83. 검출 수를 (쪽, 라벨 글)마다 gold 감쌈
+# 수와 맞대면 넘친 것은 1곳이다.
+# 괄호 꼴은 소괄호 하나로 고정한다. gold 는 책마다 갈리지만(사회문화 · 동아시아사는 대괄호) 묵자 배지는 두 갈래 책에서 글꼴 ·
+# 크기 · 색이 같아 책 안에서 꼴을 가를 신호가 없다. gold 전권(holdout 뺌) 다수가 소괄호다(20여 권 · 약 4,900곳 대 대괄호
+# 9권 · 약 2,800곳). 대괄호로 적으면 `[자료 …]` 가 글상자 태깅 후보(`text_opt._TAG_CANDIDATE_RE`)에도 걸린다.
+# 되돌리기 `BADGE_LABEL=0`(추출 단계).
+_LABEL_SMALL = 0.83
+_LABEL_MAX = 12
+_LABEL_TEXT_RE = re.compile(r"[가-힣]+(?:\s+[가-힣]+)*")
+
+
+def badge_label_on() -> bool:
+    return os.environ.get("BADGE_LABEL", "1") != "0"
+
+
+def _badge_label(chars: list[tuple], fonts: list[str]) -> tuple[int, int] | None:
+    """줄 머리 배지 라벨 (첫 글자, 끝 글자) — 줄 안 글자 번호. 없으면 None. 조건은 위 절 주석."""
+    idx = [i for i, c in enumerate(chars) if not c[0].isspace()]
+    k = next((n for n, i in enumerate(idx) if fonts[i] != fonts[idx[0]]), 0) if idx else 0
+    if not 2 <= k <= _LABEL_MAX:
+        return None
+    lead, rest = idx[:k], idx[k:]
+    if not _LABEL_TEXT_RE.fullmatch("".join(c[0] for c in chars[lead[0]:lead[-1] + 1])):
+        return None
+    if chars[rest[0]][0] in ":：" or sum(_is_hangul(chars[i][0]) for i in rest) < 2:
+        return None
+    if max(chars[i][3] for i in lead) > _LABEL_SMALL * max(chars[i][3] for i in rest):
+        return None
+    return lead[0], lead[-1]
+
+
 def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=None, italic: bool = False) -> str:
     """rawdict 한 줄 → 글자 간격으로 어절 경계를 복원한 텍스트.
 
@@ -512,9 +552,11 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
     글자들이 세로로 늘어서 x 간격이 무의미해진다(어절 복원이 전멸). 표시 좌표로 옮겨서 잰다.
     subs: {줄 안 글자 번호(스팬을 이어 센다): 대신 쓸 글}. 빈 글이면 그 글자를 뺀다. 띄어쓰기 · 밑줄
     판정은 원래 글자로 한다 — 한컴 수식 글꼴 글자를 GID 로 되돌릴 때 둘레 글이 안 흔들린다(#1060).
-    italic: 영어 줄 기울임 구간을 `<!기울임>` 으로 감싼다(위 `_italic_runs`). 태그를 내보낼 글을 만드는 호출부만 켠다.
+    italic: 내보낼 글을 만드는 호출부만 켠다. 영어 줄 기울임 구간을 `<!기울임>` 으로(위 `_italic_runs`), 줄 머리 배지
+    라벨을 소괄호로(위 `_badge_label`) 감싼다.
     """
     chars: list[tuple[str, float, float, float, bool]] = []  # (ch, x0, x1, size, underlined)
+    fonts: list[str] = []    # 글자마다 글꼴 이름(위 `_badge_label`)
     itf: list[bool] = []     # 글자마다 기울임 조각인가(수식 글꼴 · 윗첨자 빼고)
     drop: set[int] = set()   # 윤디자인 기호 뒤에 겹쳐 붙은 가는 띄움(U+2009) — 기호 폭이지 띄어쓰기가 아니다(#1087)
     frac_font: list[bool] = []   # 글자마다 한컴 분수 글꼴인가(위 `_fraction_subs`)
@@ -543,6 +585,7 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
                 if hy and ch in HANYANG:
                     ch = HANYANG[ch]
             chars.append((ch, float(bbox[0]), float(bbox[2]), size, ul))
+            fonts.append(span.get("font") or "")
             frac_font.append(fr)
             itf.append(it)
     if not chars:
@@ -557,6 +600,7 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
         runs = _italic_runs([" " if i in gone else c[0] for i, c in enumerate(chars)],
                             [f and chars[i][3] >= _IT_SMALL * big for i, f in enumerate(itf)])
         it_open, it_close = {a for a, _b in runs}, {b for _a, b in runs}
+    label = _badge_label(chars, fonts) if italic and badge_label_on() else None
 
     # 간격 표본: 공백이 아닌 인접 글자쌍의 (다음 x0 - 이전 x1)
     gaps: list[float] = []
@@ -589,7 +633,11 @@ def _line_text_with_word_gaps(line: dict, matrix=None, underlines=None, subs=Non
                     out.insert(len(out) - 1 if (ul and not _pul) else len(out), " ")
         if i in it_open:
             out.append(_IT_OPEN)
+        if label and i == label[0]:
+            out.append("(")
         out.append(ch if rep is None else rep)
+        if label and i == label[1]:
+            out.append(")")
         if i in it_close:
             out.append(_IT_CLOSE)
     if in_ul:
