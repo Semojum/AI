@@ -86,3 +86,40 @@ def test_닻이_마지막_문단이면_옮긴_게_아니다(monkeypatch):
     _anchor_wing_terms(items, ext, wing)
     assert _texts(items, ext) == before
     assert not any(e.layout_rules for e in ext.values())
+
+
+def _run(spec):
+    items, ext = [], {}
+    for k, (etype, bbox, text) in enumerate(spec, start=1):
+        eid = uuid4()
+        items.append(BBoxItem(element_id=eid, type=etype, bbox=bbox, reading_order=k))
+        ext[eid] = ExtractedContent(element_id=eid, corrected_text=text)
+    wing = _reorder_columns(items)
+    before = _texts(items, ext)
+    _anchor_wing_terms(items, ext, wing)
+    return before, _texts(items, ext)
+
+
+MAIN = [("title", (300, 100, 1000, 130), "1. 청일 전쟁"),
+        ("text", (300, 150, 1000, 300), "삼국 간섭으로 일본은 랴오둥반도를 반환하였다."),
+        ("text", (300, 320, 1000, 500), "의화단은 부청멸양을 내걸었다."),
+        ("text", (300, 520, 1000, 700), "열강의 침탈이 이어졌다.")]
+
+
+def test_상자_끝_태그가_다른_덩이와_짝이면_안_옮긴다(monkeypatch):
+    """날개 상자의 여는 태그는 앞 덩이에, 끝 태그는 이 덩이에 붙어 왔다(동아시아사 p0103). 옮기면 상자가 찢긴다."""
+    monkeypatch.delenv("WING_TERM_ORDER", raising=False)
+    side = [("title", (60, 180, 260, 200), "청일 양국 군대의 파병 사정"),
+            ("text", (60, 205, 260, 300), "<!상자><!/상자>\n조선 정부의 요청으로 청이 군대를 보냈다."),
+            ("title", (60, 380, 260, 400), "삼국 간섭"),
+            ("text", (60, 405, 260, 480), "러시아가 독일, 프랑스와 함께 압력을 가한 사건\n<!상자끝><!/상자끝>")]
+    before, after = _run(side + MAIN)
+    assert after == before                          # 덩이가 하나도 안 움직인다
+
+
+def test_덩이_안에서_짝이_맞는_상자는_옮긴다(monkeypatch):
+    monkeypatch.delenv("WING_TERM_ORDER", raising=False)
+    side = [("title", (60, 600, 260, 620), "부청멸양"),
+            ("text", (60, 625, 260, 700), "<!상자><!/상자>\n청을 도와 서양을 몰아내자는 구호\n<!상자끝><!/상자끝>")]
+    before, after = _run(side + MAIN)
+    assert after.index("부청멸양") == after.index("의화단은 부청멸양을 내걸었다.") + 1

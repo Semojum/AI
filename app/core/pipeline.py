@@ -2768,11 +2768,27 @@ def _anchor_wing_terms(items: list[BBoxItem], ext_map: dict[UUID, ExtractedConte
                 boxed.add(i)
         else:
             cur.append(i)
+    # 상자 태그가 덩이 밖과 짝을 이루면 옮기지 않는다 — 여는 태그와 닫는 태그가 갈라져 상자가 찢기거나 엉뚱한 본문을
+    # 감싼다(A/B 동아시아사 p0033 · p0061 · p0103: 날개 상자의 끝 태그가 다음 제목 · 본문 캡션에 붙어 왔다).
+    # 덩이 안에서 짝이 맞는 상자(용어 하나가 제 상자)는 통째로 옮겨도 된다.
+    delta = [len(re.findall(r"<!상자\d?>", ext_map[b.element_id].corrected_text or ""))
+             - len(re.findall(r"<!상자끝\d?>", ext_map[b.element_id].corrected_text or ""))
+             if b.element_id in ext_map else 0 for b in order]
+    depth = [sum(delta[:i]) for i in range(len(order))]
+
+    def box_safe(u: list[int]) -> bool:
+        d = 0
+        for j in u:
+            d += delta[j]
+            if d < 0:
+                return False
+        return depth[u[0]] == 0 and d == 0
+
     terms = [u for u in blocks
              if u[0] not in boxed and order[u[0]].type == "title" and len(u) >= 2
              and 0 < len(_wing_norm(txt[u[0]])) <= 15
              and not _WING_LABEL_RE.match(_wing_norm(txt[u[0]])) and not _WING_NUM_RE.match(txt[u[0]])
-             and not any(_WING_EXAMPLE_RE.search(txt[j]) for j in u[1:])]
+             and not any(_WING_EXAMPLE_RE.search(txt[j]) for j in u[1:]) and box_safe(u)]
     if not terms:
         return
     main = [i for i, b in enumerate(order) if id(b) not in wing_ids and b.type not in ("header_footer", "page_number")]
