@@ -46,6 +46,12 @@ def test_라벨_꼴이_아니면_안_감싼다(line):
     assert "(" not in _line_text_with_word_gaps(line, italic=True)
 
 
+@pytest.mark.parametrize("size, wrapped", [(7.2, True), (7.8, False)])   # 크기비 0.80(라벨 최대) · 0.867(라벨 아닌 후보 최소 언저리)
+def test_크기비_문턱(size, wrapped):
+    line = _line(("문제 분석", BADGE[0], size), (" 갑은 공자", *BODY))
+    assert _line_text_with_word_gaps(line, italic=True).startswith("(문제 분석)") is wrapped
+
+
 def test_호출부가_안_켜면_종전_글():
     line = _line(("문제 분석", *BADGE), (" 갑은 공자", *BODY))
     assert _line_text_with_word_gaps(line) == "문제 분석 갑은 공자"
