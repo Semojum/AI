@@ -384,6 +384,17 @@ def format_page_change_line(orig_page_braille: str) -> str:
 _BODY_TITLE_CELLS_RE = re.compile(r"^⠦⠆.*⠰⠴$")
 
 
+def _tn_head(line: str, indent: int) -> int:
+    """논리 줄 하나의 칸 수를 마무리한다. 점역자 주표 ⠠⠄ 로 여는 줄이 0칸이면 3칸에서 시작한다(원장 C-139 채택, 앞 빈칸 2).
+
+    `_indent_lines`(통 문자열)와 `_format_element`(쪽 조판)가 같이 쓴다 — 한쪽만 고치면 화면과 다운로드가 갈라진다.
+    짝 없는 캡션의 둘째 줄 `【점역자주】그림 생략【점역자주】` · 시각 요소의 생략 초안이 0칸으로 나갔다(10-11 기준선 0칸 주표
+    줄 260 중 caption 228). gold 주표 머리줄 앞 빈칸: 2칸 921 · 4칸 97 · 0칸 1(dev · val). 논리 줄 머리의 ⠠⠄ 는 주표를
+    여는 자리뿐이다(닫는 주표는 줄 끝에 온다). 0칸이 아닌 들여쓰기(5칸 제목 · 줄별 들여쓰기)는 그대로 둔다.
+    """
+    return _PARA_INDENT if not indent and line.startswith("⠠⠄") else indent
+
+
 def _first_indented(lines: list[str]) -> set[int]:
     """문단 들여쓰기를 받는 줄: 테두리 안 첫 내용 줄(원장 C-01b).
 
@@ -784,8 +795,8 @@ class LayoutBraille:
         # 정답 도서 실측(생물 p122): 접힌 표 줄은 첫 줄 2칸·이어지는 줄 0칸이다.
         keep_indent = etype == "table"
         for li, orig in enumerate(orig_lines):
-            indent = (per_line[li] if per_line is not None
-                      else (first_indent if li in first_at else 0))
+            indent = _tn_head(orig, per_line[li] if per_line is not None
+                              else (first_indent if li in first_at else 0))
             fw = (_COLS - indent) if indent else None
             br = ([] if wordwrap_by_word()
                   else bo.break_points[li] if li < len(bo.break_points) else [])
@@ -1067,9 +1078,9 @@ class LayoutBraille:
                     if bo.line_indents is not None and len(bo.line_indents) == len(lines)
                     else None)
         if per_line is not None:
-            return lines, list(per_line)
+            return lines, [_tn_head(ln, d) for ln, d in zip(lines, per_line)]
         # 표는 들여쓰기를 줄 문자열에 이미 박아 낸다(§3.1.1(1)②) — 여기서 또 넣으면 두 번 들어간다.
-        return lines, [first_indent if i in first_at else 0 for i in range(len(lines))]
+        return lines, [_tn_head(ln, first_indent if i in first_at else 0) for i, ln in enumerate(lines)]
 
     def _first_indent(
         self, bo: BrailleOutput, etype: str, is_heading: bool, hlevel: int
