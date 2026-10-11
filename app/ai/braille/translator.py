@@ -816,13 +816,19 @@ def _emit_mixed(text: str, result: list[str], ctx: "_RomanCtx | None" = None) ->
         #   붙임표다(제32항, 제36항 예문 `v-x쪽` = ⠴⠧⠤⠰⠭⠲…). 제33항 [다만]의 "‘-’ 앞 종료표" 는 로마자와
         #   **한글** 사이 자리다(`U-도서관`). 붙임표가 먼저 점자가 돼 세그가 끊기면 앞에서 ⠲ 를 적고 뒤에서
         #   ⠴ 를 다시 열었다(⠴⠧⠲⠤⠴⠭⠲). 앞 종료표를 떼고 다음 세그에 이어짐을 알린다.
-        if (follow and ctx is not None and follow.startswith("⠤") and follow[1:2].isascii()
-                and follow[1:2].isalpha() and seg[-1:].isascii() and seg[-1:].isalpha()):
+        #   물결도 같다(#1329): `A~F에` 를 ⠴⠠⠁⠲⠈⠔⠴⠠⠋⠲ 로 닫고 다시 열었다. 제29항(재추출 1496~1498행)은 로마자가
+        #   이어 나오면 구간 하나, 제32항(1650행)은 그 사이를 통일영어점자로. gold dev · val 한 구간 274 · 닫고 다시 엶 0.
+        #   물결은 앞에 종료표를 적은 자리(로마자표를 쓰는 줄)에서만 잇는다 — 한글 없는 줄의 표 없는 로마자 글은 그대로다.
+        link_sym = next((x for x in ("⠤", "⠈⠔") if follow and follow.startswith(x)), "")
+        nxt = follow[len(link_sym):len(link_sym) + 1] if link_sym else ""
+        if (link_sym and ctx is not None and nxt.isascii() and nxt.isalpha()
+                and seg[-1:].isascii() and seg[-1:].isalpha()
+                and (link_sym == "⠤" or (ctx.tail_term and out.endswith("⠲")))):
             if ctx.tail_term and out.endswith("⠲"):
                 out = out[:-1]
             ctx.opened = True
             ctx.tail_term = False
-            ctx.hyphen_link = True
+            ctx.hyphen_link = link_sym
             return out
         # 종료표를 적어야 하는데 세그가 끊겨 못 적은 자리(#944). 문자표가 `[`·`/`·`-` 를 먼저 점자로 바꿔
         #   로마자 세그가 거기서 끊기고, 줄 문맥 경로(`_split_english` 의 ctx 가지)는 제34항(묶인 로마자)으로 보고
@@ -3152,9 +3158,11 @@ def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
         #   ★ 여는 괄호 등이 먼저 점자가 돼 세그가 끊긴 자리(`[C] [D]`)는 켜지 않는다 — gold 는 거기서
         #   로마자표를 새로 연다(`⠦⠆⠴⠠⠙`, 001 ans p0033). ⠰ 를 붙이면 빠진 ⠴ 자리에 엉뚱한 셀이 선다.
         #   한글 없는 순수 로마자 줄도 켜지 않는다(실측 전).
-        link = ctx.hyphen_link and start == 0     # 붙임표로 이어진 구간 — ⠴ 를 다시 열지 않는다
+        link = ctx.hyphen_link if start == 0 else ""   # 붙임표 · 물결로 이어진 구간 — ⠴ 를 다시 열지 않는다
         ctx.hyphen_link = False
-        g1 = "cont" if link else ("lead" if (has_hangul or ctx.wants_roman()) else "")
+        # 통일영어점자는 붙임표 뒤 낱자를 홀로 선 글자로 보아 ⠰ 를 적는다(제36항 예문 `v-x` = ⠴⠧⠤⠰⠭⠲). 물결 뒤는
+        #   홀로 선 글자가 아니다(gold dev · val `A~F` 꼴 235곳 모두 ⠰ 없음, #1329).
+        g1 = ("cont" if link == "⠤" else "") if link else ("lead" if (has_hangul or ctx.wants_roman()) else "")
         if eng_g1:
             g1 = ""                               # 약자가 없으니 1종 지시자도 없다
         # ★ 원소 기호 나열(`Li, Na, K`)에는 1종 지시자를 안 적는다(T36, eval T32 결함 4). 과학 점자 제1항
