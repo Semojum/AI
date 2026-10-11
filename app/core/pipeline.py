@@ -383,7 +383,23 @@ _EXTRACT_SOURCES = (
     "app/ai/builder/result_builder.py",
     "app/ai/parser/extraction_losses.py",   # 경계 파일의 `extraction_losses` 를 만든다(T35)
     "app/ai/preprocessor/line_join.py",     # 경계 요소를 잇는다(요소 수·flags 가 바뀐다)
+    "app/ai/preprocessor/pdf_analyzer.py",  # 티어 · 글자층 · 글상자 · 밑줄 판정(#1144 · #1163 · #1316 …) — 경계 글과 태그가 바뀐다
+    "app/ai/preprocessor/hanyang_pua.py",   # pdf_analyzer 가 쓰는 한양 PUA 옛한글 표(#1104)
+    "app/ai/parser/crop_reask.py",          # 고급 점역 되묻기(#835)
+    "app/ai/gates.py",                      # 추출 단계 관문(G1 · #1289)
+    # ponytail: pipeline.py 는 통째로 싣는다. 경계 뒤 함수만 고쳐도 같은 잡 재실행이 경계를 다시 뜬다(09-08 이후 develop 커밋
+    #   316 중 무효 64 → 126). 다시 뜨는 값은 쌓아 둔 MinerU 원출력 위의 CPU 재파생이다(MinerU 호출 0, 재사용보다 쪽당 1~2초 더).
+    #   잦아서 거슬리면 `_extract_with_hyunju` 에서 닿는 함수만 해시한다(같은 기간 93).
+    "app/core/pipeline.py",                 # `_extract_with_hyunju` · `_graft_text` · `_split_foot_number` …
 )
+# 추출 단계에서 돌지만 지문에 안 싣는 파일과 그 까닭. `test_extract_env_fingerprint` 가 두 목록을 합쳐 스위치를 본다.
+#   ★ 목록은 여기 하나다(10-12 인계 점검: 시험이 따로 든 14개 중 여섯이 지문에 없었다).
+#   경계 뒤 모듈에서 함수 하나만 빌려 쓰는 자리(`table_braille.answer_box_*` · `table_opt._html_to_grid` · `tag_names`)는
+#   싣지 않았다. 그 함수를 고친 A/B 는 `BOUNDARY_REUSE=never` 나 abx(새 잡)로 잰다.
+_EXTRACT_SOURCES_SKIP = {
+    "app/ai/parser/mineru_service.py": "MinerU 서버 관리. 경계 재파생은 쌓아 둔 원출력을 다시 쓴다(MinerU 쪽은 MINERU_RAW_REUSE=never)",
+    "app/utils/llm_cache.py": "캐시 자리 · 열쇠. 추출 단계 프롬프트 판은 `_extract_prompt_ver` 가 따로 싣는다",
+}
 # 추출 산출을 가르는 스위치만. 값 자체는 안 싣는다(키가 섞일 수 있다) — 해시만.
 _EXTRACT_ENV = (
     "FIGURE_DETECT", "FIGDET_MODEL", "DISABLE_LLM_FALLBACK",
