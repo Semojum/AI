@@ -2660,11 +2660,17 @@ _FILLED_TRI_RUN_RE = re.compile(r"▲{2,}")
 # ★ 연속 ♡♡ 도 이름 가림이다(T30). gold 화법과 작문 vl-005 p0201 `♡♡ 고등학교` = ⠸⠔⠔⠇ —
 #   제57항 [붙임] 제1 점역자 정의 숨김표(`_9l`), 우리 ☆ 와 같은 점형이다.
 _HEART_RUN_RE = re.compile(r"♡{2,}")
+# 홀로 쓴 자음자는 온표 + 받침꼴이다(제8항, 재추출 474행 `삼각형 ㄱㄴㄷ` = ⠿⠁⠿⠒⠿⠔, #1326). 한컴 글자층은 그 자음도
+#   첫가끝 초성(U+1100~)으로 싣는데(`‘ᄂ’ 첨가`), 그러면 옛한글 경로가 초성 셀 ⠉(= 약자 '나')로 낸다. 뒤에 중성이
+#   안 오는 현대 초성만 호환 자모로 바꿔 braillify 의 단독 자모 경로에 태운다. 중성이 이어지는 옛한글(ᄂᆞ)은 그대로다.
+_LONE_CHO_RE = re.compile(r"[\u1100-\u1112](?![\u1160-\u11A7\uD7B0-\uD7C6])")
+_CHO_COMPAT = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
 
 
 def _normalize_special(s: str) -> str:
     s = _FILLED_TRI_RUN_RE.sub(lambda m: "△" * len(m.group()), s)
     s = _HEART_RUN_RE.sub(lambda m: "☆" * len(m.group()), s)
+    s = _LONE_CHO_RE.sub(lambda m: _CHO_COMPAT[ord(m.group()) - 0x1100], s)
     out = []
     for ch in s:
         o = ord(ch)
