@@ -1142,7 +1142,32 @@ def _unwrap_circled_math(cell: str) -> str:
     return "".join(out)
 
 
-def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> str:
+# 칸을 버린 표의 가드(#1317). 위 함수는 칸 하나라도 층에서 못 찾으면 표를 통째로 안 고쳤다. 2027 dev · val 표 899 중
+# 359 가 그렇게 포기했고, B3(#1296)가 고치지 못한 칸 끝 · 짧은 칸 오독(`촉은지심` · `콩팔` · `롱산문화(혹도 등)`)이 그 안에
+# 표시 없이 남았다. `fixes` 를 넘기면 실패 칸만 건너뛰고 창이 맞은 칸은 고친다. 다만 이 표들은 층과 표가 어긋난 데가
+# 있다는 뜻이라 창이 딴 칸에 대이기 쉽다(남은 후보 63 중 창 어긋남 12: `출범 → 세계` · `피동사 ↔ 사동사`).
+# 그래서 셋을 다 지킬 때만 고친다.
+#   ① 1~2음절 한글 치환(B3 와 같은 `_MISREAD_RE`) — 세 음절 넘게 바꾸는 꼴(`해야함 → 장정리`)은 창 어긋남이다.
+#   ② 우리 글(치환 자리 + 앞뒤 한 글자)이 층에 그대로 없을 것 — 있으면 그 글은 원본에 있는 글이다.
+#   ③ 음절마다 초 · 중 · 종성 가운데 하나만 다를 것 — OCR 오독은 모양이 닮은 글자다(`팔 → 팥` · `롱 → 룽`).
+#     `시 → 표` · `수 → 과` 같은 창 어긋남이 여기서 걸린다. 자모 둘이 다른 진짜 오독(`쯤 → 쭙` · `겹 → 겉`)은 놓친다.
+# 고친 자리 표지는 `fixes` 에 담아 B3 처럼 R4 '고침'으로 띄운다. 되돌리기 `TABLE_CELL_SPLIT=0`(추출 단계).
+def _jamo_diff(a: str, b: str) -> int:
+    """두 한글 음절의 초 · 중 · 종성 가운데 다른 것의 수."""
+    x, y = ord(a) - 0xAC00, ord(b) - 0xAC00
+    return (x // 588 != y // 588) + (x % 588 // 28 != y % 588 // 28) + (x % 28 != y % 28)
+
+
+def _split_fix_ok(seg: str, off: int, ln: int, repl: str, layer_ns: str) -> bool:
+    """칸을 버린 표에서 이 치환을 고쳐도 되는가(위 절 ①②③)."""
+    ours = seg[off:off + ln]
+    return (bool(_MISREAD_RE.match(ours) and _MISREAD_RE.match(repl))
+            and seg[max(0, off - 1):off + ln + 1] not in layer_ns
+            and all(_jamo_diff(a, b) <= 1 for a, b in zip(ours, repl)))
+
+
+def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str,
+                         fixes: list[str] | None = None) -> str:
     """표 셀의 한글 오독을 텍스트 레이어를 근거로 고친다. 구조(HTML)는 건드리지 않는다.
 
     ★ 부분 교정 금지(_restore_table_bullets와 같은 원칙): 내용 있는 셀 하나라도 레이어에서
@@ -1150,6 +1175,7 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     가리킨다는 뜻이라, 찾은 셀의 교정도 근거가 없다.
     창 하나로 안 맞는 긴 칸은 층 조각으로 대어 본다(#1208, 위 절). 그렇게 살린 표에서는 창 가장자리에
     닿는 치환을 버린다.
+    fixes: 넘기면 표를 통째로 놓지 않고 실패 칸만 버린다(#1317, 위 절). 그 표에서 고친 자리 표지를 여기에 담는다.
     """
     if not html or not bbox:
         return html
@@ -1164,6 +1190,9 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     circ = os.environ.get("TABLE_CELL_CIRCLED_DIGIT", "1") != "0" and bool(_CIRCLED_HANGUL_RE.search(layer_ns))
     cmp_layer = re.sub(f"[0-9{_CIRCLED_HANGUL}]", "\x01", layer_ns) if circ else layer_ns
 
+    split = fixes is not None and os.environ.get("TABLE_CELL_SPLIT", "1") != "0"
+    dropped = False                             # 실패 칸을 버렸나(= 종전이면 표째 포기했을 표)
+    texts: list[str] = []                       # 모든 칸 대조본(버린 칸 포함) — 조각 대조의 '다른 칸 글'
     cells: list[tuple[int, str, list[int], float, int]] = []    # (칸 글 시작, 대조본, 원문 인덱스, 닮음, 창 자리)
     for m in _CELL_RE.finditer(html):
         inner = m.group(2)
@@ -1187,8 +1216,12 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
         if not cell:
             continue                            # 빈 셀은 대조 대상이 아니다
         sim, pos = _best_layer_window(re.sub(r"[0-9]", "\x01", cell) if circ else cell, cmp_layer)
+        texts.append(cell)
         if sim < _CELL_SIM_MIN and (len(cell) < _PIECE_CELL_MIN or os.environ.get("TABLE_CELL_PIECES", "1") == "0"):
-            return html                         # 한 셀이라도 실패 → 이 표는 포기
+            if not split:
+                return html                     # 한 셀이라도 실패 → 이 표는 포기
+            dropped = True                      # 쪼개기(#1317): 그 칸만 버린다
+            continue
         cells.append((m.start(2), cell, ns_idx, sim, pos))
 
     # 창 하나로 안 맞은 긴 칸이 있으면 '살린 표'다. 층이 칸을 섞어 읽는 표라 창 하나 대조를 못 믿는다.
@@ -1196,8 +1229,9 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
     rescued = any(c[3] < _CELL_SIM_MIN for c in cells)
     if rescued:
         pieces = _layer_pieces(layer)
-        table_ns = "\x00".join(c[1] for c in cells)
-    edits: list[tuple[int, int, str]] = []
+        table_ns = "\x00".join(texts)
+    # 칸마다 댈 창을 먼저 다 정한다. 버릴 칸이 생기는지 알아야 아래 가드(#1317)를 걸지 정할 수 있다.
+    plan: list[tuple[int, list[int], list[tuple[int, str, str]]]] = []
     for base, cell, ns_idx, sim, pos in cells:
         if sim >= 1.0 and layer_ns[pos:pos + len(cell)] == cell:
             continue
@@ -1205,22 +1239,34 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str) -> 
             found = _piece_windows(cell, pieces, table_ns)
             if found is None:
                 if sim < _CELL_SIM_MIN:
-                    return html
+                    if not split:
+                        return html
+                    dropped = True
                 continue                        # 창 하나로는 맞았지만 조각으로 못 덮으면 고치지 않는다
             wins = [(start, cell[start:start + len(p)], p) for start, p in found]
         else:
             wins = [(0, cell, layer_ns[pos:pos + len(cell)])]
+        plan.append((base, ns_idx, wins))
+    edits: list[tuple[int, int, str]] = []
+    labels: list[str] = []
+    for base, ns_idx, wins in plan:
         for start, seg, win in wins:           # seg = 창에 댄 칸 글(조각이면 칸 일부)
             subs = _hangul_substitutions(seg, win) + (_circled_digit_restores(seg, win, layer_ns) if circ else [])
             for off, ln, repl in subs:
                 if rescued and (off == 0 or off + ln == len(seg)):
+                    continue
+                if dropped and not _split_fix_ok(seg, off, ln, repl, layer_ns):
                     continue
                 src = ns_idx[start + off:start + off + ln]
                 # 원문에서도 연속이어야 한다 — 중간에 태그·공백이 끼어 있으면 건드리지 않는다.
                 if src != list(range(src[0], src[0] + ln)):
                     continue
                 edits.append((base + src[0], ln, repl))
+                if dropped:
+                    labels.append(f"{seg[max(0, off - 2):off]}{{{seg[off:off + ln]}→{repl}}}{seg[off + ln:off + ln + 2]}")
 
+    if fixes is not None:
+        fixes.extend(labels)
     if not edits:
         return html
     out = html
@@ -2492,11 +2538,13 @@ def run(
                 mapped_type, content = "text", _table_to_text(content)
             else:
                 # 표는 구조 때문에 전면 대체를 못 하므로 글머리 기호(제72항)만 되돌리고,
-                # 셀 안 글자는 레이어를 근거로 한글 오독만 고친다(둘 다 전부-아니면-전무).
+                # 셀 안 글자는 레이어를 근거로 한글 오독만 고친다(글머리는 전부-아니면-전무, 칸 오독은 칸 단위 #1317).
                 content = _restore_table_bullets(fitz_page, bb, content)
                 content = _restore_table_circled(fitz_page, bb, content)
-                content = _correct_table_cells(fitz_page, bb, content)
+                split_fixes: list[str] = []
+                content = _correct_table_cells(fitz_page, bb, content, fixes=split_fixes)   # 실패 칸만 버린다(#1317)
                 content, table_fixes = fix_table_misreads(fitz_page, bb, content)   # 포기한 표도 확실한 자리는(#1296)
+                table_fixes = split_fixes + table_fixes
 
         # 인쇄 캡션 강제 적용(위 forced_caption) — 생성 placeholder/빈 content를 덮어쓴다.
         if forced_caption and mapped_type == "caption":
