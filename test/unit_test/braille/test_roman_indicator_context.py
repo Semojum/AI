@@ -152,16 +152,45 @@ class Test줄_문맥은_전역이_아니다:
         assert lines[0] == translate_tagged_text(src)
 
 
-@pytest.mark.xfail(
-    reason="「과학 점자」 제6항(4437행) '식에 포함된 로마자는 로마자표를 적지 않는다' · "
-           "「수학 점자」 1호(3321행) '수식에 사용하는 로마자는 로마자표를 적지 않고'. "
-           "그런데 inline_math.wrap이 'a>1일 때'를 수식으로 라우팅하지 못해 텍스트 "
-           "경로로 새고, 텍스트 경로는 줄에 한글이 있으니 로마자표를 연다. "
-           "고칠 자리는 로마자표 규칙이 아니라 **수식 라우팅**이다 — 여기에 수학 예외를 "
-           "박으면 같은 판정이 두 층에 흩어진다. 라우팅이 고쳐지면 이 xfail을 지울 것. "
-           "실측 손해: 요소 이진 dev 4 · val 1 (재현 V2/temp/i3_cmp.py).",
-    strict=True,
-)
-def test_수식_속_로마자에는_로마자표_없음() -> None:
-    """정답 도서 수학2 p055도 `⠤⠼⠁⠤⠁⠢⠢⠼⠁⠕⠂` — 변수 a 앞에 ⠴가 없다."""
-    assert _ROMAN not in _ours("a>1일 때")
+@pytest.fixture
+def math_page():
+    """수식 지면(한컴 수식 글꼴 쪽) 문맥. 파이프라인이 요청 PDF 로 재서 세운다(`inline_math.MATH_PAGE`, 원장 R-85)."""
+    from app.ai.braille import inline_math
+    tok = inline_math.MATH_PAGE.set(True)
+    yield
+    inline_math.MATH_PAGE.reset(tok)
+
+
+class Test수식_속_부등식:
+    """「수학 점자」 1호(재추출 3308~3309행) "수식에 사용하는 로마자는 로마자표 0을 적지 않고 수식의 앞뒤를 두 칸씩
+    띄어 쓴다". 부등호 점형은 제4항 2호 `a>b` = `a55b`(3053~3054행) · 4호 `x<0` = `x99#j`(3058~3059행).
+
+    종전에는 `inline_math` 가 `<` · `>` 를 수식 신호로 안 봐 `a>1일 때` 가 글 경로로 새고, 줄에 한글이 있으니 로마자표가
+    열렸다(`⠴⠁⠢⠢⠼⠁⠕⠂`, 이 시험이 xfail 로 덮고 있던 결함). 수식 지면에서만 잡는다 — 009 gold 부등호 둘레 로마자 수식 꼴
+    561 : 로마자표 꼴 8 이고, 수학 밖 책은 드물고 엇갈린다(016 `C>B>A` 로마자표 꼴).
+    """
+
+    def test_로마자표_없이_앞뒤_두_칸(self, math_page) -> None:
+        out = translate_tagged_text("a>1일 때")
+        assert _ROMAN not in _cells(out)
+        assert out.startswith("⠁⠢⠢⠼⠁⠀⠀⠕⠂")
+
+    def test_연이은_부등호와_조사(self, math_page) -> None:
+        """009 gold(해설 p0015) `즉, 3<t<4이므로` 와 같은 꼴 — 제4항 4호 `−1<x<3` 예문의 연이은 부등호."""
+        assert translate_tagged_text("즉, 3<t<4이므로") == "⠨⠪⠁⠐⠀⠀⠼⠉⠔⠔⠞⠔⠔⠼⠙⠀⠀⠕⠑⠪⠐⠥"
+
+    def test_로마_숫자_머리는_글로_남는다(self, math_page) -> None:
+        """`(i)` 머리는 수식이 아니다. 009 gold 본책 p0028 `(i) a>1일 때` = ⠦⠄⠴⠊⠠⠴ · a>1 수식."""
+        out = translate_tagged_text("(i) a>1일 때")
+        assert out.startswith("⠦⠄⠴⠊⠠⠴")
+        assert "⠁⠢⠢⠼⠁⠀⠀⠕⠂" in out
+
+    def test_수식_지면이_아니면_종전대로(self) -> None:
+        assert _ROMAN in _ours("a>1일 때")
+
+
+def test_기계_태그는_수식_구간에_안_든다() -> None:
+    """`<` · `>` 가 수식 원자라 `<!강조>x=1<!/강조>` 의 태그 꺾쇠를 수식이 삼켜 태그 글자가 점자로 찍혔다(생명과학 본책 p0055 실물)."""
+    out = translate_tagged_text("<!밑줄>x=1<!/밑줄> 이다")
+    assert "⠔⠔⠖" not in out
+    assert "⠭⠒⠒⠼⠁" in out
