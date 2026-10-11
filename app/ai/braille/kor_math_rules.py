@@ -1761,11 +1761,24 @@ def _stage8_superscript(result: str) -> str:
         #   08-06 #88 은 gold 빈도(m² ⠣ 96 : ⠘⠼⠃ 31)로 '수 + 단위 글자'의 제곱 · 세제곱을 ⠣ · ⠩ 로
         #   줄였다. 규정이 명확한 자리라 빈도로 뒤집을 수 없고, 그 판정은 변수 m(`3m^{2}`, 수학 Ⅰ
         #   p0095)까지 단위로 잡았다. 2026-10-11 걷어냈다(#1321).
+        if os.environ.get("UNIT_SQUARE_ABBR") == "1" and raw_exp in ("2", "3") and _is_unit_square(base, m.string[:m.start()]):
+            return base + ("⠣" if raw_exp == "2" else "⠩")   # A/B 끄기 팔 전용(#1321, 머지 전 제거)
         exp  = convert_latex(raw_exp)
         exp_w = _wrap_ins(exp) if _needs_wrap_out(raw_exp, exp) else exp
         return f"{base}{_SUPERSCRIPT_IND}{exp_w}"
 
     return _SUP_RE.sub(_sup_replace, result)
+
+
+_UNIT_BASE_RE = re.compile(r"(?:^|[^A-Za-z])(mm|cm|km|m|kg|g|mg|L|mL|s|h)$")   # A/B 끄기 팔 전용(#1321, 머지 전 제거)
+_NUM_BEFORE_RE = re.compile(r"\d\s*$")
+
+
+def _is_unit_square(base: str, before: str) -> bool:
+    if not base or not _UNIT_BASE_RE.search(base):
+        return False
+    head = base[:_UNIT_BASE_RE.search(base).start(1)]
+    return bool(_NUM_BEFORE_RE.search(head) or _NUM_BEFORE_RE.search(before))
 
 
 def _stage9_subscript(result: str) -> str:

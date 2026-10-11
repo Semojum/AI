@@ -84,6 +84,8 @@ def _load_flat_table() -> dict[str, str]:
 
 
 SYMBOL_TABLE: dict[str, str] = _load_flat_table()
+if os.environ.get("UNIT_SQUARE_ABBR") == "1":   # A/B 끄기 팔 전용(#1321, 머지 전 제거)
+    SYMBOL_TABLE["㎢"] = "⠴⠅⠍⠘⠆"
 
 # ★ 사각 단위 문자(U+3380~33DF) — 표에 없는 것은 **점역에서 조용히 사라졌다**(T36, eval T32 결함 1).
 #   `부피는 3 ㎥이다` → `3 이다`. 표에 든 12자(㎏·㎝·㎡ …)만 살았다. 이 글자들은 호환 분해(NFKC)가
