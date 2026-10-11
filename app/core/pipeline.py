@@ -381,6 +381,7 @@ _EXTRACT_ENV = (
     "TABLE_CELL_PIECES",                                                               # #1208 긴 칸 층 조각 대조
     "TABLE_CELL_CIRCLED_DIGIT",                                                        # #1210 표 칸 ㉠ → 민 숫자 되돌리기
     "TABLE_MISREAD_FIX",                                                               # #1296 포기한 표의 한 음절 오독 고치기
+    "TABLE_CELL_SPLIT",                                                                # #1317 표 칸 교정을 칸 단위로(실패 칸만 버림)
     "LAYER_LENGTH_MARK",                                                               # #1222 긴소리표 ː 를 층 관문에서 안 셈
     "LAYER_UNKNOWN_GLYPH",                                                             # #376 표에 없는 수식 글꼴 글리프 블록은 층 불신
     "HANCOM_FRACTION",                                                                 # #1055 한컴 작은 수 분수 풀기
@@ -3348,7 +3349,7 @@ async def _run_pipeline(task: PageTask) -> dict:
         inline_math.MATH_PAGE.set(math_page)
     # 표 칸 한 음절 오독(#1296) — 표 교정이 못 고친 한글 오독(정벌 → 정별)을 그 표 요소에 R4 로 짚는다. 점자 · 응답 꼴은
     # 안 바뀐다. 표 교정과 같은 층 글(`_native_text_pair`)을 본다. 끄기 `TABLE_MISREAD_FLAG=0`.
-    #   추출이 이미 고친 자리(경계 요소 `table_fixes`, B3)도 R4 로 남긴다. 고침이 틀렸을 때 점역사가 볼 신호다.
+    #   추출이 이미 고친 자리(경계 요소 `table_fixes`, B3 · 칸 단위 교정 #1317)도 R4 로 남긴다. 고침이 틀렸을 때 점역사가 볼 신호다.
     misread: dict = {}
     _tables = [e for e in extraction.get("elements") or [] if e.get("type") == "table" and "<t" in (e.get("content") or "")]
     _misread_on = _meta0.get("bbox_space") == "norm1000" and process_env("TABLE_MISREAD_FLAG") != "0"
