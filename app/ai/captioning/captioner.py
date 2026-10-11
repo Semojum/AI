@@ -1097,6 +1097,9 @@ _AI_VOICE_SIGNAL = re.compile(
     r"|다음과\s*같습니다"
     # 2026-09-08(#734) — "이 그림에는 말풍선 대사가 없습니다." 존댓말 종결과 함께일 때만 걸린다.
     r"|대사가\s*없|말풍선(?:\s*대사)?(?:이|가)?\s*없"
+    # 2026-10-11(#1311) — "대사를 적을 수 없습니다." · "아래와 같이 작성합니다." · "재확인 후 작성합니다."
+    #   gold 점역자주 11,286구간에 0건(`다음과 같이` 만은 '다음과 같이 바꾸어 나타냄' 꼴로 12건이라 '작성 · 적' 과 묶는다).
+    r"|(?:적을|작성할)\s*수\s*없|(?:아래와|다음과)\s*같이\s*(?:작성|적)|재확인"
 )
 # 줄 **끝**이 존댓말이어야 한다. 문장 중간의 '…합니다만'류는 안 본다.
 _HONORIFIC_END = re.compile(r"(?:습니다|합니다|입니다|됩니다)[.。!?\s]*$")
@@ -1116,10 +1119,42 @@ _SPEAKER_HEAD = re.compile(r"^\s*[^:：\n]{1,12}\s*[:：]\s*\S")
 #   "(이름표는 읽을 수 없음)"은 진짜 묘사다(실측 4건). 그래서 **줄 전체가 그것뿐일 때만** 건다.
 _UNREADABLE_LINE = re.compile(
     r"^\s*(?:[^:：\n]{1,12}\s*[:：]\s*)?"          # 선택적 '화자:' 말머리
-    r"[(（]?\s*(?:말풍선\s*)?(?:대사\s*)?"
+    r"[(（]?\s*(?:말풍선\s*(?:안의?\s*)?)?(?:(?:대사|글자|글씨|내용)(?:를|을|는|은)?\s*)?"   # '말풍선 안의 글자를'(#1311)
     r"읽을\s*수\s*없(?:는\s*(?:기호|글자|대사|내용|문자)|음)"
     r"\s*[)）]?\s*[.。]?\s*$"
 )
+
+# ★ 한 줄에 변명 문장과 진짜 설명이 붙어 온 꼴(#1311). 위 줄 판정은 **줄 끝** 존댓말만 봐서
+#   "…대사를 적을 수 없습니다. 아래와 같이 작성합니다. 만화: 사람이 …있음." 처럼 진짜 설명으로 끝나는
+#   줄을 놓쳤다(#1309 A/B 155요소 중 팔마다 2~5개). 그래서 문장 단위로도 본다. 세 꼴만 뺀다:
+#     · 불능 · 메타 신호 + 그 **문장** 끝 존댓말(줄 판정과 같은 연언, 단위만 문장)
+#     · 대사 · 말풍선을 못 읽었다 · 없다는 문장. 평서형도 뺀다("…대사를 읽을 수 없다." · "위 그림에는 대사가 없다.").
+#       만화 프롬프트가 이미 금하는 말이고, gold 점역자주 11,286구간에 이 꼴은 0건이다.
+#     · '아래와 같이 작성 · 정리 · 적' — 모델이 제 출력을 가리키는 말(캡션 캐시 3,970건 중 2건, 둘 다 변명).
+#   잃지 않으려고 둘을 좁혔다(캐시 전수에서 잡은 오검출):
+#     · 대사 · 말풍선이 **첫 마디**(쉼표 앞)에 있어야 한다 — "…회의 장면이 나옴, 대사 없음" 은 설명 문장이다.
+#     · 괄호 속 말은 빼고 본다 — "대사 글줄 있음(작아서 읽을 수 없음)" 은 관측이다(문장이 통째로 괄호면 속을 본다).
+#     · '보이지 않' 만으로는 안 건다 — gold 에 진짜 묘사로 6건 있다('태양 전체가 보이지 않는다').
+_DIALOGUE_META = re.compile(
+    r"^[^,，]*(?:대사|말풍선)[^,，]*(?:(?:읽을|적을|옮길|알아볼|확인할)\s*수\s*없|보이지\s*않|없(?:다|음|습니다)\s*[.。]?\s*$)")
+_OWN_OUTPUT_META = re.compile(r"아래와\s*같이\s*(?:작성|정리|적)")
+_PAREN_RE = re.compile(r"[(（][^)）]*[)）]")
+
+
+def _is_voice_sentence(sent: str) -> bool:
+    if _AI_VOICE_SIGNAL.search(sent) and _HONORIFIC_END.search(sent):
+        return True
+    core = _PAREN_RE.sub("", sent).strip() or sent.strip().strip("()（）")
+    return bool(_DIALOGUE_META.search(core) or _OWN_OUTPUT_META.search(core))
+
+
+def _drop_ai_voice_sentences(line: str) -> str:
+    """줄 안의 변명 문장만 뺀다. 뺀 게 없으면 줄을 그대로, 다 빠지면 빈 문자열."""
+    sents = _SENT_END.split(line.strip())
+    kept = [x for x in sents if not _is_voice_sentence(x)]
+    if len(kept) == len(sents):
+        return line
+    return (line[:len(line) - len(line.lstrip())] + " ".join(kept)) if kept else ""
 
 
 # ★ 모델이 **앞으로 할 일을 말하는 혼잣말**(#1037). 원응답 첫머리에 붙어 캡션 머리가 됐다:
@@ -1142,6 +1177,12 @@ def _monologue_on() -> bool:
     그 팔은 develop 과 바이트로 같아야 하고 관문 로그도 0 이어야 한다(guard_llm_text 도크스트링)."""
     from app.ai import gates
     return gates.guard_on() and os.environ.get("GUARD_MONOLOGUE", "1") != "0"
+
+
+def _sentence_voice_on() -> bool:
+    """`GUARD_SENTENCE_VOICE=0` 이면 종전대로(줄 단위만). 관문을 통째로 끈 팔에서도 꺼진다(`_monologue_on` 과 같다)."""
+    from app.ai import gates
+    return gates.guard_on() and os.environ.get("GUARD_SENTENCE_VOICE", "1") != "0"
 
 
 def _drop_monologue(line: str) -> str:
@@ -1167,7 +1208,7 @@ def _strip_ai_voice(text: str) -> str:
     """
     if not text:
         return ""
-    kept, dropped, vers, partial = [], 0, 0, 0
+    kept, dropped, vers, partial, voice_cut = [], 0, 0, 0, 0
     monologue_on = _monologue_on()
     for ln in text.splitlines():
         if VER_TAG_RE.search(ln):
@@ -1184,6 +1225,14 @@ def _strip_ai_voice(text: str) -> str:
         if s and (ai_voice or _UNREADABLE_LINE.match(s)):
             dropped += 1
             continue
+        if s and not speaker and _sentence_voice_on():
+            cut = _drop_ai_voice_sentences(ln)
+            if cut != ln:
+                if not cut.strip():
+                    dropped += 1
+                    continue
+                voice_cut += 1                        # 줄은 남는다 — 관문 계수는 따로 센다
+                ln = cut
         # 혼잣말 문장(#1037)은 **종전 줄 판정 뒤에** 본다. 먼저 떼면 그 줄을 걷게 하던 신호가 같이
         # 빠져 메타 문장이 되살아난다(전수에서 1건 잡힘). 종전이 걷던 것은 그대로 걷힌다.
         if s and not speaker and monologue_on:
@@ -1202,6 +1251,9 @@ def _strip_ai_voice(text: str) -> str:
         # 줄 안에서 혼잣말 문장만 뺀 것은 줄 수로 안 잡힌다(guard_llm_text 는 줄을 센다). 따로 센다.
         from app.ai import gates
         gates.gate_hit("G1", "혼잣말 문장", partial)
+    if voice_cut:
+        from app.ai import gates
+        gates.gate_hit("G1", "변명 문장", voice_cut)
     if vers:
         # 여기까지 왔으면 앞의 두 겹이 뚫린 것이다. 조용히 지우지 않는다.
         logger.warning("가드5 프롬프트 판 번호가 캡션에 샜다 %d줄 — 프롬프트를 확인하라", vers,
