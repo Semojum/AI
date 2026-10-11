@@ -1756,37 +1756,16 @@ def _stage8_superscript(result: str) -> str:
             return f"{base}⠤⠤"
         if exp_key in ("\\prime\\prime\\prime", "'''", "‴"):
             return f"{base}⠤⠤⠤"
-        # ★ 2026-08-06 판정 번복(원장 C-03). 종전에는 제곱을 ⠣ 한 셀로 약기했다
-        #   ("gold 107회 ⠣ · 규정형 ⠘⠼⠃ 0회", 수학2 p009 실측). 그 실측이 **구판 한 종류**였다.
-        #   신규 2027 코퍼스 수학1에서 `x⠘⠼⠃`(=x²)는 1,511회, `x⠣`는 **0회**다.
-        #
-        #   다만 **단위 제곱**은 여전히 ⠣ 쪽이 많다(m² ⠣ 96 : ⠘⠼⠃ 31 · L² ⠣ 11).
-        #   가르는 신호는 **앞에 수가 붙는가**다 — `25m²`는 단위, `m²`만 있으면 변수다.
-        if raw_exp in ("2", "3") and _is_unit_square(base, m.string[:m.start()]):
-            return base + ("⠣" if raw_exp == "2" else "⠩")
+        # ★ 위첨자는 단위든 변수든 ⠘ 뒤에 적는다(원장 C-03). 한글 제68항 본문(재추출 2649행)의
+        #   첫 예가 ㎡ = `0m^#b`(⠴⠍⠘⠼⠃)이고, 수학 제18항 1(3528행)도 지수를 ^ 뒤에 적는다.
+        #   08-06 #88 은 gold 빈도(m² ⠣ 96 : ⠘⠼⠃ 31)로 '수 + 단위 글자'의 제곱 · 세제곱을 ⠣ · ⠩ 로
+        #   줄였다. 규정이 명확한 자리라 빈도로 뒤집을 수 없고, 그 판정은 변수 m(`3m^{2}`, 수학 Ⅰ
+        #   p0095)까지 단위로 잡았다. 2026-10-11 걷어냈다(#1321).
         exp  = convert_latex(raw_exp)
         exp_w = _wrap_ins(exp) if _needs_wrap_out(raw_exp, exp) else exp
         return f"{base}{_SUPERSCRIPT_IND}{exp_w}"
 
     return _SUP_RE.sub(_sup_replace, result)
-
-
-# ⚠ 이 판정은 **원문 문자열** 위에서 돈다(_sup_replace가 raw_exp를 원문으로 보는 것과 같다).
-#   base가 아직 ASCII다 — 점형으로 바뀐 뒤에는 단위와 변수를 못 가른다.
-_UNIT_BASE_RE = re.compile(r"(?:^|[^A-Za-z])(mm|cm|km|m|kg|g|mg|L|mL|s|h)$")
-_NUM_BEFORE_RE = re.compile(r"\d\s*$")
-
-
-def _is_unit_square(base: str, before: str) -> bool:
-    """`base^2`가 **단위 제곱**인가 — 단위 글자로 끝나고 바로 앞에 수가 붙는가.
-
-    `25m²`(단위)와 `m²`(변수)를 가른다. gold는 단위 제곱만 ⠣로 약기한다(원장 C-03:
-    m² ⠣ 96 : ⠘⠼⠃ 31 · L² ⠣ 11 · 반면 수학1 변수 x² 은 ⠘⠼⠃ 1,511 : ⠣ 0).
-    """
-    if not base or not _UNIT_BASE_RE.search(base):
-        return False
-    head = base[:_UNIT_BASE_RE.search(base).start(1)]
-    return bool(_NUM_BEFORE_RE.search(head) or _NUM_BEFORE_RE.search(before))
 
 
 def _stage9_subscript(result: str) -> str:

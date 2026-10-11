@@ -152,10 +152,13 @@ class TestSuperscriptCount:
         result = translate_tagged_text("<!수식>a^2+b^2=c^2<!/수식>")
         assert result.count("⠘⠼⠃") == 3, f"위첨자 개수 불일치: {result!r}"
 
-    def test_수가_앞에_붙은_단위_제곱만_약기(self) -> None:
-        """단위 제곱은 gold가 ⠣를 더 쓴다(m² 96 : 31). 변수 제곱과 갈라야 한다."""
-        assert translate_tagged_text("넓이 5 m²").endswith("⠣")
-        assert not translate_tagged_text("<!수식>m^2<!/수식>").endswith("⠣")
+    def test_단위_제곱도_위첨자로_적는다(self) -> None:
+        """한글 제68항: 위 첨자는 ^ 뒤에 적는다. 첫 예가 ㎡ = `0m^#b`(재추출 2649~2651행),
+        [붙임 1] `1평은 3.3㎡이다.` = `#a`d]z`#c4c0m^#boi4`(2661~2662행). 단위를 ⠣ 로 줄이는 조항은
+        없다(원장 C-03, #1321). 앞에 수가 붙은 변수 m(`3m^{2}`, 수학 Ⅰ p0095)도 같은 꼴이다."""
+        assert translate_tagged_text("1평은 3.3㎡이다.") == "⠼⠁⠀⠙⠻⠵⠀⠼⠉⠲⠉⠴⠍⠘⠼⠃⠕⠊⠲"
+        assert translate_tagged_text("넓이 5 m²").endswith("⠍⠘⠼⠃")
+        assert translate_tagged_text("<!수식>3m^{2}<!/수식>") == "⠼⠉⠍⠘⠼⠃"
 
 
 class TestNumberIndicatorCount:
