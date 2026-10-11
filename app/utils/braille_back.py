@@ -27,6 +27,7 @@ import json
 import os
 import re
 import sys
+import threading
 from math import log as _mlog
 from pathlib import Path
 
@@ -2853,6 +2854,9 @@ _HANGUL_RUN_RE = re.compile(r"[가-힣]+")
 #   (`샐표`→`Reading` 318개가 샐+표 로 잘려 점수가 괜찮게 나온다). 형태소 **개수**가 가른다.
 _ENG_TOKEN_KIWI_MIN = float(os.environ.get("BR_ENG_TOKEN_KIWI_MIN", "-14.5"))
 _KIWI = None
+# 처음 올리는 자리 잠금(#1324). 없으면 두 스레드가 동시에 처음 부를 때 둘 다 `Kiwi()` 를 올렸다(사이드카 기동 워밍업 스레드와
+#   본 스레드: 첫 decode 7.5~10.9초 · RSS 740~985MB. 하나는 약 2.7초 · 200MB).
+_KIWI_LOCK = threading.Lock()
 _FUNC_TAGS = ("J", "E", "XS", "XP", "S", "VCP")   # 조사·어미·접사·부호·서술격 조사(`딸인`)
 
 
@@ -2865,8 +2869,10 @@ def _is_real_korean(ko: str) -> bool:
     if not runs:
         return False
     if _KIWI is None:
-        from kiwipiepy import Kiwi
-        _KIWI = Kiwi()
+        with _KIWI_LOCK:
+            if _KIWI is None:
+                from kiwipiepy import Kiwi
+                _KIWI = Kiwi()
     for run in runs:
         toks = _KIWI.analyze(run)[0][0]
         if any(t.tag.startswith(("Z", "UN", "W")) for t in toks):
