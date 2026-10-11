@@ -43,6 +43,7 @@ NOT_BOUNDARY = {
     "CONCEPT_CHECK_BOX": "경계 뒤 개념 체크 글상자(`_parse_txt_result`, #1155)",
     "ITEM_NUMBER_JOIN_ALIGNED": "경계 뒤 문항 번호 붙이기의 왼쪽 끝 같은 발문(`_parse_txt_result`, #1068)",
     "ITEM_NUMBER_UNPAGE": "경계 뒤 쪽 가운데 page_number 번호 → 본문(`_parse_txt_result`, #1068)",
+    "EXPL_BAND_ORDER": "경계 뒤 해설 띠 차례(`_parse_txt_result`, #1305)",
 }
 _ENV_RE = re.compile(r"""(?:os\.environ\.get|os\.getenv|os\.environ\.setdefault)\(\s*["']([A-Z0-9_]+)["']|os\.environ\[\s*["']([A-Z0-9_]+)["']\s*\]""")
 

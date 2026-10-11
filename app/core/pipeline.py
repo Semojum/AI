@@ -2598,6 +2598,7 @@ def _parse_txt_result(
             )
 
     _reorder_by_geometry(bbox_items, int(meta.get("page_rotation") or 0))
+    _band_explanations(bbox_items, ext_map, ih if (scale_bbox or space == "pixel") else 1000)
     _join_item_numbers(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0)
     # 쪽 높이(bbox 와 같은 좌표계): 정규화를 픽셀로 늘렸으면 픽셀 높이, 정규화 그대로면 1000, 픽셀이면 메타 높이.
     _unpage_item_numbers(bbox_items, ext_map, ih if (scale_bbox or space == "pixel") else 1000)
@@ -2617,6 +2618,98 @@ def _parse_txt_result(
 _CC_TITLE_RE = re.compile(r"^개념\s*체크$")
 _CC_ITEM_RE = re.compile(r"^\d{1,2}\s*\.")
 _INLINE_TAG_RE = re.compile(r"<!/?[^>]*>")
+
+# 대표 기출 쪽의 해설 띠 차례(#1305). 문제 틀 둘이 위아래 띠로 놓이고 곁단에 문제마다 '정답과 해설' 상자가 같은 높이로
+# 붙는다. `_reorder_columns` 3번은 그 곁단을 쪽 단위 참고 자료 단으로 보고 통째로 쪽 끝으로 미뤄 문제1 → 문제2 → 해설1 →
+# 해설2 가 됐다. 「점자 도서 제작 지침」 2장 5(NLD-2.2.5) '내용의 계열 … 순서대로' · 주종 다단 '참고 자료는 본문 아래'를
+# 문제 · 해설 짝 단위로 적용하면 띠 차례다. gold(holdout 뺀 90권)에서 이 꼴은 EBS 사회 네 권 86쪽에만 있고 모두 띠 차례,
+# 쪽 끝 몰기 0쪽이다. dev · val 32쪽 중 30쪽이 바뀐다(가드 2쪽 그대로). 되돌리기 `EXPL_BAND_ORDER=0`(호출 때 읽음).
+_EXPL_LABEL_RE = re.compile(r"^정답과\s*해설$")
+_EXPL_BODY_RE = re.compile(r"^(?:정답\s*해설|정답\s*[①-⑤])")
+_QUESTION_HEAD_RE = re.compile(r"^(?:대표\s*기출\s*문제|닮은꼴\s*문제)")
+
+
+def _band_explanations(items: list[BBoxItem], ext_map: dict[UUID, ExtractedContent], page_h: float) -> None:
+    """곁단 '정답과 해설' 덩이를 같은 높이 띠의 마지막 본문 요소 바로 뒤로 옮긴다(in-place, reading_order 만 바꾼다).
+
+    표지(글이 정확히 '정답과 해설')가 둘 이상이고, 덩이마다 해설 몸이 있고, 띠마다 본문 요소가 있을 때만 움직인다.
+    하나라도 어긋나면 손대지 않는다. 옮긴 덩이의 표지 요소에 근거 규정(NLD-2.2.5)을 남긴다.
+    """
+    if os.environ.get("EXPL_BAND_ORDER", "1") == "0" or page_h <= 0:
+        return
+    order = sorted(items, key=lambda b: b.reading_order)
+    body = [_valid_bbox(b) and b.type not in ("header_footer", "page_number") for b in order]
+    txt = [_INLINE_TAG_RE.sub("", ext_map[b.element_id].corrected_text or "").strip()
+           if b.element_id in ext_map else "" for b in order]
+    labels = [i for i in range(len(order)) if body[i] and _EXPL_LABEL_RE.match(txt[i])]
+    if len(labels) < 2:
+        return
+    tol, gap = 0.03 * page_h, 0.02 * page_h            # 띠 경계 여유 · 덩이 안 세로 띄움 상한
+    top = order[labels[0]].bbox[1]
+    page_w = max(b.bbox[2] for b in order if _valid_bbox(b))
+    # 본문 단 = 첫 표지 높이 아래의 넓은 요소들. 쪽 머리 제목은 뺀다 — 짝수 쪽은 해설 단이 왼쪽이라
+    # 넓은 제목이 범위를 해설 단까지 늘린다(동아시아사 p0094).
+    wide = [order[i].bbox for i in range(labels[0])
+            if body[i] and order[i].bbox[2] - order[i].bbox[0] >= 0.3 * page_w and order[i].bbox[1] >= top - tol]
+    if not wide:
+        return
+    m0, m1 = min(b[0] for b in wide), max(b[2] for b in wide)
+
+    def side(i: int) -> bool:
+        x0, _, x1, _ = order[i].bbox
+        return body[i] and min(x1, m1) - max(x0, m0) < 0.5 * max(x1 - x0, 1)
+
+    units: list[list[int]] = []
+    for k, a in enumerate(labels):
+        end = labels[k + 1] if k + 1 < len(labels) else len(order)
+        unit = [a]
+        for j in range(a + 1, end):
+            if not side(j) or order[j].bbox[1] - max(order[x].bbox[3] for x in unit) > gap:
+                break
+            unit.append(j)
+        if k + 1 < len(labels) and unit[-1] != end - 1:
+            return                                     # 덩이 사이에 다른 요소
+        units.append(unit)
+    if any(not any(_EXPL_BODY_RE.match(txt[j]) for j in u) for u in units):
+        return
+    if any(side(i) and order[i].bbox[1] >= top - tol for i in range(labels[0])):
+        return                                         # 곁단에 첫 표지보다 앞선 요소(출처 꼬리표 등)
+    main = [i for i in range(labels[0]) if body[i] and not side(i)]
+    # 띠 시작 = 표지 높이 − 3%. 그 위 10% 안 본문 단에 문제 머리표('대표 기출문제' · '닮은꼴 문제')가 있으면 거기부터다.
+    # 머리표가 표지보다 68px 위에 오는 쪽(세계사 p0105)과 문제1 끝이 표지 45px 위인 쪽(동아시아사 p0094)이 함께 있어
+    # 고정 여유 하나로는 못 가른다.
+    bands = []
+    for a in labels:
+        ya = order[a].bbox[1]
+        heads = [order[m].bbox[1] for m in main
+                 if _QUESTION_HEAD_RE.match(txt[m]) and ya - 0.1 * page_h <= order[m].bbox[1] <= ya + tol]
+        bands.append(min([ya - tol] + [y - 1 for y in heads]))
+    bands.append(float("inf"))
+    anchors = []
+    for k in range(len(units)):
+        # 마지막 띠는 쪽 아래 6%(꼬리말)만 뺀다 — 문제 선지 ⑤ 가 해설 덩이보다 아래로 내려가는 쪽이 있다.
+        ms = [m for m in main if bands[k] <= order[m].bbox[1] < bands[k + 1] and order[m].bbox[1] < 0.94 * page_h]
+        if not ms:
+            return
+        anchors.append(max(ms))
+    if any(b <= a for a, b in zip(anchors, anchors[1:])):
+        return
+    moved = {j for u in units for j in u}
+    seq: list[int] = []
+    for i in range(len(order)):
+        if i in moved:
+            continue
+        seq.append(i)
+        if i in anchors:
+            seq += units[anchors.index(i)]
+    if seq == list(range(len(order))):
+        return
+    for k, i in enumerate(seq, start=1):
+        order[i].reading_order = k
+    for u in units:
+        ext = ext_map.get(order[u[0]].element_id)
+        if ext is not None and "NLD-2.2.5" not in ext.layout_rules:
+            ext.layout_rules.append("NLD-2.2.5")
 
 
 def _box_concept_checks(items: list[BBoxItem], ext_map: dict[UUID, ExtractedContent]) -> None:
@@ -3472,6 +3565,12 @@ def _build_response(
     braille_by_id = {b.element_id: b for b in braille_outputs}
     ext_by_id = {e.element_id: e for e in extracted}
     flat = flat or {}
+
+    def _layout_trail(eid) -> list[dict]:
+        """읽기순서를 옮긴 근거(#1305) — 요소 전체(line_no=-1) 규정. 쪽 상태는 안 바꾼다(R 플래그 아님)."""
+        from app.ai.braille.regulations import make_rule
+        ext = ext_by_id.get(eid)
+        return [make_rule(r, tag="reading_order").model_dump() for r in (ext.layout_rules if ext else [])]
     # 32칸 초과는 더 이상 우리가 재는 값이 아니다 — 조판을 FE·BE가 하므로 초과 여부도
     # 거기서 정해진다. finalize 폐기로 C6 판정의 이동처가 사라져 0으로 고정한다.
     line_overflow_rate = 0.0
@@ -3588,7 +3687,7 @@ def _build_response(
                     o, task.mode,
                     elem_by_id.get(o.element_id, _DUMMY_ELEM).type,
                     getattr(elem_by_id.get(o.element_id), "heading_level", None) or 0)],
-                "rule_trail": [r.model_dump() for r in o.rule_trail],
+                "rule_trail": [r.model_dump() for r in o.rule_trail] + _layout_trail(o.element_id),
                 # 시각 요소 대체 초안 — **묵자만** 싣는다 (2026-08-06).
                 # mode a는 점역을 하지 않으므로(include_braille=False) 점자가 없다.
                 # mode c는 여기 묵자와 `braille_text_list`의 묵자+점자를 함께 받는다.
@@ -3638,7 +3737,7 @@ def _build_response(
                         else (braille_by_id[o.element_id].rule_trail
                               if o.element_id in braille_by_id else o.rule_trail)
                     )
-                ],
+                ] + _layout_trail(o.element_id),
                 "selected_idx": (
                     braille_by_id[o.element_id].selected_idx
                     if o.element_id in braille_by_id else 0
