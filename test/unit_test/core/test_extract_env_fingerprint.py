@@ -16,13 +16,13 @@ from app.core import pipeline  # noqa: E402
 
 ROOT = Path(__file__).parents[3]
 # 경계 파일(`_extract_with_hyunju` 까지)을 만드는 모듈. 경계 뒤(opt · 점역 · 조판)는 대상이 아니다.
-EXTRACT_MODULES = [
-    "app/ai/parser/mineru_runner.py", "app/ai/parser/mineru_service.py", "app/ai/parser/figure_detect.py",
-    "app/ai/parser/opus_fallback.py", "app/ai/parser/crop_reask.py", "app/ai/parser/extraction_losses.py",
-    "app/ai/captioning/captioner.py", "app/ai/captioning/classifier.py", "app/ai/builder/result_builder.py",
-    "app/ai/preprocessor/pdf_analyzer.py", "app/ai/preprocessor/line_join.py", "app/ai/gates.py",
-    "app/utils/llm_cache.py", "app/core/pipeline.py",
-]
+# ★ 목록을 여기 따로 두지 않는다 — 따로 든 14개 중 여섯이 지문(`_EXTRACT_SOURCES`)에 없었다(10-12).
+EXTRACT_MODULES = [*pipeline._EXTRACT_SOURCES, *pipeline._EXTRACT_SOURCES_SKIP]
+# 추출 패키지에 있지만 경계 뒤에서만 도는 모듈 — 이유를 같이 적는다.
+AFTER_BOUNDARY = {
+    "app/ai/parser/llm_order.py": "경계 뒤 읽기순서 LLM(`_run_pipeline`)",
+    "app/ai/preprocessor/lost_lines.py": "경계를 읽은 뒤 빠진 줄 되살리기(#1303, 경계 파일은 안 바뀐다)",
+}
 # 경계 내용과 무관한 스위치 — 이유를 같이 적는다.
 NOT_BOUNDARY = {
     "MINERU_RETRIES": "재시도 횟수(같은 출력)", "MINERU_CLIENT": "MinerU 를 부르는 길(같은 모델)",
@@ -58,6 +58,15 @@ def _env_names(rel: str) -> set[str]:
 def test_추출_스위치는_지문에_들거나_무관_사유가_있다(rel):
     missing = sorted(n for n in _env_names(rel) if n not in pipeline._EXTRACT_ENV and n not in NOT_BOUNDARY)
     assert not missing, f"{rel}: 경계 판 지문(_EXTRACT_ENV)에 넣거나 NOT_BOUNDARY 에 사유를 적어라 → {missing}"
+
+
+def test_추출_패키지_모듈은_지문에_들거나_빠진_사유가_있다():
+    """새 파서 · 전처리 모듈이 지문 밖에 생기면 여기서 깨진다(10-12: pdf_analyzer · hanyang_pua · crop_reask 가 빠져 있었다)."""
+    pkgs = ("app/ai/parser", "app/ai/preprocessor", "app/ai/captioning", "app/ai/builder")
+    found = {f"{d}/{p.name}" for d in pkgs for p in (ROOT / d).glob("*.py") if p.name != "__init__.py"}
+    missing = sorted(found - set(EXTRACT_MODULES) - set(AFTER_BOUNDARY))
+    assert not missing, f"경계 판 지문(_EXTRACT_SOURCES)에 넣거나 _EXTRACT_SOURCES_SKIP · AFTER_BOUNDARY 에 사유를 적어라 → {missing}"
+    assert all((ROOT / rel).exists() for rel in EXTRACT_MODULES), "지문 목록에 없는 파일이 있다(이름이 바뀌었나)"
 
 
 def test_S5_수식_글꼴_가드와_캡션_끄기가_지문에_든다(monkeypatch):
