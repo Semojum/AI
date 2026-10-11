@@ -224,6 +224,9 @@ _FLAG_TO_REVIEW: dict[str, tuple[str, str]] = {
     # 원본 텍스트층에 없는 한자 · 로마자 낱말 · 되풀이가 남은 추출(mineru_runner 환각 절, #1078).
     # 그럴듯해 보여서 못 찾는 것이 문제라 자리를 짚어 준다.
     "HALLUCINATION_SUSPECT": ("R4", "원본에 없는 글(한자 · 로마자 낱말 · 되풀이)이 든 추출입니다. 원본과 대조가 필요합니다"),
+    # 그래프 · 그림에서 AI 가 읽은 내용을 표로 옮긴 요소(mineru_runner `_chart_data_table`, #1328). 종류가 table 이라 아래
+    # 시각 요소 R11 이 안 붙으므로 여기서 붙인다. 값을 지어낼 수 있다(수학 함수 그래프 21요소가 그랬다).
+    "CHART_AS_TABLE": ("R11", "그림에서 AI가 읽은 내용을 표로 옮겼습니다. 원본 그림과 수치를 대조해야 합니다"),
 }
 _GENERIC_R_FLAG = re.compile(r"^R([1-9]|1[0-2])$")
 
