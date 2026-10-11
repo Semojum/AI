@@ -2794,13 +2794,20 @@ def _anchor_wing_terms(items: list[BBoxItem], ext_map: dict[UUID, ExtractedConte
         seq.append(i)
         for u in after.get(i, []):
             seq += u
+    # 닻이 마지막 본문 요소라 덩이가 이미 그 뒤에 있던 것은 옮긴 게 아니다 — 근거 규정을 안 남긴다(A/B 5쪽).
+    def prev_of(idx) -> dict[int, int]:
+        s = [i for i in idx if order[i].type not in ("header_footer", "page_number")]
+        return dict(zip(s[1:], s))
+    old_prev, new_prev = prev_of(range(len(order))), prev_of(seq)
+    real = [u for us in after.values() for u in us if new_prev.get(u[0]) != old_prev.get(u[0])]
+    if not real:
+        return
     for k, i in enumerate(seq, start=1):
         order[i].reading_order = k
-    for us in after.values():
-        for u in us:
-            ext = ext_map.get(order[u[0]].element_id)
-            if ext is not None and "NLD-2.2.4" not in ext.layout_rules:
-                ext.layout_rules.append("NLD-2.2.4")
+    for u in real:
+        ext = ext_map.get(order[u[0]].element_id)
+        if ext is not None and "NLD-2.2.4" not in ext.layout_rules:
+            ext.layout_rules.append("NLD-2.2.4")
 
 
 def _box_concept_checks(items: list[BBoxItem], ext_map: dict[UUID, ExtractedContent]) -> None:

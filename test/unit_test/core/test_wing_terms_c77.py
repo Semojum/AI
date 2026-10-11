@@ -65,3 +65,24 @@ def test_후치_곁단이_없으면_그대로(monkeypatch):
     before = _texts(items, ext)
     _anchor_wing_terms(items, ext, [])
     assert _texts(items, ext) == before
+
+
+def test_닻이_마지막_문단이면_옮긴_게_아니다(monkeypatch):
+    """덩이가 이미 닻 바로 뒤(날개 첫머리)면 차례도 근거 규정도 그대로다(A/B 5쪽: 생활과 윤리 p0114 등)."""
+    monkeypatch.delenv("WING_TERM_ORDER", raising=False)
+    spec = [("title", (60, 520, 260, 540), "공리주의"),
+            ("text", (60, 545, 260, 600), "최대 다수의 최대 행복을 기준으로 삼는 윤리"),
+            ("title", (300, 100, 1000, 130), "1. 서양 윤리의 흐름"),
+            ("text", (300, 150, 1000, 300), "칸트는 선의지를 강조하였다."),
+            ("text", (300, 520, 1000, 700), "벤담은 공리주의를 내세웠다.")]
+    items, ext = [], {}
+    for k, (etype, bbox, text) in enumerate(spec, start=1):
+        eid = uuid4()
+        items.append(BBoxItem(element_id=eid, type=etype, bbox=bbox, reading_order=k))
+        ext[eid] = ExtractedContent(element_id=eid, corrected_text=text)
+    wing = _reorder_columns(items)
+    before = _texts(items, ext)
+    assert before == [spec[i][2] for i in (2, 3, 4, 0, 1)]
+    _anchor_wing_terms(items, ext, wing)
+    assert _texts(items, ext) == before
+    assert not any(e.layout_rules for e in ext.values())
