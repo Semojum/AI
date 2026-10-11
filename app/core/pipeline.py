@@ -2546,6 +2546,7 @@ def _parse_txt_result(
     _els = _split_foot_number(_els, 1000 if space == "norm1000" else ih)     # 꼬리말에 든 쪽 번호(#1264)
     _band = _page_edge_band(_els)
     _bottom = _bottom_block(_els)                                            # 꼬리말 자리(C-86)
+    _feet: set[UUID] = set()                                                 # 열 묶기 뒤에 뺄 꼬리말(C-86)
     for idx, el in enumerate(_els, start=1):
         try:
             eid = UUID(str(el.get("id")))
@@ -2578,7 +2579,7 @@ def _parse_txt_result(
             continue
         if _is_page_foot(el, content, el is _bottom):
             logger.info("묵자 꼬리말 억제(C-86, %s): %.60s", etype, content)
-            continue
+            _feet.add(eid)
         # 추출 모델의 '못 읽었다' 해설문 → 내용 비우고 R11(원본 확인 요망)로 넘긴다.
         # 글자층에서 뽑은 글(TEXT_NATIVE)에는 모델 해설문이 생길 수 없다. 본문만 잘못 지운다(#1288).
         refused = method != "TEXT_NATIVE" and _is_extraction_refusal(content)
@@ -2638,6 +2639,13 @@ def _parse_txt_result(
             )
 
     wing = _reorder_by_geometry(bbox_items, int(meta.get("page_rotation") or 0))
+    if _feet:
+        # 꼬리말은 열 묶기가 끝난 뒤에 뺀다. 먼저 빼면 x 겹침 열이 달라져 남은 요소 차례가 바뀐다
+        # (dev · val 53쪽, 생명과학 body p0027 표가 실험 과정 앞으로 가 편집 +437). 차례는 손대지 않는 변경이어야 한다.
+        bbox_items[:] = [b for b in bbox_items if b.element_id not in _feet]
+        wing = [b for b in wing if b.element_id not in _feet]
+        for _eid in _feet:
+            ext_map.pop(_eid, None)
     _band_explanations(bbox_items, ext_map, ih if (scale_bbox or space == "pixel") else 1000)
     _anchor_wing_terms(bbox_items, ext_map, wing)
     _join_item_numbers(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0)

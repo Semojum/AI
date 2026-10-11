@@ -39,6 +39,14 @@ def test_MinerU_맨_아래_footer_는_안_싣는다():
     assert _texts(MINERU, [M_BODY, M_FOOT]) == [M_BODY["content"]]
 
 
+def test_꼬리말도_열_묶기에는_들어간다(monkeypatch):
+    # 먼저 빼면 x 겹침 열이 달라져 남은 요소 차례가 바뀐다(A/B 53쪽). 빼는 것은 열 묶기 뒤다.
+    seen, real = [], pipeline._reorder_by_geometry
+    monkeypatch.setattr(pipeline, "_reorder_by_geometry", lambda items, rot=0: seen.append(len(items)) or real(items, rot))
+    assert _texts(MINERU, [M_BODY, M_FOOT]) == [M_BODY["content"]]
+    assert seen == [2]
+
+
 def test_맨_아래가_아닌_footer_는_본문이라_싣는다():
     # 세계사 · 동아시아사에서 MinerU 가 본문(선택지 · 정답 · 해설)을 footer 로 잡는다. 맨 아래가 아니면 안 지운다.
     body = dict(M_BODY, flags=["MINERU_FOOTER"])
