@@ -107,9 +107,18 @@ MATH_PAGE: ContextVar[bool] = ContextVar("inline_math_page", default=False)
 _OPND = r"(?:[A-Za-z]|\d+(?:\.\d+)?)"                  # 홑 로마자 또는 수
 _EXPR = rf"{_OPND}(?:\s*[-+−]\s*{_OPND})*"
 _ELEM = rf"[-+−]?\s*{_EXPR}"
+# 부등식(xfail 해제). `<` · `>` 는 `_STRONG` 에 없어 `a>1일 때` 가 글로 새고 줄에 한글이 있으니 로마자표가 열렸다
+#   (`⠴⠁⠢⠢⠼⠁⠕⠂`). 「수학 점자」 1호(재추출 3308행) "수식에 사용하는 로마자는 로마자표를 적지 않고 수식의 앞뒤를 두 칸씩
+#   띄어 쓴다". 009 gold `즉, 3<t<4이므로` = ⠨⠪⠁⠐⠀⠀⠼⠉⠔⠔⠞⠔⠔⠼⠙⠀⠀⠕⠑⠪⠐⠥ · `(t>0)` = ⠦⠞⠢⠢⠼⠚⠴. 부등호 둘레 로마자는
+#   009 gold 수식 꼴 561 : 로마자표 꼴 8(셀 꼴 어림셈)이고 수학 밖은 드물고 엇갈린다(016 `C>B>A` 로마자표 꼴 4) → 수식 지면에서만.
+_IOPND = r"(?:\d+(?:\.\d+)?[A-Za-z]?|[A-Za-z](?:\([A-Za-z0-9]\))?)"   # 수 · 계수 붙은 문자 `2x` · 문자 · `f(x)`
+_IEXPR = rf"[-−]?{_IOPND}(?:\s*[-+−]\s*{_IOPND})*"
+_INEQ = rf"{_IEXPR}(?:\s*[<>]\s*{_IEXPR})+"
 _WEAK_MATH_RE = re.compile(
     rf"(?=.*[A-Za-z]){_OPND}\s*[-+−]\s*{_EXPR}"            # 홑 로마자가 든 덧셈·뺄셈 `p-q` · `n-1`(수 범위 `3-4쪽` 제외)
     rf"|\(\s*{_ELEM}(?:\s*,\s*{_ELEM})+\s*\)"           # 괄호 순서쌍 `(x, y)` · `(m, n-1)` · `(4, 3)` · `(8, -1)`
+    rf"|{_INEQ}(?:\s*,\s*{_INEQ})*"                       # 부등식 `a>1` · `3<t<4` · `a>0, b>0`
+    rf"|(?:{_IOPND}\s*)?\(\s*{_INEQ}\s*\)"               # 괄호 조건 `(t>0)` · `d(d>0)`
 )                                                            #   009 gold 수 순서쌍 수식 꼴 50 · 글 꼴 0
 
 
@@ -145,7 +154,8 @@ def normalize(span: str) -> str:
 # 구간 앞에 붙은 문항·선택지 번호는 수식이 아니다 — 떼어내고 원문에 남긴다.
 # 홑따옴표 없는 `.`·`,`도 뗀다: 자모 문항표 "ㄱ. |f(x)|"의 마침표는 표지의 일부라
 # 수식에 딸려 들어가면 자모 표지 규칙(ㄱ.→⠿⠁)의 뒤보기가 깨져 `.`가 그대로 남는다.
-_ENUM_HEAD_RE = re.compile(r"^(\(\s*\d+\s*\)|\d+\s*[.)]|[①-⑳]|[.,])\s*")
+# 로마 숫자 머리 `(i)` · `(ii)` 도 뗀다 — 009 gold `(i) a>1일 때` = ⠦⠄⠴⠊⠠⠴⠀⠁⠢⠢⠼⠁⠀⠀⠕⠂ (머리는 글, 식만 수식).
+_ENUM_HEAD_RE = re.compile(r"^(\(\s*\d+\s*\)|\((?:i{1,3}|iv|vi{0,3})\)|\d+\s*[.)]|[①-⑳]|[.,])\s*")
 
 
 # ★ `\text{한글}` 이 든 LaTeX 은 **통째로 한 구간**이다(2026-09-03).
@@ -296,10 +306,26 @@ def wrap(text: str) -> str:
     out: list[str] = []
     last = 0
     for m in _TAGGED_RE.finditer(text):
-        out.append(_wrap_segment(text[last:m.start()]))
+        out.append(_wrap_untagged(text[last:m.start()]))
         out.append(m.group())
         last = m.end()
-    out.append(_wrap_segment(text[last:]))
+    out.append(_wrap_untagged(text[last:]))
+    return "".join(out)
+
+
+# 기계 태그(`<!밑줄>` · `<!상자2>` …)는 수식 구간에 못 들게 따로 둔다. `<` · `>` 가 수식 원자라 종전에는 `<!밑줄>x=1<!/밑줄>` 이
+# `<!밑줄<!수식>>x=1<<!/수식>!/밑줄>` 로 태그를 찢어 태그 글자가 점자로 찍혔다(⠔⠔⠖⠑⠕⠦⠨⠯…).
+_ANY_TAG_RE = re.compile(r"<!/?[^<>]*>")
+
+
+def _wrap_untagged(seg: str) -> str:
+    out: list[str] = []
+    last = 0
+    for m in _ANY_TAG_RE.finditer(seg):
+        out.append(_wrap_segment(seg[last:m.start()]))
+        out.append(m.group())
+        last = m.end()
+    out.append(_wrap_segment(seg[last:]))
     return "".join(out)
 
 
