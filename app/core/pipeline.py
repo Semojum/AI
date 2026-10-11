@@ -1564,18 +1564,18 @@ def _valid_bbox(b: BBoxItem) -> bool:
     return b.bbox[2] > b.bbox[0] and b.bbox[3] > b.bbox[1]
 
 
-def _reorder_by_geometry(items: list[BBoxItem], rotation: int = 0) -> None:
-    """다단/사이드바 페이지의 읽기순서를 보정. 모드는 _REORDER_MODE.
+def _reorder_by_geometry(items: list[BBoxItem], rotation: int = 0) -> list[BBoxItem]:
+    """다단/사이드바 페이지의 읽기순서를 보정. 모드는 _REORDER_MODE. 쪽 끝으로 미룬 곁단 요소를 돌려준다(col 모드만).
 
     배경: MinerU content_list 순서는 좁은 좌측 사이드바(보충설명)를 본문보다 먼저 방출해
     읽기순서를 흩뜨린다(세계사 p086/p106). bbox 유효 요소가 과반인 MinerU 페이지만 손대고,
     bbox (0,0,0,0)인 ZERO/TEXT_NATIVE는 원순서를 보존한다.
     """
     if _REORDER_MODE == "off":
-        return
+        return []
     valid = [b for b in items if _valid_bbox(b)]
     if len(valid) < max(3, len(items) * 0.5):
-        return  # 기하정보 부족 → 원순서 유지
+        return []  # 기하정보 부족 → 원순서 유지
 
     if _REORDER_MODE == "geom":
         # H1(폐기): 전체를 위→아래·행내 좌→우로 정렬. MinerU가 옳던 페이지를 망가뜨림.
@@ -1586,14 +1586,15 @@ def _reorder_by_geometry(items: list[BBoxItem], rotation: int = 0) -> None:
                          else (big, b.reading_order))
         for i, b in enumerate(sorted(items, key=key), start=1):
             b.reading_order = i
-        return
+        return []
 
     if _REORDER_MODE == "sidebar":
         _reorder_sidebar(items, valid)
-        return
+        return []
 
     if _REORDER_MODE == "col":
-        _reorder_columns(items, rotation)
+        return _reorder_columns(items, rotation)
+    return []
 
 
 def _reorder_sidebar(items: list[BBoxItem], valid: list[BBoxItem]) -> None:
@@ -1636,8 +1637,8 @@ def _reorder_sidebar(items: list[BBoxItem], valid: list[BBoxItem]) -> None:
 _BANDED = os.environ.get("READING_ORDER_BANDED", "1") != "0"   # #1079 가로 띠 신호(끄면 종전) · 같은 커밋 A/B 스위치
 
 
-def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
-    """H3: 열 클러스터링 읽기순서.
+def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> list[BBoxItem]:
+    """H3: 열 클러스터링 읽기순서. 쪽 끝으로 미룬 곁단 요소(아래 (1))를 새 차례대로 돌려준다(없으면 빈 목록).
 
     규정 근거 —「점자 도서 제작 지침」2장 5. 다단 점역:
       · 동등한 관계의 다단 → "일반적으로 왼쪽 단을 적은 후 오른쪽 단으로, 상단을 적은
@@ -1665,7 +1666,7 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
     """
     body = [b for b in items if _valid_bbox(b) and b.type not in ("header_footer", "page_number")]
     if len(body) < 3:
-        return
+        return []
 
     # 1) x-구간 겹침(좁은 쪽 폭 50% 이상) union-find → 열 클러스터
     def _components(skip: set[int]) -> list[list[int]]:
@@ -1728,7 +1729,7 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
             for i, b in enumerate(sorted(body, key=lambda b: (-b.bbox[0] if desc else b.bbox[0],
                                                               b.bbox[1])), start=1):
                 b.reading_order = i
-        return
+        return []
     # 열 번호(왼쪽부터 0,1,2). ★ 여기서 확정해 둔다 — 아래에서 main 리스트를 extend하면
     #   클러스터 리스트가 같은 객체라 그대로 오염된다(열 번호가 뒤바뀐다).
     col_of = {id(b): ci for ci, cl in
@@ -1875,13 +1876,15 @@ def _reorder_columns(items: list[BBoxItem], rotation: int = 0) -> None:
 
     # 5) 새 본문 순서 = main → 이동 열(x0 순, 각 y-정렬). 비본문은 원 슬롯 유지.
     deferred.sort(key=lambda cl: min(b.bbox[0] for b in cl))
-    new_body = main + [b for cl in deferred for b in sorted(cl, key=lambda x: x.bbox[1])]
+    tail = [b for cl in deferred for b in sorted(cl, key=lambda x: x.bbox[1])]
+    new_body = main + tail
     body_ids = {id(b) for b in body}
     it = iter(new_body)
     seq = [next(it) if id(b) in body_ids else b
            for b in sorted(items, key=lambda b: b.reading_order)]
     for k, b in enumerate(seq, start=1):
         b.reading_order = k
+    return tail
 
 
 # ── 선택지·보기 하위항목 분절(P2a, opt 직전) ─────────────────────────────────
@@ -2597,8 +2600,9 @@ def _parse_txt_result(
                 box_level=int(el.get("box_level") or 0),
             )
 
-    _reorder_by_geometry(bbox_items, int(meta.get("page_rotation") or 0))
+    wing = _reorder_by_geometry(bbox_items, int(meta.get("page_rotation") or 0))
     _band_explanations(bbox_items, ext_map, ih if (scale_bbox or space == "pixel") else 1000)
+    _anchor_wing_terms(bbox_items, ext_map, wing)
     _join_item_numbers(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0)
     # 쪽 높이(bbox 와 같은 좌표계): 정규화를 픽셀로 늘렸으면 픽셀 높이, 정규화 그대로면 1000, 픽셀이면 메타 높이.
     _unpage_item_numbers(bbox_items, ext_map, ih if (scale_bbox or space == "pixel") else 1000)
@@ -2710,6 +2714,93 @@ def _band_explanations(items: list[BBoxItem], ext_map: dict[UUID, ExtractedConte
         ext = ext_map.get(order[u[0]].element_id)
         if ext is not None and "NLD-2.2.5" not in ext.layout_rules:
             ext.layout_rules.append("NLD-2.2.5")
+
+
+# 날개 용어 풀이 자리(원장 C-77). `_reorder_columns` 3번은 좁은 곁단(날개)을 참고 자료 단으로 보고 통째로 쪽 끝에 미룬다.
+# 그런데 날개의 용어 풀이(제목 '의무론' + 풀이 문단)는 각주처럼 그 용어가 나온 본문 문단 바로 아래에 적는다.
+# 「점자 도서 제작 지침」 2장 4 6) '각주는 주석이 위치한 본문 문단 다음'(재추출 1085행, NLD-2.2.4) · 점역사 답 Q8
+# '날개단의 내용은 … 본문의 해당 설명 문단 바로 아래에 삽입하여 배치'(braille-source/text/점역사_qna.txt 27행).
+# 차례만 옮긴 모의(dev · val, 날개 덩이 514 · 닻 505): 사회 네 권 실물 −99,431(좋 165 : 나 4).
+# 쪽 끝에 두는 것: 개념 체크 · 정답 상자(그 뒤 날개 요소 전부), 라벨 · 번호 제목, 예문((예) · ☞ · →)이 달린 풀이.
+# ⚠ 언매 gold 는 날개 풀이를 쪽 끝에 모은다(31/32). 예문 덩이를 남겨도 언매는 +3,580(0:9)이고 그걸 알고 Q8 을 따른다.
+# 되돌리기 `WING_TERM_ORDER=0`(호출 때 읽음).
+_WING_LABEL_RE = re.compile(r"^(?:개념체크|정답|자료플러스|개념플러스|기출플러스|수능|탐구|더알아보기|읽기자료|유제)")
+_WING_NUM_RE = re.compile(r"^\s*\d+\s*[.)]|^\s*\d+\s")       # '1.' · '2 ' 번호 제목(용어 '9품중정제' · '5대 10국' 은 남긴다)
+_WING_EXAMPLE_RE = re.compile(r"^\s*(?:\(예\)|예\)|☞|→|예:)|\(예\)")
+_JOSA_TAIL_RE = re.compile(r"(?:의|와|과|및|란|이란|에서|으로|로|을|를|은|는|이|가)$")
+
+
+def _wing_norm(s: str) -> str:
+    return re.sub(r"[^가-힣A-Za-z0-9]", "", s)
+
+
+def _wing_keys(title: str) -> list[str]:
+    """닻 찾기 열쇠: 제목 전체 → 괄호 앞 → 2자 이상 낱말(긴 것부터, 같은 길이는 제목 차례)."""
+    head = re.split(r"[(\[]", title)[0]
+    words = sorted(dict.fromkeys(_JOSA_TAIL_RE.sub("", w) for w in re.findall(r"[가-힣]{2,}", head)), key=len, reverse=True)
+    return [k for k in dict.fromkeys([_wing_norm(title), _wing_norm(head), *words]) if len(k) >= 2]
+
+
+def _anchor_wing_terms(items: list[BBoxItem], ext_map: dict[UUID, ExtractedContent], wing: list[BBoxItem]) -> None:
+    """후치된 날개의 용어 풀이 덩이를 그 용어가 처음 나온 본문 요소 바로 뒤로 옮긴다(in-place, reading_order 만 바꾼다)."""
+    if os.environ.get("WING_TERM_ORDER", "1") == "0" or not wing:
+        return
+    wing_ids = {id(b) for b in wing}
+    order = sorted(items, key=lambda b: b.reading_order)
+    txt = [_INLINE_TAG_RE.sub("", ext_map[b.element_id].corrected_text or "").strip()
+           if b.element_id in ext_map else "" for b in order]
+    blocks: list[list[int]] = []
+    boxed: set[int] = set()
+    cur, in_box = None, False
+    for i, b in enumerate(order):
+        if b.type in ("header_footer", "page_number"):
+            continue
+        if id(b) not in wing_ids:
+            cur, in_box = None, False
+            continue
+        t0 = _wing_norm(txt[i].split("\n")[0])
+        box_head = t0.startswith("개념체크") or t0 == "정답"
+        in_box = in_box or box_head                    # 개념 체크 · 정답 상자: 그 뒤 날개 요소는 상자 몫(생명과학 꼴)
+        if b.type == "title" or box_head or cur is None:
+            cur = [i]
+            blocks.append(cur)
+            if in_box:
+                boxed.add(i)
+        else:
+            cur.append(i)
+    terms = [u for u in blocks
+             if u[0] not in boxed and order[u[0]].type == "title" and len(u) >= 2
+             and 0 < len(_wing_norm(txt[u[0]])) <= 15
+             and not _WING_LABEL_RE.match(_wing_norm(txt[u[0]])) and not _WING_NUM_RE.match(txt[u[0]])
+             and not any(_WING_EXAMPLE_RE.search(txt[j]) for j in u[1:])]
+    if not terms:
+        return
+    main = [i for i, b in enumerate(order) if id(b) not in wing_ids and b.type not in ("header_footer", "page_number")]
+    mtxt = {i: _wing_norm(txt[i]) for i in main}
+    after: dict[int, list[list[int]]] = {}
+    for u in terms:
+        for k in _wing_keys(txt[u[0]].split("\n")[0]):
+            a = next((i for i in main if k in mtxt[i]), None)
+            if a is not None:
+                after.setdefault(a, []).append(u)
+                break
+    if not after:
+        return
+    moved = {j for us in after.values() for u in us for j in u}
+    seq: list[int] = []
+    for i in range(len(order)):
+        if i in moved:
+            continue
+        seq.append(i)
+        for u in after.get(i, []):
+            seq += u
+    for k, i in enumerate(seq, start=1):
+        order[i].reading_order = k
+    for us in after.values():
+        for u in us:
+            ext = ext_map.get(order[u[0]].element_id)
+            if ext is not None and "NLD-2.2.4" not in ext.layout_rules:
+                ext.layout_rules.append("NLD-2.2.4")
 
 
 def _box_concept_checks(items: list[BBoxItem], ext_map: dict[UUID, ExtractedContent]) -> None:
