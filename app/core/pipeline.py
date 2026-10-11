@@ -2626,6 +2626,7 @@ _INLINE_TAG_RE = re.compile(r"<!/?[^>]*>")
 # 쪽 끝 몰기 0쪽이다. dev · val 32쪽 중 30쪽이 바뀐다(가드 2쪽 그대로). 되돌리기 `EXPL_BAND_ORDER=0`(호출 때 읽음).
 _EXPL_LABEL_RE = re.compile(r"^정답과\s*해설$")
 _EXPL_BODY_RE = re.compile(r"^(?:정답\s*해설|정답\s*[①-⑤])")
+_QUESTION_HEAD_RE = re.compile(r"^(?:대표\s*기출\s*문제|닮은꼴\s*문제)")
 
 
 def _band_explanations(items: list[BBoxItem], ext_map: dict[UUID, ExtractedContent], page_h: float) -> None:
@@ -2674,7 +2675,16 @@ def _band_explanations(items: list[BBoxItem], ext_map: dict[UUID, ExtractedConte
     if any(side(i) and order[i].bbox[1] >= top - tol for i in range(labels[0])):
         return                                         # 곁단에 첫 표지보다 앞선 요소(출처 꼬리표 등)
     main = [i for i in range(labels[0]) if body[i] and not side(i)]
-    bands = [order[a].bbox[1] - tol for a in labels] + [float("inf")]
+    # 띠 시작 = 표지 높이 − 3%. 그 위 10% 안 본문 단에 문제 머리표('대표 기출문제' · '닮은꼴 문제')가 있으면 거기부터다.
+    # 머리표가 표지보다 68px 위에 오는 쪽(세계사 p0105)과 문제1 끝이 표지 45px 위인 쪽(동아시아사 p0094)이 함께 있어
+    # 고정 여유 하나로는 못 가른다.
+    bands = []
+    for a in labels:
+        ya = order[a].bbox[1]
+        heads = [order[m].bbox[1] for m in main
+                 if _QUESTION_HEAD_RE.match(txt[m]) and ya - 0.1 * page_h <= order[m].bbox[1] <= ya + tol]
+        bands.append(min([ya - tol] + [y - 1 for y in heads]))
+    bands.append(float("inf"))
     anchors = []
     for k in range(len(units)):
         # 마지막 띠는 쪽 아래 6%(꼬리말)만 뺀다 — 문제 선지 ⑤ 가 해설 덩이보다 아래로 내려가는 쪽이 있다.
