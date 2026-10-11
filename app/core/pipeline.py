@@ -179,6 +179,32 @@ def _is_edge_header(content: str, bbox, band: tuple[float, float, float] | None)
     return not _BOX_TAG_RE.search(content or "")
 
 
+# ── 묵자 꼬리말 억제 (2026-10-11, 원장 C-86) ─────────────────────────────────
+# 묵자 쪽 아래 꼬리말(`06강 항상성` · `[2부] 적용 학습` · `12. 사회 이동과 사회 계층 구조`)을 본문에 옮기지 않는다.
+# 근거: 「한국 점자 규정」에 조항이 없다. 참고용 「점자 자료 제작 지침」 §2.1.2 는 **점자 페이지행**의 꼬리말
+# 자리를 정할 뿐 묵자 꼬리말을 본문에 옮기라는 조항이 아니다 → 판정표 '모호 → 관행'. gold 는 본문에 안 옮기고
+# 페이지행 꼬리말 칸에 줄인 단원 · 강 표시(`Ⅱ  03` · `03 삼각함수`)를 적는다(C-09, 우리는 아직 빈 칸).
+# 꼬리말은 한 쪽 안 신호로만 가른다 — BE 가 쪽마다 한 장 PDF 를 보내 '여러 쪽에 되풀이'는 못 쓴다.
+#   · `_split_foot_number` 가 쪽 번호를 뗀 블록(`page_foot`) — ZERO 는 추출 단계, MinerU 는 여기서 뗀다.
+#   · MinerU `footer` 이면서 쪽 맨 아래 블록. 맨 아래가 아닌 `footer` 는 본문이 잘못 잡힌 것이 대부분이라
+#     안 지운다(세계사 `정답 해설 ▶ …` · 동아시아사 선택지 · 발문, dev · val 346개 중 gold 에 있는 것 101).
+#   · 한 문단만. 여러 문단 `footer` 는 본문이다(맨 아래 여러 문단 110개 중 gold 에 있는 것 101).
+# 실측(dev+val 1,746쪽 A/B, #1319): 빠지는 요소 706(ZERO 76 · MinerU 630)이고 꼬리말 아닌 요소는 0 이다. gold 에
+# 같은 글이 없는 것 677(고유 글 90, 눈으로 전부 꼬리말). 있는 것 29 중 22 는 gold **페이지행** 꼬리말 칸, 2 는 우리
+# 다른 요소에도 같은 글이 있다. gold 본문 제목과 같은 것은 5(세계사 `Ⅰ단원 실력 플러스` 등 구역 배너. 쪽 위 배너는
+# `I 단원` · `실력 플러스` 로 남는다). 같은 배너 꼴 33곳 중 gold 가 본문에 적는 것 7 · 안 적는 것 26 이라 꼴로 못
+# 가른다 → 다수(지움)로 둔다.
+# 되돌리기 `PAGE_FOOT_DROP=0`.
+def _is_page_foot(el: dict, content: str, bottom: bool) -> bool:
+    """본문에 옮기지 않는 묵자 꼬리말인가(C-86). `bottom` = 쪽 맨 아래 블록(쪽 번호 요소 뺌)."""
+    if os.environ.get("PAGE_FOOT_DROP", "1") == "0":
+        return False
+    if not (el.get("page_foot") or (bottom and "MINERU_FOOTER" in (el.get("flags") or []))):
+        return False
+    c = _HF_TAG_RE.sub("", content or "").strip()
+    return bool(c) and "\n" not in c and not _XREF_RE.search(c) and not _BOX_TAG_RE.search(content or "")
+
+
 def _is_running_foot(content: str) -> bool:
     """header_footer 요소가 인쇄 전용 러닝풋인가(실측 패턴 목록 기반)."""
     c = re.sub(r"\s+", " ", _HF_TAG_RE.sub("", content or "")).strip()
@@ -576,6 +602,13 @@ _FOOT_NUM_RE = re.compile(r"(\d{1,3})\s{2,}(\S.*)|(.*\S)\s{2,}(\d{1,3})", re.S)
 _FOOT_BAND = 0.9                # 블록 윗변이 쪽 높이의 이 비율 아래
 
 
+def _bottom_block(elements: list[dict]) -> dict | None:
+    """쪽 가장 아래 블록(윗변 기준) — 꼬리말 자리. 쪽 번호 요소 · 좌표 없는 요소는 안 본다."""
+    boxed = [e for e in elements if isinstance(e.get("bbox"), (list, tuple)) and len(e["bbox"]) >= 4
+             and e.get("type") != "page_number"]
+    return max(boxed, key=lambda e: e["bbox"][1]) if boxed else None
+
+
 def _split_foot_number(elements: list[dict], page_h: float) -> list[dict]:
     """쪽 가장 아래 블록이 아래 띠의 꼬리말이면 앞이나 뒤 쪽 번호를 `page_number` 요소로 떼어 맨 앞에 둔다(#1247).
 
@@ -596,15 +629,14 @@ def _split_foot_number(elements: list[dict], page_h: float) -> list[dict]:
     """
     if not page_h or os.environ.get("ZERO_FOOT_PAGE_NUMBER", "1") == "0":
         return elements
-    boxed = [e for e in elements if isinstance(e.get("bbox"), (list, tuple)) and len(e["bbox"]) >= 4
-             and e.get("type") != "page_number"]
-    if not boxed:
+    foot = _bottom_block(elements)
+    if foot is None:
         return elements
-    foot = max(boxed, key=lambda e: e["bbox"][1])
     m = _FOOT_NUM_RE.fullmatch(foot["content"]) if foot["bbox"][1] >= _FOOT_BAND * page_h else None
     if not m:
         return elements
     foot["content"] = m.group(2) or m.group(3)
+    foot["page_foot"] = True        # 꼬리말 글이다 → `_is_page_foot`(C-86). flags 가 아니다(BE 로 안 나간다)
     num = m.group(1) or m.group(4)
     if any(e.get("type") == "page_number" and str(e.get("content") or "").strip() == num for e in elements):
         return elements
@@ -2514,6 +2546,8 @@ def _parse_txt_result(
     _els = _split_list_marker_items(extraction.get("elements", []))
     _els = _split_foot_number(_els, 1000 if space == "norm1000" else ih)     # 꼬리말에 든 쪽 번호(#1264)
     _band = _page_edge_band(_els)
+    _bottom = _bottom_block(_els)                                            # 꼬리말 자리(C-86)
+    _feet: set[UUID] = set()                                                 # 열 묶기 뒤에 뺄 꼬리말(C-86)
     for idx, el in enumerate(_els, start=1):
         try:
             eid = UUID(str(el.get("id")))
@@ -2544,6 +2578,9 @@ def _parse_txt_result(
         if _is_edge_header(content, el.get("bbox"), _band):
             logger.info("지면 가장자리 머리글 억제(%s): %.60s", etype, content)
             continue
+        if _is_page_foot(el, content, el is _bottom):
+            logger.info("묵자 꼬리말 억제(C-86, %s): %.60s", etype, content)
+            _feet.add(eid)
         # 추출 모델의 '못 읽었다' 해설문 → 내용 비우고 R11(원본 확인 요망)로 넘긴다.
         # 글자층에서 뽑은 글(TEXT_NATIVE)에는 모델 해설문이 생길 수 없다. 본문만 잘못 지운다(#1288).
         refused = method != "TEXT_NATIVE" and _is_extraction_refusal(content)
@@ -2603,6 +2640,13 @@ def _parse_txt_result(
             )
 
     wing = _reorder_by_geometry(bbox_items, int(meta.get("page_rotation") or 0))
+    if _feet:
+        # 꼬리말은 열 묶기가 끝난 뒤에 뺀다. 먼저 빼면 x 겹침 열이 달라져 남은 요소 차례가 바뀐다
+        # (dev · val 53쪽, 생명과학 body p0027 표가 실험 과정 앞으로 가 편집 +437). 차례는 손대지 않는 변경이어야 한다.
+        bbox_items[:] = [b for b in bbox_items if b.element_id not in _feet]
+        wing = [b for b in wing if b.element_id not in _feet]
+        for _eid in _feet:
+            ext_map.pop(_eid, None)
     _band_explanations(bbox_items, ext_map, ih if (scale_bbox or space == "pixel") else 1000)
     _anchor_wing_terms(bbox_items, ext_map, wing)
     _join_item_numbers(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0)

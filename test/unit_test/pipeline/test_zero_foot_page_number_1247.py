@@ -19,6 +19,7 @@ BODY = {"content": "그림은 사람의 혈당 조절 과정을 나타낸 것이
 @pytest.fixture(autouse=True)
 def _form_off(monkeypatch):
     monkeypatch.setattr(pipeline, "_ITEM_CODE_FORM", "off")
+    monkeypatch.setenv("PAGE_FOOT_DROP", "0")    # 여기는 쪽 번호 떼기만 본다. 꼬리말 글 억제는 test_page_foot_1319
 
 
 def _kinds(els):
