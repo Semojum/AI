@@ -2670,10 +2670,71 @@ def _parse_txt_result(
     _unpage_item_numbers(bbox_items, ext_map, ih if (scale_bbox or space == "pixel") else 1000)
     _place_item_codes(bbox_items, ext_map, scale_bbox[0] if scale_bbox else 1.0,
                       scale_bbox[1] if scale_bbox else 1.0)
+    _join_choice_elements(bbox_items, ext_map)
     _box_concept_checks(bbox_items, ext_map)
     _mark_table_box_levels(bbox_items, ext_map)
     layout = LayoutResult(page_id=page_id, elements=bbox_items)
     return layout, ext_map, method
+
+
+# 선택지 요소 잇기(원장 C-166). 수학Ⅰ 은 MinerU 가 선택지마다 요소를 따로 낸다(`① $\sqrt[3]{3}$` · `② $\sqrt{3}$` · `③ 1` …).
+# 합침(`layout_braille._combine_choice_lines`, #1238)은 한 요소 안의 줄만 묶어서 이 책에서는 안 걸렸다(한 줄에 선택지 둘 이상인 줄
+# gold 416 : 우리 14, `temp/n262`). 읽기 차례로 이어진 글 요소가 ①부터 차례대로 한 줄씩이고 4 · 5개면 첫 요소에 줄로 잇는다.
+# 줄을 묶을지는 종전처럼 합침이 정한다(32칸 · `choices_one_per_line`).
+# ⚠ 계약 변화: 이은 요소는 응답에서 사라지고 첫 요소 사각형이 선택지 전체를 덮는다(`_join_item_numbers` 와 같은 꼴).
+#   그래서 **묶일 만큼 짧은 선택지만** 잇는다. 긴 선택지는 이어도 줄이 그대로라 요소 id 만 사라진다.
+#   ponytail: 글자 수 어림(선택지 글 12자 이하). 1012 A/B 에서 실제로 묶인 286묶음의 가장 긴 글이 7자, 안 묶인 1,137묶음은
+#   10% 지점이 19자였다. 셀 폭으로 정확히 가르려면 점역 뒤에 이어야 한다.
+# 줄 끝에 붙은 상자 태그(`⑤ … <!상자끝><!/상자끝>`)는 제 줄로 뗀다. 붙은 채 이으면 원문 줄과 점자 줄(테두리가 제 줄)이
+#   1:1 이 아니게 돼 항목 줄머리 들여쓰기(`_mark_item_lines`)와 합침이 통째로 빠진다(언매 본책 p0173 ② ~ ⑤ 0칸).
+# 되돌리기 `CHOICE_ELEMENT_JOIN=0`(호출 때 읽음).
+_CHOICE_HEAD_RE = re.compile(r"^([①-⑤])\s")
+_CHOICE_JOIN_MAX = 12                                       # 선택지 글 글자 수(태그 · 머리 · LaTeX 명령 뺌)
+_CHOICE_LATEX_RE = re.compile(r"\\[A-Za-z]+|[${}\\]")
+_BOX_END_INLINE_RE = re.compile(r"(?<=\S)[ \t]*(<!상자끝\d?><!/상자끝\d?>)[ \t]*$", re.M)
+_BOX_OPEN_INLINE_RE = re.compile(r"^(<!상자\d?>[^\n]*?<!/상자\d?>)[ \t]*(?=\S)", re.M)
+
+
+def _join_choice_elements(items: list[BBoxItem], ext_map: dict) -> int:
+    """읽기 차례로 이어진 선택지 요소(①~④ · ①~⑤, 요소마다 한 줄)를 첫 요소에 잇는다. 이은 묶음 수를 돌려준다."""
+    if os.environ.get("CHOICE_ELEMENT_JOIN", "1") == "0":
+        return 0
+
+    def lines(b: BBoxItem) -> list[str]:
+        c = ext_map.get(b.element_id)
+        return [ln for ln in ((c.corrected_text or "") if c else "").split("\n") if _INLINE_TAG_RE.sub("", ln).strip()]
+
+    order = sorted(items, key=lambda b: b.reading_order)
+    joined, drop, i = 0, set(), 0
+    while i < len(order):
+        run: list[BBoxItem] = []
+        for b in order[i:]:
+            ls = lines(b) if b.type == "text" else []
+            body = _INLINE_TAG_RE.sub("", ls[0]).strip() if len(ls) == 1 else ""
+            m = _CHOICE_HEAD_RE.match(body)
+            if (not m or ord(m.group(1)) - 0x2460 != len(run)
+                    or len(_CHOICE_LATEX_RE.sub("", body[m.end():]).strip()) > _CHOICE_JOIN_MAX):
+                break
+            run.append(b)
+        if len(run) not in (4, 5):
+            i += 1
+            continue
+        head = ext_map[run[0].element_id]
+        joined_text = "\n".join(ext_map[b.element_id].corrected_text or "" for b in run)
+        head.corrected_text = _BOX_OPEN_INLINE_RE.sub(r"\1\n", _BOX_END_INLINE_RE.sub(r"\n\1", joined_text))
+        head.flags = list(dict.fromkeys(f for b in run for f in ext_map[b.element_id].flags))
+        if all(_valid_bbox(b) for b in run):
+            bbs = [b.bbox for b in run]
+            run[0].bbox = (min(x[0] for x in bbs), min(x[1] for x in bbs), max(x[2] for x in bbs), max(x[3] for x in bbs))
+        drop.update(b.element_id for b in run[1:])
+        joined += 1
+        i += len(run)
+    if drop:
+        items[:] = [b for b in items if b.element_id not in drop]
+        for eid in drop:
+            ext_map.pop(eid, None)
+        logger.info("선택지 요소 잇기(C-166): %d묶음", joined)
+    return joined
 
 
 # 곁단 '개념 체크' 글상자(#1155). 사회 네 권 곁단의 개념 체크(제목 · 문항 · 정답)에는 묵자 사각형이 따로 없다(곁단 바탕

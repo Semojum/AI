@@ -46,6 +46,7 @@ NOT_BOUNDARY = {
     "EXPL_BAND_ORDER": "경계 뒤 해설 띠 차례(`_parse_txt_result`, #1305)",
     "WING_TERM_ORDER": "경계 뒤 날개 용어 풀이 자리(`_parse_txt_result`, 원장 C-77)",
     "PAGE_FOOT_DROP": "경계 뒤 묵자 꼬리말 빼기(`_parse_txt_result`, #1319 · 원장 C-86). 경계의 `page_foot` 표지는 늘 단다",
+    "CHOICE_ELEMENT_JOIN": "경계 뒤 선택지 요소 잇기(`_parse_txt_result`, 원장 C-166)",
 }
 _ENV_RE = re.compile(r"""(?:os\.environ\.get|os\.getenv|os\.environ\.setdefault)\(\s*["']([A-Z0-9_]+)["']|os\.environ\[\s*["']([A-Z0-9_]+)["']\s*\]""")
 
