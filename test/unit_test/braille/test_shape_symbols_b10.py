@@ -41,7 +41,9 @@ def test_single_big_circle_is_left_alone():
 
 def test_big_circle_run_is_judged_as_a_whole():
     """런 단위 판정 — 글자 단위로 하면 줄머리 ◯◯의 둘째만 바뀌어 없는 뜻이 된다."""
-    assert tr("◯◯ 신문").count("⠸") == 0
+    assert tr("◯◯ 12").count("⠸") == 0
+    # 줄머리 런을 바꿀 때는 두 칸을 함께 바꾼다(「자료 지침」 L1082 용례 `◯◯신문`, #1307).
+    assert MASK_2 in tr("◯◯ 신문")
 
 
 def test_box_run_is_fill_not_x():
