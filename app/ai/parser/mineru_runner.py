@@ -1929,12 +1929,38 @@ def _is_chart_description(rows: list[str]) -> bool:
     return bool(words) and all(w.lower() in _CHART_DESC_WORDS for w in words)
 
 
-def _chart_data_table(md: str) -> str:
+# 함수 그래프 꼴 표(#1328): 칸에 LaTeX(명령 · 아래첨자 · 위첨자 · 인라인 구분자)가 있거나, 머리 첫 칸이 변수 하나(`X` · `t` · `θ`)다.
+_FN_TABLE_LATEX_RE = re.compile(r"\\[A-Za-z]+|\\\(|_\{|\^\{")
+_FN_TABLE_VAR_RE = re.compile(r"\\?\(?\s*(?:[A-Za-z]|\\?theta|θ)\s*\\?\)?")
+
+
+def _is_function_graph_table(rows: list[str]) -> bool:
+    """MinerU 가 **함수 그래프**를 읽어 지어낸 값 표인가(#1328).
+
+    수학 쪽 함수 그래프(sub_type line · contour)를 MinerU 가 `X | Y / 0 | -1 / (\\pi/2) | 0` 같은 함숫값 · 좌표 표로 낸다.
+    묵자에는 표가 없고 값은 지어낸 것이다(수학Ⅰ 본책 p0051 정의역 [0, 2π] 밖 −π/2 값까지). gold 는 그 자리에 표가 아니라
+    점역자주 그림 설명(해설 쪽 `【점역자주】그림: 좌표평면에 … 그래프가 그려져 있다.`)이나 촉각 그림 참조(본책 쪽
+    `【점역자주】그림 51-1 참조`)를 적는다 — 이 표는 버리고 캡션 경로로 보낸다.
+    가르는 신호 둘: 칸에 LaTeX 가 있다(dev · val 21건 중 16) · 머리 첫 칸이 변수 하나다(나머지 5, `X | Y` · `t | y`).
+    막대그래프 수치 전사(`언어 문제 | 64.9`, 이 정책을 넣은 07-16 근거)는 머리가 낱말이라 안 걸린다.
+    ⚠ 2027 dev · val 에서 차트 → 표는 수학Ⅰ 21건뿐이고 전부 함수 그래프였다. 막대그래프 전사가 이 판정에 걸리는지는
+      실물이 없어 못 쟀다(옛 실행분 차트 19건도 표로 넘어간 것 0건).
+    """
+    if any(_FN_TABLE_LATEX_RE.search(r) for r in rows):
+        return True
+    first = rows[0].split("|")[0].strip()
+    return bool(_FN_TABLE_VAR_RE.fullmatch(first))
+
+
+def _chart_data_table(md: str, chart: bool = True) -> str:
     """MinerU가 차트에서 뽑은 markdown 표 → 표 점역이 먹는 '|' 격자. 표가 아니면 "".
 
     MinerU는 그래프(막대·원·꺾은선)를 읽어 `| Category | Value |` 형태의 데이터 표를 낸다.
     정답 도서도 그래프를 이렇게 전사하므로(수치가 본문에 살아 있어야 함) 그대로 표로 넘긴다.
     ★ 단, **전사가 아니라 생성된 설명**(`Feature | Description`)은 버린다 — `_is_chart_description`.
+    ★ MinerU `chart` 요소(`chart=True`)면 함수 그래프의 값 표도 버린다 — `_is_function_graph_table`(#1328).
+      `image`(text_image) 요소는 그림 속 글자를 읽은 것이라 안 거른다. 수학Ⅰ 본책 p0070 등차수열 합 그림
+      `a | l / a+d | l-d …` 이 그 꼴이고 gold 는 그 자리를 식 줄(`S_n=a+(a+d)+…`)로 적는다.
     """
     if not md or "|" not in md:
         return ""
@@ -1948,7 +1974,7 @@ def _chart_data_table(md: str) -> str:
         cells = [c.strip() for c in s.strip("|").split("|")]
         if any(cells):
             rows.append(" | ".join(cells))
-    if len(rows) < 2 or _is_chart_description(rows):
+    if len(rows) < 2 or _is_chart_description(rows) or (chart and _is_function_graph_table(rows)):
         return ""
     return "\n".join(rows)
 
@@ -2388,6 +2414,7 @@ def run(
 
     for item in content_list:
         suspect = False                 # 환각 신호가 남은 요소(#1078 ②) — 아래 flags 에 R4 표지로
+        chart_table = False             # 그래프에서 VLM 이 읽은 값을 표로 바꾼 요소(#1328) — 아래 flags 에 R11 표지로
         table_fixes: list[str] = []      # 표 칸 한 음절 오독을 고친 자리(#1296 B3) — 경계 요소에 실어 R4 '고침'으로
         item_type = item.get("type", "text")
         mapped_type = TYPE_MAP.get(item_type, "text")
@@ -2412,7 +2439,7 @@ def run(
         if isinstance(printed_cap, list):
             printed_cap = " ".join(x for x in printed_cap if x)
         forced_caption = (printed_cap or "").strip() if mapped_type in ("image", "chart_graph", "cartoon") else ""
-        has_data = bool(_chart_data_table(item.get("content", ""))
+        has_data = bool(_chart_data_table(item.get("content", ""), chart=item_type == "chart")
                         or _flowchart_lines(item.get("content", "")))
         # ★ 그림을 캡션으로 바꾼 자리에는 표지를 남긴다(#1073). 종전엔 표지가 없어 결과 단계의 짝 찾기가 쪽의
         #   아무 시각요소에 짝을 지었고, 그림이 있었다는 사실이 출력 어디에도 안 남았다(n71 384쪽 중 63쪽).
@@ -2450,10 +2477,12 @@ def run(
                 #   기다리면 API 없이는 요소가 통째로 비고, 있어도 생성 설명이 수치를 놓친다.
                 #   (rule-based vs generation 분리 원칙: 추출된 데이터는 규칙으로 옮긴다)
                 raw_content = item.get("content", "")
-                data = _chart_data_table(raw_content)
+                data = _chart_data_table(raw_content, chart=item_type == "chart")
                 flow = _flowchart_lines(raw_content) if not data else ""
                 if data:
-                    content, mapped_type = data, "table"
+                    # 종류가 table 로 바뀌면 시각 요소 검토(R11)가 안 붙는다. 그림에서 읽은 내용이라 원본과 대조해야 하니
+                    #   깃발로 남긴다(#1328, 함수 그래프 22요소가 R10 만 달고 나갔다).
+                    content, mapped_type, chart_table = data, "table", True
                 elif flow:
                     # 흐름도(삼각무역 도식 등) — 정답도 화살표 줄로 전사한다.
                     # 인쇄 캡션("(가)")이 있으면 앞에 붙여 어느 도식인지 알 수 있게 한다.
@@ -2593,7 +2622,8 @@ def run(
                      + (["IMAGE_AS_CAPTION"] if image_as_caption and os.environ.get("IMAGE_AS_CAPTION_NOTE", "1") != "0" else [])
                      + ([f"MINERU_{item['_nested'].upper()}"] if item.get("_nested") else [])
                      + ([item["_flag"]] if item.get("_flag") else [])
-                     + (["HALLUCINATION_SUSPECT"] if suspect else []),
+                     + (["HALLUCINATION_SUSPECT"] if suspect else [])
+                     + (["CHART_AS_TABLE"] if chart_table else []),
         })
         order += 1
 

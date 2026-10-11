@@ -532,6 +532,14 @@ class TestVisualAndTableFlags:
         assert [r.type for r in rep.review_flags] == ["R11"]
         assert "직접 작성" in rep.review_flags[0].message
 
+    def test_그래프에서_옮긴_표는_R10_과_R11(self):
+        """#1328 — 그래프를 VLM 이 표로 옮기면 종류가 table 이라 시각 요소 R11 이 안 붙었다. 깃발로 붙인다."""
+        layout, ids = self._layout_typed("table")
+        rep = QualityChecker().check("p_001", layout_result=layout,
+                                     extracted=[_ext(ids[0], flags=["CHART_AS_TABLE"])], llm_outputs=[_llm(ids[0])])
+        assert sorted(r.type for r in rep.review_flags) == ["R10", "R11"]
+        assert any("그림에서 AI가 읽은" in r.message for r in rep.review_flags if r.type == "R11")
+
     def test_표는_R10(self):
         layout, ids = self._layout_typed("table")
         rep = QualityChecker().check("p_001", layout_result=layout,
