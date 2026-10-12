@@ -443,6 +443,16 @@ class QualityChecker:
                     type="R10", element_id=eid,
                     message="표 — 전개 방식이 점역사 재량이라 초안과 다를 수 있습니다",
                 ))
+            # 묵자 머리글 · 꼬리글로 뽑힌 글(#1348, 원장 C-86). 점자본에 적을지는 책마다 갈린다 — dev · val
+            # `header_footer` 1,124요소 중 gold 에 없는 것 480 · 일부만 151 · 있는 것 493이고, 같은 글(`정답과 해설 N쪽`)도
+            # 책마다 gold 에 있기도 없기도 해 글 꼴로 못 가른다. 지우는 쪽은 자문 대기라 표시만 단다. 표시가 없어 그런
+            # 요소가 든 쪽이 COMPLETED 로 나갔다(COMPLETED 1,062쪽 중 384쪽, 그중 gold 에 없는 머리글이 든 쪽 245).
+            # `text` · `title` 로 잡힌 꼬리글(약 122)은 뺐다 — 글 꼴로도 쪽 위아래 띠 위치로도 정밀도가 50%대다.
+            if eid not in blocked_ids and types.get(eid) == "header_footer":
+                reviews.append(ReviewFlag(
+                    type="R19", element_id=eid,
+                    message="묵자 머리글·꼬리글로 뽑힌 글입니다. 점자본에 적을지 확인하세요(책마다 다릅니다)",
+                ))
             # 본문 텍스트 위험 구간 — 근거·한계는 위 _r13_reason 주석.
             if eid not in blocked_ids and types.get(eid) == "text":
                 r13 = _r13_reason(e.corrected_text or "")

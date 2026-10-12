@@ -70,7 +70,12 @@ class TestFileHandoffE2E:
     def test_response_completed_with_braille(self, job):
         job_id, _ = job
         result = asyncio.run(pipeline.run(PageTask(job_id=job_id, page_no=_PAGE, mode="c")))
-        assert result["status"] == "COMPLETED"
+        # 머리글 요소(`CHAPTER 01 · …`)는 점자본에 적을지 확인할 자리라 R19 하나만 붙어 검토로 간다(#1348).
+        assert result["status"] == "NEEDS_REVIEW"
+        hf = [e["id"] for e in result["braille_text_list"] if e["type"] == "header_footer"]
+        flags = [(f["type"], f["element_id"]) for f in result["quality_report"]["review_flags"]
+                 if f["element_id"] != "page" and f["type"] not in ("R10", "R13")]   # 쪽 단위 · 등급 표시는 뺀다
+        assert flags == [("R19", hf[0])]
         assert len(result["braille_text_list"]) == 5      # 쪽 번호(page_number)는 점자 목록에서 빠진다(#1262)
         for el in result["braille_text_list"]:
             assert el["contents"], f"빈 점자 출력: {el['id']}"
