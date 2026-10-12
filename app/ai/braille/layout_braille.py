@@ -433,8 +433,12 @@ def _with_box_blanks(seps: list[str], at: frozenset) -> list[str]:
 
 
 def _is_box_title_line(line: str) -> bool:
-    """위 테두리 윗줄 5칸 제목 줄인가(지침 1장 2절 5. 2)(4)① 399행) — 상자에 딸려 빈 줄은 그 위에 온다."""
-    return line.startswith(_PAD * 4) and not line.startswith(_PAD * 5) and bool(line.strip(" ⠀"))
+    """위 테두리 윗줄 5칸 제목 줄인가(지침 1장 2절 5. 2)(4)① 399행) — 상자에 딸려 빈 줄은 그 위에 온다.
+
+    한 줄(32칸)에 드는 줄만 본다. 응답은 접기 전 논리 줄을, 쪽 조판은 접은 줄을 보는데, 긴 5칸 제목은 접히면 마지막 줄이
+    0칸이라 두 경로가 갈렸다(A/B 123쪽). 접히는 제목은 상자 제목이 아니라 본 제목으로 본다."""
+    return (len(line) <= _COLS and line.startswith(_PAD * 4) and not line.startswith(_PAD * 5)
+            and bool(line.strip(" ⠀")))
 
 
 def _block_blanks(etype: str, hlevel: int, box_lead: bool = False, box_tail: bool = False) -> tuple[int, int]:

@@ -230,3 +230,10 @@ class TestBothOutputs:
         for lines in (c, r):
             t = next(i for i, ln in enumerate(lines) if ln.startswith("⠀⠀⠀⠀") and not ln.startswith("⠀⠀⠀⠀⠀"))
             assert not lines[t - 1].strip(" ⠀")          # 제목 위는 띈다(4단계 제목 앞 빈 줄)
+
+    def test_접히는_긴_5칸_제목_뒤_상자는_띈다(self) -> None:
+        """접히는 제목은 상자 제목이 아니다. 응답(접기 전 한 줄)과 쪽 조판(접은 줄)이 같은 답을 낸다."""
+        long_title = "생명 과학의 특성과 다른 학문 분야와의 연계 사례를 살펴보자"
+        c, r = _two_outputs([("앞 문장입니다.", "text", 0), (long_title, "title", 4),
+                             (_TOP + "\n가나다\n" + _BOT, "text", 0), ("뒤 문장입니다.", "text", 0)])
+        assert _gaps(c)[0] == _gaps(r)[0] == ("위", "⠿⠛", True)
