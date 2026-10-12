@@ -539,7 +539,7 @@ class TestLayoutBody:
         assert body[ci + 1] == ""    # 만화 뒤 빈 줄
 
     def test_글상자_빈_줄_위에_요소_빈_줄이_또_얹히지_않는다(self, lb) -> None:
-        """`_expand_box_borders`가 el_lines 안에 박은 빈 줄도 병합 대상이다.
+        """요소가 줄 머리 · 끝에 달고 온 빈 줄도 병합 대상이다.
 
         빈 줄 두 줄 연속은 어느 조항에도 없다 — 글상자 연속조차 1장2절5(6)이 한 줄이다.
         (dev-2027 200쪽에서 이 겹침이 72곳 나왔다.)
@@ -768,54 +768,31 @@ class TestBoxBorderBBPG125:
         assert bb[0][1] == 1 and bb[0][2] != ""   # top, level1, 제목 점자 있음
         assert bb[1][2] == ""                       # bottom 제목 없음
 
-    def test_render_top_짧은제목_중간7칸(self) -> None:
-        line = LayoutBraille()._render_box_top(1, "⠘⠎⠢")[0]
-        assert len(line) == _COLS
-        assert line.startswith("⠿⠛⠛⠛⠛⠀")          # 캡1+채움4+빈칸1 → 제목 7칸째
-        assert line.endswith("⠿")
-        assert "⠘⠎⠢" in line
+    def test_위_테두리_짧은제목은_7칸_점역기가_그린다(self) -> None:
+        """테두리 꼴 · 제목 자리는 점역기(`translator._border_line`)가 정한다. 조판은 다시 그리지 않는다(#1341)."""
+        from app.ai.braille.translator import substitute_tags
 
-    def test_render_top_긴제목_윗줄5칸_케이스1(self) -> None:
-        """긴 제목은 테두리 위 별도 줄에 "5칸에서 시작" = **앞 빈칸 4**.
+        line = substitute_tags("<!상자>범례<!/상자>")
+        assert len(line) == _COLS and line.startswith("⠿⠛⠛⠛⠛⠀") and line.endswith("⠿")   # 캡1+채움4+빈칸1 → 제목 7칸째
+        assert substitute_tags("<!상자><!/상자>") == "⠿" + "⠛" * 30 + "⠿"
+        assert substitute_tags("<!상자끝><!/상자끝>") == "⠿" + "⠶" * 30 + "⠿"
 
-        ★ 2026-08-10 정정 — 기대값이 앞 빈칸 5였다. 규정 문구의 **칸 번호**를 그대로 적어
-          둔 것이라, 상수의 off-by-one을 테스트가 굳혀 지켜 주고 있었다(도표 8종에서 같은
-          일이 있었다). 정답 258건 첫 줄 앞 빈칸 분포는 4가 68건 · 5가 4건으로 17배 차다.
-        """
-        title = "⠁" * 30                            # 24칸 초과
-        out = LayoutBraille()._render_box_top(1, title)
-        assert len(out) >= 2                         # 윗줄 제목(들) + 테두리
-        assert out[0].startswith("⠀" * 4) and not out[0].startswith("⠀" * 5)
-        assert out[-1] == "⠿" + "⠛" * 30 + "⠿"        # 테두리는 제목 없이
-        assert all(len(ln) <= _COLS for ln in out)
+    def test_글상자_빈_줄_자리(self) -> None:
+        """요소 안쪽 상자는 위아래 줄 번호로, 요소 머리 · 끝 상자는 앞뒤 요구로 돌려준다(줄 목록은 안 바꾼다)."""
+        from app.ai.braille.layout_braille import _box_blanks
 
-    def test_render_top_제목없음(self) -> None:
-        assert LayoutBraille()._render_box_top(1, "") == ["⠿" + "⠛" * 30 + "⠿"]
+        top, bot = "⠿" + "⠛" * 30 + "⠿", "⠿" + "⠶" * 30 + "⠿"
+        lines = ["⠁⠁", top, "⠉⠕⠝⠁", bot, "⠃⠃"]
+        assert _box_blanks(lines, False) == (frozenset({1, 4}), False, False)
+        assert _box_blanks([top, "⠉⠕⠝⠁", bot], False) == (frozenset(), True, True)
+        assert _box_blanks(lines, True) == (frozenset(), False, False)       # 지문 구역 · 상자 없는 요소
+        assert lines == ["⠁⠁", top, "⠉⠕⠝⠁", bot, "⠃⠃"]
 
-    def test_render_bottom(self) -> None:
-        assert LayoutBraille()._render_box_bottom(1) == "⠿" + "⠶" * 30 + "⠿"
+    def test_속글상자_표_테두리는_빈_줄_자리가_아니다(self) -> None:
+        from app.ai.braille.layout_braille import _box_blanks
 
-    def test_expand_위아래_빈줄_재렌더(self) -> None:
-        from app.schemas.content import BoxBorder
-
-        top = "⠿" + "⠛" * 30 + "⠿"
-        bot = "⠿" + "⠶" * 30 + "⠿"
-        bo = BrailleOutput(
-            element_id=str(uuid4()),
-            braille_lines=[top, "⠉⠕⠝⠁", bot],
-            box_borders=[BoxBorder(kind="top", level=1, title="⠘⠎⠢"),
-                         BoxBorder(kind="bottom", level=1, title="")],
-        )
-        LayoutBraille()._expand_box_borders(bo)
-        assert bo.braille_lines[0] == ""             # 위 한 줄 띔
-        assert bo.braille_lines[-1] == ""            # 아래 한 줄 띔
-        assert "⠘⠎⠢" in bo.braille_lines[1]          # 위 테두리에 제목
-        assert bo.braille_lines[2] == "⠉⠕⠝⠁"         # 내용 보존
-
-    def test_box_borders_없으면_불변(self) -> None:
-        bo = BrailleOutput(element_id=str(uuid4()), braille_lines=["⠁⠃⠉"])
-        LayoutBraille()._expand_box_borders(bo)
-        assert bo.braille_lines == ["⠁⠃⠉"]
+        lines = ["⠁⠁", "⠖" + "⠒" * 30 + "⠲", "⠉", "⠓" + "⠒" * 30 + "⠚", "⠃⠃", "⠿" * 32, "⠄⠄"]
+        assert _box_blanks(lines, False) == (frozenset(), False, False)
 
     def test_textbraille_box_borders_채움(self) -> None:
         import uuid
@@ -864,20 +841,21 @@ class TestBoxBorderBBPG125:
         assert lv1[0][1] == 1
 
     def test_위계별_테두리_글리프(self) -> None:
-        lb = LayoutBraille()
-        assert lb._render_box_top(1, "") == ["⠿" + "⠛" * 30 + "⠿"]
-        assert lb._render_box_top(2, "") == ["⠖" + "⠒" * 30 + "⠲"]   # 2단계 위 6 3 4
-        assert lb._render_box_bottom(2) == "⠓" + "⠒" * 30 + "⠚"       # 2단계 아래 h 3 j
-        assert lb._render_box_top(3, "") == ["⠖" + "⠐" * 30 + "⠲"]   # 3단계 위 6 " 4
-        assert lb._render_box_bottom(3) == "⠓" + "⠐" * 30 + "⠚"
+        from app.ai.braille.translator import substitute_tags
+
+        assert substitute_tags("<!상자2><!/상자2>") == "⠖" + "⠒" * 30 + "⠲"        # 2단계 위 6 3 4
+        assert substitute_tags("<!상자끝2><!/상자끝2>") == "⠓" + "⠒" * 30 + "⠚"    # 2단계 아래 h 3 j
+        assert substitute_tags("<!상자3><!/상자3>") == "⠖" + "⠐" * 30 + "⠲"        # 3단계 위 6 " 4
+        assert substitute_tags("<!상자끝3><!/상자끝3>") == "⠓" + "⠐" * 30 + "⠚"
 
     def test_위계_테두리_border인식(self) -> None:
         from app.ai.braille.layout_braille import _is_border_line
+        from app.ai.braille.translator import substitute_tags
 
-        lb = LayoutBraille()
-        for lv in (1, 2, 3):
-            assert _is_border_line(lb._render_box_top(lv, "")[0])
-            assert _is_border_line(lb._render_box_bottom(lv))
+        for lv in ("", "2", "3"):
+            assert _is_border_line(substitute_tags(f"<!상자{lv}><!/상자{lv}>"))
+            assert _is_border_line(substitute_tags(f"<!상자{lv}>보기<!/상자{lv}>"))
+            assert _is_border_line(substitute_tags(f"<!상자끝{lv}><!/상자끝{lv}>"))
 
     def test_위계_inline마커는_위계대로_그린다(self) -> None:
         # 응답 contents 는 조판 앞에서 굳으므로 점역기 표식부터 위계 꼴이어야 한다.
@@ -887,21 +865,6 @@ class TestBoxBorderBBPG125:
         out = substitute_tags("<!상자2>설명<!/상자2>")
         assert len(out) == _COLS and out.startswith("⠖⠒⠒⠒⠒⠀") and out.endswith("⠒⠲")
         assert substitute_tags("<!상자끝2><!/상자끝2>") == "⠓" + "⠒" * 30 + "⠚"   # 아래 h…3…j(485행)
-
-    def test_expand_위계2단계_재렌더(self) -> None:
-        from app.schemas.content import BoxBorder
-
-        marker = "⠿" + "⠛" * 30 + "⠿"
-        bo = BrailleOutput(
-            element_id=str(uuid4()),
-            braille_lines=[marker, "⠉", marker],
-            box_borders=[BoxBorder(kind="top", level=2, title=""),
-                         BoxBorder(kind="bottom", level=2, title="")],
-        )
-        LayoutBraille()._expand_box_borders(bo)
-        borders = [l for l in bo.braille_lines if l.strip(" ⠀")]
-        assert borders[0] == "⠖" + "⠒" * 30 + "⠲"   # 2단계 위
-        assert borders[-1] == "⠓" + "⠒" * 30 + "⠚"   # 2단계 아래
 
 
 class TestPostLayoutCoords:

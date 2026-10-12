@@ -1889,8 +1889,8 @@ def _border_line(name: str, title_braille: str, level: int = 1) -> str:
         return cap + fill * inner + end
     # 케이스②: 캡1 + 채움4 + 빈칸1 + 제목 + 빈칸1 + 채움R + 캡1 = 32
     max_title = inner - _BORDER_LEFT_FILL - 2          # = 24
-    # 초과분은 여기서 자른다. 케이스①(제목을 윗줄 5칸에 적고 테두리는 제목 없이 두기)은
-    # 조판 단계가 맡는다 — `layout_braille.BrailleLayout._render_box_top`.
+    # 초과분은 여기서 자른다. 케이스①(제목을 윗줄 5칸에 적고 테두리는 제목 없이 두기)은 아직 없다 —
+    # 쪽 조판(result.txt)에만 있던 렌더러를 #1341 에서 지웠다(제품에 간 적 없음, dev · val 24칸 넘는 제목 0건).
     t = title_braille[:max_title]
     right_fill = inner - _BORDER_LEFT_FILL - 2 - len(t)
     return (cap + fill * _BORDER_LEFT_FILL + _BORDER_BLANK
@@ -1978,8 +1978,8 @@ def isolate_border_tags(text: str) -> str:
 def box_borders_from_source(source_text: str) -> list[tuple[str, int, str]]:
     """원본의 글상자 테두리 태그를 문서 순서대로 (kind, level, 제목점자)로 수집(NLD-1.2.5).
 
-    layout이 이 목록으로 위계별 테두리·제목 배치(중간7칸/윗줄5칸/케이스①)를 재렌더한다.
-    translator 는 인라인 32칸 테두리를 이미 위계 꼴로 그린다(_border_line). layout 은 제목 배치 · 빈 줄을 더한다.
+    테두리 꼴 · 제목(중간 7칸)은 translator 가 그린다(_border_line). layout 은 이 목록이 있는 요소에만
+    글상자 위아래 빈 줄을 정한다(`layout_braille._box_blanks`, #1341).
     위계: 태그 이름 뒤 단계 숫자(<!상자2>=2단계, 없으면 1단계). ※§3-5 태그 규약 확장(태민 검토).
     """
     out: list[tuple[str, int, str]] = []

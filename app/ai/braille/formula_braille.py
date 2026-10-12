@@ -42,4 +42,5 @@ class FormulaBraille:
             braille_lines=lines,
             break_points=breaks,
             rule_trail=trail,
+            corrected_text=text,   # 조판이 원문을 본다 — 수식 발문(`\text {의 값은?}`) 뒤 지문 상자(#1341)
         )

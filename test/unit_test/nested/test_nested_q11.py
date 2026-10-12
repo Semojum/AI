@@ -2,7 +2,7 @@
 
 · 그림 안의 그래프 → 그래프 설명을 테두리로 묶는다(image_opt → nested_text → image_braille).
 · 표 안의 그림   → 그림을 글상자처럼 1단으로 풀어 쓴다(table_opt → nested_text → table_braille).
-공용 테두리+들여쓰기 공존은 layout `_expand_box_borders` 재매핑으로 보장한다.
+공용 테두리+들여쓰기 공존은 줄별 들여쓰기(line_indents)로 보장한다(테두리 줄은 들이지 않는다).
 """
 from __future__ import annotations
 
