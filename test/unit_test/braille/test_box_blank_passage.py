@@ -237,3 +237,22 @@ class TestBothOutputs:
         c, r = _two_outputs([("앞 문장입니다.", "text", 0), (long_title, "title", 4),
                              (_TOP + "\n가나다\n" + _BOT, "text", 0), ("뒤 문장입니다.", "text", 0)])
         assert _gaps(c)[0] == _gaps(r)[0] == ("위", "⠿⠛", True)
+
+    def test_수식_발문_뒤_상자는_안_띈다(self) -> None:
+        """수학 문항은 발문이 수식 요소다(`… \\text {의 값은?}`). 수식 점역 출력에도 원문이 실려야 구역이 열린다."""
+        from app.ai.braille.formula_braille import FormulaBraille
+        from app.ai.braille.layout_braille import flatten_elements
+
+        f_id, b_id, t_id = uuid4(), uuid4(), uuid4()
+        mk = lambda i, t, m: LLMOutput(element_id=i, corrected_text=t, render_mode=m, routing_tier="ZERO", processing_time_ms=0)
+        bo = (FormulaBraille().translate([mk(f_id, "\\sqrt{9} \\text {의   값은?}", "formula_block")])
+              + TextBraille().translate([mk(b_id, _TOP + "\n① 1\n② 2\n" + _BOT, "text_only"),
+                                         mk(t_id, "풀이 문장입니다.", "text_only")]))
+        lr = LayoutResult(page_id="p", elements=[
+            BBoxItem(element_id=i, type=ty, bbox=(0, 0, 0, 0), reading_order=k)
+            for k, (i, ty) in enumerate(((f_id, "formula"), (b_id, "text"), (t_id, "text")), start=1)])
+        flat = flatten_elements(bo, lr)
+        c = "".join(flat[i].text for i in (f_id, b_id, t_id)).split("\n")
+        pages, _ = LayoutBraille().render(bo, 1, layout_result=lr)
+        r = [ln for ln in pages[0][:25]]
+        assert _gaps(c)[:2] == _gaps(r)[:2] == [("위", "⠿⠛", False), ("아래", "⠿⠶", False)]
