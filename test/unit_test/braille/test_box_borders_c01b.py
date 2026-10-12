@@ -136,11 +136,11 @@ class TestBorderLineStrict:
         assert len(NIEUN) == _COLS and not _is_border_line(NIEUN)
 
     def test_진짜_테두리는_위계_제목과_상관없이_테두리다(self):
-        lb = LayoutBraille()
-        lines = [lb._render_box_bottom(lv) for lv in (1, 2, 3)]
-        lines += [ln for lv in (1, 2, 3) for t in ("", "보기") for ln in lb._render_box_top(lv, t)
-                  if len(ln) == _COLS]
-        assert lines and all(_is_border_line(ln) for ln in lines)
+        from app.ai.braille.translator import substitute_tags
+
+        lines = [substitute_tags(f"<!상자끝{lv}><!/상자끝{lv}>") for lv in ("", "2", "3")]
+        lines += [substitute_tags(f"<!상자{lv}>{t}<!/상자{lv}>") for lv in ("", "2", "3") for t in ("", "보기")]
+        assert all(len(ln) == _COLS for ln in lines) and all(_is_border_line(ln) for ln in lines)
 
     def test_끈_스위치는_종전처럼_캡과_길이만_본다(self, monkeypatch):
         monkeypatch.setenv("BORDER_LINE_STRICT", "0")

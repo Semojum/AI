@@ -44,7 +44,7 @@ def append_nested(bo: BrailleOutput, nested_text: Optional[str]) -> None:
     """중첩 narrative를 본 요소 점자 출력 끝에 덧붙인다(in-place).
 
     braille_lines·break_points·box_borders·line_indents(있으면)·각 draft를 일관되게 확장한다.
-    테두리 위치 마커는 layout `_expand_box_borders`가 box_borders와 짝지어 재렌더한다.
+    테두리 꼴은 점역기가 그리고, layout 은 box_borders 가 있는 요소에 위아래 빈 줄만 정한다(`_box_blanks`, #1341).
     """
     if not nested_text:
         return

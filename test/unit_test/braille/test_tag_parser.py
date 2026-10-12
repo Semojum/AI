@@ -374,25 +374,25 @@ class TestElementLocalCoords:
         assert (bullet.line_no, bullet.col_start, bullet.col_end) == (0, 0, 2)
         assert bo.braille_lines[0][bullet.col_start:bullet.col_end] == "⠸⠴"
 
-    def test_글상자_확장후_line_no_재매핑(self):
-        # 위 테두리 확장(빈 줄+테두리 삽입)으로 내용 줄이 밀려도 line_no가 갱신돼 셀을 가리킨다.
+    def test_글상자_빈_줄을_넣어도_근거가_셀을_가리킨다(self):
+        # 요소 안쪽 상자 위아래 빈 줄(#1341)로 조판 줄이 밀려도 line_no 가 갱신돼 셀을 가리킨다.
         import uuid
 
         from app.ai.braille.layout_braille import LayoutBraille
         from app.ai.braille.regulations import make_rule
         from app.schemas.content import BoxBorder, BrailleOutput
 
-        top = "⠿" + "⠛" * 30 + "⠿"  # 32칸 위 테두리 마커
+        top, bot = "⠿" + "⠛" * 30 + "⠿", "⠿" + "⠶" * 30 + "⠿"
         bo = BrailleOutput(
             element_id=str(uuid.uuid4()),
-            braille_lines=[top, "⠠⠄⠁⠃"],  # idx1 = 내용(앞 ⠠⠄ TN)
-            rule_trail=[make_rule("NLD-1.2.6", line_no=1, col_start=0, col_end=2, tag="tn_open")],
-            box_borders=[BoxBorder(kind="top", level=1, title="")],
+            braille_lines=["⠁⠃", top, "⠠⠄⠁⠃", bot, "⠉⠙"],   # idx2 = 내용(앞 ⠠⠄ TN)
+            rule_trail=[make_rule("NLD-1.2.6", line_no=2, col_start=0, col_end=2, tag="tn_open")],
+            box_borders=[BoxBorder(kind="top", level=1, title=""), BoxBorder(kind="bottom", level=1, title="")],
         )
-        LayoutBraille()._expand_box_borders(bo)
+        out, _ = LayoutBraille()._format_element(bo, "text", 0)
+        assert out.count("") == 2                       # 위 테두리 위 · 아래 테두리 아래
         r = bo.rule_trail[0]
-        assert r.line_no != 1  # 내용 줄이 밀림
-        assert bo.braille_lines[r.line_no][r.col_start:r.col_end] == "⠠⠄"
+        assert out[r.line_no][r.col_start:r.col_end] == "⠠⠄"
 
 
 class TestStep17TrailScope:
