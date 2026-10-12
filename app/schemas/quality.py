@@ -36,9 +36,10 @@ class ReviewFlag(BaseModel):
          `image_width`·`image_height` 는 정상값이라 응답만으로는 알 수 없어 짚어 준다.
     R17: SYMBOL_DROPPED — 점자 기호가 없는 기호(▶·★·↳ 등)가 점역에서 빠진 쪽(2026-09-29).
     R18: OLD_JAMO_DROPPED — 규정(제19~25항)에 점형이 없는 옛한글 음절이 점역에서 빠진 쪽(#1098, 2026-10-05).
+    R19: RUNNING_HEAD — 묵자 머리글·꼬리글로 뽑힌 요소(`header_footer`). 점자본에 적을지는 책마다 갈린다(#1348, 2026-10-12).
     """
 
-    type: str       # R1~R18
+    type: str       # R1~R19
     element_id: str
     message: str
 
