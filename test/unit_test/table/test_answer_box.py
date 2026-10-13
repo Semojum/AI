@@ -193,3 +193,12 @@ def test_답이_하나인_띠도_정답_상자로_그린다():
     titles, groups = tb.answer_box_parts(_html_to_grid(els[0]["content"], expand=False))
     assert titles == ["기출 플러스", "본문 111쪽"] and groups[0][1] == [("1", "⑤")]
     assert _infer_render_mode(None, els[0]["content"]) == "linear"     # 2열이어도 띠 머리가 있으면 정답 상자
+
+
+def test_긴_머리_줄은_낱말_경계에서_접는다():
+    """언매 해설 p23 실물(#1353). 종전에는 칸 수로만 잘라 `본문 90~94짜` / `옥` 처럼 음절(쪽) 안을 갈랐다.
+    gold 는 낱말 경계에서 접고 이어지는 줄도 같은 들임이다(언매 ans p15 `05문장 ① (본문 68~` / `71쪽)`)."""
+    lines = tb._render_answer_box(tb.answer_box_parts([["11 언어 종합 2 본문 90~94쪽"], ["01 ②", "02 ④", "03 ③"]]))
+    assert lines[0] == PAD * 2 + tr("11 언어 종합 2 본문")
+    assert lines[1] == PAD * 2 + tr("90~94쪽")
+    assert all(len(ln) <= 32 for ln in lines)
