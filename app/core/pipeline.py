@@ -2307,7 +2307,20 @@ def _split_list_marker_items(elements: list[dict]) -> list[dict]:
 #
 # ⚠ 항목이 하나뿐인 줄은 건드리지 않는다. 본문 안의 `①`(주석 참조 등)까지 가르면
 #   멀쩡한 문장이 토막 난다.
+# ⚠ 정답 목록(`01 ①  02 ③  03 ②`)도 가르지 않는다(#1353). 원문자가 선택지 머리가 아니라 답이다. 갈라 놓으면
+#   `01` / `① 02` / `③ 03` 으로 쌍마다 줄이 끊긴다(2027 dev · val 해설 권 94쪽 192곳). gold 는 한 줄에 쌍을 잇는다.
+#   줄의 원문자가 모두 `번호 답` 쌍의 답 자리에 있고 번호가 1씩 늘 때만 정답 목록이다. 수학 선택지 `① 1  ② 2` 는
+#   첫 원문자가 쌍의 답이 아니라서 그대로 가른다. 수학 띠의 숫자 답(`5 100`)도 쌍으로 센다.
 _INLINE_CHOICE_SPLIT = re.compile(r"(?<=\S)\s+(?=[\u2460-\u2473]\s*\S)")
+
+
+def _is_answer_list(line: str) -> bool:
+    pairs = list(_ANS_TEXT_RE.finditer(line))
+    nos = [int(m.group(1)) for m in pairs]
+    if len(pairs) < 2 or any(b != a + 1 for a, b in zip(nos, nos[1:])):
+        return False
+    answered = {m.start(2) for m in pairs}
+    return all(i in answered for i, ch in enumerate(line) if "\u2460" <= ch <= "\u2473")
 
 
 def _split_inline_choices(text: str) -> str:
@@ -2318,7 +2331,7 @@ def _split_inline_choices(text: str) -> str:
     out = []
     for line in text.split("\n"):
         heads = sum(1 for ch in line if "\u2460" <= ch <= "\u2473")
-        out.append(_INLINE_CHOICE_SPLIT.sub("\n", line) if heads >= 2 else line)
+        out.append(_INLINE_CHOICE_SPLIT.sub("\n", line) if heads >= 2 and not _is_answer_list(line) else line)
     return "\n".join(out)
 
 

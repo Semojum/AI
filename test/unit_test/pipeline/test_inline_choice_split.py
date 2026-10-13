@@ -57,3 +57,24 @@ class TestIndentApplied:
         bo.corrected_text = src
         LayoutBraille()._mark_item_lines(bo, "text", 2)
         assert bo.line_indents == [2, 2, 2], "항목마다 2칸(= '3칸에서 시작')이어야 한다"
+
+
+class TestAnswerList:
+    """정답 목록은 선택지가 아니다 — 가르지 않는다(#1353).
+
+    해설 권 정답 띠 `01 ①  02 ③ …` 를 가르면 `01` / `① 02` / `③ 03` 으로 쌍마다 줄이 끊겼다
+    (2027 dev · val 해설 권 94쪽 192곳). gold 는 쌍을 한 줄에 잇는다(`01 ⑤  02 ③  03 ②  04 ④`).
+    """
+
+    @pytest.mark.parametrize("src", [
+        "01 ①  02 ③  03 ②  04 ④",                                   # 동아시아사 해설 p5 꼴
+        "07 ③ 08 ⑤ <!상자끝><!/상자끝>",                               # 상자가 두 요소로 갈린 뒤쪽
+        "<!상자>수능 기본 문제<!/상자> 01 ①  02 ③  03 ⑤  04 ①",          # 상자 제목이 앞에 붙은 줄
+        "1 ⑤  2 ⑤  3 ②  4 ⑤  5 100  6 5  7 ⑤",                      # 수학 띠 — 숫자 답이 섞인다
+    ])
+    def test_정답_목록은_건드리지_않는다(self, src: str) -> None:
+        assert _split_inline_choices(src) == src
+
+    def test_수학_선택지는_그대로_가른다(self) -> None:
+        """선택지 내용이 숫자라도 첫 원문자가 쌍의 답이 아니므로 선택지다."""
+        assert _split_inline_choices("① 1  ② 2  ③ 3") == "① 1\n② 2\n③ 3"
