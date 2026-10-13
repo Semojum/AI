@@ -3971,6 +3971,10 @@ def _build_response(
                 "tn_text": o.tn_text or "",
                 "is_blocked": "[처리 불가" in o.corrected_text,
                 "render_mode": o.render_mode,
+                # 표 태그 글(#1366). 앱이 칸 글을 고친 뒤 braille 사이드카 `table` op 로 서버와 같은 표 점자를
+                # 다시 낸다. 사람이 읽는 테두리 글(`contents`)은 표 구조를 잃어, 되돌리면 정답 상자 · 번호 체계가 틀린다.
+                "table_source": (o.corrected_text
+                                 if elem_by_id.get(o.element_id, _DUMMY_ELEM).type == "table" else ""),
                 # ★ 들여쓰기를 실제 공백으로 실어 보낸다(2026-09-02 대표 지적).
                 #   SPEC-INTERFACE §1-0: "조판 규칙(빈 줄·들여쓰기·가운데 정렬)은 AI 가
                 #   `contents` 안에 넣어 보낸다." 그런데 시각 요소의 줄별 들여쓰기는

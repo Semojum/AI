@@ -1,4 +1,6 @@
-"""응답 끊을 자리(`TextElement.breaks` 19 · `Draft.breaks` 5, 이슈 #1240) 배선 — proto 번호 · dict → proto · 초안 불변식.
+"""응답 끊을 자리(`Draft.breaks` 5, 이슈 #1240) 배선 — proto 번호 · dict → proto · 초안 불변식.
+
+`TextElement.breaks`(19)는 #1366 에서 proto 에서 뺐다(BE 기준판에 없어 안 읽혔다). 응답 dict 에는 남는다.
 
 계산 자체(`layout_braille._flat_breaks`)와 접은 결과 = AI 조판 대조는 `test/unit_test/braille/test_flat_breaks_1240.py`.
 """
@@ -15,15 +17,16 @@ from protos.generated import braille_service_pb2 as pb
 
 
 def test_번호():
-    assert pb.TextElement.DESCRIPTOR.fields_by_name["breaks"].number == 19
+    assert "breaks" not in pb.TextElement.DESCRIPTOR.fields_by_name     # 19 예약(#1366)
     assert pb.Draft.DESCRIPTOR.fields_by_name["breaks"].number == 5
 
 
 def test_dict_에서_proto_로_싣는다():
     e = grpc_server._dict_to_text_element({"contents": ["⠁⠀⠃"], "breaks": [1],
                                            "drafts": [{"contents": ["⠉⠀⠙"], "breaks": [1]}]})
-    assert list(e.breaks) == [1] and list(e.drafts[0].breaks) == [1]
-    assert list(grpc_server._dict_to_text_element({"contents": ["⠁"]}).breaks) == []   # 없으면 빈 목록(모름)
+    assert list(e.drafts[0].breaks) == [1]
+    assert list(grpc_server._dict_to_text_element({"contents": ["⠁"], "drafts": [{"contents": ["⠁"]}]}
+                                                  ).drafts[0].breaks) == []   # 없으면 빈 목록(모름)
 
 
 def test_고른_초안의_끊을_자리가_본문과_같다():

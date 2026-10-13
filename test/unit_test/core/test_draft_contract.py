@@ -150,6 +150,7 @@ class TestTextElementsHaveNoDrafts:
         r = _run("c", content="인공지능 기술은 우리 삶을 바꾼다.", etype="text")
         for el in r["braille_text_list"]:
             assert (el.get("drafts") or []) == []
+        assert all(el["table_source"] == "" for el in r["text_list"])     # 표 태그 글은 표에만(#1366)
 
 
 class TestBBoxCoordSpace:
@@ -213,3 +214,17 @@ def test_표_묵자는_점역자주가_아니라_선택_초안이다(mode_a):
     assert "<!주>" not in body, body
     assert "인구" in body and "100" in body, body
     assert body == el["drafts"][el["selected_idx"]]["tn_text"]
+
+
+@pytest.mark.parametrize("mode", ["a", "c"])
+def test_표_요소는_원문_목록에_태그_글을_싣는다(mode, mode_a, mode_c):
+    """#1366 — 앱이 칸 글을 고친 뒤 braille 사이드카 `table` op 로 서버와 같은 표 점자를 다시 낸다.
+
+    사람이 읽는 테두리 글(`contents`)은 표 구조를 잃어 되돌릴 수 없다. 태그 글은 원문 목록에만 싣는다
+    (점역 목록에 또 실으면 응답만 커진다).
+    """
+    r = {"a": mode_a, "c": mode_c}[mode]
+    src = r["text_list"][0]["table_source"]
+    assert src.startswith("<!표>") and "<!칸>인구" in src and "<!칸>120" in src, src
+    assert "<!표>" not in r["text_list"][0]["contents"][0]
+    assert all(not el.get("table_source") for el in r.get("braille_text_list") or [])
