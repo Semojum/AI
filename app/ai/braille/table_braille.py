@@ -798,13 +798,29 @@ def _box_title(titles: list[str]) -> str | None:
     return next((t for t in titles if t.strip("〈〉<>") in BOX_TITLE_PROMOTABLE), None)
 
 
+def _wrap_title(pad: str, body: str) -> list[str]:
+    """정답 상자 머리 줄을 32칸 안 빈칸(낱말 경계)에서 접는다. 이어지는 줄도 같은 들임이다(gold 언매 ans p15
+    `05문장 ① (본문 68~` / `71쪽)`). 종전 `_split_lines` 는 칸 수로만 잘라 `본문 90~94짜` / `옥` 처럼 음절 안을
+    갈랐다(#1353, 2027 dev · val 언매 ans p23 · p24). 한 낱말이 폭을 넘을 때만 종전대로 자른다."""
+    lines, cur = [], ""
+    for tok in body.split(_PAD):
+        cand = f"{cur}{_PAD}{tok}" if cur else tok
+        if len(pad) + len(cand) > _COLS and cur:
+            lines.append(pad + cur)
+            cur = tok
+        else:
+            cur = cand
+    lines.append(pad + cur)
+    return [piece for ln in lines for piece in _split_lines(ln)]
+
+
 def _render_answer_box(parts) -> list[str]:
     titles, groups = parts
     boxed = _box_title(titles)
     above = [t for t in titles if t is not boxed]
     out: list[str] = []
     for i, t in enumerate(above):         # 두 줄 이상이면 첫 줄은 5칸(머리), 나머지는 3칸
-        out.extend(_split_lines(_PAD * (4 if i == 0 and len(above) > 1 else 2) + _translate(t)))
+        out.extend(_wrap_title(_PAD * (4 if i == 0 and len(above) > 1 else 2), _translate(t)))
     out.append(_translate(f"<!상자>{boxed}<!/상자>") if boxed else _TBL_TOP)
     for labels, pairs in groups:
         out.extend(_PAD * _ROW_INDENT + _translate(lb) for lb in labels)
