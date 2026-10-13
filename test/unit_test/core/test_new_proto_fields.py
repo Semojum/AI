@@ -1,13 +1,16 @@
 """2026-09-08 신설 필드 계약 회귀 — 값이 있는데 안 실리던 자리를 다시 막지 않게.
 
   ProcessingMeta.caption_disabled
-  TextElement.review_grade / .round_trip
+  TextElement.table_source(20, #1366)
 
 ★ **빈 값일 때는 종전과 바이트가 같아야 한다.** BE 가 아직 안 읽으므로 그게 평상 상태다.
   proto3 는 기본값을 직렬화하지 않으므로 "기본값이면 바이트 0" 을 그대로 잰다.
 
-★ 철회한 번호 둘은 `reserved` 로 비어 있어야 한다(#788). 다른 뜻으로 재사용하면 그 필드를
+★ 철회한 번호는 `reserved` 로 비어 있어야 한다(#788 · #1366). 다른 뜻으로 재사용하면 그 필드를
   실어 보내던·읽던 클라이언트가 있을 때 조용히 오독한다.
+  · `TextElement.review_grade`(17) · `.round_trip`(18) · `.breaks`(19) — BE 기준판(16까지)에 없어
+    BE 가 안 읽었다. 검수 신호는 우리 요청 로그로 본다(#788, 응답 dict 에는 남는다). 17 은 string 이라
+    BE 가 다른 string 필드로 집으면 우리 "high" 를 그 값으로 읽고 오류도 안 난다(#1366).
   · `BrailleRequest.customer_id`(8) — 캐시 격리는 `job_id` 단위로 돌고 고객 사이엔 안 샌다.
   · `ProcessingMeta.advanced_ai_applied`(6) — "켰는데 안 돌았다" 는 보고할 상태가 아니라
     **결함**이다. 필드로 알리지 않고 그 자리에서 실패로 알린다
@@ -35,12 +38,14 @@ class TestFieldNumbers:
         got = {m.DESCRIPTOR.name: {f.name: f.number for f in m.DESCRIPTOR.fields}
                for m in (pb.BrailleRequest, pb.ProcessingMeta, pb.TextElement)}
         assert got["ProcessingMeta"]["caption_disabled"] == 5
-        assert got["TextElement"]["review_grade"] == 17
-        assert got["TextElement"]["round_trip"] == 18
+        assert got["TextElement"]["table_source"] == 20
 
     @pytest.mark.parametrize("msg, 이름, 번호", [
         (pb.BrailleRequest, "customer_id", 8),
         (pb.ProcessingMeta, "advanced_ai_applied", 6),
+        (pb.TextElement, "review_grade", 17),
+        (pb.TextElement, "round_trip", 18),
+        (pb.TextElement, "breaks", 19),
     ])
     def test_철회한_번호는_비고_예약돼_있다(self, msg, 이름, 번호):
         assert 이름 not in {f.name for f in msg.DESCRIPTOR.fields}
@@ -62,10 +67,9 @@ class TestCarried:
     def test_processing_meta가_캡션_상태를_싣는다(self):
         assert _dict_to_processing_meta({"caption_disabled": True}).caption_disabled
 
-    def test_text_element가_검수신호를_싣는다(self):
-        e = _dict_to_text_element({"id": "x", "review_grade": "high",
-                                   "round_trip": 0.947})
-        assert e.review_grade == "high" and round(e.round_trip, 3) == 0.947
+    def test_text_element가_표_태그_글을_싣는다(self):
+        src = "<!표>\n<!행><!칸>가<!칸>나<!/행>\n<!/표>"
+        assert _dict_to_text_element({"id": "x", "type": "table", "table_source": src}).table_source == src
 
 
 class TestEmptyIsByteIdentical:
@@ -79,7 +83,10 @@ class TestEmptyIsByteIdentical:
                                      ).SerializeToString(deterministic=True)
         el = _dict_to_text_element({"id": "x"})
         assert el.SerializeToString(deterministic=True) == \
-            _dict_to_text_element({"id": "x", "review_grade": "", "round_trip": 0.0}
+            _dict_to_text_element({"id": "x", "table_source": ""}).SerializeToString(deterministic=True)
+        # 응답 dict 에 남은 검수 신호는 gRPC 로 안 나간다(17 · 18 · 19 예약)
+        assert el.SerializeToString(deterministic=True) == \
+            _dict_to_text_element({"id": "x", "review_grade": "high", "round_trip": 0.9, "breaks": [1]}
                                   ).SerializeToString(deterministic=True)
 
 
