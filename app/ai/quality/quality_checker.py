@@ -71,6 +71,15 @@ _C5_DIGIT_RE = re.compile(r"[0-9]")
 
 # 결함 탐지가 아니라 **등급**인 플래그 — 쪽 status 판정에서 뺀다(요소 화면에는 그대로 뜬다).
 _GRADE_FLAGS = frozenset({"R13", "R10"})
+# '안내' 등급(#1355, 2026-10-13 대표 결정) — 그 종류 요소 **전부**에 자동으로 붙는 표시는 틀린 요소와 맞는 요소를 못 가른다.
+#   R19(머리글 · 꼬리글 1,124 / 1,124)와 R11 중 'AI가 쓴 시각자료 설명'(시각 요소 886 / 886)이 그렇다. 2027 dev · val 에서
+#   '검토 필요' 1,069쪽 중 642쪽이 이 둘만으로 검토가 됐다(결함 표시 0). 등급처럼 요소 화면에는 그대로 뜨고 쪽 상태에서만 뺀다.
+#   R11 의 다른 문구(캡셔닝 실패 · 그래프를 표로 옮김 · 쪽 시각 비중)는 그 요소의 사정을 짚으므로 그대로 센다.
+_R11_VISUAL_MSG = "AI가 쓴 시각자료 설명 — 원본 그림과 대조가 필요합니다"
+
+
+def _is_info_flag(r: ReviewFlag) -> bool:
+    return r.type in _GRADE_FLAGS or r.type == "R19" or (r.type == "R11" and r.message == _R11_VISUAL_MSG)
 # ★ 게이트는 **점역 대상 글자에만** 연다(2026-08-10). 종전엔 corrected_text를 원문 그대로
 # 훑어 인라인 태그 이름의 숫자(`<!상자끝2>`)가 게이트를 열었다 — 태그는 테두리 점형으로
 # 치환되니 수표가 나올 리 없고, 그래서 무조건 C5가 떴다. 실측(dev+val 839쪽) C5 146건 중
@@ -449,7 +458,7 @@ class QualityChecker:
                     and "CAPTION_FAILED" not in (e.flags or [])):
                 reviews.append(ReviewFlag(
                     type="R11", element_id=eid,
-                    message="AI가 쓴 시각자료 설명 — 원본 그림과 대조가 필요합니다",
+                    message=_R11_VISUAL_MSG,
                 ))
             # 표는 조판 재량이 크고(도서지침 "점역자에 따라서 표기") 실측 편집량이 본문 다음으로
             # 많다(전체 편집셀의 11.2%, 요소의 1.1%). 실측 839쪽: 표 요소의 98.7%가 편집이
@@ -465,6 +474,7 @@ class QualityChecker:
             # 책마다 gold 에 있기도 없기도 해 글 꼴로 못 가른다. 지우는 쪽은 자문 대기라 표시만 단다. 표시가 없어 그런
             # 요소가 든 쪽이 COMPLETED 로 나갔다(COMPLETED 1,062쪽 중 384쪽, 그중 gold 에 없는 머리글이 든 쪽 245).
             # `text` · `title` 로 잡힌 꼬리글(약 122)은 뺐다 — 글 꼴로도 쪽 위아래 띠 위치로도 정밀도가 50%대다.
+            # 10-13(#1355): 전부에 붙어 결함을 못 가르므로 '안내' 등급이다. 요소에는 뜨고 쪽 상태는 안 바꾼다.
             if eid not in blocked_ids and types.get(eid) == "header_footer":
                 reviews.append(ReviewFlag(
                     type="R19", element_id=eid,
@@ -629,6 +639,7 @@ class QualityChecker:
         # ⚠ 등급은 **요소 화면에 그대로 뜬다** — 검수 순서 신호로 계속 쓰인다.
         #   쪽 판정에서만 뺀 것이지 "플래그 없는 쪽은 안 봐도 된다"는 뜻이 아니다
         #   (재현율 6.9% · COMPLETED 쪽의 21.2%가 셀 30% 이상 수정 필요).
-        if criticals or any(r.type not in _GRADE_FLAGS for r in reviews):
+        # 2026-10-13(#1355) — 종류 전부에 붙는 R19 · R11 시각 설명도 '안내'로 뺀다(위 `_is_info_flag`).
+        if criticals or any(not _is_info_flag(r) for r in reviews):
             return "NEEDS_REVIEW"
         return "COMPLETED"

@@ -546,13 +546,27 @@ class TestVisualAndTableFlags:
                                      extracted=[_ext(ids[0])], llm_outputs=[_llm(ids[0])])
         assert [r.type for r in rep.review_flags] == ["R10"]
 
-    def test_머리글_꼬리글은_R19_로_검토(self):
-        """#1348 — 묵자 머리글 · 꼬리글은 점자본에 적을지 책마다 갈린다. 표시가 없어 쪽이 COMPLETED 로 나갔다."""
+    def test_머리글_꼬리글은_R19_안내(self):
+        """#1348 — 묵자 머리글 · 꼬리글은 점자본에 적을지 책마다 갈린다. 요소에 R19 를 단다.
+        #1355(10-13 대표 결정) — 머리글 전부에 붙어 결함을 못 가르므로 '안내' 등급이다. 쪽 상태는 안 바꾼다."""
         layout, ids = self._layout_typed("header_footer", "text")
         rep = QualityChecker().check("p_001", layout_result=layout,
                                      extracted=[_ext(i) for i in ids], llm_outputs=[_llm(i) for i in ids])
         assert [(r.type, r.element_id) for r in rep.review_flags] == [("R19", str(ids[0]))]
-        assert rep.status == "NEEDS_REVIEW"
+        assert rep.status == "COMPLETED"
+
+    def test_시각_설명_R11_은_안내_캡셔닝_실패는_검토(self):
+        """#1355 — 'AI가 쓴 시각자료 설명' 은 시각 요소 전부에 붙는다(안내). 캡셔닝 실패 · 그래프를 표로 옮김은 결함이다."""
+        layout, ids = self._layout_typed("image")
+        ok = QualityChecker().check("p_001", layout_result=layout, extracted=[_ext(ids[0])], llm_outputs=[_llm(ids[0])])
+        assert [r.type for r in ok.review_flags] == ["R11"] and ok.status == "COMPLETED"
+        failed = QualityChecker().check("p_001", layout_result=layout,
+                                        extracted=[_ext(ids[0], flags=["CAPTION_FAILED"])], llm_outputs=[_llm(ids[0])])
+        assert failed.status == "NEEDS_REVIEW"
+        layout, ids = self._layout_typed("table")
+        chart = QualityChecker().check("p_001", layout_result=layout,
+                                       extracted=[_ext(ids[0], flags=["CHART_AS_TABLE"])], llm_outputs=[_llm(ids[0])])
+        assert chart.status == "NEEDS_REVIEW"
 
     def test_본문은_새_플래그_없음(self):
         layout, ids = self._layout_typed("text", "title")
