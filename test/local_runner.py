@@ -144,7 +144,7 @@ def main() -> None:
         help="gRPC 서버 주소 (예: localhost:50051). 미지정 시 직접 실행."
     )
     parser.add_argument("--advanced", action="store_true",
-                        help="고급 점역(advanced_ai) — MinerU 와 LLM 비전을 같이 돌린다")
+                        help="고급 교열(advanced_ai) — MinerU 와 LLM 비전을 같이 돌린다")
     parser.add_argument(
         "--load-models", action="store_true",
         help="직접 실행 시 HCXT 모델 로드 (실제 GPU 모델 E2E 테스트용)"

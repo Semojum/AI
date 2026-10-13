@@ -1,6 +1,6 @@
 """LLM 비전 추출 — 쪽 이미지를 모델이 직접 읽어 경계 파일 요소를 만든다.
 
-**고급 점역**(`advanced_ai=true`, 2026-09-01 대표 결정)
+**고급 교열**(`advanced_ai=true`, 2026-09-01 대표 결정)
    MinerU **대신** 이 경로가 지면을 읽는다. 기본은 Sonnet 5, 실패하거나 결과가 빈약하면
    Opus 5로 한 번 더 간다. 실측 근거(수학 정답 해설 10쪽, `temp/reports/0901_모델사다리_전문.html`):
 
@@ -32,7 +32,7 @@ from app.core.config import config
 
 logger = logging.getLogger(__name__)
 
-# 고급 점역 기본 모델과, 그게 실패했을 때 한 번 더 갈 모델.
+# 고급 교열 기본 모델과, 그게 실패했을 때 한 번 더 갈 모델.
 ADVANCED_MODEL = os.environ.get("ADVANCED_EXTRACT_MODEL", "claude-sonnet-5")
 ADVANCED_FALLBACK_MODEL = os.environ.get("ADVANCED_EXTRACT_FALLBACK_MODEL", "claude-opus-5")
 # 상한을 넘겨 JSON 이 잘리면 그 쪽이 통째로 날아간다. 실측에서 16,000 으로는 10쪽 중
@@ -195,7 +195,7 @@ def relabel_circles(elements: list[dict], image_path: str) -> int:
 
 
 def advanced_available() -> bool:
-    """고급 점역을 쓸 수 있나 — 키가 있어야 한다."""
+    """고급 교열을 쓸 수 있나 — 키가 있어야 한다."""
     return bool(config.anthropic_api_key)
 
 
@@ -206,7 +206,7 @@ _MIN_TEXT_CHARS = 120
 
 
 def is_meager(elements: list[dict]) -> bool:
-    """추출이 빈약한가 — 고급 점역 2차(Opus 5) 트리거 신호."""
+    """추출이 빈약한가 — 고급 교열 2차(Opus 5) 트리거 신호."""
     if len(elements) < _MIN_ELEMENTS:
         return True
     chars = sum(len(e.get("content") or "") for e in elements
@@ -241,7 +241,7 @@ def extract(image_path: str, model: str, label: str = "고급추출") -> list[di
         # ★ 키를 **명시로 넘긴다**(2026-09-02). 인자 없이 만들면 SDK 가 환경변수만 보는데,
         #   우리 키는 `.env` → `config.anthropic_api_key` 로 들어온다. 그래서 운영에서
         #   `advanced_available()` 은 True 인데 정작 호출이
-        #   "Could not resolve authentication method" 로 죽어 **고급 점역이 매번 MinerU 로
+        #   "Could not resolve authentication method" 로 죽어 **고급 교열이 매번 MinerU 로
         #   되돌아갔다** — 기능이 켜져도 한 번도 동작한 적이 없다. 캡셔너(captioner.py)는
         #   처음부터 명시로 넘기고 있었다.
         client = anthropic.Anthropic(api_key=config.anthropic_api_key or None,
@@ -270,7 +270,7 @@ def extract(image_path: str, model: str, label: str = "고급추출") -> list[di
 
 
 def extract_advanced(image_path: str) -> tuple[list[dict] | None, str]:
-    """고급 점역 추출. Sonnet 5 로 읽고, 실패하거나 빈약하면 Opus 5 로 한 번 더 간다.
+    """고급 교열 추출. Sonnet 5 로 읽고, 실패하거나 빈약하면 Opus 5 로 한 번 더 간다.
 
     반환 `(elements, 쓴 모델)`. 둘 다 못 읽으면 `(None, "")` — 호출부가 MinerU 로 되돌린다.
     """

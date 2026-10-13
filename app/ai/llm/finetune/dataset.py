@@ -28,7 +28,7 @@ def _registry() -> dict[str, tuple[str, str]]:
     #   지우면서 `visual_drafts._PROMPT` 가 없어졌다. 두 유형은 이제 만화와 같은 처지다 —
     #   설명문을 규칙(캡션 전사·§6.6 골격)으로 조립하므로 학습할 프롬프트가 없다.
     # ★ 2026-09-08(#788) — **`text` 도 뺐다.** 본문 OCR 교정 LLM 을 갈래째 지우면서
-    #   `text_opt._PROMPT_QUALITY` 가 없어졌다(대표 결정 「고급 점역의 정의」 — 어려운
+    #   `text_opt._PROMPT_QUALITY` 가 없어졌다(대표 결정 「고급 교열의 정의」 — 어려운
     #   지면은 추출에서 LLM 이 읽으므로 뒤에서 본문을 고칠 자리가 없다). 본문은 이제
     #   추출 원문을 그대로 옮기는 rule-based 라 학습할 프롬프트가 없다.
     from app.ai.llm import formula_opt, table_opt
