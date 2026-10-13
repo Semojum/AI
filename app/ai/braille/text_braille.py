@@ -5,6 +5,8 @@ LLMOutput.corrected_text → translator.translate_tagged_text() → BrailleOutpu
 
 from __future__ import annotations
 
+import re
+
 from app.ai.braille.isolation import safe_translate
 from app.ai.braille.regulations import make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
@@ -34,6 +36,35 @@ def content_rules(source: str, lines: list[str]) -> list[RuleApplication]:
     return []
 
 
+# 정답 목록 줄(`01 ①  02 ③  03 ④`)은 쌍 안(번호와 답 사이)에서 접지 않는다(#1353). 앱 사이드카 · FE 는 응답 `breaks`
+#   (음절 경계 · 빈칸)에서 32칸을 접는데, 그 목록에 쌍 안 빈칸이 들어 있어 `5` / `③  6 ②` 로 쌍이 갈렸다(2027 dev · val
+#   71곳). gold 는 쌍 사이에서만 접는다. 줄 끝까지 `번호 답` 토막이 번갈아 이어지고(앞에 붙은 상자 제목 같은 글은 둔다)
+#   번호가 1씩 늘고 원문자 답이 하나 이상일 때만 쌍 안 자리를 뺀다. 수학 선택지 `① 1  ② 2` 는 원문자가 번호 자리라 안 걸린다.
+_DIGIT_CELLS = "⠚⠁⠃⠉⠙⠑⠋⠛⠓⠊"                   # 0~9 — 범위로 쓰면 ⠛(7)이 빠지고 ⠂⠄⠈ 가 끼어든다
+_NUM_RE = re.compile(f"⠼[{_DIGIT_CELLS}]+")
+_CIRCLED_RE = re.compile("⠼[⠂⠆⠒⠲⠢]")             # ①~⑤
+_TOKEN_RE = re.compile("[^⠀]+")
+
+
+def _keep_answer_pairs(line: str, breaks: list[int]) -> list[int]:
+    toks = list(_TOKEN_RE.finditer(line))
+    for i in range(len(toks) % 2, len(toks) - 3, 2):        # 꼬리가 짝수 토막이 되는 머리부터 — 가장 긴 꼬리
+        tail = toks[i:]
+        nums, anss = tail[0::2], tail[1::2]
+        if not all(_NUM_RE.fullmatch(t.group()) for t in nums):
+            continue
+        if not all(_NUM_RE.fullmatch(t.group()) or _CIRCLED_RE.fullmatch(t.group()) for t in anss):
+            continue
+        if not any(_CIRCLED_RE.fullmatch(t.group()) for t in anss):
+            continue
+        nos = [int("".join(str(_DIGIT_CELLS.index(c)) for c in t.group()[1:])) for t in nums]
+        if any(b != a + 1 for a, b in zip(nos, nos[1:])):
+            continue
+        inner = {b for n, a in zip(nums, anss) for b in range(n.end(), a.start() + 1)}
+        return [b for b in breaks if b not in inner]
+    return breaks
+
+
 class TextBraille:
     """LLMOutput 목록 → BrailleOutput 목록."""
 
@@ -44,6 +75,8 @@ class TextBraille:
     def _translate_one(self, opt: LLMOutput) -> BrailleOutput:
         # 논리 줄 + 음절 줄바꿈 offset. 32칸 줄바꿈은 layout이 수행(NLD-1.2.1).
         lines, breaks = translate_body(opt.corrected_text)
+        if len(breaks) == len(lines):
+            breaks = [_keep_answer_pairs(ln, br) for ln, br in zip(lines, breaks)]
         # braille_text_list 기준 = 점자. rule_trail은 **점역사가 판단해야 할 자리**만 기록한다
         # (Step17 2026-08-08 대표 지시 — 종전 "내용 변환만"에서 좁혔다):
         #   ① 우리가 재량으로 넣은 것(점역자 주·글상자·빈칸 태그)
