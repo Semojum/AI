@@ -73,17 +73,17 @@ class TestRomanTranslate:
 
 
 class TestBookRoman:
-    """도서 관행(기본 book 모드): 로마 숫자 섹션번호는 로마자표·종료표·이중대문자표
-    없이 대문자표 ⠠ + 낱자 점형으로 적는다(gold 실측: Ⅱ→⠠⠊⠊, Ⅴ→⠠⠧, Ⅳ→⠠⠊⠧
-    — 사회문화 p046·116·154, 세계사 p016). 마침표는 한 번만(⠲)."""
+    """도서 모드(기본)에서도 로마 숫자 섹션번호는 로마자표형이다(#1373). 「한국 점자 규정」 제36항(재추출 1754~1761행):
+    I = 0,i4(⠴⠠⠊⠲) · II = 0,,ii4(⠴⠠⠠⠊⠊⠲) · IV = 0,,iv4 · V = 0,v4(⠴⠠⠧⠲). 마침표가 이어지면 종료표 자리에 마침표
+    ⠲ 하나다(제33항). 종전 낱자형(⠠⠊⠊)의 근거로 적었던 동결 val 네 쪽(사회문화 p046 · p116 · p154 · 세계사 p016)의
+    gold 도 전부 이 꼴이었다."""
 
     def test_대문자_로마숫자_섹션번호(self):
-        assert translate_tagged_text("Ⅱ. 개인과 사회 구조").startswith("⠠⠊⠊⠲")
-        assert translate_tagged_text("Ⅰ. 서론").startswith("⠠⠊⠲")
-        assert translate_tagged_text("Ⅳ. 인간과 문화").startswith("⠠⠊⠧⠲")
-        assert translate_tagged_text("Ⅴ. 현대 사회").startswith("⠠⠧⠲")
+        assert translate_tagged_text("Ⅱ. 개인과 사회 구조").startswith("⠴⠠⠠⠊⠊⠲")
+        assert translate_tagged_text("Ⅰ. 서론").startswith("⠴⠠⠊⠲")
+        assert translate_tagged_text("Ⅳ. 인간과 문화").startswith("⠴⠠⠠⠊⠧⠲")
+        assert translate_tagged_text("Ⅴ. 현대 사회").startswith("⠴⠠⠧⠲")
 
-    def test_로마자표_종료표_없음(self):
-        out = translate_tagged_text("Ⅲ. 공동체 생활")
-        assert not out.startswith(_ROMAN)     # 로마자표 없음
-        assert out.startswith("⠠⠊⠊⠊⠲")       # 대문자표 한 번 + iii + 마침표 한 번
+    def test_로마자표_뒤_대문자_단어표(self):
+        # 두 글자 이상이면 대문자 단어표 ⠠⠠(제28항 [붙임] 재추출 1480~1481행). 종전 낱자형은 ⠠ 하나였다.
+        assert translate_tagged_text("Ⅲ. 공동체 생활").startswith("⠴⠠⠠⠊⠊⠊⠲")
