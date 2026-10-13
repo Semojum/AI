@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from app.ai.braille.visual_braille import ImageBraille
 from app.ai.braille.layout_braille import LayoutBraille
-from app.ai.braille.nested_block import box_narrative
+from app.ai.llm.base_opt import box_narrative
 from app.ai.braille.table_braille import TableBraille
 from app.ai.llm.image_opt import ImageOpt
 from app.ai.llm.table_opt import TableOpt

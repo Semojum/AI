@@ -16,12 +16,12 @@ import time
 from html import unescape as _html_unescape
 from typing import Optional
 
-from app.ai.braille.nested_block import box_narrative
 from app.ai.braille.regulations import make_rule
-from app.ai.braille.table_braille import (_ANS_PAGE_REF_RE, answer_box_on, answer_box_parts, build_table_tags,
-                                         parse_table_tags, print_layout)
+from app.ai.braille.table_braille import print_layout
+from app.ai.braille.tag_names import (_ANS_PAGE_REF_RE, _PRINT_BOX_BOTTOM, _PRINT_BOX_TOP, _PRINT_RULE, answer_box_on,
+                                     answer_box_parts, build_table_tags, parse_table_tags)
 from app.ai.captioning.captioner import guard_llm_text
-from app.ai.llm.base_opt import BaseOpt, decide_tier_timeout, generate_with_retry
+from app.ai.llm.base_opt import BaseOpt, box_narrative, decide_tier_timeout, generate_with_retry
 from app.ai.llm.draft_utils import ensure_tn_prefix
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)
 from app.schemas.content import Draft, ExtractedContent, LLMOutput, RuleApplication
@@ -400,7 +400,7 @@ def _is_answer_grid(grid: list) -> bool:
       `_html_to_grid` 를 탄다. 구조 dict 쪽에만 신호를 걸면 아무 데도 안 걸린다.
     """
     # 제목 칸(`수능 2점 테스트`)·세 자리 답(`5 100`)이 든 정답 상자는 위 비율 판정에 안 걸린다
-    # (넉 자 넘는 칸이 섞여서). 정답 상자 꼴 판정(table_braille.answer_box_parts)으로 같이 본다.
+    # (넉 자 넘는 칸이 섞여서). 정답 상자 꼴 판정(tag_names.answer_box_parts)으로 같이 본다.
     return (_is_answer_texts([c for row in grid for c in row])
             or (answer_box_on() and answer_box_parts(grid) is not None))
 
@@ -623,7 +623,7 @@ _TABLE_DRAFT_MODES = [
 #
 #   무엇을 대신 적을 것인가 — **표 크기만** 적는다. 「점자 자료 제작 지침」 3장은 표에
 #   점역자 주를 의무로 달지 않는다(제목 5칸 + 테두리가 정본 형식이고, 주는 전치·번호 삽입
-#   처럼 **우리가 임의로 고친 것**을 알릴 때만 단다 — `braille/tn_notices.py` 참조).
+#   처럼 **우리가 임의로 고친 것**을 알릴 때만 단다 — `llm/tn_notices.py` 참조).
 #   그래서 여기 문구는 규정 문구가 아니라 화면 표시용 요약이다. 첫 행을 '열 항목'이라
 #   단정하는 것처럼 **틀릴 수 있는 말은 쓰지 않는다**(2열 표는 첫 행이 제목이 아니다).
 #   칸 수는 태그에서 그대로 세므로 표가 무엇이든 맞다.
@@ -774,3 +774,48 @@ class TableOpt(BaseOpt):
             nested_text=nested_text,
             **dict(zip(("drafts", "selected_idx"), _print_drafts(table_text, render_mode))),
         )
+
+
+# ── 묵자 테두리 되읽기(mode b, table_braille 에서 옮김 · #1364) ────────────────────
+# 점역사가 mode c 로 받은 묵자를 고쳐 되돌리면 엔진 `table_braille._print_frame` 이 그린 `┌ ├ └` 가
+# 그대로 올라온다. 점역기는 이 글자를 모르고 조용히 버려서, 테두리 줄이 통째로 0셀이
+# 되고 소실 가드가 `[처리 불가: 점역 불가 문자 ┌]` 를 찍었다(대표 지적 2026-09-08).
+# 우리가 쓴 형식은 우리가 읽는다 — 태그로 되돌려 mode c 와 같은 표 체인에 태운다.
+_PRINT_FRAME_RE = re.compile(
+    rf"^{_PRINT_BOX_TOP}[^\S\n]*\n(.*?)\n[^\S\n]*{_PRINT_BOX_BOTTOM}[^\S\n]*$",
+    re.DOTALL | re.MULTILINE)
+_PRINT_COL_GAP_RE = re.compile(r"[ \t]{2,}")
+# 짝이 깨진 테두리 글자(점역사가 위·아래 한쪽만 지운 경우). 블록으로 못 읽으므로
+# 표로 되살릴 수 없다 — 글자만 지운다. 내용이 없는 줄이라 잃는 게 없고, 남겨 두면
+# 그 줄이 통째로 0셀이 돼 다시 `[처리 불가]` 가 된다.
+_PRINT_FRAME_STRAY_RE = re.compile(
+    rf"^[{_PRINT_BOX_TOP}{_PRINT_BOX_BOTTOM}{_PRINT_RULE}][^\S\n]*(\n|$)", re.MULTILINE)
+
+
+def _print_frame_row(line: str) -> list[str]:
+    """묵자 초안 한 줄 → 셀 목록. `print_layout` 이 쓴 구분을 되짚는다.
+
+    · 격자·전치: `행머리: 값  값` — 행머리는 `": "` 로, 값 사이는 두 칸으로 갈린다.
+    · 선형:      `값  값  값`    — 두 칸만.
+    `(빈칸)` 은 `print_layout` 이 빈 셀 자리에 쓴 표시라 빈 셀로 되돌린다(§3.1.3(9)).
+
+    ponytail: 셀 안에 `": "` 나 두 칸이 들어 있으면 가르는 자리가 어긋난다. 칸 정보를
+    안 잃으려면 FE 가 편집분을 `<!칸>` 으로 실어 보내야 한다(계약 변경 — pm 보고 대상).
+    """
+    head, sep, rest = line.strip().partition(": ")
+    cells = ([head] + _PRINT_COL_GAP_RE.split(rest)) if sep \
+        else _PRINT_COL_GAP_RE.split(line.strip())
+    return ["" if c.strip() == "(빈칸)" else c.strip() for c in cells]
+
+
+def parse_print_frames(src: str) -> str:
+    """묵자 표 테두리 블록(`┌ … └`)을 `<!표>` 태그 형식으로 되돌린다. 없으면 원문 그대로."""
+    if not src or _PRINT_BOX_TOP not in src:
+        return src
+
+    def _sub(m: "re.Match") -> str:
+        rows = [_print_frame_row(ln) for ln in m.group(1).splitlines()
+                if ln.strip() and ln.strip() != _PRINT_RULE]
+        return build_table_tags(rows) if rows else m.group(0)
+
+    return _PRINT_FRAME_STRAY_RE.sub("", _PRINT_FRAME_RE.sub(_sub, src))

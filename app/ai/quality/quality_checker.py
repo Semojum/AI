@@ -250,7 +250,7 @@ def _answer_band_unpaired(html: str) -> bool:
     """정답 띠 머리(`본문 N~N쪽`)가 있는 표 HTML 인데 번호 · 답 짝을 못 지었는가(#1353)."""
     if "<t" not in html:
         return False
-    from app.ai.braille.table_braille import _ANS_PAGE_REF_RE, answer_box_parts
+    from app.ai.braille.tag_names import _ANS_PAGE_REF_RE, answer_box_parts
     if not _ANS_PAGE_REF_RE.search(html):
         return False
     from app.ai.llm.table_opt import _html_to_grid

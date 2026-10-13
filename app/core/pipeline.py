@@ -1975,7 +1975,7 @@ def _table_keep_cells() -> bool:
 
 def _is_answer_box_html(html: str) -> bool:
     """표 HTML 이 정답 상자인가(`ANSWER_BOX_FORM` 이 켜졌을 때만)."""
-    from app.ai.braille.table_braille import answer_box_on, answer_box_parts
+    from app.ai.braille.tag_names import answer_box_on, answer_box_parts
     if not answer_box_on() or "<t" not in (html or ""):
         return False
     from app.ai.llm.table_opt import _html_to_grid
@@ -1988,7 +1988,7 @@ def _answer_val(a: str) -> str:
 
 def _restore_answer_marks(elements: list[dict], page) -> int:
     """정답 상자 표의 `번호 답` 칸을 텍스트층 글자로 되살린다. 고친 칸 수를 돌려준다."""
-    from app.ai.braille.table_braille import answer_box_parts
+    from app.ai.braille.tag_names import answer_box_parts
     from app.ai.llm.table_opt import _html_to_grid
     if page.rotation:
         return 0
@@ -2039,7 +2039,7 @@ def _answer_digits(s: str) -> str:
 
 def _rebuild_answer_band(html: str, layer: list[tuple[str, str]]) -> tuple[str, str] | None:
     from collections import Counter
-    from app.ai.braille.table_braille import _ANS_PAGE_REF_RE, answer_box_parts
+    from app.ai.braille.tag_names import _ANS_PAGE_REF_RE, answer_box_parts
     from app.ai.llm.table_opt import _html_to_grid
     rows = _TR_RE.findall(html)
     if not rows or not _ANS_PAGE_REF_RE.search(rows[0]):
@@ -3317,7 +3317,7 @@ def _mode_b_html_tables_to_tags(src: str) -> str:
     """mode b 원문의 HTML 표를 `<!표>` 태그 형식으로 바꾼다. 표가 없으면 그대로."""
     if not src or "<table" not in src.lower():
         return src
-    from app.ai.braille.table_braille import build_table_tags
+    from app.ai.braille.tag_names import build_table_tags
     from app.ai.llm.table_opt import _html_to_grid
 
     def _sub(m: re.Match) -> str:
@@ -3403,7 +3403,7 @@ async def _run_pipeline(task: PageTask) -> dict:
         # 표 되읽기 두 갈래: BE 가 hwp·docx 에서 보낸 HTML `<table>` 과, 점역사가 우리
         # 묵자 초안을 고쳐 되돌린 테두리 블록(`┌ ├ └`). 둘 다 `<!표>` 태그로 옮겨
         # 같은 표 체인에 태운다 — 안 그러면 테두리 줄이 `[처리 불가]` 로 찍힌다(#723).
-        from app.ai.braille.table_braille import parse_print_frames
+        from app.ai.llm.table_opt import parse_print_frames
         _src = parse_print_frames(_mode_b_html_tables_to_tags(task.source_text or ""))
         src_lines = _mode_b_segments(_src)
         if not src_lines:                       # 내용이 없으면 빈 응답(빈 결과 금지 규칙은

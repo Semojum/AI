@@ -53,7 +53,8 @@ class TestRoundTrip:
             ["나 후보", "2,907", "34.0"]]
 
     def _back(self, label):
-        from app.ai.braille.table_braille import parse_print_frames, parse_table_tags
+        from app.ai.braille.tag_names import parse_table_tags
+        from app.ai.llm.table_opt import parse_print_frames
         return parse_table_tags(parse_print_frames(_drafts()[label]))
 
     def test_테두리_안은_칸까지_되살아난다(self):
@@ -68,21 +69,23 @@ class TestRoundTrip:
         assert all("├" not in c for r in self._back("테두리+구분선") for c in r)
 
     def test_테두리가_없으면_원문_그대로(self):
-        from app.ai.braille.table_braille import parse_print_frames
+        from app.ai.llm.table_opt import parse_print_frames
         assert parse_print_frames("그냥 한 줄\n또 한 줄") == "그냥 한 줄\n또 한 줄"
 
     def test_빈칸_표시는_빈_셀로_돌아온다(self):
-        from app.ai.braille.table_braille import parse_print_frames, parse_table_tags
+        from app.ai.braille.tag_names import parse_table_tags
+        from app.ai.llm.table_opt import parse_print_frames
         rows = parse_table_tags(parse_print_frames("┌\n갑: (빈칸)  3\n└"))
         assert rows == [["갑", "", "3"]]
 
     def test_짝_깨진_테두리는_글자만_지운다(self):
         # 점역사가 아래 테두리를 지우면 표로 되살릴 수 없다. 그 줄을 남기면 0셀이 돼
         # 다시 `[처리 불가]` 가 되므로 글자만 지우고 본문은 그대로 둔다.
-        from app.ai.braille.table_braille import parse_print_frames
+        from app.ai.llm.table_opt import parse_print_frames
         assert parse_print_frames("┌\n갑: 1  2\n을: 3  4") == "갑: 1  2\n을: 3  4"
 
     def test_구분선만_지워도_표로_읽는다(self):
-        from app.ai.braille.table_braille import parse_print_frames, parse_table_tags
+        from app.ai.braille.tag_names import parse_table_tags
+        from app.ai.llm.table_opt import parse_print_frames
         assert parse_table_tags(parse_print_frames("┌\n갑: 1  2\n을: 3  4\n└")) == [
             ["갑", "1", "2"], ["을", "3", "4"]]

@@ -143,7 +143,7 @@ def test_fallback_tn_is_human_text_not_tags():
 
 def test_fallback_tn_counts_from_pipe_text():
     """mode a/c 는 파이프 격자로 온다 — 태그로 옮긴 뒤 같은 문장이 나와야 한다."""
-    from app.ai.braille.table_braille import build_table_tags
+    from app.ai.braille.tag_names import build_table_tags
     grid = [["후보", "득표수(표)", "득표율(%)"], ["가 후보", "3,420", "40.0"]]
     text = "\n".join(" | ".join(r) for r in grid)
     assert _table_tn(build_table_tags(grid), text) == "표. 3항목 2행 표임."

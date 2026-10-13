@@ -290,7 +290,8 @@ class TestTableRenderModes:
         떨어지고 있었다. gold 는 그 자리를 글상자로 적는다(생명과학 body p0115 ·
         언어와매체 body p0197 실물 대조). 접두 `표.` 는 gold 에 없는 말이었다.
         """
-        from app.ai.braille.table_braille import TableBraille, build_table_tags
+        from app.ai.braille.table_braille import TableBraille
+        from app.ai.braille.tag_names import build_table_tags
         from app.schemas.content import LLMOutput
 
         tags = build_table_tags([["보기"], ["ㄱ. 첫째 항목이다."], ["ㄴ. 둘째 항목이다."]])
