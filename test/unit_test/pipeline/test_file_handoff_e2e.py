@@ -70,8 +70,9 @@ class TestFileHandoffE2E:
     def test_response_completed_with_braille(self, job):
         job_id, _ = job
         result = asyncio.run(pipeline.run(PageTask(job_id=job_id, page_no=_PAGE, mode="c")))
-        # 머리글 요소(`CHAPTER 01 · …`)는 점자본에 적을지 확인할 자리라 R19 하나만 붙어 검토로 간다(#1348).
-        assert result["status"] == "NEEDS_REVIEW"
+        # 머리글 요소(`CHAPTER 01 · …`)는 점자본에 적을지 확인할 자리라 R19 하나만 붙는다(#1348). R19 는 '안내' 등급이라
+        # 쪽 상태는 COMPLETED 다(#1355).
+        assert result["status"] == "COMPLETED"
         hf = [e["id"] for e in result["braille_text_list"] if e["type"] == "header_footer"]
         flags = [(f["type"], f["element_id"]) for f in result["quality_report"]["review_flags"]
                  if f["element_id"] != "page" and f["type"] not in ("R10", "R13")]   # 쪽 단위 · 등급 표시는 뺀다
