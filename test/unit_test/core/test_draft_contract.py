@@ -39,13 +39,13 @@ AI = Path(__file__).resolve().parents[3]
 TABLE = "구분 | t년 | t+50년\n인구 | 100 | 120\n비율 | 3.2 | 4.1"
 
 
-def _run(mode: str, content: str = TABLE, etype: str = "table") -> dict:
+def _run(mode: str, content: str = TABLE, etype: str = "table", elements: list | None = None) -> dict:
     job = f"test-draft-{mode}-{uuid4().hex[:6]}"
     # ★ 3-d: 경계 파일 + stamp 를 제품 코드로 깐다(stamp 가 없으면 재파생 갈래로 빠진다).
     pipeline._write_txt_result(
         PageTask(job_id=job, page_no=1, mode=mode),
         {"meta": {"job_id": job, "page_no": 1, "extraction_method": "TEXT_NATIVE"},
-         "elements": [{"id": str(uuid4()), "order": 1, "type": etype, "content": content}]},
+         "elements": elements or [{"id": str(uuid4()), "order": 1, "type": etype, "content": content}]},
         DocumentMeta(pdf_confidence=1.0, routing_tier="ZERO"))
     try:
         return asyncio.run(pipeline.run(PageTask(job_id=job, page_no=1, mode=mode)))
@@ -226,5 +226,17 @@ def test_표_요소는_원문_목록에_태그_글을_싣는다(mode, mode_a, mo
     r = {"a": mode_a, "c": mode_c}[mode]
     src = r["text_list"][0]["table_source"]
     assert src.startswith("<!표>") and "<!칸>인구" in src and "<!칸>120" in src, src
+    assert r["text_list"][0]["table_box_level"] == 0                  # 상자 밖 표(#1368)
     assert "<!표>" not in r["text_list"][0]["contents"][0]
     assert all(not el.get("table_source") for el in r.get("braille_text_list") or [])
+
+
+def test_상자_안_표는_원문_목록에_상자_위계를_싣는다():
+    """#1368 — 서버는 상자 안 표의 테두리를 한 단계 아래 꼴로 그린다(`_mark_table_box_levels`).
+    앱이 table op 에 `table_source` 와 같이 넘길 값이다. 상자 태그 사이에 낀 표만 1 이고 글 요소는 0."""
+    r = _run("c", elements=[
+        {"id": str(uuid4()), "order": 1, "type": "text", "content": "<!상자>보기<!/상자>"},
+        {"id": str(uuid4()), "order": 2, "type": "table", "content": TABLE, "box_level": 1},
+        {"id": str(uuid4()), "order": 3, "type": "text", "content": "<!상자끝><!/상자끝>"},
+    ])
+    assert [(e["type"], e["table_box_level"]) for e in r["text_list"]] == [("text", 0), ("table", 1), ("text", 0)]
