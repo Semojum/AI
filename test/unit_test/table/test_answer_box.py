@@ -6,6 +6,7 @@ gold(생명과학 ans p0026 · 국어 ans p0003 · p0012): 제목은 상자 위,
 import pytest
 
 from app.ai.braille import table_braille as tb
+from app.ai.llm.table_opt import _html_to_grid
 from app.ai.braille.translator import translate_tagged_text as tr
 
 PAD = "⠀"
@@ -138,3 +139,57 @@ def test_표는_보기_쪼개기를_안_탄다(monkeypatch, keep, split):
            "elements": [{"id": "t", "order": 1, "type": "table", "content": _CIRCLED_TABLE}]}
     _, ext_map, _ = pipeline._parse_txt_result(ext, "p_001")
     assert ("\n" in next(iter(ext_map.values())).corrected_text) is split
+
+
+# ── 정답 띠 다시 만들기(#1353) — 띠 머리가 첫 행에 있는데 위 되살리기를 못 탄 표 ─────────────────
+# 생활과 윤리 해설 p9 실물: 번호와 답이 다른 칸이고 원문자가 벗겨졌고 05 · 06 이 빠졌다. 글자층에는 쌍째로 다 있다.
+_BAND = ("<table><tr><td>수능</td><td>기본</td><td>문제</td><td></td><td></td><td></td><td>본문 35~36쪽</td></tr>"
+         "<tr><td>01</td><td>1</td><td>02</td><td>3</td><td>03</td><td>4</td><td>04</td></tr>"
+         "<tr><td>07</td><td>5</td><td>08</td><td>1</td><td></td><td></td><td></td></tr></table>")
+_BAND_LAYER = "01 ① \n02 ③ \n03 ④ \n04 ③ \n05 ② \n06 ④ \n07 ⑤ \n08 ①\n본문 35~36쪽\n수능               문제\n기본\n"
+
+
+def test_정답_띠는_글자층_쌍으로_다시_만든다():
+    from app.core import pipeline
+    els = [{"type": "table", "content": _BAND, "bbox": [100, 100, 900, 300]}]
+    assert pipeline._restore_answer_marks(els, _Page(_BAND_LAYER)) == 8
+    titles, groups = tb.answer_box_parts(_html_to_grid(els[0]["content"], expand=False))
+    assert titles == ["수능 기본 문제", "본문 35~36쪽"]
+    assert groups[0][1] == [("01", "①"), ("02", "③"), ("03", "④"), ("04", "③"),
+                            ("05", "②"), ("06", "④"), ("07", "⑤"), ("08", "①")]
+    assert els[0]["table_fixes"] == ["정답 띠{01 1 02 3 03 4 04 07 5…→01 ①  02 ③  03 ④  04 ③…}"]
+
+
+def test_쌍을_빠뜨린_정답_상자도_채운다():
+    """언매 해설 p53 실물: MinerU 가 `04 ⑤` 를 빠뜨려 3쌍 대 4쌍이라 위 되살리기가 손대지 않던 표."""
+    from app.core import pipeline
+    html = ("<table><tr><td colspan=\"2\">05 통합</td><td>본문 215~219쪽</td></tr>"
+            "<tr><td>01 1</td><td>02 5</td><td>03 2</td></tr></table>")
+    els = [{"type": "table", "content": html, "bbox": [100, 100, 900, 300]}]
+    assert pipeline._restore_answer_marks(els, _Page("01 ①\t\n02 ⑤\t\n03 ②\t\n04 ⑤\n통합\n05\n본문 215~219쪽\n")) == 4
+    _, groups = tb.answer_box_parts(_html_to_grid(els[0]["content"], expand=False))
+    assert groups[0][1] == [("01", "①"), ("02", "⑤"), ("03", "②"), ("04", "⑤")]
+
+
+@pytest.mark.parametrize("layer", [
+    "01 ② \n02 ② \n03 ② \n04 ③ \n05 ② \n06 ④ \n07 ⑤ \n08 ①\n",   # 표 숫자(01 1 02 3 …)가 글자층 숫자에 다 안 든다 — 엉뚱한 글자층
+    "02 ③ \n03 ④ \n04 ③ \n05 ② \n06 ④ \n07 ⑤ \n08 ①\n",          # 번호가 1부터가 아니다
+    "01 ① \n02 ③\n",                                                # 글자층 쌍이 표 숫자의 절반도 못 덮는다
+])
+def test_못_믿을_글자층이면_정답_띠를_손대지_않는다(layer):
+    from app.core import pipeline
+    els = [{"type": "table", "content": _BAND, "bbox": [100, 100, 900, 300]}]
+    assert pipeline._restore_answer_marks(els, _Page(layer)) == 0
+    assert els[0]["content"] == _BAND and "table_fixes" not in els[0]
+
+
+def test_답이_하나인_띠도_정답_상자로_그린다():
+    """사회문화 해설 p44 실물: 쌍이 머리 칸에 붙어 왔다(`기출 플러스1 5`). gold 는 `본문 111쪽` · 【글상자 기출 플러스】 · `1 ⑤`."""
+    from app.core import pipeline
+    from app.ai.llm.table_opt import _infer_render_mode
+    html = "<table><tr><td>기출 플러스1 5</td><td>본문 111쪽</td></tr></table>"
+    els = [{"type": "table", "content": html, "bbox": [100, 100, 900, 300]}]
+    assert pipeline._restore_answer_marks(els, _Page("1 ⑤\n본문 111쪽\n기출 플러스\n")) == 1
+    titles, groups = tb.answer_box_parts(_html_to_grid(els[0]["content"], expand=False))
+    assert titles == ["기출 플러스", "본문 111쪽"] and groups[0][1] == [("1", "⑤")]
+    assert _infer_render_mode(None, els[0]["content"]) == "linear"     # 2열이어도 띠 머리가 있으면 정답 상자
