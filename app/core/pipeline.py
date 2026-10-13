@@ -3861,6 +3861,7 @@ def _build_response(
     braille_by_id = {b.element_id: b for b in braille_outputs}
     ext_by_id = {e.element_id: e for e in extracted}
     flat = flat or {}
+    from app.ai.braille.table_braille import box_level_on      # 표 체인과 같은 스위치(TABLE_BOX_LEVEL)
 
     def _layout_trail(eid) -> list[dict]:
         """읽기순서를 옮긴 근거(#1305) — 요소 전체(line_no=-1) 규정. 쪽 상태는 안 바꾼다(R 플래그 아님)."""
@@ -3975,6 +3976,11 @@ def _build_response(
                 # 다시 낸다. 사람이 읽는 테두리 글(`contents`)은 표 구조를 잃어, 되돌리면 정답 상자 · 번호 체계가 틀린다.
                 "table_source": (o.corrected_text
                                  if elem_by_id.get(o.element_id, _DUMMY_ELEM).type == "table" else ""),
+                # 그 표를 감싼 글상자 위계(#1368). 표 체인이 `TableBraille(box_levels)` 에 넘긴 값 그대로다(상자 밖 0).
+                # 앱이 table op 에 같이 넘기지 않으면 상자 안 표의 테두리 꼴이 서버와 다르다(dev · val 표 900 중 71).
+                "table_box_level": (getattr(ext_by_id.get(o.element_id), "box_level", 0) or 0
+                                    if elem_by_id.get(o.element_id, _DUMMY_ELEM).type == "table" and box_level_on()
+                                    else 0),
                 # ★ 들여쓰기를 실제 공백으로 실어 보낸다(2026-09-02 대표 지적).
                 #   SPEC-INTERFACE §1-0: "조판 규칙(빈 줄·들여쓰기·가운데 정렬)은 AI 가
                 #   `contents` 안에 넣어 보낸다." 그런데 시각 요소의 줄별 들여쓰기는

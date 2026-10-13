@@ -1,7 +1,7 @@
 """2026-09-08 신설 필드 계약 회귀 — 값이 있는데 안 실리던 자리를 다시 막지 않게.
 
   ProcessingMeta.caption_disabled
-  TextElement.table_source(20, #1366)
+  TextElement.table_source(20, #1366) · .table_box_level(21, #1368)
 
 ★ **빈 값일 때는 종전과 바이트가 같아야 한다.** BE 가 아직 안 읽으므로 그게 평상 상태다.
   proto3 는 기본값을 직렬화하지 않으므로 "기본값이면 바이트 0" 을 그대로 잰다.
@@ -39,6 +39,7 @@ class TestFieldNumbers:
                for m in (pb.BrailleRequest, pb.ProcessingMeta, pb.TextElement)}
         assert got["ProcessingMeta"]["caption_disabled"] == 5
         assert got["TextElement"]["table_source"] == 20
+        assert got["TextElement"]["table_box_level"] == 21
 
     @pytest.mark.parametrize("msg, 이름, 번호", [
         (pb.BrailleRequest, "customer_id", 8),
@@ -69,7 +70,8 @@ class TestCarried:
 
     def test_text_element가_표_태그_글을_싣는다(self):
         src = "<!표>\n<!행><!칸>가<!칸>나<!/행>\n<!/표>"
-        assert _dict_to_text_element({"id": "x", "type": "table", "table_source": src}).table_source == src
+        e = _dict_to_text_element({"id": "x", "type": "table", "table_source": src, "table_box_level": 1})
+        assert e.table_source == src and e.table_box_level == 1
 
 
 class TestEmptyIsByteIdentical:
@@ -83,7 +85,8 @@ class TestEmptyIsByteIdentical:
                                      ).SerializeToString(deterministic=True)
         el = _dict_to_text_element({"id": "x"})
         assert el.SerializeToString(deterministic=True) == \
-            _dict_to_text_element({"id": "x", "table_source": ""}).SerializeToString(deterministic=True)
+            _dict_to_text_element({"id": "x", "table_source": "", "table_box_level": 0}
+                                  ).SerializeToString(deterministic=True)
         # 응답 dict 에 남은 검수 신호는 gRPC 로 안 나간다(17 · 18 · 19 예약)
         assert el.SerializeToString(deterministic=True) == \
             _dict_to_text_element({"id": "x", "review_grade": "high", "round_trip": 0.9, "breaks": [1]}

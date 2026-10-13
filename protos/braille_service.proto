@@ -160,6 +160,9 @@ message TextElement {
   // 사람이 읽는 테두리 글(contents)과 따로 싣는다. 앱이 칸 글을 고친 뒤 braille 사이드카 `table` op 에 넣으면
   // 서버와 같은 표 점자(다섯 안)가 나온다.
   string             table_source    = 20;
+  // 표를 감싼 글상자 위계(#1368). text_list 의 표 요소에만, 상자 밖이면 0. 서버는 상자 안 표의 테두리를 한 단계
+  // 아래 꼴로 그린다. 앱이 table op 에 table_source 와 같이 box_level 로 넘기면 서버와 같은 표 점자가 나온다.
+  int32              table_box_level = 21;
 }
 
 // ── 사용량 ──────────────────────────────────────────────────────

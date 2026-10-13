@@ -73,6 +73,7 @@ def _dict_to_text_element(d: dict):
     elem.latex_string = d.get("latex_string", "")
     # review_grade · round_trip · breaks 는 응답 dict(요청 로그)에만 남고 gRPC 로는 안 나간다(proto reserved 17~19, #1366).
     elem.table_source = d.get("table_source", "")   # 표 태그 글(#1366). text_list 의 표 요소에만 있다
+    elem.table_box_level = d.get("table_box_level", 0)   # 그 표를 감싼 글상자 위계(#1368)
     for c in d.get("contents", []):
         elem.contents.append(c)
     for rt in d.get("rule_trail", []):
