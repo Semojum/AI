@@ -18,7 +18,7 @@ from typing import Optional
 
 from app.ai.braille.nested_block import box_narrative
 from app.ai.braille.regulations import make_rule
-from app.ai.braille.table_braille import (answer_box_on, answer_box_parts, build_table_tags,
+from app.ai.braille.table_braille import (_ANS_PAGE_REF_RE, answer_box_on, answer_box_parts, build_table_tags,
                                          parse_table_tags, print_layout)
 from app.ai.captioning.captioner import guard_llm_text
 from app.ai.llm.base_opt import BaseOpt, decide_tier_timeout, generate_with_retry
@@ -502,7 +502,9 @@ def _infer_render_mode(table_structure: Optional[dict], text: str = "") -> str:
         grid = _html_to_grid(text)      # 여기만 expand=True — 진짜 열 수를 세야 한다
         if grid:
             max_col = max(len(r) for r in grid)
-            if max_col >= 3 and _is_answer_grid(grid):
+            # 띠 머리(`본문 N~N쪽`)가 있는 정답 상자는 열이 둘이어도 정답 상자다. 답이 하나인 띠(`기출 플러스 1 ⑤`)가
+            # 2열이라 격자로 나갔다. gold 는 글상자다(사회문화 ans p44 · p49, #1353).
+            if (max_col >= 3 or _ANS_PAGE_REF_RE.search(text)) and _is_answer_grid(grid):
                 return "linear"
             if max_col >= 3 and _is_sentence_grid(grid):
                 return "numbered"

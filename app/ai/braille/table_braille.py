@@ -729,7 +729,9 @@ _ANS_PAIR_RE = re.compile(r"^(\d{1,2})\s+([①-⑳]|\d{1,4})$")
 _ANS_BARE_NO_RE = re.compile(r"^\d{1,2}$")
 _ANS_LABEL_MAX = 4        # 쌍 사이 소제목은 넉 자 이하('언어'·'1회'·'02')
 _ANS_MIN_PAIRS = 6
-_ANS_MIN_PAIRS_PAGED = 3  # 제목에 '본문 87~89쪽' 이 있으면(정답 상자 머리 표지) 세 쌍이면 된다
+_ANS_MIN_PAIRS_PAGED = 1  # 제목에 '본문 87~89쪽' 이 있으면(정답 상자 머리 표지) 한 쌍이면 된다. 사회문화 '기출 플러스' 는 답이 하나 · 둘이고
+                          #   gold 도 글상자로 적는다(ans p21 `1 ④  2 ②` · p44 `1 ⑤` · p49 `1 ②`, #1353). 셋에서 내려 판정이 바뀐 표는
+                          #   2027 dev · val 표 899개 중 그 띠 5개뿐이다
 _ANS_PAGE_REF_RE = re.compile(r"본문\s*\d+(?:\s*~\s*\d+)?\s*쪽")
 
 

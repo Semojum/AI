@@ -1999,20 +1999,66 @@ def _restore_answer_marks(elements: list[dict], page) -> int:
         bb = json.loads(bb) if isinstance(bb, str) else bb
         if el.get("type") != "table" or not bb or "<t" not in html:
             continue
-        cells = list(_ANS_CELL_HTML_RE.finditer(html))
-        if not cells or answer_box_parts(_html_to_grid(html, expand=False)) is None:
-            continue
         clip = (bb[0] / 1000 * W - 3, bb[1] / 1000 * H - 3, bb[2] / 1000 * W + 3, bb[3] / 1000 * H + 3)
-        layer = [(m.group(1), m.group(2)) for m in _ANS_TEXT_RE.finditer(page.get_text("text", clip=clip))]
-        ours = [(m.group(2), m.group(3)) for m in cells]
-        if len(layer) != len(ours) or any(int(a[0]) != int(b[0]) or _answer_val(a[1]) != _answer_val(b[1])
-                                          for a, b in zip(layer, ours)):
-            continue
-        answers = iter(ans for _, ans in layer)
-        el["content"] = _ANS_CELL_HTML_RE.sub(
-            lambda m: f"{m.group(1)}{m.group(2)} {next(answers)}{m.group(4)}", html)
-        fixed += sum(1 for a, b in zip(layer, ours) if a[1] != b[1])
+        text = page.get_text("text", clip=clip)
+        layer = [(m.group(1), m.group(2)) for m in _ANS_TEXT_RE.finditer(text)]
+        cells = list(_ANS_CELL_HTML_RE.finditer(html))
+        if cells and answer_box_parts(_html_to_grid(html, expand=False)) is not None:
+            ours = [(m.group(2), m.group(3)) for m in cells]
+            if len(layer) == len(ours) and all(int(a[0]) == int(b[0]) and _answer_val(a[1]) == _answer_val(b[1])
+                                               for a, b in zip(layer, ours)):
+                answers = iter(ans for _, ans in layer)
+                el["content"] = _ANS_CELL_HTML_RE.sub(
+                    lambda m: f"{m.group(1)}{m.group(2)} {next(answers)}{m.group(4)}", html)
+                fixed += sum(1 for a, b in zip(layer, ours) if a[1] != b[1])
+                continue
+        rebuilt = _rebuild_answer_band(html, layer)
+        if rebuilt:
+            el["content"] = rebuilt[0]
+            el["table_fixes"] = [*(el.get("table_fixes") or []), rebuilt[1]]
+            fixed += len(layer)
     return fixed
+
+
+# ── 정답 띠 다시 만들기 (#1353) ──────────────────────────────────────────────
+# 위 되살리기는 칸 하나에 `01 4` 처럼 쌍이 든 상자이고 쌍 수 · 값이 글자층과 똑같을 때만 고친다. 해설 권 정답 띠는
+# MinerU 가 번호와 답을 다른 칸으로 가르거나(`01 | 1 | 02 | 3`) 한 낱말로 붙이고(`14 21 34`) 쌍을 빠뜨린다(05 · 06).
+# 그래서 답이 틀린 띠 표가 2027 dev · val 38쪽(gold 답 259쌍 중 256 다름)이었는데 글자층에는 `01 ①  02 ③ …` 이 쌍째로 있다.
+# 첫 행에 띠 머리(`본문 N~N쪽`)가 있는 표는 그 행을 두고 나머지를 글자층 쌍으로 다시 만든다. 셋을 다 지킬 때만이다.
+#   · 글자층 쌍의 번호가 1부터 1씩 는다(`기출 플러스` 는 답이 하나 · 둘이다).
+#   · MinerU 표 몸통의 숫자(원문자는 그 숫자로)가 글자층 숫자에 다 들어 있고(차례는 안 본다) 절반 이상이다. 엉뚱한 글자층을
+#     거른다. 차례를 안 보는 것은 MinerU 가 두 줄 띠를 세로 차례로 읽어(`01 ③ 05 ③` 이웃) 숫자 차례가 갈리기 때문이다(언매 10요소).
+#   · 다시 만든 표가 정답 상자로 판정된다.
+# 고친 자리는 `table_fixes` 에 실어 R4 '고침' 문구로 띄운다(#1296 B3, 고침이 틀렸을 때 점역사가 볼 신호).
+_TR_RE = re.compile(r"<tr[^>]*>.*?</tr>", re.S)
+
+
+def _answer_digits(s: str) -> str:
+    return "".join(_answer_val(ch) if "①" <= ch <= "⑳" else ch for ch in s if ch in "0123456789" or "①" <= ch <= "⑳")
+
+
+def _rebuild_answer_band(html: str, layer: list[tuple[str, str]]) -> tuple[str, str] | None:
+    from collections import Counter
+    from app.ai.braille.table_braille import _ANS_PAGE_REF_RE, answer_box_parts
+    from app.ai.llm.table_opt import _html_to_grid
+    rows = _TR_RE.findall(html)
+    if not rows or not _ANS_PAGE_REF_RE.search(rows[0]):
+        return None
+    if not layer or [int(q) for q, _ in layer] != list(range(1, len(layer) + 1)):
+        return None
+    body = " ".join(re.sub(r"<[^>]+>", " ", "".join(rows[1:])).split())
+    head = rows[0]
+    if not body:                  # 쌍이 머리 행 제목 칸에 붙어 온 띠(`기출 플러스1 5`) — 머리 행 글로 맞대고 제목에서 뗀다
+        body = " ".join(_ANS_PAGE_REF_RE.sub(" ", re.sub(r"<[^>]+>", " ", rows[0])).split())
+        head = re.sub(r"\s*(?:\d{1,2}\s+(?:[①-⑳]|\d{1,4})\s*)+(?=</t[dh]>)", "", rows[0])
+    ours, theirs = Counter(_answer_digits(body)), Counter(_answer_digits(" ".join(f"{q} {a}" for q, a in layer)))
+    if sum(ours.values()) * 2 < sum(theirs.values()) or ours - theirs:
+        return None
+    new = f"<table>{head}<tr>{''.join(f'<td>{q} {a}</td>' for q, a in layer)}</tr></table>"
+    if answer_box_parts(_html_to_grid(new, expand=False)) is None:
+        return None
+    clip = lambda t, sep: t if len(t) <= 24 else t[:24].rsplit(sep, 1)[0] + "…"
+    return new, f"정답 띠{{{clip(body, ' ')}→{clip('  '.join(f'{q} {a}' for q, a in layer), '  ')}}}"
 
 
 _EID_NS = UUID("5e0c6f1e-7a2b-4c1d-9f3e-2b8a6d4c1f70")
