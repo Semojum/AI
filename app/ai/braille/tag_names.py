@@ -38,6 +38,7 @@ translator의 라우팅 앵커(`_INLINE_MATH_RE`)라 파급 대비 이득이 작
 """
 from __future__ import annotations
 
+import os
 import re
 
 # ── 현행 이름 ────────────────────────────────────────────────────────────────
@@ -197,3 +198,116 @@ def strip_indent_tags(text: str) -> tuple[str, list[int] | None]:
             indents.append(n)
         out.append(rest)
     return "\n".join(out), (indents if found else None)
+
+
+# ── 교열 · 점역 공용 어휘 (이관 1단계, 2026-10-13 · #1364) ─────────────────────────────
+# AI 비엔진 모듈(교열 · 파이프라인 · 품질 검사)이 엔진에서 가져오는 어휘는 이 모듈 · `regulations` ·
+# `constants` 셋으로 모은다. 아래 셋은 엔진(`table_braille`)과 교열(`table_opt` · `pipeline` ·
+# `quality_checker`)이 같이 써서 `table_braille` 에서 옮겼다. 점자가 한 셀도 안 나오는 묵자 규약이다.
+# 이관 5단계에서 엔진 사본을 지울 때 이 모듈이 패키지 쪽(`semojum_braille.tags`)으로 간다.
+
+# ── 표 구조 태그 (plan §3-5 확장) ─────────────────────────────────────────────
+# table_opt가 stage②(점역 직전 텍스트)에 <!표>/<!행>/<!칸>으로 표 구조를 출력하고,
+# `parse_table_tags` 가 행렬로 되돌려 `table_braille` 의 4안 렌더러(풀어쓰기/격자/전치/선형)에 1:1 위임한다.
+_TBL_OPEN, _TBL_CLOSE = "<!표>", "<!/표>"
+_TBL_ROW_OPEN, _TBL_ROW_CLOSE = "<!행>", "<!/행>"
+_TBL_CELL = "<!칸>"
+# build_table_tags는 여는 `<!칸>`만 찍지만(구분자 하나면 족하다), 손으로 쓴 입력과
+# BE가 보내는 txt는 다른 태그처럼 **쌍으로** 적는다. 닫는 쪽을 먼저 지우고 여는 쪽으로
+# 가른다 — 여닫이를 한꺼번에 구분자로 쓰면 빈 조각이 생겨 빈 셀과 구분되지 않는다.
+_TBL_CELL_CLOSE = "<!/칸>"
+_TBL_ROW_RE = re.compile(r"<!행>(.*?)<!/행>", re.DOTALL)
+
+
+def build_table_tags(rows: list[list[str]]) -> str:
+    """행렬 → <!표><!행><!칸>… 태그 문자열(stage② 표시·table_braille 입력)."""
+    out = [_TBL_OPEN]
+    for r in rows:
+        out.append(_TBL_ROW_OPEN + "".join(_TBL_CELL + str(c) for c in r) + _TBL_ROW_CLOSE)
+    out.append(_TBL_CLOSE)
+    return "\n".join(out)
+
+
+def parse_table_tags(text: str):
+    """<!표> 태그 → 행렬(list[list[str]]). 태그 없으면 None(파이프 폴백)."""
+    if _TBL_OPEN not in text:
+        return None
+    rows: list[list[str]] = []
+    for m in _TBL_ROW_RE.finditer(text):
+        cells = m.group(1).replace(_TBL_CELL_CLOSE, "").split(_TBL_CELL)
+        if cells and cells[0] == "":
+            cells = cells[1:]   # 첫 <!칸> 앞 빈 셀 제거
+        rows.append([c.strip() for c in cells])
+    return rows or None
+
+
+# ── 묵자 초안 표 테두리 표시 ─────────────────────────────────────────────────────
+# 엔진 `table_braille.print_layout` 이 그리고, 교열 `table_opt.parse_print_frames`(mode b)가 되읽는다.
+_PRINT_BOX_TOP, _PRINT_BOX_BOTTOM, _PRINT_RULE = "┌", "└", "├"
+
+
+# ── 정답 상자 판정 ────────────────────────────────────────────────────────────────
+# 꼴과 근거는 `table_braille` 의 '정답 상자' 절에 있다. 판정은 엔진(테두리만 자리의 정답 상자 꼴)과
+# 교열(`table_opt` 렌더 모드 · `pipeline` 정답 띠 되살리기 · `quality_checker` R4)이 같이 쓴다.
+_ANS_PAIR_RE = re.compile(r"^(\d{1,2})\s+([①-⑳]|\d{1,4})$")
+_ANS_BARE_NO_RE = re.compile(r"^\d{1,2}$")
+_ANS_LABEL_MAX = 4        # 쌍 사이 소제목은 넉 자 이하('언어'·'1회'·'02')
+_ANS_MIN_PAIRS = 6
+_ANS_MIN_PAIRS_PAGED = 1  # 제목에 '본문 87~89쪽' 이 있으면(정답 상자 머리 표지) 한 쌍이면 된다. 사회문화 '기출 플러스' 는 답이 하나 · 둘이고
+                          #   gold 도 글상자로 적는다(ans p21 `1 ④  2 ②` · p44 `1 ⑤` · p49 `1 ②`, #1353). 셋에서 내려 판정이 바뀐 표는
+                          #   2027 dev · val 표 899개 중 그 띠 5개뿐이다
+_ANS_PAGE_REF_RE = re.compile(r"본문\s*\d+(?:\s*~\s*\d+)?\s*쪽")
+
+
+def answer_box_on() -> bool:
+    return os.environ.get("ANSWER_BOX_FORM", "1") != "0"
+
+
+def answer_box_parts(rows: list[list[str]]):
+    """표 격자 → `(제목 줄, [(소제목 줄, [(번호, 답)…])…])`. 정답 상자가 아니면 None.
+
+    · 첫 쌍 앞 칸에 다섯 자 이상 글이 있으면 그 칸들은 상자 위 제목이다(두 자 이하 칸은
+      앞 제목에 붙인다: `Level` + `1`). 짧은 칸뿐이면 상자 안 소제목이다.
+    · 쌍 사이 짧은 칸은 새 묶음의 소제목이다. 긴 글이 끼면 자료 표다 → None.
+    · 한 묶음의 번호는 1에서 시작해 1씩 는다. MinerU 가 두 쌍을 한 칸에 붙이면(`01 405 3`) 여기서
+      걸러진다 — 안 거르면 붙은 칸이 제목 줄로 샌다.
+    · 쌍이 여섯 개 안 되면 None. 제목에 '본문 N~M쪽' 이 있으면 세 개면 된다(작은 단원 상자).
+    """
+    cells = [(c or "").strip() for r in rows for c in r]
+    cells = [c for c in cells if c]
+    first = next((i for i, c in enumerate(cells) if _ANS_PAIR_RE.match(c)), None)
+    if first is None:
+        return None
+    head, rest = cells[:first], cells[first:]
+    titles: list[str] = []
+    labels: list[str] = []
+    if any(len(c) > _ANS_LABEL_MAX for c in head):
+        for c in head:
+            if titles and len(c) <= 2:
+                titles[-1] += " " + c
+            else:
+                titles.append(c)
+    else:
+        labels = head
+    groups: list[tuple[list[str], list[tuple[str, str]]]] = []
+    pairs: list[tuple[str, str]] = []
+    for c in rest:
+        m = _ANS_PAIR_RE.match(c)
+        if m:
+            if int(m.group(1)) != (int(pairs[-1][0]) + 1 if pairs else 1):
+                return None
+            pairs.append((m.group(1), m.group(2)))
+            continue
+        if len(c) > _ANS_LABEL_MAX:
+            return None
+        if pairs:
+            groups.append((labels, pairs))
+            labels, pairs = [], []
+        labels.append(c)
+    if pairs:
+        groups.append((labels, pairs))
+    need = _ANS_MIN_PAIRS_PAGED if any(_ANS_PAGE_REF_RE.search(t) for t in titles) else _ANS_MIN_PAIRS
+    if sum(len(p) for _, p in groups) < need:
+        return None
+    return titles, [([f"({x})" if _ANS_BARE_NO_RE.match(x) else f"[{x}]" for x in lb], p)
+                    for lb, p in groups]

@@ -5,11 +5,8 @@ table_opt가 stage②에 태그를 출력하고 table_braille가 파싱해 기�
 """
 import uuid
 
-from app.ai.braille.table_braille import (
-    TableBraille,
-    build_table_tags,
-    parse_table_tags,
-)
+from app.ai.braille.table_braille import TableBraille
+from app.ai.braille.tag_names import build_table_tags, parse_table_tags
 from app.schemas.content import LLMOutput
 
 ROWS = [["구분", "2023", "2024"], ["수입", "100", "120"], ["지출", "80", "90"]]

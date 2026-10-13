@@ -17,6 +17,14 @@ from app.ai.braille.isolation import BLOCKED_TEXT_PREFIXES, blocked_braille, saf
 from app.ai.braille.nested_block import append_nested
 from app.ai.braille.regulations import make_rule, make_rule_at
 from app.ai.braille.symbol_rules import symbol_rule_spans
+from app.ai.braille.tag_names import (  # 교열과 같이 쓰는 어휘(#1364)
+    _PRINT_BOX_BOTTOM,
+    _PRINT_BOX_TOP,
+    _PRINT_RULE,
+    answer_box_on,
+    answer_box_parts,
+    parse_table_tags,
+)
 from app.ai.braille.text_braille import content_rules
 from app.ai.braille.translator import translate_tagged_text as _translate
 from app.ai.braille.translator import (
@@ -71,39 +79,6 @@ _BORDER  = "⠿"  # 표 테두리
 _EMPTY_CELL = "⠿⠿"  # 빈 셀 (NLD-3.1.2(4))
 _SEP     = "⠒"  # 행·셀 구분선
 
-# ── 표 구조 태그 (plan §3-5 확장) ─────────────────────────────────────────────
-# table_opt가 stage②(점역 직전 텍스트)에 <!표>/<!행>/<!칸>으로 표 구조를 출력하고,
-# 여기서 행렬로 파싱해 기존 4안 렌더러(풀어쓰기/격자/전치/선형)에 1:1 위임한다.
-_TBL_OPEN, _TBL_CLOSE = "<!표>", "<!/표>"
-_TBL_ROW_OPEN, _TBL_ROW_CLOSE = "<!행>", "<!/행>"
-_TBL_CELL = "<!칸>"
-# build_table_tags는 여는 `<!칸>`만 찍지만(구분자 하나면 족하다), 손으로 쓴 입력과
-# BE가 보내는 txt는 다른 태그처럼 **쌍으로** 적는다. 닫는 쪽을 먼저 지우고 여는 쪽으로
-# 가른다 — 여닫이를 한꺼번에 구분자로 쓰면 빈 조각이 생겨 빈 셀과 구분되지 않는다.
-_TBL_CELL_CLOSE = "<!/칸>"
-_TBL_ROW_RE = re.compile(r"<!행>(.*?)<!/행>", re.DOTALL)
-
-
-def build_table_tags(rows: list[list[str]]) -> str:
-    """행렬 → <!표><!행><!칸>… 태그 문자열(stage② 표시·table_braille 입력)."""
-    out = [_TBL_OPEN]
-    for r in rows:
-        out.append(_TBL_ROW_OPEN + "".join(_TBL_CELL + str(c) for c in r) + _TBL_ROW_CLOSE)
-    out.append(_TBL_CLOSE)
-    return "\n".join(out)
-
-
-def parse_table_tags(text: str):
-    """<!표> 태그 → 행렬(list[list[str]]). 태그 없으면 None(파이프 폴백)."""
-    if _TBL_OPEN not in text:
-        return None
-    rows: list[list[str]] = []
-    for m in _TBL_ROW_RE.finditer(text):
-        cells = m.group(1).replace(_TBL_CELL_CLOSE, "").split(_TBL_CELL)
-        if cells and cells[0] == "":
-            cells = cells[1:]   # 첫 <!칸> 앞 빈 셀 제거
-        rows.append([c.strip() for c in cells])
-    return rows or None
 # 유도점: 지침 §(5)는 열 항목 간격이 5칸 이상일 때 열 **사이**에 `"`를 연속으로 적으라 한다
 # (열 제목 사이는 제외). 줄머리에 무조건 붙이던 옛 구현을 제거 — 진짜 규정 유도점은 미구현.
 
@@ -725,68 +700,7 @@ def _render_linear(corrected_text: str) -> list[str]:
 # 우리 5안은 모두 멀었다(dev 정답 상자 55개: 고른 안 편집 65.9% · 가장 가까운 안 53.3%, `temp/n52`).
 # 이 꼴을 "테두리만" 자리에 넣고 기본으로 고른다(5안 개수·순서는 BE·FE 계약이라 그대로).
 # 되돌리는 길 `ANSWER_BOX_FORM=0`(호출 때 읽음).
-_ANS_PAIR_RE = re.compile(r"^(\d{1,2})\s+([①-⑳]|\d{1,4})$")
-_ANS_BARE_NO_RE = re.compile(r"^\d{1,2}$")
-_ANS_LABEL_MAX = 4        # 쌍 사이 소제목은 넉 자 이하('언어'·'1회'·'02')
-_ANS_MIN_PAIRS = 6
-_ANS_MIN_PAIRS_PAGED = 1  # 제목에 '본문 87~89쪽' 이 있으면(정답 상자 머리 표지) 한 쌍이면 된다. 사회문화 '기출 플러스' 는 답이 하나 · 둘이고
-                          #   gold 도 글상자로 적는다(ans p21 `1 ④  2 ②` · p44 `1 ⑤` · p49 `1 ②`, #1353). 셋에서 내려 판정이 바뀐 표는
-                          #   2027 dev · val 표 899개 중 그 띠 5개뿐이다
-_ANS_PAGE_REF_RE = re.compile(r"본문\s*\d+(?:\s*~\s*\d+)?\s*쪽")
-
-
-def answer_box_on() -> bool:
-    return os.environ.get("ANSWER_BOX_FORM", "1") != "0"
-
-
-def answer_box_parts(rows: list[list[str]]):
-    """표 격자 → `(제목 줄, [(소제목 줄, [(번호, 답)…])…])`. 정답 상자가 아니면 None.
-
-    · 첫 쌍 앞 칸에 다섯 자 이상 글이 있으면 그 칸들은 상자 위 제목이다(두 자 이하 칸은
-      앞 제목에 붙인다: `Level` + `1`). 짧은 칸뿐이면 상자 안 소제목이다.
-    · 쌍 사이 짧은 칸은 새 묶음의 소제목이다. 긴 글이 끼면 자료 표다 → None.
-    · 한 묶음의 번호는 1에서 시작해 1씩 는다. MinerU 가 두 쌍을 한 칸에 붙이면(`01 405 3`) 여기서
-      걸러진다 — 안 거르면 붙은 칸이 제목 줄로 샌다.
-    · 쌍이 여섯 개 안 되면 None. 제목에 '본문 N~M쪽' 이 있으면 세 개면 된다(작은 단원 상자).
-    """
-    cells = [(c or "").strip() for r in rows for c in r]
-    cells = [c for c in cells if c]
-    first = next((i for i, c in enumerate(cells) if _ANS_PAIR_RE.match(c)), None)
-    if first is None:
-        return None
-    head, rest = cells[:first], cells[first:]
-    titles: list[str] = []
-    labels: list[str] = []
-    if any(len(c) > _ANS_LABEL_MAX for c in head):
-        for c in head:
-            if titles and len(c) <= 2:
-                titles[-1] += " " + c
-            else:
-                titles.append(c)
-    else:
-        labels = head
-    groups: list[tuple[list[str], list[tuple[str, str]]]] = []
-    pairs: list[tuple[str, str]] = []
-    for c in rest:
-        m = _ANS_PAIR_RE.match(c)
-        if m:
-            if int(m.group(1)) != (int(pairs[-1][0]) + 1 if pairs else 1):
-                return None
-            pairs.append((m.group(1), m.group(2)))
-            continue
-        if len(c) > _ANS_LABEL_MAX:
-            return None
-        if pairs:
-            groups.append((labels, pairs))
-            labels, pairs = [], []
-        labels.append(c)
-    if pairs:
-        groups.append((labels, pairs))
-    need = _ANS_MIN_PAIRS_PAGED if any(_ANS_PAGE_REF_RE.search(t) for t in titles) else _ANS_MIN_PAIRS
-    if sum(len(p) for _, p in groups) < need:
-        return None
-    return titles, [([f"({x})" if _ANS_BARE_NO_RE.match(x) else f"[{x}]" for x in lb], p)
-                    for lb, p in groups]
+# 판정(`answer_box_on` · `answer_box_parts` · `_ANS_*`)은 교열도 같이 써서 `tag_names` 에 있다(#1364).
 
 
 def _answer_rows(corrected_text: str) -> list[list[str]]:
@@ -1247,10 +1161,6 @@ def print_layout(corrected_text: str, mode: str) -> str:
     return "\n".join(_print_frame(out, mode, header=len(rows) > 1))
 
 
-# 묵자 초안에서 표 테두리·구분선을 나타내는 표시. 점자 쪽 【글상자】·【표 구분선】과 짝이다.
-_PRINT_BOX_TOP, _PRINT_BOX_BOTTOM, _PRINT_RULE = "┌", "└", "├"
-
-
 def _print_frame(lines: list[str], mode: str, *, header: bool) -> list[str]:
     """묵자 초안에 테두리·구분선을 두른다.
 
@@ -1272,51 +1182,6 @@ def _print_frame(lines: list[str], mode: str, *, header: bool) -> list[str]:
         out += body
     out.append(_PRINT_BOX_BOTTOM)
     return ([note] + out) if note else out
-
-
-# ── 묵자 테두리 되읽기(mode b) ────────────────────────────────────────────────
-# 점역사가 mode c 로 받은 묵자를 고쳐 되돌리면 위 `_print_frame` 이 그린 `┌ ├ └` 가
-# 그대로 올라온다. 점역기는 이 글자를 모르고 조용히 버려서, 테두리 줄이 통째로 0셀이
-# 되고 소실 가드가 `[처리 불가: 점역 불가 문자 ┌]` 를 찍었다(대표 지적 2026-09-08).
-# 우리가 쓴 형식은 우리가 읽는다 — 태그로 되돌려 mode c 와 같은 표 체인에 태운다.
-_PRINT_FRAME_RE = re.compile(
-    rf"^{_PRINT_BOX_TOP}[^\S\n]*\n(.*?)\n[^\S\n]*{_PRINT_BOX_BOTTOM}[^\S\n]*$",
-    re.DOTALL | re.MULTILINE)
-_PRINT_COL_GAP_RE = re.compile(r"[ \t]{2,}")
-# 짝이 깨진 테두리 글자(점역사가 위·아래 한쪽만 지운 경우). 블록으로 못 읽으므로
-# 표로 되살릴 수 없다 — 글자만 지운다. 내용이 없는 줄이라 잃는 게 없고, 남겨 두면
-# 그 줄이 통째로 0셀이 돼 다시 `[처리 불가]` 가 된다.
-_PRINT_FRAME_STRAY_RE = re.compile(
-    rf"^[{_PRINT_BOX_TOP}{_PRINT_BOX_BOTTOM}{_PRINT_RULE}][^\S\n]*(\n|$)", re.MULTILINE)
-
-
-def _print_frame_row(line: str) -> list[str]:
-    """묵자 초안 한 줄 → 셀 목록. `print_layout` 이 쓴 구분을 되짚는다.
-
-    · 격자·전치: `행머리: 값  값` — 행머리는 `": "` 로, 값 사이는 두 칸으로 갈린다.
-    · 선형:      `값  값  값`    — 두 칸만.
-    `(빈칸)` 은 `print_layout` 이 빈 셀 자리에 쓴 표시라 빈 셀로 되돌린다(§3.1.3(9)).
-
-    ponytail: 셀 안에 `": "` 나 두 칸이 들어 있으면 가르는 자리가 어긋난다. 칸 정보를
-    안 잃으려면 FE 가 편집분을 `<!칸>` 으로 실어 보내야 한다(계약 변경 — pm 보고 대상).
-    """
-    head, sep, rest = line.strip().partition(": ")
-    cells = ([head] + _PRINT_COL_GAP_RE.split(rest)) if sep \
-        else _PRINT_COL_GAP_RE.split(line.strip())
-    return ["" if c.strip() == "(빈칸)" else c.strip() for c in cells]
-
-
-def parse_print_frames(src: str) -> str:
-    """묵자 표 테두리 블록(`┌ … └`)을 `<!표>` 태그 형식으로 되돌린다. 없으면 원문 그대로."""
-    if not src or _PRINT_BOX_TOP not in src:
-        return src
-
-    def _sub(m: "re.Match") -> str:
-        rows = [_print_frame_row(ln) for ln in m.group(1).splitlines()
-                if ln.strip() and ln.strip() != _PRINT_RULE]
-        return build_table_tags(rows) if rows else m.group(0)
-
-    return _PRINT_FRAME_STRAY_RE.sub("", _PRINT_FRAME_RE.sub(_sub, src))
 
 
 def _transpose_text(corrected_text: str) -> str:

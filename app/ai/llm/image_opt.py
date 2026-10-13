@@ -13,8 +13,7 @@
 
 from __future__ import annotations
 
-from app.ai.braille.nested_block import box_narrative
-from app.ai.llm.base_opt import BaseOpt
+from app.ai.llm.base_opt import BaseOpt, box_narrative
 from app.ai.braille import tag_names as _TAGS
 from app.ai.llm.visual_drafts import build_visual_drafts, resolve_label, visual_trail
 from app.core.model_manager import model_manager  # noqa: F401 (단위 테스트가 이 네임스페이스를 patch)

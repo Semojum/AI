@@ -58,7 +58,7 @@ from app.ai.llm.diagram_structure import (
     type_word_from_caption,
 )
 from app.ai.braille import tag_names as _TN
-from app.ai.braille import tn_notices as _TN_NOTICES
+from app.ai.llm import tn_notices as _TN_NOTICES
 from app.ai.llm.visual_drafts import (
     AMOUNT_BASIC,
     AMOUNT_PROSE,

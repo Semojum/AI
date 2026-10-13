@@ -112,7 +112,7 @@ class TestPrintFrameSegments:
              "└")
 
     def _segs(self, src):
-        from app.ai.braille.table_braille import parse_print_frames
+        from app.ai.llm.table_opt import parse_print_frames
         return _mode_b_segments(parse_print_frames(src))
 
     def test_테두리_블록은_표_요소_하나다(self):

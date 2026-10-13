@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.ai.braille import tn_notices as tn
+from app.ai.llm import tn_notices as tn
 
 
 class TestParticle:

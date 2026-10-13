@@ -9,7 +9,8 @@
 """
 from uuid import uuid4
 
-from app.ai.braille.table_braille import TableBraille, build_table_tags
+from app.ai.braille.table_braille import TableBraille
+from app.ai.braille.tag_names import build_table_tags
 from app.schemas.content import LLMOutput
 
 ROWS = [["구분", "A", "B"], ["1차", "10", "20"], ["2차", "30", "40"]]

@@ -57,7 +57,6 @@ from app.ai.captioning.captioner import split_material
 from app.ai.llm.diagram_structure import caption_head as _caption_head
 from app.ai.llm.diagram_structure import caption_outline as _caption_outline
 from app.ai.braille import tag_names as _TAGS
-from app.ai.braille import tn_notices as _TN_NOTICES
 from app.schemas.content import Draft
 from app.utils.logger import get_logger
 
