@@ -481,7 +481,11 @@ def main():
     ap.add_argument("--no-caption", action="store_true",
                     help="시각자료 캡셔닝을 끄고 돈다(생략 처리). 기호 층 A/B용 — "
                          "이 산출물로 시각 축을 재면 안 된다. run_state와 응답 메타에 표시된다")
+    ap.add_argument("--translate-by", choices=("pipeline", "package"), default="pipeline",
+                    help="점역 주체(이관 3단계 측정, #1370). package = 경계 파일 → braille 패키지(test/translate_shim.py). "
+                         "패키지 체크아웃은 PYTHONPATH 로 앞에 둔다")
     args = ap.parse_args()
+    os.environ["SEMOJUM_TRANSLATE_BY"] = args.translate_by
     if getattr(args, "no_caption", False):
         os.environ["SEMOJUM_NO_CAPTION"] = "1"      # result_builder가 이걸 본다
         print("⚠ 캡셔닝 끔 — 시각 요소는 생략 처리로 나간다. 이 산출물로 시각 축을 재지 말 것.")

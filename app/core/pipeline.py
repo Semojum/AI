@@ -3566,17 +3566,20 @@ async def _run_pipeline(task: PageTask) -> dict:
     #   실제 실행은 아닌 쪽이 있어 티어를 잘못 적었다(원장 `routing-tier-from-run-state`).
     routing_tier = doc_meta.routing_tier
     include_braille = task.mode == "c"
+    # 이관 3단계 측정 팔(#1370) — `package` 면 체인은 교열까지만 하고, 점역은 아래 조판 자리에서 패키지가 한다.
+    by_package = include_braille and _translate_by() == "package"
+    chain_braille = include_braille and not by_package
 
     # 체인 팩토리(라벨 → coroutine). _run_formula_chain만 layout 인자가 없어 시그니처가 달라
     # 람다로 통일한다. 요소가 있는 체인만 활성화해 로그·연산을 줄인다.
     _factory = {
-        "텍스트": (_TEXT_TYPES, lambda e: _run_text_chain(e, layout_result, routing_tier, task, include_braille)),
-        "수식": ({"formula"}, lambda e: _run_formula_chain(e, routing_tier, task, include_braille)),
-        "표": ({"table"}, lambda e: _run_table_chain(e, layout_result, routing_tier, task, include_braille)),
-        "그림": ({"image"}, lambda e: _run_image_chain(e, layout_result, routing_tier, task, include_braille)),
-        "만화": ({"cartoon"}, lambda e: _run_cartoon_chain(e, layout_result, routing_tier, task, include_braille)),
-        "차트": ({"chart_graph"}, lambda e: _run_chart_graph_chain(e, layout_result, routing_tier, task, include_braille)),
-        "도표": ({"diagram"}, lambda e: _run_diagram_chain(e, layout_result, routing_tier, task, include_braille)),
+        "텍스트": (_TEXT_TYPES, lambda e: _run_text_chain(e, layout_result, routing_tier, task, chain_braille)),
+        "수식": ({"formula"}, lambda e: _run_formula_chain(e, routing_tier, task, chain_braille)),
+        "표": ({"table"}, lambda e: _run_table_chain(e, layout_result, routing_tier, task, chain_braille)),
+        "그림": ({"image"}, lambda e: _run_image_chain(e, layout_result, routing_tier, task, chain_braille)),
+        "만화": ({"cartoon"}, lambda e: _run_cartoon_chain(e, layout_result, routing_tier, task, chain_braille)),
+        "차트": ({"chart_graph"}, lambda e: _run_chart_graph_chain(e, layout_result, routing_tier, task, chain_braille)),
+        "도표": ({"diagram"}, lambda e: _run_diagram_chain(e, layout_result, routing_tier, task, chain_braille)),
     }
     active = [(label, _collect(layout_result, ext_map, types), fn)
               for label, (types, fn) in _factory.items()
@@ -3596,6 +3599,7 @@ async def _run_pipeline(task: PageTask) -> dict:
     all_extracted: list[ExtractedContent] = []
     all_llm: list[LLMOutput] = []
     all_braille: list[BrailleOutput] = []
+    chains: list[tuple] = []        # (체인 라벨, 추출, 교열 출력) — package 팔 경계 파일 재료
     for i, result in enumerate(chain_results):
         if isinstance(result, Exception):
             logger.error("체인 %d 실패 (계속 진행): %s", i, result)
@@ -3604,6 +3608,7 @@ async def _run_pipeline(task: PageTask) -> dict:
         all_extracted.extend(ext_list)
         all_llm.extend(llm_list)
         all_braille.extend(br_list)
+        chains.append((active[i][0], ext_list, llm_list))
 
     _debug_dump(task, "04_all_ocr", [e.model_dump() for e in all_extracted])
     _debug_dump(task, "05_all_opt", [o.model_dump() for o in all_llm])
@@ -3618,7 +3623,10 @@ async def _run_pipeline(task: PageTask) -> dict:
     _number_volume_refs(all_llm, task.page_no, all_braille)
 
     flat: dict = {}
-    if include_braille and all_braille:
+    if by_package:
+        with stage("조판"):
+            all_braille, flat = await run_braille(_translate_by_package, task, layout_result, chains, math_page)
+    elif include_braille and all_braille:
         with stage("조판"):
             from app.ai.braille.layout_braille import LayoutBraille, flatten_elements
             # ★ 순서 주의: flatten이 먼저다(위 mode b 주석 참조).
@@ -3637,6 +3645,44 @@ async def _run_pipeline(task: PageTask) -> dict:
         table_fixed=table_fixed,
         lost_restored=lost_restored,
     )
+
+
+def _translate_by() -> str:
+    """점역 주체 — 이관 3단계 측정 스위치(#1370). 러너 `--translate-by` 가 놓고, 제품은 늘 `pipeline` 이다."""
+    return process_env("SEMOJUM_TRANSLATE_BY") or "pipeline"
+
+
+def _translate_by_package(task: PageTask, layout_result: LayoutResult, chains: list[tuple],
+                          math_page: bool) -> tuple[list[BrailleOutput], dict]:
+    """교열본을 경계 파일로 적고, braille 패키지 shim 이 점역한 결과 파일을 AI 타입으로 되읽는다(이관 3단계, #1370).
+
+    shim(`test/translate_shim.py`)은 이 파일만 읽는다. 그래서 엔진 문맥값 다섯(수식 쪽 · 한글 정자 · 영어 정자 ·
+    선택지 한 줄 · 표 상자 위계)도 여기 싣는다. 패키지는 자기 ContextVar 를 따로 들고 있어 AI 쪽에 놓은 값이
+    안 닿는다. 체인 차례와 체인 안 교열 출력 차례를 그대로 넘긴다(조판이 같은 순서 키에서 입력 차례를 본다).
+    별책 참조 번호는 이미 채운 뒤다. 체인 점역 뒤 다시 점역하던 것을 번호 먼저로 바꾼 것이 4단계의 순서다.
+    """
+    from translate_shim import translate_file      # 측정 러너가 test/ 를 sys.path 에 둔다
+    from app.ai.braille.layout_braille import FlatElement
+    from app.schemas.content import RuleApplication
+
+    src = _page_dir(task) / "data" / f"{task.page_no:03d}_translate_in.json"
+    src.write_text(json.dumps({
+        "page_no": task.page_no, "job_id": task.job_id,
+        "context": {"math_page": math_page, "korean_grade1": bool(task.korean_grade1),
+                    "english_grade1": bool(task.english_grade1),
+                    "choices_one_per_line": bool(task.choices_one_per_line)},
+        # 표 체인이 `TableBraille(box_levels)` 에 넘기는 값과 같다(`_run_table_chain`).
+        "box_levels": {str(e.element_id): e.box_level for label, ext, _ in chains if label == "표"
+                       for e in ext if e.box_level},
+        "elements": [e.model_dump(mode="json") for e in layout_result.elements],
+        "chains": [[label, [o.model_dump(mode="json") for o in llm]] for label, _, llm in chains],
+    }, ensure_ascii=False), encoding="utf-8")
+    out = json.loads(translate_file(src).read_text(encoding="utf-8"))
+    flat = {UUID(k): FlatElement(v["text"], [RuleApplication.model_validate(r) for r in v["trail"]],
+                                 v["prefix"], v["suffix"], tuple(v["draft_texts"]), tuple(v["breaks"]),
+                                 tuple(tuple(b) for b in v["draft_breaks"]))
+            for k, v in out["flat"].items()}
+    return [BrailleOutput.model_validate(b) for b in out["braille_outputs"]], flat
 
 
 def _number_volume_refs(llm_outputs: list[LLMOutput], page_no: int,
