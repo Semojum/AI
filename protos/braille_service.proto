@@ -18,7 +18,7 @@ message BrailleRequest {
   bytes  pdf_data    = 4;   // 단일 페이지 PDF (~100–500 KB)
   string mode        = 5;   // "a" | "b" | "c"
   string source_text = 6;   // mode b 전용
-  bool   advanced_ai = 7;   // 고급 점역 — MinerU 대신 LLM 이 지면을 직접 읽는다
+  bool   advanced_ai = 7;   // 고급 교열 — MinerU 대신 LLM 이 지면을 직접 읽는다
   // 8 은 `customer_id` 였다(2026-09-08 철회). LLM 캐시 격리는 `job_id` 단위로 돈다.
   // job 경계를 넘는 캐시 재사용은 2026-10-07 대표 결정으로 하지 않는다(새 책은 새로 돈다).
   // 그래서 이 번호를 되살리지 않는다. 다른 뜻으로도 재사용하지 말 것.
@@ -120,7 +120,7 @@ message ProcessingMeta {
                                      // BE·FE 는 안 읽어도 된다 — 우리가 요청 로그로 본다.
   // 6 은 `advanced_ai_applied` 였다(2026-09-08 철회). "켰는데 안 돌았다" 는 보고할
   // 상태가 아니라 **결함**이라, 필드로 알리지 않고 그 자리에서 실패로 알린다
-  // (`docs/DECISIONS.md` 「고급 점역의 정의」). 쉬운 지면에서 안 도는 것은 정상이다.
+  // (`docs/DECISIONS.md` 「고급 교열의 정의」). 쉬운 지면에서 안 도는 것은 정상이다.
   reserved 6;
 }
 

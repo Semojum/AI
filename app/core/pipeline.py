@@ -385,7 +385,7 @@ _EXTRACT_SOURCES = (
     "app/ai/preprocessor/line_join.py",     # 경계 요소를 잇는다(요소 수·flags 가 바뀐다)
     "app/ai/preprocessor/pdf_analyzer.py",  # 티어 · 글자층 · 글상자 · 밑줄 판정(#1144 · #1163 · #1316 …) — 경계 글과 태그가 바뀐다
     "app/ai/preprocessor/hanyang_pua.py",   # pdf_analyzer 가 쓰는 한양 PUA 옛한글 표(#1104)
-    "app/ai/parser/crop_reask.py",          # 고급 점역 되묻기(#835)
+    "app/ai/parser/crop_reask.py",          # 고급 교열 되묻기(#835)
     "app/ai/gates.py",                      # 추출 단계 관문(G1 · #1289)
     # ponytail: pipeline.py 는 통째로 싣는다. 경계 뒤 함수만 고쳐도 같은 잡 재실행이 경계를 다시 뜬다(09-08 이후 develop 커밋
     #   316 중 무효 64 → 126). 다시 뜨는 값은 쌓아 둔 MinerU 원출력 위의 CPU 재파생이다(MinerU 호출 0, 재사용보다 쪽당 1~2초 더).
@@ -977,7 +977,7 @@ def _insert_recovered(mnr_els: list[dict], plan: list[tuple[int, list[int], str]
 def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
     r"""**MinerU 요소를 기준으로 두고** LLM 이 읽은 글자만 갈아 끼운다.
 
-    고급 점역의 몫은 "MinerU 가 한자로 깨뜨리는 글자를 제대로 읽는 것"이지 지면 구조를
+    고급 교열의 몫은 "MinerU 가 한자로 깨뜨리는 글자를 제대로 읽는 것"이지 지면 구조를
     다시 잡는 것이 아니다(2026-09-03 대표 지시). 그래서 **레이아웃·좌표·읽기순서·유형·
     캡션 연결은 MinerU 것을 그대로 쓰고** 글자만 바꾼다. 이렇게 해야 bbox 가 보통 경로와
     똑같이 맞는다. 짝을 못 찾은 MinerU 요소는 **원래 글자를 지킨다.**
@@ -1075,7 +1075,7 @@ def _graft_text(mnr_els: list[dict], llm_els: list[dict], img_path=None) -> int:
     def wrap(k: int, el: dict) -> str:
         """LLM `formula` 요소를 **본문 요소에 붙일 때는** `$…$` 로 감싼다.
 
-        고급 점역 프롬프트는 독립 수식 줄을 `type=formula` 로 내면서 `$` 를 뺀다. 그 줄이
+        고급 교열 프롬프트는 독립 수식 줄을 `type=formula` 로 내면서 `$` 를 뺀다. 그 줄이
         MinerU `text` 요소로 들어가면 감싸는 것이 없어 **LaTeX 소스가 본문 글자 그대로**
         점역된다(2쪽 [19]·[26]·[30] 실측). 수식 요소끼리 붙는 자리는 그대로 둔다.
         """
@@ -1350,12 +1350,12 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     image_width = image_height = 0
     # bbox 좌표계는 경로마다 다르다("pixel" = 2x 렌더 픽셀 / "norm1000" = 0~1000 정규화).
     # 추출한 자리에서 한 번 정하고 meta에 적어 둔다 — 소비자가 다른 필드로 유추하면 안 된다.
-    # 고급 점역(요청 advanced_ai) — MinerU 대신 LLM 이 쪽 이미지를 직접 읽는다.
+    # 고급 교열(요청 advanced_ai) — MinerU 대신 LLM 이 쪽 이미지를 직접 읽는다.
     # ★ **티어로 건너뛰지 않는다**(2026-09-08 대표 정정). 종전에는 ZERO 티어(텍스트 레이어가
     #   멀쩡한 쪽)를 빼고 돌렸는데, "이 쪽은 이미 깨끗하니 안 해도 된다" 는 **우리 판단이지
     #   고객 판단이 아니다.** 켜면 쉬운 쪽이든 어려운 쪽이든 모든 쪽을 LLM 이 읽는다.
     advanced_used = ""
-    advanced_why = ""          # 고급 점역이 안 돈 이유. 아래에서 실패로 알린다.
+    advanced_why = ""          # 고급 교열이 안 돈 이유. 아래에서 실패로 알린다.
     mnr: tuple[list[dict], int, int, str] | None = None
     if task.advanced_ai:
         from app.ai.parser import crop_reask as _crop
@@ -1368,7 +1368,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
             if not img:
                 advanced_why = "지면 이미지를 못 만들었다"
             else:
-                # ★ MinerU 를 **끄지 않고 같이 돌린다**(2026-09-03 대표 지시). 고급 점역은
+                # ★ MinerU 를 **끄지 않고 같이 돌린다**(2026-09-03 대표 지시). 고급 교열은
                 #   내용을 잘 읽지만 좌표를 못 준다 — 종전에는 이 경로에서 bbox 가 통째로
                 #   (0,0,0,0) 이라 FE 하이라이트가 아예 안 떴다. LLM 은 API·MinerU 는 GPU 라
                 #   서로 안 막으므로 나란히 돌리면 벽시계는 둘 중 긴 쪽이다.
@@ -1385,7 +1385,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                 try:
                     mnr = await mnr_job
                 except Exception as exc:  # noqa: BLE001 — 좌표가 없을 뿐 내용은 살린다
-                    logger.warning("고급 점역 곁의 MinerU 실패(좌표 없이 진행): %s", exc)
+                    logger.warning("고급 교열 곁의 MinerU 실패(좌표 없이 진행): %s", exc)
                     mnr = None
                 if adv_mode == "crop":
                     if mnr and mnr[0]:
@@ -1394,16 +1394,16 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                             advanced_why = "크롭 되묻기가 실패했다"
                         else:
                             advanced_used = _llm.ADVANCED_MODEL
-                            logger.info("고급 점역(crop) %d요소 갈아 끼움 (page=%d)", n, task.page_no)
+                            logger.info("고급 교열(crop) %d요소 갈아 끼움 (page=%d)", n, task.page_no)
                     else:
                         advanced_why = "MinerU 가 지면을 못 읽었다"
                 elif els:
                     advanced_used = used
-                    logger.info("고급 점역 추출 채택: %s %d요소 (page=%d)",
+                    logger.info("고급 교열 추출 채택: %s %d요소 (page=%d)",
                                 used, len(els), task.page_no)
                 else:
                     advanced_why = "두 모델 다 지면을 못 읽었다"
-        # ★ 유료 옵션은 **조용히 실패하면 안 된다**(대표 결정 2026-09-08 「고급 점역의 정의」).
+        # ★ 유료 옵션은 **조용히 실패하면 안 된다**(대표 결정 2026-09-08 「고급 교열의 정의」).
         #   여기까지 왔다는 것은 어려운 지면(티어 != ZERO)이라 이 옵션이 **걸리는 자리**인데
         #   못 돌았다는 뜻이다. 종전에는 경고 한 줄 찍고 MinerU 로 되돌아가, 값을 치른 것과
         #   다른 것이 **멀쩡한 척** 나갔다. 새 체계를 만들지 않고 예외로 알린다 — `run()` 이
@@ -1411,25 +1411,25 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         #   ⚠ **티어를 안 가린다.** 켜면 늘 도는 옵션이라 안 돈 경우는 전부 결함이다.
         if not advanced_used:
             raise RuntimeError(
-                f"고급 점역을 쓸 수 없다: {advanced_why or '알 수 없는 이유'} "
+                f"고급 교열을 쓸 수 없다: {advanced_why or '알 수 없는 이유'} "
                 f"(page={task.page_no}, 티어={doc_meta.routing_tier})")
 
     if advanced_used:
         method = "LLM_VISION"
         if mnr and mnr[0]:
-            # ★ **MinerU 가 기준이다**(2026-09-03 대표 지시). 고급 점역의 몫은 MinerU 가
+            # ★ **MinerU 가 기준이다**(2026-09-03 대표 지시). 고급 교열의 몫은 MinerU 가
             #   한자로 깨뜨리는 글자를 제대로 읽는 것이지 지면 구조를 다시 잡는 것이
             #   아니다. 레이아웃·좌표·읽기순서·유형·캡션 연결을 MinerU 것으로 두고
             #   글자만 갈아 끼우면 bbox 가 보통 경로와 **똑같이** 맞는다.
             elements = mnr[0]
             if els:
                 n = _graft_text(elements, els, img)
-                logger.info("고급 점역 글자 이식 %d/%d 요소 (page=%d)",
+                logger.info("고급 교열 글자 이식 %d/%d 요소 (page=%d)",
                             n, len(elements), task.page_no)
                 if adv_mode == "both":
                     # 이식이 못 잡은 자리(원문자·구조·누락)를 크롭으로 한 번 더 — 실측 73 → 82/125.
                     n = await asyncio.to_thread(_crop.reask_crops, elements, str(img))
-                    logger.info("고급 점역(both) 크롭 되묻기 %s요소 (page=%d)", n, task.page_no)
+                    logger.info("고급 교열(both) 크롭 되묻기 %s요소 (page=%d)", n, task.page_no)
             image_width, image_height, bbox_space = mnr[1], mnr[2], mnr[3]
         else:
             # MinerU 가 없으면 LLM 결과를 그대로 쓴다(좌표 없음). 종전 규약을 따른다.
@@ -1504,7 +1504,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
 
     # QA용 쪽 이미지 보관(기본 off — KEEP_PAGE_IMAGE=1로만 켠다, 대표 결정 2026-08-07).
     # 평소에는 처리 후 원본을 안 남긴다(저작권·디스크). QA 기간에만 켜면 bbox·읽기순서·
-    # 표 오분류를 **쪽 위에 겹쳐 눈으로** 볼 수 있다. 렌더는 고급 점역 추출과 같은 자리를 쓴다.
+    # 표 오분류를 **쪽 위에 겹쳐 눈으로** 볼 수 있다. 렌더는 고급 교열 추출과 같은 자리를 쓴다.
     if os.environ.get("KEEP_PAGE_IMAGE") == "1":
         _page_image_path(task)
 
@@ -3472,7 +3472,7 @@ async def _run_pipeline(task: PageTask) -> dict:
             extraction = _read_txt_result(task)
             doc_meta = DocumentMeta(**stamp["doc_meta"])
             # ★ 경계 지문(`_stamp_verdict`)은 코드·프롬프트·env 만 본다. **요청마다 달라지는
-            #   `advanced_ai` 는 거기 없다** — 그래서 MinerU 로 만든 경계가 고급 점역 요청에
+            #   `advanced_ai` 는 거기 없다** — 그래서 MinerU 로 만든 경계가 고급 교열 요청에
             #   그대로 재사용됐다. 유료 옵션이 조용히 안 도는 두 번째 자리다(#788).
             #   원하는 추출(LLM_VISION)이 아니면 재파생한다.
             if (task.advanced_ai
@@ -3944,7 +3944,7 @@ def _build_response(
             }
             for e in layout_result.elements
         ]
-        # 좌표가 통째로 죽은 쪽을 응답에 알린다(R16). 고급 점역 곁의 MinerU 가 실패하면
+        # 좌표가 통째로 죽은 쪽을 응답에 알린다(R16). 고급 교열 곁의 MinerU 가 실패하면
         # bbox 가 전부 (0,0,0,0) 으로 나가는데 `image_width`·`image_height` 는 정상값이
         # 그대로 실려, 소비자가 좌표가 무의미하다는 것을 알 방법이 응답 안에 없었다 —
         # FE 는 모든 상자를 왼쪽 위 한 점에 그린다(실측 88요소 전부 0, 경고는 로그에만).

@@ -1,4 +1,4 @@
-"""고급 점역 crop 모드 — **깨진 요소만 잘라** 한 요청에 배치로 되묻는다.
+"""고급 교열 crop 모드 — **깨진 요소만 잘라** 한 요청에 배치로 되묻는다.
 
 대표 지적(2026-09-10): "그냥 깨진 거 다시 배치로 모아서 돌리는 게 그렇게 비쌀 일이야?"
 쪽 전체를 LLM 에 다시 읽히는 지금 방식(`opus_fallback.extract_advanced`)은 깨진 데가 두 곳이어도
@@ -131,9 +131,9 @@ _SKIP_TYPES = ("image", "chart_graph", "diagram", "table")
 
 
 def keep_captions() -> bool:
-    """고급 점역이 시각 요소 캡션을 안 건드린다(기본). `ADVANCED_KEEP_CAPTIONS=0` 이 종전 동작이다.
+    """고급 교열이 시각 요소 캡션을 안 건드린다(기본). `ADVANCED_KEEP_CAPTIONS=0` 이 종전 동작이다.
 
-    시각 요소 `content` 는 캡셔너가 쓴 설명이지 MinerU 가 읽은 글자가 아니다 — 고급 점역이
+    시각 요소 `content` 는 캡셔너가 쓴 설명이지 MinerU 가 읽은 글자가 아니다 — 고급 교열이
     고칠 것이 없다. 글자 이식(`pipeline._graft_text`)과 크롭 되묻기가 같이 따른다(#1012). 호출 때 읽는다.
     """
     return os.environ.get("ADVANCED_KEEP_CAPTIONS", "1") != "0"
@@ -158,7 +158,7 @@ def advanced_mode() -> str:
 
     page 와 crop 은 **고치는 부류가 다르다.** page 만 한글→한글 깨짐(`극숫값`·`획률`)을 고치고,
     crop 만 원문자·구조·누락을 고친다. 그래서 둘을 같이 걸면 58.4% → 67% 로 +9~11건이다.
-    값은 쪽당 +$0.02 — 고급 점역은 유료 옵션이라 그 옵션을 켠 건에만 든다.
+    값은 쪽당 +$0.02 — 고급 교열은 유료 옵션이라 그 옵션을 켠 건에만 든다.
 
     되돌리려면 `ADVANCED_EXTRACT_MODE=page`(종전) 또는 `=crop`(비용 1/3·시간 1/3, 교정률은 page 와 같은 띠).
     실측 원장은 `temp/n10/결과_cropbatch.md`(PR #835) · `temp/n10/결과_d1-bothdefault.md`.

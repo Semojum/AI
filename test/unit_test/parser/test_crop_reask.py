@@ -1,4 +1,4 @@
-"""고급 점역 crop 모드 — 깨진 요소만 잘라 배치로 되묻는가. 실측 근거는 `crop_reask` 도크스트링."""
+"""고급 교열 crop 모드 — 깨진 요소만 잘라 배치로 되묻는가. 실측 근거는 `crop_reask` 도크스트링."""
 import json
 
 import numpy as np

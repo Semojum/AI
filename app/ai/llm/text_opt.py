@@ -2,7 +2,7 @@
 
 **본문을 LLM 이 다시 쓰는 일은 없다.** 티어와 무관하게 추출 원문을 그대로 옮긴다.
 
-대표 결정 2026-09-08 「고급 점역의 정의」 — 고급 점역은 **추출 옵션**이다. 어려운 지면은
+대표 결정 2026-09-08 「고급 교열의 정의」 — 고급 교열은 **추출 옵션**이다. 어려운 지면은
 LLM 이 **애초에 읽으므로** 뒤에서 본문을 고칠 자리가 없다. 저화질 스캔(QUALITY 티어)의
 OCR '교정' 단계는 그래서 없앴다(#788, `5a1ce49` 의 절반을 되돌린 것).
   · 남기면 **텍스트 층이 깨끗한 쪽에서도 LLM 이 멀쩡한 본문을 다시 쓴다.** 같은 문서가
@@ -214,7 +214,7 @@ class TextOpt(BaseOpt):
     async def _optimize_one(self, ext: ExtractedContent, routing_tier: str) -> LLMOutput:
         start = time.monotonic()
         # 티어를 안 가린다 — QUALITY(저화질 스캔)도 추출 원문 그대로다(#788).
-        # 어려운 지면은 고급 점역이 **추출에서** 읽는다. 여기서 다시 쓸 것이 없다.
+        # 어려운 지면은 고급 교열이 **추출에서** 읽는다. 여기서 다시 쓸 것이 없다.
         tagged = await _tag_layout(ext.corrected_text or "")  # 태깅(점역자주·테두리·빈칸)
         return LLMOutput(
             element_id=ext.element_id,

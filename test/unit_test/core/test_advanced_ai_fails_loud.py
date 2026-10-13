@@ -1,13 +1,13 @@
 """유료 옵션이 못 돌면 **실패로 알린다** — 조용히 MinerU 로 되돌아가지 않는다 (#788).
 
-대표 결정 2026-09-08 「고급 점역의 정의」(+ 같은 날 정정):
-  · 고급 점역 = **지면을 LLM 이 직접 읽는다.** 켜면 **쉬운 쪽이든 어려운 쪽이든 모든 쪽**의
+대표 결정 2026-09-08 「고급 교열의 정의」(+ 같은 날 정정):
+  · 고급 교열 = **지면을 LLM 이 직접 읽는다.** 켜면 **쉬운 쪽이든 어려운 쪽이든 모든 쪽**의
     OCR 추출을 LLM 이 한다. **티어로 건너뛰지 않는다** — "이 쪽은 이미 깨끗하니 안 해도
     된다" 는 우리 판단이지 고객 판단이 아니다.
   · 못 쓰면(모델 없음·지면 렌더 실패·둘 다 못 읽음) 조용히 되돌리지 말고 실패로 알린다.
     값을 치른 것과 다른 것이 **멀쩡한 척** 나가면 안 된다. 티어 무엇이든 마찬가지다.
   · 조용히 무시하던 자리가 **둘**이었다 — 티어 게이트(`routing_tier != "ZERO"`)와
-    **경계 재사용**(MinerU 로 만든 경계를 고급 점역 요청에 그대로 쓰던 것).
+    **경계 재사용**(MinerU 로 만든 경계를 고급 교열 요청에 그대로 쓰던 것).
 
 새 체계는 안 만들었다. 예외를 올리면 `pipeline.run` 이 이미 `status="BLOCKED"` +
 `CriticalError(C1)` 로 옮긴다(`_build_exception_response`).
@@ -22,7 +22,7 @@ from app.schemas.task import PageTask
 
 
 def _arrange(monkeypatch, tier, *, available=True, image=True, els=None):
-    """`analyze_pdf` 만 갈아 끼우면 고급 점역 갈래까지 그대로 온다 — 그 앞은 아무것도 안 탄다."""
+    """`analyze_pdf` 만 갈아 끼우면 고급 교열 갈래까지 그대로 온다 — 그 앞은 아무것도 안 탄다."""
     from app.ai.parser import opus_fallback
     from app.ai.preprocessor import pdf_analyzer
 
@@ -51,7 +51,7 @@ def test_못_쓰면_티어_무엇이든_실패한다(monkeypatch, tier, kw, 이�
     task = _arrange(monkeypatch, tier, **kw)
     with pytest.raises(RuntimeError) as e:
         asyncio.run(pipeline._extract_with_hyunju(task))
-    assert "고급 점역을 쓸 수 없다" in str(e.value) and 이유 in str(e.value)
+    assert "고급 교열을 쓸 수 없다" in str(e.value) and 이유 in str(e.value)
 
 
 @pytest.mark.parametrize("tier", ["ZERO", "STANDARD", "QUALITY"])
@@ -70,13 +70,13 @@ def test_안_켜면_티어대로_간다(monkeypatch):
         asyncio.run(pipeline._extract_with_hyunju(task))
     except Exception as exc:            # noqa: BLE001
         # 뒤쪽 추출에서 막히는 것은 이 테스트의 관심사가 아니다.
-        assert "고급 점역을 쓸 수 없다" not in str(exc)
+        assert "고급 교열을 쓸 수 없다" not in str(exc)
 
 
 class Test경계_재사용도_고급_점역을_안_무시한다:
     """조용히 무시하던 **두 번째** 자리 — 경계 지문에는 `advanced_ai` 가 없다(#788).
 
-    MinerU 로 만든 경계가 옆에 있으면 고급 점역 요청도 그걸 그대로 읽어, 유료 옵션이
+    MinerU 로 만든 경계가 옆에 있으면 고급 교열 요청도 그걸 그대로 읽어, 유료 옵션이
     한 번도 안 돌고 응답만 멀쩡히 나갔다. 원하는 추출이 아니면 재파생해야 한다.
     """
 
@@ -117,7 +117,7 @@ class Test경계_재사용도_고급_점역을_안_무시한다:
         try:
             asyncio.run(pipeline._run_pipeline(task))
         except self._재파생함:
-            pytest.fail("이미 고급 점역으로 만든 경계인데 다시 불렀다")
+            pytest.fail("이미 고급 교열로 만든 경계인데 다시 불렀다")
         except Exception:                # noqa: BLE001 — 뒤쪽 체인은 이 테스트 관심사가 아니다
             pass
 
@@ -126,7 +126,7 @@ class Test경계_재사용도_고급_점역을_안_무시한다:
         try:
             asyncio.run(pipeline._run_pipeline(task))
         except self._재파생함:
-            pytest.fail("고급 점역을 안 켰는데 재파생했다")
+            pytest.fail("고급 교열을 안 켰는데 재파생했다")
         except Exception:                # noqa: BLE001
             pass
 

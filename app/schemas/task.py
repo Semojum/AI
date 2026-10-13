@@ -17,7 +17,7 @@ class PageTask(BaseModel):
     pdf_data: bytes = b""
     mode: str  # "a" | "b" | "c"
     source_text: str = ""   # mode b 전용
-    # 고급 점역 — 켜면 MinerU 대신 LLM 이 쪽 이미지를 직접 읽는다(대표 결정 2026-09-01).
+    # 고급 교열 — 켜면 MinerU 대신 LLM 이 쪽 이미지를 직접 읽는다(대표 결정 2026-09-01).
     advanced_ai: bool = False
     # 문항코드 자리 꼴(원장 C-107): "X" `01 [코드] 발문` · "Y" 코드 윗줄 · "off" 종전. 빈 값이면 서버 기본(X).
     #   점역사가 책마다 고르는 설정이다(대표 결재 2026-10-04). proto `BrailleRequest` 11 로 받는다(#1235).
