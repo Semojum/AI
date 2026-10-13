@@ -230,6 +230,23 @@ _FLAG_TO_REVIEW: dict[str, tuple[str, str]] = {
 }
 _GENERIC_R_FLAG = re.compile(r"^R([1-9]|1[0-2])$")
 
+# 해설 권 정답 띠(#1353) — `본문 N~N쪽` 머리가 있는 표인데 번호 · 답 짝을 못 지은 것. MinerU 가 원문자를 벗기고 칸을 잘못
+#   갈라(`01 | 1 | 02 | 3` · `14 21 34`) 답이 틀리거나 빠진다. 짝을 지은 띠는 정답 상자로 나가므로(`answer_box_parts`) 고르지
+#   않는다. 2027 dev · val 43요소 · 36쪽을 고르고, 모두 gold 와 답이 달랐다(259쌍 중 256). 그 전에는 멀쩡한 띠 표와 같은 R10 ·
+#   low 뿐이라 갈 데가 없었다. 짝은 맞고 원문자만 숫자로 남은 상자(2쪽)는 못 고른다. 수학 단답(`5`)과 글로 갈리지 않는다.
+_ANSWER_BAND_MSG = "정답 띠의 번호와 답을 짝짓지 못했습니다(원문자가 숫자로 바뀌거나 답이 빠졌을 수 있음). 원본의 답과 대조가 필요합니다"
+
+
+def _answer_band_unpaired(html: str) -> bool:
+    """정답 띠 머리(`본문 N~N쪽`)가 있는 표 HTML 인데 번호 · 답 짝을 못 지었는가(#1353)."""
+    if "<t" not in html:
+        return False
+    from app.ai.braille.table_braille import _ANS_PAGE_REF_RE, answer_box_parts
+    if not _ANS_PAGE_REF_RE.search(html):
+        return False
+    from app.ai.llm.table_opt import _html_to_grid
+    return answer_box_parts(_html_to_grid(html, expand=False)) is None
+
 
 
 # ── 점역사에게 알릴 손실(#1284) ─────────────────────────────────────────────────
@@ -566,10 +583,13 @@ class QualityChecker:
         def _spots(xs: list[str]) -> str:
             return " · ".join(xs[:3]) + (f" 외 {len(xs) - 3}곳" if len(xs) > 3 else "")
         misread, table_fixed = misread or {}, table_fixed or {}
-        for eid in sorted(set(misread) | set(table_fixed)):
+        band = {str(e.element_id) for e in extracted
+                if types.get(str(e.element_id)) == "table" and str(e.element_id) not in blocked_ids
+                and _answer_band_unpaired(e.corrected_text or "")}
+        for eid in sorted(set(misread) | set(table_fixed) | band):
             if live is not None and eid not in live:
                 continue
-            parts = []
+            parts = [_ANSWER_BAND_MSG] if eid in band else []
             if eid in table_fixed:
                 parts.append(f"표 칸 글자를 원본으로 고침({{고치기 전→고친 뒤}}): {_spots(table_fixed[eid])}")
             if eid in misread:
