@@ -3716,8 +3716,10 @@ def _number_volume_refs(llm_outputs: list[LLMOutput], page_no: int,
                 if bd.option != VOLREF_OPTION:
                     continue
                 lines, breaks = translate_with_breaks(nd.text)
+                # 이름도 새 안 것으로(#1372). 09-06 부터 이름에 번호가 들어가는데 여기서 안 바꿔, 묵자 창은
+                # '그림 93-4 참조' · 점자 창 안 목록은 '그림 참조' 였다(dev · val 467쪽 · 요소 855).
                 bo.drafts[j] = bd.model_copy(update={
-                    "text": nd.text, "braille_lines": lines, "break_points": breaks})
+                    "text": nd.text, "label": nd.label, "braille_lines": lines, "break_points": breaks})
                 if bo.selected_idx == j:
                     bo.braille_lines = lines
                     bo.break_points = breaks

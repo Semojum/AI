@@ -64,6 +64,18 @@ def test_번호는_쪽마다_1부터_센다() -> None:
         f"<!주>그림 4-{i} 참조<!/주>" for i in (1, 2, 3)], _refs(outs)
 
 
+def test_점자_쪽_안도_같은_이름을_받는다() -> None:
+    """묵자 창과 점자 창 안 목록이 같은 이름을 보여야 한다(#1372). 파이프라인 차례 그대로 점역 뒤에 번호를 채운다.
+    종전에는 점자 쪽 안의 이름이 '그림 참조' 로 남았다(글 · 점자만 다시 채웠다)."""
+    from app.ai.braille.visual_braille import ChartGraphBraille
+    outs = _visual_outputs(["그래프: 연도별 인구 추이."])
+    braille = ChartGraphBraille().translate(outs)
+    _number_volume_refs(outs, 93, braille)
+    printed = next(d for d in outs[0].drafts if d.option == VOLREF_OPTION)
+    brailled = next(d for d in braille[0].drafts if d.option == VOLREF_OPTION)
+    assert printed.label == brailled.label == "그림 93-1 참조"
+
+
 @pytest.mark.parametrize("bad", ["위 그림 참조", "앞의 그림 참조", "그림 참조"])
 def test_해소되지_않는_참조는_gold에_없다(bad: str) -> None:
     """이 문구들은 gold 1,265구간에서 0건이다 — 우리도 내면 안 된다."""
