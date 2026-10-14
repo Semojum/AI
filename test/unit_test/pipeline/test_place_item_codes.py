@@ -72,5 +72,5 @@ def test_요청마다_고른_꼴이_서버_기본을_이긴다(monkeypatch):
 def test_PageTask_는_proto_에_필드가_없어도_빈_값():
     from types import SimpleNamespace
     from app.schemas.task import PageTask
-    req = SimpleNamespace(job_id="j", page_no=1, total_pages=1, pdf_data=b"", mode="c", source_text="")
+    req = SimpleNamespace(job_id="j", page_no=1, total_pages=1, pdf_data=b"", mode="c", text_data="")
     assert PageTask.from_proto(req).item_code_form == ""

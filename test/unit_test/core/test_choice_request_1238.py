@@ -1,4 +1,5 @@
-"""요청 낱값 `choices_one_per_line`(BrailleRequest 12, 이슈 #1238) 배선: proto 번호 · 비운 직렬화 · PageTask · run → 조판 풀.
+"""요청 낱값 `split_choices`(BrailleRequest 12, 이슈 #1238 · V4 정본 #1380) 배선: proto 번호 · 비운 직렬화 · PageTask · run → 조판 풀.
+PageTask 칸 이름은 `choices_one_per_line` 그대로다(뜻 같음).
 
 합치기 동작 자체는 `test/unit_test/braille/test_choice_combine_1238.py`(지침 [예 3-68] 점자 줄 대조)에 있다.
 """
@@ -14,11 +15,11 @@ from protos.generated import braille_service_pb2 as pb
 
 
 def test_번호와_빈_값():
-    assert pb.BrailleRequest.DESCRIPTOR.fields_by_name["choices_one_per_line"].number == 12
+    assert pb.BrailleRequest.DESCRIPTOR.fields_by_name["split_choices"].number == 12
     old = pb.BrailleRequest(job_id="j", page_no=3, mode="c")
     assert old.SerializeToString() == pb.BrailleRequest(job_id="j", page_no=3, mode="c",
-                                                        choices_one_per_line=False).SerializeToString()
-    assert PageTask.from_proto(pb.BrailleRequest(job_id="j", page_no=1, choices_one_per_line=True)).choices_one_per_line
+                                                        split_choices=False).SerializeToString()
+    assert PageTask.from_proto(pb.BrailleRequest(job_id="j", page_no=1, split_choices=True)).choices_one_per_line
     assert not PageTask.from_proto(old).choices_one_per_line
 
 

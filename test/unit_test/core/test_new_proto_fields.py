@@ -1,7 +1,7 @@
 """2026-09-08 신설 필드 계약 회귀 — 값이 있는데 안 실리던 자리를 다시 막지 않게.
 
   ProcessingMeta.caption_disabled
-  TextElement.table_source(20, #1366) · .table_box_level(21, #1368)
+  TextElement.table_source(17, #1366) · .table_box_level(18, #1368) — V4 정본 번호(#1380, 종전 20 · 21)
 
 ★ **빈 값일 때는 종전과 바이트가 같아야 한다.** BE 가 아직 안 읽으므로 그게 평상 상태다.
   proto3 는 기본값을 직렬화하지 않으므로 "기본값이면 바이트 0" 을 그대로 잰다.
@@ -15,6 +15,11 @@
   · `ProcessingMeta.advanced_ai_applied`(6) — "켰는데 안 돌았다" 는 보고할 상태가 아니라
     **결함**이다. 필드로 알리지 않고 그 자리에서 실패로 알린다
     (`test_advanced_ai_fails_loud.py`).
+
+★ V4 정본(docs/spec_v4/braille_service.proto, 2026-10-14)이 철회 번호 셋을 다시 쓴다(#1380).
+  `BrailleRequest` 8 = image_data · `TextElement` 17 = table_source · 18 = table_box_level. 09-08 ~ 10-14 판 AI 가
+  17 · 18 을 review_grade · round_trip 으로 내보냈으므로 **AI 를 BE 보다 먼저 올린다**(옛 AI 응답을 새 BE 가 읽지 않게).
+  19(breaks)와 잠깐 쓴 20 · 21 은 예약으로 남긴다.
 """
 import asyncio
 import sys
@@ -38,15 +43,23 @@ class TestFieldNumbers:
         got = {m.DESCRIPTOR.name: {f.name: f.number for f in m.DESCRIPTOR.fields}
                for m in (pb.BrailleRequest, pb.ProcessingMeta, pb.TextElement)}
         assert got["ProcessingMeta"]["caption_disabled"] == 5
-        assert got["TextElement"]["table_source"] == 20
-        assert got["TextElement"]["table_box_level"] == 21
+        assert got["TextElement"]["table_source"] == 17
+        assert got["TextElement"]["table_box_level"] == 18
+
+    @pytest.mark.parametrize("msg, 옛이름, 번호, 새이름", [
+        (pb.BrailleRequest, "customer_id", 8, "image_data"),
+        (pb.TextElement, "review_grade", 17, "table_source"),
+        (pb.TextElement, "round_trip", 18, "table_box_level"),
+    ])
+    def test_V4_정본이_다시_쓴_번호(self, msg, 옛이름, 번호, 새이름):
+        fields = {f.name: f.number for f in msg.DESCRIPTOR.fields}
+        assert 옛이름 not in fields and fields[새이름] == 번호
 
     @pytest.mark.parametrize("msg, 이름, 번호", [
-        (pb.BrailleRequest, "customer_id", 8),
         (pb.ProcessingMeta, "advanced_ai_applied", 6),
-        (pb.TextElement, "review_grade", 17),
-        (pb.TextElement, "round_trip", 18),
         (pb.TextElement, "breaks", 19),
+        (pb.TextElement, "(옛 table_source)", 20),
+        (pb.TextElement, "(옛 table_box_level)", 21),
     ])
     def test_철회한_번호는_비고_예약돼_있다(self, msg, 이름, 번호):
         assert 이름 not in {f.name for f in msg.DESCRIPTOR.fields}

@@ -58,7 +58,7 @@ def _make_request(mode: str, job_id: str = "test-job-001") -> braille_service_pb
         total_pages=10,
         pdf_data=DUMMY_PDF_BYTES,
         mode=mode,
-        source_text="테스트 텍스트입니다." if mode == "b" else "",
+        text_data="테스트 텍스트입니다." if mode == "b" else "",
     )
 
 

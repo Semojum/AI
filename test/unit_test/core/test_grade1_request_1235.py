@@ -20,30 +20,45 @@ from protos.generated import braille_service_pb2 as pb
 # ── ① 필드 번호 · ② 비우면 지금과 같다 ──────────────────────────────────────────
 
 def test_번호가_계약대로다():
-    req = {f.name: f.number for f in pb.BrailleRequest.DESCRIPTOR.fields}
-    assert (req["korean_grade1"], req["english_grade1"], req["item_code_form"]) == (9, 10, 11)
+    """V4 정본(docs/spec_v4/braille_service.proto, #1380): 급수는 정수 10 · 11, 선택지는 12, 쪽 이미지는 8 · 9."""
+    req = {f.name: (f.number, f.type) for f in pb.BrailleRequest.DESCRIPTOR.fields}
+    F = pb.BrailleRequest.DESCRIPTOR.fields_by_name["korean_grade"]
+    assert {k: v[0] for k, v in req.items() if k in ("text_data", "image_data", "image_mime_type", "korean_grade",
+                                                     "english_grade", "split_choices")} == {
+        "text_data": 6, "image_data": 8, "image_mime_type": 9, "korean_grade": 10, "english_grade": 11, "split_choices": 12}
+    assert req["korean_grade"][1] == req["english_grade"][1] == F.TYPE_INT32
+    assert "item_code_form" not in req and "korean_grade1" not in req and "source_text" not in req
     tt = {f.name: f.number for f in pb.TranslateTextRequest.DESCRIPTOR.fields}
-    assert tt == {"text": 1, "korean_grade1": 2, "english_grade1": 3}
+    assert tt == {"text": 1, "korean_grade1": 2, "english_grade1": 3}          # 꼬리말 통로는 4단계까지 그대로
 
 
 def test_비우면_직렬화가_지금과_같다():
-    """옛 BE 가 새 AI 를 불러도, 끈 값을 실어도 바이트가 같다(proto3 는 기본값을 안 싣는다)."""
+    """안 보낸 급수(0)는 서버 기본 2(약자)다. proto3 는 기본값을 안 싣는다."""
     old = pb.BrailleRequest(job_id="j", page_no=3, mode="c")
-    off = pb.BrailleRequest(job_id="j", page_no=3, mode="c", korean_grade1=False, english_grade1=False)
+    off = pb.BrailleRequest(job_id="j", page_no=3, mode="c", korean_grade=0, english_grade=0)
     assert old.SerializeToString() == off.SerializeToString()
 
 
-def test_PageTask_가_받는다():
-    on = PageTask.from_proto(pb.BrailleRequest(job_id="j", page_no=1, mode="c",
-                                               korean_grade1=True, english_grade1=True))
-    assert (on.korean_grade1, on.english_grade1) == (True, True)
-    off = PageTask.from_proto(pb.BrailleRequest(job_id="j", page_no=1, mode="c"))
-    assert (off.korean_grade1, off.english_grade1, off.item_code_form) == (False, False, "")
+def test_PageTask_가_급수_세_값을_받는다():
+    """1 정자 · 2 약자 · 0 = 서버 기본(2). PageTask 는 정자 여부 낱값으로 옮긴다."""
+    def task(k, e):
+        return PageTask.from_proto(pb.BrailleRequest(job_id="j", page_no=1, mode="c", korean_grade=k, english_grade=e))
+    assert [(t.korean_grade1, t.english_grade1) for t in (task(1, 1), task(2, 2), task(0, 0), task(1, 2), task(0, 1))] \
+        == [(True, True), (False, False), (False, False), (True, False), (False, True)]
+    assert task(0, 0).item_code_form == ""
 
 
-def test_문항코드_자리가_요청에서_온다():
-    """C-107(2026-10-04 결재)은 PageTask 칸만 있고 proto 필드가 없어 늘 서버 기본 X 로 돌았다."""
-    assert PageTask.from_proto(pb.BrailleRequest(job_id="j", page_no=1, mode="c", item_code_form="Y")).item_code_form == "Y"
+def test_계약_밖_급수는_요청_파싱_실패로_답한다():
+    import pytest
+    with pytest.raises(ValueError, match="급수"):
+        PageTask.from_proto(pb.BrailleRequest(job_id="j", page_no=1, mode="c", korean_grade=3))
+    resp = asyncio.run(grpc_server.BrailleServiceServicer()._process_page(
+        pb.BrailleRequest(job_id="j", page_no=1, mode="c", english_grade=-1), MagicMock()))
+    assert "요청 파싱 실패" in str(resp)
+
+
+def test_문항코드_자리는_PageTask_로만_바꾼다():
+    """C-107(2026-10-04 결재). V4 정본 proto 에는 이 칸이 없다(11 = english_grade). 요청으로는 늘 서버 기본 X 다."""
     seen = {}
 
     async def fake(task):
