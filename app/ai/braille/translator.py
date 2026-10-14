@@ -3839,6 +3839,23 @@ def _break_offsets_in(src: str, braille: str) -> list[int]:
         if _punct_any_on() and braille.startswith("⠲", n) and braille[n - 1] not in " ⠀":
             continue
         offs.add(n)
+    # #1400 — 빈칸 뒤 닫는 부호(빈 괄호 `( )` · `( ㄴ )`) 앞 빈칸과 그 부호 앞에서 끊지 않는다. 위 바닥선이 출력 빈칸마다
+    #   끊을 자리를 내서, 빈 괄호 안 빈칸에서 접으면 닫는 괄호가 줄 머리로 갔다(`⠦⠄⠀‖⠠⠴⠵`). 셀 꼴로는 못 가린다(영어 2급
+    #   `⠠⠴` Was · `⠶⠂` were,). 묵자에서 빈칸 뒤 닫는 부호를 찾고 그 앞까지 다시 점역해 점자 자리를 잡는다. 제54항(2406행) ·
+    #   gold dev · val 줄 머리 닫는 부호 0(#1398).
+    if _bracket_attach_on():
+        for sp in range(1, len(src)):
+            if src[sp] not in _CLOSERS or not _TAG_RE.sub("", src[:sp])[-1:].isspace():
+                continue
+            pre = translate_tagged_text(src[:sp].rstrip())
+            if not (pre and braille.startswith(pre)):
+                continue
+            j = k = len(pre)
+            while j > 0 and braille[j - 1] in " ⠀":
+                j -= 1
+            while k < len(braille) and braille[k] in " ⠀":
+                k += 1
+            offs -= set(range(j, k + 1))
     return sorted(offs)
 
 
