@@ -1100,6 +1100,20 @@ def _attach_length_mark(text: str) -> str:
     return _LENGTH_MARK_GAP_RE.sub("ː", text)
 
 
+# 제60항(재추출 2533행) — 참고표 ※ 는 앞뒤를 한 칸씩 띄어 쓴다. 묵자가 붙여 써도 띄운다(#1378, gold 화법과 작문
+#   p0126 `※당류:` = ⠸⠔⠀⠊⠶⠐⠩…). 줄머리 · 여는 괄호 · 따옴표 바로 뒤는 붙인다(gold 언어와 매체 p0182 `(※ NASA` =
+#   ⠦⠄⠸⠔⠀…). 별표 `*` 는 건드리지 않는다 — [다만 2](2537행) 주석을 가리키는 별표는 묵자를 따른다(예문 `모티프*를`).
+#   태그 `<!…>` 바로 뒤 · 앞도 그대로 둔다(상자 제목 · 점역자 주 머리).
+_REFMARK_BEFORE_RE = re.compile(r"(?<=[^\s(\[{‘“「『〈《<>])※")
+_REFMARK_AFTER_RE = re.compile(r"※(?=[^\s)\]}’”」』〉》<>.,:;])")
+
+
+def _space_refmark(text: str) -> str:
+    if "※" not in text:
+        return text
+    return _REFMARK_AFTER_RE.sub("※ ", _REFMARK_BEFORE_RE.sub(" ※", text))
+
+
 def _space_hangul_operators(text: str) -> str:
     """제46항 — 한글 사이 연산·비교 기호 앞뒤를 한 칸씩 띄우고, 식 속 `-` 는 뺄셈 `−` 로."""
     if not _ART46_OP_RE.search(text):
@@ -3614,6 +3628,7 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     #   여기서 점형으로 바꿔 두면 수식 구간 판정에 안 걸린다(`_AMP_RE` 와 같은 수법).
     text = _OX_MARK_RE.sub(_ox_mark_repl, text)
     text = _space_hangul_operators(text)  # 제46항 — 수식 라우팅보다 먼저(#938)
+    text = _space_refmark(text)           # 제60항 — 참고표 ※ 앞뒤 한 칸(#1378)
     text = _attach_length_mark(text)      # 제63항 — 긴소리표 앞뒤 붙임(#1222)
     text = inline_math.wrap(text)
     text = _unwrap_token_punct(text)       # 첨자 토큰 · 이온 조각에 묻은 , ( ) 를 꺼낸다(#1377)
