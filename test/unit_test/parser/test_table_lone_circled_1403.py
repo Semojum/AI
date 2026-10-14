@@ -139,3 +139,32 @@ def test_숫자뿐인_문맥으로는_원문자를_넣지_않는다(layer):
     html = MR._correct_table_cells(None, BBOX, ANSWER_HTML)
     assert "<td>10 2</td>" in html and "<td>1 2</td>" in html
     assert MR._restore_lone_circled(None, BBOX, html) == html                       # `1 2` 는 두 수라 숫자만 든 칸이 아니다
+
+
+# 014 body p0010: 층 `➊ 주장하기` 가 칸 `1 주장하기` 로 읽혔다. ➀~➓(U+2780~2793)는 번역기가 못 찍고 통째로 빼서(`➊ 가` → `⠫`),
+# 되돌리면 번호가 점자에서 사라진다(#1403 2판 손해). 그 갈래는 되돌리지 않는다. 번역기가 찍는 ❶~❿ 은 그대로 되돌린다.
+ARGUE_HTML = (
+    "<table><tr><td>1 주장하기</td><td>자신의 주장에 대한 근거를 찾고 자신의 주장을 발표함</td></tr><tr><td>2 반론하기</td>"
+    "<td>상대방 주장의 오류나 부당성을 밝힘</td></tr><tr><td>3 재반론하기</td><td>상대방의 반론이 옮지 않음을 밝히거나 자기주장을 "
+    "뒷받침할 만한 더 많은 근거를 제시함</td></tr><tr><td>4 정리하기</td><td>상대방의 반론을 참고하여 자신의 최종 입장을 발표함</td></tr></table>")
+ARGUE_LAYER = (
+    "➊ 주장하기  자신의 주장에 대한 근거를 찾고 자신의 주장을 발표함\n➋ 반론하기  상대방 주장의 오류나 부당성을 밝힘\n"
+    "➌ 재반론하기  상대방의 반론이 옳지 않음을 밝히거나 자기주장을 뒷받침할 만한 더 많은 근거를 제시함\n"
+    "➍ 정리하기  상대방의 반론을 참고하여 자신의 최종 입장을 발표함")
+
+
+def _both(html):
+    return MR._restore_lone_circled(None, BBOX, MR._correct_table_cells(None, BBOX, html))
+
+
+def test_번역기가_못_찍는_원문자로는_되돌리지_않는다(layer):
+    layer(ARGUE_LAYER)
+    out = _both(ARGUE_HTML)
+    assert "<td>1 주장하기</td>" in out and "<td>4 정리하기</td>" in out
+    assert not set(out) & {chr(c) for c in range(0x2780, 0x2794)}
+
+
+def test_번역기가_찍는_검은_원문자는_그대로_되돌린다(layer):
+    layer(ARGUE_LAYER.translate({0x278A + k: 0x2776 + k for k in range(10)}))   # ➊ → ❶ 같은 표
+    out = _both(ARGUE_HTML)
+    assert "<td>❶ 주장하기</td>" in out and "<td>❹ 정리하기</td>" in out
