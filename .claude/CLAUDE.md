@@ -63,8 +63,10 @@ app/
 │   │   ├── symbol_table.json 기호→점자 매핑 데이터
 │   │   ├── kor_math_rules.py ★ C5-critical. convert_latex(latex), digits_to_braille(수표 ⠼ 삽입), frac/sqrt/lim/log/sum/sup/sub
 │   │   ├── text_braille.py · formula_braille.py · table_braille.py · image_braille.py · cartoon_braille.py · chart_graph_braille.py · diagram_braille.py
-│   │   ├── nested_block.py  중첩 시각자료(Q11) 공용: box_narrative(테두리 묶은 1단 narrative 텍스트)·append_nested(점자 끝에 덧붙임). diagram_braille: 도표 단일 출력(줄별 들여쓰기). 흐름도 도형 점형 디코드 표는 diagram_braille 주석(검증 대기)
+│   │   ├── nested_block.py  중첩 시각자료(Q11) 공용: append_nested(점자 끝에 덧붙임)만 남는다. box_narrative(테두리 묶은 1단 narrative 텍스트)는 교열 함수라 **#1364 로 `app/ai/llm/base_opt.py` 로 옮겼다**(엔진 안 호출 0). diagram_braille: 도표 단일 출력(줄별 들여쓰기). 흐름도 도형 점형 디코드 표는 diagram_braille 주석(검증 대기)
 │   │   │   table_braille: _render_grid / _render_linear (render_mode별 표 조판)
+│   │   ├── tag_names.py  교열·점역 공용 어휘: 태그 이름 · 표 태그 직렬화 · 정답 상자 판정(#1364 로 table_braille 에서 옮김). 이관 5단계에서 `semojum_braille.tags` 로 간다
+│   │   │   ※ #1364 이관 1단계로 같이 옮긴 것: tn_notices.py `app/ai/braille/` → `app/ai/llm/` · parse_print_frames `table_braille` → `table_opt`
 │   │   └── layout_braille.py PART 10 조판 본체. layout(braille, page_no, job_id, *, layout_result, llm_outputs)→line_overflow_rate. reading_order정렬·_break_line(32칸 단어경계+first_width 들여예약, 강제분리 카운트)·heading 빈줄(L1 2/1·L2 1/1·L3 1/0)·1단계 제목 가운데정렬·3·4단계 5칸·문단 3칸들여(text)·목록 3칸들여(list_item, tier추론X)·페이지행(원본번호 좌[page_number]·꼬리말 가운데[header_footer]·점자번호 우, 한 원본→여러 점자페이지 시 2번째부터 알파벳 접두 a,b,c)·_paginate(면 26줄 — 페이지행 붙는 면은 본문 25줄, 면 첫줄 빈줄 보존)·_save. 조판 rule_trail(heading_blank·line_wrap·indent)을 점자 좌표로 BrailleOutput.rule_trail에 emit(braille_text_list 귀속). 마커/글상자 헬퍼(BBPG 정본). ⚠촉각그래픽(table/chart SVG)·출전(citation 신호없음)·원본 페이지 변경선(여러 원본→한 점자페이지 중간 대시선, 콘텐츠 흐름 속 경계위치 메타 필요) 미배선
 │   ├── quality/                 # PART 11 (2026-07-03 구현)
 │   │   ├── quality_checker.py   QualityChecker.check(page_id, layout_result·extracted·llm_outputs·braille_outputs·line_overflow_rate)→QualityReport. C1~C4·C6 감지 + R 플래그, plan §4-1 status 결정
