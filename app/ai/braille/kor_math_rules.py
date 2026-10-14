@@ -733,6 +733,10 @@ _TEXT_CMD_RE = re.compile(r"\\text(?:rm|bf|it|sf|tt|normal|md)?\s*\{([^{}]*)\}")
 # 식 번호 \tag{N} → (N), 배열 환경 \begin{array}{l}…\end{array} → 제거(행 \\는 공백)
 _TAG_CMD_RE = re.compile(r"\\tag\s*\*?\s*\{([^{}]*)\}")
 _ENV_RE = re.compile(r"\\(?:begin|end)\s*\{[^{}]*\}(?:\s*\[[^\]]*\])?(?:\s*\{[^{}]*\})?")
+# 원장 C-171 — 유도 사슬(등호로 시작하는 행 `a \\ = b \\ = c`)은 행을 앞 행에 붙여 잇는다(`a⠒⠒b⠒⠒c`). 행 구분을 빈칸으로 바꾸면
+#   연산 붙임(11e)이 등호 앞뒤를 붙인다. 규정은 배열 행을 이어 적을 때의 폭을 정하지 않는다(관행). gold 수학 Ⅰ(dev 009) 행 머리 등호
+#   251행 전부 앞뒤 0칸(줄 가운데 148 · 앞 줄 끝 103). 연립식(`_SYS_ENV_RE`)은 그보다 먼저 행을 나눠 두 칸 그대로다.
+_DERIV_ROW_RE = re.compile(r"\\\\(?=[\s&]*=)")
 # 연립식 괄호(수학 규정 제6항): 여는 ⠶⠄(7')·닫는 ⠠⠶(,7). \left\{ 동반 array 또는 cases.
 _SYS_OPEN, _SYS_CLOSE = "⠶⠄", "⠠⠶"
 # 관행 스위치 — translator._BOOK_STYLE과 같은 판정을 env에서 직접 읽는다(순환 import 회피).
@@ -1113,6 +1117,7 @@ def _normalize_latex_input(latex: str) -> str:
     # 행 구분 \\는 행 전환 sentinel(→⠀⠀)로 — 유도 사슬(= 로 시작하는 행)·라벨 행이
     # 1칸/0칸으로 붙는 것을 막는다(연립식 _sys_repl과 동일 취급).
     s = _ENV_RE.sub(" ", s)
+    s = _DERIV_ROW_RE.sub(" ", s)
     s = s.replace("\\\\", f" {_W2R_ROW_SEP} ").replace("&", " ")
     # 식 번호 \tag{N} → (N). 단, 자모 오독 인자(7·T·L·E·B — 원문자 ㉠~㉣ 자형 대응,
     # gold 실측: p121 '\tag{7}'↔⠿⠁·p023 '\tag{L}'↔⠿⠒, 2026-07-22)는 ⠿+자모로 복원.
