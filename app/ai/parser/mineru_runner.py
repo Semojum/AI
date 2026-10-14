@@ -884,9 +884,14 @@ def _circled_digit_restores(seg: str, win: str, layer_ns: str) -> list[tuple[int
             if len(before) + len(after) < 2:
                 fits = []
                 break
-            fits = [ch for ch in pool if before + ch + after in layer_ns]
+            # 동그라미 한글 밖 갈래는 문맥에 숫자 아닌 글자가 있어야 한다. 답 표 층 `1 ② 2 ③` 에서 칸 `10 2` 의 0 이
+            # 문맥 `1`·`2` 로 ② 에 들어맞았다(#1403 1판). 숫자뿐인 문맥은 층의 다른 자리에도 맞는다.
+            bare = not re.search(r"\D", before + after)
+            fits = [ch for ch in "".join(classes) if before + ch + after in layer_ns and (ch in _CIRCLED_HANGUL or not bare)]
             if fits:
                 break
+        if len(fits) > 1:                               # 갈래끼리 모호하면 창이 가리킨 글자의 갈래로 좁힌다(위 ★)
+            fits = [ch for ch in fits if ch in pool]
         if len(fits) == 1:                              # 창의 글자가 아니라 문맥으로 정해진 글자
             out.append((i1, i2 - i1, fits[0]))
     return out
@@ -920,8 +925,8 @@ def _restore_lone_circled(fitz_page: fitz.Page, bbox: list[float], html: str, fi
         cells = [(m, re.sub(r"<[^>]*>|[\s$]", "", m.group(2))) for m in _CELL_RE.finditer(html, tr.start(), tr.end())]
         rows.append([(m, t) for m, t in cells if t])
     nums = set(re.findall(r"\d+", plain)) | set(re.findall(r"\d+", layer))
-    lone = [(r, k) for r, row in enumerate(rows) for k, (_m, t) in enumerate(row)
-            if _LONE_DIGIT_RE.fullmatch(t) and t not in nums]                   # 층에 수로 찍힌 숫자는 진짜 수다
+    lone = [(r, k) for r, row in enumerate(rows) for k, (m, t) in enumerate(row)     # 칸 안 빈칸은 남기고 본다(`1 2` 는 두 수다)
+            if _LONE_DIGIT_RE.fullmatch(re.sub(r"<[^>]*>|\$", "", m.group(2)).strip()) and t not in nums]   # 층에 수로 찍힌 숫자는 진짜 수다
     if not lone:
         return html
     table_circ = Counter(ch for row in rows for _m, t in row for ch in t if ch in chars)
@@ -1272,12 +1277,14 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str,
     layer_ns = re.sub(r"\s+", "", re.sub(r"<!/?[^>]*>", "", layer))
     if not layer_ns:
         return html
-    # 층에 원문자가 있으면 대조에서 숫자 ↔ 원문자를 같은 글자로 본다(#1210 동그라미 한글, #1403 부터 ① · ⓐ · ➊ 도. 위 절)
-    # #1403 부터는 칸 쪽 원문자도 같은 글자로 본다. 종전엔 칸의 바르게 읽힌 ㉠ 이 층 쪽 \x01 과 달라 닮음이 깎였다.
+    # 층에 동그라미 한글이 있으면 대조에서 숫자 ↔ 동그라미 한글을 같은 글자로 본다(#1210, 위 절). 칸 창은 이것 그대로다.
+    # #1403 이 넓힌 갈래(① · ⓐ · ➊)는 되돌리기에만 쓴다. 창 맞추기까지 넓히면 창이 옮겨 #1210 이 되돌리던 자리
+    # (`7:반상` ↔ `㉮:반상`)를 놓쳤다(#1403 1판).
     chars = _circ_chars()
-    cell_cmp = re.compile(f"[0-9{chars}]" if chars != _CIRCLED_HANGUL else r"[0-9]")
-    circ = os.environ.get("TABLE_CELL_CIRCLED_DIGIT", "1") != "0" and any(ch in chars for ch in layer_ns)
-    cmp_layer = re.sub(f"[0-9{chars}]", "\x01", layer_ns) if circ else layer_ns
+    on = os.environ.get("TABLE_CELL_CIRCLED_DIGIT", "1") != "0"
+    hangul = on and bool(_CIRCLED_HANGUL_RE.search(layer_ns))
+    circ = on and any(ch in chars for ch in layer_ns)
+    cmp_layer = re.sub(f"[0-9{_CIRCLED_HANGUL}]", "\x01", layer_ns) if hangul else layer_ns
 
     split = fixes is not None and os.environ.get("TABLE_CELL_SPLIT", "1") != "0"
     dropped = False                             # 실패 칸을 버렸나(= 종전이면 표째 포기했을 표)
@@ -1304,7 +1311,7 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str,
         cell = "".join(ns_chars)
         if not cell:
             continue                            # 빈 셀은 대조 대상이 아니다
-        sim, pos = _best_layer_window(cell_cmp.sub("\x01", cell) if circ else cell, cmp_layer)
+        sim, pos = _best_layer_window(re.sub(r"[0-9]", "\x01", cell) if hangul else cell, cmp_layer)
         texts.append(cell)
         if sim < _CELL_SIM_MIN and (len(cell) < _PIECE_CELL_MIN or os.environ.get("TABLE_CELL_PIECES", "1") == "0"):
             if not split:
