@@ -45,6 +45,10 @@ from app.ai import gates as _gates          # 관문 G3 — 무거운 의존 없
 #   훅 · 환경)이 그대로라 같은 LaTeX 에 늘 같은 점자가 나온다. 접두마다 같은 수식을 다시 바꾸던 몫(수식 든 1,050자 줄
 #   11.6초 중 8.8초)을 없앤다. 밖에서는 None 이라 종전과 같다.
 _LATEX_MEMO: contextvars.ContextVar[dict | None] = contextvars.ContextVar("_LATEX_MEMO", default=None)
+# 끊을 자리를 찾느라 접두를 다시 점역하는 중인가(`_break_offsets`, #1377). 줄 전체를 보고 내리는 판정(선택지 줄)은
+#   접두에 걸지 않는다 — 접두 `①  A` 가 선택지 줄로 읽혀 `⠴⠠⠁` 가 되면 전체 `①  A는…` 의 머리와 맞아 `⠴⠠⠁‖⠲⠉⠵`
+#   (줄머리 종료표) · `③ T‖3` 에 후보가 섰다.
+_BREAK_PROBE: contextvars.ContextVar[bool] = contextvars.ContextVar("_BREAK_PROBE", default=False)
 
 
 def convert_latex(latex: str) -> str:
@@ -692,7 +696,7 @@ class _RomanCtx:
         # 그대로 적용되는 자리(translate_plain). 근거는 gold 페이지행 실측이다:
         # '로마숫자 + 숫자' 꼬리말 5,318건 중 로마자표를 붙인 것이 4,776건(89.8%).
         # 본문은 건드리지 않는다 — 거기 문턱값 0.2 는 따로 측정된 값이다(위 주석).
-        choice = bool(_CHOICE_LABEL_LINE_RE.match(text))
+        choice = not _BREAK_PROBE.get() and bool(_CHOICE_LABEL_LINE_RE.match(text))
         self.has_hangul = han > 0 or force or choice
         self.hangul_ratio = 1.0 if (force or choice) else (han / (han + lat) if (han + lat) else 0.0)
         # 이 줄에서 로마자 구간이 이미 열렸는가(제29항 후단 — 첫 로마자 앞에만 ⠴).
@@ -3700,9 +3704,11 @@ def _break_offsets(src: str, braille: str) -> list[int]:
     if len(braille) <= 1:
         return []
     token = _LATEX_MEMO.set({})
+    probe = _BREAK_PROBE.set(True)
     try:
         return _break_offsets_in(src, braille)
     finally:
+        _BREAK_PROBE.reset(probe)
         _LATEX_MEMO.reset(token)
 
 
@@ -3762,11 +3768,6 @@ def _break_offsets_in(src: str, braille: str) -> list[int]:
             end = next((k for k in range(sp, len(src)) if src[k].isspace()), len(src))
             if not braille.startswith(translate_tagged_text(src[sp:end]), n):
                 continue
-        # ★ #1377 — 뒤 셀이 ⠲ 인 자리는 끊지 않는다. 로마자 종료표는 로마자 뒤에 붙고(제29항 재추출 1496행) 마침표는
-        #   앞말에 붙는다. 접두가 전체와 맞아도 그렇다 — `①  A는` 의 접두 `①  A` 가 선택지 줄로 읽혀 `⠴⠠⠁` 가 전체와
-        #   맞자 `⠴⠠⠁|⠲⠉⠵` 에 후보가 섰다.
-        if braille[n:n + 1] == "⠲":
-            continue
         offs.add(n)
     return sorted(offs)
 
