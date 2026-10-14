@@ -38,13 +38,14 @@ def test_표시_글자가_점자에_남지_않는다():
     assert breaks
 
 
-def test_배열_행_머리_등호_앞_빈칸에서_끊지_않는다():
-    # #1394 — 유도 사슬 행 머리 등호 앞 행 구분 빈칸(⠀⠀)에서 접으면 등호가 줄 머리로 간다. 제66항은 등호 뒤에서 끊는다.
+def test_배열_행_머리_등호_앞에서_끊지_않는다():
+    # #1394 — 유도 사슬 행 머리 등호가 줄 머리로 가면 안 된다. 제66항은 등호 뒤에서 끊는다.
+    # 원장 C-171 부터 행 머리 등호 행은 앞 행에 붙여 잇는다(행 구분 빈칸 ⠀⠀ 이 없다).
     cells, breaks = _formula(r"\begin{array}{l} a + b \\ = c + d \\ = e \end{array}")
-    heads = [i for i in range(2, len(cells)) if cells[i - 2:i] == "⠀⠀" and cells.startswith("⠒⠒", i)]
-    assert len(heads) == 2
+    heads = [i for i in range(len(cells)) if cells.startswith("⠒⠒", i)]
+    assert len(heads) == 2 and "⠀" not in cells
     for i in heads:
-        assert i - 2 not in breaks and i - 1 not in breaks      # 행 구분 빈칸
+        assert i not in breaks                                   # 행 머리 등호 앞
         assert i + 2 in breaks                                   # 행 머리 등호 바로 뒤
     for width in range(4, len(cells)):
         lines, forced = _wrap_line(cells, breaks, width=width, first_width=width)
