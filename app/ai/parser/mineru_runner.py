@@ -18,6 +18,7 @@ import sys
 import unicodedata
 import uuid
 import zipfile
+from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -843,30 +844,122 @@ def _piece_windows(cell: str, pieces: list[str], table_ns: str) -> list[tuple[in
 #   처럼 문맥이 같으면 둘 다 맞으니 그대로 둔다.
 # 층에 동그라미 한글이 있는 표는 대조 닮음도 숫자와 동그라미 한글을 같은 글자로 본다(`7mL` 같은 짧은 칸이 대조에서
 # 떨어져 표째 막히지 않게). 끄기 `TABLE_CELL_CIRCLED_DIGIT=0`.
+# #1403 — 동그라미 숫자 · 로마자 · 검은 동그라미 숫자(❶~❿)도 같은 길로 되돌린다(층 `ⓐ안다` ↔ 칸 `1안다`).
+#   두 자리 수(`(12)` ↔ `(㉡)`)도 본다. 2027 dev · val 에서 원문자 오독이 남은 표 103 가운데 24 는 층에 동그라미 한글이
+#   없고 동그라미 숫자만 있었다. 문맥으로 하나로 정해질 때만 바꾸는 것은 그대로다. 끄기 `TABLE_CELL_CIRCLED_ANY=0`.
 _CIRCLED_HANGUL = "".join(chr(c) for c in range(0x3260, 0x3280))
 _CIRCLED_HANGUL_RE = re.compile(f"[{_CIRCLED_HANGUL}]")
+# ★ 후보 글자는 창이 가리킨 글자와 같은 갈래 안에서만 고른다. 생명과학 표는 ㉠ 과 ⓐ 를 같이 쓴다(층 `㉡(2)` · `ⓐ(2)`).
+#   갈래를 섞으면 문맥 `(2)` 에 둘 다 들어맞아, 종전에 하나로 정해지던 동그라미 한글이 모호해진다.
+_CIRCLED_CLASSES = (_CIRCLED_HANGUL,
+                    "".join(chr(c) for c in range(0x2460, 0x2474)),     # ①~⑳
+                    "".join(chr(c) for c in range(0x24D0, 0x24EA)),     # ⓐ~ⓩ
+                    "".join(chr(c) for c in range(0x2776, 0x2780)))     # ❶~❿
+# ➀~➓(U+2780~2793)는 넣지 않는다. 번역기가 이 글자를 못 찍고 통째로 빼서(`➊ 가` → `⠫`), 되돌리면 번호가 점자에서 사라진다
+# (#1403 2판 손해: 014 body p0010 표 `1 주장하기` ↔ 층 `➊ 주장하기`). 틀린 `1.` 이라도 번호가 남는 쪽이 낫다.
 _CIRC_CTX = 6
 
 
+def _circ_classes() -> tuple[str, ...]:
+    """#1210 · #1403 이 되돌리는 원문자 갈래. 호출 때 읽는다."""
+    return _CIRCLED_CLASSES[:1] if os.environ.get("TABLE_CELL_CIRCLED_ANY", "1") == "0" else _CIRCLED_CLASSES
+
+
+def _circ_chars() -> str:
+    return "".join(_circ_classes())
+
+
 def _circled_digit_restores(seg: str, win: str, layer_ns: str) -> list[tuple[int, int, str]]:
-    """(칸 글 안 자리, 1, 동그라미 한글). 칸 숫자 한 글자 ↔ 창 동그라미 한글 한 글자이고, 글자가 문맥으로 하나로 정해질 때만."""
+    """(칸 글 안 자리, 숫자 길이, 원문자). 칸 숫자(한두 자리) ↔ 창 원문자 한 글자이고, 글자가 문맥으로 하나로 정해질 때만."""
+    classes = _circ_classes()
+    two = len(classes) > 1                               # 두 자리 수는 #1403 부터
     out: list[tuple[int, int, str]] = []
     for tag, i1, i2, j1, j2 in SequenceMatcher(None, seg, win, autojunk=False).get_opcodes():
-        if tag != "replace" or i2 - i1 != 1 or j2 - j1 != 1:
+        if tag != "replace" or not 1 <= i2 - i1 <= (2 if two else 1) or j2 - j1 != 1:
             continue
-        digit, circ = seg[i1], win[j1]
-        if not ("0" <= digit <= "9" and _CIRCLED_HANGUL_RE.match(circ)):
+        digit, circ = seg[i1:i2], win[j1]
+        pool = next((c for c in classes if circ in c), "")
+        if not (digit.isascii() and digit.isdigit() and pool):
             continue
         for n in range(_CIRC_CTX, 1, -1):                 # 긴 문맥부터, 층에 들어맞는 글자가 생기는 가장 긴 문맥
             before, after = seg[max(0, i1 - n):i1], seg[i2:i2 + n]
             if len(before) + len(after) < 2:
                 fits = []
                 break
-            fits = [ch for ch in _CIRCLED_HANGUL if before + ch + after in layer_ns]
+            # 동그라미 한글 밖 갈래는 문맥에 숫자 아닌 글자가 있어야 한다. 답 표 층 `1 ② 2 ③` 에서 칸 `10 2` 의 0 이
+            # 문맥 `1`·`2` 로 ② 에 들어맞았다(#1403 1판). 숫자뿐인 문맥은 층의 다른 자리에도 맞는다.
+            bare = not re.search(r"\D", before + after)
+            fits = [ch for ch in "".join(classes) if before + ch + after in layer_ns and (ch in _CIRCLED_HANGUL or not bare)]
             if fits:
                 break
+        if len(fits) > 1:                               # 갈래끼리 모호하면 창이 가리킨 글자의 갈래로 좁힌다(위 ★)
+            fits = [ch for ch in fits if ch in pool]
         if len(fits) == 1:                              # 창의 글자가 아니라 문맥으로 정해진 글자
-            out.append((i1, 1, fits[0]))
+            out.append((i1, i2 - i1, fits[0]))
+    return out
+
+
+# ── 표 칸 홀로 선 숫자 → 원문자 (#1403) ─────────────────────────────────────
+# 위 되돌리기는 칸 글 앞뒤 문맥으로 글자를 정하므로, 칸에 숫자만 있으면(`7` · `$7$` ↔ 층 `㉠`) 문맥이 없어 손대지 않는다.
+# 2027 dev · val 에서 원문자 오독이 남은 표 103 가운데 54 가 이 꼴이었다(머리 줄 `7 8 9 10` ↔ `㉠㉡㉢㉣`, 행 머리 `1` ↔ `①`).
+# 숫자만 든 칸들을 층의 원문자 가운데 표 글에 아직 없는 것과 짝짓는다. 갈래마다 근거가 다르다.
+#   동그라미 숫자(① · ❶): 값이 곧 글자다(1 ↔ ①). 숫자 칸 값들과 남은 그 갈래 원문자 값들이 **똑같을 때만** 값으로 바꾼다.
+#   동그라미 한글 · 로마자: 값이 없다(㉠ 이 7 · 1 · 8 로, ⓐ 가 9 로 갈린다). 남은 숫자 칸과 남은 그 원문자를 읽는 차례로 짝짓되, 개수가
+#     같고, 바꾼 글자 뒤에 같은 줄 다음 칸 첫 두 글자가 층에서 이어질 때만(줄 끝 칸이면 앞 칸 끝 두 글자 뒤에) 바꾼다.
+#   두 갈래 다: 그 숫자가 층에 수로 찍혀 있으면 손대지 않는다. 진짜 수다(혈액형 표 `60` · `59`).
+# 차례 · 값으로 정한 글자라 근거가 문맥보다 약하다. 고친 자리를 `fixes` 에 담아 #1296 처럼 R4 '고침' 으로 띄운다.
+# 끄기 `TABLE_CELL_LONE_CIRCLED=0`.
+_LONE_DIGIT_RE = re.compile(r"\d{1,2}")
+_CIRCLED_NUM_BASES = ((0x2460, 20), (0x2776, 10))   # ①~⑳ · ❶~❿
+
+
+def _restore_lone_circled(fitz_page: fitz.Page, bbox: list[float], html: str, fixes: list[str] | None = None) -> str:
+    """표에서 숫자만 든 칸을 층의 원문자로 되돌린다(위 절). 못 하면 html 그대로."""
+    if not html or not bbox or os.environ.get("TABLE_CELL_LONE_CIRCLED", "1") == "0":
+        return html
+    plain, layer = map(_table_layer, _native_text_pair(fitz_page, bbox))
+    if not layer or _layer_untrustworthy(plain, fitz_page):
+        return html
+    layer_ns = re.sub(r"\s+", "", re.sub(r"<!/?[^>]*>", "", layer))
+    chars = _circ_chars()
+    rows: list[list[tuple[re.Match, str]]] = []
+    for tr in _TR_RE.finditer(html):
+        cells = [(m, re.sub(r"<[^>]*>|[\s$]", "", m.group(2))) for m in _CELL_RE.finditer(html, tr.start(), tr.end())]
+        rows.append([(m, t) for m, t in cells if t])
+    nums = set(re.findall(r"\d+", plain)) | set(re.findall(r"\d+", layer))
+    lone = [(r, k) for r, row in enumerate(rows) for k, (m, t) in enumerate(row)     # 칸 안 빈칸은 남기고 본다(`1 2` 는 두 수다)
+            if _LONE_DIGIT_RE.fullmatch(re.sub(r"<[^>]*>|\$", "", m.group(2)).strip()) and t not in nums]   # 층에 수로 찍힌 숫자는 진짜 수다
+    if not lone:
+        return html
+    table_circ = Counter(ch for row in rows for _m, t in row for ch in t if ch in chars)
+    want = []
+    for ch in (c for c in layer_ns if c in chars):          # 층 원문자 가운데 표 글에 아직 없는 것, 층 차례대로
+        if table_circ[ch]:
+            table_circ[ch] -= 1
+        else:
+            want.append(ch)
+    new: dict[tuple[int, int], str] = {}
+    for base, size in _CIRCLED_NUM_BASES:                    # 동그라미 숫자: 값으로
+        vals = sorted(ord(c) - base + 1 for c in want if base <= ord(c) < base + size)
+        cand = [rk for rk in lone if rk not in new and int(rows[rk[0]][rk[1]][1]) in vals]
+        if vals and sorted(int(rows[r][k][1]) for r, k in cand) == vals:
+            new.update({(r, k): chr(base + int(rows[r][k][1]) - 1) for r, k in cand})
+    rest = [rk for rk in lone if rk not in new]              # 동그라미 한글 · 로마자: 차례로
+    seq = [c for c in want if c in _CIRCLED_HANGUL or c in _CIRCLED_CLASSES[2] and c in chars]
+    if rest and len(rest) == len(seq):
+        trial = {**new, **dict(zip(rest, seq))}
+        text = lambda r, k: trial.get((r, k), rows[r][k][1])                         # noqa: E731 — 바꾼 뒤 칸 글
+        if all((ch + text(r, k + 1)[:2] in layer_ns) if k + 1 < len(rows[r]) else (k > 0 and text(r, k - 1)[-2:] + ch in layer_ns)
+               for (r, k), ch in zip(rest, seq)):
+            new = trial
+    if not new:
+        return html
+    out = html
+    for (r, k), ch in sorted(new.items(), key=lambda kv: rows[kv[0][0]][kv[0][1]][0].start(2), reverse=True):
+        m = rows[r][k][0]
+        out = out[:m.start(2)] + re.sub(r"\$?\s*\d{1,2}\s*\$?", ch, m.group(2), count=1) + out[m.end(2):]
+        if fixes is not None:
+            fixes.append(f"{{{rows[r][k][1]}→{ch}}}")
     return out
 
 
@@ -1186,9 +1279,14 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str,
     layer_ns = re.sub(r"\s+", "", re.sub(r"<!/?[^>]*>", "", layer))
     if not layer_ns:
         return html
-    # 층에 동그라미 한글이 있으면 대조에서 숫자 ↔ 동그라미 한글을 같은 글자로 본다(#1210, 위 절)
-    circ = os.environ.get("TABLE_CELL_CIRCLED_DIGIT", "1") != "0" and bool(_CIRCLED_HANGUL_RE.search(layer_ns))
-    cmp_layer = re.sub(f"[0-9{_CIRCLED_HANGUL}]", "\x01", layer_ns) if circ else layer_ns
+    # 층에 동그라미 한글이 있으면 대조에서 숫자 ↔ 동그라미 한글을 같은 글자로 본다(#1210, 위 절). 칸 창은 이것 그대로다.
+    # #1403 이 넓힌 갈래(① · ⓐ · ❶)는 되돌리기에만 쓴다. 창 맞추기까지 넓히면 창이 옮겨 #1210 이 되돌리던 자리
+    # (`7:반상` ↔ `㉮:반상`)를 놓쳤다(#1403 1판).
+    chars = _circ_chars()
+    on = os.environ.get("TABLE_CELL_CIRCLED_DIGIT", "1") != "0"
+    hangul = on and bool(_CIRCLED_HANGUL_RE.search(layer_ns))
+    circ = on and any(ch in chars for ch in layer_ns)
+    cmp_layer = re.sub(f"[0-9{_CIRCLED_HANGUL}]", "\x01", layer_ns) if hangul else layer_ns
 
     split = fixes is not None and os.environ.get("TABLE_CELL_SPLIT", "1") != "0"
     dropped = False                             # 실패 칸을 버렸나(= 종전이면 표째 포기했을 표)
@@ -1215,7 +1313,7 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str,
         cell = "".join(ns_chars)
         if not cell:
             continue                            # 빈 셀은 대조 대상이 아니다
-        sim, pos = _best_layer_window(re.sub(r"[0-9]", "\x01", cell) if circ else cell, cmp_layer)
+        sim, pos = _best_layer_window(re.sub(r"[0-9]", "\x01", cell) if hangul else cell, cmp_layer)
         texts.append(cell)
         if sim < _CELL_SIM_MIN and (len(cell) < _PIECE_CELL_MIN or os.environ.get("TABLE_CELL_PIECES", "1") == "0"):
             if not split:
@@ -1272,7 +1370,7 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str,
     out = html
     for pos, ln, repl in sorted(edits, reverse=True):
         out = out[:pos] + repl + out[pos + ln:]
-    if any(_CIRCLED_HANGUL_RE.match(repl) for _pos, _ln, repl in edits):    # `$7(3)$` → `$㉠(3)$` 는 글로 푼다(#1075 와 같이)
+    if any(repl in chars for _pos, _ln, repl in edits):    # `$7(3)$` → `$㉠(3)$` 는 글로 푼다(#1075 와 같이)
         out = _CELL_RE.sub(lambda m: m.group(1) + _unwrap_circled_math(m.group(2)) + m.group(3), out)
     return out
 
@@ -2592,6 +2690,7 @@ def run(
                 content = _restore_table_circled(fitz_page, bb, content)
                 split_fixes: list[str] = []
                 content = _correct_table_cells(fitz_page, bb, content, fixes=split_fixes)   # 실패 칸만 버린다(#1317)
+                content = _restore_lone_circled(fitz_page, bb, content, fixes=split_fixes)  # 숫자만 든 칸(#1403)
                 content, table_fixes = fix_table_misreads(fitz_page, bb, content)   # 포기한 표도 확실한 자리는(#1296)
                 table_fixes = split_fixes + table_fixes
 
