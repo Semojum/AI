@@ -3741,11 +3741,6 @@ def _break_offsets_in(src: str, braille: str) -> list[int]:
             if (rest[:1] and rest[0] in _CLOSERS and head[-1:].strip()
                     and rest.lstrip(_CLOSERS)[:1] in _NO_BREAK_BEFORE_ANY):
                 continue
-            # #1377 — 첨자 · 위첨자 바로 뒤 닫는 괄호 앞도 막는다(제54항 재추출 2406행). 첨자 토큰이 수식 구간에서 나오며
-            #   (`_unwrap_token_punct`) 접두 `O₂` 가 전체와 맞게 되자 `⠰⠼⠃|⠠⠴⠐⠮` 에 후보가 섰다. 앞 글자가 첨자일 때로만
-            #   좁힌다 — 닫는 괄호 앞 전체(`다.|’` · `㉠|)`)는 이 PR 범위 밖이다(별도 이슈).
-            if rest[:1] and rest[0] in _CLOSERS and head[-1:] in _SCRIPT_CHARS:
-                continue
         if nxt in _NO_BREAK_BEFORE and _HANGUL_OR_JAMO_RE.search(head.rstrip(_CLOSERS)):
             continue
         if starts:                                       # 조각 앞부분만 점역(`_segment_starts`)
@@ -3768,6 +3763,13 @@ def _break_offsets_in(src: str, braille: str) -> list[int]:
             end = next((k for k in range(sp, len(src)) if src[k].isspace()), len(src))
             if not braille.startswith(translate_tagged_text(src[sp:end]), n):
                 continue
+        # #1377 — 화학식 토큰 바로 뒤 글 닫는 괄호 앞은 끊지 않는다(제54항 재추출 2406행). 첨자 토큰이 수식 구간에서 나오며
+        #   (`_unwrap_token_punct`) 접두 `O₂` 가 전체와 맞게 되자 `O₂‖)를` = `⠰⠼⠃|⠠⠴⠐⠮` 에 후보가 섰다. 그 꼴로만 좁힌다:
+        #   앞 글자가 첨자 · 위첨자이고, 그 자리 셀이 글 괄호 `⠠⠴` 이고, 묵자에서 괄호 뒤가 빈칸이 아니다. 수식 괄호 `⠴` ·
+        #   닫는 따옴표 · 뒤가 빈칸인 자리(#1243)와 닫는 괄호 앞 전체(#1385)는 이 PR 범위 밖이다.
+        if (head[-1:] in _SCRIPT_CHARS and braille.startswith("⠠⠴", n)
+                and _TAG_RE.sub("", src[sp:])[1:2] not in ("", " ", "\n", "\t")):
+            continue
         offs.add(n)
     return sorted(offs)
 
