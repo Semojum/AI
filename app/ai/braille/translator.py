@@ -232,47 +232,11 @@ def _normalize_roman_numerals(text: str) -> str:
     return _ROMAN_NUMERAL_RE.sub(lambda m: _ROMAN_NUMERAL_MAP[m.group()], text)
 
 
-# 섹션번호 로마 숫자(Ⅱ. Ⅲ. …)의 도서 관행: gold는 로마자표(⠴…⠲)·이중 대문자표 없이
-# 대문자표 ⠠ 한 번 + 낱자 점형으로 적는다(Ⅱ→⠠⠊⠊, Ⅴ→⠠⠧ 실측 — 사회문화 p046·154,
-# 세계사 p016). 영어 단어 경로(_english_run/braillify)는 ⠴⠠⠠⠊⠊⠲로 로만표·이중대문자·
-# 종료표를 붙여 gold와 어긋난다(잉여 ⠲·⠴). 낱자 점형을 직접 주입해 관행에 맞춘다.
-# 소문자 로마자(ⅰⅱ 하위항목)는 대문자표 없이 낱자만. <!수식> 안 로마자는 건드리지 않는다.
-_ROMAN_CELL_UPPER = {r: "⠠" + "".join(_ALPHA_MAP[c] for c in ascii_low.lower())
-                     for r, ascii_low in _ROMAN_NUMERAL_MAP.items() if ascii_low[0].isupper()}
-_ROMAN_CELL_LOWER = {r: "".join(_ALPHA_MAP[c] for c in ascii_low)
-                     for r, ascii_low in _ROMAN_NUMERAL_MAP.items() if ascii_low[0].islower()}
-_ROMAN_CELL = {**_ROMAN_CELL_UPPER, **_ROMAN_CELL_LOWER}
-_ROMAN_CELL_RE = re.compile("[" + "".join(_ROMAN_CELL) + "]")
-
-
-# ★ 2026-08-27 — **섹션번호 자리로 좁힌다.** 위 관행 근거는 섹션번호(Ⅱ. Ⅲ. …) 실측
-#   세 쪽뿐인데(frozen 사회문화 p046·154, 세계사 p016) 코드는 수식 밖 로마숫자 **전부**에
-#   먹였다. dev-2027 900쪽 추출 실측: 로마숫자 1,132건 중 **섹션번호는 19건(1.7%)**이고
-#   나머지는 본문 속 참조다("경로 Ⅰ~Ⅲ을", "생쥐 Ⅰ~Ⅲ").
-#   본문 속에서 낱자 점형을 쓰면 **로마자표 ⠴·종료표 ⠲ 가 빠져 그 셀이 한글로 읽힌다**:
-#       우리  ⠈⠻⠐⠥⠀⠠⠊⠈⠔⠠⠊⠊⠊⠮
-#       gold  ⠈⠻⠐⠥⠀⠴⠠⠊⠈⠔⠠⠠⠊⠊⠊⠲⠮      (EBS-E26-001 body p0089 49행)
-#   gold 실측(묵자에 로마숫자가 있는 쪽): 생명과학 **로마자표형 162쪽 : 낱자형 2쪽**.
-#   원인 4분류 = **규칙 충돌**(관행 규칙이 규정형을 밀어냈다).
-#   섹션번호 = **줄머리 + 바로 뒤 마침표**. 공백까지 신호로 치면 안 된다 —
-#   gold p0002 는 'IV 유전'(줄머리+공백)을 **로마자표형** ⠴⠠⠠⠊⠧⠲ 로 적는다.
-_ROMAN_SECTION_RE = re.compile(
-    r"(?m)^([ \t]*)([" + "".join(_ROMAN_CELL) + r"]+)(?=[.．])")
-
-
-def _book_roman_to_cells(text: str) -> str:
-    """도서 관행 로마 숫자 **섹션번호** → 낱자 점형 직접 주입(book 모드). <!수식> 세그는 보존."""
-    def _sec(m):
-        return m.group(1) + "".join(_ROMAN_CELL[c] for c in m.group(2))
-
-    parts = _FORMULA_RE.split(text)
-    for i in range(0, len(parts), 2):   # 짝수 인덱스 = 수식 밖 일반 텍스트
-        parts[i] = _ROMAN_SECTION_RE.sub(_sec, parts[i])
-    # split이 캡처그룹 때문에 [text, formula_inner, text, ...] 형태 → 재조립
-    out = []
-    for i, seg in enumerate(parts):
-        out.append(seg if i % 2 == 0 else f"<!수식>{seg}<!/수식>")
-    return "".join(out)
+# ★ 2026-10-14 — 섹션번호 로마 숫자 낱자 주입(`_book_roman_to_cells`, 08-27)을 지웠다(#1373). 섹션번호도 본문과
+#   같은 로마자 길(제36항 로마자표 ⠴)로 간다. 그 관행의 근거로 적은 동결 val 네 쪽(사회문화 p046 · p116 · p154 ·
+#   세계사 p016)의 gold 가 전부 로마자표형이었다(`0,,ii4` = ⠴⠠⠠⠊⠊⠲ · `0,,iv4` · `0,v4` · `0,,ii4`). 낱자형은 그 쪽들에
+#   없다. 2027 dev · val 섹션번호 13자리도 gold 13/13 로마자표형이다. 규정 근거는 제36항(재추출 1753~1794행)과 본문
+#   예 1787~1788행 "미적분학 II 과목" = `0,,ii4`. 원장 6434행.
 
 _FORMULA_RE      = re.compile(r"<!수식>(.*?)<!/수식>", re.DOTALL)
 # 수학 제11항(재추출 3234~3236행): 두 칸 대상인 수학적 표기에서 "분모와 분자가 수로 이루어진
@@ -3579,11 +3543,6 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     text = _space_hangul_operators(text)  # 제46항 — 수식 라우팅보다 먼저(#938)
     text = _attach_length_mark(text)      # 제63항 — 긴소리표 앞뒤 붙임(#1222)
     text = inline_math.wrap(text)
-    if _BOOK_STYLE and not force_roman:
-        # ★ 꼬리말(force_roman)에서는 이 관행을 끈다. 섹션번호 낱자형의 근거는 **본문** 실측
-        #   세 쪽인데, 페이지행 꼬리말은 반대다 — gold 실측 로마자표형 5,762 : 낱자형 466
-        #   (92.5%). 여기서 낱자형을 쓰면 로마자표·종료표가 빠져 그 셀이 한글로 읽힌다.
-        text = _book_roman_to_cells(text)   # 로마 숫자 섹션번호 → 낱자 점형(도서 관행, 수식 밖만)
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     text = sanitize_for_braille(text)        # PUA·제어문자 정화(요소 전체 소실 방지)
     # ★ #1067 — 유니코드 공백 구분자(Zs)가 셀열에 남으면 빈칸 셀로 바꾼다. 영어 낱말이 섞인 경로가 원문의
