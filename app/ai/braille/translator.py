@@ -3649,6 +3649,7 @@ _NO_BREAK_BEFORE_ANY = frozenset(".,?!:;，．？！：；")
 #   부호가 붙은 닫는 부호는 어차피 부호가 줄머리로 가므로 막아도 그 까닭에 안 걸린다.
 #   ASCII `"` `'` 는 여닫이를 못 가려 뺀다.
 _OPENERS = frozenset("([{「『‘“〈《")
+_SCRIPT_CHARS = frozenset("₀₁₂₃₄₅₆₇₈₉₊₋⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻")      # 첨자 · 위첨자(화학식 · 이온 토큰 끝, #1377)
 
 
 def _punct_any_on() -> bool:
@@ -3731,11 +3732,13 @@ def _break_offsets_in(src: str, braille: str) -> list[int]:
             if head[-1:] in _OPENERS:
                 continue
             rest = _TAG_RE.sub("", src[sp:])
-            # #1377 — 닫는 괄호 뒤가 빈칸이 아니면(부호 · 조사 `O₂)를`) 그 앞도 막는다. 뒤가 빈칸인 자리(`(1861‖) 한편`)는
-            #   수식 줄 강제분리 때문에 그대로 둔다(#1243). 첨자 토큰이 수식 구간에서 나오며(`_unwrap_token_punct`) 접두
-            #   `O₂` 가 전체와 맞게 되자 `⠰⠼⠃|⠠⠴⠐⠮` 에 후보가 섰다.
             if (rest[:1] and rest[0] in _CLOSERS and head[-1:].strip()
-                    and rest.lstrip(_CLOSERS)[:1] not in ("", " ", "\n", "\t", "⠀")):
+                    and rest.lstrip(_CLOSERS)[:1] in _NO_BREAK_BEFORE_ANY):
+                continue
+            # #1377 — 첨자 · 위첨자 바로 뒤 닫는 괄호 앞도 막는다(제54항 재추출 2406행). 첨자 토큰이 수식 구간에서 나오며
+            #   (`_unwrap_token_punct`) 접두 `O₂` 가 전체와 맞게 되자 `⠰⠼⠃|⠠⠴⠐⠮` 에 후보가 섰다. 앞 글자가 첨자일 때로만
+            #   좁힌다 — 닫는 괄호 앞 전체(`다.|’` · `㉠|)`)는 이 PR 범위 밖이다(별도 이슈).
+            if rest[:1] and rest[0] in _CLOSERS and head[-1:] in _SCRIPT_CHARS:
                 continue
         if nxt in _NO_BREAK_BEFORE and _HANGUL_OR_JAMO_RE.search(head.rstrip(_CLOSERS)):
             continue
