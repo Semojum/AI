@@ -163,7 +163,7 @@ def main() -> None:
     def call(mode: str, *, data: bytes = pdf, text: str = "", jid: str = "ifchk"):
         return stub.ProcessPage(pb.BrailleRequest(
             job_id=f"{jid}-{mode}", page_no=1, total_pages=1,
-            pdf_data=data, mode=mode, source_text=text), timeout=a.timeout)
+            pdf_data=data, mode=mode, text_data=text), timeout=a.timeout)
 
     # mode c — 전 필드
     c = None
@@ -220,12 +220,12 @@ def main() -> None:
     except grpc.RpcError as e:
         rec("B gRPC", "mode a 응답", False, e.code().name)
 
-    # mode b — source_text 점역
+    # mode b — text_data 점역
     try:
         b = call("b", data=b"", text=SAMPLE_TEXT)
         rec("B gRPC", "mode b 응답", True, b.status)
         got = "".join("".join(e.contents) for e in b.braille_text_list)
-        rec("B gRPC", "  source_text 점역됨", bool(got.strip()), f"{len(got)}자")
+        rec("B gRPC", "  text_data 점역됨", bool(got.strip()), f"{len(got)}자")
         rec("B gRPC", "  수표(⠼) 삽입", "⠼" in got,
             "숫자 2024가 수표를 달았는가 — C5")
         rec("B gRPC", "  bounding_box 없음(설계)", len(b.bounding_box_list) == 0,

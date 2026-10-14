@@ -162,7 +162,7 @@ def main() -> None:
             continue
         req = pb.BrailleRequest(job_id=f"selftest-{run_tag}-{subj}-{pg}", page_no=1,
                                 total_pages=1, pdf_data=pdf.read_bytes(),
-                                mode="c", source_text="")
+                                mode="c", text_data="")
         t0 = time.time()
         try:
             res = stub.ProcessPage(req, timeout=a.timeout)

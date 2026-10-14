@@ -18,7 +18,7 @@ from protos.generated import braille_service_pb2
 
 def _make_request(job_id: str = "test-job") -> braille_service_pb2.BrailleRequest:
     return braille_service_pb2.BrailleRequest(
-        job_id=job_id, page_no=1, total_pages=1, pdf_data=b"", mode="b", source_text="x",
+        job_id=job_id, page_no=1, total_pages=1, pdf_data=b"", mode="b", text_data="x",
     )
 
 
