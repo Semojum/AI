@@ -40,3 +40,10 @@ def test_점자는_제64항_네모_문자로_나간다():
     tag_combining_boxes(els)
     assert translate_tagged_text(els[0]["content"]) == "⠸⠦⠊⠃⠴⠇⠀⠼⠢"
     assert translate_tagged_text(els[1]["content"]) == "⠨⠻⠊⠃"      # 장식 배지는 네모 없이
+
+
+def test_네모_문자_태그만으로는_R13_이_안_붙는다():
+    from app.ai.quality.quality_checker import _r13_reason
+    assert _r13_reason("<!네모글>답<!/네모글> ⑤") is None
+    assert "레이아웃 태그" in _r13_reason("<!상자>보기<!/상자>\nㄱ. 가")       # 테두리 태그는 그대로
+    assert "아라비아 숫자" in _r13_reason("<!네모글>(가)<!/네모글> 12와 34")   # 다른 사유는 그대로

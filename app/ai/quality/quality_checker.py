@@ -40,6 +40,7 @@ from typing import Iterable, Optional
 
 from app.ai.braille.isolation import is_blocked_braille
 from app.ai.braille.number_sign import _TAG_TOKEN_RE, has_number_sign
+from app.ai.braille.tag_names import BOX_CHAR
 from app.schemas.content import BrailleOutput, ExtractedContent, LLMOutput
 from app.schemas.layout import LayoutResult
 from app.schemas.quality import CriticalError, QualityReport, ReviewFlag
@@ -186,12 +187,15 @@ def _r14_reason(text: str) -> str:
 
 _R13_LATIN_RE = re.compile(r"[A-Za-z]")
 _R13_MIN_CHARS = 2
+# 네모 문자 태그는 R13 '레이아웃 태그' 신호에서 뺀다(#1412). 그 신호는 테두리 · 점역자주로 재서 고른 것이고, 네모글만이
+# 사유인 요소는 수정필요가 11.3%(238요소, R2 · nb 팔 근사 실측)로 본문 기준율 24.4% 보다 낮다 — 등급이 아니라 소음이다.
+_R13_BOX_CHAR_RE = re.compile(f"<!/?{BOX_CHAR}>")
 
 
 def _r13_reason(text: str) -> Optional[str]:
     """본문 텍스트 요소의 '위험 구간' 사유(없으면 None). gold 없이 원문만 본다."""
     why: list[str] = []
-    if _TAG_TOKEN_RE.search(text or ""):
+    if _TAG_TOKEN_RE.search(_R13_BOX_CHAR_RE.sub("", text or "")):
         why.append("테두리·점역자주 등 레이아웃 태그")
     if len(_R13_LATIN_RE.findall(text or "")) >= _R13_MIN_CHARS:
         why.append("로마자")
