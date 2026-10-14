@@ -449,6 +449,9 @@ _LINE_HEAD_DOUBLE_O_RE = re.compile(r"(?m)^([ \t]*)◎(?=[ \t])")
 _LINE_HEAD_SQ_RE = re.compile(r"(?m)^[ \t]*□[ \t]")
 _LINE_HEAD_FILLED_SQ_RE = re.compile(r"(?m)^([ \t]*)▣(?=[ \t])")
 _HANGUL_SYL_RE   = re.compile(r"[가-힣]")        # 완성형 한글 음절
+# 로마자 구간을 닫는 한글(제29항 후단 '연이어'). 완성형 음절에 더해 호환 자모(ㄱ~ㆎ)도 닫는다(#1374) — 목록 머리
+#   `ㄱ.` 만 사이에 두고 앞 `(O)` 구간이 열린 채로 남아 뒤 `Ⅰ` 에 로마자표가 빠졌다(dev 001 ans 4구간).
+_HANGUL_LETTER_RE = re.compile(r"[가-힣ㄱ-ㆎ]")
 _LATIN_CHAR_RE   = re.compile(r"[A-Za-z]")       # 로마자 낱글자(줄 문맥 비율 계산용)
 
 
@@ -3093,7 +3096,7 @@ def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
     runs = [m.span() for m in _ENG_RUN_RE.finditer(seg)]
     if not runs:
         # 한글이 끼면 로마자 구간은 닫힌 것으로 본다(제29항 후단 '연이어').
-        if ctx is not None and _HANGUL_SYL_RE.search(seg):
+        if ctx is not None and _HANGUL_LETTER_RE.search(seg):
             ctx.opened = False
         return None
     if ctx is None:
@@ -3113,7 +3116,7 @@ def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
         start, end = span[0][0], span[-1][1]
         if start > last:
             pre = seg[last:start]
-            if _HANGUL_SYL_RE.search(pre):
+            if _HANGUL_LETTER_RE.search(pre):
                 ctx.opened = False
             out.append((_eng_line_gap if ctx.eng_prose else _braillify_korean)(pre))
         body: list[str] = []
@@ -3177,7 +3180,7 @@ def _split_english(seg: str, ctx: "_RomanCtx | None" = None) -> str | None:
             ctx.tail_term = False
         last = end
     if seg[last:]:
-        if _HANGUL_SYL_RE.search(seg[last:]):
+        if _HANGUL_LETTER_RE.search(seg[last:]):
             ctx.opened = False
         out.append((_eng_line_gap if ctx.eng_prose else _braillify_korean)(seg[last:]))
         ctx.tail_term = False
