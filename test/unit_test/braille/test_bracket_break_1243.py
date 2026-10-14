@@ -5,6 +5,8 @@
 뒤가 빈칸인 닫는 괄호 앞(`(1861‖) 한편`)은 종전대로 둔다(수식 줄 강제분리, `_NO_BREAK_BEFORE` 의 까닭).
 #1385 — 닫는 부호 뒤가 빈칸이 아니면 앞 글자가 무엇이든 막는다. 제55항(재추출 2422행)이 줄 첫머리에 올 수 있는 부호를
 빗금 · 줄표 · 물결표로만 꼽는다. 첫 예는 제54항 예문(2412행 묵자)의 한 토막이다.
+#1400 — 빈칸 뒤 닫는 부호(빈 괄호 `( )` · `( ㄴ )`) 앞 빈칸도 막는다. 접두가 빈칸으로 끝나 `_cut_before` 로는 자리를
+못 집으므로 셀 자리를 직접 본다. 영어 2급 `Was`(⠠⠴)는 닫는 괄호와 셀이 같아 묵자로 가른다.
 """
 from __future__ import annotations
 
@@ -45,3 +47,33 @@ def test_스위치를_끄면_종전(monkeypatch, src, head):
 def test_뒤가_빈칸인_닫는_괄호_앞과_여는_괄호_앞은_그대로():
     assert _cut_before("수입되었다(1861) 한편", "수입되었다(1861")
     assert _cut_before("스며들다[스며 나오다]", "스며들다")
+
+
+BLANK = ["가장 알맞은 것은 ( )은 무엇인가", "그 까닭은 ( ㄴ ) 때문이다", "‘ ’ 안에 넣으시오"]
+
+
+def _blank_closer_cuts(src: str) -> list[int]:
+    """빈칸 뒤 닫는 부호 앞 빈칸 줄(그 부호 자리 포함)에 선 끊을 자리."""
+    br = translate_tagged_text(src)
+    c = next(i for i in range(1, len(br)) if br[i - 1] == "⠀" and br.startswith(("⠠⠴", "⠴⠄"), i))
+    j = c
+    while br[j - 1] == "⠀":
+        j -= 1
+    return [b for b in _break_offsets(src, br) if j <= b <= c]
+
+
+@pytest.mark.parametrize("src", BLANK)
+def test_빈칸_뒤_닫는_부호_앞은_안_끊는다(src):
+    assert _blank_closer_cuts(src) == []
+
+
+@pytest.mark.parametrize("src", BLANK)
+def test_빈칸_뒤_닫는_부호_스위치를_끄면_종전(monkeypatch, src):
+    monkeypatch.setenv("BREAK_BRACKET_ATTACH", "0")
+    assert _blank_closer_cuts(src)
+
+
+def test_묵자에_닫는_부호가_없으면_같은_셀이어도_그대로():
+    src = "I think it Was good"                       # 영어 2급 Was = ⠠⠴
+    br = translate_tagged_text(src)
+    assert br.index("⠀⠠⠴") in _break_offsets(src, br)
