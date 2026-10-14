@@ -2221,15 +2221,31 @@ def _unwrap_token_punct(text: str) -> str:
     판정(`_INLINE_SUB_TOKEN_RE` · `_ion_parts`)에서 빠지고 수식 길(제11항 두 칸, 로마자표 없음)로 갔다. 2027 gold 는
     `㉠은 O₂,` = ⠴⠠⠕⠰⠼⠃⠐ · `K⁺(㉠)` = ⠴⠠⠅⠘⠢⠦⠄ 로 로마자표를 적는다(과학 점자 제1항 · 제2항). 토큰마다 따로 감싸
     `O₂를` 과 같은 길로 보낸다. 토큰이 아닌 조각(`f(x)` · `(1, 0)` · `Mg(OH)_{2}`)은 그대로 둔다.
+    ★ 화학식 토큰만 꺼낸다(`_chem_token`). 생물 · 수학 표기(`G₁기` · 넓이 `S₁` · 수열 `a₁`)를 꺼내면 로마자표가 붙는데
+    gold 는 그 자리에 안 적는다(생명과학 Ⅰ 해설 p0027~0029 `㉠(G₁기)` 5곳 · 수학 Ⅰ 해설 p0019 `S₁` 1곳).
     """
     def repl(m: "re.Match[str]") -> str:
         parts = _TOKEN_PUNCT_RE.split(m.group(1))
         toks = parts[0::2]
-        if len(parts) < 2 or not any(toks) or not all(
-                not t or _INLINE_SUB_TOKEN_RE.match(t) or _ion_parts(t) for t in toks):
+        if len(parts) < 2 or not any(toks) or not all(not t or _chem_token(t) for t in toks):
             return m.group(0)
         return "".join((f"<!수식>{p}<!/수식>" if p else "") if k % 2 == 0 else p for k, p in enumerate(parts))
     return _MATH_SPAN_RE.sub(repl, text)
+
+
+def _chem_token(t: str) -> bool:
+    """화학식 토큰인가(#1377). 원소 기호만으로 되어 있고, 이온이거나 · 원소가 둘 이상이거나 · 첨자가 2 이상이다.
+    `O₂` · `CO₂` · `K⁺` 는 참, `G₁`(원소 아님) · `S₁`(홑 원소 첨자 1, 넓이 변수) · `a₁`(소문자)은 거짓."""
+    plain = _ROMAN_WRAP_RE.sub(r"\1", t).replace(" ", "")
+    els = re.findall(r"[A-Z][a-z]?|[a-z]", plain)
+    if not els or not all(e in _kor_math_rules._ELEMENTS for e in els):
+        return False
+    if _ion_parts(t):
+        return True
+    if len(els) < 2 and inline_math.MATH_PAGE.get():
+        return False       # 수식 쪽의 홑 원소 첨자는 변수다(`S₂` 넓이) — `_latex_chem_to_unicode` 와 같은 기준
+    subs = [int(x) for x in re.findall(r"_\{?(\d+)\}?", plain)]
+    return bool(_INLINE_SUB_TOKEN_RE.match(t)) and bool(subs) and (len(els) >= 2 or max(subs) >= 2)
 
 
 def _ion_parts(core: str) -> list[str] | None:
@@ -2319,6 +2335,7 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
                                   for i in range(0, len(parts), 2)),
                           force=force_roman)
     punct_head: set[int] = set()
+    open_tail: set[int] = set()
 
     for i, part in enumerate(parts):
         if i % 2 == 0:  # 일반 텍스트 세그먼트
@@ -2345,6 +2362,8 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
                 _emit_mixed(substituted, text_result, roman_ctx)
                 if part[:1] in ",()[]":
                     punct_head.add(len(chunks))   # 부호로 시작하는 글 조각 — 이온 뒤 한 칸을 안 넣는다(#1377)
+                if part[-1:] in "([":
+                    open_tail.add(len(chunks))    # 여는 괄호로 끝나는 글 조각 — 뒤 이온 앞 한 칸을 안 넣는다(#1377)
                 chunks.append(("t", _collapse_spaces("".join(text_result)),
                                lead_ws, trail_ws))
             else:
@@ -2388,6 +2407,7 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
     # 단 인라인 첨자 토큰(O₂·t₁)은 gold가 두 칸을 쓰지 않으므로 원문 띄어쓰기를 그대로 둔다.
     result_parts: list[str] = []
     prev_kind: str | None = None
+    prev_idx = -1
     pending_ws = False
     for idx, (kind, braille, lead_ws, trail_ws) in enumerate(chunks):
         if not braille:
@@ -2405,8 +2425,10 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
         if prev_kind is not None:
             if kind in ("n", "s") or prev_kind in ("n", "s"):
                 # 이온은 한 칸(과학 제2항 붙임), 홑 기호도 한 칸(제70항·제60항 5호·제15항). 이온 바로 뒤
-                #   쉼표 · 괄호는 붙인다(#1377) — 2027 gold `K⁺(㉠)` = ⠴⠠⠅⠘⠢⠦⠄ · `K⁺,` = ⠴⠠⠅⠘⠢⠐.
-                if not (prev_kind == "n" and idx in punct_head and not lead_ws):
+                #   쉼표 · 괄호와 바로 앞 여는 괄호는 붙인다(#1377) — 2027 gold `K⁺(㉠)` = ⠴⠠⠅⠘⠢⠦⠄ · `K⁺,` = ⠴⠠⠅⠘⠢⠐ ·
+                #   `이온(NH₄⁺)` = ⠕⠷⠦⠄⠴⠠⠝⠠⠓⠰⠼⠙⠘⠢⠠⠴.
+                if not ((prev_kind == "n" and idx in punct_head and not lead_ws)
+                        or (kind == "n" and prev_idx in open_tail and not lead_ws)):
                     result_parts.append("⠀")
             elif kind == "p" or prev_kind == "p":
                 # 단순 수 앞뒤: 묵자 빈칸 그대로(한 칸), 제11항. 단 다음 선택지 번호 앞은 두 칸 —
@@ -2421,7 +2443,7 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
             else:
                 result_parts.append("⠀⠀")
         result_parts.append(braille)
-        prev_kind = kind
+        prev_kind, prev_idx = kind, idx
         pending_ws = trail_ws
 
     braille = "".join(result_parts)

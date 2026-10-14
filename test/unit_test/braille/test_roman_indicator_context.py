@@ -216,3 +216,16 @@ def test_줄머리에_종료표_닫는_괄호가_오는_끊을_자리는_없다(
     for s in ("①  A는 몰가치성, B는 가치 함축성을 띤다.", "㉠은 O₂)를 내보낸다.", "③ T3 시기에 대해"):
         (cells,), (breaks,) = translate_with_breaks(s)
         assert not [b for b in breaks if cells[b] == "⠲" or cells.startswith("⠠⠴", b) or cells[b - 1:b + 1] == "⠞⠼"], (s, cells, breaks)
+
+
+def test_화학식_토큰만_수식_구간에서_꺼낸다():
+    # #1377 — 화학식은 로마자표(과학 제1 · 2항, gold `O₂,` · `이온(NH₄⁺)`), 생물 · 수학 표기는 종전 수식 길.
+    assert "⠴⠠⠕⠰⠼⠃⠐" in translate_tagged_text("㉠은 O₂, ㉡은 CO₂이다.")
+    assert "⠕⠷⠦⠄⠴⠠⠝⠠⠓⠰⠼⠙⠘⠢⠠⠴" in translate_tagged_text("암모늄 이온(NH₄⁺)이 된다")   # gold 생명과학 Ⅰ 해설 p0049
+    assert "⠴⠠⠛⠰⠼⠁" not in translate_tagged_text("㉠(G₁기 또는 G₂기) 시기")        # 세포 주기 표기(gold ⠴ 없음)
+    from app.ai.braille import inline_math
+    tok = inline_math.MATH_PAGE.set(True)
+    try:
+        assert "⠴⠠⠎⠰⠼⠃⠐" not in translate_tagged_text("넓이를 S₂, 부채꼴의 넓이를 S₃이라 하면")  # 수식 쪽 변수
+    finally:
+        inline_math.MATH_PAGE.reset(tok)
