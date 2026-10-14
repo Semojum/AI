@@ -3727,8 +3727,11 @@ def _break_offsets_in(src: str, braille: str) -> list[int]:
             if head[-1:] in _OPENERS:
                 continue
             rest = _TAG_RE.sub("", src[sp:])
+            # #1377 — 닫는 괄호 뒤가 빈칸이 아니면(부호 · 조사 `O₂)를`) 그 앞도 막는다. 뒤가 빈칸인 자리(`(1861‖) 한편`)는
+            #   수식 줄 강제분리 때문에 그대로 둔다(#1243). 첨자 토큰이 수식 구간에서 나오며(`_unwrap_token_punct`) 접두
+            #   `O₂` 가 전체와 맞게 되자 `⠰⠼⠃|⠠⠴⠐⠮` 에 후보가 섰다.
             if (rest[:1] and rest[0] in _CLOSERS and head[-1:].strip()
-                    and rest.lstrip(_CLOSERS)[:1] in _NO_BREAK_BEFORE_ANY):
+                    and rest.lstrip(_CLOSERS)[:1] not in ("", " ", "\n", "\t", "⠀")):
                 continue
         if nxt in _NO_BREAK_BEFORE and _HANGUL_OR_JAMO_RE.search(head.rstrip(_CLOSERS)):
             continue
@@ -3752,6 +3755,11 @@ def _break_offsets_in(src: str, braille: str) -> list[int]:
             end = next((k for k in range(sp, len(src)) if src[k].isspace()), len(src))
             if not braille.startswith(translate_tagged_text(src[sp:end]), n):
                 continue
+        # ★ #1377 — 뒤 셀이 ⠲ 인 자리는 끊지 않는다. 로마자 종료표는 로마자 뒤에 붙고(제29항 재추출 1496행) 마침표는
+        #   앞말에 붙는다. 접두가 전체와 맞아도 그렇다 — `①  A는` 의 접두 `①  A` 가 선택지 줄로 읽혀 `⠴⠠⠁` 가 전체와
+        #   맞자 `⠴⠠⠁|⠲⠉⠵` 에 후보가 섰다.
+        if braille[n:n + 1] == "⠲":
+            continue
         offs.add(n)
     return sorted(offs)
 

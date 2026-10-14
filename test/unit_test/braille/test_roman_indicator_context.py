@@ -202,3 +202,11 @@ def test_기계_태그는_수식_구간에_안_든다() -> None:
     out = translate_tagged_text("<!밑줄>x=1<!/밑줄> 이다")
     assert "⠔⠔⠖" not in out
     assert "⠭⠒⠒⠼⠁" in out
+
+
+def test_줄머리에_종료표_닫는_괄호가_오는_끊을_자리는_없다():
+    # #1377 — 접두가 전체와 맞아도 ⠲(종료표 · 마침표) 앞과, 뒤가 빈칸 아닌 닫는 괄호 앞(제54항 재추출 2406행 · #1243)은 끊지 않는다.
+    from app.ai.braille.translator import translate_with_breaks
+    for s in ("①  A는 몰가치성, B는 가치 함축성을 띤다.", "㉠은 O₂)를 내보낸다."):
+        (cells,), (breaks,) = translate_with_breaks(s)
+        assert not [b for b in breaks if cells[b] == "⠲" or cells.startswith("⠠⠴", b)], (s, cells, breaks)
