@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 
+from app.ai.braille.constants import BREAK_MARK
 from app.ai.braille.symbol_rules import substitute_symbols
 
 # ── C5-critical: 숫자 점자 매핑 ─────────────────────────────────────────
@@ -1183,7 +1184,7 @@ _TIGHT_OPS_RE = re.compile(
 #   바깥 호출의 sentinel이 복원되지 않은 채 지나간다(설계상 정상 — 바깥이 복원한다).
 #   제외하지 않으면 하위 호출의 이 그물이 sentinel을 먹어 한글이 통째로 깨진다
 #   (실측: `\frac{(거리)}{(속력)}` → ⠠⠭⠐⠱⠁·⠈⠎⠐⠕ 가 ⠰⠤·⠤⠄ 로, 수학2 p001).
-_W2C_RESIDUE_RUN_RE = re.compile(r"[^⠀-⣿\s-]+")
+_W2C_RESIDUE_RUN_RE = re.compile(r"[^⠀-⣿\s-" + BREAK_MARK + "]+")   # 끊을 자리 표시(constants)는 formula_braille 가 지운다
 
 
 def _w2c_sweep_residue(result: str) -> str:

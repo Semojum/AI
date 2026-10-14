@@ -54,6 +54,11 @@ BOX_TITLE_PROMOTABLE = frozenset({
 WRAP_HYPHEN_OPEN = "\ufdd0"
 WRAP_HYPHEN_CLOSE = "\ufdd1"
 
+# 수식 끊을 자리 표시(formula_braille `_op_breaks`). LaTeX 의 연산 · 관계 기호 뒤에 넣어 점역하고 점자에서 그 자리를 읽은 뒤
+#   지운다. U+FDD2~FDD4 는 translator · braille_back 이 쓴다. convert_latex 마지막 그물(`_w2c_sweep_residue`)이 비점자로
+#   지우지 않게 거기서 뺀다.
+BREAK_MARK = "\ufdd8"
+
 # 영어 1급(#1189) — 점역사가 문서를 올릴 때 고른다. 기본 False = 지금 동작(2급 약자, 한글 없는 영어 줄은 로마자표 생략).
 #   켜면 약자 없이 글자대로 적고 영어 구간마다 로마자표 ⠴ … 종료표 ⠲ 를 적는다. 「점자 자료 제작 지침」 1.1.2(재추출
 #   240~242행) 영어 약자는 중학교 2학년용 교재부터 · 「점자 도서 제작 지침」 제2장 제4절 1.1)(1) 초급자 자료의 영어
