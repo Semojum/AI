@@ -1549,7 +1549,8 @@ def drop_question_frames(elements: list[dict], rects: list) -> list:
     return keep
 
 
-def tag_boxed_elements(elements: list[dict], rects: list, page_w: float = 1000.0) -> int:
+def tag_boxed_elements(elements: list[dict], rects: list, page_w: float = 1000.0,
+                       titles: dict | None = None) -> int:
     """사각형이 감싼 텍스트 요소 앞뒤에 테두리 태그를 넣는다(in-place). 감싼 상자 수 반환.
 
     ★ **표·그림을 품은 사각형도 글상자다**(「제작 지침」 3장 지문 (4): 지문 속 글상자는
@@ -1562,6 +1563,7 @@ def tag_boxed_elements(elements: list[dict], rects: list, page_w: float = 1000.0
       0개였다. 사각형이 다른 사각형 안에 들면 그 깊이만큼 위계를 올려 태그한다.
 
     ★ `rects`와 `elements`의 bbox는 **같은 좌표계**여야 한다(부르는 쪽 책임).
+    ★ `titles` 는 {사각형 좌표 튜플: 글자층 테두리 제목}(#1414, `box_border_titles_norm`). 제목 요소가 없을 때만 쓴다.
     ★ 감싼 요소가 **읽기순서에서 연속**이어야 태그를 단다. 태그는 첫 요소 앞과 마지막 요소
       뒤에 붙으므로, 중간에 상자 밖 요소가 끼면 그것까지 테두리 안으로 들어간다.
       MinerU는 읽기순서를 다시 매기므로(단 클러스터링·문항번호 이동) 실제로 끊긴다.
@@ -1619,6 +1621,20 @@ def tag_boxed_elements(elements: list[dict], rects: list, page_w: float = 1000.0
         if title_i is not None:
             title = _tag_title(elements[title_i])
             promoted.add(title_i)
+        elif titles and (layer_title := titles.get(tuple(rect), "")):
+            # 글자층 테두리 제목(#1414) — 제목 요소가 없을 때만. 탭이 MinerU 글 블록에 **줄로 섞여 온** 자리(dv 94상자, 001 86)는
+            # 그 줄을 떼어 제목으로 올린다. 안 떼면 `보기` 가 두 번 나가고(1차 A/B 나빠진 10쪽 가운데 9쪽), 뒤 단계 '글상자 제목
+            # 승격'(pipeline `_BOX_TITLE_PROMOTABLE`)은 그 94 가운데 19만 옮겼다. 상자 글이 그 제목 줄 하나뿐이면 종전대로
+            # 뒤 단계에 맡긴다(떼면 몸통이 빈다).
+            hit = next(((i, k) for i in texts for k, ln in enumerate((elements[i].get("content") or "").split("\n"))
+                        if ln.strip() == layer_title), None)
+            if hit is None:
+                title = layer_title
+            elif not (len(texts) == 1 and (elements[hit[0]].get("content") or "").strip() == layer_title):
+                lines = elements[hit[0]]["content"].split("\n")
+                del lines[hit[1]]
+                elements[hit[0]]["content"] = "\n".join(lines)
+                title = layer_title
         first, last = texts[0], texts[-1]
         # 곁단 용어 상자는 테두리 대신 주석으로 적는다(§2.4.7 · 원장 C-77, 기본 끔).
         if _is_sidebar_note(rect, page_w, title, texts):
@@ -1683,6 +1699,51 @@ def _box_title_index(elements: list[dict], rect, blocked) -> int | None:
         if best is None or d < best[0]:
             best = (d, i)
     return best[1] if best else None
+
+
+# 글자층 테두리 제목(#1414) — 위 올리기는 **요소**만 본다. `◀ 보기 ▶` 탭은 작은 글씨라 MinerU 가 요소로 안 내는
+# 일이 잦고(생명과학 7.3pt), 그러면 빈 제목 테두리가 나간다. 제목 요소가 없을 때만 글자층에서 윗변에 걸친 글
+# (글 세로 범위 안에 윗변이 지나감)을 본다. **`보기`(번호 붙은 `보기 N` 포함)만 쓴다.** dev · val 실측(develop
+# ade38fc4, 빈 제목 상자 1,686): 윗변에 걸친 짧은 글 224 가운데 `보기` 153 은 같은 쪽 gold 위 테두리 줄에 전부
+# 있었고(153:0), 그 밖(`예제1~5` · `기본` · `01~06` · `통합` …)은 하나도 없었다(0:71). 끄기 `BOX_TITLE_LAYER=0`.
+_BORDER_TITLE_DECOR_RE = re.compile(r"[◀▶◁▷◆◇■□●○▲△▼▽]")
+_BORDER_TITLE_RE = re.compile(r"보기(?: ?\d{1,2})?")
+
+
+def _border_title(spans: list[tuple[str, list]], rect) -> str:
+    """윗변에 걸친 글자층 글이 `보기`(번호 포함)면 그 글, 아니면 빈 문자열. spans · rect 는 같은 표시 좌표."""
+    x0, top, x1 = rect[0], rect[1], rect[2]
+    hits = [t for t, b in spans if b[1] - 1 <= top <= b[3] + 1 and x0 <= (b[0] + b[2]) / 2 <= x1]
+    title = re.sub(r"\s+", " ", _BORDER_TITLE_DECOR_RE.sub(" ", "".join(hits))).strip()
+    return title if _BORDER_TITLE_RE.fullmatch(title) else ""
+
+
+def box_border_titles_norm(pdf_data: bytes, page_no: int, rects_norm: list) -> list[str]:
+    """0~1000 정규화 사각형마다 글자층 테두리 제목(위 절, 없으면 ""). 실패하면 빈 목록(제목 없이 진행)."""
+    if not rects_norm or os.environ.get("BOX_TITLE_LAYER", "1") == "0":
+        return []
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(_coerce_pdf_bytes(pdf_data))
+            tmp_path = f.name
+        doc = fitz.open(tmp_path)
+        try:
+            page = doc[max(0, min(page_no - 1, doc.page_count - 1))]
+            rot = page.rotation_matrix
+            w, h = page.rect.width or 1, page.rect.height or 1
+            spans = [(s["text"], list(_disp(s["bbox"], rot))) for b in page.get_text("dict")["blocks"]
+                     for ln in b.get("lines", []) for s in ln["spans"] if s["text"].strip()]
+            return [_border_title(spans, [r[0] / 1000 * w, r[1] / 1000 * h, r[2] / 1000 * w, r[3] / 1000 * h])
+                    for r in rects_norm]
+        finally:
+            doc.close()
+    except Exception as exc:  # noqa: BLE001 — 제목은 있으면 좋은 것, 없어도 상자는 나가야 한다
+        logger.warning("글자층 테두리 제목 검출 실패(없이 진행): %s", exc)
+        return []
+    finally:
+        if tmp_path:
+            os.unlink(tmp_path)
 
 
 # 벡터 그림 판정(교과서 지도·도표·그래프는 임베디드 이미지가 아니라 벡터로 그려진다).
