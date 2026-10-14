@@ -1862,6 +1862,11 @@ _TAG_PAIR_MARKER: dict[str, tuple[str, str]] = {
     # 검출은 `pdf_analyzer.char_box_glyphs`(벡터 사각형) — 묵자의 네모가 글자가 아니라
     # 그림이라 추출 텍스트만 보면 문두 지시 `(가)`와 지문 빈칸 `(가)`가 구분되지 않는다.
     _TAGS.BOX_CHAR: ("⠸⠦", "⠴⠇"),
+    # 제56항 [붙임](재추출 2477~2478행) — 색상 · 모양으로 강조된 글자체는 제1점역자 정의 글자체표 ⠐⠤ … ⠤⠂,
+    #   제2점역자 정의 글자체표는 ⠈⠤ … ⠤⠁. 점자 태깅 목록표(63 · 64행)가 색강조 · 취소선에 하나씩 준다. 규정 예문도
+    #   취소된 금액 `15,000원` 에 제2 글자체표를 쓴다(2488행). 앱 삽입 메뉴로만 들어온다(#1382).
+    _TAGS.COLOR_EMPH: ("⠐⠤", "⠤⠂"),
+    _TAGS.STRIKE: ("⠈⠤", "⠤⠁"),
 }
 
 # 테두리(글상자 = 표, NLD-1.2.5) 태그 → 종류. 글리프는 위계별 공용 표(`constants.BOX_LEVELS`)에 있다.
@@ -2138,6 +2143,14 @@ def _promote_literal_tn(text: str) -> str:
     if n[0]:
         logger.info("translator: 리터럴 점역자주 마커 %d개를 태그로 승격", n[0])
     return out
+
+
+_TAG_ALIAS_RE = re.compile(r"<!(/?)(%s)>" % "|".join(map(re.escape, _TAGS.ALIASES)))
+
+
+def normalize_tag_aliases(text: str) -> str:
+    """목록표 태그 이름(`<!밑줄빈칸>` · `<!네모빈칸>`)을 엔진 이름(`<!밑줄>` · `<!네모>`)으로 푼다(#1382)."""
+    return _TAG_ALIAS_RE.sub(lambda m: f"<!{m.group(1)}{_TAGS.ALIASES[m.group(2)]}>", text)
 
 
 def substitute_tags(text: str) -> str:
@@ -3575,6 +3588,7 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     # R-72 — 뒤집힌 닫는 태그(`</!이름>`). 여기에도 두는 이유는 `table_braille` 이
     # 이 함수를 **직접** 부르기 때문이다(표 칸 269건 중 14건). 멱등이라 겹쳐도 무해하다.
     text = _MIRRORED_CLOSE_RE.sub("<!/", text)
+    text = normalize_tag_aliases(text)   # 목록표 이름 `<!밑줄빈칸>` · `<!네모빈칸>` → 엔진 이름(#1382)
     # 기울임 태그(#1205)는 아직 점형이 없다 — 맨 먼저 걷어 점자를 태그 없는 글과 같게 둔다.
     #   UEB 이탤릭(⠨⠂ · ⠨⠶…⠨⠄)은 gold 와 맞댈 묵자 짝이 생기면 단다(gold 이탤릭 242곳이 전부 짝 없는 책).
     text = _TAGS.ITALIC_TAG_RE.sub("", text)
