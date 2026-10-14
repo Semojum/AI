@@ -57,3 +57,15 @@ def test_연립식_행_머리_부호_앞은_그대로_끊는다():
     cells, breaks = _formula(r"\left\{ \begin{array}{l} x + y = 1 \\ - x + y = 3 \end{array} \right.")
     i = cells.index("⠀⠀⠔")
     assert i in breaks and i + 1 in breaks
+
+
+def test_글_안_수식_구간도_제66항_자리에서_끊는다():
+    # #1395 — 글 요소의 끊을 자리는 접두 재점역이라 수식 구간 안에서는 빈칸 자리뿐이었다. 수식 요소와 같은 자리를 낸다.
+    from app.ai.braille.translator import translate_tagged_text, translate_with_breaks
+    text = r"다음 식을 간단히 하시오. $\frac{1}{(x+1)(x+2)(x+3)}+\frac{1}{x+2}$"
+    line1 = ascii_to_unicode("(8x5#a08x5#b08x5#c0)/#a5")    # 재추출 4289~4300행 예문 첫 줄
+    lines, breaks = translate_with_breaks(text)
+    assert lines == [translate_tagged_text(text)]            # 셀은 그대로다
+    k = lines[0].find(line1 + ascii_to_unicode("(x5#b)/#a"))
+    assert k > 0 and k + len(line1) in breaks[0]             # 맨 바깥 + 뒤
+    assert BREAK_MARK not in lines[0]

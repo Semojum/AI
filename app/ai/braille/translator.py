@@ -39,6 +39,7 @@ from app.ai.braille.symbol_rules import (
     substitute_symbols,
 )
 from app.ai.braille import tag_names as _TAGS
+from app.ai.braille.formula_braille import formula_breaks
 from app.ai import gates as _gates          # 관문 G3 — 무거운 의존 없음(gates 도크스트링)
 
 # 수식 변환 기억(#1323). `_break_offsets` 가 음절 자리마다 접두를 다시 점역하는 동안만 켠다. 그 안에서는 문맥(요청 깃발 ·
@@ -49,6 +50,9 @@ _LATEX_MEMO: contextvars.ContextVar[dict | None] = contextvars.ContextVar("_LATE
 #   접두에 걸지 않는다 — 접두 `①  A` 가 선택지 줄로 읽혀 `⠴⠠⠁` 가 되면 전체 `①  A는…` 의 머리와 맞아 `⠴⠠⠁‖⠲⠉⠵`
 #   (줄머리 종료표) · `③ T‖3` 에 후보가 섰다.
 _BREAK_PROBE: contextvars.ContextVar[bool] = contextvars.ContextVar("_BREAK_PROBE", default=False)
+# 줄 점역이 낸 수식 조각 `(LaTeX, 셀)`(#1395). `translate_with_breaks` 가 줄마다 켜고, `_break_offsets` 접두 재점역은 안 적는다.
+#   끊을 자리를 접두 재점역으로 찾으면 수식 구간 안에서 자른 접두는 `<!수식>` 짝이 깨져 자리가 다 빠진다.
+_MATH_SPANS: contextvars.ContextVar[list | None] = contextvars.ContextVar("_MATH_SPANS", default=None)
 
 
 def convert_latex(latex: str) -> str:
@@ -2427,8 +2431,11 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
             else:
                 # "s" = 홑 기호(제70항·제60항 5호·제15항 한 칸). 그 밖은 "f"(제11항 두 칸).
                 simple = _SIMPLE_NUM_MATH_RE.fullmatch(core)
-                chunks.append(("p" if simple else "s" if _LONE_SPACED_SYM_RE.match(core) else "f",
-                               convert_latex(part), False, False))
+                kind = "p" if simple else "s" if _LONE_SPACED_SYM_RE.match(core) else "f"
+                chunks.append((kind, convert_latex(part), False, False))
+                spans = _MATH_SPANS.get()
+                if kind == "f" and spans is not None and not _BREAK_PROBE.get():
+                    spans.append((part, chunks[-1][1]))
 
     # 수학 점자 규정 제11항: 수식 앞뒤 두 칸 공백(⠀⠀).
     # 단 인라인 첨자 토큰(O₂·t₁)은 gold가 두 칸을 쓰지 않으므로 원문 띄어쓰기를 그대로 둔다.
@@ -4117,11 +4124,32 @@ def translate_with_breaks(text: str, *, force_roman: bool = False,
     lines: list[str] = []
     breaks: list[list[int]] = []
     for src_line in text.split("\n"):
-        braille = translate_tagged_text(src_line, force_roman=force_roman,
-                                        qnum_period=qnum_period)
+        spans: list[tuple[str, str]] = []
+        token = _MATH_SPANS.set(spans)
+        try:
+            braille = translate_tagged_text(src_line, force_roman=force_roman,
+                                            qnum_period=qnum_period)
+        finally:
+            _MATH_SPANS.reset(token)
         lines.append(braille)
-        breaks.append(_break_offsets(src_line, braille))
+        breaks.append(_math_span_breaks(braille, _break_offsets(src_line, braille), spans))
     return (lines or [""], breaks or [[]])
+
+
+def _math_span_breaks(braille: str, offs: list[int], spans: list[tuple[str, str]]) -> list[int]:
+    """수식 구간 안 끊을 자리를 수식 요소와 같게 바꾼다(#1395). 「한국 점자 규정」 수학 점자 제66항(재추출 4287~4288행)
+    사칙연산 · 등호 · 분수표 뒤(`formula_braille.formula_breaks`). 접두 재점역(`_break_offsets`)은 수식 구간 안에서
+    빈칸 자리만 내서 빈칸 없는 긴 수식이 32칸째에서 잘렸다(수학 Ⅰ 글 · 목록 요소 71곳). 조각 셀을 줄에서 차례로 찾아
+    그 안쪽 자리만 갈아 끼운다. 못 찾은 조각(뒤 단계가 셀을 바꾼 것)은 종전 자리를 둔다."""
+    out, at = set(offs), 0
+    for latex, cells in spans:
+        k = braille.find(cells, at)
+        if k < 0 or len(cells) < 2:
+            continue
+        inner = formula_breaks(latex, cells)
+        out = {b for b in out if not k < b < k + len(cells)} | {k + b for b in inner if 0 < b < len(cells)}
+        at = k + len(cells)
+    return sorted(out)
 
 
 def _line_head_bullet(line: str) -> str:
