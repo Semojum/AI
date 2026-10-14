@@ -293,7 +293,7 @@ _INLINE_MATH_RE = re.compile(
 _NUMBER_RE       = re.compile(r"-?\d+(?:[.,]\d+)*")
 _ALPHA_RUN_RE    = re.compile(r"[A-Za-z]+")
 _BRAILLE_RE      = re.compile(r"[⠀-⣿]+")
-_BRACKET_CELLS_RE = re.compile("⠦⠄|⠠⠴|⠦⠆|⠰⠴")      # 여는 · 닫는 소괄호 · 대괄호(문장 부호 표)
+_OPEN_BRACKET_RE = re.compile("⠦⠄|⠦⠆")      # 여는 소괄호 · 대괄호(문장 부호 표)
 # 두 칸 이상 빈칸 = 항목 구분 부호(지침 3장 3절 4)(3)① 선택지 사이 · 6)(1) 표의 셀 사이).
 # braillify가 한 칸으로 뭉개고(_safe_to_unicode) _collapse_spaces가 또 한 번 뭉갠다.
 # _safe_to_unicode는 이 자리를 _GAP_MARK로 찍어 두고, _collapse_spaces가 모드전환
@@ -851,10 +851,12 @@ def _emit_mixed(text: str, result: list[str], ctx: "_RomanCtx | None" = None) ->
             if pre:
                 result.append(_seg(pre, text[i:]))
             result.append(text[i:j])
-            if ctx is not None and _BRACKET_CELLS_RE.search(text[i:j]):
-                # 괄호 · 따옴표가 로마자 구간을 닫는다(제34항 재추출 1709행: 묶이면 종료표를 적지 않는다). 다음 묶음의
-                #   로마자는 새로 로마자표를 적는다(#1377). 제29항 후단 '연이어'에 묶음을 넘는 경우는 조항에 없어
-                #   2027 gold 를 따른다: 둘째 괄호 이름표 17/17 · `[A]~[E]` = …⠦⠆⠴⠠⠑⠰⠴ · `A(DNA)` = ⠴⠠⠁⠦⠄⠴⠠⠠⠙⠝⠁.
+            if ctx is not None and _OPEN_BRACKET_RE.search(text[i:j]):
+                # 여는 괄호 · 대괄호가 새 묶음을 연다(#1377). 묶인 로마자는 종료표 대신 괄호로 닫히므로(제34항 재추출
+                #   1709행) 새 묶음 안의 로마자는 로마자표를 새로 적는다. 제29항 후단 '연이어'에 묶음을 넘는 경우는 조항에
+                #   없어 2027 gold 를 따른다: 둘째 괄호 이름표 17/17 · `[A]~[E]` = …⠦⠆⠴⠠⠑⠰⠴ · `A(DNA)` = ⠴⠠⠁⠦⠄⠴⠠⠠⠙⠝⠁.
+                #   닫는 괄호에서는 닫지 않는다 — `(i) a+b>1인` 의 a 를 gold 는 ⠴ 없이 적는다(수학 Ⅰ 해설 p0021, 수식 속
+                #   로마자). 그 갈래(본문 속 수식 · 유전 표기)는 #1376 이 맡는다.
                 ctx.opened = False
             last = i = j
     tail = text[last:]
