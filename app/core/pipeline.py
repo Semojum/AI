@@ -422,6 +422,8 @@ _EXTRACT_ENV = (
     "TABLE_LAYER_CTRL",                                                                # #1148 표 경로 층 글의 제어 문자 띄움
     "TABLE_CELL_PIECES",                                                               # #1208 긴 칸 층 조각 대조
     "TABLE_CELL_CIRCLED_DIGIT",                                                        # #1210 표 칸 ㉠ → 민 숫자 되돌리기
+    "TABLE_CELL_CIRCLED_ANY",                                                          # #1403 위 되돌리기를 ① · ⓐ · ➊ 와 두 자리 수로
+    "TABLE_CELL_LONE_CIRCLED",                                                         # #1403 숫자만 든 표 칸 → 원문자
     "TABLE_MISREAD_FIX",                                                               # #1296 포기한 표의 한 음절 오독 고치기
     "TABLE_CELL_SPLIT",                                                                # #1317 표 칸 교정을 칸 단위로(실패 칸만 버림)
     "LAYER_LENGTH_MARK",                                                               # #1222 긴소리표 ː 를 층 관문에서 안 셈
