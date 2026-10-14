@@ -39,7 +39,7 @@ class PageTask(BaseModel):
             job_id=req.job_id,
             page_no=req.page_no,
             total_pages=req.total_pages or 1,
-            pdf_data=req.pdf_data,
+            pdf_data=req.pdf_data or _image_pdf(getattr(req, "image_data", b"")),
             advanced_ai=bool(getattr(req, "advanced_ai", False)),
             korean_grade1=_grade(getattr(req, "korean_grade", 0)) == 1,
             english_grade1=_grade(getattr(req, "english_grade", 0)) == 1,
@@ -47,6 +47,27 @@ class PageTask(BaseModel):
             mode=req.mode.lower() if req.mode else "c",
             source_text=getattr(req, "text_data", "") or "",
         )
+
+
+def _image_pdf(data: bytes) -> bytes:
+    """쪽 이미지(V4 정본 8, png · jpeg) → 한 쪽 PDF(#1384). 빈 값은 빈 값이다.
+
+    mode a 소비처(텍스트 층 · 라우팅 · MinerU · 환각 검사 등 15곳)는 전부 `pdf_data` 를 제 DPI 로 렌더하므로
+    감싸기만 하면 고치지 않고 돈다. 텍스트 층이 없으니 스캔 쪽 길(MinerU)을 탄다. 품질도 스캔 PDF 수준이다.
+    MinerU 의 이미지 입력(`images_bytes_to_pdf_bytes`)과 같은 꼴로 감싼다: 사진 방향(EXIF)을 바로잡고
+    200 DPI(MinerU 렌더 DPI 와 같아 1:1) · JPEG 95 로 적는다. 못 푸는 바이트는 예외 → 서버가 "요청 파싱 실패".
+    ⚠ fitz 의 `convert_to_pdf()` 로 바꾸지 말 것. EXIF 방향을 무시하고, DPI 가 없으면 96 으로 봐 쪽이 약 2배가 된다.
+    """
+    if not data:
+        return b""
+    from io import BytesIO
+
+    from PIL import Image, ImageOps
+
+    buf = BytesIO()
+    ImageOps.exif_transpose(Image.open(BytesIO(data))).convert("RGB").save(
+        buf, format="PDF", resolution=200, quality=95, subsampling=0)
+    return buf.getvalue()
 
 
 def _grade(v: int) -> int:

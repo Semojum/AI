@@ -1759,6 +1759,11 @@ def _halluc_signs(text: str, layer) -> list[str]:
     if not (lat or cjk or rep):
         return []
     lay = layer() if callable(layer) else layer
+    if not lay.strip():
+        # 층이 빈 쪽(이미지 입력 · 글자를 윤곽선으로 바꾼 PDF, #1384)은 로마자 낱말을 맞댈 데가 없어 영어 · 로마자 표기가 전부 걸린다.
+        # 그런 요소엔 R13 이 이미 붙으므로 로마자 낱말만 뺀다. 한자 · 되풀이는 그대로 본다. 층 없는 쪽에서 MinerU 가 자모를 한자로
+        # 읽고(人 · 乚 · 卄), 한자는 점역에서 소리 없이 빠져 점역사가 자리를 못 찾는다(아래 #1274 절). 언매 p0022 이미지 실측(#1384 PR).
+        lat = []
     return sorted({w for w in lat if _halluc_norm(w) not in lay}
                   | {c for c in cjk if c not in lay and _HALLUC_CJK_VARIANT.get(c, c) not in lay}
                   | {m.group(0)[:12] for m in rep if _halluc_norm(m.group(0)) not in lay})
