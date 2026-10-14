@@ -3,9 +3,8 @@
 import uuid
 
 import app.ai.braille.translator  # noqa: F401 — 제품처럼 convert_latex 마지막 그물(_w2c)을 켠다
-from app.ai.braille.constants import BREAK_MARK
 from app.ai.braille.formula_braille import FormulaBraille
-from app.ai.braille.kor_math_rules import convert_latex
+from app.ai.braille.kor_math_rules import BREAK_MARK, convert_latex
 from app.ai.braille.layout_braille import _wrap_line
 from app.schemas.content import LLMOutput
 from app.utils.braille_ascii import ascii_to_unicode

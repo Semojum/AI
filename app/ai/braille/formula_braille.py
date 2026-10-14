@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import re
 
-from app.ai.braille.constants import BREAK_MARK as _MARK
 from app.ai.braille.isolation import BLOCKED_TEXT_PREFIXES, blocked_braille, safe_translate
-from app.ai.braille.kor_math_rules import convert_latex, latex_rule_ids
+from app.ai.braille.kor_math_rules import BREAK_MARK as _MARK, convert_latex, latex_rule_ids
 from app.ai.braille.regulations import make_rule
 from app.schemas.content import BrailleOutput, LLMOutput
 
