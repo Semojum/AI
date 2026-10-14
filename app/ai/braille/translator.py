@@ -293,6 +293,7 @@ _INLINE_MATH_RE = re.compile(
 _NUMBER_RE       = re.compile(r"-?\d+(?:[.,]\d+)*")
 _ALPHA_RUN_RE    = re.compile(r"[A-Za-z]+")
 _BRAILLE_RE      = re.compile(r"[⠀-⣿]+")
+_BRACKET_CELLS_RE = re.compile("⠦⠄|⠠⠴|⠦⠆|⠰⠴")      # 여는 · 닫는 소괄호 · 대괄호(문장 부호 표)
 # 두 칸 이상 빈칸 = 항목 구분 부호(지침 3장 3절 4)(3)① 선택지 사이 · 6)(1) 표의 셀 사이).
 # braillify가 한 칸으로 뭉개고(_safe_to_unicode) _collapse_spaces가 또 한 번 뭉갠다.
 # _safe_to_unicode는 이 자리를 _GAP_MARK로 찍어 두고, _collapse_spaces가 모드전환
@@ -667,6 +668,10 @@ def _braillify(text: str) -> str:
 #     한글 ≥50%  : gold가 ⠴ 편 dev 42:1 · val 187:26
 #   한글이 거의 없는 줄은 사실상 외국어 지문이라 제29항 [다만]에 가깝다.
 _ROMAN_LINE_HANGUL_MIN = 0.2
+# 선택지 줄(`① A` · `③ A, C`)은 한국어 문항의 한 줄이다(#1377). 줄에 한글이 없어도 제29항 [다만](문단 전체가 로마자)이
+#   아니라 2027 gold 가 로마자표를 적는다(같은 문장 맞대기 5/5, 반례 0). **대문자 이름표만** 든 줄로 좁힌다 —
+#   영어 낱말 선택지(`① apple`)는 영어 지문 갈래라 건드리지 않는다.
+_CHOICE_LABEL_LINE_RE = re.compile(r"^\s*[①-⑳❶-❿]\s*[A-Z]{1,3}(?:\s*,\s*[A-Z]{1,3})*\s*$")
 
 
 class _RomanCtx:
@@ -685,8 +690,9 @@ class _RomanCtx:
         # 그대로 적용되는 자리(translate_plain). 근거는 gold 페이지행 실측이다:
         # '로마숫자 + 숫자' 꼬리말 5,318건 중 로마자표를 붙인 것이 4,776건(89.8%).
         # 본문은 건드리지 않는다 — 거기 문턱값 0.2 는 따로 측정된 값이다(위 주석).
-        self.has_hangul = han > 0 or force
-        self.hangul_ratio = 1.0 if force else (han / (han + lat) if (han + lat) else 0.0)
+        choice = bool(_CHOICE_LABEL_LINE_RE.match(text))
+        self.has_hangul = han > 0 or force or choice
+        self.hangul_ratio = 1.0 if (force or choice) else (han / (han + lat) if (han + lat) else 0.0)
         # 이 줄에서 로마자 구간이 이미 열렸는가(제29항 후단 — 첫 로마자 앞에만 ⠴).
         self.opened = False
         # 직전 `_split_english` 가 **세그 맨 끝에** 종료표 ⠲ 를 적었는가(#917, `_emit_mixed` 가 읽는다).
@@ -845,6 +851,11 @@ def _emit_mixed(text: str, result: list[str], ctx: "_RomanCtx | None" = None) ->
             if pre:
                 result.append(_seg(pre, text[i:]))
             result.append(text[i:j])
+            if ctx is not None and _BRACKET_CELLS_RE.search(text[i:j]):
+                # 괄호 · 따옴표가 로마자 구간을 닫는다(제34항 재추출 1709행: 묶이면 종료표를 적지 않는다). 다음 묶음의
+                #   로마자는 새로 로마자표를 적는다(#1377). 제29항 후단 '연이어'에 묶음을 넘는 경우는 조항에 없어
+                #   2027 gold 를 따른다: 둘째 괄호 이름표 17/17 · `[A]~[E]` = …⠦⠆⠴⠠⠑⠰⠴ · `A(DNA)` = ⠴⠠⠁⠦⠄⠴⠠⠠⠙⠝⠁.
+                ctx.opened = False
             last = i = j
     tail = text[last:]
     if tail:
@@ -2189,6 +2200,28 @@ _ROMAN_WRAP_RE = re.compile(r"\\(?:mathrm|rm|text)\s*\{([^{}]*)\}")
 _ION_JOIN_RE = re.compile(r"(?<=\})-(?=[A-Z])")
 
 
+_MATH_SPAN_RE = re.compile(r"<!수식>(.*?)<!/수식>", re.DOTALL)
+_TOKEN_PUNCT_RE = re.compile(r"(\s*,\s*|[()])")
+
+
+def _unwrap_token_punct(text: str) -> str:
+    """수식 조각이 첨자 토큰 · 이온과 `,` `(` `)` 만으로 되어 있으면 부호를 조각 밖으로 꺼낸다(#1377).
+
+    `inline_math.wrap` 이 뒤 쉼표 · 괄호까지 구간에 넣어(`<!수식>O_{2},<!/수식>` · `K^{+}(` · `O_{2}, CO_{2}`) 첨자 토큰
+    판정(`_INLINE_SUB_TOKEN_RE` · `_ion_parts`)에서 빠지고 수식 길(제11항 두 칸, 로마자표 없음)로 갔다. 2027 gold 는
+    `㉠은 O₂,` = ⠴⠠⠕⠰⠼⠃⠐ · `K⁺(㉠)` = ⠴⠠⠅⠘⠢⠦⠄ 로 로마자표를 적는다(과학 점자 제1항 · 제2항). 토큰마다 따로 감싸
+    `O₂를` 과 같은 길로 보낸다. 토큰이 아닌 조각(`f(x)` · `(1, 0)` · `Mg(OH)_{2}`)은 그대로 둔다.
+    """
+    def repl(m: "re.Match[str]") -> str:
+        parts = _TOKEN_PUNCT_RE.split(m.group(1))
+        toks = parts[0::2]
+        if len(parts) < 2 or not any(toks) or not all(
+                not t or _INLINE_SUB_TOKEN_RE.match(t) or _ion_parts(t) for t in toks):
+            return m.group(0)
+        return "".join((f"<!수식>{p}<!/수식>" if p else "") if k % 2 == 0 else p for k, p in enumerate(parts))
+    return _MATH_SPAN_RE.sub(repl, text)
+
+
 def _ion_parts(core: str) -> list[str] | None:
     """이온 하나 또는 붙임표로 이은 이온들이면 조각 목록, 아니면 None."""
     plain = _ROMAN_WRAP_RE.sub(r"\1", core).replace(" ", "")
@@ -2275,6 +2308,7 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
     roman_ctx = _RomanCtx("".join(_RESIDUAL_BANG_TAG_RE.sub("", parts[i])
                                   for i in range(0, len(parts), 2)),
                           force=force_roman)
+    punct_head: set[int] = set()
 
     for i, part in enumerate(parts):
         if i % 2 == 0:  # 일반 텍스트 세그먼트
@@ -2299,6 +2333,8 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
                     substitute_symbols(_hold_eng_punct(preprocessed))))
                 text_result: list[str] = []
                 _emit_mixed(substituted, text_result, roman_ctx)
+                if part[:1] in ",()[]":
+                    punct_head.add(len(chunks))   # 부호로 시작하는 글 조각 — 이온 뒤 한 칸을 안 넣는다(#1377)
                 chunks.append(("t", _collapse_spaces("".join(text_result)),
                                lead_ws, trail_ws))
             else:
@@ -2343,7 +2379,7 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
     result_parts: list[str] = []
     prev_kind: str | None = None
     pending_ws = False
-    for kind, braille, lead_ws, trail_ws in chunks:
+    for idx, (kind, braille, lead_ws, trail_ws) in enumerate(chunks):
         if not braille:
             pending_ws = pending_ws or lead_ws or trail_ws
             continue
@@ -2358,8 +2394,10 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
             braille = "⠴" + braille
         if prev_kind is not None:
             if kind in ("n", "s") or prev_kind in ("n", "s"):
-                # 이온은 한 칸(과학 제2항 붙임), 홑 기호도 한 칸(제70항·제60항 5호·제15항)
-                result_parts.append("⠀")
+                # 이온은 한 칸(과학 제2항 붙임), 홑 기호도 한 칸(제70항·제60항 5호·제15항). 이온 바로 뒤
+                #   쉼표 · 괄호는 붙인다(#1377) — 2027 gold `K⁺(㉠)` = ⠴⠠⠅⠘⠢⠦⠄ · `K⁺,` = ⠴⠠⠅⠘⠢⠐.
+                if not (prev_kind == "n" and idx in punct_head and not lead_ws):
+                    result_parts.append("⠀")
             elif kind == "p" or prev_kind == "p":
                 # 단순 수 앞뒤: 묵자 빈칸 그대로(한 칸), 제11항. 단 다음 선택지 번호 앞은 두 칸 —
                 #   제64항 예(2585~2586행) `① ㄱ, ㄴ  ② ㄱ, ㄷ` 의 선택지 사이(묵자가 한 칸이어도).
@@ -3546,6 +3584,7 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     text = _space_hangul_operators(text)  # 제46항 — 수식 라우팅보다 먼저(#938)
     text = _attach_length_mark(text)      # 제63항 — 긴소리표 앞뒤 붙임(#1222)
     text = inline_math.wrap(text)
+    text = _unwrap_token_punct(text)       # 첨자 토큰 · 이온 조각에 묻은 , ( ) 를 꺼낸다(#1377)
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     text = sanitize_for_braille(text)        # PUA·제어문자 정화(요소 전체 소실 방지)
     # ★ #1067 — 유니코드 공백 구분자(Zs)가 셀열에 남으면 빈칸 셀로 바꾼다. 영어 낱말이 섞인 경로가 원문의
