@@ -78,6 +78,23 @@ def test_스위치를_끄면_종전(monkeypatch):
     assert _cut_before("세포, □□, □□, 기관", "세포, □□")       # 종전: 한글 뒤만 막았다
 
 
+# 묵자에 없는 ⠲(로마자 종료표 · 문항 번호 뒤 마침표 · 줄임표 뒤 마침표)는 셀 자리를 직접 본다(#1385).
+TERM_SRCS = ["기자: A가 필요한 이유는", "1 (가) 왕조에 대한", "학생: 어……. (잠시 생각하다가)"]
+
+
+def test_앞_셀에_붙은_종료표_마침표_앞은_안_끊는다():
+    for src in TERM_SRCS:
+        br = translate_tagged_text(src)
+        assert br.index("⠲") not in _break_offsets(src, br), src
+
+
+def test_종료표_스위치를_끄면_종전(monkeypatch):
+    monkeypatch.setenv("BREAK_PUNCT_ANY", "0")
+    for src in TERM_SRCS:
+        br = translate_tagged_text(src)
+        assert br.index("⠲") in _break_offsets(src, br), src
+
+
 # ── ② 좌표 셈 ────────────────────────────────────────────────────────────
 
 def test_좌표는_들임과_실제_구분자_길이로_센다():
