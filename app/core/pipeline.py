@@ -431,6 +431,7 @@ _EXTRACT_ENV = (
     "HANCOM_FRACTION",                                                                 # #1055 한컴 작은 수 분수 풀기
     "ITALIC_TAG",                                                                      # #1205 영어 줄 기울임 태그
     "BADGE_LABEL",                                                                     # C-144 줄 머리 배지 라벨 괄호
+    "BOX_CHAR_COMBINING",                                                              # #1412 결합 네모 U+20DE → 네모 문자
     "ZERO_FOOT_PAGE_NUMBER",                                                           # #1247 ZERO 꼬리말 쪽 번호 떼기
     "SEMOJUM_NO_CAPTION", "CAPTION_MATERIAL", "CAPTION_UPSCALE", "CAPTION_FAIL_STREAK_LIMIT",
     "LLM_TEXT_GUARD", "LLM_CACHE_MODE", "SIDEBAR_AS_NOTE", "GRAFT_SIM_MIN",
@@ -1337,6 +1338,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         extract_text_blocks,
         mark_glyphs_norm,
         tag_char_boxes,
+        tag_combining_boxes,
         regroup_boxed,
         tag_answer_marks,
         tag_boxed_elements,
@@ -1489,6 +1491,9 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
                       for t, r in cboxes]
         if n := tag_char_boxes(elements, cboxes):
             logger.info("네모 문자 %d개 태깅 (page=%d)", n, task.page_no)
+        # 글자층 결합 네모 `답⃞`(U+20DE)로 적힌 네모 문자(#1412) — 그린 사각형이 아니라 위 검출에 안 잡힌다.
+        if n := tag_combining_boxes(elements):
+            logger.info("결합 네모 문자 %d개 태깅 (page=%d)", n, task.page_no)
 
         # 놓친 그림 회수 — 앞단이 시각 요소를 **0개** 낸 쪽만 비전 모델로 다시 본다.
         # 평가 실측: 시각 요소가 0인 26쪽에서 우리가 gold의 1%만 쓴다(프롬프트로는 안 움직인다).
