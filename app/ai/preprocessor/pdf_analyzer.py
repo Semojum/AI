@@ -1336,6 +1336,33 @@ def tag_char_boxes(elements: list[dict], boxes: list) -> int:
     return n
 
 
+# ── 결합 네모 U+20DE 로 적힌 네모 문자(#1412 · 규정 제64항 · 원장 C-16-2 · C-16-3) ──────────────
+# 위 검출은 그린 사각형만 본다. 그런데 수학Ⅰ 해설의 정답 표시 `답` 네모는 그림이 아니라 글자층의 결합 문자
+# U+20DE(COMBINING ENCLOSING SQUARE)다(`답⃞ ⑤`). 번역기는 이 글자를 보이지 않는 조합 문자로 지운다
+# (`translator._ZEROWIDTH_RE`) — 그래서 네모가 점자에서 사라졌다.
+# 묵자 글자층 실측(홀드아웃 뺌): U+20DE 는 두 꼴뿐이다.
+#   · 한 글자가 홀로 네모 `답⃞` — 수학Ⅰ 해설 181번. gold 는 제64항대로 `⠸⠦⠊⠃⠴⠇`.
+#   · 네모 글자가 이어져 한 낱말 `정⃞답⃞` — 생활과 윤리 본문 71 · 사회문화 본문 48번. gold 는 네모 없이 `정답`
+#     (C-16-3 장식 배지와 같은 판단).
+# 그래서 **홀로 선 한 글자 네모만** 네모 문자 태그로 바꾸고, 낱말을 이룬 것은 그대로 둔다(번역기가 지금처럼 지운다).
+# 번역기는 건드리지 않는다(엔진 규칙). 끄기 `BOX_CHAR_COMBINING=0`.
+_COMBINING_BOX_RE = re.compile("(?<![가-힣⃞])([가-힣])⃞(?![가-힣]⃞)")
+
+
+def tag_combining_boxes(elements: list[dict]) -> int:
+    """글 요소에서 홀로 선 결합 네모 `X⃞` 를 `<!네모글>X<!/네모글>` 로 바꾼다(in-place, 위 절). 바꾼 개수 반환."""
+    if os.environ.get("BOX_CHAR_COMBINING", "1") == "0":
+        return 0
+    rep = f"<!{TAG_BOX_CHAR}>\\1<!/{TAG_BOX_CHAR}>"
+    n = 0
+    for el in elements:
+        if el.get("type") not in ("text", "list_item", "title") or "⃞" not in (el.get("content") or ""):
+            continue
+        el["content"], k = _COMBINING_BOX_RE.subn(rep, el["content"])
+        n += k
+    return n
+
+
 def box_rects_norm(pdf_data: bytes, page_no: int) -> list[list[float]]:
     """글상자 후보를 **0~1000 정규화** 좌표로 돌려준다.
 
