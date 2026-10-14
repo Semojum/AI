@@ -48,7 +48,11 @@ def _run(mode: str, content: str = TABLE, etype: str = "table", elements: list |
          "elements": elements or [{"id": str(uuid4()), "order": 1, "type": etype, "content": content}]},
         DocumentMeta(pdf_confidence=1.0, routing_tier="ZERO"))
     try:
-        return asyncio.run(pipeline.run(PageTask(job_id=job, page_no=1, mode=mode)))
+        # 깐 경계를 쓰게 재사용 스위치를 이 시험이 직접 켠다(#1390). 안 켜면 재파생으로 빠져 빈 pdf_data 로 C1 이 난다.
+        #   종전엔 다른 모듈(corpus_runner · demo_runner) import 의 setdefault 에 기대 전체 실행에서만 통과했다.
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("SEMOJUM_MEASURE_REUSE", "1")
+            return asyncio.run(pipeline.run(PageTask(job_id=job, page_no=1, mode=mode)))
     finally:
         shutil.rmtree(AI / f"storage/jobs/{job}", ignore_errors=True)
 
