@@ -4144,6 +4144,8 @@ def _math_span_breaks(braille: str, offs: list[int], spans: list[tuple[str, str]
     out, at = set(offs), 0
     for latex, cells in spans:
         k = braille.find(cells, at)
+        while k > 0 and braille[k - 1] not in " ⠀":   # 수식 조각은 빈칸 뒤에 선다(제11항). 앞 글 조각의 같은 셀(`×7!`)을 건넌다
+            k = braille.find(cells, k + 1)
         if k < 0 or len(cells) < 2:
             continue
         inner = formula_breaks(latex, cells)
