@@ -1793,9 +1793,24 @@ def _halluc_struct_signs(content: str, kind: str, layer) -> list[str]:
         return _halluc_signs(_HTML_TAG_RE.sub(" ", content or ""), layer)
     cjk = set(_HALLUC_CJK_RE.findall(content or ""))
     if not cjk:
+        return _circ_josa_signs(content, layer)
+    lay = layer() if callable(layer) else layer
+    return sorted(c for c in cjk if c not in lay and _HALLUC_CJK_VARIANT.get(c, c) not in lay) + _circ_josa_signs(content, lay)
+
+
+# #1352 — MinerU 가 수식 뒤 조사 '이'(이고 · 이므로 · 이다)를 `\circ |` 로 읽는다. 점역하면 합성 기호 ∘(「수학 점자」 제15항
+#   5호 ⠸⠴)가 찍히고 조사는 빠진다. 글 요소의 `$…$` 는 위 글 검사가 LaTeX 명령을 걷어 내 못 봤다(생명과학 해설 7요소,
+#   `$d_{4} \circ | \tau |$` = 묵자 'd₄이다'). 수식 요소도 한자가 같이 나온 것만 걸렸다(`\circ |` 16요소 중 14).
+#   쪽 층에 ∘(U+2218)가 있으면 진짜 합성일 수 있어 뺀다.
+_CIRC_JOSA_RE = re.compile(r"\\circ\s*\|")
+
+
+def _circ_josa_signs(content: str, layer) -> list[str]:
+    """`\\circ |` 꼴(위 절)이 있고 쪽 층에 ∘ 가 없으면 신호 하나."""
+    if not _CIRC_JOSA_RE.search(content or ""):
         return []
     lay = layer() if callable(layer) else layer
-    return sorted(c for c in cjk if c not in lay and _HALLUC_CJK_VARIANT.get(c, c) not in lay)
+    return [] if "∘" in lay else ["\\circ|"]
 
 
 def _length_mark_mixed(plain: str) -> bool:
@@ -1857,10 +1872,10 @@ def _native_or_flag(fitz_page: fitz.Page, bbox: list[float], mineru_text: str, p
 
     page_layer 는 쪽 원본 층을 돌려주는 함수다(쪽당 한 번 만든다).
     """
-    signs = _halluc_signs(mineru_text, page_layer) if _HALLUC_RULE else []
+    signs = _halluc_signs(mineru_text, page_layer) + _circ_josa_signs(mineru_text, page_layer) if _HALLUC_RULE else []
     flat = bool(signs) and "$" not in mineru_text and "\\" not in mineru_text      # LaTeX 없는 요소만 덮는다(①)
     text = _native_override(fitz_page, bbox, mineru_text, page_layer() if flat else None) or mineru_text
-    return text, bool(signs) and bool(_halluc_signs(text, page_layer))           # 남았으면 표시(②)
+    return text, bool(signs) and bool(_halluc_signs(text, page_layer) or _circ_josa_signs(text, page_layer))   # 남았으면 표시(②)
 
 
 # ⚠ **기본은 꺼짐이다**(2026-09-02 실측). 수학 지면 40쪽을 같은 커밋에서 환경변수만
