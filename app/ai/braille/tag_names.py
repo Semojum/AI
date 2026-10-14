@@ -60,9 +60,18 @@ ITALIC = "기울임"
 #   2477~2478행)의 제1 · 제2점역자 정의 글자체표다. 검출은 없다 — 앱 삽입 메뉴로만 들어온다.
 COLOR_EMPH = "색강조"     # 색상 · 모양 강조 = ⠐⠤ … ⠤⠂ (목록표 63행)
 STRIKE = "취소선"         # 취소선 = ⠈⠤ … ⠤⠁ (목록표 64행)
-# 목록표 이름 → 엔진 이름(#1382, 목록표 70 · 71행). 교열(LLM)은 엔진 이름을 낸다(`text_opt` 지시) — 프롬프트를 고치면
-#   캐시 열쇠가 바뀌므로 목록표 이름을 별칭으로 받는다. 번역기 입구(`translate_tagged_text`)에서 엔진 이름으로 푼다.
-ALIASES = {"밑줄빈칸": BLANK_RULE, "네모빈칸": BLANK_SQUARE}
+# 엔진 이름 ↔ 목록표 이름(#1382, 목록표 70 · 71행). **목록표 이름이 정본**이다. 교열(LLM)은 엔진 이름을 낸다
+#   (`text_opt` 지시) — 프롬프트를 고치면 캐시 열쇠가 바뀌므로 서버 안에서는 엔진 이름을 쓴다. 경계에서만 바꾼다:
+#   · 들어오는 글(앱 · 사이드카) — 번역기 입구(`translate_tagged_text`)가 목록표 이름을 엔진 이름으로 푼다(`ALIASES`).
+#   · 나가는 묵자(gRPC 응답) — `grpc_server` 가 엔진 이름을 목록표 이름으로 바꾼다(`to_list_names`). 옛 이름은 안 나간다.
+LIST_NAMES = {BLANK_RULE: "밑줄빈칸", BLANK_SQUARE: "네모빈칸"}
+ALIASES = {v: k for k, v in LIST_NAMES.items()}
+_LIST_NAME_RE = re.compile(r"<!(/?)(%s)>" % "|".join(map(re.escape, LIST_NAMES)))
+
+
+def to_list_names(text: str) -> str:
+    """엔진 태그 이름 → 목록표 이름(`<!밑줄>` → `<!밑줄빈칸>` · `<!네모>` → `<!네모빈칸>`). `<!네모글>` 은 그대로."""
+    return _LIST_NAME_RE.sub(lambda m: f"<!{m.group(1)}{LIST_NAMES[m.group(2)]}>", text) if "<!" in text else text
 ITALIC_TAG_RE = re.compile(f"<!/?{ITALIC}>")   # 판정은 태그 없는 글로(mineru_runner) · 점역기는 걷어 낸다
 
 

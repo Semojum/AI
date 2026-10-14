@@ -10,6 +10,7 @@ import grpc
 
 from app.ai.braille.regulations import rule_meta
 from app.ai.braille.constants import ENGLISH_GRADE1, KOREAN_GRADE1
+from app.ai.braille.tag_names import to_list_names
 from app.ai.braille.translator import translate_plain
 from app.core.config import config
 from app.core import pipeline
@@ -65,17 +66,18 @@ def _dict_to_text_element(d: dict):
     elem.order = d.get("order", 0)
     elem.heading_level = d.get("heading_level", 0)
     elem.ocr_confidence = d.get("ocr_confidence", 0.0)
-    elem.tn_text = d.get("tn_text", "")
+    # 나가는 묵자의 태그 이름은 점자 태깅 목록표 이름이다(#1382). 서버 안은 엔진 이름(`<!밑줄>` · `<!네모>`)을 쓴다.
+    elem.tn_text = to_list_names(d.get("tn_text", ""))
     elem.is_blocked = d.get("is_blocked", False)
     elem.render_mode = d.get("render_mode", "")
     elem.visual_subtype = d.get("visual_subtype", "")
     elem.subtype_confidence = d.get("subtype_confidence", 0.0)
     elem.latex_string = d.get("latex_string", "")
     # review_grade · round_trip · breaks 는 응답 dict(요청 로그)에만 남고 gRPC 로는 안 나간다(proto reserved 17~19, #1366).
-    elem.table_source = d.get("table_source", "")   # 표 태그 글(#1366). text_list 의 표 요소에만 있다
+    elem.table_source = to_list_names(d.get("table_source", ""))   # 표 태그 글(#1366). text_list 의 표 요소에만 있다
     elem.table_box_level = d.get("table_box_level", 0)   # 그 표를 감싼 글상자 위계(#1368)
     for c in d.get("contents", []):
-        elem.contents.append(c)
+        elem.contents.append(to_list_names(c))
     for rt in d.get("rule_trail", []):
         trail = elem.rule_trail.add()
         trail.rule_id = rt.get("rule_id", "")
@@ -107,10 +109,10 @@ def _dict_to_text_element(d: dict):
     elem.selected_idx = d.get("selected_idx", 0)
     for dr in d.get("drafts", []):
         draft = elem.drafts.add()
-        draft.text = dr.get("text", "")
+        draft.text = to_list_names(dr.get("text", ""))
         draft.label = dr.get("label", "")
         # 안마다 태그가 살아 있는 묵자(2026-09-02) — FE 가 고른 안에 맞춰 위칸을 그린다.
-        draft.tn_text = dr.get("tn_text", "")
+        draft.tn_text = to_list_names(dr.get("tn_text", ""))
         for c in dr.get("contents", []):
             draft.contents.append(c)
         draft.breaks.extend(dr.get("breaks", []))
