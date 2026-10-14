@@ -91,11 +91,24 @@ class Test제34항_묶인_로마자:
 class Test제29항_후단_중복개시_억제:
     """"로마자가 둘 이상 연이어 나오면 **첫** 로마자 앞에 로마자표를 적고"(1496행)."""
 
-    def test_대괄호_두_개는_첫_번째만(self):
-        # 정답 도서 언어 p049도 같다: ⠦⠄⠴⠠⠁⠠⠴⠤⠤⠦⠄⠠⠑⠠⠴ — 둘째 [E]엔 ⠴가 없다.
+    def test_대괄호_이름표는_묶음마다_로마자표(self):
+        # #1377 — 괄호가 로마자 구간을 닫으므로(제34항 재추출 1709행: 묶이면 종료표를 적지 않는다) 다음 묶음은
+        #   로마자표를 새로 적는다. 2027 dev · val gold 는 둘째 괄호 이름표에 17/17 적는다(같은 문장 맞대기, 반례 0):
+        #   `[A]~[E]` = …⠦⠆⠴⠠⠁⠰⠴⠈⠔⠦⠆⠴⠠⠑⠰⠴. 종전 기대(둘째엔 없음)는 동결 구판 언어 p049 의 꼴이었다
+        #   (⠦⠄⠴⠠⠁⠠⠴⠤⠤⠦⠄⠠⠑⠠⠴, 대괄호를 소괄호로 적던 판). 판본 역전이다.
         out = _ours("34. [A]~[E]에 대한 감상으로 가장 적절한 것은?")
-        assert _ROMAN + "⠠⠁" in out          # 첫 로마자 A 앞에는 로마자표
-        assert _ROMAN + "⠠⠑" not in out      # 둘째 로마자 E 앞에는 없다
+        assert _ROMAN + "⠠⠁" in out          # 첫 로마자 A 앞에 로마자표
+        assert _ROMAN + "⠠⠑" in out          # 둘째 괄호의 E 앞에도
+
+    def test_닫는_괄호_뒤_수식_로마자는_구간을_다시_열지_않는다(self):
+        # #1377 — 여는 괄호만 새 묶음이다. gold 수학 Ⅰ 해설 p0021 `(i) a+b>1인` = ⠦⠄⠴⠊⠠⠴⠀⠁⠢⠃… (a 앞 ⠴ 없음).
+        out = _ours("(i) a+b>1인 경우")
+        assert "⠦⠄⠴⠊⠠⠴⠁⠢⠃" in out          # 빈칸은 `_cells` 가 걷는다
+        # 이름표가 아닌 괄호도 다시 열지 않는다 — gold `(m>0)` 0:6 · `g(x)`.
+        assert "⠦⠄⠍⠢⠢⠼⠚⠠⠴" in _ours("(m, 2m) (m>0)이라 하면")
+        assert "⠛⠦⠄⠭⠠⠴" in _ours("두 함수 f(x), g(x)의 최댓값")
+        # 둘째 로마 숫자 이름표는 다시 연다 — gold `(i), (ii)` 의 ii 100/100.
+        assert "⠦⠄⠴⠊⠊⠠⠴" in _ours("(i), (ii)에 의하여")
 
     def test_구분자로_쪼개진_한_구간은_한_번만(self):
         # (mg/kg·일) — '/'가 점자 셀이라 세그가 쪼개지지만 로마자런은 이어진다.
@@ -194,3 +207,25 @@ def test_기계_태그는_수식_구간에_안_든다() -> None:
     out = translate_tagged_text("<!밑줄>x=1<!/밑줄> 이다")
     assert "⠔⠔⠖" not in out
     assert "⠭⠒⠒⠼⠁" in out
+
+
+def test_줄머리에_종료표_닫는_괄호가_오는_끊을_자리는_없다():
+    # #1377 — 이 과제가 만들 뻔한 나쁜 후보: 선택지 줄 판정이 접두에 걸려 생기는 줄머리 종료표 `⠴⠠⠁‖⠲` 와
+    #   첨자 뒤 닫는 괄호 `O₂‖)를`(제54항 재추출 2406행).
+    from app.ai.braille.translator import translate_with_breaks
+    for s in ("①  A는 몰가치성, B는 가치 함축성을 띤다.", "㉠은 O₂)를 내보낸다.", "③ T3 시기에 대해"):
+        (cells,), (breaks,) = translate_with_breaks(s)
+        assert not [b for b in breaks if cells[b] == "⠲" or cells.startswith("⠠⠴", b) or cells[b - 1:b + 1] == "⠞⠼"], (s, cells, breaks)
+
+
+def test_화학식_토큰만_수식_구간에서_꺼낸다():
+    # #1377 — 화학식은 로마자표(과학 제1 · 2항, gold `O₂,` · `이온(NH₄⁺)`), 생물 · 수학 표기는 종전 수식 길.
+    assert "⠴⠠⠕⠰⠼⠃⠐" in translate_tagged_text("㉠은 O₂, ㉡은 CO₂이다.")
+    assert "⠕⠷⠦⠄⠴⠠⠝⠠⠓⠰⠼⠙⠘⠢⠠⠴" in translate_tagged_text("암모늄 이온(NH₄⁺)이 된다")   # gold 생명과학 Ⅰ 해설 p0049
+    assert "⠴⠠⠛⠰⠼⠁" not in translate_tagged_text("㉠(G₁기 또는 G₂기) 시기")        # 세포 주기 표기(gold ⠴ 없음)
+    from app.ai.braille import inline_math
+    tok = inline_math.MATH_PAGE.set(True)
+    try:
+        assert "⠴⠠⠎⠰⠼⠃⠐" not in translate_tagged_text("넓이를 S₂, 부채꼴의 넓이를 S₃이라 하면")  # 수식 쪽 변수
+    finally:
+        inline_math.MATH_PAGE.reset(tok)

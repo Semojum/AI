@@ -45,6 +45,10 @@ from app.ai import gates as _gates          # 관문 G3 — 무거운 의존 없
 #   훅 · 환경)이 그대로라 같은 LaTeX 에 늘 같은 점자가 나온다. 접두마다 같은 수식을 다시 바꾸던 몫(수식 든 1,050자 줄
 #   11.6초 중 8.8초)을 없앤다. 밖에서는 None 이라 종전과 같다.
 _LATEX_MEMO: contextvars.ContextVar[dict | None] = contextvars.ContextVar("_LATEX_MEMO", default=None)
+# 끊을 자리를 찾느라 접두를 다시 점역하는 중인가(`_break_offsets`, #1377). 줄 전체를 보고 내리는 판정(선택지 줄)은
+#   접두에 걸지 않는다 — 접두 `①  A` 가 선택지 줄로 읽혀 `⠴⠠⠁` 가 되면 전체 `①  A는…` 의 머리와 맞아 `⠴⠠⠁‖⠲⠉⠵`
+#   (줄머리 종료표) · `③ T‖3` 에 후보가 섰다.
+_BREAK_PROBE: contextvars.ContextVar[bool] = contextvars.ContextVar("_BREAK_PROBE", default=False)
 
 
 def convert_latex(latex: str) -> str:
@@ -293,6 +297,9 @@ _INLINE_MATH_RE = re.compile(
 _NUMBER_RE       = re.compile(r"-?\d+(?:[.,]\d+)*")
 _ALPHA_RUN_RE    = re.compile(r"[A-Za-z]+")
 _BRAILLE_RE      = re.compile(r"[⠀-⣿]+")
+_OPEN_BRACKET_RE = re.compile("(?:⠦⠄|⠦⠆)$")      # 여는 소괄호 · 대괄호(문장 부호 표)로 끝나는 점자 조각
+# 그 바로 뒤가 이름표(대문자 낱말 · 두 글자 이상 로마 숫자)이고 곧바로 닫히는가(#1377).
+_BRACKET_LABEL_RE = re.compile("(?:[A-Z]{1,6}|[ivx]{2,6})(?:⠠⠴|⠰⠴)")
 # 두 칸 이상 빈칸 = 항목 구분 부호(지침 3장 3절 4)(3)① 선택지 사이 · 6)(1) 표의 셀 사이).
 # braillify가 한 칸으로 뭉개고(_safe_to_unicode) _collapse_spaces가 또 한 번 뭉갠다.
 # _safe_to_unicode는 이 자리를 _GAP_MARK로 찍어 두고, _collapse_spaces가 모드전환
@@ -667,6 +674,10 @@ def _braillify(text: str) -> str:
 #     한글 ≥50%  : gold가 ⠴ 편 dev 42:1 · val 187:26
 #   한글이 거의 없는 줄은 사실상 외국어 지문이라 제29항 [다만]에 가깝다.
 _ROMAN_LINE_HANGUL_MIN = 0.2
+# 선택지 줄(`① A` · `③ A, C`)은 한국어 문항의 한 줄이다(#1377). 줄에 한글이 없어도 제29항 [다만](문단 전체가 로마자)이
+#   아니라 2027 gold 가 로마자표를 적는다(같은 문장 맞대기 5/5, 반례 0). **대문자 이름표만** 든 줄로 좁힌다 —
+#   영어 낱말 선택지(`① apple`)는 영어 지문 갈래라 건드리지 않는다.
+_CHOICE_LABEL_LINE_RE = re.compile(r"^\s*[①-⑳❶-❿]\s*[A-Z]{1,3}(?:\s*,\s*[A-Z]{1,3})*\s*$")
 
 
 class _RomanCtx:
@@ -685,8 +696,9 @@ class _RomanCtx:
         # 그대로 적용되는 자리(translate_plain). 근거는 gold 페이지행 실측이다:
         # '로마숫자 + 숫자' 꼬리말 5,318건 중 로마자표를 붙인 것이 4,776건(89.8%).
         # 본문은 건드리지 않는다 — 거기 문턱값 0.2 는 따로 측정된 값이다(위 주석).
-        self.has_hangul = han > 0 or force
-        self.hangul_ratio = 1.0 if force else (han / (han + lat) if (han + lat) else 0.0)
+        choice = not _BREAK_PROBE.get() and bool(_CHOICE_LABEL_LINE_RE.match(text))
+        self.has_hangul = han > 0 or force or choice
+        self.hangul_ratio = 1.0 if (force or choice) else (han / (han + lat) if (han + lat) else 0.0)
         # 이 줄에서 로마자 구간이 이미 열렸는가(제29항 후단 — 첫 로마자 앞에만 ⠴).
         self.opened = False
         # 직전 `_split_english` 가 **세그 맨 끝에** 종료표 ⠲ 를 적었는가(#917, `_emit_mixed` 가 읽는다).
@@ -845,6 +857,15 @@ def _emit_mixed(text: str, result: list[str], ctx: "_RomanCtx | None" = None) ->
             if pre:
                 result.append(_seg(pre, text[i:]))
             result.append(text[i:j])
+            if ctx is not None and _OPEN_BRACKET_RE.search(text[i:j]) and _BRACKET_LABEL_RE.match(text, j):
+                # 괄호로 묶인 이름표는 묶음마다 로마자표를 적는다(#1377). 묶인 로마자는 종료표 대신 괄호로 닫히므로(제34항
+                #   재추출 1709행) 새 묶음의 이름표는 로마자표를 새로 적는다. 제29항 후단 '연이어'에 묶음을 넘는 경우는 조항에
+                #   없어 2027 gold 를 따른다: 둘째 괄호 이름표 `[A]~[E]` = …⠦⠆⠴⠠⠑⠰⠴(9/9) · `(i), (ii)` 의 ii 100/100 ·
+                #   `A(DNA)` = ⠴⠠⠁⠦⠄⠴⠠⠠⠙⠝⠁.
+                #   ★ 좁힌 까닭(넓히지 말 것): 닫는 괄호에서도 닫으면 `(i) a+b>1인` 의 a 에 ⠴ 가 붙었다(gold 수학 Ⅰ 해설
+                #   p0021 은 안 적음). 이름표가 아닌 괄호에서도 열면 `(m>0)` 의 m 에 붙었다(gold 0:6) · `g(x)` 의 x 에도.
+                #   본문 속 수식 · 유전 표기 갈래는 #1376 이 맡는다.
+                ctx.opened = False
             last = i = j
     tail = text[last:]
     if tail:
@@ -2189,6 +2210,44 @@ _ROMAN_WRAP_RE = re.compile(r"\\(?:mathrm|rm|text)\s*\{([^{}]*)\}")
 _ION_JOIN_RE = re.compile(r"(?<=\})-(?=[A-Z])")
 
 
+_MATH_SPAN_RE = re.compile(r"<!수식>(.*?)<!/수식>", re.DOTALL)
+_TOKEN_PUNCT_RE = re.compile(r"(\s*,\s*|[()])")
+
+
+def _unwrap_token_punct(text: str) -> str:
+    """수식 조각이 첨자 토큰 · 이온과 `,` `(` `)` 만으로 되어 있으면 부호를 조각 밖으로 꺼낸다(#1377).
+
+    `inline_math.wrap` 이 뒤 쉼표 · 괄호까지 구간에 넣어(`<!수식>O_{2},<!/수식>` · `K^{+}(` · `O_{2}, CO_{2}`) 첨자 토큰
+    판정(`_INLINE_SUB_TOKEN_RE` · `_ion_parts`)에서 빠지고 수식 길(제11항 두 칸, 로마자표 없음)로 갔다. 2027 gold 는
+    `㉠은 O₂,` = ⠴⠠⠕⠰⠼⠃⠐ · `K⁺(㉠)` = ⠴⠠⠅⠘⠢⠦⠄ 로 로마자표를 적는다(과학 점자 제1항 · 제2항). 토큰마다 따로 감싸
+    `O₂를` 과 같은 길로 보낸다. 토큰이 아닌 조각(`f(x)` · `(1, 0)` · `Mg(OH)_{2}`)은 그대로 둔다.
+    ★ 화학식 토큰만 꺼낸다(`_chem_token`). 생물 · 수학 표기(`G₁기` · 넓이 `S₁` · 수열 `a₁`)를 꺼내면 로마자표가 붙는데
+    gold 는 그 자리에 안 적는다(생명과학 Ⅰ 해설 p0027~0029 `㉠(G₁기)` 5곳 · 수학 Ⅰ 해설 p0019 `S₁` 1곳).
+    """
+    def repl(m: "re.Match[str]") -> str:
+        parts = _TOKEN_PUNCT_RE.split(m.group(1))
+        toks = parts[0::2]
+        if len(parts) < 2 or not any(toks) or not all(not t or _chem_token(t) for t in toks):
+            return m.group(0)
+        return "".join((f"<!수식>{p}<!/수식>" if p else "") if k % 2 == 0 else p for k, p in enumerate(parts))
+    return _MATH_SPAN_RE.sub(repl, text)
+
+
+def _chem_token(t: str) -> bool:
+    """화학식 토큰인가(#1377). 원소 기호만으로 되어 있고, 이온이거나 · 원소가 둘 이상이거나 · 첨자가 2 이상이다.
+    `O₂` · `CO₂` · `K⁺` 는 참, `G₁`(원소 아님) · `S₁`(홑 원소 첨자 1, 넓이 변수) · `a₁`(소문자)은 거짓."""
+    plain = _ROMAN_WRAP_RE.sub(r"\1", t).replace(" ", "")
+    els = re.findall(r"[A-Z][a-z]?|[a-z]", plain)
+    if not els or not all(e in _kor_math_rules._ELEMENTS for e in els):
+        return False
+    if _ion_parts(t):
+        return True
+    if len(els) < 2 and inline_math.MATH_PAGE.get():
+        return False       # 수식 쪽의 홑 원소 첨자는 변수다(`S₂` 넓이) — `_latex_chem_to_unicode` 와 같은 기준
+    subs = [int(x) for x in re.findall(r"_\{?(\d+)\}?", plain)]
+    return bool(_INLINE_SUB_TOKEN_RE.match(t)) and bool(subs) and (len(els) >= 2 or max(subs) >= 2)
+
+
 def _ion_parts(core: str) -> list[str] | None:
     """이온 하나 또는 붙임표로 이은 이온들이면 조각 목록, 아니면 None."""
     plain = _ROMAN_WRAP_RE.sub(r"\1", core).replace(" ", "")
@@ -2275,6 +2334,8 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
     roman_ctx = _RomanCtx("".join(_RESIDUAL_BANG_TAG_RE.sub("", parts[i])
                                   for i in range(0, len(parts), 2)),
                           force=force_roman)
+    punct_head: set[int] = set()
+    open_tail: set[int] = set()
 
     for i, part in enumerate(parts):
         if i % 2 == 0:  # 일반 텍스트 세그먼트
@@ -2299,6 +2360,10 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
                     substitute_symbols(_hold_eng_punct(preprocessed))))
                 text_result: list[str] = []
                 _emit_mixed(substituted, text_result, roman_ctx)
+                if part[:1] in ",()[]":
+                    punct_head.add(len(chunks))   # 부호로 시작하는 글 조각 — 이온 뒤 한 칸을 안 넣는다(#1377)
+                if part[-1:] in "([":
+                    open_tail.add(len(chunks))    # 여는 괄호로 끝나는 글 조각 — 뒤 이온 앞 한 칸을 안 넣는다(#1377)
                 chunks.append(("t", _collapse_spaces("".join(text_result)),
                                lead_ws, trail_ws))
             else:
@@ -2342,8 +2407,9 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
     # 단 인라인 첨자 토큰(O₂·t₁)은 gold가 두 칸을 쓰지 않으므로 원문 띄어쓰기를 그대로 둔다.
     result_parts: list[str] = []
     prev_kind: str | None = None
+    prev_idx = -1
     pending_ws = False
-    for kind, braille, lead_ws, trail_ws in chunks:
+    for idx, (kind, braille, lead_ws, trail_ws) in enumerate(chunks):
         if not braille:
             pending_ws = pending_ws or lead_ws or trail_ws
             continue
@@ -2358,8 +2424,12 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
             braille = "⠴" + braille
         if prev_kind is not None:
             if kind in ("n", "s") or prev_kind in ("n", "s"):
-                # 이온은 한 칸(과학 제2항 붙임), 홑 기호도 한 칸(제70항·제60항 5호·제15항)
-                result_parts.append("⠀")
+                # 이온은 한 칸(과학 제2항 붙임), 홑 기호도 한 칸(제70항·제60항 5호·제15항). 이온 바로 뒤
+                #   쉼표 · 괄호와 바로 앞 여는 괄호는 붙인다(#1377) — 2027 gold `K⁺(㉠)` = ⠴⠠⠅⠘⠢⠦⠄ · `K⁺,` = ⠴⠠⠅⠘⠢⠐ ·
+                #   `이온(NH₄⁺)` = ⠕⠷⠦⠄⠴⠠⠝⠠⠓⠰⠼⠙⠘⠢⠠⠴.
+                if not ((prev_kind == "n" and idx in punct_head and not lead_ws)
+                        or (kind == "n" and prev_idx in open_tail and not lead_ws)):
+                    result_parts.append("⠀")
             elif kind == "p" or prev_kind == "p":
                 # 단순 수 앞뒤: 묵자 빈칸 그대로(한 칸), 제11항. 단 다음 선택지 번호 앞은 두 칸 —
                 #   제64항 예(2585~2586행) `① ㄱ, ㄴ  ② ㄱ, ㄷ` 의 선택지 사이(묵자가 한 칸이어도).
@@ -2373,7 +2443,7 @@ def _translate_with_braillify(text: str, *, force_roman: bool = False,
             else:
                 result_parts.append("⠀⠀")
         result_parts.append(braille)
-        prev_kind = kind
+        prev_kind, prev_idx = kind, idx
         pending_ws = trail_ws
 
     braille = "".join(result_parts)
@@ -3546,6 +3616,7 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     text = _space_hangul_operators(text)  # 제46항 — 수식 라우팅보다 먼저(#938)
     text = _attach_length_mark(text)      # 제63항 — 긴소리표 앞뒤 붙임(#1222)
     text = inline_math.wrap(text)
+    text = _unwrap_token_punct(text)       # 첨자 토큰 · 이온 조각에 묻은 , ( ) 를 꺼낸다(#1377)
     text = _normalize_roman_numerals(text)  # 로마 숫자 → 로마자(제36항), braillify 거부 방지
     text = sanitize_for_braille(text)        # PUA·제어문자 정화(요소 전체 소실 방지)
     # ★ #1067 — 유니코드 공백 구분자(Zs)가 셀열에 남으면 빈칸 셀로 바꾼다. 영어 낱말이 섞인 경로가 원문의
@@ -3604,6 +3675,7 @@ _NO_BREAK_BEFORE_ANY = frozenset(".,?!:;，．？！：；")
 #   부호가 붙은 닫는 부호는 어차피 부호가 줄머리로 가므로 막아도 그 까닭에 안 걸린다.
 #   ASCII `"` `'` 는 여닫이를 못 가려 뺀다.
 _OPENERS = frozenset("([{「『‘“〈《")
+_SCRIPT_CHARS = frozenset("₀₁₂₃₄₅₆₇₈₉₊₋⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻")      # 첨자 · 위첨자(화학식 · 이온 토큰 끝, #1377)
 
 
 def _punct_any_on() -> bool:
@@ -3654,9 +3726,11 @@ def _break_offsets(src: str, braille: str) -> list[int]:
     if len(braille) <= 1:
         return []
     token = _LATEX_MEMO.set({})
+    probe = _BREAK_PROBE.set(True)
     try:
         return _break_offsets_in(src, braille)
     finally:
+        _BREAK_PROBE.reset(probe)
         _LATEX_MEMO.reset(token)
 
 
@@ -3711,6 +3785,13 @@ def _break_offsets_in(src: str, braille: str) -> list[int]:
             end = next((k for k in range(sp, len(src)) if src[k].isspace()), len(src))
             if not braille.startswith(translate_tagged_text(src[sp:end]), n):
                 continue
+        # #1377 — 화학식 토큰 바로 뒤 글 닫는 괄호 앞은 끊지 않는다(제54항 재추출 2406행). 첨자 토큰이 수식 구간에서 나오며
+        #   (`_unwrap_token_punct`) 접두 `O₂` 가 전체와 맞게 되자 `O₂‖)를` = `⠰⠼⠃|⠠⠴⠐⠮` 에 후보가 섰다. 그 꼴로만 좁힌다:
+        #   앞 글자가 첨자 · 위첨자이고, 그 자리 셀이 글 괄호 `⠠⠴` 이고, 묵자에서 괄호 뒤가 빈칸이 아니다. 수식 괄호 `⠴` ·
+        #   닫는 따옴표 · 뒤가 빈칸인 자리(#1243)와 닫는 괄호 앞 전체(#1385)는 이 PR 범위 밖이다.
+        if (head[-1:] in _SCRIPT_CHARS and braille.startswith("⠠⠴", n)
+                and _TAG_RE.sub("", src[sp:])[1:2] not in ("", " ", "\n", "\t")):
+            continue
         offs.add(n)
     return sorted(offs)
 
