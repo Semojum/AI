@@ -36,3 +36,24 @@ def test_표시_글자가_점자에_남지_않는다():
     cells, breaks = _formula(r"a + b = \frac {c}{d}")
     assert BREAK_MARK not in cells and BREAK_MARK not in convert_latex(r"a + b = \frac {c}{d}")
     assert breaks
+
+
+def test_배열_행_머리_등호_앞_빈칸에서_끊지_않는다():
+    # #1394 — 유도 사슬 행 머리 등호 앞 행 구분 빈칸(⠀⠀)에서 접으면 등호가 줄 머리로 간다. 제66항은 등호 뒤에서 끊는다.
+    cells, breaks = _formula(r"\begin{array}{l} a + b \\ = c + d \\ = e \end{array}")
+    heads = [i for i in range(2, len(cells)) if cells[i - 2:i] == "⠀⠀" and cells.startswith("⠒⠒", i)]
+    assert len(heads) == 2
+    for i in heads:
+        assert i - 2 not in breaks and i - 1 not in breaks      # 행 구분 빈칸
+        assert i + 2 in breaks                                   # 행 머리 등호 바로 뒤
+    for width in range(4, len(cells)):
+        lines, forced = _wrap_line(cells, breaks, width=width, first_width=width)
+        if not forced:                                           # 칸이 좁아 강제로 자른 폭은 뺀다
+            assert not any(ln.lstrip("⠀").startswith("⠒⠒") for ln in lines[1:]), width
+
+
+def test_연립식_행_머리_부호_앞은_그대로_끊는다():
+    # 행 머리 − 는 부호라(둘째 식의 머리) 행 구분 빈칸이 끊을 자리로 남는다.
+    cells, breaks = _formula(r"\left\{ \begin{array}{l} x + y = 1 \\ - x + y = 3 \end{array} \right.")
+    i = cells.index("⠀⠀⠔")
+    assert i in breaks and i + 1 in breaks

@@ -32,7 +32,7 @@ _TEXT_CMD = re.compile(r"\\(?:text|textrm|mbox|mathrm|operatorname)\s*$")
 
 def _operand_before(latex: str, i: int) -> bool:
     """`latex[i]` 기호 앞이 피연산자인가. 아니면(맨 앞 · 여는 괄호 · 연산 · 관계 기호 · 쉼표 · 배열 줄 `\\\\` 뒤) + · − 는 부호이고,
-    등호 · 관계 기호는 앞 줄을 이어 받는 머리라 뒤에서 끊을 까닭이 없다(제66항은 두 항 사이 기호 뒤다)."""
+    등호 · 관계 기호는 뒤에서 끊을 까닭이 없다(제66항은 두 항 사이 기호 뒤다). 행 머리 관계 기호는 `_row_sep_before` 를 본다."""
     j = i - 1
     while j >= 0 and latex[j].isspace():
         j -= 1
@@ -48,10 +48,27 @@ def _operand_before(latex: str, i: int) -> bool:
     return latex[j] in ")]}|!'′"
 
 
+def _row_sep_before(latex: str, i: int) -> int:
+    """`latex[i]` 바로 앞(빈칸 건너)이 배열 행 · 열 구분(`\\\\` · `&`)이면 그 구분 첫 글자 자리, 아니면 -1.
+    유도 사슬 행 머리 등호(`a \\\\ = b`)는 앞 행을 잇는다. gold 수학 Ⅰ(009)은 이 행들을 붙여 쓰고 등호로 시작하는 행
+    251개 중 등호를 줄 머리에 둔 곳이 0, 앞 줄 끝에 둔 곳이 95다."""
+    j, at = i - 1, -1
+    while j >= 0:
+        if latex[j].isspace():
+            j -= 1
+        elif latex[j] == "&" and latex[j - 1:j] != "\\":
+            at, j = j, j - 1
+        elif latex[j - 1:j + 1] == "\\\\":
+            at, j = j - 1, j - 2
+        else:
+            break
+    return at
+
+
 def _op_marks(latex: str) -> list[tuple[int, str, tuple[int, ...]]]:
-    """표시를 넣어 볼 LaTeX 자리 후보 `(깊이, 갈래, 자리들)`. 자리는 그 앞 글자 뒤이고 기호마다 (기호와 뒤 빈칸 다음,
-    기호 바로 다음), 분수는 (분자 여는 중괄호 다음,)이다. 깊이는 감싼 괄호 · 묶음 수, 갈래는 rel(등호 · 부등호) ·
-    bin(사칙연산) · frac(분수표)."""
+    """표시를 넣어 볼 LaTeX 자리 후보 `(깊이, 갈래, 자리들, 행 머리 기호)`. 자리는 그 앞 글자 뒤이고 기호마다 (기호와 뒤
+    빈칸 다음, 기호 바로 다음), 분수는 (분자 여는 중괄호 다음,)이다. 깊이는 감싼 괄호 · 묶음 수, 갈래는 rel(등호 · 부등호) ·
+    bin(사칙연산) · frac(분수표). 행 머리 기호는 배열 행 · 열 구분 바로 뒤 기호의 LaTeX 글(아니면 None)이다."""
     out, stack, pending, paren, fdepth = [], [], 0, 0, 0   # stack: 그룹 종류(script · text · num · den · group)
     i, n = 0, len(latex)
     while i < n:
@@ -72,7 +89,7 @@ def _op_marks(latex: str) -> list[tuple[int, str, tuple[int, ...]]]:
                 kind = "num" if pending == 2 else "den"
                 pending -= 1
                 if kind == "num" and not skip:
-                    out.append((fdepth, "frac", (i + 1,)))
+                    out.append((fdepth, "frac", (i + 1,), None))
             else:
                 kind = "group"
             stack.append(kind)
@@ -98,14 +115,15 @@ def _op_marks(latex: str) -> list[tuple[int, str, tuple[int, ...]]]:
                 i += 2
                 continue
         m = _BREAK_AFTER.match(latex, i)
-        end = (m.end() if m else i + 1 if c in _SIGN else 0) if _operand_before(latex, i) else 0
+        sep = _row_sep_before(latex, i) if m else -1   # 부호(+ −)는 행을 넘겨 잇지 않는다(연립식 둘째 행 `-x + y`)
+        end = (m.end() if m else i + 1 if c in _SIGN else 0) if _operand_before(latex, i if sep < 0 else sep) else 0
         if end:
             k = end
             while k < n and latex[k].isspace():
                 k += 1
             if not skip and k < n:
                 rel = bool(m) and not _BIN_CMD.match(latex, i)
-                out.append((depth, "rel" if rel else "bin", (k, end) if k != end else (end,)))
+                out.append((depth, "rel" if rel else "bin", (k, end) if k != end else (end,), m.group() if sep >= 0 else None))
             i = max(end, i + 1)
             continue
         if c == "\\":                           # 다른 명령은 이름째 넘긴다(`\leftarrow` 의 `-` 없음 · `\text` 판정)
@@ -123,14 +141,15 @@ def _op_marks(latex: str) -> list[tuple[int, str, tuple[int, ...]]]:
 _OP_TAIL = frozenset("⠢⠔⠒⠡⠌⠐⠖⠲")
 
 
-def _op_candidates(latex: str, braille: str) -> list[tuple[int, int, str]]:
-    """수식 점자 `braille`(= `convert_latex(latex)`) 안 제66항 끊을 자리 후보 `(셀 자리, 깊이, 갈래)`.
+def _op_candidates(latex: str, braille: str) -> tuple[list[tuple[int, int, str]], set[int]]:
+    """수식 점자 `braille`(= `convert_latex(latex)`) 안 제66항 끊을 자리 후보 `(셀 자리, 깊이, 갈래)` 목록과, 행 머리 기호
+    앞 빈칸 자리(거기서 끊으면 기호가 줄 머리로 간다, 제66항은 기호 뒤에서 끊는다).
 
     후보마다 표시 하나만 넣어 점역한다. 표시가 연산 기호 붙임(수학 제45항) 같은 빈칸 판정을 바꿔 점자가 달라지면 그 후보만
     버린다(한꺼번에 넣으면 하나가 어긋날 때 전부 잃는다). 표시 자리를 둘째 후보(기호 바로 뒤)로도 본다.
     """
-    out = {}
-    for depth, kind, alts in _op_marks(latex):
+    out, no = {}, set()
+    for depth, kind, alts, head in _op_marks(latex):
         for at in alts:
             got = convert_latex(latex[:at] + _MARK + latex[at:])
             k = got.find(_MARK)
@@ -138,10 +157,21 @@ def _op_candidates(latex: str, braille: str) -> list[tuple[int, int, str]]:
                 continue
             if braille[k - 2:k] == "⠌⠷":         # 분자 앞 표시가 분자 묶음(⠷) 뒤에 서면 분수표 바로 뒤로 당긴다
                 k -= 1
+            if head:
+                # 행 머리 기호. 표시를 행 구분 곁에 넣으면 구분 빈칸 흡수(`_stage15_spaces`)가 칸 수를 바꿔 못 쓰므로,
+                #   기호 뒤 표시 자리에서 기호 셀만큼 앞이 행 구분 빈칸인지 본다. 뒤 빈칸(`⠀⠀⠒⠒⠀`)은 기호 바로 뒤로 당긴다.
+                while k > 0 and braille[k - 1] in " ⠀":
+                    k -= 1
+                cells = convert_latex(head)
+                s = k - len(cells)
+                if cells and braille[s:k] == cells:
+                    while s > 0 and braille[s - 1] in " ⠀":
+                        s -= 1
+                        no.add(s)
             if 0 < k < len(braille) and braille[k - 1] in _OP_TAIL:
                 out.setdefault(k, (k, depth, kind))
             break
-    return sorted(out.values())
+    return sorted(out.values()), no
 
 
 # 후보 고르기 — 제66항은 어느 후보에서 끊을지 정하지 않는다. 접는 쪽(엔진 `wrap` · 앱)은 칸 안 가장 먼 자리를 고르므로
@@ -156,10 +186,10 @@ _REL_PREF = 4
 
 
 def _op_breaks(latex: str, braille: str, base: list[int] = ()) -> list[int]:
-    """`base`(빈칸 자리)에 제66항 후보를 위 관행으로 골라 더한 끊을 자리."""
-    cands = _op_candidates(latex, braille)
+    """`base`(빈칸 자리)에서 행 머리 기호 앞 빈칸을 빼고 제66항 후보를 위 관행으로 골라 더한 끊을 자리."""
+    cands, no = _op_candidates(latex, braille)
     rels = [k for k, d, kd in cands if d == 0 and kd == "rel"]
-    chosen = set(base) | {k for k, d, kd in cands
+    chosen = (set(base) - no) | {k for k, d, kd in cands
                           if d == 0 and (kd == "rel" or not any(k - _REL_PREF <= r < k for r in rels))}
     for depth in range(1, max((d for _, d, _ in cands), default=0) + 1):
         pts = sorted(chosen | {0, len(braille)})
