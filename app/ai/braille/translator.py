@@ -3710,6 +3710,9 @@ _NO_BREAK_BEFORE_ANY = frozenset(".,?!:;，．？！：；")
 #   닫는 부호 앞 전부를 막지 않는 것은 위 `_NO_BREAK_BEFORE` 의 까닭(수식 줄 `cos2α)` 강제분리) 때문이다.
 #   부호가 붙은 닫는 부호는 어차피 부호가 줄머리로 가므로 막아도 그 까닭에 안 걸린다.
 #   ASCII `"` `'` 는 여닫이를 못 가려 뺀다.
+# #1385 — 닫는 부호 뒤가 빈칸이 아니면(줄 끝 포함) 앞 글자가 무엇이든 그 앞을 막는다(`다.‖’라고` · `(㉠‖)은` · `‘1‖’`).
+#   제55항(2422행)이 줄 첫머리에 올 수 있는 부호를 빗금 · 줄표 · 물결표로만 꼽는다. gold dev · val 1,746쪽에 줄 머리가 닫는
+#   부호(’ ) ] } 」 』 〉 》)인 줄이 0, 앞말에 붙은 닫는 부호가 31,349다. 뒤가 빈칸인 자리는 종전대로 남긴다(수식 줄 강제분리).
 _OPENERS = frozenset("([{「『‘“〈《")
 _SCRIPT_CHARS = frozenset("₀₁₂₃₄₅₆₇₈₉₊₋⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻")      # 첨자 · 위첨자(화학식 · 이온 토큰 끝, #1377)
 
@@ -3796,8 +3799,7 @@ def _break_offsets_in(src: str, braille: str) -> list[int]:
             if head[-1:] in _OPENERS:
                 continue
             rest = _TAG_RE.sub("", src[sp:])
-            if (rest[:1] and rest[0] in _CLOSERS and head[-1:].strip()
-                    and rest.lstrip(_CLOSERS)[:1] in _NO_BREAK_BEFORE_ANY):
+            if rest[:1] and rest[0] in _CLOSERS and head[-1:].strip() and not rest.lstrip(_CLOSERS)[:1].isspace():
                 continue
         if nxt in _NO_BREAK_BEFORE and _HANGUL_OR_JAMO_RE.search(head.rstrip(_CLOSERS)):
             continue
@@ -3824,7 +3826,7 @@ def _break_offsets_in(src: str, braille: str) -> list[int]:
         # #1377 — 화학식 토큰 바로 뒤 글 닫는 괄호 앞은 끊지 않는다(제54항 재추출 2406행). 첨자 토큰이 수식 구간에서 나오며
         #   (`_unwrap_token_punct`) 접두 `O₂` 가 전체와 맞게 되자 `O₂‖)를` = `⠰⠼⠃|⠠⠴⠐⠮` 에 후보가 섰다. 그 꼴로만 좁힌다:
         #   앞 글자가 첨자 · 위첨자이고, 그 자리 셀이 글 괄호 `⠠⠴` 이고, 묵자에서 괄호 뒤가 빈칸이 아니다. 수식 괄호 `⠴` ·
-        #   닫는 따옴표 · 뒤가 빈칸인 자리(#1243)와 닫는 괄호 앞 전체(#1385)는 이 PR 범위 밖이다.
+        #   닫는 따옴표 · 뒤가 빈칸인 자리(#1243)는 이 PR 범위 밖이다(닫는 부호 앞 전체는 #1385 가 위 `_bracket_attach_on` 에서 막는다).
         if (head[-1:] in _SCRIPT_CHARS and braille.startswith("⠠⠴", n)
                 and _TAG_RE.sub("", src[sp:])[1:2] not in ("", " ", "\n", "\t")):
             continue
