@@ -870,11 +870,28 @@ def _circ_chars() -> str:
     return "".join(_circ_classes())
 
 
-def _circled_digit_restores(seg: str, win: str, layer_ns: str) -> list[tuple[int, int, str]]:
-    """(칸 글 안 자리, 숫자 길이, 원문자). 칸 숫자(한두 자리) ↔ 창 원문자 한 글자이고, 글자가 문맥으로 하나로 정해질 때만."""
+# ── 막히던 원문자 되돌리기(#1433) ───────────────────────────────────────────
+# 위 되돌리기가 돌지도 못하던 자리가 셋이다(2027 dev · val 표 셈, V2 temp/n364/cells_*.jsonl).
+#   ① 짧은 칸 창 문턱: 칸 `1(가)` 은 층 `①(가)` 와 한 글자가 달라 닮음 0.75 로 `_CELL_SIM_MIN` 아래라 칸째 빠진다.
+#      첫 대조에서 떨어진 칸만 숫자와 원문자 갈래를 같은 글자로 보고 창을 다시 찾는다. 붙은 칸의 창은 그대로라
+#      #1210 이 되돌리던 자리가 안 옮겨진다(#1403 1판이 창 맞추기를 통째로 넓혔다가 겪은 일).
+#   ② 칸을 버린 표의 고침 조건(#1317 `_split_fix_ok`)은 한글 오독 꼴만 받는다. 긴 칸 하나만 층에서 갈려도
+#      (세계사 본문 161쪽 연표 `러일 전쟁발발`) 그 표의 원문자 되돌리기가 모두 막혔다.
+#   ③ 살린 표(#1208)는 칸 맨 앞 · 끝 치환을 버린다. `1(가)` 의 1 은 칸 맨 앞이다.
+#   ②③에 막힌 되돌리기는 아래 둘을 다 지킬 때만 통과시킨다(`strict`). 종전에 통과하던 것은 그대로다.
+#     · 숫자 바로 앞뒤에 숫자 아닌 글자가 있다. `1000` ↔ 층 `100㉡` 같은 진짜 수의 끝자리를 안 바꾼다(생명과학 본문 187쪽).
+#     · 칸의 숫자 ↔ 원문자 자리가 전부 정해진다. 수식 칸 `$7 + (7 + 7)$` 에서 셋 중 하나만 바뀌던 것을 막는다(언매 본문 60쪽).
+#   셈(채점 아님): dev 16표 41칸 · val 15표 87칸이 바뀐다(세계사 · 동아시아사 연표 `① (가)` · 화작 설문 · 생명과학 `㉠(1)` 등).
+def _circled_digit_restores(seg: str, win: str, layer_ns: str, strict: bool = False) -> list[tuple[int, int, str]]:
+    """(칸 글 안 자리, 숫자 길이, 원문자). 칸 숫자(한두 자리) ↔ 창 원문자 한 글자이고, 글자가 문맥으로 하나로 정해질 때만.
+
+    strict: 창을 못 믿는 표(칸을 버렸거나 조각으로 살린 표)에서 부른다. 숫자 바로 앞뒤에 숫자 아닌 글자가 있어야 하고,
+    칸의 숫자 ↔ 원문자 자리가 전부 정해질 때만 돌려준다(위 #1433 절).
+    """
     classes = _circ_classes()
     two = len(classes) > 1                               # 두 자리 수는 #1403 부터
     out: list[tuple[int, int, str]] = []
+    cands = 0
     for tag, i1, i2, j1, j2 in SequenceMatcher(None, seg, win, autojunk=False).get_opcodes():
         if tag != "replace" or not 1 <= i2 - i1 <= (2 if two else 1) or j2 - j1 != 1:
             continue
@@ -882,6 +899,9 @@ def _circled_digit_restores(seg: str, win: str, layer_ns: str) -> list[tuple[int
         pool = next((c for c in classes if circ in c), "")
         if not (digit.isascii() and digit.isdigit() and pool):
             continue
+        cands += 1
+        if strict and not re.search(r"\D", seg[max(0, i1 - 1):i1] + seg[i2:i2 + 1]):
+            continue                                     # `1000` ↔ 층 `100㉡` 꼴. 이웃이 숫자뿐이면 진짜 수일 수 있다
         for n in range(_CIRC_CTX, 1, -1):                 # 긴 문맥부터, 층에 들어맞는 글자가 생기는 가장 긴 문맥
             before, after = seg[max(0, i1 - n):i1], seg[i2:i2 + n]
             if len(before) + len(after) < 2:
@@ -897,7 +917,7 @@ def _circled_digit_restores(seg: str, win: str, layer_ns: str) -> list[tuple[int
             fits = [ch for ch in fits if ch in pool]
         if len(fits) == 1:                              # 창의 글자가 아니라 문맥으로 정해진 글자
             out.append((i1, i2 - i1, fits[0]))
-    return out
+    return out if not strict or len(out) == cands else []
 
 
 # ── 표 칸 홀로 선 숫자 → 원문자 (#1403) ─────────────────────────────────────
@@ -1288,6 +1308,7 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str,
     hangul = on and bool(_CIRCLED_HANGUL_RE.search(layer_ns))
     circ = on and any(ch in chars for ch in layer_ns)
     cmp_layer = re.sub(f"[0-9{_CIRCLED_HANGUL}]", "\x01", layer_ns) if hangul else layer_ns
+    eq_layer = re.sub(f"[0-9{chars}]", "\x01", layer_ns) if circ else layer_ns
 
     split = fixes is not None and os.environ.get("TABLE_CELL_SPLIT", "1") != "0"
     dropped = False                             # 실패 칸을 버렸나(= 종전이면 표째 포기했을 표)
@@ -1316,6 +1337,10 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str,
             continue                            # 빈 셀은 대조 대상이 아니다
         sim, pos = _best_layer_window(re.sub(r"[0-9]", "\x01", cell) if hangul else cell, cmp_layer)
         texts.append(cell)
+        if sim < _CELL_SIM_MIN and circ and re.search(r"[0-9]", cell):     # 떨어진 칸만 원문자 ↔ 숫자를 같게 보고 다시(#1433 ①)
+            sim2, pos2 = _best_layer_window(re.sub(f"[0-9{chars}]", "\x01", cell), eq_layer)
+            if sim2 >= _CELL_SIM_MIN:
+                sim, pos = sim2, pos2
         if sim < _CELL_SIM_MIN and (len(cell) < _PIECE_CELL_MIN or os.environ.get("TABLE_CELL_PIECES", "1") == "0"):
             if not split:
                 return html                     # 한 셀이라도 실패 → 이 표는 포기
@@ -1350,11 +1375,13 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str,
     labels: list[str] = []
     for base, ns_idx, wins in plan:
         for start, seg, win in wins:           # seg = 창에 댄 칸 글(조각이면 칸 일부)
-            subs = _hangul_substitutions(seg, win) + (_circled_digit_restores(seg, win, layer_ns) if circ else [])
-            for off, ln, repl in subs:
-                if rescued and (off == 0 or off + ln == len(seg)):
-                    continue
-                if dropped and not _split_fix_ok(seg, off, ln, repl, layer_ns):
+            circs = _circled_digit_restores(seg, win, layer_ns) if circ else []
+            sure = set(_circled_digit_restores(seg, win, layer_ns, strict=True)) if circs and (dropped or rescued) else set()
+            subs = [(s, False) for s in _hangul_substitutions(seg, win)] + [(s, True) for s in circs]
+            for (off, ln, repl), by_ctx in subs:
+                blocked = ((rescued and (off == 0 or off + ln == len(seg)))
+                           or (dropped and not _split_fix_ok(seg, off, ln, repl, layer_ns)))
+                if blocked and not (by_ctx and (off, ln, repl) in sure):      # 막힌 문맥 되돌리기는 엄격 판만(#1433 ②③)
                     continue
                 src = ns_idx[start + off:start + off + ln]
                 # 원문에서도 연속이어야 한다 — 중간에 태그·공백이 끼어 있으면 건드리지 않는다.
