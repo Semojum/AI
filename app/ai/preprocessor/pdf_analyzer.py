@@ -937,6 +937,11 @@ _BOX_IN_PAGE = 0.9       # 원래 넓이의 이 비율은 판면 안이어야 �
 # 위계를 한 단 올렸다. 실측 dev-2027 900쪽 자식 사각형 206개의 부모 대비 넓이비는
 # 뚜렷한 쌍봉이다 — 0.9~1.0에 29개(두 겹) · 0.0~0.4에 156개(진짜 중첩) · 0.7~0.9에 5개뿐.
 _BOX_SAME_AREA = 0.85
+# 2단 판 사료 상자는 양쪽 맞춤 글 블록이 테두리를 몇 pt 넘는다(#1429, 세계사 본문 123쪽:
+# 블록 x1 289 · 테두리 286.2). 이만큼은 넘어도 감싼 글로 본다. 쪽 위 머리띠(21~29pt)도
+# 글이 1pt 안팎 넘어 같은 꼴이라 높이로 가른다(dev · val 본문 자리는 52pt 이상).
+_BOX_LOOSE = 4.0
+_BOX_LOOSE_MIN_H = 40.0
 
 
 def page_is_blank(pdf_data: bytes, page_no: int) -> bool:
@@ -1024,6 +1029,7 @@ def box_rects(page) -> list:
     except Exception:  # noqa: BLE001 — 손상 페이지는 테두리 없이 진행
         return []
     out: list = []
+    loose_ok: list = []                   # 글 삐짐으로 받은 상자(아래 중첩 거름)
     for g in drawings:
         raw = _disp(g["rect"], rot)
         if not raw.intersects(pr):
@@ -1048,7 +1054,10 @@ def box_rects(page) -> list:
         if not _hugs_border(g, r, rot):       # 속을 가로지르는 획 = 그림이지 테두리가 아니다
             continue
         if not any(t in r for t in tblocks):  # 감싼 글이 없다
-            continue
+            loose = r + (-_BOX_LOOSE, -_BOX_LOOSE, _BOX_LOOSE, _BOX_LOOSE)
+            if r.height < _BOX_LOOSE_MIN_H or not any(t in loose for t in tblocks):
+                continue
+            loose_ok.append(r)
         out.append(r)
     # 겹치는 후보는 하나로 — 다만 **안에 든 것은 남긴다**. gold는 상자를 중첩하고
     # (자료 박스 안 표), 그 안쪽에 2단계 테두리를 쓴다(dev-2027 343개 중 81%가 1단계 안).
@@ -1073,6 +1082,10 @@ def box_rects(page) -> list:
         if any((r & m).get_area() > r.get_area() * 0.7 for m in merged):
             continue                                     # 어중간하게 겹친다 = 같은 상자
         merged.append(r)
+    # 글 삐짐으로 받은 상자가 다른 상자 안이면 그림 이름표 틀이다(생명과학 본문 62쪽: 실험 그림의
+    # 이름표 틀 둘이 속상자가 되어 바깥 상자 태그까지 깨졌다). 2단 사료 상자는 맨 바깥이다.
+    merged = [m for m in merged
+              if not (any(m is q for q in loose_ok) and any(m in o and m is not o for o in merged))]
     return _drop_many_siblings(merged)
 
 
