@@ -31,14 +31,14 @@ def test_앞_요소에_이미_든_뒷조각만_버린다():
     assert not _merged_dup(item, TAIL, [GONE], host_cut)
 
 
-def test_같은_단_위로_거슬러_합친_블록은_제자리_사본이라_둔다():
+def test_같은_단_위아래로_합친_블록은_제자리_사본이라_둔다():
     # 위 상자 안 지문을 그 아래 선택지 줄에 잘못 합친 꼴. 뒷블록(상자 안)이 앞 요소보다 위에 있다.
     boxed = [82, 598, 453, 708]
     host = [{"type": "text", "content": "① ㄱ ② ㄴ " + TAIL, "bbox": [72, 885, 396, 905]}]
     assert not _merged_dup({"type": "text", "text": "", "bbox": boxed}, TAIL, [boxed], host)
-    below = [82, 600, 476, 700]                                     # 그림에 끊겨 같은 단 아래로 이어진 꼴은 버린다
+    below = [82, 600, 476, 700]                                     # 같은 단 아래도 단 넘김으로 안 친다
     host_above = [{"type": "text", "content": HEAD + TAIL, "bbox": [82, 300, 476, 400]}]
-    assert _merged_dup({"type": "text", "text": "", "bbox": below}, TAIL, [below], host_above)
+    assert not _merged_dup({"type": "text", "text": "", "bbox": below}, TAIL, [below], host_above)
 
 
 def test_뒷조각_안에서_새_선지가_시작하면_둔다():

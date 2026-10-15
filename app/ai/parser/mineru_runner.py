@@ -2271,11 +2271,11 @@ def _middle_blocks(raw_dir: Path) -> list[tuple[str, list[float], list[tuple[str
 # 통째로 있을 때만** 버린다. dev · val 실측(develop fc9b5e2d): 이런 빈 블록 dev 51 · val 5.
 # 다만 뒷블록이 그 앞 요소보다 위(같은 단)에 있으면 단 넘김이 아니다. MinerU 가 위 상자 안 지문을 그 아래 선택지 줄에
 # 잘못 합친 자리(생명과학 본문 99쪽 · 윤리 본문 164쪽)라 뒷블록이 상자 안 제자리 사본이다. 그래서 뒷블록이 앞 요소의
-# 다음 단(오른쪽)이나 아래에 있을 때만 버린다.
+# 다음 단(오른쪽)에 있을 때만 버린다. 같은 단 아래로 이어지는 꼴은 dev · val 에 없어 열지 않았다(열면 아래로 잘못 합친 꼴이 같은 사고를 낸다).
 # 뒷블록 둘째 줄부터 새 선지(`ㄱ.` · `①` …)가 시작해도 버리지 않는다. 앞 요소는 그 줄을 한 문단에 붙여 두어
 # 정오 표시(`tag_answer_marks`)가 붙을 줄이 없다(생명과학 해설 18쪽 `(X)ㄱ.` 이 조용히 사라졌다). 중복은 지우면 되지만
 # 사라진 표시는 점역사가 묵자를 봐야 되살린다.
-_MERGED_TOL = 20                  # 다음 단 · 아래 판정 여유(0~1000)
+_MERGED_TOL = 20                  # 다음 단 판정 여유(0~1000)
 
 
 def _merged_away(raw_dir: Path) -> list[list[float]]:
@@ -2293,7 +2293,7 @@ def _merged_away(raw_dir: Path) -> list[list[float]]:
 
 
 def _merged_dup(item: dict, content: str, merged_away: list, earlier: list[dict]) -> bool:
-    """합치고 비운 블록을 층이 다시 채운 글이 같은 쪽 앞 글 요소 안에 이미 통째로 있고, 그 요소의 다음 단이나 아래인가(위 절)."""
+    """합치고 비운 블록을 층이 다시 채운 글이 같은 쪽 앞 글 요소 안에 이미 통째로 있고, 그 요소의 다음 단에 있나(위 절)."""
     bb = item.get("bbox") or []
     if (item.get("text") or "").strip() or len(bb) != 4:
         return False
@@ -2306,7 +2306,7 @@ def _merged_dup(item: dict, content: str, merged_away: list, earlier: list[dict]
     host = next((e for e in earlier if e.get("type") in ("text", "title", "list_item")
                  and q in _squash_text(re.sub(r"<!/?[^>]*>", "", e.get("content") or ""))), None)
     hb = (host or {}).get("bbox") or []
-    return len(hb) == 4 and (bb[0] >= hb[2] - _MERGED_TOL or bb[1] >= hb[3] - _MERGED_TOL)
+    return len(hb) == 4 and bb[0] >= hb[2] - _MERGED_TOL
 
 
 def _unfold_nested(content_list: list[dict], raw_dir: Path) -> list[dict]:
