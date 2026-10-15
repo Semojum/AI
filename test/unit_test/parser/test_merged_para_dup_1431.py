@@ -53,5 +53,5 @@ def test_뒷조각_안에서_새_선지가_시작하면_둔다():
 def test_글이_있던_블록_딴_자리_짧은_글은_안_버린다():
     host = [{"type": "text", "content": HEAD + TAIL, "bbox": LEFT_END}]
     assert not _merged_dup({"type": "text", "text": TAIL, "bbox": GONE}, TAIL, [GONE], host)
-    assert not _merged_dup({"type": "text", "text": "", "bbox": [100, 84, 400, 208]}, TAIL, [GONE], host)
+    assert not _merged_dup({"type": "text", "text": "", "bbox": [514, 300, 910, 400]}, TAIL, [GONE], host)   # 다음 단이지만 비운 블록 아님
     assert not _merged_dup({"type": "text", "text": "", "bbox": GONE}, "있다.", [GONE], host)
