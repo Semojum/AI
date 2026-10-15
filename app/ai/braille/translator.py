@@ -3516,7 +3516,11 @@ _PAREN_HEAD_RE = re.compile(rf"^(\s*(?:<!\d+칸>)?\s*(?:{_LINE_HEAD}))[ \t]+")
 #     반올림 이하(~416셀)라 이번엔 보류.
 # ⚠ _SPECIAL_MAP(sanitize)와 분리한 전용 경로 — 병합 충돌 회피.
 _LEGACY_CIRCLED_BLACK = {"❶": "①", "❷": "②", "❸": "③", "❹": "④", "❺": "⑤", "❻": "⑥"}
-_LEGACY_CIRCLED_RE = re.compile(r"[❶-❻]")
+# #1423 — 딩뱃 동그라미 숫자 ➀–➉ · ➊–➓(U+2780–2793)도 ①–⑩ 으로 맡긴다. braillify 도 기호표도 몰라
+#   점자 없이 빠졌다(`➊ 가` → `⠫`). 「한국 점자 규정」 제64항(재추출 2566행) 동그라미 숫자 = 수표 + 한 단 내린 숫자.
+#   gold 014 body p0010 표 ➊–➍ = `⠼⠂ ⠼⠆ ⠼⠒ ⠼⠲`. 위 `[` 앞 지우기는 ❶ 언어 콜아웃 관행이라 이 갈래엔 안 넓힌다.
+_DINGBAT_CIRCLED = {chr(0x2780 + i): chr(0x2460 + i % 10) for i in range(20)}
+_LEGACY_CIRCLED_RE = re.compile(r"[❶-❻➀-➓]")
 
 
 def _restore_circled_black(text: str) -> str:
@@ -3524,6 +3528,8 @@ def _restore_circled_black(text: str) -> str:
     # ⚠ _restore_legacy_glyphs(:800)와 이름·정규식을 반드시 분리할 것 — 한때 양쪽이
     #   같은 이름을 써서 나중 정의가 5자 복원을 통째로 가리는 사고가 있었다.
     def _rep(m: re.Match) -> str:
+        if m.group() in _DINGBAT_CIRCLED:
+            return _DINGBAT_CIRCLED[m.group()]
         return "" if text[m.end():m.end() + 1] == "[" else _LEGACY_CIRCLED_BLACK[m.group()]
     return _LEGACY_CIRCLED_RE.sub(_rep, text)
 
@@ -3620,7 +3626,7 @@ def translate_tagged_text(text: str, *, force_roman: bool = False,
     text = _restore_legacy_glyphs(text)     # 오디코딩 5자(⇂¤‹˘⇨)
     text = _restore_broken_subscripts(text)  # 깨진 아래첨자 ¡™£¢§ → ₁₂₃₄₆ (수식 라우팅 전, r16)
     text = _restore_ion_signs(text)         # 이온 전하 ±— → ⁺⁻ (과학점자 제2항, 아래첨자 복원 뒤)
-    text = _restore_circled_black(text)     # 검은 원문자 ❶-❻ (선지머리 정규화보다 먼저)
+    text = _restore_circled_black(text)     # 검은 원문자 ❶-❻ · 딩뱃 ➀-➓ (선지머리 정규화보다 먼저)
     text = _normalize_araea_middot(text)    # 아래아 ㆍ → 가운뎃점 ·(제50항, 수표 혼입 차단)
     text = _CHOICE_HEAD_RE.sub(r"\1 ", text)
     text = _PAREN_HEAD_RE.sub(r"\1 ", text)
