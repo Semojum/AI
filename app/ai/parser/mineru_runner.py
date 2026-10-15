@@ -2272,6 +2272,9 @@ def _middle_blocks(raw_dir: Path) -> list[tuple[str, list[float], list[tuple[str
 # 다만 뒷블록이 그 앞 요소보다 위(같은 단)에 있으면 단 넘김이 아니다. MinerU 가 위 상자 안 지문을 그 아래 선택지 줄에
 # 잘못 합친 자리(생명과학 본문 99쪽 · 윤리 본문 164쪽)라 뒷블록이 상자 안 제자리 사본이다. 그래서 뒷블록이 앞 요소의
 # 다음 단(오른쪽)이나 아래에 있을 때만 버린다.
+# 뒷블록 둘째 줄부터 새 선지(`ㄱ.` · `①` …)가 시작해도 버리지 않는다. 앞 요소는 그 줄을 한 문단에 붙여 두어
+# 정오 표시(`tag_answer_marks`)가 붙을 줄이 없다(생명과학 해설 18쪽 `(X)ㄱ.` 이 조용히 사라졌다). 중복은 지우면 되지만
+# 사라진 표시는 점역사가 묵자를 봐야 되살린다.
 _MERGED_TOL = 20                  # 다음 단 · 아래 판정 여유(0~1000)
 
 
@@ -2296,8 +2299,9 @@ def _merged_dup(item: dict, content: str, merged_away: list, earlier: list[dict]
         return False
     if not any(all(abs(a - b) <= 3 for a, b in zip(bb, m)) for m in merged_away):
         return False
+    from app.ai.preprocessor.pdf_analyzer import _CHOICE_HEAD_RE
     q = _squash_text(re.sub(r"<!/?[^>]*>", "", content))
-    if len(q) < _NESTED_DUP_MIN:
+    if len(q) < _NESTED_DUP_MIN or any(_CHOICE_HEAD_RE.match(ln) for ln in content.split("\n")[1:]):
         return False
     host = next((e for e in earlier if e.get("type") in ("text", "title", "list_item")
                  and q in _squash_text(re.sub(r"<!/?[^>]*>", "", e.get("content") or ""))), None)

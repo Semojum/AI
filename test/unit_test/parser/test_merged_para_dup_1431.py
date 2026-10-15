@@ -41,6 +41,15 @@ def test_같은_단_위로_거슬러_합친_블록은_제자리_사본이라_둔
     assert _merged_dup({"type": "text", "text": "", "bbox": below}, TAIL, [below], host_above)
 
 
+def test_뒷조각_안에서_새_선지가_시작하면_둔다():
+    # 앞 요소는 선지 줄을 문단에 붙여 두어 정오 표시가 붙을 줄이 없다. 뒷블록을 버리면 표시가 사라진다.
+    tail = "추는 반응이 일어난다. ㉠은 후엽이고, ⓐ는 증가이다.\nㄱ.\t항이뇨 호르몬은 뇌하수체 후엽에서 분비된다."
+    host = [{"type": "text", "content": "혈장 삼투압을 낮" + tail.replace("\n", ""), "bbox": LEFT_END}]
+    item = {"type": "text", "text": "", "bbox": GONE}
+    assert not _merged_dup(item, tail, [GONE], host)
+    assert _merged_dup(item, tail.replace("\nㄱ.\t", " ㄱ. "), [GONE], host)   # 줄머리 선지가 없으면 버린다
+
+
 def test_글이_있던_블록_딴_자리_짧은_글은_안_버린다():
     host = [{"type": "text", "content": HEAD + TAIL, "bbox": LEFT_END}]
     assert not _merged_dup({"type": "text", "text": TAIL, "bbox": GONE}, TAIL, [GONE], host)
