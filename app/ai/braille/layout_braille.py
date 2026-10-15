@@ -441,12 +441,23 @@ def _is_box_title_line(line: str) -> bool:
             and bool(line.strip(" ⠀")))
 
 
-def _block_blanks(etype: str, hlevel: int, box_lead: bool = False, box_tail: bool = False) -> tuple[int, int]:
+def _block_blanks(etype: str, hlevel: int, box_lead: bool = False, box_tail: bool = False,
+                  inner_table: bool = False) -> tuple[int, int]:
     """요소 앞뒤 빈 줄 요구(0 · 1) — 응답 · 쪽 조판이 같이 쓴다. 제목 단계 · 표 · 시각 자료 · 요소 머리 · 끝의 글상자."""
     before, after = _HEADING_BLANK.get(hlevel, (0, 0))
-    if etype in _BLANK_AROUND_TYPES:        # 표·시각자료 위아래(NLD 2장2절2 2)(2)④)
+    if etype in _BLANK_AROUND_TYPES and not inner_table:     # 표·시각자료 위아래(NLD 2장2절2 2)(2)④)
         before, after = max(before, 1), max(after, 1)
     return max(before, int(box_lead)), max(after, int(box_tail))
+
+
+# #1424(원장 C-175) — 글상자 안 표는 위아래에 빈 줄을 두지 않는다. 표 위아래 한 줄(지침 2장 2절 2. 2)(2)④ 905행)과
+#   속글상자 위아래 빈 줄 없음(3장 평가문제 3)(4) 3095~3096행)이 맞서 조항이 모호하다 → 관행. gold dev · val 상자 안 표 134 중
+#   위 빈 줄 9 · 아래 11(93% 붙임), 표 아래 테두리 바로 다음이 바깥 상자 아래 테두리인 57곳은 사이 0줄.
+#   상자 안 표는 표 체인이 위계대로 2 · 3단계 테두리(⠖…⠲ · ⠓…⠚)로 다시 그린 표다(`table_braille._relevel_borders`).
+#   되돌리기 `INNER_TABLE_BLANKS=1`(호출 때 읽음).
+def _is_inner_table(etype: str, lines: list[str]) -> bool:
+    return (etype == "table" and os.environ.get("INNER_TABLE_BLANKS", "0") != "1"
+            and any(ln[:1] in "⠖⠓" and _is_border_line(ln) for ln in lines))
 
 
 def _joins_visual_run(etype: str, prev_type: str, first_line: str, prev_line: str) -> bool:
@@ -827,7 +838,8 @@ class LayoutBraille:
                 continue
             prev_line = next((ln for ln in reversed(lines) if ln.strip()), "")
             # 위 테두리 윗줄 5칸 제목(앞 요소)은 상자에 딸린다 — 빈 줄은 그 위다.
-            before, after = _block_blanks(etype, hlevel, box_lead and not _is_box_title_line(prev_line), box_tail)
+            before, after = _block_blanks(etype, hlevel, box_lead and not _is_box_title_line(prev_line), box_tail,
+                                          _is_inner_table(etype, el_lines))
             # 요소가 스스로 달고 온 앞뒤 빈 줄도 같은 '한 줄' 요구다. 떼어 내 before/after에 합치면
             # 경계 빈 줄과 겹칠 일이 없다.
             lead, tail = _lead_blanks(el_lines), _tail_blanks(el_lines)
@@ -1623,7 +1635,7 @@ def flatten_elements(
         # 쪽 첫 요소의 상자 머리 빈 줄은 안 낸다 — 쪽 조판(`_assemble_pages`)도 쪽 머리에 빈 줄을 안 두고,
         # 원본 쪽 경계(변경선) 옆 빈 줄은 원장 C-118 소관이다.
         box_lead = box_lead and prev_key is not None and not _is_box_title_line(prev_line)
-        before, after = _block_blanks(etype, hlevel, box_lead, box_tail)
+        before, after = _block_blanks(etype, hlevel, box_lead, box_tail, _is_inner_table(etype, lines))
         if _joins_visual_run(etype, prev_type, next((ln for ln in lines if ln.strip()), ""), prev_line):
             # NLD 3장2절1 2) 다만 — 시각 자료가 연이어 나올 때 그 사이는 안 띈다.
             # 여기선 빈 줄이 **앞 요소의 suffix에 이미 박혀** 있으므로 그만큼 되돈다
