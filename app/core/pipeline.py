@@ -1342,6 +1342,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         tag_char_boxes,
         tag_combining_boxes,
         regroup_boxed,
+        shade_panels_norm,
         tag_answer_marks,
         tag_boxed_elements,
         drop_question_frames,
@@ -1458,6 +1459,7 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
     # 테두리 태그를 붙인다. 두 경로(ZERO·MinerU) 모두 여기를 지나므로 한 자리면 된다.
     if not doc_meta.scan_only:
         rects = await asyncio.to_thread(box_rects_norm, task.pdf_data, task.page_no)
+        panels = await asyncio.to_thread(shade_panels_norm, task.pdf_data, task.page_no)   # 음영 속글상자(#1427)
         # 글자층 테두리 제목(#1414) — 정규화 좌표로 먼저 찾고, 아래 좌표 변환 뒤 사각형 튜플로 짝짓는다.
         border_titles = await asyncio.to_thread(box_border_titles_norm, task.pdf_data, task.page_no, rects)
         # 사각형은 0~1000 정규화로 온다. 경계 bbox의 좌표계가 경로마다 다르므로 맞춰 준다
@@ -1465,6 +1467,8 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         if bbox_space == "pixel" and image_width and image_height:
             rects = [[r[0] / 1000 * image_width, r[1] / 1000 * image_height,
                       r[2] / 1000 * image_width, r[3] / 1000 * image_height] for r in rects]
+            panels = [[r[0] / 1000 * image_width, r[1] / 1000 * image_height,
+                       r[2] / 1000 * image_width, r[3] / 1000 * image_height] for r in panels]
         border_titles = {tuple(r): t for r, t in zip(rects, border_titles) if t}
         # 추출기 읽기순서가 상자를 가로지르면 먼저 모아 준다 — 안 그러면 아래 태깅이
         # "읽기순서가 끊겼다"로 상자를 통째로 건너뛴다(원장 C-17 후속).
@@ -1475,7 +1479,10 @@ async def _extract_with_hyunju(task: PageTask) -> tuple[DocumentMeta, dict]:
         # 문항 틀 · 곁단 바탕은 글상자가 아니다(#1110 · #1149, pdf_analyzer 주석). 순서 재정렬(위)은 종전대로 다 쓴다.
         _page_h = float(image_height) if (bbox_space == "pixel" and image_height) else 1000.0
         boxes = drop_sidebar_columns(drop_question_frames(elements, rects), _page_w, _page_h)
-        if n := tag_boxed_elements(elements, boxes, _page_w, border_titles):
+        # 음영 속글상자(#1427)는 남은 상자 안에 든 것만 넘긴다. 부모가 문항 틀 · 곁단 바탕으로 빠졌으면 속상자가 아니다.
+        panels = [p for p in panels
+                  if any(b[0] <= p[0] and b[1] <= p[1] and p[2] <= b[2] and p[3] <= b[3] for b in boxes)]
+        if n := tag_boxed_elements(elements, boxes + panels, _page_w, border_titles, {tuple(p) for p in panels}):
             logger.info("글상자 %d개 태깅 (page=%d)", n, task.page_no)
 
         # 정오 표시 ○·×(원장 M-04) — 채움 경로라 텍스트레이어에도 MinerU에도 안 잡힌다.
