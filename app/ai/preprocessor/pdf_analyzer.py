@@ -1395,6 +1395,76 @@ def box_rects_norm(pdf_data: bytes, page_no: int) -> list[list[float]]:
             os.unlink(tmp_path)
 
 
+
+# ── 음영 속글상자(#1427) ─────────────────────────────────────────────────
+# 획 상자 안에 **채움으로만** 칠한 패널(자료 · 인용)을 gold 는 속글상자(2단계 `⠖⠒…⠲` · `⠓⠒…⠚`)로 적는다.
+# 「점자 도서 제작 지침」 1장 2절 5. 1)(재추출 388~389행): 음영으로 채운 글상자도 글상자. 3장 3) 지문 (4)
+# (3094~3095행): 지문 안의 또 다른 글상자는 속글상자. 채움 전용을 다 받으면 새 상자의 76% 가 gold 에 없어
+# (위 `box_rects` 주석) **획 상자 안 · 거의 부모 폭 · 좌우 여백 있음**만 받는다. 여백이 0 이면 부모 바탕 칠이다
+# (언어와 매체 본문). 실측(develop 45b449e5 · dev · val 1,746쪽): 이 조건과 '글이 있고 표가 없음'(`tag_boxed_elements`)
+# 을 다 맞는 패널 val 152 · dev 5, 쪽마다 gold 2단계 모자람과 맞대면 val 최대 140(92%) · dev 최대 3.
+_PANEL_FILL = (0.75, 0.97)   # 가장 어두운 채널 — 흰 마스크와 짙은 띠 · 라벨을 뺀다
+_PANEL_IN = 0.9              # 패널 넓이 가운데 부모 상자 안에 든 몫
+_PANEL_MIN_W = 0.85          # 부모 폭 대비 하한
+_PANEL_INSET = 3.0           # 좌우 안쪽 여백 하한(pt)
+
+
+def shade_panels(page, boxes: list) -> list:
+    """획 상자(`box_rects`) 안의 음영 패널(표시 좌표 Rect). 부모로 잘라 중첩이 되게 돌려준다."""
+    pr = page.rect
+    rot = page.rotation_matrix
+    try:
+        tblocks = [_disp(b["bbox"], rot) for b in page.get_text("rawdict")["blocks"] if b.get("type") == 0]
+        drawings = page.get_drawings()
+    except Exception:  # noqa: BLE001 — 손상 페이지는 패널 없이 진행
+        return []
+    found: list = []
+    for g in drawings:
+        fill = g.get("fill")
+        if g["type"] != "f" or not fill or not _PANEL_FILL[0] <= min(fill) <= _PANEL_FILL[1]:
+            continue
+        r = _disp(g["rect"], rot) & pr
+        if r.height < _BOX_MIN_H:
+            continue
+        par = [m for m in boxes if (r & m).get_area() >= r.get_area() * _PANEL_IN
+               and r.get_area() < m.get_area() * _BOX_SAME_AREA]
+        if not par:
+            continue
+        m = min(par, key=lambda q: q.get_area())
+        if r.width < m.width * _PANEL_MIN_W or r.x0 - m.x0 < _PANEL_INSET or m.x1 - r.x1 < _PANEL_INSET:
+            continue
+        if not any(t in r or (t & r).get_area() > t.get_area() * 0.6 for t in tblocks):
+            continue
+        found.append(r & m)                      # 부모 위 띠에 걸친 윗변은 잘라 낸다(세계사 본문 114쪽 6pt)
+    out: list = []
+    for r in sorted(found, key=lambda r: -r.get_area()):   # 같은 패널을 두세 겹 칠한 것은 하나로
+        if not any((r & o).get_area() > r.get_area() * 0.8 for o in out):
+            out.append(r)
+    return out
+
+
+def shade_panels_norm(pdf_data: bytes, page_no: int) -> list[list[float]]:
+    """음영 속글상자를 0~1000 정규화 좌표로(`box_rects_norm` 과 같은 좌표계). 실패하면 빈 목록."""
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            f.write(_coerce_pdf_bytes(pdf_data))
+            tmp_path = f.name
+        doc = fitz.open(tmp_path)
+        try:
+            page = doc[max(0, min(page_no - 1, doc.page_count - 1))]
+            w, h = page.rect.width or 1, page.rect.height or 1
+            return [[r.x0 / w * 1000, r.y0 / h * 1000, r.x1 / w * 1000, r.y1 / h * 1000]
+                    for r in shade_panels(page, box_rects(page))]
+        finally:
+            doc.close()
+    except Exception as exc:  # noqa: BLE001 — 속글상자는 있으면 좋은 것, 없어도 본문은 나가야 한다
+        logger.warning("음영 속글상자 검출 실패(없이 진행): %s", exc)
+        return []
+    finally:
+        if tmp_path:
+            os.unlink(tmp_path)
+
 def _center_in(bb, rect) -> bool:
     """요소 중심이 사각형 안인가. 테두리에 닿은 글이 몇 px 삐져나오므로 완전포함은 안 쓴다."""
     return (rect[0] <= (bb[0] + bb[2]) / 2 <= rect[2]
@@ -1550,7 +1620,7 @@ def drop_question_frames(elements: list[dict], rects: list) -> list:
 
 
 def tag_boxed_elements(elements: list[dict], rects: list, page_w: float = 1000.0,
-                       titles: dict | None = None) -> int:
+                       titles: dict | None = None, panels: set | None = None) -> int:
     """사각형이 감싼 텍스트 요소 앞뒤에 테두리 태그를 넣는다(in-place). 감싼 상자 수 반환.
 
     ★ **표·그림을 품은 사각형도 글상자다**(「제작 지침」 3장 지문 (4): 지문 속 글상자는
@@ -1564,6 +1634,8 @@ def tag_boxed_elements(elements: list[dict], rects: list, page_w: float = 1000.0
 
     ★ `rects`와 `elements`의 bbox는 **같은 좌표계**여야 한다(부르는 쪽 책임).
     ★ `titles` 는 {사각형 좌표 튜플: 글자층 테두리 제목}(#1414, `box_border_titles_norm`). 제목 요소가 없을 때만 쓴다.
+    ★ `panels` 는 `rects` 가운데 음영 속글상자(#1427, `shade_panels_norm`)의 좌표 튜플이다. 테두리 제목을 올리지 않고,
+      안에 표가 들면 감싸지 않는다(그 표는 상자 안 표로 이미 2단계 테두리를 받는다, #1110).
     ★ 감싼 요소가 **읽기순서에서 연속**이어야 태그를 단다. 태그는 첫 요소 앞과 마지막 요소
       뒤에 붙으므로, 중간에 상자 밖 요소가 끼면 그것까지 테두리 안으로 들어간다.
       MinerU는 읽기순서를 다시 매기므로(단 클러스터링·문항번호 이동) 실제로 끊긴다.
@@ -1590,7 +1662,8 @@ def tag_boxed_elements(elements: list[dict], rects: list, page_w: float = 1000.0
         # MinerU 읽기순서가 제목을 몸통 중간에 놓는 일이 잦아, 한정하면 이득의 2/3가 날아간다
         # (실측 2026-08-09: 한정 dev −6,297셀 / 전체 탐색 dev −9,000셀).
         blocked = promoted | opens.keys() | closes.keys()   # 태그를 인 요소는 못 뺀다
-        title_i = _box_title_index(elements, rect, blocked)
+        panel = bool(panels) and tuple(rect) in panels
+        title_i = None if panel else _box_title_index(elements, rect, blocked)
         inside: list[int] = []            # 읽기순서 연속성 판정용(시각요소 포함)
         texts: list[int] = []             # 태그를 붙일 수 있는 요소만
         for i, el in enumerate(elements):
@@ -1613,6 +1686,8 @@ def tag_boxed_elements(elements: list[dict], rects: list, page_w: float = 1000.0
             # 제목만 남으면 상자가 통째로 사라진다 — 승격을 물리고 상자를 살린다.
             inside, texts, title_i = sorted(inside + [title_i]), [title_i], None
         if not texts:
+            continue
+        if panel and any(elements[i].get("type") == "table" for i in inside):
             continue
         if inside != list(range(inside[0], inside[-1] + 1)):
             logger.debug("글상자 건너뜀 — 읽기순서가 끊겼다(%s)", inside)
