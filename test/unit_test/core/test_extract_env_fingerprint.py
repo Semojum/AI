@@ -48,6 +48,7 @@ NOT_BOUNDARY = {
     "PAGE_FOOT_DROP": "경계 뒤 묵자 꼬리말 빼기(`_parse_txt_result`, #1319 · 원장 C-86). 경계의 `page_foot` 표지는 늘 단다",
     "CHOICE_ELEMENT_JOIN": "경계 뒤 선택지 요소 잇기(`_parse_txt_result`, 원장 C-166)",
     "BOX_CLOSE_AFTER_TABLE": "경계 뒤 상자 닫는 태그를 표 · 그림 뒤로 옮기기(`_parse_txt_result`, #1416). 경계의 `box_close_after` 표지는 늘 단다",
+    "BOX_LINE_NO_JOIN": "경계 뒤 줄 잇기에서 상자 테두리 줄 뒤 줄바꿈 지키기(`_parse_txt_result`, #1419)",
 }
 _ENV_RE = re.compile(r"""(?:os\.environ\.get|os\.getenv|os\.environ\.setdefault)\(\s*["']([A-Z0-9_]+)["']|os\.environ\[\s*["']([A-Z0-9_]+)["']\s*\]""")
 

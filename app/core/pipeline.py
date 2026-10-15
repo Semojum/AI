@@ -2520,6 +2520,14 @@ def _join_split_words(text: str) -> str:
     return "\n\n".join(out) if touched else text
 
 
+# 글상자 테두리 한 줄 — 여는 태그 쌍(사이는 제목) 또는 닫는 태그 쌍. 추출(`tag_boxed_elements`)이 늘 제 줄에 둔다.
+# 줄 잇기는 태그 줄도 인쇄면 한 줄로 보고 다음 줄을 잇는다(`_join_words` 가 빈 구분자를 주거나 폭 판정이 '안
+# 들어감'일 때). 그러면 위 테두리와 본문 첫 줄이 한 줄로 나간다. 위 테두리는 줄 첫 칸부터 마지막 칸까지 적는 한 줄이다
+# (「점자 도서 제작 지침」 1장 2절 5. 2)(1), 재추출 392~393행. #1419).
+# `_join_split_words` 는 낱말 끝 글자를 보는 문으로 이미 막는다. 되돌리기 `BOX_LINE_NO_JOIN=0`(호출 때 읽음).
+_BOX_TAG_LINE_RE = re.compile(r"<!(상자(?:끝)?\d?)>[^<>\n]*<!/\1>")
+
+
 def _join_wrapped_lines(text: str) -> str:
     """인쇄면에서 끊긴 한 문단을 한 줄로 잇는다.
 
@@ -2541,6 +2549,7 @@ def _join_wrapped_lines(text: str) -> str:
     from app.ai.preprocessor.pdf_analyzer import _join_words
 
     out: list[str] = []
+    keep_box = os.environ.get("BOX_LINE_NO_JOIN", "1") != "0"
     for block in text.split("\n\n"):
         lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
         if len(lines) < 2:
@@ -2564,8 +2573,20 @@ def _join_wrapped_lines(text: str) -> str:
                 merged.append(nxt)               # 들어갔는데 바꾼 줄 = 내용상 줄바꿈
             else:
                 merged[-1] += sep + nxt
+        if keep_box:
+            merged = [_split_head_box_lines(ln) for ln in merged]
         out.append("\n".join(merged))
     return "\n\n".join(out)
+
+
+def _split_head_box_lines(line: str) -> str:
+    """이은 줄 **맨 앞**의 상자 테두리 줄 뒤만 줄을 바꾼다(#1419). 잇기 판정은 종전 그대로 둔다 — 태그 줄을
+    따로 두고 다시 판정하면 짧아진 첫 본문 줄 때문에 다른 줄바꿈 판정까지 바뀐다(1,746쪽 전수 12요소)."""
+    head: list[str] = []
+    while (m := _BOX_TAG_LINE_RE.match(line)) and m.end() < len(line):
+        head.append(m.group(0))
+        line = line[m.end():].lstrip(" ")
+    return "\n".join(head + [line])
 
 
 def _promote_box_title(text: str) -> str:
