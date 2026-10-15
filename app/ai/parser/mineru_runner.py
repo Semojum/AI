@@ -2262,6 +2262,53 @@ def _middle_blocks(raw_dir: Path) -> list[tuple[str, list[float], list[tuple[str
     return out
 
 
+# ── 단 넘김 문단의 뒷조각(#1431) ─────────────────────────────────────────────
+# MinerU 는 단을 넘는 문단을 앞 블록에 합친다. 합친 글은 앞 블록에 들고, 뒤 블록은 middle.json 에
+# `lines_deleted: true`(줄 0개)로 남는데 content_list 에는 **빈 글 · 원래 bbox** 로 그대로 나온다.
+# 아래 하이브리드 층 덮기가 그 빈 글을 bbox 의 글자층으로 다시 채운다. 앞 블록이 층으로 갈아 끼워지면
+# (자기 bbox 가 단 끝 한 줄이라 앞부분만 남는다) 이 조각이 유일한 사본이라 둬야 하고, 앞 블록이 합친 글을
+# 그대로 두면 뒷부분이 두 번 나간다(언어와 매체 해설 40쪽 ⑤ 해설). 그래서 **채운 글이 앞 글 요소에 이미
+# 통째로 있을 때만** 버린다. dev · val 실측(develop fc9b5e2d): 이런 빈 블록 dev 51 · val 5.
+# 다만 뒷블록이 그 앞 요소보다 위(같은 단)에 있으면 단 넘김이 아니다. MinerU 가 위 상자 안 지문을 그 아래 선택지 줄에
+# 잘못 합친 자리(생명과학 본문 99쪽 · 윤리 본문 164쪽)라 뒷블록이 상자 안 제자리 사본이다. 그래서 뒷블록이 앞 요소의
+# 다음 단(오른쪽)에 있을 때만 버린다. 같은 단 아래로 이어지는 꼴은 dev · val 에 없어 열지 않았다(열면 아래로 잘못 합친 꼴이 같은 사고를 낸다).
+# 뒷블록 둘째 줄부터 새 선지(`ㄱ.` · `①` …)가 시작해도 버리지 않는다. 앞 요소는 그 줄을 한 문단에 붙여 두어
+# 정오 표시(`tag_answer_marks`)가 붙을 줄이 없다(생명과학 해설 18쪽 `(X)ㄱ.` 이 조용히 사라졌다). 중복은 지우면 되지만
+# 사라진 표시는 점역사가 묵자를 봐야 되살린다.
+_MERGED_TOL = 20                  # 다음 단 판정 여유(0~1000)
+
+
+def _merged_away(raw_dir: Path) -> list[list[float]]:
+    """MinerU 가 앞 블록에 합치고 비운 블록(`lines_deleted`)의 bbox(0~1000). 못 읽으면 빈 목록."""
+    paths = list(raw_dir.rglob("*_middle.json"))
+    if not paths:
+        return []
+    try:
+        info = json.loads(paths[0].read_text(encoding="utf-8"))["pdf_info"][0]
+        w, h = info["page_size"]
+        return [[b["bbox"][0] / w * 1000, b["bbox"][1] / h * 1000, b["bbox"][2] / w * 1000, b["bbox"][3] / h * 1000]
+                for b in info.get("para_blocks") or [] if b.get("lines_deleted") and b.get("bbox")]
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        return []
+
+
+def _merged_dup(item: dict, content: str, merged_away: list, earlier: list[dict]) -> bool:
+    """합치고 비운 블록을 층이 다시 채운 글이 같은 쪽 앞 글 요소 안에 이미 통째로 있고, 그 요소의 다음 단에 있나(위 절)."""
+    bb = item.get("bbox") or []
+    if (item.get("text") or "").strip() or len(bb) != 4:
+        return False
+    if not any(all(abs(a - b) <= 3 for a, b in zip(bb, m)) for m in merged_away):
+        return False
+    from app.ai.preprocessor.pdf_analyzer import _CHOICE_HEAD_RE
+    q = _squash_text(re.sub(r"<!/?[^>]*>", "", content))
+    if len(q) < _NESTED_DUP_MIN or any(_CHOICE_HEAD_RE.match(ln) for ln in content.split("\n")[1:]):
+        return False
+    host = next((e for e in earlier if e.get("type") in ("text", "title", "list_item")
+                 and q in _squash_text(re.sub(r"<!/?[^>]*>", "", e.get("content") or ""))), None)
+    hb = (host or {}).get("bbox") or []
+    return len(hb) == 4 and bb[0] >= hb[2] - _MERGED_TOL
+
+
 def _unfold_nested(content_list: list[dict], raw_dir: Path) -> list[dict]:
     """부모 항목 안 필드로 온 제목·각주를 본문 글 항목으로 펼치고, code 블록을 글로 바꾼다(#986)."""
     middle = _middle_blocks(raw_dir)
@@ -2487,6 +2534,7 @@ def run(
     with open(cl_path, encoding="utf-8") as f:
         content_list = json.load(f)
     content_list = _unfold_nested(content_list, raw_dir)     # 딸린 제목·각주·code 글(#986)
+    merged_away = _merged_away(raw_dir)                          # 단 넘김 문단의 비운 뒷블록(#1431)
 
     images_dir = raw_dir / "images"
     images_dir.mkdir(exist_ok=True)
@@ -2718,6 +2766,10 @@ def run(
         if (_HALLUC_RULE and _HALLUC_STRUCT and not suspect
                 and (mapped_type in ("table", "formula") or item_type == "table")):
             suspect = bool(_halluc_struct_signs(content, mapped_type, _page_layer))
+
+        if merged_away and _merged_dup(item, content, merged_away, merged_layout):   # 위 #1431 절
+            logger.info("page %d: 앞 블록에 이미 든 단 넘김 뒷조각을 버렸다 (%r)", page_no, content[:30])
+            continue
 
         # MinerU bbox는 0~1000 정규화 좌표 → 실제 픽셀로 변환
         bb_px = [bb[0] / 1000 * img_w, bb[1] / 1000 * img_h,
