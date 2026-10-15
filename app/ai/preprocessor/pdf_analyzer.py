@@ -1647,6 +1647,11 @@ def tag_boxed_elements(elements: list[dict], rects: list, page_w: float = 1000.0
         sfx = "" if level == 1 else str(level)        # <!상자2> = 2단계(translator 규약)
         opens.setdefault(first, []).append((level, f"<!상자{sfx}>{title}<!/상자{sfx}>"))
         closes.setdefault(last, []).append((level, f"<!상자끝{sfx}><!/상자끝{sfx}>"))
+        # 사각형 안 마지막 요소가 표 · 그림 · 수식이면 상자는 그 뒤에서 닫혀야 한다(#1416). 그런 요소에는 태그를 못 다니
+        # 닫는 태그는 종전 자리(마지막 글 요소)에 두고 '이 뒤에서 닫는다'를 경계 키로 남긴다. 옮기는 것은 꼬리말을 빼고
+        # 읽기순서를 다 매긴 뒤 파이프라인이 한다(`pipeline._move_box_closes`).
+        if inside[-1] > last:
+            elements[inside[-1]].setdefault("box_close_after", []).append([level, f"<!상자끝{sfx}><!/상자끝{sfx}>"])
         # 표에는 태그를 못 다니 위계를 경계 키로 남긴다(#1110). 사각형 안 표 전부 — 태그 안에 그려지는지는
         # 읽기순서 재배정 뒤에 정해지므로 점역이 최종 순서로 다시 본다(`pipeline._mark_table_box_levels`).
         for i in inside:

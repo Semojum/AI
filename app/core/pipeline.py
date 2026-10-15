@@ -2635,6 +2635,7 @@ def _parse_txt_result(
     _band = _page_edge_band(_els)
     _bottom = _bottom_block(_els)                                            # 꼬리말 자리(C-86)
     _feet: set[UUID] = set()                                                 # 열 묶기 뒤에 뺄 꼬리말(C-86)
+    close_after: dict[UUID, list] = {}                                       # 표 · 그림 뒤에서 닫을 상자 태그(#1416)
     for idx, el in enumerate(_els, start=1):
         try:
             eid = UUID(str(el.get("id")))
@@ -2725,6 +2726,8 @@ def _parse_txt_result(
                 flags=flags,
                 box_level=int(el.get("box_level") or 0),
             )
+        if el.get("box_close_after"):
+            close_after[eid] = el["box_close_after"]
 
     wing = _reorder_by_geometry(bbox_items, int(meta.get("page_rotation") or 0))
     if _feet:
@@ -2743,6 +2746,7 @@ def _parse_txt_result(
                       scale_bbox[1] if scale_bbox else 1.0)
     _join_choice_elements(bbox_items, ext_map)
     _box_concept_checks(bbox_items, ext_map)
+    _move_box_closes(bbox_items, ext_map, close_after)
     _mark_table_box_levels(bbox_items, ext_map)
     layout = LayoutResult(page_id=page_id, elements=bbox_items)
     return layout, ext_map, method
@@ -3053,6 +3057,42 @@ def _box_concept_checks(items: list[BBoxItem], ext_map: dict[UUID, ExtractedCont
         items[:] = [it for it in items if it.element_id not in drop]
         for eid in drop:
             ext_map.pop(eid, None)
+
+
+# 상자 안 마지막 요소가 표 · 그림 · 수식이면 상자는 그 뒤에서 닫힌다(#1416). 추출(`tag_boxed_elements`)은 그런 요소에 태그를
+# 못 달아 닫는 태그를 마지막 글 요소에 두고 `box_close_after` 를 남긴다. 표 바로 다음 요소는 꼬리말을 빼고 읽기순서를 다 매긴
+# 뒤라야 정해진다 — 경계에서 다음 요소에 바로 붙이면 그것이 꼬리말(`[2부] 적용 학습`)일 때 태그가 같이 지워진다(61곳 중 2곳).
+# 표 바로 앞 글 요소가 그 태그를 갖고 있고 표 바로 다음이 글 요소일 때만 옮긴다. 아니면 종전 자리(표 앞에서 닫힘)에 둔다.
+# 되돌리기 `BOX_CLOSE_AFTER_TABLE=0`(호출 때 읽음).
+_CLOSE_TARGET_TYPES = frozenset({"text", "title", "list_item", "caption", "footnote"})
+
+
+def _move_box_closes(items: list[BBoxItem], ext_map: dict[UUID, ExtractedContent], close_after: dict) -> int:
+    """닫는 상자 태그를 표 · 그림 · 수식 뒤 글 요소 머리로 옮긴다(in-place). 옮긴 태그 수를 돌려준다."""
+    if not close_after or os.environ.get("BOX_CLOSE_AFTER_TABLE", "1") == "0":
+        return 0
+    order = [it for it in sorted(items, key=lambda b: b.reading_order) if it.element_id in ext_map]
+    moved = 0
+    for k, it in enumerate(order):
+        tags = close_after.get(it.element_id)
+        if not tags or k + 1 >= len(order) or order[k + 1].type not in _CLOSE_TARGET_TYPES:
+            continue
+        prev = next((order[j] for j in range(k - 1, -1, -1) if order[j].type in _CLOSE_TARGET_TYPES), None)
+        if prev is None:
+            continue
+        src, dst = ext_map[prev.element_id], ext_map[order[k + 1].element_id]
+        head = []
+        for _lv, tag in sorted(tags, key=lambda t: -t[0]):        # 안쪽(높은 위계)부터 닫는다
+            text = src.corrected_text or ""
+            cut = text.rfind(tag)
+            if cut < 0:
+                continue
+            src.corrected_text = text[:cut].rstrip("\n") + text[cut + len(tag):]
+            head.append(tag)
+        if head:
+            dst.corrected_text = "\n".join(head) + "\n" + (dst.corrected_text or "")
+            moved += len(head)
+    return moved
 
 
 def _mark_table_box_levels(items: list[BBoxItem], ext_map: dict[UUID, ExtractedContent]) -> None:
