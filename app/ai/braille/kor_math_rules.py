@@ -1662,7 +1662,8 @@ def _stage4_log(result: str) -> str:
         # 숫자 거듭제곱 밑(`\log_{2^2}`)은 조항이 없어 관행을 따라 묶는다(원장 C-149, #1143). 안 묶으면
         #   `_;#b~#b#c` 로 지수와 진수가 붙는다. gold 94권 묶음 11 : 안 묶음 0(전부 수학 Ⅰ EBS-E26-009,
         #   `_;(#b~#b)#c`). 문자 거듭제곱 밑(`_;a~m`)은 gold 4곳 모두 안 묶어 그대로 둔다.
-        if (_needs_wrap(base_raw) or re.fullmatch(r"\d+\.\d+", base_raw) or "⠌" in base_raw
+        # #1437: 밑은 곱을 안 묶는다(붙임 1 은 분수 · 소수만, 재추출 3820행) — `product=False`.
+        if (_needs_wrap(base_raw, product=False) or re.fullmatch(r"\d+\.\d+", base_raw) or "⠌" in base_raw
                 or re.fullmatch(r"\d+\^(?:\{[^{}]*\}|\d)", base_raw)):
             return f"{_LOG_IND}{_SUBSCRIPT_IND}{_wrap_ins(base)}{tail}"
         # [다만] 밑이 문자면 괄호 진수는 그대로 잇는다
@@ -2573,23 +2574,108 @@ _FUNC_APPLY_RE = re.compile(
 # `\pi x` 는 곱이라 접으면 안 된다.
 _FUNC_BARE_RE = re.compile(rf"{_FUNC_NAME}\s*(?:\d+(?:[.,]\d+)*|[A-Za-z]|\\[a-zA-Z]+)")
 
+# ── 곱 판정 전용 원자 접기(#1437, 원장 M-13) ──────────────────────────────────────
+# 묶음 판정은 **최상위 인수**를 센다. 그 전에 한 덩어리인 것을 원자 하나(\x00)로 접는다.
+#   · 함수 이름은 위 `_FUNC_NAME` 에 `\log` 를 더한다(판정 전용 — 위 두 정규식의 이름 목록은 그대로 둔다).
+#     `\log_{6} 2` 는 함수값 하나다. 안 접으면 분자 · 지수 자리에서 곱으로 잡힌다.
+#   · 인자는 1단계 뒤 소괄호 ⠦⠴ 와 삼각 · 로그 인수 묶음 ⠷⠾(1f · 1g 단계)까지 본다. 그리스 글자도 인자다(`\sin θ`).
+#   · 글자 + 괄호는 함수 이름 f · g · h 일 때만 함수값이다. `n(n+1)` · `a(r^n-1)` 은 곱이다
+#     (2027 수학Ⅰ gold 가 분자에서 묶는다). 괄호 안이 대문자 하나면(`n(A)` · `n(A_4)` 원소 개수) 함수값이다.
+_JUDGE_FN = rf"(?:{_FUNC_NAME}|\\log)(?![A-Za-z])"
+_JUDGE_ARGS = r"(?:\([^()]*\)|⠦[^⠦⠴]*⠴|⠷[^⠷⠾]*⠾)"
+_JUDGE_SET_APPLY_RE = re.compile(
+    r"[A-Za-z]\s*(?:\(|⠦)\s*[A-Z]\s*(?:_\s*(?:\{[^{}]*\}|[A-Za-z0-9]))?\s*(?:\)|⠴)")
+_JUDGE_APPLY_RE = re.compile(rf"(?:{_JUDGE_FN}|\\[a-zA-Z]+|[fghFGH])\s*[′']*\s*{_JUDGE_ARGS}")
+_JUDGE_BARE_RE = re.compile(rf"{_JUDGE_FN}\s*(?:\x00|\d+(?:[.,]\d+)*|[A-Za-zα-ωΑ-Ω]|\\[a-zA-Z]+)")
+_JUDGE_GROUP_RE = re.compile(_JUDGE_ARGS)
+_JUDGE_SIZE_RE = re.compile(r"\\(?:left|right|big|Big|bigg|Bigg)(?![A-Za-z])")
+_OPEN_ALL, _CLOSE_ALL = "({[⠦⠷", ")}]⠴⠾"   # 깊이 셈: 1단계 뒤 소괄호 ⠦⠴ · 묶음 ⠷⠾ 도 괄호다
 
-def _needs_wrap(expr: str, *, radicand: bool = False) -> bool:
+
+def _top_level(expr: str) -> str:
+    """괄호(ASCII · ⠦⠴ · ⠷⠾ · 중괄호) 밖, 깊이 0 글자만 남긴 것."""
+    depth, out = 0, []
+    for ch in expr:
+        if ch in _OPEN_ALL:
+            depth += 1
+        elif ch in _CLOSE_ALL:
+            depth -= 1
+        elif depth == 0:
+            out.append(ch)
+    return "".join(out)
+
+
+def _strip_scripts(expr: str) -> str:
+    """위 · 아래첨자를 지운다 — 중첩 중괄호(`^{\\sqrt{2} - 1}`)까지. 첨자는 인수 셈에 안 든다."""
+    out, i = [], 0
+    while i < len(expr):
+        if expr[i] in "^_":
+            j = i + 1
+            while j < len(expr) and expr[j] == " ":
+                j += 1
+            if j < len(expr) and expr[j] == "{":
+                i = _extract_brace_content(expr, j)[1]
+                continue
+            if j < len(expr) and (expr[j].isalnum() or expr[j] in "′'"):
+                i = j + 1
+                continue
+        out.append(expr[i])
+        i += 1
+    return "".join(out)
+
+
+def _fold_atoms(expr: str) -> str:
+    """`\\cmd{…}{…}`(중첩 중괄호) · 함수 적용 · 괄호 무리를 원자(\\x00) 하나로 접는다."""
+    s = _JUDGE_SIZE_RE.sub("", expr)
+    out, i = [], 0
+    while i < len(s):
+        m = re.match(r"\\[a-zA-Z]+", s[i:])
+        if not m:
+            out.append(s[i])
+            i += 1
+            continue
+        k = j = i + m.end()
+        while j < len(s) and s[j] == " ":
+            j += 1
+        if j >= len(s) or s[j] != "{":
+            out.append(s[i:k])
+            i = k
+            continue
+        while True:                                   # 인자 중괄호 여럿(`\frac{…}{…}`)도 한 덩어리
+            j = _extract_brace_content(s, j)[1]
+            nxt = j
+            while nxt < len(s) and s[nxt] == " ":
+                nxt += 1
+            if nxt < len(s) and s[nxt] == "{":
+                j = nxt
+                continue
+            break
+        out.append("\x00")
+        i = j
+    s = _JUDGE_SET_APPLY_RE.sub("\x00", "".join(out))
+    s = _JUDGE_APPLY_RE.sub("\x00", s)
+    s = _JUDGE_BARE_RE.sub("\x00", s)
+    return _JUDGE_GROUP_RE.sub("\x00", s)             # 남은 괄호 무리는 인수 하나
+
+
+def _needs_wrap(expr: str, *, radicand: bool = False, product: bool = True) -> bool:
     """점역자 삽입 묶음 괄호 필요 판정 (수학 제7항 3호·제18항 붙임·제22항 붙임2).
 
-    `radicand=True` 는 **근호 안** 자리다(제14항 [붙임 2]). 그 자리에서는 book 모드에서도
-    곱을 묶는다 — 아래 ⚠ 의 관행 해제가 닿지 않는 자리다. 근거는 그쪽 주석(#877).
+    `radicand=True` 는 **근호 안** 자리다(제22항 [붙임 2], 재추출 3615~3618행). 종전에는 book 모드에서도 곱을 묶는
+    유일한 자리였다(#877).
+    #1437 부터 곱은 어느 자리 · 어느 모드에서나 묶으므로 이 표시는 판정을 바꾸지 않는다(호출부 표시로 남긴다).
+    `product=False` 는 곱을 묶지 않는 자리다 — 로그 밑(제46항 [붙임 1], 재추출 3820행)은 분수 · 소수만 묶는다.
 
-    묶는다: 다항식(이항 +/−), 분수(/·\\frac), 곱(인수 2개 이상 — xy·2a·2(m+n)).
+    묶는다: 다항식(이항 +/−), 분수(\\frac · /), 곱(최상위 인수 2개 이상 — xy·2a·2(m+n)·2√6·2 sin α·2×x×2).
     안 묶는다: 단일 수(소수·자릿점 포함, 제18항 x^#j4c)·단일 문자·문자^단일첨자
     (제22항 #c]x^#c)·미분소 dx·d²y(제53항 dx/dy 실측)·앞뒤 부호뿐인 수(이온 2−)·
-    이미 완전히 괄호로 묶인 식(제53항 y^(4) — 이중 괄호 방지)·단일 명령(\\pi 등).
+    이미 완전히 괄호로 묶인 식(제53항 y^(4) — 이중 괄호 방지)·단일 명령(\\pi 등)·
+    함수값 하나(√3 · f(x) · sin 2x · log₂ 6 · n(A))·괄호의 거듭제곱((2k+1)²).
 
-    ⚠ 분수 분자·분모의 곱 묶음을 book 모드에서 되살리는 시도는 기각됐다(2026-07-22
-    A/B: 요소 win 4 vs lose 42). gold는 계수×함수(2cosθ, p044)만 묶고 √3·f(x)·
-    sin2x 같은 단일 함수값은 안 묶는데, 아래 인수 셈은 \\sqrt{3}·f(x)를 2인수로
-    세어 과잉 묶음이 텍스트 인라인 수식 38건을 깨뜨렸다. 되살리려면 함수 적용
-    경계를 아는 원자 파서가 먼저다.
+    ★ #1437(원장 M-13, 판본 역전): 종전에는 book 모드(기본)에서 곱 판정을 껐다. 근거는 2026-07-22 구판 A/B
+    ('정답 도서는 묶지 않는다' 곱 묶음 해제 유사도 +2.1p · 되살린 시도 요소 win 4 : lose 42)였다. 2027 gold 는
+    규정대로 곱을 묶는다 — 분수표 바로 뒤 '수 × 근호' 분자 묶음 : 안 묶음이 구판 수학2 0 : 25 에서 2027 수학Ⅰ
+    86 : 1 로 뒤집혔다. 7-22 기각의 원인(√3 · f(x) 를 2인수로 세어 과잉 묶음)은 아래 원자 접기(`_fold_atoms`)가 닫는다.
     """
     expr = expr.strip()
     if not expr:
@@ -2615,51 +2701,39 @@ def _needs_wrap(expr: str, *, radicand: bool = False) -> bool:
         return False
     if re.fullmatch(r"[A-Za-z](?:\^(?:\{[^{}]*\}|[A-Za-z0-9]))?", expr):
         return False
-    if re.fullmatch(r"[+-]?(?:d|\\Delta ?|Δ ?)(?:\^(?:\{[^{}]*\}|[A-Za-z0-9]))?[A-Za-z]", expr):
-        return False   # 미분소 dx·d²y·증분 Δx (제53항·p146 gold ⠨⠙⠞⠌⠨⠙⠭ — 곱으로 세지 않음)
-    if re.fullmatch(r"\\[a-zA-Z]+|[-]", expr):
+    # 미분소 dx·d²y·증분 Δx (제53항·p146 gold ⠨⠙⠞⠌⠨⠙⠭ — 곱으로 세지 않음). 미분소의 거듭제곱 dx² 도 하나다 —
+    #   제53항 2호 이계도함수 예문 `d^#by/dx^#b`(분모 안 묶음). #1437 로 곱 판정이 모드와 무관해지며 드러났다.
+    #   MinerU 띄어쓰기(`d x ^ {2}`)도 같은 꼴로 본다.
+    if re.fullmatch(r"[+-]?(?:d|\\Delta|Δ)(?:\^(?:\{[^{}]*\}|[A-Za-z0-9]))?[A-Za-z](?:\^(?:\{[^{}]*\}|[A-Za-z0-9]))?",
+                    re.sub(r"\s+", "", expr)):
         return False
-    # 분수 → 묶음 (제7항 3호·제46항 붙임)
-    if "\\frac" in expr or "/" in expr:
+    if re.fullmatch(r"\\[a-zA-Z]+|[-]", expr):
+        return False
+    # 분수 → 묶음 (제7항 3호·제46항 붙임). **최상위**에 있을 때만이다(#1437) — 함수 인수 · 근호 · 괄호 속 분수는
+    #   그 함수값 하나다. `\sin⠷\frac{π}{6}⠾` 을 분모에서 통째로 묶던 것(gold 는 sin 인수만 묶는다, 수학Ⅰ 해설 36쪽).
+    top = _top_level(expr)
+    if re.search(r"\\[dt]?frac(?![A-Za-z])", top) or "/" in top:
         return True
-    # 이항 +/− (괄호 밖, 양쪽에 피연산자) → 다항식
+    # 이항 +/− (괄호 밖, 양쪽에 피연산자) → 다항식. 깊이는 1단계 뒤 소괄호 ⠦⠴ · 묶음 ⠷⠾ 까지 센다(#1437) —
+    #   ASCII 괄호만 세면 `⠦2k+1⠴^{2}` 의 + 가 깊이 0 이 되어 괄호의 거듭제곱을 다항식으로 묶었다.
     depth = 0
     for i, ch in enumerate(expr):
-        if ch in ("(", "{", "["):
+        if ch in _OPEN_ALL:
             depth += 1
-        elif ch in (")", "}", "]"):
+        elif ch in _CLOSE_ALL:
             depth -= 1
         elif ch in ("+", "-") and depth == 0 and 0 < i < len(expr) - 1:
             return True
-    # 곱 판정: 첨자 그룹 제거 후 인수(문자·수·명령·괄호군) 2개 이상.
-    # 규정은 곱도 묶으라 하지만(제7항 3호·제22항 [붙임2]) 정답 도서는 묶지 않는다 —
-    # A/B에서 곱 묶음 해제가 유사도 +2.1p(temp/wrap_variant_ab.py). 관행이라 book 모드
-    # 한정으로 해제하고, regulation 모드는 규정대로 묶는다.
-    #
-    # ★ #877 — **근호 안(`radicand`)은 이 해제가 닿지 않는다.**
-    #   규정이 그 자리를 따로 집어 말한다: 「수학 점자」 제14항 [붙임 2](규정 재추출
-    #   3615~3618행) "근호 안이 분수, 곱, 다항식 등일 때에는 묶음 괄호로 묶어 나타낸다"
-    #   + 보기 `√―xy → >(xy)`. 제6항 2호(3110행)도 같은 보기를 든다.
-    #   관행 쪽은 **증거가 없다** — 동결 코퍼스 gold 의 근호 중 묶음 괄호를 쓴 것은 4건인데
-    #   넷 다 다항식이고(`{f'(t)}²+{g'(t)}²` 꼴), 안 묶은 258건은 전부 `√3` 같은 **단항**이다.
-    #   즉 gold 에 근호 안 곱이 **0건**이라 위 A/B(+2.1p)가 이 자리를 잰 적이 없다.
-    #   규정만 있고 관행이 침묵하면 규정대로 간다(CLAUDE.md 판정표).
-    #   실측 규모: 추출물 근호 1,304건 중 곱은 11건(0.8%) — 작지만 규정이 요구하는 것을
-    #   빈도로 빼지 않는다.
-    if _IS_BOOK_STYLE and not radicand:
+    if not product:
         return False
-    flat = re.sub(r"[\^_](?:\{[^{}]*\}|[A-Za-z0-9])", "", expr)
-    # ★ #877 — 세기 전에 **함수 적용과 명령 인자를 원자 하나로 접는다.**
-    #   위 ⚠ 가 기각된 이유가 정확히 이것이다: `f(x)`를 `f`+`(x)` 로, `\sqrt{3}`을
-    #   `\sqrt`+`3` 으로 세면 **단일 함수값이 곱으로 잡혀** 과잉 묶음이 난다
-    #   (2026-07-22 A/B 에서 텍스트 인라인 수식 38건이 이렇게 깨졌다).
-    #   전면 원자 파서는 아직 없고, 여기서는 두 꼴만 접으면 그 함정이 닫힌다.
-    #   ⚠ 이 자리에 오는 `expr` 은 **1단계를 지난 반쯤 점자**다 — 소괄호가 이미 ⠦ ⠴ 로
-    #     바뀌어 있다(실측: `\sqrt{f(x)}` → `f⠦x⠴`). ASCII 괄호만 보면 안 걸린다.
-    #     위 "이미 완전 괄호" 검사가 두 꼴을 다 보는 이유와 같다.
-    flat = re.sub(_FUNC_APPLY_RE, "\x00", flat)   # f⠦x⠴ · \sin⠦x⠴ · \vec{a}
-    flat = re.sub(_FUNC_BARE_RE, "\x00", flat)    # \sin x · \ln 2
-    factors = re.findall(r"\x00|\\[a-zA-Z]+|\d+(?:[.,]\d+)*|[A-Za-z]|\([^()]*\)", flat)
+    # 부호 + 괄호 무리(`−(−2)`)는 식이다 — 종전(괄호 속 −를 깊이 0 으로 보던 판정)과 같게 묶는다.
+    if re.fullmatch(r"[+\-−]\s*(?:⠦.*⠴|\(.*\))", expr):
+        return True
+    # 곱 판정: 첨자를 지우고(중첩 중괄호까지) 원자를 접은 뒤 최상위 인수(문자·수·명령·원자) 2개 이상.
+    #   규정 제7항 3호(재추출 3149행) · 제6항 2호(3110행) · 지수 [붙임](3540행) · 아래첨자 [붙임](3573행).
+    flat = _fold_atoms(_strip_scripts(expr))
+    factors = [f for f in re.findall(r"\x00|\\[a-zA-Z]+|\d+(?:[.,]\d+)*|[A-Za-zα-ωΑ-Ω]", flat)
+               if f not in ("\\times", "\\cdot", "\\quad", "\\qquad")]
     return len(factors) >= 2
 
 
@@ -2753,8 +2827,10 @@ def _needs_wrap_out(raw: str, braille: str) -> bool:
     """
     if _already_wrapped(braille):
         return False
+    # 분수표는 **최상위**(⠷⠾ · ⠦⠴ 밖)일 때만 이 자리가 분수다(#1437). 로그 진수 · 함수 인수 속 분수표를 보고
+    #   `2^{\log_2 \frac{y}{3}}` 의 지수를 통째로 묶던 것(gold 안 묶음, 수학Ⅰ 해설 5쪽).
     return (_needs_wrap(raw) or _is_monomial_product(raw)
-            or _FRACTION_MID in braille)
+            or _FRACTION_MID in _top_level(braille))
 
 # 한글이 든 분자 · 분모는 한글표 ⠸⠷ · 한글 종료표 ⠸⠾ 로 묶고 분수표는 붙여 적는다(#1183 2차, 원장 B-26 관행 채택).
 # 「한국 점자 규정」 수학 제6항 [붙임](재추출본 3121~3124행): 한글이 포함된 수식에서 수식의 일부를 묶어야 할 경우

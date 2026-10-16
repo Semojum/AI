@@ -83,9 +83,15 @@ class TestRegulationMode:
         assert OPEN not in regulation.convert_latex(latex), 왜
 
 
-class TestOtherCallSitesUnchanged:
-    """근호 밖에서는 book 모드의 곱 묶음 해제가 그대로다(2026-07-22 A/B 를 되돌리지 않는다)."""
+class TestOtherCallSites:
+    """#1437(원장 M-13): 근호 밖(분수 분자 · 분모 · 지수 · 아래첨자)에서도 book 모드에서 곱을 묶는다.
+    종전의 곱 묶음 해제(2026-07-22 A/B)는 구판 gold 근거였고, 2027 gold 는 규정대로 묶는다
+    (분수표 바로 뒤 '수 × 근호' 분자 묶음 : 안 묶음 = 구판 수학2 0 : 25 → 2027 수학Ⅰ 86 : 1)."""
 
-    def test_분수_분자의_곱은_book_에서_안_묶는다(self) -> None:
-        assert not k._needs_wrap("xy")
+    def test_분수_분자의_곱도_book_에서_묶는다(self) -> None:
+        assert k._needs_wrap("xy")
         assert k._needs_wrap("xy", radicand=True)
+
+    def test_로그_밑은_곱을_안_묶는다(self) -> None:
+        """로그 [붙임 1](재추출 3820행)은 밑이 분수 · 소수일 때만 묶는다."""
+        assert not k._needs_wrap("xy", product=False)
