@@ -1297,6 +1297,108 @@ def _unwrap_circled_math(cell: str) -> str:
     return "".join(out)
 
 
+# 줄 수식 요소의 원문자 이름표 · 한글 낱말(#1440). MinerU 수식 OCR 은 `…… ㉠` 이름표를 `⑦` · `\tag{①}` · `\text{己}` ·
+# `\textcircled{\text{七}}` 로, 한글 `이므로` 를 `^{\circ}\text{丨旦豆}` · `\circ | \text{旦豆}` 로, `이고` 를 `^{\circ}\text{고}` 로
+# 읽는다(2027 수학Ⅰ 줄 수식 1,934 중 228). 수식은 위 글 · 표 갈래와 달리 층을 안 봐서 그대로 점역됐다. 층에는 바른 글자가
+# 있다(`yy`㉠` · `a°=81a이므로`). 표 원문자(`_restore_table_circled`)와 같은 원칙 — 읽는 차례로 짝짓고 **개수가 맞을 때만**
+# 바꾼다. 고정 치환표(`⑦ → ㉠`)는 안 쓴다. 되돌리기 `FORMULA_LAYER_RESTORE=0`(추출 단계).
+_FORMULA_ELLIPSIS_END_RE = re.compile(r"\\(?:dots|cdots|ldots)(?:\s*\\(?:dots|cdots|ldots))*\s*(?:\\q?quad\s*)?$")
+# 층에서 가져와 **써넣는** 원문자는 번역기가 수식 자리에서 점형을 내는 글자만이다(① ~ ⑳ · ⓐ ~ ⓩ · ㉠ ~ ㉻, 74자).
+#   집합 전체를 번역기에 통과시킨 표(V2 temp/n368/circ_table.tsv, #1435 자모 전수와 같은 방식): 괄호 · 마침표 꼴(⑴ · ⒈ · ⒜,
+#   U+2474 ~ 24B5)과 대문자 원문자 Ⓐ ~ Ⓩ(U+24B6 ~ 24CF)는 수식 자리에서 빈 출력, ㉼ ~ ㉾(U+327C ~ 327E)는 어디서나 빈 출력이다.
+#   `\tag{1}` 을 ⑴ 로 바꾸면 `(1)` 이 사라졌다(수학Ⅰ 본문 29쪽). **찾는** 쪽(아래 토큰)은 오독 Ⓛ(= ㉡)까지 넓게 본다.
+_FORMULA_CIRCLED_RE = re.compile(r"[\u2460-\u2473\u24D0-\u24E9\u3260-\u327B]")
+_FORMULA_CIRCLED_TOKEN_RE = re.compile(
+    r"\\textcircled\s*\{(?:[^{}]|\{[^{}]*\})*\}|\\tag\s*\*?\s*\{[^{}]*\}|\\text\s*\{\s*[^{}\s]\s*\}"
+    r"|[\u2460-\u2473\u24B6-\u24E9\u3260-\u327E]")
+_FORMULA_HANGUL_RE = re.compile(r"[가-힣]+")      # ⚠ 위 739행 `_HANGUL_RUN_RE`(통째 한글)와 다른 이름이어야 한다
+_CJK_IDEOGRAPH_RE = re.compile(r"[\u4e00-\u9fff]")
+_FORMULA_CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff](?:[\s\u4e00-\u9fff가-힣]*[\u4e00-\u9fff가-힣])?")
+# 한글 자리: ('이' 를 ∘ 로 읽은 앞머리) + `\text{…}`, 또는 `\text` 밖 한자 덩이(`北 에 서`)
+_FORMULA_HANGUL_SLOT_RE = re.compile(
+    r"(?P<pre>(?:\^\s*\{\s*\\circ\s*\}|\\circ)\s*[|\]]?\s*)?\\text\s*\{(?P<body>[^{}]*)\}"
+    r"|(?P<cjk>[\u4e00-\u9fff](?:[\s\u4e00-\u9fff가-힣]*[\u4e00-\u9fff가-힣])?)")
+
+
+def _formula_circled_tokens(latex: str) -> list[re.Match]:
+    """원문자 자리 토큰. 한 글자 `\\text{X}` 는 줄임표 바로 뒤(이름표 자리)일 때만 — 그 밖의 `\\text{X}` 는 글이다."""
+    return [m for m in _FORMULA_CIRCLED_TOKEN_RE.finditer(latex)
+            if not m.group(0).startswith("\\text") or m.group(0).startswith("\\textcircled")
+            or _FORMULA_ELLIPSIS_END_RE.search(latex[:m.start()])]
+
+
+def _restore_formula_circled(latex: str, layer: str) -> str:
+    """원문자 자리를 층 원문자로 바꾼다. `\\tag{…}` 도 날 원문자가 된다 — `\\tag` 는 괄호를 쳐서 `(㉢)` 로 나간다."""
+    toks = _formula_circled_tokens(latex)
+    want = _FORMULA_CIRCLED_RE.findall(layer)
+    if not toks or len(toks) != len(want):
+        return latex
+    out = latex
+    for t, w in sorted(zip(toks, want), key=lambda tw: tw[0].start(), reverse=True):
+        out = out[:t.start()] + w + out[t.end():]
+    return out
+
+
+def _restore_formula_hangul(latex: str, layer: str, layer_fixed: str) -> str:
+    """한글 자리를 층 한글 낱말로 맞춘다. 바른 자리는 층 낱말을 이어 붙여 같아질 때까지 먹고(칸 잃은 `\\text{이식을}` =
+    이 · 식을), 한자 쓰레기 자리는 층 낱말 하나를 그대로 받는다. 끝까지 짝이 맞고 층 낱말이 남지 않을 때만 바꾼다.
+
+    ∘ 앞머리: `^{\\circ}\\text{고}` 는 '이고'(∘ 가 '이')다. `\\circ \\text{이므로}` 는 '이' 를 두 번 읽은 것이라 ∘ 를 지운다 —
+    다만 층에 ∘ · 도(°)가 있으면 진짜 기호일 수 있어 둔다(본문 52쪽 `90°이므로`). 기호는 한컴 글꼴 GID 를 되돌린 층으로 본다
+    (평문 층은 ° 를 ± 로 보인다).
+    """
+    words = _FORMULA_HANGUL_RE.findall(layer)
+    keep_circ = "∘" in layer_fixed or "°" in layer_fixed
+    skip = [(m.start(), m.end()) for m in _formula_circled_tokens(latex)]
+    i, reps = 0, []
+    for m in _FORMULA_HANGUL_SLOT_RE.finditer(latex):
+        if any(s <= m.start() < e for s, e in skip):
+            continue                                   # 원문자 이름표 자리(`\textcircled{\text{七}}`)는 한글이 아니다
+        body = m.group("body") if m.group("cjk") is None else m.group("cjk")
+        pre = bool(m.group("pre"))
+        h = "".join(_FORMULA_HANGUL_RE.findall(body))
+        if _CJK_IDEOGRAPH_RE.search(body):
+            if i >= len(words):
+                return latex
+            # 한자 덩이만 낱말로 바꾸고 둘레 문장부호 · 칸은 둔다 — `\text{歆,}` 의 쉼표(수학 II 해설 10 · 32 · 44쪽 `즉,`)
+            reps.append((m.start(), m.end(), "\\text{" + _FORMULA_CJK_RUN_RE.sub(words[i], body, count=1) + "}"))
+            i += 1
+            continue
+        if not h:
+            continue
+        for key, drop in ((("이" + h) if pre else None, False), (h, pre)):
+            if key is None:
+                continue
+            j, acc = i, ""
+            while j < len(words) and len(acc) < len(key):
+                acc += words[j]
+                j += 1
+            if acc != key:
+                continue
+            if pre and not drop:
+                reps.append((m.start(), m.end(), "\\text{이" + body.strip() + "}"))
+            elif drop and not keep_circ:
+                reps.append((m.start(), m.end(), "\\text{" + body + "}"))
+            i = j
+            break
+        else:
+            return latex
+    if i != len(words):
+        return latex
+    out = latex
+    for s, e, r in reversed(reps):
+        out = out[:s] + r + out[e:]
+    return out
+
+
+def _restore_formula_layer(fitz_page: fitz.Page, bbox: list[float], latex: str) -> str:
+    """줄 수식 LaTeX 의 원문자 이름표 · 한글 낱말을 bbox 안 글자층으로 되살린다(위 절, #1440)."""
+    if not latex or not bbox or os.environ.get("FORMULA_LAYER_RESTORE", "1") == "0":
+        return latex
+    plain, fixed = _native_text_pair(fitz_page, bbox)
+    return _restore_formula_hangul(_restore_formula_circled(latex, plain), plain, fixed)
+
+
 # 칸을 버린 표의 가드(#1317). 위 함수는 칸 하나라도 층에서 못 찾으면 표를 통째로 안 고쳤다. 2027 dev · val 표 899 중
 # 359 가 그렇게 포기했고, B3(#1296)가 고치지 못한 칸 끝 · 짧은 칸 오독(`촉은지심` · `콩팔` · `롱산문화(혹도 등)`)이 그 안에
 # 표시 없이 남았다. `fixes` 를 넘기면 실패 칸만 건너뛰고 창이 맞은 칸은 고친다. 다만 이 표들은 층과 표가 어긋난 데가
@@ -2818,6 +2920,8 @@ def run(
                 content = _restore_lone_circled(fitz_page, bb, content, fixes=split_fixes)  # 숫자만 든 칸(#1403)
                 content, table_fixes = fix_table_misreads(fitz_page, bb, content)   # 포기한 표도 확실한 자리는(#1296)
                 table_fixes = split_fixes + table_fixes
+        elif mapped_type == "formula":
+            content = _restore_formula_layer(fitz_page, bb, content)   # 원문자 이름표 · 한글 낱말(#1440)
 
         # 인쇄 캡션 강제 적용(위 forced_caption) — 생성 placeholder/빈 content를 덮어쓴다.
         if forced_caption and mapped_type == "caption":
