@@ -2718,8 +2718,10 @@ def _needs_wrap(expr: str, *, radicand: bool = False, product: bool = True) -> b
         return False
     # 분수 → 묶음 (제7항 3호·제46항 붙임). **최상위**에 있을 때만이다(#1437) — 함수 인수 · 근호 · 괄호 속 분수는
     #   그 함수값 하나다. `\sin⠷\frac{π}{6}⠾` 을 분모에서 통째로 묶던 것(gold 는 sin 인수만 묶는다, 수학Ⅰ 해설 36쪽).
+    #   2c 단계(근호)에는 분수가 이미 점형이라 분수표 ⠌ 로도 본다(#1439) — 제22항 [붙임 2](재추출 3615행) "근호 안이 분수 … 일 때에는
+    #   묶음 괄호로". 못 보던 때는 `√(1/2)` 가 `>#b/#a` 로 나가 `1/√2` 와 같은 점형이 됐다(수학Ⅰ 해설 19쪽 gold `>(#d/#e)`).
     top = _top_level(expr)
-    if re.search(r"\\[dt]?frac(?![A-Za-z])", top) or "/" in top:
+    if re.search(r"\\[dt]?frac(?![A-Za-z])", top) or "/" in top or _FRACTION_MID in top:
         return True
     # 이항 +/− (괄호 밖, 양쪽에 피연산자) → 다항식. 깊이는 1단계 뒤 소괄호 ⠦⠴ · 묶음 ⠷⠾ 까지 센다(#1437) —
     #   ASCII 괄호만 세면 `⠦2k+1⠴^{2}` 의 + 가 깊이 0 이 되어 괄호의 거듭제곱을 다항식으로 묶었다.
