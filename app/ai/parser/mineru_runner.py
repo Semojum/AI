@@ -733,7 +733,8 @@ def _restore_table_bullets(fitz_page: fitz.Page, bbox: list[float], html: str) -
 #   - 길이가 바뀌는 편집(삽입·삭제)은 전부 버린다 → 잘림·중복이 반영될 수 없다.
 #   - 기호·숫자·로마자는 건드리지 않는다. 물결표(~ vs ∼)·붙임표(– vs -)는 레이어 쪽이
 #     원문 글리프지만, 그건 특수기호 축이 따로 규정으로 다루는 영역이라 여기서 손대면
-#     담당이 섞인다.
+#     담당이 섞인다. 예외 둘: 원문자로 읽힐 숫자(#1210 · #1403 · #1433)와, 층이 한글 · 자모인
+#     자리의 외래 글자(#1435, 아래 `_foreign_substitutions` 절).
 _CELL_RE = re.compile(r"(<t[dh][^>]*>)(.*?)(</t[dh]>)", re.IGNORECASE | re.DOTALL)
 _HANGUL_RUN_RE = re.compile(r"^[가-힣]+$")
 _CELL_SIM_MIN = 0.80      # 셀이 레이어에서 이만큼도 안 닮은 자리밖에 없으면 대조 실패
@@ -776,6 +777,46 @@ def _hangul_substitutions(cell: str, window: str) -> list[tuple[int, int, str]]:
             continue
         out.append((i1, i2 - i1, b))
     return out
+
+
+# ── 외래 글자로 읽힌 한글 · 자모 (#1435) ─────────────────────────────────────
+# MinerU 표 OCR 이 홀로 선 자모를 닮은 외래 글자로 읽고(‘ㅁ’ → ‘ロ’ · ㅅ → 人 · ㄱ → Γ · ㅑ, ㅕ → ٤, ٤), 한글 음절을
+# 라틴 낱말로 지어낸다(꾸밈 → 꾸lipid · 글벗 → 글Viet · 로펌 → 로pem). 드물게 한자로 읽는다(수수깡 → 수수梵).
+# 2027 dev 언어와 매체 표에 몰려 있다(V2 temp/n365). 번역기는 이 글자 상당수를 빼거나(ロ · ٣ · 丨 · 乚) 로마자로 찍어
+# 원문이 사라지는데, 층에는 바른 글자가 있다. 칸 창에서 바뀐 자리가 아래 셋 가운데 하나이고 양옆이 층과 같은
+# 글자일 때만(칸 가장자리는 안 된다) 층 글자로 바꾼다.
+#   · 외래 글자 한 자(다른 문자 체계 글자 · 비ASCII 숫자 · 기호) ↔ 현대 자모 한 자(ㄱ~ㅣ). 옛 자모 가운데 번역기가
+#     빈 출력을 내는 글자(ㅦ ~ ㅰ 등)가 있어 현대 자모만 받는다. 첫소리 자모(ᄂ)는 번역기가 ㄴ 과 같게 찍어 안 바꾼다.
+#   · 라틴 글자 2~8자 ↔ 한글 · 자모 1~2자. 라틴 한 자 ↔ 한글 음절은 안 받는다. 생명과학 본문 155쪽 칸
+#     `상염색체 수-X 염색체 수` 는 층 창이 이웃 줄 `성염색체 수` 로 밀려 X 를 `성` 으로 바꿀 뻔했다(묵자는 X).
+#   · 한자 ↔ 같은 길이 한글 음절.
+# 칸을 버린 표(#1317)에서도 받는다. 이 꼴 자체가 오독 증거라 `_split_fix_ok` 의 ① · ③ 대신 ② 만 본다.
+_MODERN_JAMO_RE = re.compile(r"^[ㄱ-ㅣ]$")
+_LATIN_RUN_RE = re.compile(r"^[A-Za-zÀ-ɏ]{2,8}$")
+_HANGUL_JAMO12_RE = re.compile(r"^[가-힣ㄱ-ㅣ]{1,2}$")
+_CJK_RUN_RE = re.compile(r"^[㐀-鿿豈-﫿]+$")
+
+
+def _foreign_glyph(ch: str) -> bool:
+    """한글 · 자모 · ASCII 숫자 · ASCII 부호가 아닌 글자 · 숫자 · 기호(라틴 낱자는 든다)."""
+    if "가" <= ch <= "힣" or "ᄀ" <= ch <= "ᇿ" or "㄰" <= ch <= "㆏" or (ch.isascii() and not ch.isalpha()):
+        return False
+    return unicodedata.category(ch)[0] in "LNS"
+
+
+def _foreign_misread(ours: str, layer: str) -> bool:
+    """우리 글 `ours` 가 층 글 `layer` 를 외래 글자로 읽은 꼴인가(위 절 셋)."""
+    return bool((len(ours) == 1 and _foreign_glyph(ours) and _MODERN_JAMO_RE.match(layer))
+                or (_LATIN_RUN_RE.match(ours) and _HANGUL_JAMO12_RE.match(layer))
+                or (len(ours) == len(layer) and _CJK_RUN_RE.match(ours) and _HANGUL_RUN_RE.match(layer)))
+
+
+def _foreign_substitutions(cell: str, window: str) -> list[tuple[int, int, str]]:
+    """(셀 내 오프셋, 길이, 대체문자열). 양옆이 층과 같은 외래 글자 오독만(위 절)."""
+    ops = SequenceMatcher(None, cell, window, autojunk=False).get_opcodes()
+    return [(i1, i2 - i1, window[j1:j2]) for k, (tag, i1, i2, j1, j2) in enumerate(ops)
+            if tag == "replace" and 0 < k < len(ops) - 1 and ops[k - 1][0] == ops[k + 1][0] == "equal"
+            and _foreign_misread(cell[i1:i2], window[j1:j2])]
 
 
 # ── 긴 칸 조각 대조 (#1208) ─────────────────────────────────────────────────
@@ -1273,8 +1314,10 @@ def _jamo_diff(a: str, b: str) -> int:
 
 
 def _split_fix_ok(seg: str, off: int, ln: int, repl: str, layer_ns: str) -> bool:
-    """칸을 버린 표에서 이 치환을 고쳐도 되는가(위 절 ①②③)."""
+    """칸을 버린 표에서 이 치환을 고쳐도 되는가(위 절 ①②③). 외래 글자 오독(#1435)은 ② 만 본다."""
     ours = seg[off:off + ln]
+    if _foreign_misread(ours, repl):
+        return seg[max(0, off - 1):off + ln + 1] not in layer_ns
     return (bool(_MISREAD_RE.match(ours) and _MISREAD_RE.match(repl))
             and seg[max(0, off - 1):off + ln + 1] not in layer_ns
             and all(_jamo_diff(a, b) <= 1 for a, b in zip(ours, repl)))
@@ -1297,7 +1340,8 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str,
     if not layer or _layer_untrustworthy(plain, fitz_page):
         return html
     # 레이어에는 우리가 붙이는 인라인 태그(<!강조> 등)가 들어 있다 — 대조 전에 걷어낸다.
-    layer_ns = re.sub(r"\s+", "", re.sub(r"<!/?[^>]*>", "", layer))
+    layer_sp = re.sub(r"<!/?[^>]*>", "", layer)
+    layer_ns = re.sub(r"\s+", "", layer_sp)
     if not layer_ns:
         return html
     # 층에 동그라미 한글이 있으면 대조에서 숫자 ↔ 동그라미 한글을 같은 글자로 본다(#1210, 위 절). 칸 창은 이것 그대로다.
@@ -1377,7 +1421,8 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str,
         for start, seg, win in wins:           # seg = 창에 댄 칸 글(조각이면 칸 일부)
             circs = _circled_digit_restores(seg, win, layer_ns) if circ else []
             sure = set(_circled_digit_restores(seg, win, layer_ns, strict=True)) if circs and (dropped or rescued) else set()
-            subs = [(s, False) for s in _hangul_substitutions(seg, win)] + [(s, True) for s in circs]
+            subs = ([(s, False) for s in _hangul_substitutions(seg, win) + _foreign_substitutions(seg, win)]
+                    + [(s, True) for s in circs])
             for (off, ln, repl), by_ctx in subs:
                 blocked = ((rescued and (off == 0 or off + ln == len(seg)))
                            or (dropped and not _split_fix_ok(seg, off, ln, repl, layer_ns)))
@@ -1387,7 +1432,11 @@ def _correct_table_cells(fitz_page: fitz.Page, bbox: list[float], html: str,
                 # 원문에서도 연속이어야 한다 — 중간에 태그·공백이 끼어 있으면 건드리지 않는다.
                 if src != list(range(src[0], src[0] + ln)):
                     continue
-                edits.append((base + src[0], ln, repl))
+                at = base + src[0]
+                if (off and _LATIN_RUN_RE.match(seg[off:off + ln]) and seg[off - 1] + repl in layer_sp
+                        and not html[base + ns_idx[start + off - 1] + 1:at].strip()):
+                    at = base + ns_idx[start + off - 1] + 1     # `꾸 lipid` → `꾸밈`: 라틴 낱말 앞 빈칸은 MinerU 가 넣은 것(#1435)
+                edits.append((at, base + src[0] + ln - at, repl))
                 if dropped:
                     labels.append(f"{seg[max(0, off - 2):off]}{{{seg[off:off + ln]}→{repl}}}{seg[off + ln:off + ln + 2]}")
 
