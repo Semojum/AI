@@ -426,6 +426,7 @@ _EXTRACT_ENV = (
     "TABLE_CELL_LONE_CIRCLED",                                                         # #1403 숫자만 든 표 칸 → 원문자
     "TABLE_MISREAD_FIX",                                                               # #1296 포기한 표의 한 음절 오독 고치기
     "TABLE_CELL_SPLIT",                                                                # #1317 표 칸 교정을 칸 단위로(실패 칸만 버림)
+    "FORMULA_LAYER_RESTORE",                                                           # #1440 줄 수식 원문자 이름표 · 한글 낱말 층 되살리기
     "LAYER_LENGTH_MARK",                                                               # #1222 긴소리표 ː 를 층 관문에서 안 셈
     "LAYER_UNKNOWN_GLYPH",                                                             # #376 표에 없는 수식 글꼴 글리프 블록은 층 불신
     "HANCOM_FRACTION",                                                                 # #1055 한컴 작은 수 분수 풀기
