@@ -29,6 +29,8 @@ def _b(brf: str) -> str:
     (r"a_{n+3}", "a;(n5#c)"),                # 제19항 [붙임](3581행)
     (r"a_{m+n}", "a;(m5n)"),                 # 제19항 [붙임](3583행)
     (r"S_{2a}", ',s;(#b"a)'),                # 제19항 [붙임](3585행) — 곱 아래첨자
+    (r"\frac{\Delta y}{\Delta x}", ",.dx/,.dy"),                     # 제52항(3938행) — 증분 Δx 는 하나
+    (r"\sigma(\hat{p})=\sqrt{V(\hat{p})}", ".S8p@@5033>,V8p@@50"),   # 제64항(4262행) — 근호 안 대문자 함수값
 ])
 def test_규정_예문(latex, brf):
     assert convert_latex(latex) == _b(brf)
@@ -56,6 +58,30 @@ def test_곱은_묶는다_2027_gold(latex, brf):
 ])
 def test_함수값_하나는_안_묶는다_2027_gold(latex, brf):
     assert convert_latex(latex) == _b(brf)
+
+
+@pytest.mark.parametrize("latex,brf", [
+    (r"\frac{d x_{1}}{d t}", "dt/dx;#a"),       # 미분소 dx₁ — 제53항(3956행 dx/dy) · 제52항(3940행 x;#a)
+    (r"\frac{1}{Q (x)}", ",q8x0/#a"),          # 대문자 함수값 — 제64항(4262행)과 같은 꼴
+    (r"\frac{(x-1)Q(x)}{2}", "#b/(8x9#a0,q8x0)"),  # 괄호 × 함수값은 곱 — 제7항 3호(3149행)
+])
+def test_수학II_꼴(latex, brf):
+    """수학 II(구판 묵자 162쪽) 발화를 눈으로 보다 찾은 꼴 — dev 에 없던 것이라 규칙이 dev 에 맞춰졌는지 가른다."""
+    assert convert_latex(latex) == _b(brf)
+
+
+@pytest.mark.parametrize("latex", [
+    r"\lim_{x \longrightarrow \infty} f(x)",              # 3단계 `_LIM_RE` 가 \longrightarrow 를 못 잡는다
+    r"\operatorname* { l i m } _ { x  1 - } g ( x )",     # MinerU 가 화살표를 잃은 꼴
+])
+def test_lim_범위는_안_묶는다(latex):
+    """제51항(3908 · 3918행 `LIM;X`3o`=`F8X0`) lim 범위는 ⠰ 뒤에 묶지 않는다."""
+    assert _b("(") not in convert_latex(latex)
+
+
+def test_varDelta_증분은_안_묶는다():
+    """제52항(3938행) 변화율 `,.dx/,.dy` 는 안 묶는다 — MinerU 가 `\\varDelta` 로 낸 꼴(수학 II 본문 88쪽)."""
+    assert _b("(") not in convert_latex(r"\frac{\varDelta S}{\varDelta t}")
 
 
 def test_지수가_로그_하나면_안_묶는다():

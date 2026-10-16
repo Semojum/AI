@@ -1796,6 +1796,10 @@ def _stage9_subscript(result: str) -> str:
         #   규정 제19항 1호와 같은 형식이고 수학·화학 양쪽에서 일관된다 → 규정형으로 낸다.
         #   (내린 숫자 `_DROPPED_DIGIT`는 로그 밑 제46항 전용으로 남는다.)
         sub  = convert_latex(sub_raw)
+        # lim 범위는 ⠰ 뒤에 묶지 않고 적는다(제51항, 재추출 3908 · 3918행 `LIM;X`3o`=`F8X0`). 3단계 `_LIM_RE` 가
+        #   못 잡은 꼴(`\longrightarrow` · 화살표를 잃은 MinerU 출력 `x  1 -`)이 여기로 온다 — 곱으로 세어 묶었다(#1437).
+        if base == "m" and m.string[:m.start()].endswith("\\li"):
+            return f"{base}{_SUBSCRIPT_IND}{sub}"
         sub_w = _wrap_ins(sub) if _needs_wrap_out(sub_raw, sub) else sub
         return f"{base}{_SUBSCRIPT_IND}{sub_w}"
 
@@ -2579,13 +2583,15 @@ _FUNC_BARE_RE = re.compile(rf"{_FUNC_NAME}\s*(?:\d+(?:[.,]\d+)*|[A-Za-z]|\\[a-zA
 #   · 함수 이름은 위 `_FUNC_NAME` 에 `\log` 를 더한다(판정 전용 — 위 두 정규식의 이름 목록은 그대로 둔다).
 #     `\log_{6} 2` 는 함수값 하나다. 안 접으면 분자 · 지수 자리에서 곱으로 잡힌다.
 #   · 인자는 1단계 뒤 소괄호 ⠦⠴ 와 삼각 · 로그 인수 묶음 ⠷⠾(1f · 1g 단계)까지 본다. 그리스 글자도 인자다(`\sin θ`).
-#   · 글자 + 괄호는 함수 이름 f · g · h 일 때만 함수값이다. `n(n+1)` · `a(r^n-1)` 은 곱이다
+#   · 소문자 + 괄호는 함수 이름 f · g · h 일 때만 함수값이다. `n(n+1)` · `a(r^n-1)` 은 곱이다
 #     (2027 수학Ⅰ gold 가 분자에서 묶는다). 괄호 안이 대문자 하나면(`n(A)` · `n(A_4)` 원소 개수) 함수값이다.
+#   · 대문자 + 괄호는 함수값이다(`Q(x)` · `F(x)` · `P(B|A)`). 제64항(재추출 4262행) `√V(p̂)` → `>,V8p@@50` 은
+#     근호 안 대문자 함수값을 안 묶는다. 수학 II 몫 `(x-1)Q(x)` 의 Q(x) 를 곱으로 세어 분모에서 묶었다.
 _JUDGE_FN = rf"(?:{_FUNC_NAME}|\\log)(?![A-Za-z])"
 _JUDGE_ARGS = r"(?:\([^()]*\)|⠦[^⠦⠴]*⠴|⠷[^⠷⠾]*⠾)"
 _JUDGE_SET_APPLY_RE = re.compile(
     r"[A-Za-z]\s*(?:\(|⠦)\s*[A-Z]\s*(?:_\s*(?:\{[^{}]*\}|[A-Za-z0-9]))?\s*(?:\)|⠴)")
-_JUDGE_APPLY_RE = re.compile(rf"(?:{_JUDGE_FN}|\\[a-zA-Z]+|[fghFGH])\s*[′']*\s*{_JUDGE_ARGS}")
+_JUDGE_APPLY_RE = re.compile(rf"(?:{_JUDGE_FN}|\\[a-zA-Z]+|[fghA-Z])\s*[′']*\s*{_JUDGE_ARGS}")
 _JUDGE_BARE_RE = re.compile(rf"{_JUDGE_FN}\s*(?:\x00|\d+(?:[.,]\d+)*|[A-Za-zα-ωΑ-Ω]|\\[a-zA-Z]+)")
 _JUDGE_GROUP_RE = re.compile(_JUDGE_ARGS)
 _JUDGE_SIZE_RE = re.compile(r"\\(?:left|right|big|Big|bigg|Bigg)(?![A-Za-z])")
@@ -2703,9 +2709,10 @@ def _needs_wrap(expr: str, *, radicand: bool = False, product: bool = True) -> b
         return False
     # 미분소 dx·d²y·증분 Δx (제53항·p146 gold ⠨⠙⠞⠌⠨⠙⠭ — 곱으로 세지 않음). 미분소의 거듭제곱 dx² 도 하나다 —
     #   제53항 2호 이계도함수 예문 `d^#by/dx^#b`(분모 안 묶음). #1437 로 곱 판정이 모드와 무관해지며 드러났다.
-    #   MinerU 띄어쓰기(`d x ^ {2}`)도 같은 꼴로 본다.
-    if re.fullmatch(r"[+-]?(?:d|\\Delta|Δ)(?:\^(?:\{[^{}]*\}|[A-Za-z0-9]))?[A-Za-z](?:\^(?:\{[^{}]*\}|[A-Za-z0-9]))?",
-                    re.sub(r"\s+", "", expr)):
+    #   MinerU 띄어쓰기(`d x ^ {2}`)도 같은 꼴로 본다. 첨자 붙은 변수의 미분소 `dx₁`(수학 II 속도 `dx_1/dt`)와
+    #   `\varDelta` 도 하나다 — 제52항(재추출 3937~3938행) 변화율 Δy/Δx 는 `,.dx/,.dy` 로 안 묶는다.
+    if re.fullmatch(r"[+-]?(?:d|\\(?:var)?Delta|Δ)(?:\^(?:\{[^{}]*\}|[A-Za-z0-9]))?[A-Za-z]"
+                    r"(?:[_^](?:\{[^{}]*\}|[A-Za-z0-9]))*", re.sub(r"\s+", "", expr)):
         return False
     if re.fullmatch(r"\\[a-zA-Z]+|[-]", expr):
         return False
